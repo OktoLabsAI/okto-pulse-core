@@ -2,9 +2,8 @@
 direct imports/uses of the relational RUNTIME adapter surface outside a temporary,
 GOVERNED allowlist, so the inbound runtime seams (REST ``get_unit_of_work`` / MCP
 ``get_unit_of_work_factory_for_mcp``) resolve the edition-registered provider via
-:mod:`okto_pulse.core.runtime_registry` and the relational ownership (engine +
-session factory + UnitOfWork + concrete repos) can finish moving to the Community
-adapter editions.
+:mod:`okto_pulse.core.runtime_registry` and the remaining UnitOfWork/concrete
+repository surface can finish moving to the Community adapter editions.
 
 The gate fails if core runtime, OUTSIDE the temporary allowlist, references any of:
   * the concrete relational package ``okto_pulse.core.repositories.sqlalchemy``
@@ -29,10 +28,11 @@ GOVERNED allowlist (TR3 register-before-remove, NOT a generic escape): every
 allowlisted reference is an explicit :class:`AllowlistEntry` carrying an ``owner``,
 a ``reason`` and a ``removal_criterion`` bound to R01C — surfaced in the report so
 a reviewer can audit each waiver. A NEW importer/user outside the allowlist BLOCKS.
-The two strangled runtime seams (``api/deps.py`` / ``mcp/server.py``) are
-deliberately OFF the allowlist and no longer reference the adapter at all (proof of
-strangle). String literals (e.g. names quoted in ``__all__`` / docstrings / a
-debt-ledger ``location=``) are ``ast.Constant`` and are never flagged.
+The strangled runtime seams (``api/deps.py`` / ``mcp/server.py`` / engine
+startup) are deliberately OFF the allowlist and no longer reference the adapter
+surface (proof of strangle). String literals (e.g. names quoted in ``__all__`` /
+docstrings / a debt-ledger ``location=``) are ``ast.Constant`` and are never
+flagged.
 """
 
 from __future__ import annotations
@@ -97,24 +97,6 @@ ALLOWLIST: tuple[AllowlistEntry, ...] = (
         "test / R01C-compat importers (no runtime construction).",
         removal_criterion="R01C: drop the re-export once no core caller imports the concretes.",
     ),
-    AllowlistEntry(
-        pattern="infra/database.py",
-        kind="file",
-        owner="okto-pulse-core/infra",
-        reason="still-core-owned engine + session-factory home (create_async_engine / "
-        "async_sessionmaker); DORMANT cutover registered in R01B IMP1.",
-        removal_criterion="R01C: engine + session-factory ownership moves to the Community "
-        "adapter editions; core stops constructing them.",
-    ),
-    AllowlistEntry(
-        pattern="events/dispatcher.py",
-        kind="file",
-        owner="okto-pulse-core/events",
-        reason="TYPE-ONLY: async_sessionmaker appears solely as a parameter type "
-        "annotation (no engine/session construction).",
-        removal_criterion="R01C: replace the async_sessionmaker annotation with a "
-        "port/Protocol session-factory type.",
-    ),
 )
 
 #: Back-compat flat views derived from the governed allowlist.
@@ -128,10 +110,10 @@ ALLOWLISTED_FILES: frozenset[str] = frozenset(
 #: Gate-level removal summary (per-entry criteria live on each AllowlistEntry).
 REMOVAL_CRITERION = (
     "R01B IMP2: runtime authority over the relational adapter (UnitOfWork concretes + "
-    "engine/session factory) removed from the inbound REST/MCP seams (now resolve the "
-    "registered provider via runtime_registry). Each remaining reference is a GOVERNED "
-    "allowlist waiver (owner + removal_criterion) retired by R01C when the concretes and "
-    "the engine/session-factory ownership physically leave core."
+    "engine/session factory) removed from startup and the inbound REST/MCP seams "
+    "(now resolve registered providers via runtime_registry / edition injection). "
+    "Each remaining reference is a GOVERNED allowlist waiver (owner + "
+    "removal_criterion) retired by R01C when the concretes physically leave core."
 )
 
 

@@ -191,3 +191,103 @@ async def test_resolve_missing_links_emits_bug_covered_by_edges():
         and edge.rule_id == f"belongs_to/bug_linked_test_scenario@{WORKER_VERSION}"
         for edge in resolved.edges
     )
+
+
+@pytest.mark.asyncio
+async def test_resolve_missing_bug_links_uses_entity_projection_for_bug_targets():
+    bug_cid = "card_bug12345_entity"
+    result = WorkerResult(
+        nodes=[
+            EmittedNode(
+                candidate_id=bug_cid,
+                node_type="Bug",
+                title="Bug",
+                content="desc",
+                source_artifact_ref="card:bug12345",
+            )
+        ],
+        missing_link_candidates=[
+            MissingLinkCandidate(
+                edge_type="violates",
+                from_candidate_id=bug_cid,
+                from_candidate_title="Bug",
+                reason="origin_task_requires_cross_artifact_resolution",
+                suggested_candidates=["task:originbug999"],
+                artifact_ref="card:bug12345",
+            ),
+            MissingLinkCandidate(
+                edge_type="tests",
+                from_candidate_id=bug_cid,
+                from_candidate_title="Bug",
+                reason="linked_test_task_requires_cross_artifact_resolution",
+                suggested_candidates=["test_task:testbug999"],
+                artifact_ref="card:bug12345",
+            ),
+        ],
+    )
+    origin_bug = SimpleNamespace(
+        id="originbug999",
+        board_id="board-kg-test",
+        title="Origin bug",
+        description="origin bug still projects as target Entity",
+        card_type="bug",
+        status="done",
+        spec_id=None,
+        observed_behavior="observed",
+        expected_behavior="expected",
+        steps_to_reproduce="steps",
+        linked_test_task_ids=["testcard"],
+        conclusions=["fixed"],
+    )
+    test_bug = SimpleNamespace(
+        id="testbug999",
+        board_id="board-kg-test",
+        title="Test bug",
+        description="bad historical data",
+        card_type="bug",
+        status="done",
+        spec_id=None,
+        observed_behavior="observed",
+        expected_behavior="expected",
+        steps_to_reproduce="steps",
+        linked_test_task_ids=["testcard"],
+        conclusions=["fixed"],
+        test_scenario_ids=[],
+    )
+
+    resolved = await _resolve_missing_link_candidates(
+        _FakeDb([origin_bug, test_bug], []),
+        "board-kg-test",
+        result,
+    )
+
+    assert resolved.missing_link_candidates == []
+    node_types = {node.candidate_id: node.node_type for node in resolved.nodes}
+    source_refs = {node.candidate_id: node.source_artifact_ref for node in resolved.nodes}
+    assert node_types[bug_cid] == "Bug"
+    assert node_types["card_originbu_target_entity"] == "Entity"
+    assert node_types["card_testbug9_target_entity"] == "Entity"
+    assert (
+        source_refs["card_originbu_target_entity"]
+        == "card_relationship_target:originbug999"
+    )
+    assert (
+        source_refs["card_testbug9_target_entity"]
+        == "card_relationship_target:testbug999"
+    )
+    assert (
+        "originates_from",
+        bug_cid,
+        "card_originbu_target_entity",
+    ) in {
+        (edge.edge_type, edge.from_candidate_id, edge.to_candidate_id)
+        for edge in resolved.edges
+    }
+    assert (
+        "covered_by",
+        bug_cid,
+        "card_testbug9_target_entity",
+    ) in {
+        (edge.edge_type, edge.from_candidate_id, edge.to_candidate_id)
+        for edge in resolved.edges
+    }

@@ -540,6 +540,47 @@ def _append_card_entity_node(result: WorkerResult, card: Card) -> str:
     return cid
 
 
+def _append_card_edge_target_entity_node(result: WorkerResult, card: Card) -> str:
+    """Append an Entity projection for card relationship targets.
+
+    Bug cards are materialized as ``Bug`` by their own consolidation path, but
+    deterministic ``originates_from``/``covered_by`` endpoint contracts require
+    the target side to be an ``Entity``. When a bug references another bug card,
+    use a separate relationship-target projection instead of weakening the KG
+    schema to allow ``Bug -> Bug``.
+    """
+
+    card_type = getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    if card_type != "bug":
+        return _append_card_entity_node(result, card)
+
+    cid = f"card_{card.id[:8]}_target_entity"
+    if not _node_exists(result, cid):
+        graph_layer, maturity_status = _layer_attrs_for_artifact(
+            _card_source_artifact_type(card_type),
+            getattr(getattr(card, "status", None), "value", getattr(card, "status", None)),
+            has_minimal_evidence=_card_has_minimal_evidence(card),
+        )
+        result.nodes.append(EmittedNode(
+            candidate_id=cid,
+            node_type="Entity",
+            title=card.title or f"Card {card.id}",
+            content=card.description or "",
+            source_artifact_ref=f"card_relationship_target:{card.id}",
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+            source_confidence=1.0,
+        ))
+    if getattr(card, "board_id", None):
+        _attach_entity_node_to_board_root(
+            result,
+            board_id=card.board_id,
+            child_candidate_id=cid,
+            rule_slot="card_relationship_target",
+        )
+    return cid
+
+
 def _append_spec_entity_node(result: WorkerResult, spec: Spec) -> str:
     cid = f"spec_{spec.id[:8]}_entity"
     if not _node_exists(result, cid):
@@ -851,7 +892,7 @@ async def _resolve_missing_link_candidates(
             if origin_card is None:
                 unresolved.append(candidate)
                 continue
-            target_cid = _append_card_entity_node(result, origin_card)
+            target_cid = _append_card_edge_target_entity_node(result, origin_card)
             edge_id = f"{candidate.from_candidate_id}_originates_from_{origin_card.id[:8]}"
             if not _edge_exists(result, edge_id):
                 result.edges.append(EmittedEdge(
@@ -871,7 +912,7 @@ async def _resolve_missing_link_candidates(
             if test_card is None:
                 unresolved.append(candidate)
                 continue
-            target_cid = _append_card_entity_node(result, test_card)
+            target_cid = _append_card_edge_target_entity_node(result, test_card)
             edge_id = f"{candidate.from_candidate_id}_covered_by_card_{test_card.id[:8]}"
             if not _edge_exists(result, edge_id):
                 result.edges.append(EmittedEdge(

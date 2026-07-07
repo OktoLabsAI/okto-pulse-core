@@ -38,10 +38,9 @@ def test_real_core_is_clean_and_inbound_seams_dropped_the_adapter():
     # Every real-core finding is an allowlisted entry and carries a real line.
     assert all(f.allowlisted for f in report.findings)
     assert all(f.line >= 1 for f in report.findings)
-    # The home package, the aggregator and the still-core-owned engine home remain.
+    # Only the remaining concrete repository package and aggregator remain.
     assert "repositories/sqlalchemy/unit_of_work.py" in referencing_files
     assert "repositories/__init__.py" in referencing_files
-    assert "infra/database.py" in referencing_files
 
 
 def test_gate_blocks_create_async_engine_in_services_with_file_and_line(tmp_path):
@@ -112,7 +111,7 @@ def test_gate_blocks_sensitive_module_import_and_respects_allowlist(tmp_path):
         "from .unit_of_work import SQLAlchemyUnitOfWork\nu = SQLAlchemyUnitOfWork(None)\n",
         encoding="utf-8",
     )
-    # allowlisted by file: the still-core-owned engine home
+    # engine/session construction is no longer allowlisted in infra/database.py
     infra = tmp_path / "infra"
     infra.mkdir(parents=True)
     (infra / "database.py").write_text(
@@ -127,9 +126,10 @@ def test_gate_blocks_sensitive_module_import_and_respects_allowlist(tmp_path):
     assert ("services/rogue_pkg.py", "repositories.sqlalchemy") in flagged
     assert ("services/rogue_pkg.py", "SQLAlchemyUnitOfWork") in flagged  # symbol too
     assert ("services/rogue_pkg2.py", "repositories.sqlalchemy") in flagged
+    assert ("infra/database.py", "create_async_engine") in flagged
+    assert ("infra/database.py", "async_sessionmaker") in flagged
     violation_files = {v.file for v in report.violations}
     assert "repositories/sqlalchemy/internal.py" not in violation_files
-    assert "infra/database.py" not in violation_files  # allowlisted engine home
 
 
 def test_sensitive_symbols_cover_engine_session_and_uow_concretes():
@@ -152,8 +152,5 @@ def test_allowlist_is_governed_not_a_generic_escape():
         assert entry.reason  # non-empty rationale
         assert governed[entry.pattern]["removal_criterion"] == entry.removal_criterion
 
-    # events/dispatcher.py is explicitly TYPE-ONLY (async_sessionmaker as annotation).
-    dispatcher = governed["events/dispatcher.py"]
-    assert "TYPE-ONLY" in dispatcher["reason"] or "type" in dispatcher["reason"].lower()
-    # infra/database.py waiver is bound to R01C engine-ownership cutover.
-    assert "engine" in governed["infra/database.py"]["removal_criterion"].lower()
+    assert "infra/database.py" not in governed
+    assert "events/dispatcher.py" not in governed

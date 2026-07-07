@@ -21,9 +21,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import update
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from okto_pulse.core.events import bus as _bus_module
 from okto_pulse.core.events.types import DomainEvent, resolve_event_class
@@ -70,7 +70,7 @@ class EventDispatcher:
 
     def __init__(
         self,
-        session_factory: async_sessionmaker,
+        session_factory: Any,
         *,
         claim_repository: ClaimRepository | None = None,
     ) -> None:

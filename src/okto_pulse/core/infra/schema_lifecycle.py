@@ -13,7 +13,7 @@ inline path. Activation — registering the Community
 
 This is a leaf module: it imports only ``typing`` so it stays agnostic of the
 SQLAlchemy ORM and of the relational provider (R01B owns
-``create_database``/engine/session/pool/PRAGMA; this seam never touches them).
+engine/session/pool/PRAGMA ownership; this seam never touches runtime creation).
 """
 
 from __future__ import annotations

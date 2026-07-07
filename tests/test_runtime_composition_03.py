@@ -135,8 +135,8 @@ def test_create_app_strict_runtime_empty_lifecycle_hooks_fails_before_database(
     calls: list[str] = []
     monkeypatch.setattr(
         app_mod,
-        "create_database",
-        lambda *args, **kwargs: calls.append("create_database"),
+        "is_database_runtime_configured",
+        lambda: calls.append("is_database_runtime_configured") or True,
     )
 
     with pytest.raises(RuntimeProviderMissing) as exc:
@@ -159,8 +159,8 @@ def test_create_app_runtime_shell_only_skips_database_when_explicit(monkeypatch)
     calls: list[str] = []
     monkeypatch.setattr(
         app_mod,
-        "create_database",
-        lambda *args, **kwargs: calls.append("create_database"),
+        "is_database_runtime_configured",
+        lambda: calls.append("is_database_runtime_configured") or True,
     )
     settings = SimpleNamespace(
         app_name="Shell Smoke",
@@ -210,8 +210,8 @@ def test_create_app_runtime_shell_only_lifespan_avoids_default_side_effects(
 
     monkeypatch.setattr(
         app_mod,
-        "create_database",
-        lambda *args, **kwargs: side_effects.append("create_database"),
+        "is_database_runtime_configured",
+        lambda: side_effects.append("is_database_runtime_configured") or True,
     )
     monkeypatch.setattr(app_mod, "init_db", _forbidden_init_db)
 

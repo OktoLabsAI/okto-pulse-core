@@ -17554,23 +17554,24 @@ def run_mcp_server():
     separate ports. This function is preserved for stand-alone debug runs
     (``python -m okto_pulse.core.mcp.server``) only.
 
-    R01B REPLAN-IMP2 (TR5): this standalone shim does NOT register a Community
-    SQLite PRAGMA installer, so ``create_database`` below resolves the EXPLICIT
-    core-default fallback (the three historical PRAGMAs: WAL + busy_timeout=30000
-    + synchronous=NORMAL, no foreign_keys). That is the documented core-only /
-    transitional path. The production MCP listener (``community.main.serve``) does
-    NOT call ``create_database`` again — it shares the SAME engine built by
-    ``create_app``, which was hardened with the Community UNION installer (adds
-    foreign_keys=ON) — so the production MCP path inherits the edition registration.
+    The concrete relational runtime is no longer created here. An edition
+    composition root must configure the shared database runtime before this
+    function can register the MCP session factory.
 
     This core-only standalone path also does not inject a trace sink; local
     MCP replay JSONL is enabled by the Community composition root.
     """
     from okto_pulse.core.infra.config import get_settings
-    from okto_pulse.core.infra.database import create_database, get_session_factory
+    from okto_pulse.core.infra.database import (
+        get_session_factory,
+        is_database_runtime_configured,
+    )
 
     settings = get_settings()
-    create_database(settings.database_url, echo=settings.debug)
+    if not is_database_runtime_configured():
+        raise RuntimeError(
+            "Standalone core MCP requires an edition-configured relational runtime."
+        )
     register_session_factory(get_session_factory())
 
     # Read port from environment (set by CLI) or use settings

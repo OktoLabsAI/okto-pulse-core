@@ -3,12 +3,10 @@
 import asyncio
 import contextlib
 import logging
-import time
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Awaitable
+from typing import Any, AsyncGenerator, Awaitable
 
-from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import declarative_base
 
 logger = logging.getLogger(__name__)
@@ -16,75 +14,54 @@ logger = logging.getLogger(__name__)
 # Base class for models — always available at import time
 Base = declarative_base()
 
-# Module-level singletons managed via create_database()
+# Module-level runtime handles injected by the edition composition root.
 _engine = None
 _session_factory = None
 
 
-def create_database(url: str, *, echo: bool = False) -> None:
-    """Create the async engine and session factory.
+def configure_database_runtime(*, engine: Any, session_factory: Any) -> None:
+    """Register the edition-owned relational runtime.
 
-    Called once at application startup by the ecosystem bootstrap code.
+    Core owns the ORM schema and business lifecycle still present in this module,
+    but the concrete engine/session construction belongs to an edition adapter.
     """
     global _engine, _session_factory
+    if engine is None:
+        raise ValueError("engine is required")
+    if session_factory is None:
+        raise ValueError("session_factory is required")
+    _engine = engine
+    _session_factory = session_factory
 
-    engine_kwargs: dict = {
-        "echo": echo,
-        "future": True,
-    }
-    if url.startswith("postgresql"):
-        engine_kwargs.update({
-            "pool_size": 10,
-            "max_overflow": 20,
-            "pool_pre_ping": True,
-        })
-    elif url.startswith("sqlite"):
-        # Bug fix (deadlock report 2026-04-29): default
-        # AsyncAdaptedQueuePool é 5 + overflow 10 = 15 connections, e o
-        # pool_timeout default é 30s. Com Okto Pulse rodando
-        # consolidation_worker + outbox_worker + dispatcher + endpoints
-        # + polling + SSE concorrentes, isso satura facilmente e o usuário
-        # vê o servidor "deadlockado" (na verdade pool exhaustion + 30s
-        # de espera por conexão livre). Combinado com WAL (multi-reader)
-        # e busy_timeout=30000 para escritas, conseguimos comportar:
-        #   - mais leituras paralelas (pool maior)
-        #   - falha rápida em vez de aparente deadlock (timeout 10s)
-        #   - reciclagem de conexões idle (recycle 1800s = 30min)
-        #   - health check antes de checkout (pre_ping)
-        engine_kwargs.update({
-            "pool_size": 20,
-            "max_overflow": 30,
-            "pool_timeout": 10,
-            "pool_recycle": 1800,
-            "pool_pre_ping": True,
-        })
 
-    _engine = create_async_engine(url, **engine_kwargs)
+def reset_database_runtime_for_tests() -> None:
+    """Drop registered runtime handles for isolated tests."""
+    global _engine, _session_factory
+    _engine = None
+    _session_factory = None
 
-    # PRAGMA single-owner (R01B REPLAN-IMP2, TR5): the SQLite hardening listener is
-    # installed through the runtime seam so the EDITION owns the effective listener.
-    # The Community composition root registers its UNION installer
-    # (install_community_sqlite_pragmas: WAL + busy_timeout=30000 +
-    # synchronous=NORMAL + foreign_keys=ON) BEFORE this runs, so production attaches
-    # exactly ONE connect listener — the edition's — instead of THIS function and
-    # community/main.py each adding a partial one. When nothing is registered
-    # (core-standalone / the test suite that calls create_database directly) the seam
-    # resolves the EXPLICIT core-default fallback (the three historical PRAGMAs:
-    # journal_mode=WAL + busy_timeout=30000 + synchronous=NORMAL, NO foreign_keys),
-    # byte-for-byte the prior inline behavior (bug d0f6bab2 / deadlock report
-    # 2026-04-29). Wired HERE — before the first connection — and no-op for
-    # non-SQLite engines.
-    from okto_pulse.core.runtime_registry import resolve_sqlite_pragma_installer
 
-    resolve_sqlite_pragma_installer()(_engine)
+def is_database_runtime_configured() -> bool:
+    return _engine is not None and _session_factory is not None
 
-    _session_factory = async_sessionmaker(
-        _engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
 
-    _install_pool_observability(_engine)
+def create_database(url: str, *, echo: bool = False) -> None:
+    """Compatibility shim that delegates runtime creation to a registered adapter.
+
+    Production edition composition should call ``configure_database_runtime``
+    after building its concrete engine/session. Legacy tests and transitional
+    tooling may still call this symbol, but the core no longer constructs the
+    SQLAlchemy engine or session factory itself.
+    """
+    from okto_pulse.core.runtime_registry import resolve_relational_runtime_factory
+
+    runtime = resolve_relational_runtime_factory()(url, echo=echo)
+    if isinstance(runtime, tuple):
+        engine, session_factory = runtime
+    else:
+        engine = getattr(runtime, "engine")
+        session_factory = getattr(runtime, "session_factory")
+    configure_database_runtime(engine=engine, session_factory=session_factory)
 
 
 # ---------------------------------------------------------------------------
@@ -96,46 +73,6 @@ def create_database(url: str, *, echo: bool = False) -> None:
 # servidor parecia travado. Estes listeners mantêm o timestamp de checkout
 # por _ConnectionRecord e logam um warning agregado quando algum checkout
 # ultrapassa o threshold, ANTES da exaustão.
-
-_POOL_STALE_CHECKOUT_WARN_SECONDS = 30.0
-_POOL_STALE_WARN_INTERVAL_SECONDS = 60.0
-_checked_out_since: dict[int, float] = {}
-_last_stale_warn_at: float = 0.0
-
-
-def _install_pool_observability(engine) -> None:
-    sync_engine = engine.sync_engine
-
-    @event.listens_for(sync_engine, "checkout")
-    def _on_checkout(_dbapi_conn, conn_record, _conn_proxy):  # noqa: ANN001
-        global _last_stale_warn_at
-        now = time.monotonic()
-        _checked_out_since[id(conn_record)] = now
-        stale_ages = [
-            now - ts for ts in _checked_out_since.values()
-            if now - ts > _POOL_STALE_CHECKOUT_WARN_SECONDS
-        ]
-        if stale_ages and now - _last_stale_warn_at > _POOL_STALE_WARN_INTERVAL_SECONDS:
-            _last_stale_warn_at = now
-            logger.warning(
-                "db.pool.stale_checkouts count=%d oldest_s=%.0f pool=%s",
-                len(stale_ages), max(stale_ages), sync_engine.pool.status(),
-                extra={
-                    "event": "db.pool.stale_checkouts",
-                    "count": len(stale_ages),
-                    "oldest_s": round(max(stale_ages)),
-                    "pool_status": sync_engine.pool.status(),
-                },
-            )
-
-    @event.listens_for(sync_engine, "checkin")
-    def _on_checkin(_dbapi_conn, conn_record):  # noqa: ANN001
-        _checked_out_since.pop(id(conn_record), None)
-
-    @event.listens_for(sync_engine, "close")
-    def _on_close(_dbapi_conn, conn_record):  # noqa: ANN001
-        _checked_out_since.pop(id(conn_record), None)
-
 
 def get_pool_status() -> str:
     """Snapshot legível do pool (size/checked-out/overflow) para diagnóstico."""
@@ -185,13 +122,19 @@ async def cancel_safe_session() -> AsyncGenerator[AsyncSession, None]:
 
 def get_engine():
     """Return the async engine (asserts it has been initialised)."""
-    assert _engine is not None, "Database not initialised. Call create_database() first."
+    assert _engine is not None, (
+        "Database runtime not initialised. The edition composition root must call "
+        "configure_database_runtime() first."
+    )
     return _engine
 
 
 def get_session_factory():
     """Return the async session factory (asserts it has been initialised)."""
-    assert _session_factory is not None, "Database not initialised. Call create_database() first."
+    assert _session_factory is not None, (
+        "Database runtime not initialised. The edition composition root must call "
+        "configure_database_runtime() first."
+    )
     return _session_factory
 
 
@@ -1322,8 +1265,7 @@ async def init_db() -> None:
     and return. DORMANT by default — nothing registers in production this card,
     so ``resolve_*`` is ``None`` and the unchanged inline path below runs
     (fail-open). Activation = R01C IMP2. This branch is the only addition; it
-    does not touch ``create_database``/engine/session/pool/PRAGMA (R01B owns
-    those).
+    does not touch runtime engine/session ownership.
     """
     from okto_pulse.core.infra.schema_lifecycle import (
         resolve_relational_schema_lifecycle_orchestrator,

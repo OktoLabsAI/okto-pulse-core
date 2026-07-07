@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ---------------------------------------------------------------------------
 # Path setup — must happen before any okto_pulse import
@@ -59,11 +61,7 @@ os.environ["KG_EMBEDDING_MODE"] = "stub"
 # Application imports
 # ---------------------------------------------------------------------------
 
-from okto_pulse.core.infra.database import (  # noqa: E402
-    create_database,
-    get_session_factory,
-    init_db,
-)
+from okto_pulse.core.infra.database import create_database, get_session_factory, init_db  # noqa: E402
 from okto_pulse.core.kg.embedding import reset_embedding_provider_cache  # noqa: E402
 from okto_pulse.core.kg.schema import bootstrap_board_graph  # noqa: E402
 from okto_pulse.core.kg.session_manager import reset_session_manager_for_tests  # noqa: E402
@@ -72,6 +70,51 @@ from okto_pulse.core.models import db as _models  # noqa: E402, F401
 # Ensure AppSetting (0.1.4) is registered with Base before init_db() runs;
 # otherwise the app_settings table is missing and runtime settings tests fail.
 from okto_pulse.core.services import settings_service as _settings_svc  # noqa: E402, F401
+
+
+def _build_test_relational_runtime(url: str, *, echo: bool = False):
+    engine_kwargs: dict = {
+        "echo": echo,
+        "future": True,
+    }
+    if url.startswith("postgresql"):
+        engine_kwargs.update({
+            "pool_size": 10,
+            "max_overflow": 20,
+            "pool_pre_ping": True,
+        })
+    elif url.startswith("sqlite"):
+        engine_kwargs.update({
+            "pool_size": 20,
+            "max_overflow": 30,
+            "pool_timeout": 10,
+            "pool_recycle": 1800,
+            "pool_pre_ping": True,
+        })
+
+    engine = create_async_engine(url, **engine_kwargs)
+    if engine.url.get_backend_name() == "sqlite":
+        @event.listens_for(engine.sync_engine, "connect")
+        def _install_test_sqlite_pragmas(dbapi_conn, _conn_record):  # noqa: ANN001
+            cursor = dbapi_conn.cursor()
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=30000")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+            finally:
+                cursor.close()
+
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    return engine, session_factory
+
+
+from okto_pulse.core.runtime_registry import register_relational_runtime_factory  # noqa: E402
+
+register_relational_runtime_factory(_build_test_relational_runtime)
 
 
 AGENT_ID = "agent-test-001"
@@ -420,19 +463,11 @@ def _register_test_unit_of_work_factory():
 
 
 @pytest.fixture(autouse=True)
-def _reset_sqlite_pragma_installer_seam():
-    """R01B TR5: keep the SQLite PRAGMA installer seam EMPTY for each test so any
-    ``create_database()`` call resolves the EXPLICIT core-default fallback (the
-    three historical PRAGMAs: WAL + busy_timeout=30000 + synchronous=NORMAL, NO
-    foreign_keys) — identical to the prior inline behavior. This is the core-only
-    compat path, NOT the Community runtime path (which registers the UNION
-    installer). Reset before AND after so a test that registers a Community-style
-    installer cannot leak ``foreign_keys=ON`` semantics into the next test."""
-    from okto_pulse.core.runtime_registry import reset_sqlite_pragma_installer
-
-    reset_sqlite_pragma_installer()
+def _test_relational_runtime_factory_is_stable():
+    """Keep the explicit test relational runtime factory registered."""
+    register_relational_runtime_factory(_build_test_relational_runtime)
     yield
-    reset_sqlite_pragma_installer()
+    register_relational_runtime_factory(_build_test_relational_runtime)
 
 
 @pytest.fixture

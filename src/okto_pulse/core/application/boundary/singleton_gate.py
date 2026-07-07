@@ -210,24 +210,19 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "edition composes its UnitOfWorkFactory via RuntimeComposition."
         ),
     },
-    "_sqlite_pragma_installer": {
+    "_relational_runtime_factory": {
         "file": "okto_pulse/core/runtime_registry.py",
         "owner": "okto-pulse-core/runtime",
-        "target_provider": "sqlite_pragma_installer",
+        "target_provider": "relational_runtime_factory",
         "expected_adapter": (
-            "Edition SQLite PRAGMA installer (R01B TR5) — the composition root "
-            "(Community) registers its UNION installer "
-            "(install_community_sqlite_pragmas: WAL + busy_timeout + synchronous + "
-            "foreign_keys) behind the seam so create_database attaches exactly ONE "
-            "connect listener. When unregistered the core resolves an EXPLICIT "
-            "core-default fallback (3 historical PRAGMAs, no foreign_keys) used only "
-            "by core-standalone / tests. Same register-before-remove pattern as the "
-            "uow_factory seam."
+            "Edition relational runtime factory (AF30-3a) — transitional callers "
+            "that still enter through core.infra.database.create_database must use "
+            "an explicitly registered adapter factory. Productive Community startup "
+            "builds and injects the runtime directly from its SQLAlchemy adapter."
         ),
         "retirement_criterion": (
-            "Remove the module global once the engine + PRAGMA ownership physically "
-            "moves to Community (R01C) and the core no longer builds the SQLite "
-            "engine via create_database."
+            "Remove the compatibility factory once all legacy/tooling callers use "
+            "edition-owned configure_database_runtime injection directly."
         ),
     },
     "_content_ingestion_resolver": {

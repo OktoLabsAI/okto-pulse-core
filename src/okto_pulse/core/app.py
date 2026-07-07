@@ -18,7 +18,12 @@ from okto_pulse.core.infra.daily_tick import (
 )
 from okto_pulse.core.infra.auth import AuthProvider, configure_auth
 from okto_pulse.core.infra.config import CoreSettings, configure_settings
-from okto_pulse.core.infra.database import create_database, init_db, close_db, get_session_factory
+from okto_pulse.core.infra.database import (
+    close_db,
+    get_session_factory,
+    init_db,
+    is_database_runtime_configured,
+)
 from okto_pulse.core.infra.storage import StorageProvider, configure_storage
 from okto_pulse.core.composition import (
     STRICT_RUNTIME_REQUIRED_PROVIDERS,
@@ -291,11 +296,14 @@ def create_app(
     configure_auth(auth_provider)
     configure_storage(storage_provider)
 
-    # Initialize database unless an explicit strict runtime shell was requested.
-    # The historical productive path still opens the database here; R08B only
-    # adds a side-effect-free path for core-only smoke and future shell adopters.
-    if not runtime_shell_only:
-        create_database(settings.database_url, echo=settings.debug)
+    # The concrete relational runtime is edition-owned. Community/SaaS adapters
+    # must build the engine/session and inject them before the default lifespan
+    # reaches init_db; the core app factory never opens a database itself.
+    if not runtime_shell_only and not is_database_runtime_configured():
+        raise RuntimeProviderMissing(
+            "session_factory",
+            missing=["relational_runtime"],
+        )
 
     shell_lifespan = None
     if runtime_shell_only and lifespan is None and composition is not None:

@@ -177,10 +177,10 @@ def test_gate_catches_aliased_relational_module_bypasses(tmp_path):
 # The exact frozen snapshot shape the drift checker is fed in the unit tests
 # below (the 3 aggregates + the per-surface breakdown of classified call-sites).
 _SNAP = {
-    "relational_imports": 371,
-    "relational_symbols": 851,
-    "classified_call_sites": 1429,
-    "by_surface": {"rest": 163, "service": 1149, "mcp": 117},
+    "relational_imports": 368,
+    "relational_symbols": 836,
+    "classified_call_sites": 1416,
+    "by_surface": {"rest": 163, "service": 1139, "mcp": 114},
 }
 
 
@@ -285,9 +285,9 @@ def test_relational_coverage_below_floor_fails_even_when_declared():
     # regardless of a structurally-valid R01 declaration covering the snapshot
     # drift (Codex AC5 ruling: "exigir live >= floors" is independent).
     live = {
-        "relational_imports": 384,
+        "relational_imports": 368,
         "relational_symbols": 600,  # below the 605 floor
-        "classified_call_sites": 1422,
+        "classified_call_sites": 1416,
         "by_surface": dict(_SNAP["by_surface"]),
     }
     declared = {"relational_symbols": {"count": 241, "task": "R01C-x"}}

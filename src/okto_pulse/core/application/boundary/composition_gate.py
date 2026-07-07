@@ -54,7 +54,6 @@ DEFERRED_BOUNDARIES: tuple[str, ...] = (
 #: snapshot, never a self-scan — a self-scan would mask new wiring.
 DEFAULT_COMPOSITION_BASELINE: frozenset[str] = frozenset(
     {
-        "okto_pulse/core/mcp/server.py::create_database",
         "okto_pulse/core/mcp/server.py::register_session_factory",
         "okto_pulse/core/services/settings_service.py::configure_settings",
     }
@@ -66,7 +65,6 @@ PROVIDER_WIRING_SYMBOLS: dict[str, str] = {
     "configure_auth": "auth_provider",
     "configure_storage": "storage_provider",
     "FileSystemStorageProvider": "storage_provider",
-    "create_database": "session_factory",
     "register_session_factory": "mcp_session_factory",
     "SqliteOutboxEventBus": "event_bus",
     "set_scheduler": "scheduler_control",

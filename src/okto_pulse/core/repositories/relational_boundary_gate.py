@@ -444,12 +444,12 @@ RELATIONAL_COVERAGE_BASELINE = {
 #: wiring, AF-11 cleanup, and 8 new AF-02/03/04/09/11 gate/facade modules.
 #: Stable floors stay untouched; this remains an exact drift detector.
 RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
-    "relational_imports": 371,
-    "relational_symbols": 851,
-    "classified_call_sites": 1429,
-    "by_surface": {"rest": 163, "service": 1149, "mcp": 117},
+    "relational_imports": 368,
+    "relational_symbols": 836,
+    "classified_call_sites": 1416,
+    "by_surface": {"rest": 163, "service": 1139, "mcp": 114},
     "source_root": "okto_pulse/core",
-    "file_count": 461,
+    "file_count": 477,
 }
 
 #: R01B drawn-down counter baseline (ac_28f50f9d), SEPARATE from the spec #04
@@ -470,8 +470,8 @@ RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
 #: teeth prove mismatches fail.
 RELATIONAL_BASELINE_R01B = {
     "depends_get_db": 79,
-    "get_db_for_mcp": 175,
-    "async_session": 425,
+    "get_db_for_mcp": 173,
+    "async_session": 424,
 }
 
 _COVERAGE_AGGREGATES = ("relational_imports", "relational_symbols", "classified_call_sites")

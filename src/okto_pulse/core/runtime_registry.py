@@ -23,29 +23,6 @@ This module global is ledgered in
 ``BASELINE_SINGLETONS``) so the ``AntiSingletonGate`` keeps it register-before-
 remove (owner ``okto-pulse-core/runtime``, target provider ``uow_factory``,
 retirement = R01C when the core relational concretes are physically removed).
-
-SQLite PRAGMA single-owner seam (R01B REPLAN-IMP2, TR5)
--------------------------------------------------------
-Production runs SQLite under two connect listeners today — the core
-``create_database`` (WAL + busy_timeout=30000 + synchronous=NORMAL) and
-``community/main.py:_configure_sqlite_pragmas`` (WAL + foreign_keys=ON) — so the
-hardening is split across two partial points. ``register_sqlite_pragma_installer``
-makes the edition the SINGLE owner of the effective PRAGMA listener: the Community
-composition root registers its UNION installer (``install_community_sqlite_pragmas``
-= WAL + busy_timeout + synchronous + foreign_keys) BEFORE ``create_database`` runs,
-so the core attaches exactly ONE listener — the edition's.
-
-Unlike the UoW seam this is NOT fail-closed: PRAGMAs are a data-integrity concern,
-so when nothing is registered (core-standalone / the test suite that calls
-``create_database`` directly) ``resolve_sqlite_pragma_installer`` returns the
-EXPLICIT core-default fallback ``install_core_default_sqlite_pragmas`` — the three
-HISTORICAL core PRAGMAs (WAL + busy_timeout + synchronous, NO foreign_keys), byte
--for-byte the prior inline behavior. This fallback is core-only/transitional, NOT
-the Community runtime path (the edition always registers its UNION installer). The
-``_sqlite_pragma_installer`` global is ledgered in ``singleton_gate`` the same
-register-before-remove way (owner ``okto-pulse-core/runtime``, target provider
-``sqlite_pragma_installer``, retirement = R01C when the engine + PRAGMA ownership
-physically moves to Community).
 """
 
 from __future__ import annotations
@@ -56,6 +33,7 @@ from typing import Any
 #: root — or the test harness — registers one). NO implicit default.
 _unit_of_work_factory: Any = None
 _content_ingestion_resolver: Any = None
+_relational_runtime_factory: Any = None
 
 
 def register_unit_of_work_factory(factory: Any) -> None:
@@ -134,82 +112,43 @@ def resolve_content_ingestion_resolver(*, preferred: Any = None) -> Any | None:
 
 
 # ---------------------------------------------------------------------------
-# SQLite PRAGMA single-owner seam (R01B REPLAN-IMP2, TR5)
+# Relational runtime factory seam (AF30-3a)
 # ---------------------------------------------------------------------------
 
-#: The edition-registered SQLite PRAGMA installer (None until a composition root
-#: registers one). NOT fail-closed: when unregistered the core falls back to its
-#: OWN historical installer (see ``install_core_default_sqlite_pragmas``) so test
-#: / standalone boots keep identical SQLite semantics. The Community edition
-#: registers the UNION installer (adds ``foreign_keys=ON``) so production runs
-#: exactly ONE connect listener — the edition's. Ledgered in ``singleton_gate``.
-_sqlite_pragma_installer: Any = None
+def register_relational_runtime_factory(factory: Any) -> None:
+    """Register an edition/test factory able to build relational runtime handles.
+
+    The factory is called as ``factory(url, echo=False)`` and must return either
+    ``(engine, session_factory)`` or an object exposing ``engine`` and
+    ``session_factory``. It is a compatibility seam for callers that still enter
+    through ``core.infra.database.create_database``; production Community startup
+    configures the runtime directly from its adapter.
+    """
+    global _relational_runtime_factory
+    _relational_runtime_factory = factory
 
 
-def register_sqlite_pragma_installer(installer: Any) -> None:
-    """Register the edition-owned SQLite PRAGMA installer (R01B TR5).
-
-    Called once by the edition composition root (Community ``main.py`` / ``cli.py``)
-    BEFORE ``create_database`` builds the engine, so the core attaches the
-    edition's single connect listener — the UNION
-    (``install_community_sqlite_pragmas``: WAL + busy_timeout=30000 +
-    synchronous=NORMAL + foreign_keys=ON) — and nothing adds a second partial
-    listener. ``installer`` is a ``Callable[[AsyncEngine], None]`` that attaches a
-    ``connect`` listener (and no-ops for non-SQLite engines). Last writer wins."""
-    global _sqlite_pragma_installer
-    _sqlite_pragma_installer = installer
+def reset_relational_runtime_factory() -> None:
+    """Drop the registered relational runtime factory."""
+    global _relational_runtime_factory
+    _relational_runtime_factory = None
 
 
-def reset_sqlite_pragma_installer() -> None:
-    """Drop the registered installer (test isolation / teardown). After a reset,
-    ``resolve_sqlite_pragma_installer`` returns the core-default fallback again."""
-    global _sqlite_pragma_installer
-    _sqlite_pragma_installer = None
+def is_relational_runtime_factory_registered() -> bool:
+    """Whether a relational runtime factory is currently registered."""
+    return _relational_runtime_factory is not None
 
 
-def is_sqlite_pragma_installer_registered() -> bool:
-    """Whether an edition PRAGMA installer is currently registered on the seam."""
-    return _sqlite_pragma_installer is not None
-
-
-def install_core_default_sqlite_pragmas(engine: Any) -> None:
-    """Core-default FALLBACK PRAGMA installer (R01B TR5) — explicit, core-only.
-
-    The three HISTORICAL core PRAGMAs (``journal_mode=WAL`` + ``busy_timeout=30000``
-    + ``synchronous=NORMAL``, NO ``foreign_keys``), byte-for-byte the prior inline
-    ``create_database`` listener. Used ONLY when no edition installer is registered
-    (core-standalone / the test suite that calls ``create_database`` directly) — it
-    is NOT the Community runtime path. Fires per pooled connection; no-op for
-    non-SQLite engines."""
-    from sqlalchemy import event
-
-    if engine.url.get_backend_name() != "sqlite":
-        return
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _install_core_default_pragmas(dbapi_conn, _conn_record):  # noqa: ANN001
-        cursor = dbapi_conn.cursor()
-        try:
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute("PRAGMA busy_timeout=30000")
-            cursor.execute("PRAGMA synchronous=NORMAL")
-        finally:
-            cursor.close()
-
-
-def resolve_sqlite_pragma_installer() -> Any:
-    """Return the SQLite PRAGMA installer to run against a freshly-built engine.
-
-    Returns the edition-registered installer when present (Community UNION: WAL +
-    busy_timeout + synchronous + foreign_keys), otherwise the EXPLICIT core-default
-    fallback ``install_core_default_sqlite_pragmas`` (WAL + busy_timeout +
-    synchronous). Always returns a callable — PRAGMAs are a data-integrity concern,
-    so unlike the UoW seam this resolves to a core-only fallback rather than failing
-    closed. The result is a ``Callable[[AsyncEngine], None]`` that installs exactly
-    one connect listener."""
-    if _sqlite_pragma_installer is not None:
-        return _sqlite_pragma_installer
-    return install_core_default_sqlite_pragmas
+def resolve_relational_runtime_factory(*, preferred: Any = None) -> Any:
+    """Return a registered relational runtime factory, fail-closed if absent."""
+    factory = preferred if preferred is not None else _relational_runtime_factory
+    if factory is None:
+        raise RuntimeError(
+            "No relational runtime factory is registered. The edition adapter must "
+            "build the engine/session and call configure_database_runtime(), or "
+            "register a compatibility factory explicitly."
+        )
+    return factory
 
 
 __all__ = [
@@ -220,9 +159,8 @@ __all__ = [
     "register_content_ingestion_resolver",
     "reset_content_ingestion_resolver",
     "resolve_content_ingestion_resolver",
-    "register_sqlite_pragma_installer",
-    "reset_sqlite_pragma_installer",
-    "is_sqlite_pragma_installer_registered",
-    "install_core_default_sqlite_pragmas",
-    "resolve_sqlite_pragma_installer",
+    "register_relational_runtime_factory",
+    "reset_relational_runtime_factory",
+    "is_relational_runtime_factory_registered",
+    "resolve_relational_runtime_factory",
 ]
