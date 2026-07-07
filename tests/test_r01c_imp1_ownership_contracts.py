@@ -13,6 +13,7 @@ Behavioral proof of the three IMP1 contracts the implementation establishes:
 
 from __future__ import annotations
 
+import ast
 import os
 import pathlib
 import subprocess
@@ -175,3 +176,41 @@ async def test_init_db_delegates_to_registered_orchestrator():
     assert calls == ["delegated"]
     # runtime_checkable Protocol: the fake satisfies the port by structure.
     assert isinstance(fake, sl.RelationalSchemaLifecycleOrchestrator)
+
+
+def _dotted_name(node: ast.AST) -> str | None:
+    parts: list[str] = []
+    cur = node
+    while isinstance(cur, ast.Attribute):
+        parts.append(cur.attr)
+        cur = cur.value
+    if isinstance(cur, ast.Name):
+        parts.append(cur.id)
+        return ".".join(reversed(parts))
+    return None
+
+
+def test_core_database_has_no_dormant_schema_lifecycle_sql_residue():
+    database_path = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "src"
+        / "okto_pulse"
+        / "core"
+        / "infra"
+        / "database.py"
+    )
+    tree = ast.parse(database_path.read_text(encoding="utf-8"), filename=str(database_path))
+
+    top_level_migrations = [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name.startswith("_migrate_")
+    ]
+    assert top_level_migrations == []
+
+    create_all_refs = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and _dotted_name(node) == "Base.metadata.create_all"
+    ]
+    assert create_all_refs == []
