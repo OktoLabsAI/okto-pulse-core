@@ -564,7 +564,7 @@ def _source_root_for_core_package(core_root: Path) -> Path:
 
 
 def _gate_report_ok(report: Any) -> bool:
-    return str(getattr(report, "status", "")) not in {"blocking", "reject"}
+    return str(getattr(report, "status", "")) in {"passed", "baseline"}
 
 
 def _missing_string_attrs(entry: Any, attrs: tuple[str, ...]) -> tuple[str, ...]:

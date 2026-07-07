@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from okto_pulse.core.application.boundary import capstone_conformance as capstone_mod
 from okto_pulse.core.application.boundary.adapter_readiness_inventory import (
     build_adapter_inventory,
 )
@@ -203,6 +205,14 @@ def test_af33_integration_gate_mutations_fail_closed(tmp_path: Path) -> None:
         "run_relational_residue_gate",
         "SchedulerControlSymbolGate",
     } <= failed
+
+
+def test_af33_gate_status_helper_fails_closed_on_unknown_status() -> None:
+    assert capstone_mod._gate_report_ok(SimpleNamespace(status="passed")) is True
+    assert capstone_mod._gate_report_ok(SimpleNamespace(status="baseline")) is True
+    assert capstone_mod._gate_report_ok(SimpleNamespace(status="xfail_advisory")) is False
+    assert capstone_mod._gate_report_ok(SimpleNamespace(status="weird")) is False
+    assert capstone_mod._gate_report_ok(object()) is False
 
 
 def test_af33_matrix_references_af29_af30_af31_integration_gates() -> None:
