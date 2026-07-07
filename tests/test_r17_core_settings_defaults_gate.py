@@ -41,9 +41,13 @@ _CONFIG_SOURCE = (
 
 
 def _insert_after_upload_dir(source: str, field_line: str) -> str:
-    needle = '    upload_dir: str = "./uploads"\n'
-    assert needle in source
-    return source.replace(needle, f"{needle}{field_line}\n", 1)
+    for needle in (
+        '    upload_dir: str = ""\n',
+        '    upload_dir: str = "./uploads"\n',
+    ):
+        if needle in source:
+            return source.replace(needle, f"{needle}{field_line}\n", 1)
+    raise AssertionError("CoreSettings.upload_dir source line not found")
 
 
 def _finding_codes(report) -> set[str]:
