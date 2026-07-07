@@ -16,11 +16,22 @@ from .adapter_readiness_inventory import (
     AdapterInventoryEntry,
     build_adapter_inventory,
 )
+from .core_settings_defaults_gate import (
+    run_core_settings_defaults_gate,
+    run_public_config_stability_gate,
+)
 from .dependency_ledger import (
     LedgerEntry,
     build_dependency_ledger,
     entry_missing_fields,
 )
+from .rebuild_audit_storage_gate import run_rebuild_audit_storage_gate
+from .relational_residue_gate import run_relational_residue_gate
+from .scheduler_control_symbol_gate import SchedulerControlSymbolGate
+from .conformance_suite import scheduler_signal_conformance
+from .telemetry_product_ownership_gate import run_telemetry_product_ownership_gate
+from .telemetry_sender_ownership_gate import run_telemetry_sender_ownership_gate
+from .telemetry_store_ownership_gate import run_telemetry_store_ownership_gate
 
 README_MATRIX_BEGIN = "<!-- AF33-CAPSTONE-MATRIX:BEGIN -->"
 README_MATRIX_END = "<!-- AF33-CAPSTONE-MATRIX:END -->"
@@ -84,11 +95,26 @@ class CapstoneLedgerReport:
 
 
 @dataclass(frozen=True)
+class CapstoneIntegrationGateResult:
+    gate_id: str
+    ok: bool
+    detail: str
+
+
+@dataclass(frozen=True)
+class CapstoneIntegrationGateReport:
+    ok: bool
+    results: tuple[CapstoneIntegrationGateResult, ...]
+    violations: tuple[CapstoneViolation, ...]
+
+
+@dataclass(frozen=True)
 class CapstoneConformanceReport:
     ok: bool
     readme: CapstoneReadmeReport
     imports: CapstoneImportReport
     ledgers: CapstoneLedgerReport
+    integrations: CapstoneIntegrationGateReport
 
 
 CAPSTONE_OWNERSHIP_MATRIX: tuple[CapstoneOwnershipRow, ...] = (
@@ -373,11 +399,106 @@ def audit_capstone_ledgers(
     return CapstoneLedgerReport(ok=not violations, violations=tuple(violations))
 
 
+def audit_capstone_integration_gates(
+    *,
+    core_source_root: str | Path,
+    community_source_root: str | Path | None = None,
+) -> CapstoneIntegrationGateReport:
+    """Execute the AF29/AF30/AF31 gates the AF33 matrix depends on."""
+
+    core_root = _core_package_root(Path(core_source_root))
+    source_root = _source_root_for_core_package(core_root)
+    community_root = (
+        _community_package_root(Path(community_source_root))
+        if community_source_root is not None
+        else None
+    )
+    results: list[CapstoneIntegrationGateResult] = []
+    violations: list[CapstoneViolation] = []
+
+    def add(gate_id: str, ok: bool, detail: str) -> None:
+        results.append(CapstoneIntegrationGateResult(gate_id=gate_id, ok=ok, detail=detail))
+        if not ok:
+            violations.append(
+                CapstoneViolation(
+                    code="capstone_integration_gate_failed",
+                    surface="integration_gate",
+                    location=gate_id,
+                    detail=detail,
+                )
+            )
+
+    rebuild_violations = run_rebuild_audit_storage_gate(core_root)
+    add(
+        "run_rebuild_audit_storage_gate",
+        not rebuild_violations,
+        f"violations={len(rebuild_violations)}",
+    )
+
+    relational = run_relational_residue_gate(
+        core_root=core_root,
+        community_root=community_root,
+    )
+    add(
+        "run_relational_residue_gate",
+        relational.ok,
+        f"findings={len(relational.findings)}",
+    )
+
+    scheduler = SchedulerControlSymbolGate().run(source_root=source_root)
+    add("SchedulerControlSymbolGate", _gate_report_ok(scheduler), f"status={scheduler.status}")
+
+    signal = scheduler_signal_conformance()
+    add("scheduler_signal_conformance", _gate_report_ok(signal), f"status={signal.status}")
+
+    settings = run_core_settings_defaults_gate(source_root=source_root)
+    add(
+        "run_core_settings_defaults_gate",
+        _gate_report_ok(settings),
+        f"status={settings.status}",
+    )
+
+    public_config = run_public_config_stability_gate(source_root=source_root)
+    add(
+        "run_public_config_stability_gate",
+        _gate_report_ok(public_config),
+        f"status={public_config.status}",
+    )
+
+    telemetry_store = run_telemetry_store_ownership_gate(core_root)
+    add(
+        "run_telemetry_store_ownership_gate",
+        telemetry_store.ok,
+        f"violations={len(telemetry_store.violations)}",
+    )
+
+    telemetry_sender = run_telemetry_sender_ownership_gate(core_root)
+    add(
+        "run_telemetry_sender_ownership_gate",
+        telemetry_sender.ok,
+        f"violations={len(telemetry_sender.violations)}",
+    )
+
+    telemetry_product = run_telemetry_product_ownership_gate(core_root)
+    add(
+        "run_telemetry_product_ownership_gate",
+        telemetry_product.ok,
+        f"violations={len(telemetry_product.violations)}",
+    )
+
+    return CapstoneIntegrationGateReport(
+        ok=not violations,
+        results=tuple(results),
+        violations=tuple(violations),
+    )
+
+
 def build_capstone_conformance_report(
     *,
     core_source_root: str | Path,
     core_readme: str,
     community_readme: str,
+    community_source_root: str | Path | None = None,
     community_reach_in_ledger: Iterable[Any] = (),
 ) -> CapstoneConformanceReport:
     """Run the AF33 capstone checks that do not require importing Community."""
@@ -388,11 +509,16 @@ def build_capstone_conformance_report(
     )
     imports = audit_core_capstone_imports(core_source_root)
     ledgers = audit_capstone_ledgers(community_reach_in_ledger=community_reach_in_ledger)
+    integrations = audit_capstone_integration_gates(
+        core_source_root=core_source_root,
+        community_source_root=community_source_root,
+    )
     return CapstoneConformanceReport(
-        ok=readme.ok and imports.ok and ledgers.ok,
+        ok=readme.ok and imports.ok and ledgers.ok and integrations.ok,
         readme=readme,
         imports=imports,
         ledgers=ledgers,
+        integrations=integrations,
     )
 
 
@@ -419,6 +545,26 @@ def _core_package_root(source_root: Path) -> Path:
     if candidate.exists():
         return candidate
     return source_root
+
+
+def _community_package_root(source_root: Path) -> Path:
+    candidate = source_root / "src" / "okto_pulse" / "community"
+    if candidate.exists():
+        return candidate
+    candidate = source_root / "okto_pulse" / "community"
+    if candidate.exists():
+        return candidate
+    return source_root
+
+
+def _source_root_for_core_package(core_root: Path) -> Path:
+    if core_root.name == "core" and core_root.parent.name == "okto_pulse":
+        return core_root.parent.parent
+    return core_root
+
+
+def _gate_report_ok(report: Any) -> bool:
+    return str(getattr(report, "status", "")) not in {"blocking", "reject"}
 
 
 def _missing_string_attrs(entry: Any, attrs: tuple[str, ...]) -> tuple[str, ...]:
@@ -510,10 +656,13 @@ __all__ = [
     "CapstoneReadmeReport",
     "CapstoneImportReport",
     "CapstoneLedgerReport",
+    "CapstoneIntegrationGateResult",
+    "CapstoneIntegrationGateReport",
     "CapstoneConformanceReport",
     "render_capstone_ownership_matrix",
     "validate_capstone_readme_sync",
     "audit_core_capstone_imports",
     "audit_capstone_ledgers",
+    "audit_capstone_integration_gates",
     "build_capstone_conformance_report",
 ]

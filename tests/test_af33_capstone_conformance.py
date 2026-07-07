@@ -12,6 +12,7 @@ from okto_pulse.core.application.boundary.capstone_conformance import (
     CAPSTONE_OWNERSHIP_MATRIX,
     REQUIRED_SWAP_TARGETS,
     audit_capstone_ledgers,
+    audit_capstone_integration_gates,
     audit_core_capstone_imports,
     build_capstone_conformance_report,
     render_capstone_ownership_matrix,
@@ -140,15 +141,68 @@ def test_af33_ledgers_require_owner_source_coverage_and_removal() -> None:
 
 
 def test_af33_real_tree_capstone_conformance_is_green() -> None:
+    community_source_root = (
+        COMMUNITY_ROOT / "src" / "okto_pulse" / "community"
+        if COMMUNITY_ROOT.exists()
+        else None
+    )
     report = build_capstone_conformance_report(
         core_source_root=CORE_SOURCE_ROOT,
         core_readme=(REPO_ROOT / "README.md").read_text(encoding="utf-8"),
         community_readme=_community_readme(),
+        community_source_root=community_source_root,
     )
 
     assert report.ok is True, report
     assert report.imports.violations == ()
     assert report.ledgers.violations == ()
+    assert report.integrations.violations == ()
+    assert {
+        result.gate_id for result in report.integrations.results
+    } >= {
+        "run_rebuild_audit_storage_gate",
+        "run_relational_residue_gate",
+        "SchedulerControlSymbolGate",
+        "run_telemetry_sender_ownership_gate",
+    }
+
+
+def _write(root: Path, rel: str, source: str) -> None:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(source, encoding="utf-8")
+
+
+def test_af33_integration_gate_mutations_fail_closed(tmp_path: Path) -> None:
+    core = tmp_path / "src" / "okto_pulse" / "core"
+    _write(
+        core,
+        "kg/rebuild_root.py",
+        "from pathlib import Path\n"
+        "import tempfile\n"
+        "base = Path(tempfile.gettempdir()) / 'okto_pulse_kg_rebuild'\n",
+    )
+    _write(
+        core,
+        "application/boundary/relational_adapter_import_gate.py",
+        "ALLOWLIST = ('infra/database.py',)\n",
+    )
+    _write(
+        core,
+        "runtime/scheduler.py",
+        "class SingletonSchedulerControl:\n"
+        "    pass\n",
+    )
+
+    report = audit_capstone_integration_gates(core_source_root=tmp_path)
+
+    assert report.ok is False
+    failed = {violation.location for violation in report.violations}
+    assert {
+        "run_rebuild_audit_storage_gate",
+        "run_relational_residue_gate",
+        "SchedulerControlSymbolGate",
+    } <= failed
 
 
 def test_af33_matrix_references_af29_af30_af31_integration_gates() -> None:
