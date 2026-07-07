@@ -1,5 +1,5 @@
 """Regression tests for bug card 4a430c6d — ConsolidationEnqueuer race
-condition fix (SELECT-then-INSERT replaced by dialect-aware UPSERT).
+condition fix (SELECT-then-INSERT delegated to a relational effects port).
 
 The handler at events/handlers/consolidation_enqueuer.py:_enqueue_one was
 vulnerable to a TOCTOU race: when two domain events for the same
@@ -269,9 +269,9 @@ async def test_serial_events_on_same_artifact_produce_one_row(race_db_factory):
 
 def test_legacy_select_then_insert_idiom_is_gone():
     """The previous v1 path used `session.add(ConsolidationQueue(...))`
-    after a SELECT lookup. Post-fix uses `session.execute(stmt)` with a
-    dialect-specific upsert. A future regression that copy-pastes the old
-    idiom back into _enqueue_one gets caught by this grep-style assertion.
+    after a SELECT lookup. AF30-3cR keeps concrete SQL conflict handling behind
+    a registered relational effects port. A future regression that copy-pastes
+    the old idiom or dialect branch back into _enqueue_one gets caught here.
     """
     src = (
         Path(__file__).resolve().parent.parent
@@ -289,12 +289,11 @@ def test_legacy_select_then_insert_idiom_is_gone():
     assert "session.add(ConsolidationQueue(" not in src, (
         "v1 SELECT-then-INSERT idiom returned to _enqueue_one — race fix regressed"
     )
-    # Required post-fix idiom present.
-    assert "on_conflict_do_update" in src, (
-        "ConflictDoUpdate UPSERT call missing — race fix not in place"
-    )
-    assert "from sqlalchemy.dialects.sqlite import insert" in src
-    assert "from sqlalchemy.dialects.postgresql import insert" in src
+    assert "upsert_consolidation_queue" in src
+    assert "get_relational_effects_port" in src
+    assert "on_conflict_do_update" not in src
+    assert "sqlalchemy.dialects" not in src
+    assert "dialect_name" not in src
 
 
 def test_story_lifecycle_events_enqueue_story_artifact():

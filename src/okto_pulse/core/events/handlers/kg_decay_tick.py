@@ -12,9 +12,9 @@ a node in the same run. Failure of one node never aborts the loop (BR14).
 Board-level failures (corrupt/locked graph) are caught and counted
 (``boards_failed``) so the rest of the fleet continues — FR1.
 
-The tick run is logged in the ``kg_tick_runs`` table (Ideação #4 IMPL-F)
-so kg_health can surface ``last_decay_tick_at`` and
-``nodes_recomputed_in_last_tick`` to operators / agents.
+The tick run is persisted through the registered relational effects port so
+kg_health can surface ``last_decay_tick_at`` and
+``nodes_recomputed_in_last_tick`` without core owning SQL dialect mechanics.
 """
 
 from __future__ import annotations
@@ -25,15 +25,16 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import KGDailyTick
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.kg.scoring import _recompute_relevance_batch
-from okto_pulse.core.models.db import KGTickRun
+from okto_pulse.core.ports.relational_effects import (
+    KGTickRunUpsert,
+    get_relational_effects_port,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ KG_DECAY_TICK_STALENESS_DAYS = int(os.getenv("KG_DECAY_TICK_STALENESS_DAYS", "7"
 
 
 async def publish_tick_events(
-    session: AsyncSession,
+    session,
     *,
     board_id: str | None = None,
     actor_id: str | None = None,
@@ -65,17 +66,12 @@ async def publish_tick_events(
     nem na enumeração) e eventos de boards deletados são limpos pelo
     ON DELETE CASCADE. O handler já suportava ``board_id`` concreto.
     """
-    from sqlalchemy import select
-
     from okto_pulse.core.events import publish as event_publish
-    from okto_pulse.core.models.db import Board
 
     if board_id and board_id != "*":
         board_ids = [board_id]
     else:
-        board_ids = list(
-            (await session.execute(select(Board.id))).scalars().all()
-        )
+        board_ids = list(await get_relational_effects_port().list_board_ids(session))
 
     when = scheduled_at or datetime.now(timezone.utc).isoformat()
     extra_kwargs: dict[str, str] = {}
@@ -239,7 +235,7 @@ def _process_board_sync(
 
 
 async def _persist_tick_run(
-    session: AsyncSession,
+    session,
     *,
     tick_id: str,
     started_at: datetime,
@@ -250,49 +246,28 @@ async def _persist_tick_run(
     boards_failed: int = 0,
     error: str | None = None,
 ) -> None:
-    """Insert or update the row that kg_health will surface as the latest tick state.
+    """Insert or update the latest tick state through the relational port."""
 
-    Uses an idempotent upsert (ON CONFLICT DO UPDATE on ``tick_id`` PK) so
-    that dispatcher retries with the same ``tick_id`` produce exactly one
-    row — FR2/TR1.  ``session.merge`` is NOT used (it issues a SELECT +
-    conditional INSERT/UPDATE; the explicit upsert is a single statement).
-    """
-    # Dialect dispatch: same approach as consolidation_enqueuer.py so both
-    # SQLite (dev/test) and PostgreSQL (prod) are covered by a single code path.
-    dialect_name = session.bind.dialect.name if session.bind else None
-    if dialect_name == "postgresql":
-        from sqlalchemy.dialects.postgresql import insert as _upsert_insert
-    else:
-        from sqlalchemy.dialects.sqlite import insert as _upsert_insert
-
-    stmt = _upsert_insert(KGTickRun).values(
-        tick_id=tick_id,
-        started_at=started_at,
-        completed_at=completed_at,
-        nodes_recomputed=nodes_recomputed,
-        duration_ms=duration_ms,
-        boards_processed=boards_processed,
-        boards_failed=boards_failed,
-        error=error,
-    ).on_conflict_do_update(
-        index_elements=["tick_id"],
-        set_={
-            "completed_at": completed_at,
-            "nodes_recomputed": nodes_recomputed,
-            "duration_ms": duration_ms,
-            "boards_processed": boards_processed,
-            "boards_failed": boards_failed,
-            "error": error,
-        },
+    await get_relational_effects_port().upsert_kg_tick_run(
+        session,
+        KGTickRunUpsert(
+            tick_id=tick_id,
+            started_at=started_at,
+            completed_at=completed_at,
+            nodes_recomputed=nodes_recomputed,
+            duration_ms=duration_ms,
+            boards_processed=boards_processed,
+            boards_failed=boards_failed,
+            error=error,
+        ),
     )
-    await session.execute(stmt)
     await session.commit()
 
 
 async def _run_daily_tick(
     *,
     tick_id: str,
-    session: AsyncSession,
+    session,
     board_id: str | None = None,
     batch_size: int = KG_DECAY_TICK_BATCH_SIZE,
     staleness_days: int = KG_DECAY_TICK_STALENESS_DAYS,
@@ -308,9 +283,6 @@ async def _run_daily_tick(
     increments ``boards_failed`` and emits a ``kg.tick.board_failed`` warning
     without aborting the remaining boards.
     """
-    from sqlalchemy import select
-    from okto_pulse.core.models.db import Board
-
     started_at = datetime.now(timezone.utc)
     cutoff_iso = (started_at - timedelta(days=staleness_days)).isoformat()
     boards_processed = 0
@@ -321,7 +293,7 @@ async def _run_daily_tick(
     if board_id and board_id != "*":
         boards = [board_id]
     else:
-        boards = (await session.execute(select(Board.id))).scalars().all()
+        boards = list(await get_relational_effects_port().list_board_ids(session))
 
     for bid in boards:
         try:

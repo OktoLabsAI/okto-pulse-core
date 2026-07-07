@@ -318,6 +318,21 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "provider."
         ),
     },
+    "_relational_effects_port": {
+        "file": "okto_pulse/core/ports/relational_effects.py",
+        "owner": "okto-pulse-core/runtime",
+        "target_provider": "relational_effects_port",
+        "expected_adapter": (
+            "Edition relational side-effects adapter (AF30-3cR) — core runtime "
+            "handlers request queue/tick persistence through this port while "
+            "Community owns SQLAlchemy dialect conflict handling and model access."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once relational side-effect providers are "
+            "supplied through RuntimeComposition or another edition-scoped "
+            "composition object for every runtime entrypoint."
+        ),
+    },
     "_orchestrator": {
         "file": "okto_pulse/core/infra/schema_lifecycle.py",
         "owner": "okto-pulse-core/runtime",
@@ -501,7 +516,9 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/ports/coordination.py::_claim_repository",
         "okto_pulse/core/ports/coordination.py::_runtime_settings_provider",
         "okto_pulse/core/ports/coordination.py::_config_validation_port",
+        "okto_pulse/core/ports/relational_effects.py::_relational_effects_port",
         "okto_pulse/core/runtime_registry.py::_unit_of_work_factory",
+        "okto_pulse/core/runtime_registry.py::_relational_runtime_factory",
         "okto_pulse/core/runtime_registry.py::_sqlite_pragma_installer",
         "okto_pulse/core/runtime_registry.py::_content_ingestion_resolver",
         "okto_pulse/core/mcp/server.py::_effective_resource_catalog",

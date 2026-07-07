@@ -13,19 +13,14 @@ async def run_startup_schema_sweep(
 ) -> None:
     """Run the idempotent per-board KG schema sweep used by the legacy lifespan."""
 
-    from sqlalchemy import Column, MetaData, String, Table, select
-
     from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.startup_schema_sweep import sweep_board_schemas
-
-    boards = Table(
-        "boards",
-        MetaData(),
-        Column("id", String),
+    from okto_pulse.core.ports.relational_effects import (
+        get_relational_effects_port,
     )
 
     async with session_factory() as session:
-        board_ids = (await session.execute(select(boards.c.id))).scalars().all()
+        board_ids = list(await get_relational_effects_port().list_board_ids(session))
 
     kg_registry = get_kg_registry()
     await sweep_board_schemas(

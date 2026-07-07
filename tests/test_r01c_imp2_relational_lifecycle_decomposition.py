@@ -63,7 +63,7 @@ def test_representative_classifications():
     assert classify_function("get_engine") == "r01b"
     assert classify_function("close_db") == "r01b"
     assert classify_function("init_db") == "r01c"
-    assert classify_function("_seed_builtin_presets") == "r01c"
+    assert classify_function("_seed_builtin_presets") is None
     # any migration is auto-classified lifecycle by prefix
     assert classify_function(f"{R01C_MIGRATION_PREFIX}something_new") == "r01c"
     assert classify_function("totally_unknown") is None

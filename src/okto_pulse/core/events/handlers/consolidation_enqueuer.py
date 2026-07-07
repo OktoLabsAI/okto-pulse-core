@@ -8,27 +8,24 @@ Replaces the ad-hoc `db.add(ConsolidationQueue(...))` calls that used to
 live scattered across services/main.py. New handlers (activity log,
 notifications, webhooks) follow the same pattern — subscribe, map, do.
 
-Idempotency: enqueue is a single dialect-aware UPSERT
-(`INSERT ... ON CONFLICT DO UPDATE`) that atomically merges concurrent
-events for the same (board, artifact_type, artifact_id). The WHERE clause
-on the conflict-update branch limits the update to terminal-state rows
-(``done``/``failed``/``paused``); rows already in ``pending``/``claimed``
-are left untouched (the worker will pick them up). This eliminates the
-SELECT-then-INSERT TOCTOU race that the previous v1 path had — see bug
-card 4a430c6d.
+Idempotency is delegated to the registered relational effects port. The
+Community SQLAlchemy adapter owns database-specific conflict mechanics; this
+core handler only maps domain events to logical queue requests.
 """
 
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import DomainEvent
 from okto_pulse.core.infra.config import get_settings
-from okto_pulse.core.models.db import ConsolidationQueue
+from okto_pulse.core.ports.relational_effects import (
+    ConsolidationQueueUpsert,
+    get_relational_effects_port,
+)
 
 logger = logging.getLogger("okto_pulse.core.events.consolidation_enqueuer")
 
@@ -110,7 +107,7 @@ class ConsolidationEnqueuer:
         priority: str,
         session: AsyncSession,
     ) -> None:
-        # Bug 4a430c6d (race fix): dialect-aware UPSERT atomically merges
+        # Bug 4a430c6d (race fix): the relational port atomically merges
         # concurrent events for the same (board_id, artifact_type, artifact_id)
         # without the SELECT-then-INSERT TOCTOU race that the previous v1 path
         # had. Semantics preserved bit-for-bit:
@@ -133,10 +130,11 @@ class ConsolidationEnqueuer:
         # the count).
         settings = get_settings()
         alert_threshold = settings.kg_queue_alert_threshold
-        depth_before_insert = await session.scalar(
-            select(func.count()).where(
-                ConsolidationQueue.board_id == event.board_id,
-                ConsolidationQueue.status.in_(["pending", "claimed"]),
+        relational_effects = get_relational_effects_port()
+        depth_before_insert = (
+            await relational_effects.count_active_consolidation_queue(
+                session,
+                board_id=event.board_id,
             )
         )
         if (
@@ -166,42 +164,17 @@ class ConsolidationEnqueuer:
             )
             record_alert_fired()
 
-        # Dialect dispatch: SQLite and PostgreSQL both expose
-        # `insert().on_conflict_do_update(...)` but via different module paths.
-        # Detect at runtime so the same handler works in both prod (Postgres,
-        # planned) and dev/local (SQLite, current default).
-        dialect_name = session.bind.dialect.name if session.bind else None
-        if dialect_name == "postgresql":
-            from sqlalchemy.dialects.postgresql import insert as upsert_insert
-        else:
-            from sqlalchemy.dialects.sqlite import insert as upsert_insert
-
-        stmt = upsert_insert(ConsolidationQueue).values(
-            board_id=event.board_id,
-            artifact_type=artifact_type,
-            artifact_id=artifact_id,
-            priority=priority,
-            source=f"event:{event.event_type}",
-            triggered_by_event=event.event_type,
-            status="pending",
-        ).on_conflict_do_update(
-            index_elements=["board_id", "artifact_type", "artifact_id"],
-            set_={
-                "status": "pending",
-                "attempts": 0,
-                "last_error": None,
-                "priority": priority,
-                "source": f"event:{event.event_type}",
-                "triggered_by_event": event.event_type,
-                "claimed_by_session_id": None,
-                "claimed_at": None,
-                "worker_id": None,
-                "claim_timeout_at": None,
-                "next_retry_at": None,
-            },
-            where=ConsolidationQueue.status.notin_(("pending", "claimed")),
+        await relational_effects.upsert_consolidation_queue(
+            session,
+            ConsolidationQueueUpsert(
+                board_id=event.board_id,
+                artifact_type=artifact_type,
+                artifact_id=artifact_id,
+                priority=priority,
+                source=f"event:{event.event_type}",
+                triggered_by_event=event.event_type,
+            ),
         )
-        await session.execute(stmt)
 
         # Spec 4007e4a3 (Ideação #3, FR5): structured counter for dual-target
         # spec re-enqueue. Emitted only when the spec-side enqueue actually

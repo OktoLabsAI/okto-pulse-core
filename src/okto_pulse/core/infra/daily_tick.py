@@ -38,14 +38,9 @@ async def compute_tick_catch_up_next_run(
 ) -> datetime | None:
     """Read the last persisted tick and return the scheduler next_run_time."""
 
-    from sqlalchemy import Column, DateTime, MetaData, Table, select
-
     from okto_pulse.core.infra.database import get_session_factory
-
-    kg_tick_runs = Table(
-        "kg_tick_runs",
-        MetaData(),
-        Column("completed_at", DateTime(timezone=True)),
+    from okto_pulse.core.ports.relational_effects import (
+        get_relational_effects_port,
     )
 
     factory = (
@@ -54,14 +49,9 @@ async def compute_tick_catch_up_next_run(
         else get_session_factory()
     )
     async with factory() as session:
-        last = (
-            await session.execute(
-                select(kg_tick_runs.c.completed_at)
-                .where(kg_tick_runs.c.completed_at.is_not(None))
-                .order_by(kg_tick_runs.c.completed_at.desc())
-                .limit(1)
-            )
-        ).scalars().first()
+        last = await get_relational_effects_port().read_latest_kg_tick_completed_at(
+            session
+        )
     now = now_provider() if now_provider is not None else datetime.now(timezone.utc)
     return tick_next_run_from_last(last, interval_minutes, now)
 
