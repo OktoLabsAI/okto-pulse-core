@@ -121,6 +121,20 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "directly (R10-E Stage D / IMP03)."
         ),
     },
+    "_provider": {
+        "file": "okto_pulse/core/telemetry/effect_config_registry.py",
+        "owner": "okto-pulse-core/telemetry",
+        "target_provider": "telemetry_effect_config",
+        "expected_adapter": (
+            "TelemetryEffectConfig provider (AF31-S3) - Community registers "
+            "local metrics dir and beacon defaults behind the port while core "
+            "keeps telemetry configuration neutral."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once telemetry effect config is resolved "
+            "from RuntimeComposition instead of the process-wide registry."
+        ),
+    },
     "_carrier": {
         "file": "okto_pulse/core/telemetry/telemetry_state_registry.py",
         "owner": "okto-pulse-core/telemetry",
@@ -149,6 +163,32 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "Remove the module global once the inbound MCP server resolves the "
             "effective resource catalog from RuntimeComposition instead of the "
             "process-wide register-before-freeze catalog bridge."
+        ),
+    },
+    "_instruction_providers": {
+        "file": "okto_pulse/core/mcp/server.py",
+        "owner": "okto-pulse-core/inbound-mcp",
+        "target_provider": "mcp_instruction_provider",
+        "expected_adapter": (
+            "Effective MCP instruction providers (AF31-S2) - Community injects "
+            "edition-owned instructions before MCP startup freezes the registry."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once MCP instructions are resolved from "
+            "RuntimeComposition instead of the process-wide provider bridge."
+        ),
+    },
+    "_instruction_providers_frozen": {
+        "file": "okto_pulse/core/mcp/server.py",
+        "owner": "okto-pulse-core/inbound-mcp",
+        "target_provider": "mcp_instruction_provider",
+        "expected_adapter": (
+            "Instruction-provider freeze guard (AF31-S2) - late instruction "
+            "provider registration fails closed after edition composition."
+        ),
+        "retirement_criterion": (
+            "Remove the module global when MCP instruction provider lifecycle "
+            "and freeze state move behind RuntimeComposition."
         ),
     },
     "_resource_catalog_frozen": {
@@ -368,6 +408,19 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "owned by RuntimeComposition or a scoped KG provider cache service."
         ),
     },
+    "_version_provider": {
+        "file": "okto_pulse/core/infra/config.py",
+        "owner": "okto-pulse-core/settings",
+        "target_provider": "package_version_provider",
+        "expected_adapter": (
+            "PackageVersionProvider (AF31-S2) - runtime/package metadata owns "
+            "version resolution so core settings never read source checkout files."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once version resolution is supplied by "
+            "edition/runtime composition or immutable installed metadata only."
+        ),
+    },
 }
 
 #: Equivalent per-occurrence runtime ledger for singleton names that are reused
@@ -490,6 +543,7 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/events/dispatcher.py::_dispatcher",
         "okto_pulse/core/infra/auth.py::_auth_provider",
         "okto_pulse/core/infra/config.py::_settings_instance",
+        "okto_pulse/core/infra/config.py::_version_provider",
         "okto_pulse/core/infra/database.py::_engine",
         "okto_pulse/core/infra/database.py::_session_factory",
         "okto_pulse/core/infra/database.py::_last_stale_warn_at",
@@ -522,6 +576,8 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/runtime_registry.py::_sqlite_pragma_installer",
         "okto_pulse/core/runtime_registry.py::_content_ingestion_resolver",
         "okto_pulse/core/mcp/server.py::_effective_resource_catalog",
+        "okto_pulse/core/mcp/server.py::_instruction_providers",
+        "okto_pulse/core/mcp/server.py::_instruction_providers_frozen",
         "okto_pulse/core/mcp/server.py::_resource_catalog_frozen",
         "okto_pulse/core/mcp/server.py::_RESOURCE_REGISTRY",
         "okto_pulse/core/mcp/server.py::_XML_SAFETY_DECORATED_COUNT",
@@ -530,6 +586,7 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/telemetry/product_aggregator_registry.py::_product_aggregator_factory",
         "okto_pulse/core/telemetry/publish_health_source_registry.py::_publish_health_source_provider",
         "okto_pulse/core/telemetry/sender_registry.py::_telemetry_sender_factory",
+        "okto_pulse/core/telemetry/effect_config_registry.py::_provider",
         "okto_pulse/core/telemetry/telemetry_port_registry.py::_telemetry_port_factory",
         "okto_pulse/core/telemetry/telemetry_state_registry.py::_carrier",
     }
