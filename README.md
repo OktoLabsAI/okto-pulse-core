@@ -11,16 +11,16 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 - **59 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, KG queues, rebuild/cognitive-candidate records, discovery entities and audit/outbox records. Source: classes with `__tablename__` in `core/models/db.py`, checked against `Base.registry.mappers`; historical Skills entities remain removed.
 - **33 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
-- **43 API route modules** — FastAPI REST endpoints. Source: `core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`; the raw glob has 46 Python files, or 45 without only `__init__.py`.
+- **44 API route modules** — FastAPI REST endpoints. Source: `core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`; the raw glob has 47 Python files, or 46 without only `__init__.py`.
 - **17 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence, bug traceability and sprint health controls.
-- **259 MCP tools** — Complete Model Context Protocol server for AI agent integration, counted from the FastMCP registry after importing the server, including:
+- **262 MCP tools** — Complete Model Context Protocol server for AI agent integration, counted from the FastMCP registry after importing the server, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
   - 24 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability, rebuild preflight/confirm/run)
-  - Community runtime exposure: 259 core MCP tools, 0 community-only MCP tools
+  - Community runtime exposure: 262 core MCP tools, 0 community-only MCP tools
 - **App factory** — `create_app()` with dependency injection for auth and storage providers
 - **Hexagonal backend ports** — runtime, telemetry, repository/UoW and KG provider seams, plus the adapter readiness ledger, documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - **Knowledge Graph contracts and orchestration** — graph schema vocabulary, query/consolidation semantics, deterministic + cognitive workers, 11 node types and **13 relationship types**. Source: `len(KGEdgeType)` in `core/kg/schemas.py`; the concrete LadybugDB/Kuzu board and global graph runtimes are supplied by the active edition
@@ -92,6 +92,21 @@ around.
 | `requests` | `temporary_exception` | Ledgered under `#10_telemetry` and `tr_03abf5ab`; core source must not import it, but the manifest remains governed until the telemetry oracle is green. | The Community telemetry sender imports `requests`, but AF-05 does not reassign ownership or declare it here just because it is currently reached through core packaging. |
 | `chardet` | `temporary_exception` | Ledgered as the requests/telemetry charset companion under `#10_telemetry`; it stays in `CANONICAL_TEMPORARY_EXCEPTION_TOKENS`. | Kept with `requests`; do not remove, move or omit it from reports before the same telemetry oracle is green. |
 | `apscheduler` | `community_owned` | AF31-S1R moved the concrete scheduler runtime out of core. Core keeps only `JobSpec`/`SchedulerControl` and the KG daily tick policy; `dependency_conformance` now blocks manifest, lock, wheel or runtime-import reintroduction. | Declared by Community and mapped in `community/adapters/scheduler.py` from core `JobSpec` to APScheduler/`IntervalTrigger`. |
+
+AF33 capstone ownership matrix. The marked table is rendered from
+`CAPSTONE_OWNERSHIP_MATRIX` and must stay byte-identical to the Community
+README block. The gates listed here are executable; README prose follows them.
+
+<!-- AF33-CAPSTONE-MATRIX:BEGIN -->
+| Surface | Core contract | Community/local adapter | SaaS swap target | Executable gates |
+| --- | --- | --- | --- | --- |
+| Relational runtime | repository/UoW and schema lifecycle ports; no ad-hoc dialect or engine/session factory bypass | SQLite/SQLAlchemy adapters in community.adapters.sqlalchemy_* and relational_schema_lifecycle | SQLite -> Aurora/Postgres | run_relational_residue_gate, audit_dependency_conformance, audit_community_core_import_boundary |
+| KG graph runtime | KG interfaces, policies and adapter-neutral schema compatibility helpers | LadybugDB/Kuzu adapters in community.adapters.kuzu_* and global_discovery_runtime | LadybugDB/Kuzu -> Neptune | audit_dependency_conformance, ImportBoundaryGate, audit_community_core_import_boundary |
+| Durable files and artifacts | StorageProvider, RebuildAuditArtifactStore and CognitivePendingWorkProvider contracts | filesystem storage, upload_dir, rebuild audit storage and cognitive-pending providers | filesystem -> S3 | run_rebuild_audit_storage_gate, run_core_settings_defaults_gate, run_public_config_stability_gate |
+| Telemetry effects | TelemetryPort contracts, event schema and privacy policy | local JSONL store, state files, beacon sender and product telemetry adapters | local telemetry files/API -> AWS telemetry API | run_telemetry_store_ownership_gate, run_telemetry_sender_ownership_gate, run_telemetry_product_ownership_gate |
+| Scheduler/runtime effects | JobSpec, SchedulerControl and KG daily tick policy | APScheduler-backed SingletonSchedulerControl | APScheduler local runtime -> runtime scheduler adapter | SchedulerControlSymbolGate, scheduler_signal_conformance |
+| MCP resources and versions | MCP instruction/resource/version provider ports and stable public catalog | Community resource catalog, capability descriptors and package version wiring | local catalog/version reads -> deployment provider | run_public_config_stability_gate, register_instruction_provider, register_package_version_provider |
+<!-- AF33-CAPSTONE-MATRIX:END -->
 
 The AF-11 import-boundary pass is application-first. Its done criterion is
 `ImportBoundaryGate(mode="bootstrap").observed_value == 0` for blocking

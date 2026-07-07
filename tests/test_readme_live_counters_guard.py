@@ -155,9 +155,9 @@ def test_api_route_module_counter_documents_infrastructure_exclusions() -> None:
     live = _markdown_section(readme, "What's inside")
     api_py = sorted((CORE_SRC / "api").glob("*.py"))
 
-    assert len(api_py) == 46
-    assert len([path for path in api_py if path.name != "__init__.py"]) == 45
-    assert len(_api_route_modules()) == 43
+    assert len(api_py) == 47
+    assert len([path for path in api_py if path.name != "__init__.py"]) == 46
+    assert len(_api_route_modules()) == 44
     assert "`deps.py`" in live
     assert "`router.py`" in live
 
