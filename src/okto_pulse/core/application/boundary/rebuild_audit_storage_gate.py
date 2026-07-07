@@ -23,8 +23,9 @@ _ALLOWLISTED_BASE_DIR_PATH_CONSUMERS = frozenset({
     "rebuild_report.py",
     "rebuild_service.py",
     "rebuild_sources.py",
-    # MCP resource path loading is a confined read contract for bundled docs,
-    # not a rebuild/current-generation durable store.
+    # MCP resource/instruction path loading is a confined read contract for
+    # bundled docs/prompts, not a rebuild/current-generation durable store.
+    "mcp_instructions.py",
     "mcp_resources.py",
     "single_writer_lock.py",
     "stress_chaos_executor.py",
