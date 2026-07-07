@@ -10,9 +10,9 @@ source:
     (journal_mode=WAL, busy_timeout=30000, synchronous=NORMAL) are applied on
     connect — verified by querying the live connection;
   * the engine carries the pool tuning (pool_size=20);
-  * ``init_db`` runs the full migration chain + ``create_all`` on an EMPTY DB and
-    materialises the schema; a second ``init_db`` is idempotent (no table loss) —
-    the no-drift property the migration replay must hold.
+  * ``init_db`` delegates to a registered lifecycle orchestrator on an EMPTY DB
+    and materialises the schema; a second ``init_db`` is idempotent (no table
+    loss) — the no-drift property the edition migration replay must hold.
 
 Uses a temp file SQLite (WAL needs a real file) and preserves the process-global
 engine/session-factory so the surrounding suite is unaffected.
@@ -73,11 +73,19 @@ async def test_create_database_applies_sqlite_pragmas_and_pool_at_runtime(tmp_pa
 
 async def test_init_db_runs_migrations_and_materialises_schema_idempotently(tmp_path, _preserve_global_engine):
     from okto_pulse.core.infra import database as db
+    from okto_pulse.core.infra import schema_lifecycle as sl
 
     url = f"sqlite+aiosqlite:///{(tmp_path / 'init.db').as_posix()}"
     db.create_database(url)
 
-    # empty DB: init_db runs the full migration chain + create_all
+    class _CreateAllLifecycle:
+        async def initialize_schema(self) -> None:
+            async with db.get_engine().begin() as conn:
+                await conn.run_sync(db.Base.metadata.create_all)
+
+    sl.register_relational_schema_lifecycle_orchestrator(_CreateAllLifecycle())
+
+    # empty DB: init_db delegates to the registered lifecycle
     await db.init_db()
     engine = db.get_engine()
     async with engine.connect() as conn:

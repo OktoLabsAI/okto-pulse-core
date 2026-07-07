@@ -1,15 +1,12 @@
 """Relational schema-lifecycle orchestrator seam (R01C FR3).
 
-DORMANT composition seam. ``init_db`` owns the relational schema lifecycle
-(migrations -> ``Base.metadata.create_all`` -> seeds) inline today. This module
-lets the edition composition root *optionally* register an orchestrator that
-takes that lifecycle over, so the concrete schema/migration/bootstrap ownership
-can move to Community (FR3) WITHOUT changing core's public startup contract.
+Mandatory composition seam. ``init_db`` delegates the relational schema
+lifecycle (migrations -> ``Base.metadata.create_all`` -> seeds) to the edition
+composition root. Core owns the ORM ``Base`` and domain models; concrete
+schema/migration/bootstrap execution is Community-owned.
 
-Fail-open by design: nothing is registered in production by this card (R01C
-IMP1), so ``resolve_*`` returns ``None`` and ``init_db`` runs its unchanged
-inline path. Activation — registering the Community
-``RelationalSchemaMigrator``/``DataBootstrapper`` orchestrator — is R01C IMP2.
+Fail-closed by design: if no orchestrator is registered, ``init_db`` raises
+instead of running lifecycle SQL from core.
 
 This is a leaf module: it imports only ``typing`` so it stays agnostic of the
 SQLAlchemy ORM and of the relational provider (R01B owns
@@ -35,7 +32,7 @@ class RelationalSchemaLifecycleOrchestrator(Protocol):
         ...
 
 
-#: Process-wide registered orchestrator. ``None`` => fail-open (inline default).
+#: Process-wide registered orchestrator. ``None`` => init_db fails closed.
 _orchestrator: RelationalSchemaLifecycleOrchestrator | None = None
 
 
@@ -44,8 +41,7 @@ def register_relational_schema_lifecycle_orchestrator(
 ) -> None:
     """Register the edition's schema-lifecycle orchestrator (composition root).
 
-    Intentionally NOT called from production wiring in this card — registration
-    is the IMP2 activation step. Tests use it to exercise the seam.
+    Called by the edition composition root before ``init_db``.
     """
     global _orchestrator
     _orchestrator = orchestrator
@@ -54,11 +50,11 @@ def register_relational_schema_lifecycle_orchestrator(
 def resolve_relational_schema_lifecycle_orchestrator() -> (
     RelationalSchemaLifecycleOrchestrator | None
 ):
-    """Return the registered orchestrator, or ``None`` (fail-open default)."""
+    """Return the registered orchestrator, or ``None`` when unregistered."""
     return _orchestrator
 
 
 def reset_relational_schema_lifecycle_orchestrator() -> None:
-    """Clear any registered orchestrator (restores the inline default)."""
+    """Clear any registered orchestrator."""
     global _orchestrator
     _orchestrator = None

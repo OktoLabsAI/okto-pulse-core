@@ -7,8 +7,8 @@ Behavioral proof of the three IMP1 contracts the implementation establishes:
     across the FR1 enum extraction (``core.models.db`` re-exports
     ``core.domain.enums`` by identity, not by copy).
   * FR3 (fr_61a1562b): ``init_db`` delegates the schema lifecycle to a
-    registered relational schema-lifecycle orchestrator (dormant seam) and is
-    fail-open when none is registered.
+    registered relational schema-lifecycle orchestrator and fails closed when
+    none is registered.
 """
 
 from __future__ import annotations
@@ -142,10 +142,17 @@ def _reset_orchestrator():
     sl.reset_relational_schema_lifecycle_orchestrator()
 
 
-def test_resolve_is_fail_open_when_unregistered():
+def test_resolve_is_none_when_unregistered():
     from okto_pulse.core.infra import schema_lifecycle as sl
 
     assert sl.resolve_relational_schema_lifecycle_orchestrator() is None
+
+
+async def test_init_db_fails_closed_when_unregistered():
+    from okto_pulse.core.infra import database
+
+    with pytest.raises(RuntimeError, match="orchestrator not registered"):
+        await database.init_db()
 
 
 async def test_init_db_delegates_to_registered_orchestrator():
