@@ -24,6 +24,7 @@ from .core_settings_defaults_gate import (
     run_core_settings_defaults_gate,
     run_public_config_stability_gate,
 )
+from .relational_residue_gate import run_relational_residue_gate
 from .report import GateReport
 from .runtime_worker_gate import RuntimeWorkerBoundaryGate
 from .scheduler_control_symbol_gate import SchedulerControlSymbolGate
@@ -51,6 +52,7 @@ AXES: tuple[str, ...] = (
     "source_read_consumer",
     "core_settings_defaults",
     "public_config_stability",
+    "af30_3c_relational_residue",
     "runtime_settings_effect_split",
     "scheduler_signal",
     "community_smoke",
@@ -62,6 +64,13 @@ def _settings_source(source_root: Path | None) -> str | None:
     root = source_root or Path(__file__).resolve().parents[4]
     path = root / "okto_pulse" / "core" / "services" / "settings_service.py"
     return path.read_text(encoding="utf-8") if path.exists() else None
+
+
+def _core_package_root(source_root: Path | None) -> Path | None:
+    if source_root is None:
+        return None
+    candidate = source_root / "okto_pulse" / "core"
+    return candidate if candidate.exists() else source_root
 
 
 def settings_split_conformance(source_root: Path | None = None) -> GateReport:
@@ -234,6 +243,9 @@ class ConformanceSuite:
             "public_config_stability": run_public_config_stability_gate(
                 source_root=source_root
             ),
+            "af30_3c_relational_residue": run_relational_residue_gate(
+                core_root=_core_package_root(source_root)
+            ).as_gate_report(),
             "runtime_settings_effect_split": settings_split_conformance(source_root),
             "scheduler_signal": scheduler_signal_conformance(),
             "community_smoke": community_report

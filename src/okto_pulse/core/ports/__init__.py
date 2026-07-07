@@ -55,6 +55,11 @@ from .mcp_auth import (
     mcp_credential_from_sources,
     require_authenticator,
 )
+from .mcp_instructions import (
+    McpInstructionProvider,
+    StaticFileMcpInstructionProvider,
+    StaticMcpInstructionProvider,
+)
 from .mcp_trace import McpTraceRecord, McpTraceSink, TraceWriteResult
 from .relational_schema_migrator import (
     MIGRATION_PHASES,
@@ -68,6 +73,15 @@ from .relational_schema_migrator import (
     SchemaMigrationError,
     StepStatus,
     require_migrator,
+)
+from .relational_effects import (
+    ConsolidationQueueUpsert,
+    KGTickRunUpsert,
+    RelationalEffectsPort,
+    RelationalEffectsProviderMissing,
+    get_relational_effects_port,
+    register_relational_effects_port,
+    reset_relational_effects_port_for_tests,
 )
 from .capability_descriptor import (
     CapabilityDescriptor,
@@ -84,6 +98,11 @@ from .mcp_resources import (
     catalog_link_integrity,
     catalog_uri_conflicts,
     scan_forbidden_terms,
+)
+from .package_version import (
+    ImportlibMetadataVersionProvider,
+    MappingPackageVersionProvider,
+    PackageVersionProvider,
 )
 from .runtime_control import RuntimeCompositionLike, RuntimeControl
 from .runtime_events import RuntimeEvent, RuntimeEventBusPort
@@ -121,6 +140,7 @@ from .telemetry import (
     ProductState,
     PublishHealthSource,
     TelemetryEventStore,
+    TelemetryEffectConfigProvider,
     TelemetryPort,
     TelemetryResult,
     TelemetrySink,
@@ -138,12 +158,16 @@ __all__ = [
     "CoordinationProviderMissing",
     "ContentIngestionError",
     "ContentIngestionResolver",
+    "ConsolidationQueueUpsert",
     "HealthReport",
+    "ImportlibMetadataVersionProvider",
     "IngestedBinaryContent",
     "IngestedTextContent",
     "LeaseHandle",
     "LeaseProvider",
+    "MappingPackageVersionProvider",
     "ProductAggregationPort",
+    "PackageVersionProvider",
     "ProductState",
     "PublishHealthSource",
     "TelemetryPort",
@@ -152,6 +176,7 @@ __all__ = [
     "TelemetryState",
     "TelemetryStateCarrier",
     "TelemetryStateStore",
+    "TelemetryEffectConfigProvider",
     "TelemetryEventStore",
     "TraceWriteResult",
     "ActorContextLike",
@@ -163,8 +188,11 @@ __all__ = [
     "classify_resources",
     "descriptors_to_dicts",
     "CompositeMcpResourceCatalog",
+    "McpInstructionProvider",
     "McpResourceCatalog",
     "McpResourceSpec",
+    "StaticFileMcpInstructionProvider",
+    "StaticMcpInstructionProvider",
     "StaticMcpResourceCatalog",
     "catalog_link_integrity",
     "catalog_uri_conflicts",
@@ -180,6 +208,7 @@ __all__ = [
     "DataBootstrapper",
     "JobSpec",
     "KG_DAILY_TICK_JOB_ID",
+    "KGTickRunUpsert",
     "MCP_AUTH_FAILURE_REASONS",
     "MCP_CREDENTIAL_SOURCES",
     "McpAuthError",
@@ -202,6 +231,8 @@ __all__ = [
     "RESCHEDULE_FAILED_FORBIDDEN_FIELDS",
     "RESCHEDULE_FAILED_REQUIRED_FIELDS",
     "RelationalSchemaMigrator",
+    "RelationalEffectsPort",
+    "RelationalEffectsProviderMissing",
     "RuntimeCompositionLike",
     "RuntimeControl",
     "RuntimeEffectResult",
@@ -226,11 +257,14 @@ __all__ = [
     "get_claim_repository",
     "get_config_validation_port",
     "get_lease_provider",
+    "get_relational_effects_port",
     "get_runtime_settings_provider",
     "get_write_lock_port",
     "require_bootstrapper",
     "require_migrator",
     "register_coordination_providers",
+    "register_relational_effects_port",
     "reset_coordination_providers_for_tests",
+    "reset_relational_effects_port_for_tests",
     "sanitize_message",
 ]

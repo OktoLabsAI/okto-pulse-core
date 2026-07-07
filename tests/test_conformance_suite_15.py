@@ -325,6 +325,7 @@ def test_conformance_suite_reports_per_axis() -> None:
     assert report["axes"]["scheduler_control_symbol"]["status"] == "passed"
     assert report["axes"]["lifecycle_fallback"]["status"] == "passed"
     assert report["axes"]["runtime_worker_boundary"]["status"] == "passed"
+    assert report["axes"]["af30_3c_relational_residue"]["status"] == "passed"
     assert report["axes"]["runtime_settings_effect_split"]["status"] == "baseline"
     assert report["axes"]["scheduler_signal"]["status"] == "baseline"
     # the two integration axes are deferred, with a runnable promotion path

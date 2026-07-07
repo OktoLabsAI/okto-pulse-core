@@ -6,8 +6,11 @@ from typing import Any
 
 from okto_pulse.core.mcp.server import (
     build_mcp_asgi_app,
+    freeze_instruction_providers,
+    has_instruction_provider,
     mcp,
     mount_mcp,
+    register_instruction_provider,
     register_session_factory,
     run_mcp_server,
 )
@@ -52,10 +55,13 @@ __all__ = [
     "build_mcp_asgi_app",
     "effective_resource_catalog",
     "freeze_resource_catalog",
+    "freeze_instruction_providers",
     "get_authenticated_agent_for_mcp",
     "get_db_for_current_mcp_request",
+    "has_instruction_provider",
     "mcp",
     "mount_mcp",
+    "register_instruction_provider",
     "register_resource_catalog",
     "register_session_factory",
     "run_mcp_server",

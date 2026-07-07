@@ -187,18 +187,17 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
             classification="temporary_exception",
             kind="dependency",
             owner_wave="#04_repository_uow + #16_schema_migrations (#05-D relational boundary)",
-            current_owner="okto-pulse-core/infra",
+            current_owner="okto-pulse-community/adapters",
             reason=(
-                "Async SQLite driver loaded BY URL by SQLAlchemy for the default "
-                "local database (sqlite+aiosqlite). Direct dependency with no "
-                "explicit import in src/okto_pulse/core — SQLAlchemy resolves the "
-                "dbapi from the connection URL."
+                "Async SQLite driver loaded BY URL by SQLAlchemy for local "
+                "Community databases (sqlite+aiosqlite). Direct dependency with "
+                "no explicit import in src/okto_pulse/core — SQLAlchemy resolves "
+                "the dbapi from the connection URL."
             ),
             removal_criterion=(
-                "Remove once the relational driver is owned by a Community/edition "
-                "adapter behind the repository/UoW port (#04) and the migrations "
-                "boundary (#16/#05-D). NOT removable while the core default DB URL "
-                "is sqlite+aiosqlite (infra/config.py)."
+                "Remove from the core package once packaging/dependency ownership "
+                "fully moves the relational driver to the Community distribution "
+                "without breaking core test/runtime fixtures."
             ),
             validation_oracle=(
                 "dependency_conformance accepts aiosqlite as a ledgered "
@@ -206,7 +205,7 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
                 "(test_r05d_data_ownership) governs the actual move."
             ),
             direct_dep_no_import=True,
-            transitive_consumer="SQLAlchemy sqlite+aiosqlite async driver (default local DB URL)",
+            transitive_consumer="SQLAlchemy sqlite+aiosqlite async driver (Community local DB URL)",
             expected_source_import_roots=(),
         ),
         LedgerEntry(

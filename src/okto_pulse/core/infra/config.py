@@ -1,30 +1,44 @@
 """Core application configuration using pydantic-settings."""
 
 from functools import lru_cache
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
-from pathlib import Path
-import tomllib
 
+from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
+from okto_pulse.core.ports.package_version import (
+    ImportlibMetadataVersionProvider,
+    PackageVersionProvider,
+)
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_version_provider: PackageVersionProvider = ImportlibMetadataVersionProvider()
+
+
+def register_package_version_provider(provider: PackageVersionProvider) -> None:
+    """Register the runtime package version provider."""
+    global _version_provider
+    _version_provider = provider
+
+
+def reset_package_version_provider_for_tests() -> None:
+    """Restore the default metadata-backed version provider."""
+    global _version_provider
+    _version_provider = ImportlibMetadataVersionProvider()
+
+
 def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
-    """Read version from installed package metadata; fallback if not installed
-    (e.g. running from source tree without ``pip install -e``)."""
-    pyproject = Path(__file__).resolve().parents[4] / "pyproject.toml"
-    if pyproject.exists():
-        try:
-            return tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
-        except Exception:
-            pass
+    """Resolve version through provider/package metadata, never source files."""
     try:
-        return _pkg_version(package_name)
-    except PackageNotFoundError:
-        return fallback
+        resolved = _version_provider.version(package_name)
+    except Exception:
+        resolved = None
+    return resolved or fallback
 
 
-_CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.3.0+local")
+def _default_core_version() -> str:
+    return _resolve_version("okto-pulse-core", fallback=_CORE_PACKAGE_VERSION)
+
+
 GRAPH_DB_MAX_SIZE_GB_VALUES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
 DEFAULT_METRICS_BEACON_URL = ""
 
@@ -55,7 +69,7 @@ class CoreSettings(BaseSettings):
     # so /health, FastAPI title and MCP server-info stay aligned with
     # the installed wheel without manual sync (NC-2 fix).
     app_name: str = "Okto Pulse"
-    app_version: str = _CORE_VERSION
+    app_version: str = Field(default_factory=_default_core_version)
     debug: bool = False
     environment: str = "development"
 
@@ -83,7 +97,7 @@ class CoreSettings(BaseSettings):
 
     # MCP Server
     mcp_server_name: str = "okto-pulse"
-    mcp_server_version: str = _CORE_VERSION
+    mcp_server_version: str = Field(default_factory=_default_core_version)
     mcp_port: int = 8101
 
     # CORS

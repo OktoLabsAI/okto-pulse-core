@@ -131,6 +131,13 @@ from .core_settings_defaults_gate import (
     run_core_settings_defaults_gate,
     run_public_config_stability_gate,
 )
+from .relational_residue_gate import (
+    COMMUNITY_TARGET_FILES,
+    CORE_TARGET_FILES,
+    RelationalResidueFinding,
+    RelationalResidueReport,
+    run_relational_residue_gate,
+)
 from .conformance_matrix import (
     ConformanceMatrixReport,
     ConformanceMatrixRow,
@@ -393,12 +400,14 @@ __all__ = [
     "CoreSettingSourceField",
     "CoreSettingsDefaultsReport",
     "CoreSettingsFinding",
+    "COMMUNITY_TARGET_FILES",
     "SmokeInstallInput",
     "CompositionBoundaryGate",
     "CompositionBoundaryGateInput",
     "CompositionFinding",
     "ConformanceMatrixReport",
     "ConformanceMatrixRow",
+    "CORE_TARGET_FILES",
     "DEFAULT_COMPOSITION_BASELINE",
     "DEFAULT_CORE_PURE_FORBIDDEN_DEPENDENCIES",
     "DEFAULT_ONLY_EXCLUSIONS",
@@ -437,6 +446,8 @@ __all__ = [
     "PackageManifestGateInput",
     "PublicSettingAlias",
     "REQUIRED_INVENTORY_FIELDS",
+    "RelationalResidueFinding",
+    "RelationalResidueReport",
     "SourceImportReference",
     "SOURCE_READ_PATH_FUNCTIONS",
     "TARGET_SUFFIXES",
@@ -454,5 +465,6 @@ __all__ = [
     "render_matrix_report",
     "run_core_settings_defaults_gate",
     "run_public_config_stability_gate",
+    "run_relational_residue_gate",
     "rule_for",
 ]

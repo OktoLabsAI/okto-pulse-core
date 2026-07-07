@@ -689,6 +689,45 @@ def _set_all_flags(d: dict[str, Any], value: bool) -> dict[str, Any]:
     return d
 
 
+def merge_missing_flags(stored: dict, registry: dict) -> tuple[dict, int]:
+    """Deep-merge missing permission keys while preserving existing values."""
+    added = 0
+    for key, reg_val in registry.items():
+        if key not in stored:
+            if isinstance(reg_val, dict):
+                import copy as _copy
+
+                subtree = _copy.deepcopy(reg_val)
+                _set_all_leaves(subtree, True)
+                stored[key] = subtree
+                added += _count_leaves(subtree)
+            else:
+                stored[key] = True
+                added += 1
+        elif isinstance(reg_val, dict) and isinstance(stored[key], dict):
+            _, sub_added = merge_missing_flags(stored[key], reg_val)
+            added += sub_added
+    return stored, added
+
+
+def _set_all_leaves(d: dict, value: bool) -> None:
+    for k, v in d.items():
+        if isinstance(v, dict):
+            _set_all_leaves(v, value)
+        else:
+            d[k] = value
+
+
+def _count_leaves(d: dict) -> int:
+    n = 0
+    for v in d.values():
+        if isinstance(v, dict):
+            n += _count_leaves(v)
+        else:
+            n += 1
+    return n
+
+
 # ---------------------------------------------------------------------------
 # Built-in preset definitions
 # ---------------------------------------------------------------------------

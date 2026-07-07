@@ -86,7 +86,7 @@ async def test_resolve_config_clamps_out_of_range_legacy_value(db_factory):
 
 @pytest.mark.asyncio
 async def test_legacy_migration_adds_column_idempotent_reads_false(tmp_path):
-    import okto_pulse.core.infra.database as dbmod
+    steps = pytest.importorskip("okto_pulse.community.adapters.relational_schema_steps")
 
     db_path = tmp_path / "legacy.db"
     eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
@@ -96,10 +96,10 @@ async def test_legacy_migration_adds_column_idempotent_reads_false(tmp_path):
             await conn.execute(text("CREATE TABLE ideations (id TEXT PRIMARY KEY, title TEXT)"))
             await conn.execute(text("INSERT INTO ideations (id, title) VALUES ('i1', 'legacy')"))
 
-        with patch.object(dbmod, "get_engine", lambda: eng):
-            await dbmod._migrate_add_ideation_skip_ambiguity_gate()
+        with patch.object(steps, "get_engine", lambda: eng):
+            await steps._migrate_add_ideation_skip_ambiguity_gate()
             # Idempotent: a second run must not raise.
-            await dbmod._migrate_add_ideation_skip_ambiguity_gate()
+            await steps._migrate_add_ideation_skip_ambiguity_gate()
 
         async with eng.begin() as conn:
             rows = (await conn.execute(text("SELECT id, skip_ambiguity_gate FROM ideations"))).fetchall()

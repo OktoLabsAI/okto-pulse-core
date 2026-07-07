@@ -24,6 +24,10 @@ from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value, parse_options_json
 from okto_pulse.core.mcp.trace_middleware import install_trace_sink as _install_trace
 from okto_pulse.core.ports.content_ingestion import ContentIngestionError
+from okto_pulse.core.ports.mcp_instructions import (
+    McpInstructionProvider,
+    StaticFileMcpInstructionProvider,
+)
 from okto_pulse.core.ports.mcp_trace import McpTraceSink
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
 from okto_pulse.core.services.activity_log import (
@@ -154,16 +158,58 @@ def _qa_answer_text(qa: Any) -> str | None:
     return None
 
 
+_core_instruction_provider = StaticFileMcpInstructionProvider(
+    provider_id="core",
+    base_dir=Path(__file__).parent,
+    relative_path="agent_instructions.md",
+)
+_instruction_providers: tuple[McpInstructionProvider, ...] = (_core_instruction_provider,)
+_instruction_providers_frozen = False
+
+
+def _refresh_fastmcp_instructions() -> None:
+    mcp.instructions = _load_instructions()
+
+
 def _load_instructions() -> str:
-    """Load agent instructions. Prefers mounted volume (live-editable), falls back to bundled copy."""
-    here = Path(__file__).parent
-    for candidate in [
-        Path("/app/prompts/agent_system_prompt.md"),
-        here / "agent_instructions.md",
-    ]:
-        if candidate.exists():
-            return candidate.read_text(encoding="utf-8")
+    """Load FastMCP instructions through registered edition providers."""
+    for provider in _instruction_providers:
+        text = provider.load_instructions()
+        if text:
+            return text
     return ""
+
+
+def register_instruction_provider(provider: McpInstructionProvider) -> None:
+    """Register an edition-owned instruction provider before MCP startup freezes."""
+    global _instruction_providers
+    if _instruction_providers_frozen:
+        raise RuntimeError(
+            "MCP instruction providers are FROZEN after composition; late "
+            "registration/mutation is forbidden."
+        )
+    _instruction_providers = (provider, *_instruction_providers)
+    _refresh_fastmcp_instructions()
+
+
+def freeze_instruction_providers() -> None:
+    """Freeze MCP instruction provider registration after composition."""
+    global _instruction_providers_frozen
+    _instruction_providers_frozen = True
+    _refresh_fastmcp_instructions()
+
+
+def has_instruction_provider(provider_id: str) -> bool:
+    """Return whether an instruction provider id is already registered."""
+    return any(provider.provider_id == provider_id for provider in _instruction_providers)
+
+
+def reset_instruction_providers_for_tests() -> None:
+    """Tests only: restore the core bundled instruction provider."""
+    global _instruction_providers, _instruction_providers_frozen
+    _instruction_providers = (_core_instruction_provider,)
+    _instruction_providers_frozen = False
+    _refresh_fastmcp_instructions()
 
 
 # Initialize MCP server
@@ -373,6 +419,7 @@ def reset_resource_catalog_for_tests() -> None:
     drop any FastMCP resource handlers registered beyond the core baseline so a
     previously-injected catalog leaves NO residual state (isolation)."""
     global _effective_resource_catalog, _resource_catalog_frozen
+    reset_instruction_providers_for_tests()
     _effective_resource_catalog = CompositeMcpResourceCatalog(
         [_build_core_resource_catalog()]
     )

@@ -31,6 +31,8 @@ _LAZY_EXPORTS: dict[str, str] = {
     "CoreSettings": "okto_pulse.core.infra.config",
     "get_settings": "okto_pulse.core.infra.config",
     "configure_settings": "okto_pulse.core.infra.config",
+    "register_package_version_provider": "okto_pulse.core.infra.config",
+    "reset_package_version_provider_for_tests": "okto_pulse.core.infra.config",
     # infra.database
     "Base": "okto_pulse.core.infra.database",
     "get_db": "okto_pulse.core.infra.database",
@@ -63,6 +65,8 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         CoreSettings,
         configure_settings,
         get_settings,
+        register_package_version_provider,
+        reset_package_version_provider_for_tests,
     )
     from okto_pulse.core.infra.database import (
         Base,

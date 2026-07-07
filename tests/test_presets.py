@@ -972,11 +972,13 @@ def test_legacy_permission_map_includes_story_topic_flags():
 
 
 def test_merge_missing_flags_backfills_story_topic_as_allowed():
-    from okto_pulse.core.infra.database import _merge_missing_flags
-    from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
+    from okto_pulse.core.infra.permissions import (
+        PERMISSION_REGISTRY,
+        merge_missing_flags,
+    )
 
     stored = {"board": {"read": False}}
-    merged, added = _merge_missing_flags(stored, PERMISSION_REGISTRY)
+    merged, added = merge_missing_flags(stored, PERMISSION_REGISTRY)
 
     assert added > 0
     assert _get_nested(merged, "board.read") is False
