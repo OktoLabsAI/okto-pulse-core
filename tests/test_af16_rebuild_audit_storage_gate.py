@@ -105,3 +105,34 @@ def test_af16_rebuild_audit_storage_gate_blocks_retired_legacy_seam(
         "legacy_rebuild_base_dir_helper",
     }
     assert {violation.path for violation in violations} == {"kg/rebuild_audit.py"}
+
+
+def test_af16_rebuild_audit_storage_gate_blocks_rebuild_root_symbols(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "core"
+    bad = root / "kg" / "new_rebuild_root_consumer.py"
+    bad.parent.mkdir(parents=True)
+    bad.write_text(
+        "from okto_pulse.core.api.kg_rebuild import _REBUILD_BASE_DIR\n"
+        "def leak(adapter):\n"
+        "    return (\n"
+        "        _REBUILD_BASE_DIR,\n"
+        "        adapter._LEGACY_REBUILD_BASE_DIR_SEAM,\n"
+        "        '_LEGACY_REBUILD_BASE_DIR_SEAM',\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    violations = run_rebuild_audit_storage_gate(root)
+
+    assert {violation.rule for violation in violations} == {
+        "rebuild_root_symbol_in_core",
+    }
+    assert {violation.symbol for violation in violations} == {
+        "_REBUILD_BASE_DIR",
+        "_LEGACY_REBUILD_BASE_DIR_SEAM",
+    }
+    assert {violation.path for violation in violations} == {
+        "kg/new_rebuild_root_consumer.py",
+    }

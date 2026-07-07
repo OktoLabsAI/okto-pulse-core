@@ -33,6 +33,10 @@ _ALLOWLISTED_BASE_DIR_PATH_CONSUMERS = frozenset({
 })
 
 _FORBIDDEN_REBUILD_ROOT_HELPER = "default_" + "rebuild_base_dir"
+_FORBIDDEN_REBUILD_ROOT_SYMBOLS = frozenset({
+    "_REBUILD_" + "BASE_DIR",
+    "_LEGACY_" + "REBUILD_BASE_DIR_SEAM",
+})
 _ALLOWLISTED_TEMPDIR_SEAMS = frozenset({
     # Full-clean-core smoke checks whether the OS temp root is writable before
     # it creates a disposable venv. It is an ephemeral prerequisite probe.
@@ -108,6 +112,19 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
+def _forbidden_rebuild_root_symbol(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name) and node.id in _FORBIDDEN_REBUILD_ROOT_SYMBOLS:
+        return node.id
+    if (
+        isinstance(node, ast.Attribute)
+        and node.attr in _FORBIDDEN_REBUILD_ROOT_SYMBOLS
+    ):
+        return node.attr
+    if isinstance(node, ast.alias) and node.name in _FORBIDDEN_REBUILD_ROOT_SYMBOLS:
+        return node.name
+    return None
+
+
 def run_rebuild_audit_storage_gate(
     root: str | Path | None = None,
 ) -> tuple[RebuildAuditStorageGateViolation, ...]:
@@ -153,6 +170,21 @@ def run_rebuild_audit_storage_gate(
                         symbol=node.name,
                         detail=(
                             "Core must not own a rebuild base-dir resolver; "
+                            "local roots belong to the edition adapter."
+                        ),
+                    )
+                )
+
+            forbidden_symbol = _forbidden_rebuild_root_symbol(node)
+            if forbidden_symbol is not None:
+                violations.append(
+                    RebuildAuditStorageGateViolation(
+                        rule="rebuild_root_symbol_in_core",
+                        path=rel,
+                        line=line,
+                        symbol=forbidden_symbol,
+                        detail=(
+                            "Core must not retain rebuild root symbols; "
                             "local roots belong to the edition adapter."
                         ),
                     )
@@ -239,6 +271,19 @@ def run_rebuild_audit_storage_gate(
                             detail=(
                                 "Core must not read filesystem path env vars "
                                 "for durable rebuild artifacts."
+                            ),
+                        )
+                    )
+                if node.value in _FORBIDDEN_REBUILD_ROOT_SYMBOLS:
+                    violations.append(
+                        RebuildAuditStorageGateViolation(
+                            rule="rebuild_root_symbol_in_core",
+                            path=rel,
+                            line=line,
+                            symbol=node.value,
+                            detail=(
+                                "Core must not retain rebuild root symbols; "
+                                "local roots belong to the edition adapter."
                             ),
                         )
                     )
