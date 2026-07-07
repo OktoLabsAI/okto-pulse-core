@@ -39,7 +39,17 @@ def _finding_codes(report) -> set[str]:
     }
 
 
-def test_af31_s4_core_upload_dir_is_neutral_and_contracts_remain_core_owned():
+def test_af31_s4_core_upload_dir_is_neutral_and_contracts_remain_core_owned(
+    monkeypatch,
+):
+    for env_name in (
+        "DATABASE_URL",
+        "UPLOAD_DIR",
+        "METRICS_BEACON_URL",
+        "KG_EMBEDDING_MODEL",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
     settings = CoreSettings()
     inventory = {entry.setting_name: entry for entry in build_core_settings_inventory()}
 

@@ -198,6 +198,10 @@ _CORE_CONTRACT_OWNERS: dict[str, tuple[str, str]] = {
     "kg_decay_tick_max_age_days": ("okto-pulse-core/kg", "decay max-age cap"),
 }
 
+_LOCAL_FIRST_UPLOAD_DEFAULT_REPRS: frozenset[str] = frozenset(
+    {"'./uploads'", '"./uploads"'}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class CoreSettingDefaultEntry:
@@ -567,6 +571,42 @@ def _validate_inventory_rows(
     return tuple(findings)
 
 
+def _validate_upload_dir_local_first_ownership(
+    entries: Sequence[CoreSettingDefaultEntry],
+    source_by_name: dict[str, CoreSettingSourceField],
+) -> tuple[CoreSettingsFinding, ...]:
+    findings: list[CoreSettingsFinding] = []
+    for entry in entries:
+        if entry.setting_name != "upload_dir":
+            continue
+        source_field = source_by_name.get(entry.setting_name)
+        if source_field is None:
+            continue
+        if source_field.default_repr not in _LOCAL_FIRST_UPLOAD_DEFAULT_REPRS:
+            continue
+        if (
+            entry.classification == "edition_default_community"
+            and entry.owner.startswith("okto-pulse-community/")
+        ):
+            continue
+        findings.append(
+            CoreSettingsFinding(
+                setting_name=entry.setting_name,
+                diagnostic_code="unowned_local_first_default",
+                reason=(
+                    "upload_dir has a local-first filesystem default but is not "
+                    "owned by the Community edition default inventory row."
+                ),
+                remediation=(
+                    "Keep CoreSettings.upload_dir neutral, or classify the local "
+                    "upload path as edition_default_community with a Community owner."
+                ),
+                line=source_field.line,
+            )
+        )
+    return tuple(findings)
+
+
 def _alias_by_original(
     aliases: Sequence[PublicSettingAlias],
 ) -> dict[str, PublicSettingAlias]:
@@ -601,6 +641,7 @@ def audit_core_settings_defaults(
     alias_map = _alias_by_original(aliases)
 
     findings: list[CoreSettingsFinding] = list(_validate_inventory_rows(inventory))
+    findings.extend(_validate_upload_dir_local_first_ownership(inventory, source_by_name))
     baseline = set(_BASELINE_CORE_SETTING_NAMES)
 
     for field in source_fields:

@@ -67,7 +67,7 @@ class CoreSettings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./dashboard.db"
 
     # Storage
-    upload_dir: str = "./uploads"
+    upload_dir: str = ""
     max_upload_size: int = 10 * 1024 * 1024  # 10MB
 
     # Local-first telemetry (v0.2.1). Empty values mean "not explicitly set"
