@@ -443,13 +443,22 @@ RELATIONAL_COVERAGE_BASELINE = {
 #: ``mcp/server.py`` and ``api/kg_tick.py``, injected ``kg_events_hub`` factory
 #: wiring, AF-11 cleanup, and 8 new AF-02/03/04/09/11 gate/facade modules.
 #: Stable floors stay untouched; this remains an exact drift detector.
+#:
+#: AF30-3a/3b/3c re-baseline (2026-07-07) after the SQLAlchemy runtime,
+#: schema lifecycle, and final relational residue removals landed. The exact
+#: snapshot intentionally moves down with the audited removals:
+#: ``relational_imports`` 368 -> 308 (-60), ``relational_symbols`` 836 -> 827
+#: (-9), ``classified_call_sites`` 1416 -> 1389 (-27, all service), and
+#: ``file_count`` 477 -> 483 (+6) from the provider/catalog additions. Stable
+#: floors remain unchanged, so future rises still fail as new coupling and
+#: future drops still require an explicit re-baseline.
 RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
-    "relational_imports": 368,
-    "relational_symbols": 836,
-    "classified_call_sites": 1416,
-    "by_surface": {"rest": 163, "service": 1139, "mcp": 114},
+    "relational_imports": 308,
+    "relational_symbols": 827,
+    "classified_call_sites": 1389,
+    "by_surface": {"rest": 163, "service": 1112, "mcp": 114},
     "source_root": "okto_pulse/core",
-    "file_count": 477,
+    "file_count": 483,
 }
 
 #: R01B drawn-down counter baseline (ac_28f50f9d), SEPARATE from the spec #04
@@ -468,10 +477,14 @@ RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
 #: ``api/kg_tick.py`` plus pre-existing committed drift. These counters are not
 #: floors or relaxations: tests still require exact live equality and mutation
 #: teeth prove mismatches fail.
+#:
+#: AF30-3a/3b/3c re-baseline (2026-07-07) records the audited async-session
+#: drawdown from 424 -> 420 after relational runtime ownership moved to
+#: Community. REST/MCP factory counters are unchanged.
 RELATIONAL_BASELINE_R01B = {
     "depends_get_db": 79,
     "get_db_for_mcp": 173,
-    "async_session": 424,
+    "async_session": 420,
 }
 
 _COVERAGE_AGGREGATES = ("relational_imports", "relational_symbols", "classified_call_sites")

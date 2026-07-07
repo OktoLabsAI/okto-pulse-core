@@ -177,10 +177,10 @@ def test_gate_catches_aliased_relational_module_bypasses(tmp_path):
 # The exact frozen snapshot shape the drift checker is fed in the unit tests
 # below (the 3 aggregates + the per-surface breakdown of classified call-sites).
 _SNAP = {
-    "relational_imports": 368,
-    "relational_symbols": 836,
-    "classified_call_sites": 1416,
-    "by_surface": {"rest": 163, "service": 1139, "mcp": 114},
+    "relational_imports": 308,
+    "relational_symbols": 827,
+    "classified_call_sites": 1389,
+    "by_surface": {"rest": 163, "service": 1112, "mcp": 114},
 }
 
 
@@ -243,7 +243,7 @@ def test_relational_coverage_undeclared_drift_fails():
 
 def test_relational_coverage_declared_r01_drawdown_passes():
     # An R01C strangle removes 100 service call-sites: a DECLARED drawdown that
-    # still clears the floor (1322 >= 276) passes the gate.
+    # still clears the floor (1289 >= 276) passes the gate.
     live = {
         **_SNAP,
         "classified_call_sites": _SNAP["classified_call_sites"] - 100,
