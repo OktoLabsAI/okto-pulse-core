@@ -26,7 +26,7 @@ def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
 
 _CORE_VERSION = _resolve_version("okto-pulse-core", fallback="0.3.0+local")
 GRAPH_DB_MAX_SIZE_GB_VALUES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
-DEFAULT_METRICS_BEACON_URL = "https://metrics.oktolabs.ai"
+DEFAULT_METRICS_BEACON_URL = ""
 
 
 def validate_graph_db_max_size_gb(value: int) -> int:
@@ -64,7 +64,7 @@ class CoreSettings(BaseSettings):
     port: int = 8100
 
     # Database
-    database_url: str = "sqlite+aiosqlite:///./dashboard.db"
+    database_url: str = ""
 
     # Storage
     upload_dir: str = ""

@@ -9,7 +9,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from okto_pulse.core.infra.config import CoreSettings, DEFAULT_METRICS_BEACON_URL
+from okto_pulse.core.infra.config import CoreSettings
+from okto_pulse.core.telemetry.effect_config_registry import (
+    beacon_url_from_effect_config,
+    metrics_dir_from_effect_config,
+)
 from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION
 from okto_pulse.core.telemetry.telemetry_state_registry import (
     load_telemetry_state,
@@ -102,13 +106,7 @@ def _normalize_effective_mode(
 
 
 def metrics_dir_for(settings: CoreSettings) -> Path:
-    raw = (getattr(settings, "metrics_dir", "") or "").strip()
-    if raw:
-        return Path(raw).expanduser().resolve()
-    data_dir = getattr(settings, "data_dir", "") or ""
-    if data_dir:
-        return (Path(data_dir).expanduser() / "metrics").resolve()
-    return (Path.home() / ".okto-pulse" / "metrics").resolve()
+    return metrics_dir_from_effect_config(settings)
 
 
 def load_state(metrics_dir: Path) -> dict[str, Any]:
@@ -269,7 +267,7 @@ def resolve_telemetry_config(
         migration_notice=migration_notice,
         metrics_dir=metrics_dir,
         retention_days=int(getattr(settings, "metrics_retention_days", 30)),
-        beacon_url=str(getattr(settings, "metrics_beacon_url", DEFAULT_METRICS_BEACON_URL)).rstrip("/"),
+        beacon_url=beacon_url_from_effect_config(settings),
         policy_version=str(getattr(settings, "metrics_policy_version", "2026-05-11")),
         schema_version=str(getattr(settings, "metrics_schema_version", CURRENT_SCHEMA_VERSION)),
         source=source,

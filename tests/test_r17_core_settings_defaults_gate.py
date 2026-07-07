@@ -151,8 +151,8 @@ def test_allowlisted_agnostic_default_with_owner_passes_gate():
 
 def test_public_setting_rename_without_alias_fails_and_alias_passes():
     renamed = _CONFIG_SOURCE.replace(
-        '    database_url: str = "sqlite+aiosqlite:///./dashboard.db"',
-        '    database_dsn: str = "sqlite+aiosqlite:///./dashboard.db"',
+        '    database_url: str = ""',
+        '    database_dsn: str = ""',
         1,
     )
 
@@ -167,7 +167,7 @@ def test_public_setting_rename_without_alias_fails_and_alias_passes():
     renamed_entry = CoreSettingDefaultEntry(
         setting_name="database_dsn",
         env_var="DATABASE_URL",
-        default_repr="'sqlite+aiosqlite:///./dashboard.db'",
+        default_repr="''",
         classification="edition_default_community",
         owner="okto-pulse-community/data",
         spec_ref="R17",

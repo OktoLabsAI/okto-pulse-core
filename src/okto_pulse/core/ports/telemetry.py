@@ -248,6 +248,24 @@ class TelemetryStateCarrier(Protocol):
 
 
 @runtime_checkable
+class TelemetryEffectConfigProvider(Protocol):
+    """Edition-owned telemetry effect configuration.
+
+    Core may consume explicit values supplied on settings, but it must not choose
+    local telemetry directories or concrete beacon endpoints by itself. Editions
+    provide those defaults here at composition time.
+    """
+
+    def metrics_dir(self, settings: Any) -> Path | str | None:
+        """Return the edition-owned metrics directory, or None if unavailable."""
+        ...
+
+    def beacon_url(self, settings: Any) -> str | None:
+        """Return the edition-owned beacon URL, or None when not configured."""
+        ...
+
+
+@runtime_checkable
 class TelemetryEventStore(Protocol):
     """Local append-only telemetry EVENT persistence boundary (today:
     ``LocalTelemetryStore``). The concrete adapter owns the JSONL layout
@@ -355,6 +373,7 @@ __all__ = [
     "TelemetrySink",
     "TelemetryStateStore",
     "TelemetryStateCarrier",
+    "TelemetryEffectConfigProvider",
     "TelemetryEventStore",
     "PublishHealthSource",
     "ProductAggregationPort",
