@@ -1,20 +1,16 @@
-"""Relational lifecycle decomposition manifest + startup-boundary oracle + R01C removal
-ordering invariant (SaaS Refactor spec R01C, FR5 fr_4b186577, TR4 tr_418fc1a3,
-AC ac_af454ee3; integration scenario ``ts_cdbe5d65``).
+"""Relational lifecycle decomposition manifest + startup-boundary oracle.
 
-R01C must DECOMPOSE ``core/infra/database.py`` along the R01B boundary WITHOUT
-changing startup (decision ``dec_0f85b536``) and WITHOUT removing anything yet
-(ac_af454ee3 — startup parity preserved until R01B exposes the definitive
-relational provider). This module is the *removal evidence*: it does not move or
-delete code, it makes the decomposition explicit, testable and ordered.
+R01C decomposes ``core/infra/database.py`` along the R01B boundary. Core keeps
+runtime injection, sessions, cleanup and the ORM declarative ``Base``. Concrete
+schema lifecycle execution (migrations, ``create_all`` and data bootstrap) is
+Community-owned and reached through the mandatory schema-lifecycle seam.
 
 Three artifacts:
 
 1. **Decomposition manifest** — every module-level function (and the key state
    globals) in ``database.py`` is assigned to either the R01B *relational
    provider* concern (engine / session / pool / PRAGMA / connection cleanup) or
-   the R01C *schema-lifecycle* concern (``init_db`` / migrations / bootstrap /
-   seed / the declarative ``Base``). :func:`decomposition_drift` parses the live
+   the R01C *schema-lifecycle* concern (``init_db`` delegation). :func:`decomposition_drift` parses the live
    module and FAILS if any function is unclassified or any manifest entry is
    stale — so the decomposition can never silently drift from the source.
 
@@ -66,28 +62,17 @@ R01B_PROVIDER_FUNCTIONS: frozenset[str] = frozenset({
     "get_db",
 })
 
-#: R01C schema-lifecycle concern: init_db + migrations + data bootstrap/seed.
-#: These move to the Community lifecycle (RelationalSchemaMigrator /
-#: DataBootstrapper) once R01B provides the registered relational provider.
-R01C_LIFECYCLE_FUNCTIONS: frozenset[str] = frozenset({
-    "init_db",
-    "_bootstrap_default_discovery_intents",
-    "_seed_builtin_presets",
-    "_merge_missing_flags",
-    "_set_all_leaves",
-    "_count_leaves",
-    "_reconcile_builtin_presets",
-    "_reconcile_agent_permission_flags",
-})
+#: R01C schema-lifecycle concern left in core: mandatory delegation only.
+R01C_LIFECYCLE_FUNCTIONS: frozenset[str] = frozenset({"init_db"})
 
-#: Migrations are R01C lifecycle too, matched by the ``_migrate_`` prefix so a
-#: newly-added migration is auto-classified (never silently unclassified).
+#: Migration names remain R01C lifecycle by classification, but concrete
+#: ``_migrate_*`` implementations must live in edition adapters.
 R01C_MIGRATION_PREFIX = "_migrate_"
 
 #: Key module state globals split across the same boundary (``Base`` is the ORM
-#: declarative base — schema concern, R01C; the engine/session singletons are the
-#: provider, R01B). Other module constants (logger, pool-warn thresholds) are
-#: provider-internal and out of the classified surface.
+#: declarative base retained by core; the engine/session singletons are the
+#: provider, R01B). Other module constants are provider-internal and out of the
+#: classified surface.
 R01B_PROVIDER_STATE: frozenset[str] = frozenset({"_engine", "_session_factory"})
 R01C_LIFECYCLE_STATE: frozenset[str] = frozenset({"Base"})
 
