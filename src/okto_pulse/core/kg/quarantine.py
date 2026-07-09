@@ -36,6 +36,7 @@ Storage layout:
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections.abc import Mapping
@@ -52,6 +53,10 @@ QUARANTINE_DIRNAME = "quarantine"
 MANIFEST_FILENAME = "manifest.json"
 DEFAULT_RETENTION_DAYS = 30  # TR9.
 SOFTWARE_VERSION_FALLBACK = "unknown"
+
+# Keep `json` available as a module attribute for artifact-store manifest
+# writers and regression tests that monkeypatch the manifest write path.
+JSON_MODULE = json
 
 
 # Canonical graph_type values per contract api_ee77f56f request body.
