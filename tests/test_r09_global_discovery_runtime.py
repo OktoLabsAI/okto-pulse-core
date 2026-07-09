@@ -274,6 +274,7 @@ def test_outbox_worker_uses_global_discovery_runtime_provider() -> None:
     assert "require_global_discovery_runtime" in text
     assert "global_runtime.ensure_layer_schema()" in text
     assert "global_runtime.open_connection()" in text
+    assert "_global_discovery_runtime().flush_after_write_batch()" in text
 
 
 def test_kg_health_global_probe_uses_global_discovery_runtime_provider(
