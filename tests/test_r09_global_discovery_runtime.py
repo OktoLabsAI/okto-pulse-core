@@ -76,6 +76,25 @@ class _FakeGlobalConnection:
         self.closed = True
 
 
+class _HealthGlobalConnection:
+    def __init__(self, *, digest_count: int = 3) -> None:
+        self.closed = False
+        self.digest_count = digest_count
+        self.executed: list[str] = []
+
+    def execute(self, cypher: str, params: dict[str, Any] | None = None) -> _FakeResult:
+        self.executed.append(cypher)
+        if "CALL SHOW_TABLES()" in cypher:
+            return _FakeResult([["DecisionDigest"]])
+        if "MATCH (d:DecisionDigest" in cypher:
+            assert params == {"bid": "board-a"}
+            return _FakeResult([[self.digest_count]])
+        return _FakeResult([])
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class _FakeGlobalDiscoveryRuntime:
     def __init__(self) -> None:
         self.ensure_calls = 0
@@ -88,6 +107,23 @@ class _FakeGlobalDiscoveryRuntime:
     def open_connection(self) -> tuple[object, _FakeGlobalConnection]:
         self.open_calls += 1
         return object(), _FakeGlobalConnection()
+
+
+class _HealthGlobalDiscoveryRuntime:
+    def __init__(self, path: Path, *, digest_count: int = 3) -> None:
+        self.path = path
+        self.digest_count = digest_count
+        self.open_calls = 0
+        self.connections: list[_HealthGlobalConnection] = []
+
+    def global_graph_path(self) -> Path:
+        return self.path
+
+    def open_connection(self) -> tuple[object, _HealthGlobalConnection]:
+        self.open_calls += 1
+        conn = _HealthGlobalConnection(digest_count=self.digest_count)
+        self.connections.append(conn)
+        return object(), conn
 
 
 class _TokenCheckingGlobalDiscoveryRuntime(_FakeGlobalDiscoveryRuntime):
@@ -238,6 +274,74 @@ def test_outbox_worker_uses_global_discovery_runtime_provider() -> None:
     assert "require_global_discovery_runtime" in text
     assert "global_runtime.ensure_layer_schema()" in text
     assert "global_runtime.open_connection()" in text
+
+
+def test_kg_health_global_probe_uses_global_discovery_runtime_provider(
+    tmp_path: Path,
+) -> None:
+    from okto_pulse.core.services import kg_health_service
+
+    path = tmp_path / "discovery.lbug"
+    path.write_text("readable")
+    runtime = _HealthGlobalDiscoveryRuntime(path)
+    configure_test_kg_registry(global_discovery_runtime=runtime)
+
+    telemetry = kg_health_service._probe_global_discovery_telemetry()
+
+    assert telemetry.graph_type == "discovery"
+    assert telemetry.recent_wal_errors == 0
+    assert runtime.open_calls == 1
+    assert runtime.connections[0].closed is True
+    assert runtime.connections[0].executed == ["CALL SHOW_TABLES() RETURN name"]
+
+
+def test_check_global_uses_global_discovery_runtime_provider(tmp_path: Path) -> None:
+    from okto_pulse.core.kg.health import check_global
+
+    path = tmp_path / "discovery.lbug"
+    path.write_text("readable")
+    runtime = _HealthGlobalDiscoveryRuntime(path, digest_count=3)
+    configure_test_kg_registry(global_discovery_runtime=runtime)
+
+    health = check_global("board-a")
+
+    assert runtime.open_calls == 1
+    assert runtime.connections[0].closed is True
+    assert any(
+        "MATCH (d:DecisionDigest {board_id: $bid}) RETURN count(d) AS c" in query
+        for query in runtime.connections[0].executed
+    )
+    assert health.healthy is True
+    assert health.counts["digests"] == 3
+    assert health.details == "3 digests synced"
+
+
+def test_kg_health_consumers_do_not_import_global_discovery_schema_open_or_path() -> None:
+    core_root = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
+    files = [
+        core_root / "services" / "kg_health_service.py",
+        core_root / "kg" / "health.py",
+    ]
+    forbidden_helpers = {
+        "global_discovery_graph_path",
+        "open_global_connection",
+    }
+    offenders: list[str] = []
+
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module == "okto_pulse.core.kg.global_discovery.schema"
+            ):
+                offenders.extend(
+                    f"{path.relative_to(core_root)}::{alias.name}"
+                    for alias in node.names
+                    if alias.name in forbidden_helpers
+                )
+
+    assert offenders == []
 
 
 def test_query_global_schema_hardening_runs_inside_global_write_barrier() -> None:

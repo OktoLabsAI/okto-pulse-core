@@ -762,22 +762,19 @@ def _probe_global_discovery_telemetry() -> GraphTelemetry:
     """
 
     try:
-        from okto_pulse.core.kg.global_discovery.schema import (
-            global_discovery_graph_path,
-            open_global_connection,
-        )
+        runtime = get_kg_registry().require_global_discovery_runtime()
     except Exception:
         return _telemetry_unavailable("discovery")
 
     try:
-        path = global_discovery_graph_path()
+        path = runtime.global_graph_path()
     except Exception:
         return _telemetry_unavailable("discovery")
     if not path.exists():
         return _telemetry_unavailable("discovery")
 
     try:
-        _db, conn = open_global_connection()
+        _db, conn = runtime.open_connection()
         try:
             res = conn.execute("CALL SHOW_TABLES() RETURN name")
             try:

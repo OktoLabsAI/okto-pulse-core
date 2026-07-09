@@ -271,17 +271,17 @@ def check_global(board_id: str) -> LayerHealth:
     :func:`check_outbox` (pending=0) combined with this.
     """
     try:
-        from okto_pulse.core.kg.global_discovery.schema import open_global_connection
-    except ImportError as exc:
+        global_runtime = get_kg_registry().require_global_discovery_runtime()
+    except Exception as exc:
         return LayerHealth(
             layer="global",
             healthy=False,
             counts={"digests": 0},
-            details=f"global discovery module unavailable: {exc}",
+            details=f"global discovery runtime unavailable: {exc}",
         )
 
     try:
-        _db, conn = open_global_connection()
+        _db, conn = global_runtime.open_connection()
         qr = None
         try:
             qr = conn.execute(
