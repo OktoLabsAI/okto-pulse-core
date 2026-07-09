@@ -344,6 +344,40 @@ def test_kg_health_consumers_do_not_import_global_discovery_schema_open_or_path(
     assert offenders == []
 
 
+def test_global_discovery_consumers_do_not_import_schema_lifecycle_facade() -> None:
+    core_root = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
+    consumer_files = [
+        core_root / "kg" / "global_discovery" / "outbox_worker.py",
+        core_root / "kg" / "global_discovery" / "clustering.py",
+        core_root / "kg" / "global_discovery" / "layer_parity.py",
+        core_root / "kg" / "health.py",
+        core_root / "services" / "kg_health_service.py",
+    ]
+    forbidden_helpers = {
+        "bootstrap_global_discovery",
+        "ensure_global_discovery_layer_schema",
+        "global_discovery_graph_path",
+        "open_global_connection",
+        "purge_global_discovery_storage",
+    }
+    offenders: list[str] = []
+
+    for path in consumer_files:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module == "okto_pulse.core.kg.global_discovery.schema"
+            ):
+                offenders.extend(
+                    f"{path.relative_to(core_root)}::{alias.name}"
+                    for alias in node.names
+                    if alias.name in forbidden_helpers
+                )
+
+    assert offenders == []
+
+
 def test_query_global_schema_hardening_runs_inside_global_write_barrier() -> None:
     runtime = _TokenCheckingGlobalDiscoveryRuntime()
     configure_test_kg_registry(

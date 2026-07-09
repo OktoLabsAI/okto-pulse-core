@@ -139,7 +139,6 @@ def board_delete_cascade(board_id: str) -> dict:
     or rebuild service) to enter KGSafeWriteLifecycle under the admin
     lane first.
     """
-    from okto_pulse.core.kg.global_discovery.schema import open_global_connection
     from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.schema_contract import NODE_TYPES
     from okto_pulse.core.kg.write_barrier import require_write_token
@@ -223,7 +222,8 @@ def board_delete_cascade(board_id: str) -> dict:
             board_id, exc,
         )
 
-    gdb, gconn = open_global_connection()
+    global_runtime = get_kg_registry().require_global_discovery_runtime()
+    gdb, gconn = global_runtime.open_connection()
     try:
         # Delete DecisionDigests for this board
         result = gconn.execute(
@@ -281,14 +281,15 @@ def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
     ``under_global_safe_write`` first; STRICT mode raises before any
     Cypher MATCH, SOFT mode logs + bumps the counter.
     """
-    from okto_pulse.core.kg.global_discovery.schema import open_global_connection
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.write_barrier import require_global_write_token
 
     require_global_write_token()
 
     counts = {"topics_removed": 0, "entities_removed": 0, "dry_run": dry_run}
 
-    gdb, gconn = open_global_connection()
+    global_runtime = get_kg_registry().require_global_discovery_runtime()
+    gdb, gconn = global_runtime.open_connection()
     try:
         # Count orphan topics
         r = gconn.execute(
@@ -348,14 +349,11 @@ def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
     counter-instrumented. A separate "backup" without a manifest only
     confused responders.
     """
-    from okto_pulse.core.kg.global_discovery.schema import (
-        bootstrap_global_discovery,
-        global_discovery_graph_path,
-        purge_global_discovery_storage,
-    )
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
-    path = global_discovery_graph_path()
+    global_runtime = get_kg_registry().require_global_discovery_runtime()
+    path = global_runtime.global_graph_path()
 
     purge_response: list[str] = []
     rebuild_token = f"rebuild-{uuid.uuid4().hex[:12]}"
@@ -364,10 +362,8 @@ def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
         if path.exists() or any(
             path.parent.glob(path.name + ".*")
         ):
-            purge_response = purge_global_discovery_storage(
-                reason="rebuild_from_scratch"
-            )
-        bootstrap_global_discovery()
+            purge_response = global_runtime.purge(reason="rebuild_from_scratch")
+        global_runtime.bootstrap()
 
     return {
         "status": "rebuilt",

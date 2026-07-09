@@ -94,11 +94,13 @@ async def detect_digest_layer_mismatches(
         pending_or_debt_exclusions,
     )
     from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
-    from okto_pulse.core.kg.global_discovery.schema import open_global_connection
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
 
     try:
-        _gdb, gconn = open_global_connection()
+        _gdb, gconn = (
+            get_kg_registry().require_global_discovery_runtime().open_connection()
+        )
     except Exception:
         return []
     try:

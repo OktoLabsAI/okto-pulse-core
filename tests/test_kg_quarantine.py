@@ -658,12 +658,13 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
         return primary
 
     runtime = get_kg_registry().global_discovery_runtime
-    monkeypatch.setattr(gd_schema, "global_discovery_graph_path", lambda: primary)
     monkeypatch.setattr(runtime, "global_graph_path", lambda: primary)
     monkeypatch.setattr(runtime, "close", lambda: None)
+    monkeypatch.setattr(runtime, "bootstrap", fake_bootstrap)
     monkeypatch.setattr(gd_schema, "bootstrap_global_discovery", fake_bootstrap)
-    # clustering imports bootstrap_global_discovery and
-    # purge_global_discovery_storage lazily, so patches above cover both.
+    # clustering resolves lifecycle through GlobalDiscoveryRuntime; keep the
+    # schema patch only as a compatibility assertion for callers still using
+    # the facade directly.
 
     quarantine_module.reset_quarantine_counter()
 
