@@ -20,7 +20,6 @@ from okto_pulse.core.kg.global_discovery.metrics import (
     emit_missing_embedding_skipped,
 )
 from okto_pulse.core.kg.cypher_templates import layer_label_projection
-from okto_pulse.core.kg.global_discovery.schema import open_global_connection
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
 from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
@@ -55,6 +54,10 @@ BOARD_READ_ERROR_MARKERS = (
 # (the old hand-maintained subset omitted Requirement/APIContract/TestScenario/
 # Bug, so those canonical types were never globally searchable).
 DIGESTED_NODE_TYPES: tuple[str, ...] = VECTOR_INDEX_TYPES
+
+
+def _global_discovery_runtime():
+    return get_kg_registry().require_global_discovery_runtime()
 
 
 class OutboxWorker:
@@ -193,7 +196,7 @@ class OutboxWorker:
             return 0
 
         try:
-            _gdb, gconn = open_global_connection()
+            _gdb, gconn = _global_discovery_runtime().open_connection()
             del gconn, _gdb
         except Exception as exc:
             logger.warning(
@@ -299,11 +302,9 @@ class OutboxWorker:
         payload = event.payload or {}
         board_id = event.board_id
         require_global_write_token()
-        from okto_pulse.core.kg.global_discovery.schema import (
-            ensure_global_discovery_layer_schema,
-        )
 
-        ensure_global_discovery_layer_schema()
+        global_runtime = _global_discovery_runtime()
+        global_runtime.ensure_layer_schema()
         session_id = payload.get("session_id", "") or event.session_id
         nodes_added = payload.get("nodes_added", 0)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
@@ -322,7 +323,7 @@ class OutboxWorker:
         )
         refs = list(refs_res.scalars().all())
 
-        gdb, gconn = open_global_connection()
+        gdb, gconn = global_runtime.open_connection()
         try:
             # Upsert Board summary node
             existing = gconn.execute(
@@ -582,7 +583,7 @@ class OutboxWorker:
         If the probe fails, process_once keeps those events retryable so the
         next run can re-apply idempotently after operator recovery.
         """
-        get_kg_registry().require_global_discovery_runtime().flush_after_write_batch()
+        _global_discovery_runtime().flush_after_write_batch()
 
     @staticmethod
     def _read_board_nodes_for_refs(

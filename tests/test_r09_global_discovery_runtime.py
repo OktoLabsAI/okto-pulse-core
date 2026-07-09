@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import Any
 
@@ -194,6 +195,49 @@ def test_query_global_uses_global_discovery_runtime_provider() -> None:
             "similarity": 0.9,
         }
     ]
+
+
+def test_outbox_worker_uses_global_discovery_runtime_provider() -> None:
+    worker_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "okto_pulse"
+        / "core"
+        / "kg"
+        / "global_discovery"
+        / "outbox_worker.py"
+    )
+    text = worker_path.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    forbidden_helpers = {
+        "ensure_global_discovery_layer_schema",
+        "open_global_connection",
+    }
+    forbidden_imports: list[str] = []
+    forbidden_calls: list[str] = []
+
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "okto_pulse.core.kg.global_discovery.schema"
+        ):
+            forbidden_imports.extend(
+                alias.name
+                for alias in node.names
+                if alias.name in forbidden_helpers
+            )
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in forbidden_helpers
+        ):
+            forbidden_calls.append(node.func.id)
+
+    assert forbidden_imports == []
+    assert forbidden_calls == []
+    assert "require_global_discovery_runtime" in text
+    assert "global_runtime.ensure_layer_schema()" in text
+    assert "global_runtime.open_connection()" in text
 
 
 def test_query_global_schema_hardening_runs_inside_global_write_barrier() -> None:
