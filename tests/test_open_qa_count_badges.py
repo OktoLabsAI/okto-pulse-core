@@ -237,6 +237,7 @@ async def test_card_columns_open_qa_count():
         payload = await get_board_columns(
             board_id,
             user_id=USER,
+            realm_id=None,
             uow=SQLAlchemyUnitOfWork(db),
         )
 

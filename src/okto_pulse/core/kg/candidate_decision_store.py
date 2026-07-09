@@ -37,7 +37,10 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
 )
-from okto_pulse.core.kg.rebuild_audit import _is_raw_token_shape
+from okto_pulse.core.kg.rebuild_audit import (
+    _is_raw_token_shape,
+    resolve_rebuild_audit_artifact_store,
+)
 from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
 
 
@@ -431,6 +434,16 @@ class CandidateDecisionStore:
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
 
     def _board_dir(self, board_id: str) -> Path:
         if self.base_dir is None:

@@ -14,11 +14,24 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.admin_catalog import (
+    AssociateAmendmentRevisionCommand,
+    AssociateAmendmentRevisionUseCase,
+    CreateAmendmentRevisionCommand,
+    CreateAmendmentRevisionUseCase,
+    GetAmendmentRevisionCommand,
+    GetAmendmentRevisionUseCase,
+    ListAmendmentRevisionsCommand,
+    ListAmendmentRevisionsUseCase,
+    TransitionAmendmentRevisionCommand,
+    TransitionAmendmentRevisionUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.amendment_revision_api import (
     AmendmentRevisionApiError,
-    AmendmentRevisionApiService,
     reject_bypass_fields,
 )
 
@@ -77,7 +90,7 @@ async def create_amendment_revision(
     board_id: str,
     bug_id: str,
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
@@ -88,14 +101,14 @@ async def create_amendment_revision(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        result = await AmendmentRevisionApiService(db).create(
-            board_id=board_id,
-            bug_id=bug_id,
-            author=actor,
-            **req.model_dump(exclude_none=True),
+        result = await CreateAmendmentRevisionUseCase().execute(
+            CreateAmendmentRevisionCommand(
+                board_id, bug_id, req.model_dump(exclude_none=True)
+            ),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
-        await db.commit()
-        return result
+        return result.data
     except AmendmentRevisionApiError as exc:
         raise _err(exc)
 
@@ -104,13 +117,16 @@ async def create_amendment_revision(
 async def list_amendment_revisions(
     board_id: str,
     bug_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
-        return await AmendmentRevisionApiService(db).list_for_bug(
-            board_id=board_id, bug_id=bug_id
+        result = await ListAmendmentRevisionsUseCase().execute(
+            ListAmendmentRevisionsCommand(board_id, bug_id),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
+        return result.data
     except AmendmentRevisionApiError as exc:
         raise _err(exc)
 
@@ -120,13 +136,16 @@ async def get_amendment_revision(
     board_id: str,
     bug_id: str,
     amendment_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
-        return await AmendmentRevisionApiService(db).get(
-            board_id=board_id, bug_id=bug_id, amendment_id=amendment_id
+        result = await GetAmendmentRevisionUseCase().execute(
+            GetAmendmentRevisionCommand(board_id, bug_id, amendment_id),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
+        return result.data
     except AmendmentRevisionApiError as exc:
         raise _err(exc)
 
@@ -137,7 +156,7 @@ async def associate_amendment_revision_artifacts(
     bug_id: str,
     amendment_id: str,
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
@@ -148,15 +167,14 @@ async def associate_amendment_revision_artifacts(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        result = await AmendmentRevisionApiService(db).associate(
-            board_id=board_id,
-            bug_id=bug_id,
-            amendment_id=amendment_id,
-            actor=actor,
-            **req.model_dump(exclude_none=True),
+        result = await AssociateAmendmentRevisionUseCase().execute(
+            AssociateAmendmentRevisionCommand(
+                board_id, bug_id, amendment_id, req.model_dump(exclude_none=True)
+            ),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
-        await db.commit()
-        return result
+        return result.data
     except AmendmentRevisionApiError as exc:
         raise _err(exc)
 
@@ -167,7 +185,7 @@ async def transition_amendment_revision(
     bug_id: str,
     amendment_id: str,
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
@@ -178,14 +196,13 @@ async def transition_amendment_revision(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        result = await AmendmentRevisionApiService(db).transition_lifecycle(
-            board_id=board_id,
-            bug_id=bug_id,
-            amendment_id=amendment_id,
-            actor=actor,
-            **req.model_dump(exclude_none=True),
+        result = await TransitionAmendmentRevisionUseCase().execute(
+            TransitionAmendmentRevisionCommand(
+                board_id, bug_id, amendment_id, req.model_dump(exclude_none=True)
+            ),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
-        await db.commit()
-        return result
+        return result.data
     except AmendmentRevisionApiError as exc:
         raise _err(exc)

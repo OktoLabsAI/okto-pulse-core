@@ -26,6 +26,7 @@ from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.models.db import Board, Ideation, Refinement, Spec
 from okto_pulse.core.models.schemas import SpecMove
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services import IdeationService, RefinementService, SpecService
 
 USER = "af23-allowed-transitions"
@@ -50,6 +51,10 @@ def client() -> TestClient:
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+def _wrap_uow(db):
+    return resolve_unit_of_work_factory().wrap(db)
 
 
 def _ctx(board_id: str):
@@ -188,7 +193,7 @@ async def test_use_case_resolves_entity_status_and_exposes_unlock_edges() -> Non
         result = await ListAllowedTransitionsUseCase().execute(
             ListAllowedTransitionsCommand(board_id, "spec", entity_id=spec_id),
             actor=ActorContext(USER, "rest", board_id=board_id),
-            uow=db,
+            uow=_wrap_uow(db),
         )
 
     payload = result.read_model.to_dict()
@@ -290,7 +295,7 @@ async def test_read_model_does_not_enforce_invalid_backend_moves() -> None:
         result = await ListAllowedTransitionsUseCase().execute(
             ListAllowedTransitionsCommand(board_id, "spec", entity_id=spec_id),
             actor=ActorContext(USER, "rest", board_id=board_id),
-            uow=db,
+            uow=_wrap_uow(db),
         )
         assert "done" not in [
             item.to_status for item in result.read_model.allowed_transitions

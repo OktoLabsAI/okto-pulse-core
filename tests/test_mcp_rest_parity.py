@@ -289,6 +289,9 @@ class TestSpecCoverageSummaryParity:
         # IR/OR first-class requirement coverage
         "ir_task_linkage_pct", "irs_linked", "irs_total", "irs_uncovered_ids",
         "or_task_linkage_pct", "ors_linked", "ors_total", "ors_uncovered_ids",
+        "cards_total", "cards_done",
+        "cards_total_raw", "cards_done_raw",
+        "cards_total_effective", "cards_done_effective",
         "skip_test_coverage", "skip_rules_coverage", "skip_decisions_coverage",
         "skip_ir_coverage", "skip_or_coverage",
     }
@@ -374,6 +377,33 @@ class TestBlockersParity:
         assert filtered["filter_type"] == "stale"
         for b in filtered["blockers"]:
             assert b["type"] == "stale"
+
+    async def test_cancelled_specs_do_not_surface_uncovered_scenarios(self, db_factory):
+        board_id = f"cancelled-spec-board-{uuid.uuid4().hex[:8]}"
+        spec_id = f"cancelled-spec-{uuid.uuid4().hex[:8]}"
+        async with db_factory() as db:
+            db.add(Board(id=board_id, name="Cancelled spec blockers", owner_id="owner-1"))
+            db.add(Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Cancelled spec with orphan scenario",
+                status=SpecStatus.CANCELLED,
+                archived=False,
+                acceptance_criteria=["AC1"],
+                test_scenarios=[
+                    {"id": "ts_cancelled", "title": "orphan", "status": "draft"},
+                ],
+                created_by="user-1",
+            ))
+            await db.commit()
+
+        async with db_factory() as db:
+            filtered = await compute_blockers(
+                db, board_id, filter_type="uncovered_scenario"
+            )
+
+        assert filtered["total"] == 0
+        assert filtered["blockers"] == []
 
     async def test_invalid_stale_hours_raises(self, db_factory):
         async with db_factory() as db:
@@ -493,15 +523,22 @@ class TestDelegationContract:
         for fn in ("aggregate_task_validation_gate", "aggregate_spec_validation_gate"):
             assert fn in svc_src, f"analytics service missing gate aggregator: {fn}"
 
-    def test_mcp_server_imports_service_functions(self):
+    def test_mcp_server_delegates_analytics_to_use_cases(self):
         from okto_pulse.core.mcp import server as mcp_mod
         src = inspect.getsource(mcp_mod)
-        for fn in (
-            "compute_coverage", "compute_funnel", "compute_velocity",
-            "compute_blockers",
-            "aggregate_task_validation_gate",
+        for symbol in (
+            "McpGetAnalyticsUseCase",
+            "McpGetAnalyticsCommand",
+            "McpListBlockersUseCase",
+            "McpListBlockersCommand",
         ):
-            assert fn in src, f"MCP server missing service import: {fn}"
+            assert symbol in src, f"MCP server missing analytics use-case delegation: {symbol}"
+
+        from okto_pulse.core.application.use_cases import mcp_admin_validation_analytics
+
+        uc_src = inspect.getsource(mcp_admin_validation_analytics)
+        for fn in ("compute_mcp_board_analytics", "compute_blockers"):
+            assert fn in uc_src, f"MCP analytics use cases missing service delegation: {fn}"
 
     def test_mcp_re_exports_decisions_helpers(self):
         """D-8 — MCP server re-exports filter_decisions_by_status + decisions_stats

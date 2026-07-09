@@ -34,6 +34,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.rebuild_audit import (
+    resolve_rebuild_audit_artifact_store,
+)
+
 logger = logging.getLogger("okto_pulse.kg.global_discovery_reindex")
 
 
@@ -220,21 +228,39 @@ def _default_reindex_adapter(
 
 @dataclass(frozen=True, slots=True)
 class GlobalDiscoveryReindexStatusStore:
-    """File-backed store for the per-(board, generation) reindex status.
+    """Store for the per-(board, generation) reindex status.
 
     ``record`` is the ONLY way to publish the visible status; the
     rebuilder calls it after every reindex attempt so the KG Health view
     + the rebuild report read from the same source of truth.
     """
 
-    base_dir: Path
+    base_dir: Path | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
+
+    def _base_dir(self) -> Path:
+        if self.base_dir is None:
+            raise RuntimeError(
+                "base_dir is unavailable when RebuildAuditArtifactStore is configured"
+            )
+        return self.base_dir
+
     def _board_dir(self, board_id: str) -> Path:
         return (
-            self.base_dir
+            self._base_dir()
             / REBUILD_DIRNAME
             / REINDEX_DIRNAME
             / board_id
@@ -242,6 +268,13 @@ class GlobalDiscoveryReindexStatusStore:
 
     def _record_path(self, board_id: str, kg_generation_id: str) -> Path:
         return self._board_dir(board_id) / f"{kg_generation_id}.json"
+
+    def _record_key(self, board_id: str, kg_generation_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="global_discovery_reindex",
+            board_id=board_id,
+            kg_generation_id=kg_generation_id,
+        )
 
     def record(
         self,
@@ -281,7 +314,6 @@ class GlobalDiscoveryReindexStatusStore:
 
         with self._lock:
             try:
-                self._board_dir(board_id).mkdir(parents=True, exist_ok=True)
                 recorded_at = datetime.now(timezone.utc).isoformat()
                 payload = {
                     "board_id": board_id,
@@ -293,11 +325,18 @@ class GlobalDiscoveryReindexStatusStore:
                     "detail": detail,
                     "recorded_at": recorded_at,
                 }
-                path = self._record_path(board_id, kg_generation_id)
-                tmp = path.with_suffix(".json.tmp")
-                with tmp.open("w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, indent=2)
-                tmp.replace(path)
+                if self.artifact_store is not None:
+                    key = self._record_key(board_id, kg_generation_id)
+                    self.artifact_store.write_json_atomic(key, payload)
+                    record_ref = key.to_ref()
+                else:
+                    self._board_dir(board_id).mkdir(parents=True, exist_ok=True)
+                    path = self._record_path(board_id, kg_generation_id)
+                    tmp = path.with_suffix(".json.tmp")
+                    with tmp.open("w", encoding="utf-8") as fh:
+                        json.dump(payload, fh, indent=2)
+                    tmp.replace(path)
+                    record_ref = str(path)
             except Exception as exc:
                 logger.error(
                     "kg.global_discovery_reindex.record_failed board=%s gen=%s err=%s",
@@ -327,12 +366,16 @@ class GlobalDiscoveryReindexStatusStore:
             visible_in_health=visible,
             visible_in_report=visible,
             recorded_at=recorded_at,
-            record_ref=str(path),
+            record_ref=record_ref,
         )
 
     def get_status(
         self, board_id: str, kg_generation_id: str
     ) -> dict[str, Any] | None:
+        if self.artifact_store is not None:
+            return self.artifact_store.read_json(
+                self._record_key(board_id, kg_generation_id)
+            )
         path = self._record_path(board_id, kg_generation_id)
         if not path.exists():
             return None
@@ -350,6 +393,15 @@ class GlobalDiscoveryReindexStatusStore:
         """Return the most recently recorded reindex status for the
         board, or ``None`` if there is no record yet. ``recorded_at``
         ISO8601 sorts lexically — same key the report drilldown shows."""
+
+        if self.artifact_store is not None:
+            rows = self.artifact_store.list_json(
+                RebuildAuditKey(
+                    namespace="global_discovery_reindex",
+                    board_id=board_id,
+                )
+            )
+            return max(rows, key=lambda row: str(row.get("recorded_at", "")), default=None)
 
         directory = self._board_dir(board_id)
         if not directory.exists():

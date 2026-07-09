@@ -8,6 +8,12 @@ import pytest
 
 from okto_pulse.core.kg.workers import consolidation
 from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
+from okto_pulse.core.ports.coordination import (
+    register_coordination_providers,
+    reset_coordination_providers_for_tests,
+)
+
+from tests.coordination_fakes import FakeWriteLockPort
 
 
 class _RecordingWorker(ConsolidationWorker):
@@ -54,13 +60,17 @@ async def test_queue_entry_processing_is_serialized_per_board(
         return True
 
     monkeypatch.setattr(consolidation, "_process_queue_entry", fake_process)
+    register_coordination_providers(write_lock_port=FakeWriteLockPort())
     entry_a = SimpleNamespace(board_id="board-1")
     entry_b = SimpleNamespace(board_id="board-1")
 
-    await asyncio.gather(
-        consolidation._process_queue_entry_serialized(None, entry_a),
-        consolidation._process_queue_entry_serialized(None, entry_b),
-    )
+    try:
+        await asyncio.gather(
+            consolidation._process_queue_entry_serialized(None, entry_a),
+            consolidation._process_queue_entry_serialized(None, entry_b),
+        )
+    finally:
+        reset_coordination_providers_for_tests()
 
     assert max_active == 1
 
@@ -80,6 +90,7 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
 
     from okto_pulse.core import app as app_mod
     from okto_pulse.core.infra import auth as auth_mod
+    from okto_pulse.core.infra import database as database_mod
     from okto_pulse.core.infra import storage as storage_mod
     from okto_pulse.core.infra.config import configure_settings, get_settings
     from okto_pulse.core.ports.runtime_workers import (
@@ -88,6 +99,10 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
     )
 
     events: list[str] = []
+
+    class _Engine:
+        async def dispose(self) -> None:
+            return None
 
     class _Handle:
         async def stop(self) -> None:
@@ -107,8 +122,17 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
         )
     )
 
+    original_settings = get_settings()
+    original_auth = auth_mod._auth_provider
+    original_storage = storage_mod._storage_provider
+    original_engine = database_mod._engine
+    original_session_factory = database_mod._session_factory
+
     monkeypatch.setenv("KG_DAILY_TICK_DISABLED", "1")
-    monkeypatch.setattr(app_mod, "create_database", lambda *args, **kwargs: None)
+    database_mod.configure_database_runtime(
+        engine=_Engine(),
+        session_factory=lambda: None,
+    )
 
     async def _noop_init_db() -> None:
         return None
@@ -125,9 +149,6 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
         database_url="sqlite+aiosqlite:///:memory:",
         debug=False,
     )
-    original_settings = get_settings()
-    original_auth = auth_mod._auth_provider
-    original_storage = storage_mod._storage_provider
     try:
         app = app_mod.create_app(
             settings,
@@ -149,3 +170,10 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
         configure_settings(original_settings)
         auth_mod._auth_provider = original_auth
         storage_mod._storage_provider = original_storage
+        if original_engine is None or original_session_factory is None:
+            database_mod.reset_database_runtime_for_tests()
+        else:
+            database_mod.configure_database_runtime(
+                engine=original_engine,
+                session_factory=original_session_factory,
+            )

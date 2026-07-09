@@ -234,6 +234,13 @@ the R01B/R01C migration path, so documentation and gates must keep it visible
 instead of treating it as already removed or as permission to reintroduce
 `asyncpg`.
 
+AF35-S5 adds the executable final relational ownership matrix:
+[`docs/architecture/af35_relational_ownership_matrix.md`](./docs/architecture/af35_relational_ownership_matrix.md).
+It is rendered from
+`okto_pulse.core.application.boundary.af35_s5_relational_final_gate.run_af35_s5_relational_final_gate`
+and is guarded by a drift test. Update the gate/ledger and the generated block
+together whenever AF35 removes, reclassifies or adds relational residue.
+
 Removal must pass the bounded evidence fields in the inventory:
 `port_closed`, `community_registered`, `oracle_passed`, `import_audit_passed`,
 `dependency_audit_passed` and `register_before_remove_passed`.
@@ -292,7 +299,7 @@ core and should remain visible during the next refactor cycle:
 | Area | Current core dependency | Why it remains |
 | --- | --- | --- |
 | Relational database | SQLAlchemy models, `AsyncSession` service APIs, `core.infra.database` migrations and SQLAlchemy repositories/UoW. | The repository/UoW strangler is narrow. Broad service and route migration is still pending. Any PostgreSQL dialect branch here is R01B/R01C debt, not a license to restore `asyncpg` to the core default. |
-| Core settings defaults | `CoreSettings` still contains local SQLite/upload/KG/telemetry defaults such as `sqlite+aiosqlite:///./dashboard.db`, `~/.okto-pulse` and the sentence-transformers model name. | Editions override these defaults, but a future SaaS edition should not inherit local-first storage defaults from core. |
+| Core settings defaults | `CoreSettings` still exposes legacy/public settings such as `kg_base_dir`, `kg_embedding_model`, KG runtime knobs and telemetry fields; the AF39/R17 inventory records owner, public contract, effective source, compatibility path and removal criterion for each field. | Editions own installed local-first effective values. New local defaults, public renames/removals or incomplete allowlist rows must fail `run_core_settings_defaults_gate` / `run_public_config_stability_gate` before SaaS inherits them. |
 | Default core lifespan path | `core.app._default_lifespan` still performs DB init/backfills/schema sweep and can start the scheduler when an edition does not supply a lifespan. | Community supplies its own composed lifespan in production; the standalone core path remains transitional runtime debt. |
 | KG test/default providers | `core.kg.providers.embedded.memory_*` and `providers.testing.*`. | Needed for sanctioned test defaults and deterministic fakes; not production runtime ownership. |
 | MCP AuthContext bridge | `core.kg.providers.embedded.mcp_auth_context`. | Credential carrier moved to request scope, but the concrete AuthContext bridge has not moved to Community. |

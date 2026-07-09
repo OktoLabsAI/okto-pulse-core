@@ -11,8 +11,8 @@ from okto_pulse.core.mcp.server import (
     mcp,
     mount_mcp,
     register_instruction_provider,
+    register_mcp_authenticator,
     register_session_factory,
-    run_mcp_server,
 )
 
 
@@ -62,7 +62,7 @@ __all__ = [
     "mcp",
     "mount_mcp",
     "register_instruction_provider",
+    "register_mcp_authenticator",
     "register_resource_catalog",
     "register_session_factory",
-    "run_mcp_server",
 ]

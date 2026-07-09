@@ -436,8 +436,26 @@ async def test_source_failure_raises_503(tmp_path, db_factory, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def _route_paths(routes) -> set[str]:
+    paths: set[str] = set()
+    for route in routes:
+        effective_route_contexts = getattr(route, "effective_route_contexts", None)
+        if callable(effective_route_contexts):
+            for context in effective_route_contexts():
+                path = getattr(context, "path", None)
+                if path:
+                    paths.add(path)
+        path = getattr(route, "path", None)
+        if path:
+            paths.add(path)
+        nested = getattr(route, "routes", None)
+        if nested:
+            paths.update(_route_paths(nested))
+    return paths
+
+
 def test_route_is_registered():
-    paths = {route.path for route in api_router.routes}
+    paths = _route_paths(api_router.routes)
     assert "/api/v1/kg/{board_id}/cognitive-readiness/items" in paths
 
 

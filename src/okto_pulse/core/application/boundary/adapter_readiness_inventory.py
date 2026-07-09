@@ -87,6 +87,8 @@ class AdapterInventoryEntry:
     #: Immutable metadata — a tuple of (key, value) pairs, NOT a mutable dict
     #: (a dict inside a frozen dataclass would still be mutable in place).
     metadata: tuple[tuple[str, str], ...] = ()
+    #: Evidence fields this ledger row requires before future removal/migration.
+    evidence_fields: tuple[str, ...] = REQUIRED_EVIDENCE
 
 
 @dataclass(frozen=True)
@@ -490,19 +492,27 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         # --- telemetry (#10 — ledger item, NOT a functional impl) ---
         _entry(
             adapter_key="local_telemetry_store",
-            owner="okto-pulse-core/telemetry",
-            current_module="okto_pulse/core/telemetry/store.py",
-            port_ref="(governed by #10)",
-            wave="R05-TELEMETRY",
+            owner="okto-pulse-community/telemetry",
+            current_module="okto_pulse/community/adapters/telemetry_sender.py",
+            port_ref="TelemetrySink / telemetry sender factory",
+            wave="AF40-R1",
             predecessor_refs=("#10_telemetry",),
-            target_destination="governed by #10 telemetry boundary",
-            packages=("stdlib",),
-            oracles_required=("telemetry_event_persisted",),
-            removal_criterion=(
-                "Ledger item governed by #10: NOT a functional implementation in "
-                "R05. Deferred until the #10 telemetry boundary defines the port."
+            target_destination="community/adapters/telemetry_sender.py",
+            packages=("requests", "chardet"),
+            oracles_required=(
+                "telemetry_sender_ownership_gate",
+                "community_manifest_requests_chardet",
+                "r10c_telemetry_sender",
             ),
-            status="deferred",
+            removal_criterion=(
+                "AF40-R1 done: Community owns the concrete telemetry HTTP "
+                "transport and declares requests/chardet directly; core keeps "
+                "only telemetry ports, DTOs and the sender registry. Core "
+                "manifest/lock/wheel/source reintroduction is blocked by "
+                "dependency_conformance and telemetry_sender_ownership_gate."
+            ),
+            status="ready",
+            metadata=(("moved_by", "AF40-R1"),),
         ),
         # --- dependency ledger: asyncpg postgres driver ---
         _entry(
@@ -530,7 +540,7 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             adapter_key="board_source_store",
             owner="okto-pulse-community/kg",
             current_module="okto_pulse/community/adapters/board_source_reader.py",
-            port_ref="BoardSourceReader",
+            port_ref="okto_pulse.core.application.rebuild_ports.BoardSourceReader",
             wave="R05-RELATIONAL",
             predecessor_refs=("#04_repository_uow",),
             target_destination="community/adapters/board_source_reader.py",
@@ -552,7 +562,10 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
             adapter_key="board_rebuild_ingestion_adapter",
             owner="okto-pulse-community/kg",
             current_module="okto_pulse/community/adapters/board_rebuild_ingestion.py",
-            port_ref="RebuildIngestionPort/StepAdapterFactory",
+            port_ref=(
+                "okto_pulse.core.application.rebuild_ports."
+                "RebuildIngestionPort/StepAdapterFactory"
+            ),
             wave="R05-RELATIONAL",
             predecessor_refs=("#04_repository_uow",),
             target_destination="composition-owned relational rebuild ingestion (Community)",

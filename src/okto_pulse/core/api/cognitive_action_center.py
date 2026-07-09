@@ -21,50 +21,41 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.cognitive_readiness import (
+    ListCognitiveReadinessItemsCommand,
+    ListCognitiveReadinessItemsUseCase,
+)
+from okto_pulse.core.application.use_cases.operational_rest import (
+    ClearCognitiveSkipUseCase,
+    CognitiveClearCommand,
+    CognitiveReadinessMetricsCommand,
+    CognitiveSkipCommand,
+    GetCognitiveReadinessMetricsUseCase,
+    RecordCognitiveSkipUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.kg.cognitive_action_center import (
-    CognitiveActionCenterReadModel,
     build_clear_response,
     build_skip_response,
 )
 from okto_pulse.core.kg.cognitive_readiness import (
     GATE_BLOCKING_TIERS,
     CognitiveReadinessError,
-    CognitiveReadinessService,
 )
-from okto_pulse.core.kg.rebuild_audit import (
-    CognitiveConsolidationItemStore,
-    require_rebuild_audit_artifact_store,
-)
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter()
 
 
-def build_default_readiness_service() -> CognitiveReadinessService:
-    return CognitiveReadinessService(
-        CognitiveConsolidationItemStore(
-            artifact_store=require_rebuild_audit_artifact_store()
-        )
+def build_default_readiness_service():
+    """Compatibility injection point for REST tests and thin wrapper wiring."""
+    from okto_pulse.core.services.application_kg import (
+        build_cognitive_readiness_service,
     )
 
-
-async def _enforcement_active(db, board_id: str) -> bool:
-    """Whether the board's done-gate actually enforces readiness (two-key
-    rollout). Delegates to the existing helper — never recomputed (S3.1 carry-
-    forward). Lazy import avoids a services<->api import cycle."""
-    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
-    from okto_pulse.core.services.main import _cognitive_readiness_blocking_active
-
-    # R01C IMP3 drain: resolve the board through the edition-owned repository port
-    # (``resolve_unit_of_work_factory().wrap`` — the same R01B FR3 seam ``deps.py``
-    # uses) instead of importing the ORM model. This removes the ``core.models.db``
-    # import coupling. Equivalence: the prior call was a pure existence get-by-id
-    # (no owner/permission predicate — auth is enforced by the endpoint's
-    # ``require_user`` + board scope); ``boards.get(board_id)`` is the unscoped
-    # get-by-id and still returns the ORM Board (registered ORM_RETURN_DEBT).
-    board = await resolve_unit_of_work_factory().wrap(db).boards.get(board_id)
-    return _cognitive_readiness_blocking_active(board)
+    return build_cognitive_readiness_service()
 
 
 def _would_block_done(verdict, enforcement_active: bool) -> bool:
@@ -104,37 +95,41 @@ async def list_cognitive_readiness_items(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     kg_generation_id: str | None = Query(None),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
-    read_model = CognitiveActionCenterReadModel(build_default_readiness_service())
     try:
-        result = await read_model.list_signals(
-            db,
-            board_id=board_id,
-            signal=signal,
-            artifact_id=artifact_id,
-            source_ref=source_ref,
-            reason_code=reason_code,
-            status=status,
-            search=search,
-            limit=limit,
-            offset=offset,
-            kg_generation_id=kg_generation_id,
+        uc_result = await ListCognitiveReadinessItemsUseCase(
+            readiness_service_factory=build_default_readiness_service
+        ).execute(
+            ListCognitiveReadinessItemsCommand(
+                board_id,
+                signal=signal,
+                artifact_id=artifact_id,
+                source_ref=source_ref,
+                reason_code=reason_code,
+                status=status,
+                search=search,
+                limit=limit,
+                offset=offset,
+                kg_generation_id=kg_generation_id,
+            ),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
     except CognitiveReadinessError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc
 
+    result = uc_result.result
     # Enforcement-aware annotation so the UI never says "blocks done" purely from
     # blocking=True (S3.1 carry-forward): would_block_done = enforcement_active
     # AND tier in GATE_BLOCKING_TIERS, delegated to the central helper.
-    enforcement_active = await _enforcement_active(db, board_id)
     for item in result["items"]:
         tier = (item.get("precedence_explanation") or {}).get("tier")
         item["would_block_done"] = bool(
-            enforcement_active and tier in GATE_BLOCKING_TIERS
+            uc_result.enforcement_active and tier in GATE_BLOCKING_TIERS
         )
-    result["summary"]["enforcement_active"] = enforcement_active
+    result["summary"]["enforcement_active"] = uc_result.enforcement_active
     return result
 
 
@@ -145,40 +140,36 @@ async def list_cognitive_readiness_items(
 async def record_cognitive_skip_endpoint(
     board_id: str,
     payload: CognitiveSkipRequest,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     """Thin REST over the CENTRAL skip write-path (same service as the MCP twin).
     400 invalid_reason_code / 400 revisit_at_required / 409
     technical_debt_cannot_be_skipped — a DLQ/open-debt blocker is NEVER masked."""
-    service = build_default_readiness_service()
     try:
-        item = await service.record_cognitive_skip(
-            db,
-            board_id=board_id,
-            source_ref=payload.source_ref,
-            reason_code=payload.reason_code,
-            actor=actor,
-            # REST is the HUMAN surface: actor comes from require_user
-            # (authenticated human). This is NOT a client-supplied/spoofable
-            # field — the MCP/agent twin never sets it (fail-closed default
-            # False), so R7 holds/debt stay human-only (AC9 / IR3).
-            actor_is_human=True,
-            justification=payload.justification,
-            evidence_refs=payload.evidence_refs,
-            revisit_at=payload.revisit_at,
-            kg_generation_id=payload.kg_generation_id,
+        result = await RecordCognitiveSkipUseCase(
+            readiness_service_factory=build_default_readiness_service
+        ).execute(
+            CognitiveSkipCommand(
+                board_id,
+                payload.source_ref,
+                payload.reason_code,
+                payload.justification,
+                payload.evidence_refs,
+                payload.revisit_at,
+                payload.kg_generation_id,
+            ),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
-        verdict = await service.evaluate_artifact(
-            db, board_id=board_id, source_ref=payload.source_ref,
-            kg_generation_id=payload.kg_generation_id,
-        )
-        enforcement_active = await _enforcement_active(db, board_id)
     except CognitiveReadinessError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc
+    data = result.data
     return build_skip_response(
-        item, verdict, actor=actor,
-        would_block_done=_would_block_done(verdict, enforcement_active),
+        data["item"], data["verdict"], actor=actor,
+        would_block_done=_would_block_done(
+            data["verdict"], data["enforcement_active"]
+        ),
     )
 
 
@@ -189,33 +180,31 @@ async def record_cognitive_skip_endpoint(
 async def clear_cognitive_skip_endpoint(
     board_id: str,
     payload: CognitiveClearRequest,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     """Clear/reopen a cognitive skip via the CENTRAL path (audit preserved).
     404 generation/item_not_found; 409 cognitive_item_not_skipped."""
-    service = build_default_readiness_service()
     try:
-        item = await service.clear_cognitive_skip(
-            db,
-            board_id=board_id,
-            source_ref=payload.source_ref,
-            actor=actor,
-            # REST = authenticated human (require_user); not spoofable from the
-            # client. The MCP/agent twin never sets this, so R7 stays human-only.
-            actor_is_human=True,
-            kg_generation_id=payload.kg_generation_id,
+        result = await ClearCognitiveSkipUseCase(
+            readiness_service_factory=build_default_readiness_service
+        ).execute(
+            CognitiveClearCommand(
+                board_id,
+                payload.source_ref,
+                payload.kg_generation_id,
+            ),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
-        verdict = await service.evaluate_artifact(
-            db, board_id=board_id, source_ref=payload.source_ref,
-            kg_generation_id=payload.kg_generation_id,
-        )
-        enforcement_active = await _enforcement_active(db, board_id)
     except CognitiveReadinessError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc
+    data = result.data
     return build_clear_response(
-        item, verdict, actor=actor,
-        would_block_done=_would_block_done(verdict, enforcement_active),
+        data["item"], data["verdict"], actor=actor,
+        would_block_done=_would_block_done(
+            data["verdict"], data["enforcement_active"]
+        ),
     )
 
 
@@ -226,15 +215,19 @@ async def clear_cognitive_skip_endpoint(
 async def get_cognitive_readiness_metrics(
     board_id: str,
     kg_generation_id: str | None = Query(None),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     """Bounded readiness metrics derived from the read-model (fr_9ae21310).
     Labels are bounded; free-text is never a label (br_3a55b609)."""
-    read_model = CognitiveActionCenterReadModel(build_default_readiness_service())
     try:
-        return await read_model.metrics(
-            db, board_id=board_id, kg_generation_id=kg_generation_id,
+        result = await GetCognitiveReadinessMetricsUseCase(
+            readiness_service_factory=build_default_readiness_service
+        ).execute(
+            CognitiveReadinessMetricsCommand(board_id, kg_generation_id),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
+        return result.data
     except CognitiveReadinessError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc

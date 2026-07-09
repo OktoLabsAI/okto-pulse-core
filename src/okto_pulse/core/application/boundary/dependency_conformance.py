@@ -41,6 +41,8 @@ from typing import Literal
 
 from .dependency_ledger import (
     LEDGER_VERSION,
+    CANONICAL_AF40_CARRY_FORWARD_TOKENS,
+    CANONICAL_AF40_DEPENDENCY_TOKENS,
     CANONICAL_TEMPORARY_EXCEPTION_TOKENS,
     LedgerEntry,
     build_dependency_ledger,
@@ -85,6 +87,8 @@ DIAG_EXTERNAL_OWNER_DEPENDENCY_PRESENT = "external_owner_dependency_present"
 DIAG_EXTERNAL_OWNER_IMPORT_PRESENT = "external_owner_import_present"
 DIAG_LEDGER_ENTRY_INCOMPLETE = "ledger_entry_incomplete"
 DIAG_MISSING_CANONICAL_EXCEPTION = "missing_canonical_exception"
+DIAG_MISSING_AF40_TOKEN = "missing_af40_dependency_token"
+DIAG_INVALID_AF40_CARRY_FORWARD_TOKEN = "invalid_af40_carry_forward_token"
 
 EXTERNAL_OWNER_CLASSIFICATIONS = frozenset({"community_owned", "future_adapter"})
 
@@ -375,6 +379,55 @@ def audit_dependency_conformance(
                         f"Add a ledger entry for the temporary exception '{token}' "
                         "(owner_wave/current_owner/reason/removal_criterion/"
                         "validation_oracle)."
+                    ),
+                )
+            )
+    for token in CANONICAL_AF40_DEPENDENCY_TOKENS:
+        if normalize_token(token) not in index:
+            integrity_ok = False
+            findings.append(
+                AuditFinding(
+                    surface="ledger",
+                    token=token,
+                    diagnostic_code=DIAG_MISSING_AF40_TOKEN,
+                    severity="blocking",
+                    origin="ledger",
+                    location="dependency_ledger",
+                    classification=None,
+                    remediation=(
+                        f"Add an AF40 ownership row for '{token}' with owner, "
+                        "manifest state, removal/permanence criterion and "
+                        "validation oracle."
+                    ),
+                )
+            )
+    for token in CANONICAL_AF40_CARRY_FORWARD_TOKENS:
+        entry = index.get(normalize_token(token))
+        if entry is None:
+            continue
+        invalid = (
+            entry.classification != "temporary_exception"
+            or entry.direct_dep_no_import is not True
+            or not entry.transitive_consumer
+            or entry.expected_source_import_roots != ()
+        )
+        if invalid:
+            integrity_ok = False
+            findings.append(
+                AuditFinding(
+                    surface="ledger",
+                    token=token,
+                    diagnostic_code=DIAG_INVALID_AF40_CARRY_FORWARD_TOKEN,
+                    severity="blocking",
+                    origin="ledger",
+                    location=f"dependency_ledger:{token}",
+                    classification=entry.classification,
+                    remediation=(
+                        f"Keep '{token}' as an AF40 non-telemetry carry-forward "
+                        "temporary_exception with direct_dep_no_import=True, a "
+                        "named relational/KG transitive consumer, and no expected "
+                        "core source import roots. Do not remove or move it under "
+                        "the telemetry cleanup without its owner oracle."
                     ),
                 )
             )
@@ -782,6 +835,8 @@ __all__ = [
     "DIAG_REMOVED_IMPORT_PRESENT",
     "DIAG_LEDGER_ENTRY_INCOMPLETE",
     "DIAG_MISSING_CANONICAL_EXCEPTION",
+    "DIAG_MISSING_AF40_TOKEN",
+    "DIAG_INVALID_AF40_CARRY_FORWARD_TOKEN",
     "AuditFinding",
     "DependencyConformanceReport",
     "audit_dependency_conformance",

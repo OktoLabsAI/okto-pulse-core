@@ -74,11 +74,23 @@ def test_inventory_covers_current_core_settings_and_required_r17_rows():
         assert entry.spec_ref
         assert entry.allowed_action
         assert entry.cleanup_status
+        assert entry.public_contract
+        assert entry.effective_source
+        assert entry.compatibility_path
+        assert entry.removal_criterion
 
     for field in COMMUNITY_PARITY_FIELDS:
         assert by_name[field].classification == "edition_default_community"
         assert by_name[field].cleanup_status == "register_before_remove"
         assert by_name[field].community_surfaces
+        assert "Community" in by_name[field].effective_source
+
+    assert "compatibility-only" in by_name["kg_base_dir"].effective_source
+    assert "neutral" in by_name["metrics_beacon_url"].effective_source
+    assert "Community telemetry" in by_name["metrics_beacon_url"].effective_source
+    assert "AF40" in by_name["metrics_beacon_url"].compatibility_path
+    assert "AF40" in by_name["metrics_beacon_url"].removal_criterion
+    assert "Community embedding provider" in by_name["kg_embedding_model"].effective_source
 
     for field in KG_RUNTIME_KNOBS:
         entry = by_name[field]
@@ -86,6 +98,11 @@ def test_inventory_covers_current_core_settings_and_required_r17_rows():
         assert entry.cleanup_status == "register_before_remove"
         assert "okto_pulse.core.kg.connection_pool" in entry.core_consumers
         assert "/api/v1/settings/runtime" in entry.community_surfaces
+        assert (
+            entry.migration_plan_ref
+            == "AF37/AF39 graph-runtime compatibility ledger"
+        )
+        assert "Legacy public" in entry.rationale
 
 
 def test_community_settings_effective_values_match_r17_installed_parity(tmp_path):
@@ -139,6 +156,10 @@ def test_allowlisted_agnostic_default_with_owner_passes_gate():
         allowed_action="keep as explicit common feature flag",
         cleanup_status="keep",
         rationale="R17 test-owned agnostic default.",
+        public_contract="R17 test feature flag public contract.",
+        effective_source="CoreSettings test source.",
+        compatibility_path="No compatibility migration required for test field.",
+        removal_criterion="Remove after the R17 gate test fixture is deleted.",
     )
 
     report = run_core_settings_defaults_gate(
@@ -147,6 +168,75 @@ def test_allowlisted_agnostic_default_with_owner_passes_gate():
     )
 
     assert report.status == "passed", report.evidence
+
+
+def test_allowlisted_entry_without_removal_criterion_fails_gate():
+    mutated = _insert_after_upload_dir(
+        _CONFIG_SOURCE,
+        "    r17_safe_feature_enabled: bool = False",
+    )
+    incomplete_row = CoreSettingDefaultEntry(
+        setting_name="r17_safe_feature_enabled",
+        env_var="R17_SAFE_FEATURE_ENABLED",
+        default_repr="False",
+        classification="common_agnostic",
+        owner="okto-pulse-core/config",
+        spec_ref="R17",
+        allowed_action="keep as explicit common feature flag",
+        cleanup_status="keep",
+        rationale="R17 test-owned agnostic default.",
+        public_contract="R17 test feature flag public contract.",
+        effective_source="CoreSettings test source.",
+        compatibility_path="No compatibility migration required for test field.",
+    )
+
+    report = run_core_settings_defaults_gate(
+        source_text=mutated,
+        additional_entries=(incomplete_row,),
+    )
+
+    assert report.status == "blocking"
+    assert _finding_codes(report) == {"incomplete_inventory_row"}
+
+
+def test_new_local_default_with_core_owner_still_fails_gate():
+    mutated = _insert_after_upload_dir(
+        _CONFIG_SOURCE,
+        '    r17_local_cache_dir: str = "./runtime-cache"',
+    )
+    local_row = CoreSettingDefaultEntry(
+        setting_name="r17_local_cache_dir",
+        env_var="R17_LOCAL_CACHE_DIR",
+        default_repr="'./runtime-cache'",
+        classification="core_contract_required",
+        owner="okto-pulse-core/config",
+        spec_ref="R17",
+        allowed_action="keep as core-owned cache path",
+        cleanup_status="keep",
+        rationale="R17 test mutant: local path cannot be core-owned.",
+        public_contract="R17 test local cache field.",
+        effective_source="CoreSettings test source.",
+        compatibility_path="No migration path.",
+        removal_criterion="Remove after test mutant is deleted.",
+    )
+
+    report = run_core_settings_defaults_gate(
+        source_text=mutated,
+        additional_entries=(local_row,),
+    )
+
+    assert report.status == "blocking"
+    assert _finding_codes(report) == {"unowned_local_first_default"}
+
+
+def test_duplicate_core_settings_source_field_fails_gate():
+    needle = "    kg_queue_alert_threshold: int = Field(5000, ge=100, le=100000)\n"
+    mutated = _CONFIG_SOURCE.replace(needle, f"{needle}{needle}", 1)
+
+    report = run_core_settings_defaults_gate(source_text=mutated)
+
+    assert report.status == "blocking"
+    assert "duplicate_core_settings_source_field" in _finding_codes(report)
 
 
 def test_public_setting_rename_without_alias_fails_and_alias_passes():
@@ -174,6 +264,10 @@ def test_public_setting_rename_without_alias_fails_and_alias_passes():
         allowed_action="rename only through DATABASE_URL migration alias",
         cleanup_status="register_before_remove",
         rationale="R17 test migration alias for the public database setting.",
+        public_contract="DATABASE_URL remains a public settings contract.",
+        effective_source="CommunitySettings derives the installed data source.",
+        compatibility_path="DATABASE_URL aliases database_dsn during migration.",
+        removal_criterion="Remove after R17 database URL alias migration passes.",
         community_surfaces=("CommunitySettings",),
         migration_plan_ref="R17-MP-database-url",
     )

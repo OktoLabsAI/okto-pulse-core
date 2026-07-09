@@ -45,7 +45,18 @@ def _client() -> TestClient:
 
 
 def test_orphan_integrity_routes_are_registered() -> None:
-    paths = {route.path for route in api_router.routes}
+    paths = set()
+    for route in api_router.routes:
+        path = getattr(route, "path", None)
+        if path:
+            paths.add(path)
+        effective_route_contexts = getattr(route, "effective_route_contexts", None)
+        if callable(effective_route_contexts):
+            paths.update(
+                context.path
+                for context in effective_route_contexts()
+                if getattr(context, "path", None)
+            )
     assert "/api/v1/kg/orphan-integrity/report" in paths
     assert "/api/v1/kg/orphan-integrity/backfill" in paths
 

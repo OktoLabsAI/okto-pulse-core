@@ -50,10 +50,13 @@ ALLOWLISTED_FILES: frozenset[str] = frozenset(
         "okto_pulse/core/application/use_cases/boards_crud.py",
         "okto_pulse/core/application/use_cases/list_boards_for_agent.py",
         "okto_pulse/core/application/use_cases/mcp_board_crud.py",
+        "okto_pulse/core/application/use_cases/mcp_profile_activity.py",
         "okto_pulse/core/application/use_cases/update_agent.py",
         "okto_pulse/core/application/use_cases/update_board_overrides.py",
+        "okto_pulse/core/mcp/__init__.py",
         "okto_pulse/core/mcp/server.py",
         "okto_pulse/core/services/__init__.py",
+        "okto_pulse/core/services/application_agents.py",
         "okto_pulse/core/services/main.py",
     }
 )

@@ -72,9 +72,10 @@ ResultT = TypeVar("ResultT", covariant=True)
 class UseCase(Protocol[CommandT, ResultT]):
     """A transport-free application operation (tr_3d5b5204).
 
-    ``uow`` is typed ``Any`` as a transitional bridge: until spec #04 lands the
-    ``PulseUnitOfWork`` port, adapters pass either a UnitOfWork exposing
-    ``.session``/``.commit()`` or an ``AsyncSession`` directly.
+    ``uow`` is typed ``Any`` as a transitional bridge while the concrete
+    ``PulseUnitOfWork`` port remains external to this package. Adapters pass a
+    UnitOfWork exposing ``.session``/``.commit()``; bare relational sessions are
+    rejected at this boundary.
     """
 
     async def execute(self, command: CommandT, *, actor: ActorContext, uow: Any) -> ResultT:
@@ -125,22 +126,21 @@ class PermissionDeniedError(UseCaseError):
 def session_of(uow: Any) -> Any:
     """Return the relational session for ``uow``.
 
-    Accepts a UnitOfWork exposing ``.session`` (the spec #04 shape) or an
-    ``AsyncSession`` passed directly (the transitional shape).
+    Accepts only a UnitOfWork exposing a non-null ``.session``. Bare
+    relational sessions must be wrapped by the registered UnitOfWorkFactory.
     """
-    session = getattr(uow, "session", None)
-    if session is not None:
-        return session
-    return uow
+    missing = object()
+    session = getattr(uow, "session", missing)
+    if session is missing:
+        raise TypeError("uow must expose .session; bare sessions are not accepted")
+    if session is None:
+        raise TypeError("uow.session must not be None")
+    return session
 
 
 async def commit(uow: Any) -> None:
-    """Commit the transaction owned by ``uow``.
-
-    Works for both a UnitOfWork and a bare ``AsyncSession`` (both expose an
-    awaitable ``commit()``).
-    """
+    """Commit the transaction owned by ``uow``."""
     commit_fn = getattr(uow, "commit", None)
     if commit_fn is None:
-        raise TypeError("uow must provide an awaitable commit() or a .session")
+        raise TypeError("uow must provide an awaitable commit()")
     await commit_fn()

@@ -12,8 +12,13 @@ COMMUNITY_ROOT = CORE_ROOT.parent / "okto_labs_pulse_community"
 
 PUBLIC_FACADE_SYMBOLS: dict[str, tuple[str, ...]] = {
     "okto_pulse.core.services.application_agents": (
+        "authenticate_agent_by_api_key",
         "credential_marker",
         "hash_api_key",
+        "list_accessible_board_ids_for_agent",
+    ),
+    "okto_pulse.core.services.application_startup": (
+        "backfill_qa_answered_at",
     ),
     "okto_pulse.core.mcp": (
         "build_mcp_asgi_app",
@@ -28,6 +33,15 @@ PUBLIC_FACADE_SYMBOLS: dict[str, tuple[str, ...]] = {
     "okto_pulse.core.ports.runtime_workers": (
         "RuntimeWorkerRegistry",
         "RuntimeWorkerSpec",
+    ),
+    "okto_pulse.core.ports.relational_runtime": (
+        "close_db",
+        "configure_database_runtime",
+        "get_engine",
+        "get_session_factory",
+        "init_db",
+        "is_database_runtime_configured",
+        "resolve_sqlite_database_path",
     ),
     "okto_pulse.core.ports.telemetry": (
         "TelemetryEventStore",
@@ -68,6 +82,31 @@ def test_ts_72c34282_public_facade_symbols_are_importable() -> None:
             assert hasattr(module, symbol), f"{module_name}.{symbol} is missing"
 
 
+def test_af41_provider_seams_stay_public_while_legacy_runner_stays_private() -> None:
+    import okto_pulse.core as core
+    import okto_pulse.core.mcp as core_mcp
+    import okto_pulse.core.ports as core_ports
+
+    public_provider_seams = {
+        core_mcp: (
+            "build_mcp_asgi_app",
+            "mount_mcp",
+            "register_instruction_provider",
+            "register_resource_catalog",
+            "freeze_resource_catalog",
+        ),
+        core: ("register_package_version_provider",),
+        core_ports: ("McpAuthenticator", "McpTraceSink"),
+    }
+
+    for module, symbols in public_provider_seams.items():
+        for symbol in symbols:
+            assert hasattr(module, symbol), f"{module.__name__}.{symbol} is missing"
+
+    assert "run_mcp_server" not in core_mcp.__all__
+    assert not hasattr(core_mcp, "run_mcp_server")
+
+
 def test_ts_72c34282_public_facade_signatures_do_not_expose_orm_internals() -> None:
     for module_name, symbols in PUBLIC_FACADE_SYMBOLS.items():
         module = importlib.import_module(module_name)
@@ -96,6 +135,7 @@ def test_ts_72c34282_public_service_facades_import_internals_lazily_only() -> No
     for rel_path in (
         "src/okto_pulse/core/services/application_kg.py",
         "src/okto_pulse/core/services/application_agents.py",
+        "src/okto_pulse/core/services/application_startup.py",
         "src/okto_pulse/core/mcp/__init__.py",
     ):
         tree = ast.parse((CORE_ROOT / rel_path).read_text(encoding="utf-8"))

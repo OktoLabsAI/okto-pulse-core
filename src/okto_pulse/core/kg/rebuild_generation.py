@@ -40,6 +40,7 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
 )
+from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_generation")
 
@@ -458,10 +459,18 @@ class RebuildAuditKGGenerationRepository:
     generation state behind the rebuild/audit artifact-store port.
     """
 
-    artifact_store: RebuildAuditArtifactStore
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        if self.artifact_store is None:
+            object.__setattr__(
+                self,
+                "artifact_store",
+                require_rebuild_audit_artifact_store(),
+            )
 
     @staticmethod
     def _current_key(board_id: str) -> RebuildAuditKey:

@@ -157,6 +157,8 @@ _FULL_COMMUNITY_DEPS = [
     "okto-pulse-core>=0.3.0",
     "apscheduler>=3.10",
     "ladybug>=0.16",
+    "requests>=2.32",
+    "chardet>=5.0",
     "sentence-transformers>=2.5",
 ]
 
@@ -257,7 +259,12 @@ def test_ts_abce12bb_community_manifest_missing_adapter_dep_blocks(tmp_path):
     # that its kuzu_* runtime adapters require.
     community = _community_pyproject(
         tmp_path,
-        dependencies=["okto-pulse-core>=0.3.0", "sentence-transformers>=2.5"],
+        dependencies=[
+            "okto-pulse-core>=0.3.0",
+            "requests>=2.32",
+            "chardet>=5.0",
+            "sentence-transformers>=2.5",
+        ],
     )
 
     # Build a clean core ownership verdict to project the dependency audit against.
@@ -299,28 +306,36 @@ def test_ts_abce12bb_community_manifest_missing_adapter_dep_blocks(tmp_path):
 
 # =========================================================================== #
 # ts_a77cf454 (integration, AC4 + AC5 + AC7)
-# GIVEN core packaging declares `requests` and `chardet`, one a VALID ledgered
-#   temporary exception (requests) and one WITHOUT an owner (chardet removed
-#   from the ledger).
+# GIVEN core packaging declares `requests` and `chardet` after AF40 moved the
+#   telemetry transport pair to Community ownership.
 # WHEN the gate classifies them.
-# THEN the valid exception stays VISIBLE as `temporary_exception` (never silently
-#   passed) (AC4); the no-owner dependency BLOCKS as `unknown`/`violation` while
-#   preserving the original dependency_conformance finding (AC5); and the
-#   projected dependency_audit_passed becomes True for the affected adapter_key
-#   ONLY after the blocking row is gone (AC7).
+# THEN both BLOCK as `community_owned` on the core manifest; removing a ledger
+#   row still fails closed as `unknown`; and the projected
+#   dependency_audit_passed becomes True for the affected adapter_key ONLY after
+#   the core blocking rows are gone and Community declares the pair.
 # =========================================================================== #
 def test_ts_a77cf454_requests_chardet_require_visible_ownership(tmp_path):
-    # --- Phase 1: chardet is unledgered ("no owner"), requests stays valid ---
+    # --- Phase 1: full ledger => both tokens are Community-owned core leaks ---
     base = tmp_path / "mixed"
     pyproject, src = _core_repo(
         base, dependencies=["requests>=2.0", "chardet>=5.0"]
     )
-    # Drop ONLY chardet from the ledger -> it loses its owner; requests keeps
-    # its valid ledgered temporary exception.
+    report = _run_gate(base, pyproject, src)
+
+    by_symbol = {r.symbol: r for r in report.blocking}
+    assert by_symbol["requests"].classification == "community_owned"
+    assert by_symbol["requests"].diagnostic_code == "external_owner_dependency_present"
+    assert by_symbol["requests"].adapter_key == "local_telemetry_store"
+    assert by_symbol["chardet"].classification == "community_owned"
+    assert by_symbol["chardet"].diagnostic_code == "external_owner_dependency_present"
+    assert by_symbol["chardet"].adapter_key == "local_telemetry_store"
+    assert report.ok is False
+
+    # --- Phase 2: removing a ledger row still fails closed as unknown ----------
     stripped_ledger = tuple(
         e for e in build_dependency_ledger() if e.token != "chardet"
     )
-    blocking_report = audit_dependency_conformance(
+    unowned_dependency_report = audit_dependency_conformance(
         repo_root=base,
         pyproject_path=pyproject,
         lock_path=base / "missing.lock",
@@ -328,46 +343,31 @@ def test_ts_a77cf454_requests_chardet_require_visible_ownership(tmp_path):
         audit_wheel=False,
         ledger=stripped_ledger,
     )
-    report = _run_gate(base, pyproject, src, dependency_report=blocking_report)
-
-    # AC4 — requests is a VISIBLE temporary_exception, never silently passed.
-    te = {r.symbol: r for r in report.temporary_exceptions}
-    assert "requests" in te
-    assert te["requests"].classification == "temporary_exception"
-    assert te["requests"].action == "temporary_exception"
-    assert not te["requests"].blocking
-    # surfaced in the verdict rows (not dropped).
-    assert "requests" in {r.symbol for r in report.rows}
-    assert "requests" not in {r.symbol for r in report.blocking}
-
-    # AC5 — the no-owner chardet BLOCKS via the MatrixClassification while the
-    # original dependency_conformance finding is preserved on the row.
-    by_symbol = {r.symbol: r for r in report.blocking}
-    assert "chardet" in by_symbol
-    assert by_symbol["chardet"].classification in ("unknown", "violation")
-    assert by_symbol["chardet"].diagnostic_code == "unledgered_dependency"
-    # reuse (not re-derivation): still linked to the residual adapter.
-    assert by_symbol["chardet"].adapter_key == "local_telemetry_store"
-    assert report.ok is False
+    unowned_report = _run_gate(
+        base, pyproject, src, dependency_report=unowned_dependency_report
+    )
+    unowned = {r.symbol: r for r in unowned_report.blocking}
+    assert unowned["chardet"].classification in ("unknown", "violation")
+    assert unowned["chardet"].diagnostic_code == "unledgered_dependency"
+    assert unowned["chardet"].adapter_key == "local_telemetry_store"
 
     # --- AC7: dependency_audit_passed flips True only after the blocking is gone -
     community = _community_pyproject(tmp_path, dependencies=_FULL_COMMUNITY_DEPS)
     community_audit = audit_community_manifest(community)
 
-    # while chardet still BLOCKS, the affected adapter's projected
+    # while requests/chardet still BLOCK in core, the affected adapter's projected
     # dependency_audit_passed is False (a blocking finding is present).
     blocked_projection = project_dependency_audit_evidence(
         ownership_report=report, community_audit=community_audit
     )
     assert blocked_projection.passed("local_telemetry_store") is False
 
-    # restore the full ledger -> chardet is a valid temporary_exception, no
-    # blocking remains, and the projection is now consumable by FCC-07B (True).
-    clean_report = _run_gate(base, pyproject, src)
+    # Clean core packaging + Community declarations makes the projection
+    # consumable by FCC-07B (True).
+    clean_base = tmp_path / "clean_core"
+    clean_pyproject, clean_src = _core_repo(clean_base, dependencies=[])
+    clean_report = _run_gate(clean_base, clean_pyproject, clean_src)
     assert clean_report.blocking == ()
-    assert {"requests", "chardet"} <= {
-        r.symbol for r in clean_report.temporary_exceptions
-    }
     clean_projection = project_dependency_audit_evidence(
         ownership_report=clean_report, community_audit=community_audit
     )

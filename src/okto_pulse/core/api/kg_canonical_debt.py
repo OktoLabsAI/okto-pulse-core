@@ -6,16 +6,19 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.api.deps import scheduler_control_from_request
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.services.canonical_debt_service import (
-    list_canonical_debt,
-    schedule_canonical_debt_retry,
+from okto_pulse.core.api.deps import get_unit_of_work, scheduler_control_from_request
+from okto_pulse.core.application.use_cases.operational_rest import (
+    BoardNotFoundError,
+    CanonicalDebtListCommand,
+    CanonicalDebtRetryCommand,
+    ListCanonicalDebtUseCase,
+    RetryCanonicalDebtUseCase,
 )
-from okto_pulse.core.services.kg_health_service import get_kg_health
+from okto_pulse.core.application.use_cases.base import PermissionDeniedError
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter(prefix="/kg/canonical-debt")
 
@@ -45,19 +48,19 @@ async def get_canonical_debt(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> CanonicalDebtListResponse:
-    from okto_pulse.core.api.kg_rebuild import _require_board_access
-
-    await _require_board_access(board_id, user_id, db)
-    result = await list_canonical_debt(
-        db,
-        board_id=board_id,
-        artifact_type=artifact_type,
-        state=state,
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        use_case_result = await ListCanonicalDebtUseCase().execute(
+            CanonicalDebtListCommand(board_id, artifact_type, state, limit, offset),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
+        )
+    except BoardNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Board not found") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail=exc.message) from exc
+    result = use_case_result.data
     return CanonicalDebtListResponse(
         board_id=board_id,
         items=result.items,
@@ -74,23 +77,23 @@ async def retry_canonical_debt(
     debt_id: str = Path(..., min_length=1),
     board_id: str = Query(..., min_length=1),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> CanonicalDebtRetryResponse:
-    from okto_pulse.core.api.kg_rebuild import _require_board_access
-
-    await _require_board_access(board_id, user_id, db)
-    health = await get_kg_health(
-        board_id,
-        db,
-        scheduler_control=scheduler_control_from_request(request),
-    )
-    result = await schedule_canonical_debt_retry(
-        db,
-        board_id=board_id,
-        debt_id=debt_id,
-        actor_id=user_id,
-        kg_health_state=str(health.get("overall_state") or health.get("graph_state")),
-    )
+    try:
+        use_case_result = await RetryCanonicalDebtUseCase().execute(
+            CanonicalDebtRetryCommand(
+                board_id,
+                debt_id,
+                scheduler_control_from_request(request),
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
+        )
+    except BoardNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Board not found") from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail=exc.message) from exc
+    result = use_case_result.data
     if not result.get("ok") and result.get("error") == "canonical_debt_not_found":
         raise HTTPException(status_code=404, detail="canonical debt item not found")
     return CanonicalDebtRetryResponse(**result)

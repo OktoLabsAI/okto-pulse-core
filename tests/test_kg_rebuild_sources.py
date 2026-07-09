@@ -21,6 +21,11 @@ from okto_pulse.core.kg.rebuild_confirmation import (
     get_confirmation_samples,
     reset_confirmation_counter,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    REBUILD_AUDIT_GLOBAL_BOARD_ID,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 from okto_pulse.core.kg.rebuild_sources import (
     CANONICAL_ARTIFACT_TYPES,
     EnumerationOutcome,
@@ -1006,9 +1011,6 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
     """val_d0da4a75 #1: /preflight is the manifest issuance point.
     Response MUST include manifest_ref + source_set_hash, and the
     manifest must be loadable via the canonical store."""
-    from okto_pulse.core.api.kg_rebuild import _REBUILD_BASE_DIR
-    from okto_pulse.core.kg.rebuild_sources import KGRebuildSourceManifest
-
     with _client_with_router() as client:
         resp = client.post(
             "/api/v1/kg/rebuild/preflight",
@@ -1021,7 +1023,9 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
     assert len(body["preflight_hash"]) == 64
 
     # Manifest is loadable from the canonical store.
-    store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
+    store = KGRebuildSourceManifest(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     manifest = store.load(body["manifest_ref"])
     assert manifest is not None
     assert manifest.board_id == "b-life"
@@ -1032,17 +1036,6 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
 def test_confirm_uses_existing_manifest_does_not_recreate():
     """val_d0da4a75 #1: /confirm loads the manifest_ref produced by
     /preflight; it MUST NOT enumerate or build a new manifest."""
-    import shutil
-    from okto_pulse.core.api.kg_rebuild import _REBUILD_BASE_DIR
-    from okto_pulse.core.kg.rebuild_sources import KGRebuildSourceManifest
-
-    # Isolate this test from manifests left over by sibling tests
-    # (the endpoint uses a process-wide tmp dir).
-    manifests_dir = _REBUILD_BASE_DIR / "rebuild" / "manifests"
-    if manifests_dir.exists():
-        shutil.rmtree(manifests_dir)
-    manifests_dir.mkdir(parents=True, exist_ok=True)
-
     with _client_with_router() as client:
         pre = client.post(
             "/api/v1/kg/rebuild/preflight",
@@ -1067,14 +1060,18 @@ def test_confirm_uses_existing_manifest_does_not_recreate():
 
     # Only ONE manifest exists in the store for this board (no
     # recreation by confirm).
-    store = KGRebuildSourceManifest(base_dir=_REBUILD_BASE_DIR)
-    matching = 0
-    for entry in manifests_dir.iterdir():
-        if entry.suffix != ".json":
-            continue
-        loaded = store.load(entry.stem)
-        if loaded and loaded.board_id == "b-confirm-isolated":
-            matching += 1
+    artifact_store = require_rebuild_audit_artifact_store()
+    payloads = artifact_store.list_json(
+        RebuildAuditKey(
+            namespace="source_manifest",
+            board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+        )
+    )
+    matching = sum(
+        1
+        for payload in payloads
+        if payload.get("board_id") == "b-confirm-isolated"
+    )
     assert matching == 1, f"expected exactly 1 manifest, got {matching}"
 
 

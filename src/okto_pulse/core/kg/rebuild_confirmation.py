@@ -38,6 +38,9 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
 )
+from okto_pulse.core.kg.rebuild_audit import (
+    resolve_rebuild_audit_artifact_store,
+)
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_confirmation")
 
@@ -220,6 +223,14 @@ class RebuildConfirmationStore:
     artifact_store: RebuildAuditArtifactStore | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
         if self.ttl_seconds < 30:
             raise ValueError(
                 f"ttl_seconds={self.ttl_seconds} below safety floor of 30"

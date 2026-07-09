@@ -61,7 +61,9 @@ def test_af31_s4_core_upload_dir_is_neutral_and_contracts_remain_core_owned(
     assert inventory["upload_dir"].classification == "edition_default_community"
     assert inventory["upload_dir"].cleanup_status == "register_before_remove"
     assert inventory["metrics_beacon_url"].classification == "core_contract_required"
+    assert "neutral" in inventory["metrics_beacon_url"].effective_source
     assert inventory["kg_embedding_model"].classification == "core_contract_required"
+    assert "Community embedding provider" in inventory["kg_embedding_model"].effective_source
 
 
 def test_af31_s4_r17_blocks_unowned_local_first_upload_dir_default():
@@ -76,6 +78,10 @@ def test_af31_s4_r17_blocks_unowned_local_first_upload_dir_default():
         allowed_action="mutant must fail; upload_dir local paths are edition-owned",
         cleanup_status="keep",
         rationale="AF31-S4 mutant: local-first upload_dir cannot be core-owned.",
+        public_contract="AF31 mutant upload dir contract.",
+        effective_source="CoreSettings mutant local path.",
+        compatibility_path="No edition compatibility path.",
+        removal_criterion="Remove after AF31 mutant fixture is deleted.",
     )
 
     report = run_core_settings_defaults_gate(

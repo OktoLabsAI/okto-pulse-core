@@ -114,30 +114,39 @@ def _validate_local_edge_pair(
     )
 
 # ---------------------------------------------------------------------------
-# Thread pool for offloading synchronous Kùzu operations from the event loop
+# Thread pool for offloading synchronous graph adapter IO from the event loop
 # Lazy-initialized to avoid thread leaks in test suites.
 # ---------------------------------------------------------------------------
 
-_kuzu_executor: ThreadPoolExecutor | None = None
+_graph_io_executor: ThreadPoolExecutor | None = None
+
+
+def _get_graph_io_executor() -> ThreadPoolExecutor:
+    global _graph_io_executor
+    if _graph_io_executor is None:
+        _graph_io_executor = ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="graph-io",
+        )
+    return _graph_io_executor
 
 
 def _get_kuzu_executor() -> ThreadPoolExecutor:
-    global _kuzu_executor
-    if _kuzu_executor is None:
-        _kuzu_executor = ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="kuzu",
-        )
-    return _kuzu_executor
+    """Compatibility alias for legacy tests/tools; prefer _get_graph_io_executor."""
+
+    return _get_graph_io_executor()
 
 
-async def _run_kuzu(func, *args, **kwargs):
-    """Run a synchronous Kùzu operation in a dedicated thread pool."""
+async def _run_graph_io(func, *args, **kwargs):
+    """Run synchronous graph adapter IO in a dedicated thread pool."""
     loop = asyncio.get_running_loop()
-    executor = _get_kuzu_executor()
+    executor = _get_graph_io_executor()
     if kwargs:
         pfunc = partial(func, *args, **kwargs)
         return await loop.run_in_executor(executor, pfunc)
     return await loop.run_in_executor(executor, func, *args)
+
+
+_run_kuzu = _run_graph_io
 
 
 # ---------------------------------------------------------------------------
@@ -576,7 +585,7 @@ async def get_similar_nodes(
     node_type = (
         cand.node_type.value if hasattr(cand.node_type, "value") else cand.node_type
     )
-    raw = await _run_kuzu(
+    raw = await _run_graph_io(
         find_similar_nodes_by_type,
         board_id=session.board_id,
         node_type=node_type,
@@ -612,7 +621,7 @@ def _find_existing_kuzu_matches(
 ) -> dict[str, list]:
     """Sync: find existing graph nodes matching session candidates.
 
-    Runs in the thread pool via ``_run_kuzu``.
+    Runs in the thread pool via ``_run_graph_io``.
     """
     from okto_pulse.core.kg.search import find_similar_for_candidate
 
@@ -665,7 +674,7 @@ async def propose_reconciliation(
     existing_matches_by_candidate: dict[str, list] = {}
     if not nothing_changed:
         embedder = registry.require_embedding_provider()
-        existing_matches_by_candidate = await _run_kuzu(
+        existing_matches_by_candidate = await _run_graph_io(
             _find_existing_kuzu_matches,
             session.board_id,
             dict(session.node_candidates),
@@ -1606,7 +1615,7 @@ async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
     return state
 
 
-def _do_kuzu_commit(
+def _do_graph_commit(
     board_id: str,
     session_id: str,
     node_candidates: dict,
@@ -1616,9 +1625,9 @@ def _do_kuzu_commit(
     embedder,
     kg_health_state: str,
 ) -> tuple[dict, object, list, datetime, dict]:
-    """Synchronous Kùzu writes for ``commit_consolidation``.
+    """Synchronous graph writes for ``commit_consolidation``.
 
-    Runs in the thread pool via ``_run_kuzu``. Returns
+    Runs in the thread pool via ``_run_graph_io``. Returns
     ``(candidate_to_kuzu_id, counters, records, committed_at, connectivity)``
     on success.
     Raises ``KGPrimitiveError`` on failure (after inline compensation).
@@ -1635,11 +1644,11 @@ def _do_kuzu_commit(
         kg_health_state=kg_health_state,
     )
 
-    kconn = run_async_blocking(
+    graph_scope = run_async_blocking(
         get_kg_registry().graph_transaction.begin(board_id)
     )
     orch = TransactionOrchestrator(
-        kuzu_conn=kconn,
+        graph_scope=graph_scope,
         sqlite_session=None,  # SQLite writes happen in async context
         session_id=session_id,
         board_id=board_id,
@@ -1649,7 +1658,7 @@ def _do_kuzu_commit(
 
     try:
         connectivity = _validate_kuzu_connectivity_before_commit(
-            kconn=kconn,
+            kconn=graph_scope,
             board_id=board_id,
             session_id=session_id,
             node_candidates=node_candidates,
@@ -1667,7 +1676,7 @@ def _do_kuzu_commit(
                 # Spec eca49df9 (FR6): NOOP is a processed candidate too.
                 orch.counters.nodes_noop += 1
                 existing_id = _lookup_existing_node(
-                    kconn, node_type, cand.source_artifact_ref or ""
+                    graph_scope, node_type, cand.source_artifact_ref or ""
                 )
                 if existing_id:
                     candidate_to_kuzu_id[cand_id] = existing_id
@@ -1685,7 +1694,9 @@ def _do_kuzu_commit(
             if op == ReconciliationOperation.UPDATE and hint and getattr(hint, "target_node_id", None):
                 target_node_id = hint.target_node_id
                 node_type_check = _enum_value(cand.node_type)
-                is_curated = _node_is_human_curated(kconn, node_type_check, target_node_id)
+                is_curated = _node_is_human_curated(
+                    graph_scope, node_type_check, target_node_id
+                )
                 has_override = bool(hint.confidence and hint.confidence >= 1.0)
                 if is_curated and not has_override:
                     logger.info(
@@ -1820,11 +1831,11 @@ def _do_kuzu_commit(
             source_ref = cand.source_artifact_ref or ""
             if source_ref:
                 existing_id = _lookup_existing_node(
-                    kconn, node_type, source_ref
+                    graph_scope, node_type, source_ref
                 )
                 if existing_id:
                     is_curated = _node_is_human_curated(
-                        kconn, node_type, existing_id
+                        graph_scope, node_type, existing_id
                     )
                     if not is_curated:
                         embedding = embedder.encode(
@@ -1871,7 +1882,7 @@ def _do_kuzu_commit(
                     candidate_to_kuzu_id[cand_id] = existing_id
                     candidate_to_node_type[cand_id] = node_type
                     # Spec eca49df9 (FR5/AC6): count + audit the NC-8
-                    # dedup-reuse (merge). No KuzuWriteRecord — the reused
+                    # dedup-reuse (merge). No GraphWriteRecord — the reused
                     # node belongs to a prior session and must not enter
                     # compensation rollback.
                     orch.counters.nodes_merged += 1
@@ -1934,10 +1945,10 @@ def _do_kuzu_commit(
 
         for edge in edge_candidates.values():
             from_id, from_xref_type = _resolve_endpoint(
-                edge.from_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+                edge.from_candidate_id, candidate_to_kuzu_id, kconn=graph_scope,
             )
             to_id, to_xref_type = _resolve_endpoint(
-                edge.to_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+                edge.to_candidate_id, candidate_to_kuzu_id, kconn=graph_scope,
             )
             if from_id is None or to_id is None:
                 continue
@@ -1988,14 +1999,14 @@ def _do_kuzu_commit(
                     endpoints_to_recompute.append(key)
             for edge in edge_candidates.values():
                 from_id_resolved, from_type_resolved = _resolve_endpoint(
-                    edge.from_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+                    edge.from_candidate_id, candidate_to_kuzu_id, kconn=graph_scope,
                 )
                 if from_type_resolved is None:
                     from_type_resolved = candidate_to_node_type.get(
                         edge.from_candidate_id
                     )
                 to_id_resolved, to_type_resolved = _resolve_endpoint(
-                    edge.to_candidate_id, candidate_to_kuzu_id, kconn=kconn,
+                    edge.to_candidate_id, candidate_to_kuzu_id, kconn=graph_scope,
                 )
                 if to_type_resolved is None:
                     to_type_resolved = candidate_to_node_type.get(
@@ -2013,7 +2024,7 @@ def _do_kuzu_commit(
                         endpoints_to_recompute.append(key)
             if endpoints_to_recompute:
                 _recompute_relevance_batch(
-                    kconn, board_id, endpoints_to_recompute,
+                    graph_scope, board_id, endpoints_to_recompute,
                     trigger="degree_delta",
                 )
         except Exception as exc:
@@ -2023,7 +2034,7 @@ def _do_kuzu_commit(
             )
 
         committed_at = datetime.now(timezone.utc)
-        run_async_blocking(kconn.commit())
+        run_async_blocking(graph_scope.commit())
         return (
             candidate_to_kuzu_id,
             orch.counters,
@@ -2034,13 +2045,13 @@ def _do_kuzu_commit(
 
     except KGPrimitiveError:
         try:
-            run_async_blocking(kconn.rollback())
+            run_async_blocking(graph_scope.rollback())
         except Exception:
             pass
         raise
     except Exception as exc:
         try:
-            run_async_blocking(kconn.rollback())
+            run_async_blocking(graph_scope.rollback())
         except Exception:
             pass
         _compensate_kuzu_writes(board_id, session_id, orch.records)
@@ -2053,6 +2064,9 @@ def _do_kuzu_commit(
         ) from exc
 
 
+_do_kuzu_commit = _do_graph_commit
+
+
 async def commit_consolidation(
     req: CommitConsolidationRequest,
     *,
@@ -2061,8 +2075,8 @@ async def commit_consolidation(
 ) -> CommitConsolidationResponse:
     """Atomically write Kuzu nodes/edges + audit + outbox event.
 
-    Kùzu writes are offloaded to the thread pool via ``_run_kuzu`` and
-    ``_do_kuzu_commit``.  Audit persistence (SQLite) remains in the async
+    Graph writes are offloaded to the thread pool via ``_run_graph_io`` and
+    ``_do_graph_commit``.  Audit persistence (SQLite) remains in the async
     context via ``_commit_audit_records``.
 
     KG-01 FR5/FR6 enforcement: this primitive is a write path against
@@ -2101,8 +2115,8 @@ async def commit_consolidation(
                 records,
                 committed_at,
                 connectivity,
-            ) = await _run_kuzu(
-                _do_kuzu_commit,
+            ) = await _run_graph_io(
+                _do_graph_commit,
                 session.board_id,
                 req.session_id,
                 dict(session.node_candidates),
@@ -2373,7 +2387,7 @@ def _apply_kuzu_node_update_partial(
 ) -> None:
     """Spec 7f23535f (NC-8): UPDATE attrs on existing Kuzu node by id.
 
-    Used by `_do_kuzu_commit` when source_artifact_ref already maps to a
+    Used by `_do_graph_commit` when source_artifact_ref already maps to a
     node — preserves historical fields (created_at, created_by_agent,
     query_hits, last_queried_at, relevance_score, source_session_id,
     human_curated) and refreshes only content-derived attrs.
@@ -2396,8 +2410,8 @@ def _apply_kuzu_node_update_partial(
         f"WHERE n.id = $node_id "
         f"SET {', '.join(set_pairs)}"
     )
-    orch.kuzu_conn.execute(cypher, params)
-    # Note: do NOT append a KuzuWriteRecord — the existing node was created
+    orch.execute_graph(cypher, params)
+    # Note: do NOT append a GraphWriteRecord — the existing node was created
     # by a prior session, and compensation rollback uses source_session_id
     # to scope deletes. Re-recording here would risk deleting the node on
     # rollback of the current session despite belonging to the prior one.
@@ -2413,7 +2427,7 @@ def _apply_kuzu_node_create_with_timestamp(
     """
     # orchestrator.create_node builds a literal `created_at: $created_at`
     # substring — we rewrite the connection.execute call to wrap it.
-    # Simpler approach: pre-create the node with raw kuzu_conn and then append
+    # Simpler approach: pre-create the node through the graph scope and append
     # to records manually so compensation still works.
     params = dict(attrs)
     params["id"] = node_id
@@ -2422,12 +2436,12 @@ def _apply_kuzu_node_create_with_timestamp(
         f"{k}: timestamp(${k})" if k == "created_at" else f"{k}: ${k}"
         for k in params
     )
-    orch.kuzu_conn.execute(
+    orch.execute_graph(
         f"CREATE (n:{node_type} {{{columns}}})", params
     )
-    from okto_pulse.core.kg.transaction import KuzuWriteRecord
+    from okto_pulse.core.kg.transaction import GraphWriteRecord
     orch.records.append(
-        KuzuWriteRecord(kind="node", entity_type=node_type, entity_id=node_id)
+        GraphWriteRecord(kind="node", entity_type=node_type, entity_id=node_id)
     )
     orch.counters.nodes_added += 1
 

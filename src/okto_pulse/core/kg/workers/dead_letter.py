@@ -1,8 +1,8 @@
 """Dead-letter routing for the consolidation queue (spec bdcda842 IMPL-3).
 
 After ``kg_queue_max_attempts`` consecutive failures of a consolidation
-attempt, the queue entry is moved into ``ConsolidationDeadLetter`` and
-removed from ``ConsolidationQueue``. The DLQ row preserves the full attempt
+attempt, the queue entry is moved into the adapter-owned dead-letter store and
+removed from the active queue. The DLQ record preserves the full attempt
 history in the ``errors`` JSON array following the schema fixed by TR16/AC17:
 
     {
@@ -25,16 +25,12 @@ from __future__ import annotations
 
 import logging
 import traceback
-import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.models.db import (
-    ConsolidationDeadLetter,
-    ConsolidationQueue,
+from okto_pulse.core.ports.kg_operational import (
+    KGQueueEntrySnapshot,
+    get_kg_worker_queue_port,
 )
 
 logger = logging.getLogger("okto_pulse.kg.dead_letter")
@@ -81,7 +77,7 @@ def build_attempt_entry(
 
 
 def _accumulate_history(
-    queue_entry: ConsolidationQueue,
+    queue_entry: KGQueueEntrySnapshot,
     final_entry: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Reconstruct the full attempt history from queue_entry.last_error.
@@ -111,55 +107,64 @@ def _accumulate_history(
     return history
 
 
+def queue_entry_snapshot(queue_entry: Any) -> KGQueueEntrySnapshot:
+    return KGQueueEntrySnapshot(
+        id=str(queue_entry.id),
+        board_id=str(queue_entry.board_id),
+        artifact_type=str(queue_entry.artifact_type),
+        artifact_id=str(queue_entry.artifact_id),
+        attempts=int(queue_entry.attempts or 0),
+        last_error=queue_entry.last_error,
+    )
+
+
 async def route_to_dead_letter(
-    db: AsyncSession,
-    queue_entry: ConsolidationQueue,
+    context: Any,
+    queue_entry: Any,
     *,
     error_text: str,
     error_type: str | None = None,
     capture_traceback: bool = False,
-) -> ConsolidationDeadLetter:
-    """Move ``queue_entry`` to ConsolidationDeadLetter and remove from queue.
+) -> Any:
+    """Move ``queue_entry`` to the adapter-owned DLQ and remove it from queue.
 
-    The caller (worker) is responsible for ``await db.commit()`` afterwards.
+    The caller is responsible for committing the surrounding transaction.
     """
+    snapshot = (
+        queue_entry
+        if isinstance(queue_entry, KGQueueEntrySnapshot)
+        else queue_entry_snapshot(queue_entry)
+    )
     parts = error_text.split(":", 1)
     if error_type is None:
         error_type = parts[0].strip() if parts else "UnknownError"
     message = (parts[1].strip() if len(parts) > 1 else error_text).strip()
 
     final_entry = build_attempt_entry(
-        attempt=queue_entry.attempts or 1,
+        attempt=snapshot.attempts or 1,
         error_type=error_type or "UnknownError",
         message=message,
         include_traceback=capture_traceback,
     )
-    history = _accumulate_history(queue_entry, final_entry)
-
-    dlq_row = ConsolidationDeadLetter(
-        id=str(uuid.uuid4()),
-        board_id=queue_entry.board_id,
-        artifact_type=queue_entry.artifact_type,
-        artifact_id=queue_entry.artifact_id,
-        original_queue_id=queue_entry.id,
-        attempts=queue_entry.attempts or 0,
+    history = _accumulate_history(snapshot, final_entry)
+    dlq_row = await get_kg_worker_queue_port().route_to_dead_letter(
+        context,
+        queue_entry=snapshot,
         errors=history,
     )
-    db.add(dlq_row)
-    await db.delete(queue_entry)
 
     logger.warning(
         "consolidation.dead_letter board=%s artifact=%s:%s attempts=%d "
         "last_error=%s",
-        queue_entry.board_id, queue_entry.artifact_type,
-        queue_entry.artifact_id, queue_entry.attempts or 0,
+        snapshot.board_id, snapshot.artifact_type,
+        snapshot.artifact_id, snapshot.attempts or 0,
         message[:120],
         extra={
             "event": "kg.queue.dead_letter",
-            "board_id": queue_entry.board_id,
-            "artifact_type": queue_entry.artifact_type,
-            "artifact_id": queue_entry.artifact_id,
-            "attempts": queue_entry.attempts or 0,
+            "board_id": snapshot.board_id,
+            "artifact_type": snapshot.artifact_type,
+            "artifact_id": snapshot.artifact_id,
+            "attempts": snapshot.attempts or 0,
             "error_type": error_type,
         },
     )
@@ -167,16 +172,15 @@ async def route_to_dead_letter(
 
 
 async def list_dead_letter(
-    db: AsyncSession,
+    context: Any,
     board_id: str,
     *,
     limit: int = 100,
-) -> list[ConsolidationDeadLetter]:
+) -> list[Any]:
     """Return up to ``limit`` most recent DLQ rows for a board."""
-    result = await db.execute(
-        select(ConsolidationDeadLetter)
-        .where(ConsolidationDeadLetter.board_id == board_id)
-        .order_by(ConsolidationDeadLetter.dead_lettered_at.desc())
-        .limit(limit)
+    rows = await get_kg_worker_queue_port().list_dead_letter(
+        context,
+        board_id=board_id,
+        limit=limit,
     )
-    return list(result.scalars().all())
+    return list(rows)

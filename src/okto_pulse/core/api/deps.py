@@ -14,7 +14,7 @@ raises — there is NO implicit fallback to a core ``SQLAlchemyUnitOfWork``.
 
 from __future__ import annotations
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.infra.database import get_db
@@ -48,5 +48,14 @@ async def get_unit_of_work(
     preferred = (
         getattr(composition, "uow_factory", None) if composition is not None else None
     )
-    factory = resolve_unit_of_work_factory(preferred=preferred)
+    try:
+        factory = resolve_unit_of_work_factory(preferred=preferred)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "persistence_provider_not_configured",
+                "message": str(exc),
+            },
+        ) from exc
     return factory.wrap(db)

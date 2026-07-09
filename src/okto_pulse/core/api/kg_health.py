@@ -17,19 +17,25 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.api.deps import scheduler_control_from_request
+from okto_pulse.core.api.deps import get_unit_of_work, scheduler_control_from_request
+from okto_pulse.core.application.use_cases.kg_health import (
+    GetKgHealthCommand,
+    GetKgHealthReadinessCommand,
+    GetKgHealthReadinessUseCase,
+    GetKgHealthUseCase,
+)
+from okto_pulse.core.application.use_cases.operational_rest import (
+    CognitiveEffectivenessInventoryCommand,
+    GetCognitiveEffectivenessInventoryUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.cognitive_effectiveness_service import (
     CognitiveEffectivenessError,
-    build_cognitive_effectiveness_inventory,
 )
-from okto_pulse.core.services.kg_health_service import (
-    BoardNotFoundError,
-    get_kg_health,
-)
+from okto_pulse.core.services.kg_health_service import BoardNotFoundError
 
 router = APIRouter()
 
@@ -249,7 +255,7 @@ async def get_kg_health_endpoint(
     request: Request,
     board_id: str = Query(..., description="Board ID (uuid)"),
     _: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> KGHealthResponse:
     """Return the live KG health snapshot for ``board_id``.
 
@@ -261,13 +267,16 @@ async def get_kg_health_endpoint(
     Per contract api_3ed9037f the endpoint MUST NOT mutate graph or
     discovery storage. It is read-only.
     """
-    scheduler_control = scheduler_control_from_request(request)
     try:
-        data = await get_kg_health(
-            board_id,
-            db,
-            scheduler_control=scheduler_control,
+        result = await GetKgHealthUseCase().execute(
+            GetKgHealthCommand(
+                board_id,
+                scheduler_control=scheduler_control_from_request(request),
+            ),
+            actor=RESTAdapterContract.actor("kg-health-rest", board_id=board_id),
+            uow=db,
         )
+        data = result.data
     except BoardNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return KGHealthResponse(**data)
@@ -281,7 +290,7 @@ async def get_kg_health_readiness_endpoint(
     artifact_ref: str | None = Query(
         None, description="Optional type:id ref to scope non_maskable_items"),
     _: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict:
     """RKG-05 (api_1feb6875): the canonical, NON-MASKABLE health/readiness
     projection.
@@ -293,20 +302,21 @@ async def get_kg_health_readiness_endpoint(
     ``non_maskable_items`` are exposed in BOTH the summary and full profiles — a
     summary view never masks a technical blocker or its drill_down_tool. The full
     profile only ADDS the prose ``health_issues`` + ``root_cause``. Read-only."""
-    from okto_pulse.core.services.kg_health_readiness_service import (
-        InvalidProfileError,
-        build_health_readiness,
-    )
+    from okto_pulse.core.services.kg_health_readiness_service import InvalidProfileError
 
     try:
-        return await build_health_readiness(
-            board_id,
-            db,
-            profile=profile,
-            surface="rest",
-            artifact_ref=artifact_ref,
-            scheduler_control=scheduler_control_from_request(request),
+        result = await GetKgHealthReadinessUseCase().execute(
+            GetKgHealthReadinessCommand(
+                board_id,
+                profile=profile,
+                surface="rest",
+                artifact_ref=artifact_ref,
+                scheduler_control=scheduler_control_from_request(request),
+            ),
+            actor=RESTAdapterContract.actor("kg-health-readiness-rest", board_id=board_id),
+            uow=db,
         )
+        return result.data
     except InvalidProfileError as exc:
         raise HTTPException(status_code=400, detail="invalid_profile") from exc
     except BoardNotFoundError as exc:
@@ -321,7 +331,7 @@ async def get_cognitive_effectiveness_inventory_endpoint(
     include_candidate_logs: bool = Query(False),
     graph_layer: str = Query("canonical", description="canonical|working|all"),
     _: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict:
     """Read-only canonical cognitive-effectiveness inventory (RKG-01).
 
@@ -331,21 +341,21 @@ async def get_cognitive_effectiveness_inventory_endpoint(
     creates nodes or mutates readiness.
     """
     try:
-        health = await get_kg_health(
-            board_id,
-            db,
-            scheduler_control=scheduler_control_from_request(request),
+        result = await GetCognitiveEffectivenessInventoryUseCase().execute(
+            CognitiveEffectivenessInventoryCommand(
+                board_id,
+                artifact_id,
+                include_candidate_logs,
+                graph_layer,
+                scheduler_control_from_request(request),
+            ),
+            actor=RESTAdapterContract.actor(
+                "cognitive-effectiveness-rest", board_id=board_id
+            ),
+            uow=db,
         )
+        return result.data
     except BoardNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    try:
-        return await build_cognitive_effectiveness_inventory(
-            db,
-            board_id,
-            artifact_id=artifact_id,
-            include_candidate_logs=include_candidate_logs,
-            graph_layer=graph_layer,
-            metric_status=health.get("metric_status"),
-        )
     except CognitiveEffectivenessError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc

@@ -14,13 +14,24 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from okto_pulse.core.application.scope import ActorScope, QueryScope
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.admin_catalog import (
+    ActivateDefaultBoardConfigVersionUseCase,
+    CreateDefaultBoardConfigVersionUseCase,
+    DeactivateDefaultBoardConfigVersionUseCase,
+    DefaultBoardConfigCommand,
+    GetActiveDefaultBoardConfigUseCase,
+    GetBoardDefaultConfigDiffUseCase,
+    ListDefaultBoardConfigVersionsUseCase,
+    ListDefaultGuidelineCandidatesUseCase,
+    SetDefaultDesignSystemUseCase,
+    UpdateDefaultGuidelineRefsUseCase,
+)
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.amendment_revision_api import AmendmentRevisionApiError
 from okto_pulse.core.services.default_board_config_api import (
-    DefaultBoardConfigApiService,
     reject_bypass_fields,
 )
 from okto_pulse.core.services.default_board_configuration import (
@@ -28,6 +39,8 @@ from okto_pulse.core.services.default_board_configuration import (
 )
 
 router = APIRouter()
+
+# query_scope is derived inside the admin/catalog use cases from the REST actor.
 
 
 class DefaultBoardConfigVersionCreateRequest(BaseModel):
@@ -71,18 +84,19 @@ def _invalid_request(exc: ValidationError) -> HTTPException:
     )
 
 
-def _query_scope_for_actor(actor: str) -> QueryScope:
-    return ActorScope.from_context(RESTAdapterContract.actor(actor)).query_scope()
-
-
 @router.get("/default-board-config/active")
 async def get_active_default_board_config(
     scope: str = "global",
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
-        return await DefaultBoardConfigApiService(db).get_active(scope=scope)
+        result = await GetActiveDefaultBoardConfigUseCase().execute(
+            DefaultBoardConfigCommand(scope=scope),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
+        )
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
 
@@ -90,11 +104,16 @@ async def get_active_default_board_config(
 @router.get("/default-board-config/versions")
 async def list_default_board_config_versions(
     scope: str = "global",
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
-        return await DefaultBoardConfigApiService(db).list_versions(scope=scope)
+        result = await ListDefaultBoardConfigVersionsUseCase().execute(
+            DefaultBoardConfigCommand(scope=scope),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
+        )
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
 
@@ -102,7 +121,7 @@ async def list_default_board_config_versions(
 @router.post("/default-board-config/versions")
 async def create_default_board_config_version(
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
@@ -113,14 +132,12 @@ async def create_default_board_config_version(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        query_scope = _query_scope_for_actor(actor)
-        result = await DefaultBoardConfigApiService(db).create_version(
-            actor=actor,
-            query_scope=query_scope,
-            **req.model_dump(),
+        result = await CreateDefaultBoardConfigVersionUseCase().execute(
+            DefaultBoardConfigCommand(payload=req.model_dump()),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
         )
-        await db.commit()
-        return result
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
 
@@ -128,18 +145,16 @@ async def create_default_board_config_version(
 @router.post("/default-board-config/versions/{template_id}/activate")
 async def activate_default_board_config_version(
     template_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
-        query_scope = _query_scope_for_actor(actor)
-        result = await DefaultBoardConfigApiService(db).activate_version(
-            template_id=template_id,
-            actor=actor,
-            query_scope=query_scope,
+        result = await ActivateDefaultBoardConfigVersionUseCase().execute(
+            DefaultBoardConfigCommand(template_id=template_id),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
         )
-        await db.commit()
-        return result
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
 
@@ -147,15 +162,16 @@ async def activate_default_board_config_version(
 @router.post("/default-board-config/versions/{template_id}/deactivate")
 async def deactivate_default_board_config_version(
     template_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
-        result = await DefaultBoardConfigApiService(db).deactivate_version(
-            template_id=template_id, actor=actor
+        result = await DeactivateDefaultBoardConfigVersionUseCase().execute(
+            DefaultBoardConfigCommand(template_id=template_id),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
         )
-        await db.commit()
-        return result
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
 
@@ -163,11 +179,16 @@ async def deactivate_default_board_config_version(
 @router.get("/boards/{board_id}/default-config-diff")
 async def get_board_default_config_diff(
     board_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
-        return await DefaultBoardConfigApiService(db).get_board_diff(board_id=board_id)
+        result = await GetBoardDefaultConfigDiffUseCase().execute(
+            DefaultBoardConfigCommand(board_id=board_id),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
+        )
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
 
@@ -179,19 +200,18 @@ async def get_board_default_config_diff(
 async def list_default_guideline_candidates(
     scope: str = "global",
     template_id: str | None = None,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     """Global catalog guidelines with derived eligibility + current default status
     from the umbrella template (api_019810c9)."""
     try:
-        query_scope = _query_scope_for_actor(actor)
-        return await DefaultBoardConfigApiService(db).list_default_candidates(
-            scope=scope,
-            template_id=template_id,
-            actor=actor,
-            query_scope=query_scope,
+        result = await ListDefaultGuidelineCandidatesUseCase().execute(
+            DefaultBoardConfigCommand(scope=scope, template_id=template_id or ""),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
         )
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
 
@@ -200,7 +220,7 @@ async def list_default_guideline_candidates(
 async def update_default_guideline_refs(
     template_id: str,
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     """Update guideline_default_refs for a template using only global catalog
@@ -213,15 +233,15 @@ async def update_default_guideline_refs(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        query_scope = _query_scope_for_actor(actor)
-        result = await DefaultBoardConfigApiService(db).update_template_guidelines(
-            template_id=template_id,
-            guideline_default_refs=req.guideline_default_refs,
-            actor=actor,
-            query_scope=query_scope,
+        result = await UpdateDefaultGuidelineRefsUseCase().execute(
+            DefaultBoardConfigCommand(
+                template_id=template_id,
+                payload={"guideline_default_refs": req.guideline_default_refs},
+            ),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
         )
-        await db.commit()
-        return result
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)
 
@@ -230,7 +250,7 @@ async def update_default_guideline_refs(
 async def set_default_design_system(
     template_id: str,
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     """Set the Design System default reference + canonical gate mode on a template
@@ -244,10 +264,11 @@ async def set_default_design_system(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        result = await DefaultBoardConfigApiService(db).set_template_design_system(
-            template_id=template_id, actor=actor, **req.model_dump()
+        result = await SetDefaultDesignSystemUseCase().execute(
+            DefaultBoardConfigCommand(template_id=template_id, payload=req.model_dump()),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
         )
-        await db.commit()
-        return result
+        return result.data
     except DefaultBoardConfigurationError as exc:
         raise _err(exc)

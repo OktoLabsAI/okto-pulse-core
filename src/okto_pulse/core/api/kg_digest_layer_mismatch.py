@@ -12,13 +12,15 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.kg.global_discovery.layer_parity import (
-    list_digest_layer_mismatches,
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.operational_rest import (
+    DigestLayerMismatchListCommand,
+    ListDigestLayerMismatchUseCase,
 )
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter()
 
@@ -31,8 +33,8 @@ async def list_digest_layer_mismatch_endpoint(
     board_id: str,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    _user: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_user),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict[str, Any]:
     """Read-only list of digest-vs-board publication-layer mismatches.
 
@@ -40,6 +42,9 @@ async def list_digest_layer_mismatch_endpoint(
     actual_layer, source_artifact_ref. Degrades to an empty list if the global or
     board graph is unreadable (never 5xx for a transient storage state).
     """
-    return await list_digest_layer_mismatches(
-        db, board_id=board_id, limit=limit, offset=offset,
+    result = await ListDigestLayerMismatchUseCase().execute(
+        DigestLayerMismatchListCommand(board_id, limit, offset),
+        actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+        uow=db,
     )
+    return result.data

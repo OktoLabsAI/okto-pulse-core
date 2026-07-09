@@ -32,6 +32,7 @@ from okto_pulse.core.models.schemas import (
     TopicMergeRequest,
     TopicUpdate,
 )
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services.analytics_service import compute_funnel
 from okto_pulse.core.services.main import InvalidTopicMergeError, StoryService, TopicNotEmptyError
 from okto_pulse.core.services.traceability import build_lineage_graph
@@ -39,6 +40,10 @@ from okto_pulse.core.services.traceability import build_lineage_graph
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
+
+
+def _wrap_uow(db):
+    return resolve_unit_of_work_factory().wrap(db)
 
 
 def _stub_ctx(board_id: str, actor_id: str):
@@ -554,7 +559,7 @@ async def test_topic_rest_endpoints_return_contextual_delete_and_merge_payloads(
         await db.commit()
 
         with pytest.raises(HTTPException) as blocked:
-            await stories_api.delete_topic(source_id, user_id=owner_id, uow=db)
+            await stories_api.delete_topic(source_id, user_id=owner_id, uow=_wrap_uow(db))
         assert blocked.value.status_code == 409
         assert blocked.value.detail["code"] == "topic_not_empty"
         assert blocked.value.detail["active_count"] == 1
@@ -565,14 +570,14 @@ async def test_topic_rest_endpoints_return_contextual_delete_and_merge_payloads(
             source_id,
             TopicMergeRequest(target_topic_id=target_id),
             user_id=owner_id,
-            uow=db,
+            uow=_wrap_uow(db),
         )
         assert merged["success"] is True
         assert merged["moved_count"] == 1
         assert merged["source"].archived is True
         assert getattr(merged["target"], "total_associated_count") == 1
 
-        deleted = await stories_api.delete_topic(source_id, user_id=owner_id, uow=db)
+        deleted = await stories_api.delete_topic(source_id, user_id=owner_id, uow=_wrap_uow(db))
         assert deleted.success is True
         assert deleted.deleted_topic_id == source_id
 
@@ -608,17 +613,17 @@ async def test_topic_rest_and_mcp_tools_enforce_granular_permissions(db_factory)
             seen_permissions.append(args[3])
 
         with patch.object(stories_crud, "_require_permissions", side_effect=capture_permission):
-            await stories_api.create_topic(board_id, TopicCreate(name="Permission created"), user_id=owner_id, uow=db)
-            await stories_api.list_topics(board_id, user_id=owner_id, uow=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(name="Permission renamed"), user_id=owner_id, uow=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(archived=True), user_id=owner_id, uow=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(archived=False), user_id=owner_id, uow=db)
-            await stories_api.delete_topic(empty.id, user_id=owner_id, uow=db)
+            await stories_api.create_topic(board_id, TopicCreate(name="Permission created"), user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.list_topics(board_id, user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.update_topic(topic.id, TopicUpdate(name="Permission renamed"), user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.update_topic(topic.id, TopicUpdate(archived=True), user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.update_topic(topic.id, TopicUpdate(archived=False), user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.delete_topic(empty.id, user_id=owner_id, uow=_wrap_uow(db))
             await stories_api.merge_topics(
                 topic.id,
                 TopicMergeRequest(target_topic_id=target.id),
                 user_id=owner_id,
-                uow=db,
+                uow=_wrap_uow(db),
             )
 
         flattened = [
@@ -755,7 +760,7 @@ async def test_story_links_require_editable_ideations_and_reject_duplicates(db_f
                 story.id,
                 StoryLinkCreate(ideation_id=editable.id),
                 user_id=owner_id,
-                uow=db,
+                uow=_wrap_uow(db),
             )
         assert duplicate_http.value.status_code == 400
         assert "already linked" in duplicate_http.value.detail

@@ -150,25 +150,24 @@ def test_ac2_removed_asyncpg_blocks_on_manifest_source_and_wheel(tmp_path):
 
 
 # ===========================================================================
-# AC4 — requests/chardet with a VALID ledgered temporary exception are
-# reported as temporary_exception (visible), never silently passed.
+# AC4 — requests/chardet are Community-owned after AF40: a core runtime
+# manifest declaration is visible and blocking.
 # ===========================================================================
-def test_ac4_valid_temporary_exception_reported_not_silently_passed(tmp_path):
+def test_ac4_requests_chardet_community_owned_core_manifest_blocks(tmp_path):
     pyproject, src = _repo(tmp_path, dependencies=["requests>=2.0", "chardet>=5.0"])
 
     report = _run(tmp_path, pyproject, src)
 
-    assert report.ok is True
-    assert report.status == "baseline"
-    assert report.blocking == ()
-    te = {r.symbol: r for r in report.temporary_exceptions}
-    assert "requests" in te and "chardet" in te
-    assert te["requests"].classification == "temporary_exception"
-    assert te["requests"].action == "temporary_exception"
-    assert te["chardet"].classification == "temporary_exception"
-    # surfaced (not silently passed): the symbols are present in the verdict rows.
-    surfaced = {r.symbol for r in report.rows}
-    assert {"requests", "chardet"} <= surfaced
+    assert report.ok is False
+    assert report.status == "blocking"
+    by_symbol = {r.symbol: r for r in report.blocking}
+    assert by_symbol["requests"].classification == "community_owned"
+    assert by_symbol["requests"].action == "block"
+    assert by_symbol["requests"].adapter_key == "local_telemetry_store"
+    assert by_symbol["chardet"].classification == "community_owned"
+    assert by_symbol["chardet"].action == "block"
+    assert by_symbol["chardet"].adapter_key == "local_telemetry_store"
+    assert report.temporary_exceptions == ()
 
 
 # ===========================================================================

@@ -98,7 +98,14 @@ def _core_ownership_report(base: Path, *, dependencies: list[str] | tuple[str, .
     )
 
 
-_FULL_COMMUNITY_DEPS = ["okto-pulse-core>=0.3.0", "ladybug>=0.16", "sentence-transformers>=2.5"]
+_FULL_COMMUNITY_DEPS = [
+    "okto-pulse-core>=0.3.0",
+    "apscheduler>=3.10",
+    "ladybug>=0.16",
+    "requests>=2.32",
+    "chardet>=5.0",
+    "sentence-transformers>=2.5",
+]
 
 
 # ===========================================================================
@@ -108,7 +115,14 @@ _FULL_COMMUNITY_DEPS = ["okto-pulse-core>=0.3.0", "ladybug>=0.16", "sentence-tra
 def test_ac3_missing_ladybug_blocks_with_family_adapter_and_remediation(tmp_path):
     # Community manifest declares sentence-transformers but NOT ladybug.
     community = _community_pyproject(
-        tmp_path, dependencies=["okto-pulse-core>=0.3.0", "sentence-transformers>=2.5"]
+        tmp_path,
+        dependencies=[
+            "okto-pulse-core>=0.3.0",
+            "apscheduler>=3.10",
+            "requests>=2.32",
+            "chardet>=5.0",
+            "sentence-transformers>=2.5",
+        ],
     )
 
     report = audit_community_manifest(community)
@@ -132,7 +146,14 @@ def test_ac3_missing_ladybug_blocks_with_family_adapter_and_remediation(tmp_path
 
 def test_ac3_missing_dep_fails_dependency_audit_passed_for_that_adapter(tmp_path):
     community = _community_pyproject(
-        tmp_path, dependencies=["okto-pulse-core>=0.3.0", "sentence-transformers>=2.5"]
+        tmp_path,
+        dependencies=[
+            "okto-pulse-core>=0.3.0",
+            "apscheduler>=3.10",
+            "requests>=2.32",
+            "chardet>=5.0",
+            "sentence-transformers>=2.5",
+        ],
     )
     clean_core = _core_ownership_report(tmp_path / "core", dependencies=[])
 
@@ -174,7 +195,13 @@ def test_ac7_complete_manifest_and_clean_core_passes(tmp_path):
     for key in _LADYBUG_ADAPTERS | _SENTENCE_ADAPTERS:
         assert evidence[key] is True
     # required families were actually exercised (not a vacuous pass).
-    assert set(audit.required_families) == {"ladybug", "sentence_transformers"}
+    assert set(audit.required_families) == {
+        "apscheduler",
+        "chardet",
+        "ladybug",
+        "requests",
+        "sentence_transformers",
+    }
 
 
 def test_ac7_evidence_consumable_as_adapter_evidence_for_fcc07b(tmp_path):
@@ -203,7 +230,14 @@ def test_dependency_audit_passed_drives_fcc07b_readiness(tmp_path):
 
     good = _community_pyproject(tmp_path / "good", dependencies=_FULL_COMMUNITY_DEPS)
     bad = _community_pyproject(
-        tmp_path / "bad", dependencies=["okto-pulse-core>=0.3.0", "sentence-transformers>=2.5"]
+        tmp_path / "bad",
+        dependencies=[
+            "okto-pulse-core>=0.3.0",
+            "apscheduler>=3.10",
+            "requests>=2.32",
+            "chardet>=5.0",
+            "sentence-transformers>=2.5",
+        ],
     )
     _, proj_good = run_community_packaging_audit(
         community_pyproject_path=good, ownership_report=clean_core
@@ -263,7 +297,13 @@ def test_core_leak_fails_audit_even_when_community_declares(tmp_path):
 def test_fr7_optional_only_family_is_warning_not_blocking(tmp_path):
     community = _community_pyproject(
         tmp_path,
-        dependencies=["okto-pulse-core>=0.3.0", "sentence-transformers>=2.5"],
+        dependencies=[
+            "okto-pulse-core>=0.3.0",
+            "apscheduler>=3.10",
+            "requests>=2.32",
+            "chardet>=5.0",
+            "sentence-transformers>=2.5",
+        ],
         optional={"dev": ["ladybug>=0.16"]},  # ladybug ONLY as a dev extra
     )
 
@@ -295,7 +335,15 @@ def test_fr7_optional_only_family_is_warning_not_blocking(tmp_path):
 def test_required_families_exclude_transitive_and_stdlib(tmp_path):
     # only sentence-transformers declared; torch/huggingface_hub absent.
     community = _community_pyproject(
-        tmp_path, dependencies=["okto-pulse-core>=0.3.0", "sentence-transformers>=2.5", "ladybug>=0.16"]
+        tmp_path,
+        dependencies=[
+            "okto-pulse-core>=0.3.0",
+            "apscheduler>=3.10",
+            "sentence-transformers>=2.5",
+            "ladybug>=0.16",
+            "requests>=2.32",
+            "chardet>=5.0",
+        ],
     )
 
     report = audit_community_manifest(community)

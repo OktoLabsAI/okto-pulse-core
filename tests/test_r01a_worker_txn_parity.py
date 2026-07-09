@@ -29,6 +29,36 @@ def _board_id() -> str:
     return f"r01a-imp6-{uuid.uuid4().hex[:8]}"
 
 
+class _TestClaimRepository:
+    async def claim_global_outbox(self, session, *, limit: int):
+        from okto_pulse.core.models.db import GlobalUpdateOutbox
+
+        rows = (
+            await session.execute(
+                select(GlobalUpdateOutbox)
+                .where(
+                    GlobalUpdateOutbox.processed_at.is_(None),
+                    GlobalUpdateOutbox.retry_count >= 0,
+                )
+                .order_by(GlobalUpdateOutbox.created_at.asc())
+                .limit(limit)
+            )
+        ).scalars().all()
+        return list(rows)
+
+    async def claim_domain_event_executions(self, session, *, limit: int, now):
+        return []
+
+    async def claim_consolidation_queue(
+        self,
+        session,
+        *,
+        board_id: str | None,
+        limit: int,
+    ):
+        return []
+
+
 async def _seed_queue_entry(factory, board_id: str) -> str:
     from okto_pulse.core.models.db import Board, ConsolidationQueue
 
@@ -160,7 +190,7 @@ async def test_outbox_worker_failure_does_not_falsely_mark_processed(monkeypatch
         )
         await db.commit()
 
-    worker = OutboxWorker(factory)
+    worker = OutboxWorker(factory, claim_repository=_TestClaimRepository())
 
     async def _failing_apply(event, db):
         raise RuntimeError("outbox apply failure (R01A IMP6)")

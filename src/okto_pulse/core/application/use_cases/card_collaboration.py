@@ -1,0 +1,462 @@
+"""Card collaboration use cases for AF35-S3 C2.
+
+The REST adapter owns HTTP/auth/file envelopes; these use cases own the
+transactional collaboration work for card comments, Q&A and attachments. They
+delegate to the existing services while the strangler is still in progress, but
+the REST handlers no longer depend on raw request sessions.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from okto_pulse.core.application.use_cases.base import (
+    ActorContext,
+    CommandValidationError,
+    EntityNotFoundError,
+    commit,
+    session_of,
+)
+
+
+class CardNotFoundError(EntityNotFoundError):
+    def __init__(self, card_id: str) -> None:
+        super().__init__("card", card_id)
+
+
+class CardNotFoundInBoardError(EntityNotFoundError):
+    def __init__(self, board_id: str, card_id: str) -> None:
+        self.board_id = board_id
+        super().__init__("card_in_board", card_id)
+
+
+class CommentMutationNotFoundError(EntityNotFoundError):
+    def __init__(self, comment_id: str) -> None:
+        super().__init__("comment_mutation", comment_id)
+
+
+class ChoiceCommentNotFoundError(EntityNotFoundError):
+    def __init__(self, comment_id: str) -> None:
+        super().__init__("choice_comment", comment_id)
+
+
+class InvalidChoiceResponseError(CommandValidationError):
+    def __init__(self) -> None:
+        super().__init__("Invalid choice or comment not found")
+
+
+class QuestionNotFoundError(EntityNotFoundError):
+    def __init__(self, qa_id: str) -> None:
+        super().__init__("qa_item", qa_id)
+
+
+class AttachmentNotFoundError(EntityNotFoundError):
+    def __init__(self, attachment_id: str) -> None:
+        super().__init__("attachment", attachment_id)
+
+
+@dataclass(frozen=True)
+class CreateCardCommentCommand:
+    card_id: str
+    data: Any
+
+
+@dataclass(frozen=True)
+class UpdateCardCommentCommand:
+    comment_id: str
+    data: Any
+
+
+@dataclass(frozen=True)
+class RespondToChoiceCommentCommand:
+    comment_id: str
+    selected: list[str]
+    free_text: str | None
+
+
+@dataclass(frozen=True)
+class DeleteCardCommentCommand:
+    comment_id: str
+
+
+@dataclass(frozen=True)
+class CreateCardQuestionCommand:
+    card_id: str
+    data: Any
+
+
+@dataclass(frozen=True)
+class AnswerCardQuestionCommand:
+    qa_id: str
+    data: Any
+
+
+@dataclass(frozen=True)
+class DeleteCardQuestionCommand:
+    qa_id: str
+
+
+@dataclass(frozen=True)
+class UploadCardAttachmentCommand:
+    board_id: str
+    card_id: str
+    filename: str
+    content: bytes
+    mime_type: str
+
+
+@dataclass(frozen=True)
+class GetCardAttachmentCommand:
+    board_id: str
+    card_id: str
+    attachment_id: str
+
+
+@dataclass(frozen=True)
+class DeleteCardAttachmentCommand:
+    board_id: str
+    card_id: str
+    attachment_id: str
+
+
+@dataclass(frozen=True)
+class CommentResult:
+    comment: Any
+
+
+@dataclass(frozen=True)
+class QAResult:
+    qa: Any
+
+
+@dataclass(frozen=True)
+class AttachmentResult:
+    attachment: Any
+
+
+async def _log_card_activity(
+    session: Any,
+    card_id: str,
+    action: str,
+    actor: ActorContext,
+    details: dict[str, Any] | None = None,
+) -> None:
+    from okto_pulse.core.services.main import log_card_collaboration_activity
+
+    await log_card_collaboration_activity(
+        session,
+        card_id,
+        action=action,
+        actor_type="user" if actor.source == "rest" else actor.source,
+        actor_id=actor.actor_id,
+        actor_name=actor.actor_name,
+        details=details,
+    )
+
+
+async def _require_card_in_board(session: Any, board_id: str, card_id: str) -> Any:
+    from okto_pulse.core.services.main import card_belongs_to_board
+
+    if not await card_belongs_to_board(session, board_id, card_id):
+        raise CardNotFoundInBoardError(board_id, card_id)
+
+
+async def _refresh(session: Any, entity: Any, attribute_names: list[str] | None = None) -> None:
+    await session.refresh(entity, attribute_names=attribute_names)
+
+
+class CreateCardCommentUseCase:
+    async def execute(
+        self, command: CreateCardCommentCommand, *, actor: ActorContext, uow: Any
+    ) -> CommentResult:
+        from okto_pulse.core.services import CommentService
+
+        session = session_of(uow)
+        comment = await CommentService(session).create_comment(
+            command.card_id, actor.actor_id, command.data
+        )
+        if not comment:
+            raise CardNotFoundError(command.card_id)
+        await _log_card_activity(
+            session,
+            command.card_id,
+            "comment_added",
+            actor,
+            {"content": command.data.content[:100]},
+        )
+        await commit(uow)
+        await _refresh(
+            session,
+            comment,
+            ["id", "card_id", "content", "author_id", "created_at", "updated_at"],
+        )
+        return CommentResult(comment)
+
+
+class UpdateCardCommentUseCase:
+    async def execute(
+        self, command: UpdateCardCommentCommand, *, actor: ActorContext, uow: Any
+    ) -> CommentResult:
+        from okto_pulse.core.services import CommentService
+
+        session = session_of(uow)
+        comment = await CommentService(session).update_comment(
+            command.comment_id, actor.actor_id, command.data
+        )
+        if not comment:
+            raise CommentMutationNotFoundError(command.comment_id)
+        await _log_card_activity(
+            session,
+            comment.card_id,
+            "comment_updated",
+            actor,
+            {"comment_id": command.comment_id},
+        )
+        await commit(uow)
+        await _refresh(
+            session,
+            comment,
+            ["id", "card_id", "content", "author_id", "created_at", "updated_at"],
+        )
+        return CommentResult(comment)
+
+
+class RespondToChoiceCommentUseCase:
+    async def execute(
+        self, command: RespondToChoiceCommentCommand, *, actor: ActorContext, uow: Any
+    ) -> CommentResult:
+        from okto_pulse.core.services import CommentService
+        from okto_pulse.core.services.main import resolve_choice_comment_actor_name
+
+        session = session_of(uow)
+        actor_name = await resolve_choice_comment_actor_name(
+            session, command.comment_id, actor.actor_id
+        )
+        if actor_name is None:
+            raise ChoiceCommentNotFoundError(command.comment_id)
+
+        comment = await CommentService(session).respond_to_choice(
+            comment_id=command.comment_id,
+            responder_id=actor.actor_id,
+            responder_name=actor_name or actor.actor_id,
+            selected=command.selected,
+            free_text=command.free_text,
+        )
+        if not comment:
+            raise InvalidChoiceResponseError()
+        await commit(uow)
+        await _refresh(session, comment)
+        return CommentResult(comment)
+
+
+class DeleteCardCommentUseCase:
+    async def execute(
+        self, command: DeleteCardCommentCommand, *, actor: ActorContext, uow: Any
+    ) -> None:
+        from okto_pulse.core.services import CommentService
+        from okto_pulse.core.services.main import comment_card_id
+
+        session = session_of(uow)
+        card_id = await comment_card_id(session, command.comment_id)
+
+        deleted = await CommentService(session).delete_comment(
+            command.comment_id, actor.actor_id
+        )
+        if not deleted:
+            raise CommentMutationNotFoundError(command.comment_id)
+        if card_id:
+            await _log_card_activity(
+                session,
+                card_id,
+                "comment_deleted",
+                actor,
+                {"comment_id": command.comment_id},
+            )
+        await commit(uow)
+
+
+class CreateCardQuestionUseCase:
+    async def execute(
+        self, command: CreateCardQuestionCommand, *, actor: ActorContext, uow: Any
+    ) -> QAResult:
+        from okto_pulse.core.services import QAService
+
+        session = session_of(uow)
+        qa = await QAService(session).create_question(
+            command.card_id, actor.actor_id, command.data
+        )
+        if not qa:
+            raise CardNotFoundError(command.card_id)
+        await _log_card_activity(
+            session,
+            command.card_id,
+            "question_added",
+            actor,
+            {"question": command.data.question[:100]},
+        )
+        await commit(uow)
+        await _refresh(
+            session,
+            qa,
+            [
+                "id",
+                "card_id",
+                "question",
+                "answer",
+                "asked_by",
+                "answered_by",
+                "created_at",
+                "answered_at",
+            ],
+        )
+        return QAResult(qa)
+
+
+class AnswerCardQuestionUseCase:
+    async def execute(
+        self, command: AnswerCardQuestionCommand, *, actor: ActorContext, uow: Any
+    ) -> QAResult:
+        from okto_pulse.core.services import QAService, QASelfAnsweringNotAllowedError
+
+        session = session_of(uow)
+        try:
+            qa = await QAService(session).answer_question(
+                command.qa_id,
+                actor.actor_id,
+                command.data,
+                actor_type="user",
+                surface="rest",
+            )
+        except QASelfAnsweringNotAllowedError:
+            await commit(uow)
+            raise
+        if not qa:
+            raise QuestionNotFoundError(command.qa_id)
+        await _log_card_activity(
+            session,
+            qa.card_id,
+            "question_answered",
+            actor,
+            {"qa_id": command.qa_id, "answer": command.data.answer[:100]},
+        )
+        await commit(uow)
+        await _refresh(
+            session,
+            qa,
+            [
+                "id",
+                "card_id",
+                "question",
+                "answer",
+                "asked_by",
+                "answered_by",
+                "created_at",
+                "answered_at",
+            ],
+        )
+        return QAResult(qa)
+
+
+class DeleteCardQuestionUseCase:
+    async def execute(
+        self, command: DeleteCardQuestionCommand, *, actor: ActorContext, uow: Any
+    ) -> None:
+        from okto_pulse.core.services import QAService
+        from okto_pulse.core.services.main import qa_card_id
+
+        session = session_of(uow)
+        card_id = await qa_card_id(session, command.qa_id)
+
+        deleted = await QAService(session).delete_question(command.qa_id)
+        if not deleted:
+            raise QuestionNotFoundError(command.qa_id)
+        if card_id:
+            await _log_card_activity(
+                session, card_id, "question_deleted", actor, {"qa_id": command.qa_id}
+            )
+        await commit(uow)
+
+
+class UploadCardAttachmentUseCase:
+    async def execute(
+        self, command: UploadCardAttachmentCommand, *, actor: ActorContext, uow: Any
+    ) -> AttachmentResult:
+        from okto_pulse.core.services import AttachmentService
+
+        session = session_of(uow)
+        await _require_card_in_board(session, command.board_id, command.card_id)
+        attachment = await AttachmentService(session).upload_attachment(
+            card_id=command.card_id,
+            user_id=actor.actor_id,
+            filename=command.filename,
+            content=command.content,
+            mime_type=command.mime_type,
+        )
+        if not attachment:
+            raise CardNotFoundError(command.card_id)
+        await _log_card_activity(
+            session,
+            command.card_id,
+            "attachment_uploaded",
+            actor,
+            {"filename": command.filename, "size": len(command.content)},
+        )
+        await commit(uow)
+        await _refresh(
+            session,
+            attachment,
+            [
+                "id",
+                "card_id",
+                "filename",
+                "original_filename",
+                "mime_type",
+                "size",
+                "uploaded_by",
+                "created_at",
+            ],
+        )
+        return AttachmentResult(attachment)
+
+
+class GetCardAttachmentUseCase:
+    async def execute(
+        self, command: GetCardAttachmentCommand, *, actor: ActorContext, uow: Any
+    ) -> AttachmentResult:
+        from okto_pulse.core.services import AttachmentService
+
+        session = session_of(uow)
+        await _require_card_in_board(session, command.board_id, command.card_id)
+        attachment = await AttachmentService(session).get_attachment(
+            command.attachment_id
+        )
+        if not attachment or attachment.card_id != command.card_id:
+            raise AttachmentNotFoundError(command.attachment_id)
+        return AttachmentResult(attachment)
+
+
+class DeleteCardAttachmentUseCase:
+    async def execute(
+        self, command: DeleteCardAttachmentCommand, *, actor: ActorContext, uow: Any
+    ) -> None:
+        from okto_pulse.core.services import AttachmentService
+
+        session = session_of(uow)
+        await _require_card_in_board(session, command.board_id, command.card_id)
+        service = AttachmentService(session)
+        attachment = await service.get_attachment(command.attachment_id)
+        if not attachment or attachment.card_id != command.card_id:
+            raise AttachmentNotFoundError(command.attachment_id)
+
+        deleted = await service.delete_attachment(command.attachment_id)
+        if not deleted:
+            raise AttachmentNotFoundError(command.attachment_id)
+        await _log_card_activity(
+            session,
+            command.card_id,
+            "attachment_deleted",
+            actor,
+            {"attachment_id": command.attachment_id},
+        )
+        await commit(uow)

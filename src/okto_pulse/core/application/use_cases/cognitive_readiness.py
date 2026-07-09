@@ -134,6 +134,9 @@ class ListCognitiveReadinessItemsResult:
 class ListCognitiveReadinessItemsUseCase:
     """List cognitive-readiness rows + the board enforcement flag (read-only)."""
 
+    def __init__(self, readiness_service_factory=None) -> None:
+        self._readiness_service_factory = readiness_service_factory or _readiness_service
+
     async def execute(
         self, command: ListCognitiveReadinessItemsCommand, *, actor: ActorContext, uow: Any
     ) -> ListCognitiveReadinessItemsResult:
@@ -143,7 +146,9 @@ class ListCognitiveReadinessItemsUseCase:
         from okto_pulse.core.services.main import cognitive_enforcement_active
 
         session = session_of(uow)
-        read_model = build_cognitive_action_center_read_model(_readiness_service())
+        read_model = build_cognitive_action_center_read_model(
+            self._readiness_service_factory()
+        )
         result = await read_model.list_signals(
             session,
             board_id=command.board_id,

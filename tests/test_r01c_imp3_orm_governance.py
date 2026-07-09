@@ -54,8 +54,8 @@ from okto_pulse.core.repositories.orm_consumer_split_inventory import (
 
 def test_governance_metadata_complete_on_real_tree():
     assert validate_allowlist_metadata() == []
-    # the shrunk allowlist (R01C IMP3 drained 4 consumers: 69 -> 65)
-    assert len(CORE_ORM_IMPORT_ALLOWLIST) == 65
+    # the shrunk allowlist includes AF35-S2 worker helper drains (65 -> 63)
+    assert len(CORE_ORM_IMPORT_ALLOWLIST) == 63
 
 
 def test_every_cluster_carries_full_governance_resolving_to_ledger():
@@ -197,7 +197,7 @@ def test_drained_files_absent_and_coupling_free():
 
 def test_governance_report_explicit_remainder_nothing_hidden():
     rep = core_orm_governance_report()
-    assert rep["allowlisted_files"] == 65
+    assert rep["allowlisted_files"] == 63
     rem = rep["remainder"]
     assert rem["hidden"] == 0
     assert rem["all_temporary"] is True

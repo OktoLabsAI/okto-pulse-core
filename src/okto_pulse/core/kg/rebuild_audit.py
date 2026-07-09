@@ -94,6 +94,23 @@ def require_rebuild_audit_artifact_store() -> RebuildAuditArtifactStore:
     return get_kg_registry().require_rebuild_audit_artifact_store()
 
 
+def resolve_rebuild_audit_artifact_store(
+    *,
+    base_dir: Path | None,
+    artifact_store: RebuildAuditArtifactStore | None,
+) -> RebuildAuditArtifactStore | None:
+    """Resolve productive artifact IO through the edition registry.
+
+    Explicit ``base_dir`` is retained as a legacy/test compatibility path. A
+    caller that supplies neither dependency must use the registered provider and
+    fail closed if composition omitted it.
+    """
+
+    if artifact_store is not None or base_dir is not None:
+        return artifact_store
+    return require_rebuild_audit_artifact_store()
+
+
 # ---------------------------------------------------------------------------
 # kg.rebuilt event publisher
 # ---------------------------------------------------------------------------
@@ -266,6 +283,16 @@ class KGRebuiltEventPublisher:
     base_dir: Path | None = None
     publish_adapter: KGRebuiltPublishAdapter = _default_publish_adapter
     artifact_store: RebuildAuditArtifactStore | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
 
     def _audit_dir(self, board_id: str) -> Path:
         base_dir = _require_base_dir(self.base_dir)
@@ -1482,6 +1509,16 @@ class CognitiveConsolidationItemStore:
         default_factory=threading.Lock, repr=False, compare=False
     )
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
+
     @staticmethod
     def _record_key(board_id: str, kg_generation_id: str) -> RebuildAuditKey:
         return RebuildAuditKey(
@@ -2427,6 +2464,16 @@ class CognitivePendingMarker:
     pending_adapter: CognitivePendingAdapter = _default_pending_adapter
     artifact_store: RebuildAuditArtifactStore | None = None
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
+
     def _record_path(
         self, board_id: str, kg_generation_id: str
     ) -> Path:
@@ -2744,6 +2791,16 @@ class ConfirmationConsumptionAuditRecorder:
     base_dir: Path | None = None
     artifact_store: RebuildAuditArtifactStore | None = None
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
+
     def _audit_dir(self, board_id: str) -> Path:
         base_dir = _require_base_dir(self.base_dir)
         return (
@@ -3059,5 +3116,6 @@ __all__ = [
     "get_reopen_samples",
     "reset_reopen_counter",
     "require_rebuild_audit_artifact_store",
+    "resolve_rebuild_audit_artifact_store",
     "validate_kg_rebuilt_event",
 ]

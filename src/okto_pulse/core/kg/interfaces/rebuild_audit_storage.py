@@ -23,6 +23,8 @@ RebuildAuditNamespace = Literal[
     "rebuild_report",
     "candidate_decision",
     "rebaseline_audit",
+    "global_discovery_reindex",
+    "contingency",
 ]
 
 REBUILD_AUDIT_GLOBAL_BOARD_ID = "_global"

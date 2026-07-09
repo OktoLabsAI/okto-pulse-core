@@ -734,6 +734,28 @@ async def compute_velocity(
 # ---------------------------------------------------------------------------
 
 
+def _card_status_value(card: Any) -> str:
+    status_attr = getattr(card, "status", None)
+    return getattr(status_attr, "value", str(status_attr) if status_attr is not None else "")
+
+
+def _card_coverage_counts(cards: list | None) -> dict[str, int]:
+    raw_cards = list(cards or [])
+    effective_cards = [
+        card
+        for card in raw_cards
+        if not getattr(card, "archived", False) and _card_status_value(card) != "cancelled"
+    ]
+    return {
+        "cards_total_raw": len(raw_cards),
+        "cards_done_raw": sum(1 for card in raw_cards if _card_status_value(card) == "done"),
+        "cards_total_effective": len(effective_cards),
+        "cards_done_effective": sum(
+            1 for card in effective_cards if _card_status_value(card) == "done"
+        ),
+    }
+
+
 def spec_coverage_summary(
     spec, *, scenarios=None, rules=None, contracts=None, trs=None, decisions=None,
     integration_requirements=None, observability_requirements=None, cards=None,
@@ -774,14 +796,11 @@ def spec_coverage_summary(
         else (getattr(spec, "observability_requirements", None) or [])
     )
 
+    card_counts = _card_coverage_counts(cards)
     cancelled_card_ids: set = set()
     if cards:
         for c in cards:
-            status_attr = getattr(c, "status", None)
-            status_val = getattr(
-                status_attr, "value", str(status_attr) if status_attr is not None else ""
-            )
-            if status_val == "cancelled":
+            if _card_status_value(c) == "cancelled" or getattr(c, "archived", False):
                 cancelled_card_ids.add(c.id)
 
     covered_ac = set()
@@ -912,6 +931,11 @@ def spec_coverage_summary(
         "ors_linked": or_linked,
         "ors_total": or_total,
         "ors_uncovered_ids": or_uncovered_ids,
+        # Raw/historical aliases are preserved for legacy clients; effective
+        # counts mirror the gate surface by excluding cancelled/archived cards.
+        "cards_total": card_counts["cards_total_raw"],
+        "cards_done": card_counts["cards_done_raw"],
+        **card_counts,
         "skip_test_coverage": getattr(spec, "skip_test_coverage", False),
         "skip_rules_coverage": getattr(spec, "skip_rules_coverage", False),
         "skip_decisions_coverage": getattr(spec, "skip_decisions_coverage", False),
@@ -1102,6 +1126,8 @@ async def compute_blockers(
             for sid in (c.test_scenario_ids or []):
                 test_card_scenarios.add(sid)
     for s in specs:
+        if s.status == SpecStatus.CANCELLED:
+            continue
         for ts in (s.test_scenarios or []):
             if not isinstance(ts, dict):
                 continue
@@ -1131,6 +1157,264 @@ async def compute_blockers(
         "stale_hours_threshold": stale_hours,
         "filter_type": filter_type or None,
         "blockers": blockers,
+    }
+
+
+async def compute_mcp_board_analytics(
+    db: AsyncSession,
+    board_id: str,
+    *,
+    metric_type: str = "overview",
+    dt_from: datetime | None = None,
+    dt_to: datetime | None = None,
+) -> Any:
+    """Legacy board-scoped MCP analytics dispatcher.
+
+    Keeps the historical MCP envelopes while ORM querying remains in the
+    analytics service layer.
+    """
+    board = (await db.execute(select(Board).where(Board.id == board_id))).scalars().first()
+    if not board:
+        return {"error": "Board not found"}
+
+    def _legacy_is_test(card) -> bool:
+        ids = card.test_scenario_ids
+        return bool(ids and isinstance(ids, list) and len(ids) > 0)
+
+    def _last_conclusion(card) -> dict | None:
+        conclusions = card.conclusions
+        if not conclusions or not isinstance(conclusions, list):
+            return None
+        last = conclusions[-1]
+        return last if isinstance(last, dict) else None
+
+    if metric_type == "overview":
+        ideation_q = select(Ideation).where(Ideation.board_id == board_id)
+        refinement_q = select(Refinement).where(Refinement.board_id == board_id)
+        spec_q = select(Spec).where(Spec.board_id == board_id)
+        sprint_q = select(Sprint).where(Sprint.board_id == board_id)
+        card_q = select(Card).where(Card.board_id == board_id)
+        if dt_from:
+            ideation_q = ideation_q.where(Ideation.created_at >= dt_from)
+            refinement_q = refinement_q.where(Refinement.created_at >= dt_from)
+            spec_q = spec_q.where(Spec.created_at >= dt_from)
+            sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
+            card_q = card_q.where(Card.created_at >= dt_from)
+        if dt_to:
+            ideation_q = ideation_q.where(Ideation.created_at <= dt_to)
+            refinement_q = refinement_q.where(Refinement.created_at <= dt_to)
+            spec_q = spec_q.where(Spec.created_at <= dt_to)
+            sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
+            card_q = card_q.where(Card.created_at <= dt_to)
+
+        ideations = list((await db.execute(ideation_q)).scalars().all())
+        refinements = list((await db.execute(refinement_q)).scalars().all())
+        specs = list((await db.execute(spec_q)).scalars().all())
+        sprints = list((await db.execute(sprint_q)).scalars().all())
+        cards = list((await db.execute(card_q)).scalars().all())
+
+        impl_cards = [card for card in cards if not _legacy_is_test(card)]
+        test_cards = [card for card in cards if _legacy_is_test(card)]
+        done_cards = [card for card in cards if card.status == CardStatus.DONE]
+        bug_cards = [card for card in cards if getattr(card, "card_type", "normal") == "bug"]
+
+        comp_vals = []
+        drift_vals = []
+        for card in cards:
+            conclusion = _last_conclusion(card)
+            if conclusion and "completeness" in conclusion:
+                comp_vals.append(conclusion["completeness"])
+            if conclusion and "drift" in conclusion:
+                drift_vals.append(conclusion["drift"])
+
+        avg_completeness = round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None
+        avg_drift = round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None
+
+        task_validation_gate = aggregate_task_validation_gate(cards)
+        spec_validation_gate = aggregate_spec_validation_gate(specs)
+        if (
+            avg_completeness is None
+            and task_validation_gate["avg_scores"]["completeness"] is not None
+        ):
+            avg_completeness = task_validation_gate["avg_scores"]["completeness"]
+        if avg_drift is None and task_validation_gate["avg_scores"]["drift"] is not None:
+            avg_drift = task_validation_gate["avg_scores"]["drift"]
+
+        cycle_times = []
+        for card in done_cards:
+            hours = _hours_between(card.created_at, card.updated_at)
+            if hours is not None:
+                cycle_times.append(round(hours, 1))
+        avg_cycle_hours = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None
+
+        def _lifecycle_cycle_time(items, done_status) -> float | None:
+            times = []
+            for item in items:
+                if str(getattr(item, "status", "")) == str(done_status):
+                    hours = _hours_between(item.created_at, item.updated_at)
+                    if hours is not None:
+                        times.append(round(hours, 1))
+            return round(sum(times) / len(times), 1) if times else None
+
+        sprint_evals_total = 0
+        sprint_eval_scores = []
+        for sprint in sprints:
+            evaluations = getattr(sprint, "evaluations", None) or []
+            if isinstance(evaluations, list):
+                sprint_evals_total += len(evaluations)
+                for evaluation in evaluations:
+                    if isinstance(evaluation, dict) and evaluation.get("overall_score") is not None:
+                        sprint_eval_scores.append(int(evaluation["overall_score"]))
+
+        funnel = {
+            "ideations": len(ideations),
+            "refinements": len(refinements),
+            "specs": len(specs),
+            "sprints": len(sprints),
+            "cards": len(cards),
+            "done": len(done_cards),
+        }
+        bugs_open = sum(
+            1 for card in bug_cards if card.status not in (CardStatus.DONE, CardStatus.CANCELLED)
+        )
+
+        return {
+            "board_id": board_id,
+            "ideation_count": len(ideations),
+            "refinement_count": len(refinements),
+            "spec_count": len(specs),
+            "sprint_count": len(sprints),
+            "task_count": {
+                "total": len(cards),
+                "impl": len(impl_cards),
+                "tests": len(test_cards),
+                "bugs": len(bug_cards),
+            },
+            "avg_completeness": avg_completeness,
+            "avg_drift": avg_drift,
+            "avg_cycle_hours": avg_cycle_hours,
+            "cycle_time": {
+                "ideation": _lifecycle_cycle_time(ideations, "done"),
+                "refinement": _lifecycle_cycle_time(refinements, "done"),
+                "spec": _lifecycle_cycle_time(specs, "done"),
+                "sprint": _lifecycle_cycle_time(sprints, "closed"),
+                "card": avg_cycle_hours,
+            },
+            "task_validation_gate": task_validation_gate,
+            "spec_validation_gate": spec_validation_gate,
+            "sprint_evaluation": {
+                "total_submitted": sprint_evals_total,
+                "avg_overall_score": (
+                    round(sum(sprint_eval_scores) / len(sprint_eval_scores), 1)
+                    if sprint_eval_scores
+                    else None
+                ),
+            },
+            "funnel": funnel,
+            "bugs": {
+                "total": len(bug_cards),
+                "open": bugs_open,
+                "done": sum(1 for card in bug_cards if card.status == CardStatus.DONE),
+                "by_severity": {
+                    "critical": sum(
+                        1 for card in bug_cards if getattr(card, "severity", None) == "critical"
+                    ),
+                    "major": sum(
+                        1 for card in bug_cards if getattr(card, "severity", None) == "major"
+                    ),
+                    "minor": sum(
+                        1 for card in bug_cards if getattr(card, "severity", None) == "minor"
+                    ),
+                },
+            },
+        }
+
+    if metric_type == "funnel":
+        return await compute_funnel(
+            db, board_id, dt_from=dt_from, dt_to=dt_to, include_archived=True
+        )
+
+    if metric_type == "quality":
+        q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
+        if dt_from:
+            q = q.where(Card.created_at >= dt_from)
+        if dt_to:
+            q = q.where(Card.created_at <= dt_to)
+        cards = list((await db.execute(q)).scalars().all())
+
+        result = []
+        for card in cards:
+            conclusion = _last_conclusion(card)
+            if conclusion and "completeness" in conclusion and "drift" in conclusion:
+                result.append(
+                    {
+                        "card_id": card.id,
+                        "title": card.title,
+                        "completeness": conclusion["completeness"],
+                        "drift": conclusion["drift"],
+                    }
+                )
+        return result
+
+    if metric_type == "velocity":
+        return await compute_velocity(
+            db,
+            board_id,
+            granularity="week",
+            weeks=12,
+            dt_from=dt_from,
+            dt_to=dt_to,
+            include_archived=True,
+        )
+
+    if metric_type == "coverage":
+        return await compute_coverage(
+            db, board_id, dt_from=dt_from, dt_to=dt_to, include_archived=True
+        )
+
+    if metric_type == "agents":
+        q = select(Card).where(Card.board_id == board_id)
+        if dt_from:
+            q = q.where(Card.created_at >= dt_from)
+        if dt_to:
+            q = q.where(Card.created_at <= dt_to)
+        cards = list((await db.execute(q)).scalars().all())
+
+        groups: dict[str, list] = {}
+        for card in cards:
+            groups.setdefault(card.created_by, []).append(card)
+
+        result = []
+        for actor_id, actor_cards in groups.items():
+            done = [card for card in actor_cards if card.status == CardStatus.DONE]
+            conclusions = [_last_conclusion(card) for card in done]
+            comp = [
+                conclusion["completeness"]
+                for conclusion in conclusions
+                if conclusion and "completeness" in conclusion
+            ]
+            drift = [
+                conclusion["drift"]
+                for conclusion in conclusions
+                if conclusion and "drift" in conclusion
+            ]
+            result.append(
+                {
+                    "actor_id": actor_id,
+                    "total_cards": len(actor_cards),
+                    "done_cards": len(done),
+                    "avg_completeness": round(sum(comp) / len(comp), 1) if comp else None,
+                    "avg_drift": round(sum(drift) / len(drift), 1) if drift else None,
+                }
+            )
+        result.sort(key=lambda item: item["done_cards"], reverse=True)
+        return result
+
+    return {
+        "error": (
+            f"Unknown metric_type: {metric_type}. "
+            "Use one of: overview, funnel, quality, velocity, coverage, agents"
+        )
     }
 
 

@@ -140,8 +140,8 @@ def _row_value(row: Any, key: str, default: Any = None) -> Any:
 def _canonical_content_hash(row: Any, columns: tuple[str, ...]) -> str:
     """SHA-256 over canonical JSON of the load-bearing fields.
 
-    ``row`` can be a mapping, SQLAlchemy row proxy, or sqlite3.Row supplied by an
-    edition adapter. JSON strings are parsed before hashing so whitespace changes
+    ``row`` can be a mapping, SQLAlchemy row proxy, or DB-API row object supplied
+    by an edition adapter. JSON strings are parsed before hashing so whitespace changes
     in serialized JSON columns do not alter the hash.
     """
 

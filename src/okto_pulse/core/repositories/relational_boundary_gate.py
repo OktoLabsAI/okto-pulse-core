@@ -283,6 +283,41 @@ def observe_relational_boundary_violations(report: RelationalBoundaryReport) -> 
 _DEPENDS_GET_DB_RE = re.compile(r"Depends\(\s*get_db\s*\)")
 _BASE_CLASS_RE = re.compile(r"^class\s+[A-Za-z0-9_]+\([^)]*\bBase\b[^)]*\):", re.MULTILINE)
 
+_RELATIONAL_BASELINE_EXCLUDED_FILES = frozenset(
+    {
+        # AF35-S3's REST manifest is boundary-audit data: it stores relational
+        # symbol names as manifest keys, not as runtime dependencies. The S3
+        # gate validates that artifact directly; the historical core-wide
+        # counters must not drift because a conformance ledger names its tokens.
+        "core/application/boundary/af35_s3_rest_residual_manifest.py",
+    }
+)
+_RELATIONAL_TEXT_BASELINE_EXCLUDED_FILES = frozenset(
+    {
+        *_RELATIONAL_BASELINE_EXCLUDED_FILES,
+        # AF35-S5's final gate records the governed MCP direct-session ledger and
+        # names get_db_for_mcp as audit data. Keep that text out of the historical
+        # string counters while retaining normal AST coverage for the file.
+        "core/application/boundary/af35_s5_relational_final_gate.py",
+    }
+)
+
+
+def _is_relational_baseline_excluded(path: Path, base: Path) -> bool:
+    try:
+        rel = path.relative_to(base.parent).as_posix()
+    except ValueError:
+        return False
+    return rel in _RELATIONAL_BASELINE_EXCLUDED_FILES
+
+
+def _is_relational_text_baseline_excluded(path: Path, base: Path) -> bool:
+    try:
+        rel = path.relative_to(base.parent).as_posix()
+    except ValueError:
+        return False
+    return rel in _RELATIONAL_TEXT_BASELINE_EXCLUDED_FILES
+
 
 def relational_baseline_report(core_root: str | Path | None = None) -> dict:
     """Recount the core-wide relational coupling baseline (ac_cddd871d).
@@ -295,6 +330,8 @@ def relational_baseline_report(core_root: str | Path | None = None) -> dict:
     depends_get_db = get_db_for_mcp = async_session = migrate_refs = 0
     orm_base_classes = 0
     for path in base.rglob("*.py"):
+        if _is_relational_text_baseline_excluded(path, base):
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
@@ -408,7 +445,7 @@ def _is_relational_import_module(module: str | None) -> bool:
 #: aggregate below its floor is a coverage regression the report rejects unless
 #: declared as an R01A/R01B/R01C removal.
 RELATIONAL_COVERAGE_BASELINE = {
-    "relational_imports": 245,
+    "relational_imports": 232,
     "relational_symbols": 605,
     "classified_call_sites": 276,
 }
@@ -452,13 +489,42 @@ RELATIONAL_COVERAGE_BASELINE = {
 #: ``file_count`` 477 -> 483 (+6) from the provider/catalog additions. Stable
 #: floors remain unchanged, so future rises still fail as new coupling and
 #: future drops still require an explicit re-baseline.
+#:
+#: AF35-S2 re-baseline (2026-07-08) after KG operational readers/workers moved
+#: behind ports and Community adapters. The exact snapshot moves down again with
+#: the audited removals and the AF35-S3 manifest artifact exclusion: imports
+#: 308 -> 274, symbols 827 -> 728, classified call-sites 1389 -> 1215.
+#: Stable floors stay unchanged.
+#:
+#: AF35-S3 C2 re-baseline (2026-07-08) after comments, Q&A and attachments REST
+#: handlers moved request-session work into card-collaboration use cases:
+#: imports 274 -> 261, symbols 728 -> 704, classified call-sites 1215 -> 1168
+#: (rest 163 -> 140, service 1008 -> 984, mcp unchanged 44), file_count +1.
+#:
+#: AF35-S3 C3 re-baseline (2026-07-08) after amendment revisions, default board
+#: config, design systems and screen mockups REST wrappers moved to UoW-backed
+#: admin/catalog use cases: imports 261 -> 257, symbols 704 -> 680, classified
+#: call-sites 1168 -> 1116 (rest 140 -> 88, service/mcp unchanged), file_count +1.
+#:
+#: AF35-S3 C4 re-baseline (2026-07-08) after operational/KG REST wrappers moved
+#: to existing UoW/use-case/port surfaces where in scope: imports 257 -> 236,
+#: symbols 680 -> 637, classified call-sites 1116 -> 1030
+#: (rest 88 -> 32, service 984 -> 954, mcp unchanged 44), file_count +1.
+#:
+#: FCC-01C-A re-baseline (2026-07-09) after the small me/presets REST cluster
+#: stopped binding request persistence directly and moved orchestration behind
+#: UoW-backed use cases plus a focused service: imports 236 -> 232, symbols
+#: 637 -> 626, classified call-sites 1030 -> 1008 (rest 32 -> 18,
+#: service 954 -> 946, mcp unchanged 44). The import floor moves with this
+#: declared clean-core drawdown; future rises still fail as new coupling and
+#: future drops still require an explicit re-baseline.
 RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
-    "relational_imports": 308,
-    "relational_symbols": 827,
-    "classified_call_sites": 1389,
-    "by_surface": {"rest": 163, "service": 1112, "mcp": 114},
+    "relational_imports": 232,
+    "relational_symbols": 626,
+    "classified_call_sites": 1008,
+    "by_surface": {"rest": 18, "service": 946, "mcp": 44},
     "source_root": "okto_pulse/core",
-    "file_count": 483,
+    "file_count": 507,
 }
 
 #: R01B drawn-down counter baseline (ac_28f50f9d), SEPARATE from the spec #04
@@ -481,10 +547,34 @@ RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
 #: AF30-3a/3b/3c re-baseline (2026-07-07) records the audited async-session
 #: drawdown from 424 -> 420 after relational runtime ownership moved to
 #: Community. REST/MCP factory counters are unchanged.
+#:
+#: AF35-S2 re-baseline (2026-07-08) records the audited drawdown from KG
+#: operational port migration: the MCP DB-provider counter 173 -> 107 and the
+#: async-session type counter 420 -> 410. The REST dependency counter is
+#: unchanged.
+#:
+#: AF35-S3 C2 re-baseline (2026-07-08) records the audited REST collaboration
+#: drawdown: REST DB dependency sites 79 -> 69 and async-session references
+#: 410 -> 393.
+#:
+#: AF35-S3 C3 re-baseline (2026-07-08) records the audited REST admin/catalog
+#: drawdown: REST DB dependency sites 69 -> 45; async-session references unchanged.
+#:
+#: AF35-S3 C4 re-baseline (2026-07-08) records the audited operational/KG REST
+#: wrapper drawdown: REST DB dependency sites 45 -> 22; async-session references
+#: 393 -> 365. MCP DB-provider counter is unchanged.
+#:
+#: AF35-S5 cleanup (2026-07-09) removes one concrete async-session annotation from
+#: the graph transaction orchestrator constructor while preserving its legacy
+#: callable contract; no runtime behavior changes.
+#:
+#: FCC-01C-A re-baseline (2026-07-09) records the audited REST me/presets
+#: drawdown: REST DB dependency sites 22 -> 16 and async-session references
+#: 364 -> 354. MCP DB-provider counter is unchanged.
 RELATIONAL_BASELINE_R01B = {
-    "depends_get_db": 79,
-    "get_db_for_mcp": 173,
-    "async_session": 420,
+    "depends_get_db": 16,
+    "get_db_for_mcp": 107,
+    "async_session": 354,
 }
 
 _COVERAGE_AGGREGATES = ("relational_imports", "relational_symbols", "classified_call_sites")
@@ -505,6 +595,8 @@ def relational_coverage_counts(core_root: str | Path | None = None) -> dict:
     by_surface = {SURFACE_REST: 0, SURFACE_SERVICE: 0, SURFACE_MCP: 0}
     file_count = 0
     for path in base.rglob("*.py"):
+        if _is_relational_baseline_excluded(path, base):
+            continue
         try:
             text = path.read_text(encoding="utf-8")
             tree = ast.parse(text, filename=str(path))

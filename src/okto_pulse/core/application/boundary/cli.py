@@ -22,6 +22,10 @@ from pathlib import Path
 
 from .conformance_matrix import build_conformance_matrix, render_matrix_report
 from .dependency_conformance import audit_dependency_conformance, render_report
+from .mcp_runtime_ownership_gate import (
+    render_mcp_runtime_ownership_report,
+    run_mcp_runtime_ownership_gate,
+)
 from .packaging_ownership_gate import (
     PackagingOwnershipGate,
     PackagingOwnershipGateInput,
@@ -126,6 +130,23 @@ def main(argv: list[str] | None = None) -> int:
     dep.add_argument("--wheel-metadata", type=Path, default=None)
     dep.add_argument("--no-wheel", action="store_true", help="Skip the wheel surface.")
 
+    mcp_runtime = sub.add_parser(
+        "mcp-runtime-ownership",
+        aliases=["af41"],
+        help="Run the AF41 MCP server runtime ownership gate.",
+    )
+    mcp_runtime.add_argument("--format", choices=("json", "text"), default="text")
+    mcp_runtime.add_argument("--repo-root", type=Path, default=None)
+    mcp_runtime.add_argument("--pyproject", type=Path, default=None)
+    mcp_runtime.add_argument("--lock", type=Path, default=None)
+    mcp_runtime.add_argument("--source-root", type=Path, default=None)
+    mcp_runtime.add_argument("--wheel-metadata", type=Path, default=None)
+    mcp_runtime.add_argument(
+        "--lock-package-name",
+        default="okto-pulse-core",
+        help="Package name to inspect in uv.lock.",
+    )
+
     matrix = sub.add_parser(
         "conformance-matrix",
         aliases=["fcc07a"],
@@ -174,6 +195,21 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
         else:
             sys.stdout.write(render_report(report) + "\n")
+        return 0 if report.ok else 1
+
+    if args.command in ("mcp-runtime-ownership", "af41"):
+        report = run_mcp_runtime_ownership_gate(
+            repo_root=args.repo_root,
+            pyproject_path=args.pyproject,
+            lock_path=args.lock,
+            source_root=args.source_root,
+            wheel_metadata_path=args.wheel_metadata,
+            lock_package_name=args.lock_package_name,
+        )
+        if args.format == "json":
+            sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
+        else:
+            sys.stdout.write(render_mcp_runtime_ownership_report(report) + "\n")
         return 0 if report.ok else 1
 
     if args.command in ("conformance-matrix", "fcc07a"):

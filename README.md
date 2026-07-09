@@ -72,6 +72,14 @@ metadata and runtime imports. The remaining SQLAlchemy/PostgreSQL code path in
 `core.infra.database` is deferred R01B/R01C migration debt, not evidence that the
 `asyncpg` dependency may return to the core package.
 
+AF35 adds the final relational ownership source map in
+[`docs/architecture/af35_relational_ownership_matrix.md`](./docs/architecture/af35_relational_ownership_matrix.md).
+That document is rendered from `run_af35_s5_relational_final_gate()` and guards
+the current matrix for `adapter_owned`, `migrated_clean`,
+`temporary_core_exception`, `uow_seam`, `test_only`,
+`non_productive_reference` and `unowned` residues. The executable gate, not this
+README prose, is the source of truth for counts and stale-exception failures.
+
 Current boundary status is intentionally mixed. The adapter readiness inventory
 currently reports 21 seams: 12 `ready`, 6 `blocked` and 3 `deferred`. The moved
 Community-owned surfaces include sentence-transformers embeddings, cross-encoder
@@ -81,17 +89,47 @@ debt includes broad SQLAlchemy/`AsyncSession` usage, local defaults in
 `CoreSettings` and a small set of ledgered direct dependencies
 (`requests`, `chardet`, `aiosqlite`, `numpy`).
 
-AF-05 dependency owner matrix. The source of truth is
-`dependency_ledger.py`, `CANONICAL_TEMPORARY_EXCEPTION_TOKENS` and
-`conformance_matrix.py`; README text must follow those gates, not the other way
-around.
+AF-05/AF40 dependency owner matrix. The source of truth is
+`dependency_ledger.py`, `CANONICAL_AF40_DEPENDENCY_TOKENS`,
+`CANONICAL_TEMPORARY_EXCEPTION_TOKENS` and `conformance_matrix.py`; README text
+must follow those gates, not the other way around.
 
 | Dependency | Status | Current owner and evidence | Community packaging note |
 | --- | --- | --- | --- |
 | `aiofiles` | `removed` | AF-05 removed the orphaned core runtime dependency. It must stay absent from the core manifest, lock, wheel metadata and runtime imports; `dependency_conformance` fails closed if it reappears and `conformance_matrix` emits `removed_dependency_absent`. | Not Community-owned and not moved to Community without a direct adapter consumer. A stale Community lock can still show the published core dependency until the isolated artifact smoke resolves against the local core build. |
-| `requests` | `temporary_exception` | Ledgered under `#10_telemetry` and `tr_03abf5ab`; core source must not import it, but the manifest remains governed until the telemetry oracle is green. | The Community telemetry sender imports `requests`, but AF-05 does not reassign ownership or declare it here just because it is currently reached through core packaging. |
-| `chardet` | `temporary_exception` | Ledgered as the requests/telemetry charset companion under `#10_telemetry`; it stays in `CANONICAL_TEMPORARY_EXCEPTION_TOKENS`. | Kept with `requests`; do not remove, move or omit it from reports before the same telemetry oracle is green. |
+| `requests` | `community_owned` | AF40-R1 moved the concrete telemetry HTTP transport ownership to Community. `dependency_conformance` now blocks core manifest, lock, wheel or runtime-import reintroduction. | Declared directly by Community and used by `community/adapters/telemetry_sender.py`; `community_packaging_audit` requires the declaration for `local_telemetry_store`. |
+| `chardet` | `community_owned` | AF40-R1 moves the requests/telemetry charset companion with the transport pair. It is no longer in `CANONICAL_TEMPORARY_EXCEPTION_TOKENS`; it is covered by `CANONICAL_AF40_DEPENDENCY_TOKENS`. | Declared directly by Community together with `requests`; moving only one token fails the ownership matrix/oracle expectations. |
+| `aiosqlite` | `temporary_exception` | AF40-R1 carry-forward: non-telemetry relational/local DB driver loaded by SQLAlchemy from `sqlite+aiosqlite` URLs. The AF40 carry-forward guard requires direct-dep/no-import plus a named relational consumer. | Not a telemetry dependency and not moved by AF40. A later relational/local DB owner spec must provide the oracle before this can leave core packaging. |
+| `numpy` | `temporary_exception` | AF40-R1 carry-forward: non-telemetry KG/vector dependency for embedding/rerank transitives. The AF40 carry-forward guard requires direct-dep/no-import plus a named KG/vector consumer. | Not a telemetry dependency and not moved by AF40. A later KG/vector or embedding owner spec must provide the oracle before this can leave core packaging. |
 | `apscheduler` | `community_owned` | AF31-S1R moved the concrete scheduler runtime out of core. Core keeps only `JobSpec`/`SchedulerControl` and the KG daily tick policy; `dependency_conformance` now blocks manifest, lock, wheel or runtime-import reintroduction. | Declared by Community and mapped in `community/adapters/scheduler.py` from core `JobSpec` to APScheduler/`IntervalTrigger`. |
+
+AF41 MCP runtime ownership: `uvicorn[standard]` and `wsproto` are Community
+serving dependencies. Core exposes `build_mcp_asgi_app()` and `mount_mcp()`, but
+its manifest, lock and wheel metadata must not declare the concrete server
+runtime. `mcp_runtime_ownership_gate.py` enforces that boundary and allows only
+the lazy `uvicorn` import inside the deprecated
+`okto_pulse.core.mcp.server.run_mcp_server` debug shim.
+
+AF41 provider preservation: this change does not recreate the delivered MCP
+instruction, resource, version, auth or trace adapters. Core keeps only the
+provider seams (`register_instruction_provider`, `register_resource_catalog`,
+`register_package_version_provider`, `McpAuthenticator` and `McpTraceSink`);
+Community supplies the concrete local providers through its composition root.
+
+AF37 graph runtime compatibility ledger. The source of truth is
+`LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER` in
+`graph_runtime_surface_gate.py`; README text follows that executable gate.
+These names remain public compatibility surfaces only. New core code should
+consume `GraphRuntimeStore`, `GraphLifecycle`, `GraphTransaction`,
+`GraphSchemaManager` or `SemanticGraphStore`.
+
+| Legacy token | Preferred neutral surface | Owner | Removal criterion |
+| --- | --- | --- | --- |
+| `board_kuzu_path` | `GraphRuntimeStore.exists/graph_state/footprint` | `okto-pulse-core/kg + okto-pulse-community/adapters` | Remove after Community and fixtures stop importing board path symbols and startup/lifecycle checks use runtime ports. |
+| `KuzuNodeRef` / `kuzu_node_id` | graph node reference audit ledger / `graph_node_id` | `okto-pulse-core/kg-governance` and `okto-pulse-core/kg-api-compat` | Add neutral aliases and prove payload/table parity before any versioned removal. |
+| `kg_kuzu_*` | `graph_runtime_*` settings aliases | `okto-pulse-core/settings + okto-pulse-community/settings` | Add API/UI/env alias parity, then retire legacy names through public config stability gates. |
+| `graph_lbug_bytes` | `storage_footprint_proxy.total_bytes/primary_bytes` | `okto-pulse-core/kg-health` | Move UI/API consumers to neutral footprint fields before removing the legacy byte field. |
+| `kuzu_error` / `kuzu_lock_retries_5m` | `graph_backend_error` / `graph_lock_retries_5m` | `okto-pulse-core/kg-api-compat` and `okto-pulse-core/kg-operations` | Add neutral fields/types and keep legacy mappings for one compatibility window before deprecation. |
 
 AF33 capstone ownership matrix. The marked table is rendered from
 `CAPSTONE_OWNERSHIP_MATRIX` and must stay byte-identical to the Community
@@ -139,9 +177,13 @@ logic that future SaaS editions must share.
 AF-21 and AF-28 define the public surface that Community adapters may consume
 while the remaining reach-ins are retired. Public entry points include
 `okto_pulse.core.services.application_kg` for KG/governance orchestration,
-`okto_pulse.core.services.application_agents` for agent credential primitives,
+`okto_pulse.core.services.application_agents` for agent credential/auth/ACL
+primitives,
+`okto_pulse.core.services.application_startup` for startup self-heal helpers,
 `okto_pulse.core.mcp.build_mcp_asgi_app` and the other `okto_pulse.core.mcp`
 composition hooks for MCP mounting/session binding,
+`okto_pulse.core.ports.relational_runtime` for edition-owned relational
+lifecycle/session binding,
 `okto_pulse.core.ports.runtime_workers` for edition-owned worker composition,
 and adapter-neutral KG facades in `core.kg.board_source_store`,
 `core.kg.board_rebuild_adapter`, `core.kg.tier_power`, `core.kg.scoring`,
@@ -354,7 +396,7 @@ Cleanup:
 #### Other improvements
 
 - **MCP `ApiKeySessionMiddleware`** rewritten on top of `ContextVar` — required because the FastAPI process serves multiple concurrent requests and the previous module-level global would leak identities across requests. Token-based set/reset pattern protects against exception leaks.
-- **`run_mcp_server`** retained for legacy callers, now defers to `build_mcp_asgi_app` for ASGI-mode embeds.
+- **Legacy debug shim:** `okto_pulse.core.mcp.server.run_mcp_server` is not part of the normal `okto_pulse.core.mcp` facade. Productive serving is owned by Community runtime composition; the shim emits a deprecation warning, lazy-loads the concrete server runtime, and fails closed when the edition has not configured the relational runtime/dependency. Removal criterion: no supported caller imports this shim from core after the AF41 ownership gates are enforced.
 
 To upgrade an existing install: `pip install -U okto-pulse okto-pulse-core` and then `okto-pulse init --agents` to regenerate `.mcp.json` (the URL still points at port 8101 by default; override with `--mcp-port` if you remapped). No downstream contract changes for MCP clients — the wire protocol and tool catalog (sans 5 skills tools) are unchanged.
 

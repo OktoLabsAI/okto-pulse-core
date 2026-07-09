@@ -62,13 +62,13 @@ def _make_spec(
     )
 
 
-def _card(card_id: str, status: str):
+def _card(card_id: str, status: str, *, archived: bool = False):
     """Fabrica um card-like com .id e .status (string ou enum-like)."""
     return SimpleNamespace(
         id=card_id,
         status=SimpleNamespace(value=status),
         spec_id="spec-test",
-        archived=False,
+        archived=archived,
         card_type=SimpleNamespace(value="normal"),
     )
 
@@ -126,6 +126,23 @@ class TestTSDrop:
         cov = spec_coverage_summary(spec, cards=[_card("c_a", "cancelled")])
         assert cov["scenarios_linked"] == 0
         assert cov["scenario_task_linkage_pct"] == 0.0
+
+    def test_card_counts_distinguish_raw_from_gate_effective(self):
+        spec = _make_spec()
+        cov = spec_coverage_summary(
+            spec,
+            cards=[
+                _card("c_done", "done"),
+                _card("c_cancelled", "cancelled"),
+                _card("c_archived", "done", archived=True),
+            ],
+        )
+        assert cov["cards_total"] == 3
+        assert cov["cards_done"] == 2
+        assert cov["cards_total_raw"] == 3
+        assert cov["cards_done_raw"] == 2
+        assert cov["cards_total_effective"] == 1
+        assert cov["cards_done_effective"] == 1
 
 
 # ---------------------------------------------------------------------------

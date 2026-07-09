@@ -133,6 +133,54 @@ def test_get_related_context_echoes_and_fails_closed(monkeypatch):
     assert "context" not in bad
 
 
+def test_get_related_context_rejects_raw_uuid_before_graph_lookup(monkeypatch):
+    board_id = _seed_board_subgraph()
+    raw_uuid = str(uuid.uuid4())
+    calls = {"get_related_context": 0}
+
+    class FakeService:
+        def check_board_access(self, boards, checked_board_id):
+            assert checked_board_id == board_id
+
+        def get_related_context(self, *args, **kwargs):
+            calls["get_related_context"] += 1
+            return []
+
+    import okto_pulse.core.mcp.kg_query_tools as kg_query_tools
+
+    monkeypatch.setattr(kg_query_tools, "get_kg_service", lambda: FakeService())
+    tool = _register_query_tools(board_id, monkeypatch)["okto_pulse_kg_get_related_context"]
+
+    result = _call(tool, board_id=board_id, artifact_id=raw_uuid)
+    assert result["error"]["code"] == "invalid_artifact_ref"
+    assert result["error"]["supported"] == ["spec:<uuid>", "card:<uuid>"]
+    assert calls["get_related_context"] == 0
+
+
+def test_get_related_context_accepts_typed_uuid_refs(monkeypatch):
+    board_id = _seed_board_subgraph()
+    artifact_ref = f"spec:{uuid.uuid4()}"
+    calls = {"artifact_id": None}
+
+    class FakeService:
+        def check_board_access(self, boards, checked_board_id):
+            assert checked_board_id == board_id
+
+        def get_related_context(self, board_id_arg, artifact_id, **kwargs):
+            calls["artifact_id"] = artifact_id
+            return []
+
+    import okto_pulse.core.mcp.kg_query_tools as kg_query_tools
+
+    monkeypatch.setattr(kg_query_tools, "get_kg_service", lambda: FakeService())
+    tool = _register_query_tools(board_id, monkeypatch)["okto_pulse_kg_get_related_context"]
+
+    result = _call(tool, board_id=board_id, artifact_id=artifact_ref)
+    assert result["context"] == []
+    assert result["applied_graph_layer"] == "canonical"
+    assert calls["artifact_id"] == artifact_ref
+
+
 # ===========================================================================
 # R6-IMP3 rework TEETH — query_global must fall back to the linear scan when the
 # global HNSW page is incomplete for the target board (so a board's `working`

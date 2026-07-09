@@ -6,19 +6,22 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.api.deps import scheduler_control_from_request
+from okto_pulse.core.api.deps import get_unit_of_work, scheduler_control_from_request
+from okto_pulse.core.application.use_cases.operational_rest import (
+    OrphanBackfillCommand,
+    RunOrphanBackfillUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.kg.orphan_integrity import (
     DEFAULT_ORPHAN_SAMPLE_LIMIT,
     MAX_ORPHAN_SAMPLE_LIMIT,
     OrphanBackfillReconciler,
     OrphanNodeScanner,
 )
-from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.services.kg_health_service import get_kg_health
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter()
 
@@ -29,31 +32,6 @@ class OrphanBackfillRequest(BaseModel):
     dry_run: bool = True
     node_ids: list[str] | None = None
     limit: int = Field(default=DEFAULT_ORPHAN_SAMPLE_LIMIT, ge=0)
-
-
-async def _ensure_backfill_allowed(
-    board_id: str,
-    db: AsyncSession,
-    *,
-    scheduler_control: SchedulerControl | None = None,
-) -> None:
-    health = await get_kg_health(
-        board_id,
-        db,
-        scheduler_control=scheduler_control,
-    )
-    state = str(health.get("overall_state") or health.get("graph_state") or "")
-    if state in {"recovery_needed", "quarantined"}:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "kg_orphan_backfill_refused_by_health",
-                "board_id": board_id,
-                "overall_state": health.get("overall_state"),
-                "graph_state": health.get("graph_state"),
-                "operator_action": "inspect_kg_health_recovery_flow",
-            },
-        )
 
 
 def _graph_unavailable_error(board_id: str, exc: Exception) -> HTTPException:
@@ -121,32 +99,30 @@ async def get_kg_orphan_integrity_report(
 async def post_kg_orphan_integrity_backfill(
     body: OrphanBackfillRequest,
     request: Request,
-    _: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_user),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict[str, Any]:
     """Run explicit orphan backfill. Defaults to dry-run for safe review."""
 
-    await _ensure_backfill_allowed(
-        body.board_id,
-        db,
-        scheduler_control=scheduler_control_from_request(request),
-    )
-    limit = max(0, min(int(body.limit), MAX_ORPHAN_SAMPLE_LIMIT))
     try:
-        result = OrphanBackfillReconciler().run(
-            board_id=body.board_id,
-            generation_id=body.generation_id,
-            dry_run=body.dry_run,
-            node_ids=body.node_ids,
-            limit=limit,
+        result = await RunOrphanBackfillUseCase(
+            health_reader=get_kg_health,
+            reconciler_factory=OrphanBackfillReconciler,
+        ).execute(
+            OrphanBackfillCommand(
+                body.board_id,
+                body.generation_id,
+                body.dry_run,
+                body.node_ids,
+                body.limit,
+                scheduler_control_from_request(request),
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=body.board_id),
+            uow=db,
         )
     except Exception as exc:
         raise _graph_unavailable_error(body.board_id, exc) from exc
+    if isinstance(result.data, dict) and "refused_by_health" in result.data:
+        raise HTTPException(status_code=409, detail=result.data["refused_by_health"])
 
-    return {
-        "board_id": body.board_id,
-        "generation_id": body.generation_id,
-        "dry_run": body.dry_run,
-        "backfill_summary": result.to_safe_dict(),
-        "correlation_id": result.correlation_id,
-    }
+    return result.data

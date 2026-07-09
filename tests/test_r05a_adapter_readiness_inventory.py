@@ -124,7 +124,9 @@ def test_r_p2_01_raw_sqlite_adapters_are_nominally_governed():
     source = inv["board_source_store"]
     assert source.current_module == "okto_pulse/community/adapters/board_source_reader.py"
     assert source.owner == "okto-pulse-community/kg"
-    assert source.port_ref == "BoardSourceReader"
+    assert source.port_ref == (
+        "okto_pulse.core.application.rebuild_ports.BoardSourceReader"
+    )
     assert source.status == "ready"
     assert ("moved_by", "R10A") in source.metadata
     assert "SourceReadConsumerGate" in source.removal_criterion
@@ -132,7 +134,10 @@ def test_r_p2_01_raw_sqlite_adapters_are_nominally_governed():
     ingestion = inv["board_rebuild_ingestion_adapter"]
     assert ingestion.current_module == "okto_pulse/community/adapters/board_rebuild_ingestion.py"
     assert ingestion.owner == "okto-pulse-community/kg"
-    assert ingestion.port_ref == "RebuildIngestionPort/StepAdapterFactory"
+    assert ingestion.port_ref == (
+        "okto_pulse.core.application.rebuild_ports."
+        "RebuildIngestionPort/StepAdapterFactory"
+    )
     assert ingestion.status == "ready"
     assert ("moved_by", "R10B") in ingestion.metadata
     assert "#04_repository_uow" in ingestion.predecessor_refs

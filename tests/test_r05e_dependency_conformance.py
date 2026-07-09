@@ -25,6 +25,7 @@ import ast
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -32,11 +33,14 @@ import pytest
 import okto_pulse.core.application.boundary.dependency_conformance as _conf_mod
 import okto_pulse.core.application.boundary.dependency_ledger as _ledger_mod
 from okto_pulse.core.application.boundary.dependency_conformance import (
+    DIAG_INVALID_AF40_CARRY_FORWARD_TOKEN,
     GOVERNED_TECHNICAL_TOKENS,
     audit_dependency_conformance,
     render_report,
 )
 from okto_pulse.core.application.boundary.dependency_ledger import (
+    CANONICAL_AF40_CARRY_FORWARD_TOKENS,
+    CANONICAL_AF40_DEPENDENCY_TOKENS,
     CANONICAL_TEMPORARY_EXCEPTION_TOKENS,
     REQUIRED_ENTRY_FIELDS,
     build_dependency_ledger,
@@ -298,13 +302,22 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
         for alias in e.aliases:
             index[normalize_token(alias)] = e
 
+    assert CANONICAL_AF40_CARRY_FORWARD_TOKENS == CANONICAL_TEMPORARY_EXCEPTION_TOKENS
+
     for token in CANONICAL_TEMPORARY_EXCEPTION_TOKENS:
         entry = index.get(normalize_token(token))
         assert entry is not None, f"temporary exception '{token}' is not ledgered"
         for fld in REQUIRED_ENTRY_FIELDS:
             value = getattr(entry, fld)
             assert isinstance(value, str) and value.strip(), f"{token}.{fld} empty"
-        assert entry.classification in ("temporary_exception", "community_owned")
+        assert entry.classification == "temporary_exception"
+
+    for token in CANONICAL_AF40_DEPENDENCY_TOKENS:
+        entry = index.get(normalize_token(token))
+        assert entry is not None, f"AF40 token '{token}' is not ledgered"
+        for fld in REQUIRED_ENTRY_FIELDS:
+            value = getattr(entry, fld)
+            assert isinstance(value, str) and value.strip(), f"{token}.{fld} empty"
 
     # numpy + aiosqlite are the carry-forward: direct-dep + no-import, kept by a
     # transitive consumer (NOT auto-removed like asyncpg).
@@ -313,6 +326,9 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
         assert entry.direct_dep_no_import is True
         assert entry.transitive_consumer, f"{token} must name its transitive consumer"
         assert entry.expected_source_import_roots == ()
+        assert "Non-telemetry carry-forward" in entry.reason
+        assert "Do not remove or classify as telemetry-owned in AF40" in entry.removal_criterion
+        assert "AF40 carry-forward guard" in entry.validation_oracle
 
     # asyncpg is the SAME shape (direct-dep + no-import) but classified `removed`.
     asyncpg = index[normalize_token("asyncpg")]
@@ -337,6 +353,13 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
     assert sentence_transformers.classification == "community_owned"
     assert sentence_transformers.expected_source_import_roots == ("sentence_transformers",)
 
+    requests = index[normalize_token("requests")]
+    assert requests.classification == "community_owned"
+    assert requests.expected_source_import_roots == ("requests",)
+    chardet = index[normalize_token("chardet")]
+    assert chardet.classification == "community_owned"
+    assert chardet.expected_source_import_roots == ("chardet",)
+
     # On the real repo every temporary exception is reported as accepted.
     report = audit_dependency_conformance(audit_wheel=False)
     accepted_tokens = {normalize_token(e["token"]) for e in report.accepted_exceptions}
@@ -344,6 +367,45 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
         assert normalize_token(token) in accepted_tokens, f"{token} not reported as accepted"
     assert "ladybug" in report.community_owned
     assert "sentence-transformers" in report.community_owned
+    assert "requests" in report.community_owned
+    assert "chardet" in report.community_owned
+
+
+def test_af40_carry_forward_guard_rejects_removal_or_telemetry_reclassification():
+    mutated = []
+    for entry in build_dependency_ledger():
+        if entry.token == "aiosqlite":
+            mutated.append(
+                replace(
+                    entry,
+                    classification="community_owned",
+                    direct_dep_no_import=False,
+                    transitive_consumer=None,
+                    expected_source_import_roots=("aiosqlite",),
+                )
+            )
+        elif entry.token == "numpy":
+            mutated.append(
+                replace(
+                    entry,
+                    classification="removed",
+                    transitive_consumer=None,
+                )
+            )
+        else:
+            mutated.append(entry)
+
+    report = audit_dependency_conformance(audit_wheel=False, ledger=tuple(mutated))
+
+    assert report.ledger_integrity_ok is False
+    hits = [
+        finding
+        for finding in report.findings
+        if finding.diagnostic_code == DIAG_INVALID_AF40_CARRY_FORWARD_TOKEN
+    ]
+    assert {normalize_token(f.token) for f in hits} == {"aiosqlite", "numpy"}
+    assert all(f.severity == "blocking" for f in hits)
+    assert report.ok is False
 
 
 def test_community_owned_ladybug_reintroduction_fails_closed(tmp_path):
@@ -469,10 +531,12 @@ def test_report_is_actionable_and_serialisable():
     assert "aiofiles" in text
     assert "temporary_exceptions" in text
     # every accepted exception surfaces its owner_wave + removal_criterion + oracle.
-    for token in ("aiosqlite", "numpy", "requests", "chardet"):
+    for token in ("aiosqlite", "numpy"):
         assert token in text
     assert "community_owned :" in text
     assert "apscheduler" in text
+    assert "requests" in text
+    assert "chardet" in text
     assert "ladybug" in text
     assert "removal_criterion" in text
     assert "validation_oracle" in text
@@ -481,7 +545,7 @@ def test_report_is_actionable_and_serialisable():
     import json
 
     payload = json.dumps(report.as_dict(), sort_keys=True)
-    assert '"ledger_version": "R05-E.2"' in payload
+    assert '"ledger_version": "R05-E.3"' in payload
 
 
 def test_af05_readmes_document_dependency_owner_matrix():
@@ -493,17 +557,22 @@ def test_af05_readmes_document_dependency_owner_matrix():
     community_readme = community_readme_path.read_text(encoding="utf-8")
 
     for text in (core_readme, community_readme):
-        assert "AF-05 dependency owner matrix" in text
+        assert "AF-05/AF40 dependency owner matrix" in text
         assert "`dependency_ledger.py`" in text
+        assert "`CANONICAL_AF40_DEPENDENCY_TOKENS`" in text
         assert "`CANONICAL_TEMPORARY_EXCEPTION_TOKENS`" in text
         assert "`conformance_matrix.py`" in text
         for token, status in (
             ("aiofiles", "removed"),
-            ("requests", "temporary_exception"),
-            ("chardet", "temporary_exception"),
+            ("requests", "community_owned"),
+            ("chardet", "community_owned"),
+            ("aiosqlite", "temporary_exception"),
+            ("numpy", "temporary_exception"),
             ("apscheduler", "community_owned"),
         ):
             assert f"| `{token}` | `{status}` |" in text
+
+        assert "Non-telemetry carry-forward" in text or "non-telemetry" in text
 
     assert "published core dependency" in core_readme
     assert "published `okto-pulse-core`" in community_readme

@@ -40,6 +40,10 @@ REQUIRED_INVENTORY_FIELDS: tuple[str, ...] = (
     "spec_ref",
     "allowed_action",
     "cleanup_status",
+    "public_contract",
+    "effective_source",
+    "compatibility_path",
+    "removal_criterion",
 )
 
 COMMUNITY_PARITY_FIELDS: tuple[str, ...] = (
@@ -133,10 +137,17 @@ _EDITION_COMMUNITY_OWNERS: dict[str, tuple[str, str, str]] = {
 }
 
 _KG_RUNTIME_OWNERS: dict[str, str] = {
-    "kg_kuzu_buffer_pool_mb": "Runtime KG buffer knob exposed by settings runtime.",
-    "kg_kuzu_max_db_size_gb": "Runtime KG storage knob exposed by settings runtime.",
+    "kg_kuzu_buffer_pool_mb": (
+        "Legacy public buffer knob retained for API/env compatibility; AF37 "
+        "tracks the neutral graph_runtime_* alias plan."
+    ),
+    "kg_kuzu_max_db_size_gb": (
+        "Legacy public storage knob retained for API/env compatibility; AF37 "
+        "tracks the neutral graph_runtime_* alias plan."
+    ),
     "kg_connection_pool_size": (
-        "Runtime KG connection-pool knob consumed by core/kg/connection_pool.py."
+        "Legacy public connection-pool knob retained for API/env compatibility; "
+        "AF39 tracks the neutral graph_runtime_* alias plan."
     ),
 }
 
@@ -202,6 +213,147 @@ _LOCAL_FIRST_UPLOAD_DEFAULT_REPRS: frozenset[str] = frozenset(
     {"'./uploads'", '"./uploads"'}
 )
 
+_CORE_PUBLIC_CONTRACT = (
+    "Core-owned public CoreSettings field and environment variable."
+)
+_CORE_EFFECTIVE_SOURCE = "CoreSettings default/env parsing."
+_CORE_COMPATIBILITY_PATH = (
+    "Field name and env var remain stable; renames require PublicSettingAlias "
+    "and an approved migration plan."
+)
+_CORE_REMOVAL_CRITERION = (
+    "No planned removal; removal requires an approved public migration alias, "
+    "downstream regression coverage and this inventory update."
+)
+
+_CORE_CONTRACT_MATRIX_OVERRIDES: dict[str, dict[str, str]] = {
+    "metrics_beacon_url": {
+        "public_contract": (
+            "Telemetry beacon endpoint field is public; the core default is "
+            "intentionally neutral."
+        ),
+        "effective_source": (
+            "CoreSettings keeps a neutral empty default; Community telemetry "
+            "capability supplies the installed endpoint and consent behavior."
+        ),
+        "compatibility_path": (
+            "METRICS_BEACON_URL remains accepted while AF40 owns the telemetry "
+            "provider pipeline and any endpoint migration."
+        ),
+        "removal_criterion": (
+            "Only move/remove after AF40 registers a telemetry provider contract, "
+            "legacy env alias and Community/runtime regression coverage."
+        ),
+    },
+    "kg_embedding_model": {
+        "public_contract": (
+            "Embedding model field/env remains a public compatibility contract."
+        ),
+        "effective_source": (
+            "Core preserves the historical model name for compatibility; the "
+            "Community embedding provider is the installed effective provider."
+        ),
+        "compatibility_path": (
+            "KG_EMBEDDING_MODEL stays stable until the Community provider declares "
+            "the edition default and a migration alias."
+        ),
+        "removal_criterion": (
+            "Only move/remove after provider-owned defaults, env alias coverage, "
+            "runtime API parity and embedding provider regression tests pass."
+        ),
+    },
+    "kg_embedding_dim": {
+        "public_contract": (
+            "Embedding dimension remains public because persisted vectors depend on it."
+        ),
+        "effective_source": (
+            "CoreSettings preserves the compatibility dimension; Community "
+            "embedding provider metadata must agree or override explicitly."
+        ),
+        "compatibility_path": (
+            "KG_EMBEDDING_DIM remains stable until provider metadata is the single "
+            "source of truth with migration coverage."
+        ),
+        "removal_criterion": (
+            "Only move/remove after provider metadata owns the dimension, legacy "
+            "env alias coverage exists and vector/index regression tests pass."
+        ),
+    },
+}
+
+_EDITION_MATRIX: dict[str, dict[str, str]] = {
+    "database_url": {
+        "effective_source": (
+            "CommunitySettings derives data/pulse.db from data_dir; CoreSettings "
+            "keeps a neutral empty default."
+        ),
+        "compatibility_path": (
+            "DATABASE_URL remains public; CommunitySettings accepts empty or "
+            "legacy local values and derives the installed database URL."
+        ),
+        "removal_criterion": (
+            "Only move/remove after Community database provider registration, "
+            "legacy env alias and settings parity tests replace this field."
+        ),
+    },
+    "upload_dir": {
+        "effective_source": (
+            "Community storage derives data_dir/uploads; CoreSettings keeps a "
+            "neutral empty default."
+        ),
+        "compatibility_path": (
+            "UPLOAD_DIR remains public; CommunitySettings accepts empty or legacy "
+            "./uploads values and derives the installed upload path."
+        ),
+        "removal_criterion": (
+            "Only move/remove after StorageProvider registration, legacy env alias "
+            "and Community settings parity tests replace this field."
+        ),
+    },
+    "metrics_dir": {
+        "effective_source": (
+            "Community telemetry derives data_dir/metrics; CoreSettings keeps a "
+            "neutral empty default."
+        ),
+        "compatibility_path": (
+            "METRICS_DIR remains public; CommunitySettings derives the installed "
+            "metrics path while AF40 owns the telemetry pipeline migration."
+        ),
+        "removal_criterion": (
+            "Only move/remove after AF40 telemetry provider registration, legacy "
+            "env alias and local telemetry parity tests replace this field."
+        ),
+    },
+    "kg_base_dir": {
+        "effective_source": (
+            "CommunitySettings/KG capability derives data_dir; the core "
+            "~/.okto-pulse literal is compatibility-only, not an installed source."
+        ),
+        "compatibility_path": (
+            "KG_BASE_DIR remains public; CommunitySettings maps empty or legacy "
+            "~/.okto-pulse values to data_dir."
+        ),
+        "removal_criterion": (
+            "Only move/remove after KG capability/provider registration, legacy "
+            "env alias and runtime settings parity tests replace this field."
+        ),
+    },
+    "kg_embedding_mode": {
+        "effective_source": (
+            "CommunitySettings overrides the core stub mode with "
+            "sentence-transformers for the installed edition."
+        ),
+        "compatibility_path": (
+            "KG_EMBEDDING_MODE remains public; CommunitySettings preserves the "
+            "edition override and tests the effective value."
+        ),
+        "removal_criterion": (
+            "Only move/remove after embedding provider registration, legacy env "
+            "alias and provider composition regression tests replace this field."
+        ),
+    },
+}
+
 
 @dataclass(frozen=True, slots=True)
 class CoreSettingDefaultEntry:
@@ -216,6 +368,10 @@ class CoreSettingDefaultEntry:
     allowed_action: str
     cleanup_status: CleanupStatus
     rationale: str
+    public_contract: str = ""
+    effective_source: str = ""
+    compatibility_path: str = ""
+    removal_criterion: str = ""
     core_consumers: tuple[str, ...] = ()
     community_surfaces: tuple[str, ...] = ()
     migration_plan_ref: str | None = None
@@ -231,6 +387,10 @@ class CoreSettingDefaultEntry:
             "allowed_action": self.allowed_action,
             "cleanup_status": self.cleanup_status,
             "rationale": self.rationale,
+            "public_contract": self.public_contract,
+            "effective_source": self.effective_source,
+            "compatibility_path": self.compatibility_path,
+            "removal_criterion": self.removal_criterion,
             "core_consumers": list(self.core_consumers),
             "community_surfaces": list(self.community_surfaces),
             "migration_plan_ref": self.migration_plan_ref,
@@ -327,7 +487,8 @@ class CoreSettingsDefaultsReport:
             expected_value=0,
             promotion_criteria=(
                 "Every CoreSettings default is explicitly inventoried with owner, "
-                "classification, allowed action and cleanup status."
+                "classification, public contract, effective source, compatibility "
+                "path, allowed action, cleanup status and removal criterion."
             ),
             remediation_hint=(
                 "Update the R17 CoreSettings ownership inventory, add a Community "
@@ -399,6 +560,18 @@ def _field_default_repr(
     return source_defaults.get(field_name, "<missing-in-source>")
 
 
+def _core_matrix_value(field_name: str, key: str) -> str:
+    return _CORE_CONTRACT_MATRIX_OVERRIDES.get(field_name, {}).get(
+        key,
+        {
+            "public_contract": _CORE_PUBLIC_CONTRACT,
+            "effective_source": _CORE_EFFECTIVE_SOURCE,
+            "compatibility_path": _CORE_COMPATIBILITY_PATH,
+            "removal_criterion": _CORE_REMOVAL_CRITERION,
+        }[key],
+    )
+
+
 def _core_contract_entry(
     field_name: str,
     source_defaults: dict[str, str],
@@ -414,6 +587,10 @@ def _core_contract_entry(
         allowed_action="keep; changes require explicit owner review",
         cleanup_status="keep",
         rationale=rationale,
+        public_contract=_core_matrix_value(field_name, "public_contract"),
+        effective_source=_core_matrix_value(field_name, "effective_source"),
+        compatibility_path=_core_matrix_value(field_name, "compatibility_path"),
+        removal_criterion=_core_matrix_value(field_name, "removal_criterion"),
     )
 
 
@@ -450,6 +627,17 @@ def build_core_settings_inventory(
                     ),
                     cleanup_status="register_before_remove",
                     rationale=rationale,
+                    public_contract=(
+                        "Public CoreSettings field/env retained for "
+                        "edition-neutral compatibility."
+                    ),
+                    effective_source=_EDITION_MATRIX[field_name]["effective_source"],
+                    compatibility_path=_EDITION_MATRIX[field_name][
+                        "compatibility_path"
+                    ],
+                    removal_criterion=_EDITION_MATRIX[field_name][
+                        "removal_criterion"
+                    ],
                     community_surfaces=("CommunitySettings",),
                 )
             )
@@ -469,6 +657,23 @@ def build_core_settings_inventory(
                     ),
                     cleanup_status="register_before_remove",
                     rationale=_KG_RUNTIME_OWNERS[field_name],
+                    public_contract=(
+                        "Public KG runtime field/env retained for /settings/runtime "
+                        "and environment compatibility."
+                    ),
+                    effective_source=(
+                        "Core KG consumers still read the field; Community "
+                        "settings/runtime surfaces own the installed operator value."
+                    ),
+                    compatibility_path=(
+                        "Keep the legacy field/env until provider-neutral runtime "
+                        "aliases and Community API/UI parity are registered."
+                    ),
+                    removal_criterion=(
+                        "Only move/remove after provider-neutral aliases, legacy env "
+                        "migration, Community /settings/runtime parity and core KG "
+                        "consumer regression tests pass."
+                    ),
                     core_consumers=(
                         "okto_pulse.core.kg.connection_pool",
                         "okto_pulse.core.kg.primitives",
@@ -479,6 +684,7 @@ def build_core_settings_inventory(
                         "/api/v1/settings/runtime",
                         "Community settings UI",
                     ),
+                    migration_plan_ref="AF37/AF39 graph-runtime compatibility ledger",
                 )
             )
             continue
@@ -554,7 +760,9 @@ def _validate_inventory_rows(
                     reason=f"Inventory row is missing required fields: {missing}",
                     remediation=(
                         "Provide setting_name/env/default/classification/owner/"
-                        "spec/action/cleanup fields before the gate can pass."
+                        "spec/action/cleanup/public_contract/effective_source/"
+                        "compatibility_path/removal_criterion fields before the "
+                        "gate can pass."
                     ),
                 )
             )
@@ -571,35 +779,96 @@ def _validate_inventory_rows(
     return tuple(findings)
 
 
-def _validate_upload_dir_local_first_ownership(
+def _validate_source_fields_unique(
+    source_fields: Sequence[CoreSettingSourceField],
+) -> tuple[CoreSettingsFinding, ...]:
+    findings: list[CoreSettingsFinding] = []
+    seen: dict[str, CoreSettingSourceField] = {}
+    for field in source_fields:
+        first = seen.get(field.setting_name)
+        if first is None:
+            seen[field.setting_name] = field
+            continue
+        findings.append(
+            CoreSettingsFinding(
+                setting_name=field.setting_name,
+                diagnostic_code="duplicate_core_settings_source_field",
+                reason=(
+                    "CoreSettings declares the same public setting field more "
+                    "than once, making ownership/default review ambiguous."
+                ),
+                remediation=(
+                    "Keep a single CoreSettings declaration for the field and "
+                    "record any compatibility or cleanup intent in the AF39 "
+                    "ownership inventory."
+                ),
+                line=field.line,
+            )
+        )
+    return tuple(findings)
+
+
+def _literal_string_default(default_repr: str) -> str | None:
+    try:
+        value = ast.literal_eval(default_repr)
+    except (SyntaxError, ValueError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _is_local_first_default(default_repr: str) -> bool:
+    value = _literal_string_default(default_repr)
+    if value is None:
+        return False
+    normalized = value.replace("\\", "/")
+    if not normalized:
+        return False
+    if normalized.startswith(("./", "../", "~/", "/")):
+        return True
+    if len(normalized) >= 3 and normalized[1:3] == ":/":
+        return True
+    return normalized.startswith("sqlite") and "///" in normalized
+
+
+def _has_edition_local_default_owner(entry: CoreSettingDefaultEntry) -> bool:
+    return (
+        entry.classification == "edition_default_community"
+        and entry.owner.startswith("okto-pulse-community/")
+        and bool(entry.effective_source)
+        and bool(entry.compatibility_path)
+        and bool(entry.removal_criterion)
+    )
+
+
+def _validate_local_first_default_ownership(
     entries: Sequence[CoreSettingDefaultEntry],
     source_by_name: dict[str, CoreSettingSourceField],
 ) -> tuple[CoreSettingsFinding, ...]:
     findings: list[CoreSettingsFinding] = []
     for entry in entries:
-        if entry.setting_name != "upload_dir":
-            continue
         source_field = source_by_name.get(entry.setting_name)
         if source_field is None:
             continue
-        if source_field.default_repr not in _LOCAL_FIRST_UPLOAD_DEFAULT_REPRS:
-            continue
-        if (
-            entry.classification == "edition_default_community"
-            and entry.owner.startswith("okto-pulse-community/")
+        if not (
+            source_field.default_repr in _LOCAL_FIRST_UPLOAD_DEFAULT_REPRS
+            or _is_local_first_default(source_field.default_repr)
         ):
+            continue
+        if _has_edition_local_default_owner(entry):
             continue
         findings.append(
             CoreSettingsFinding(
                 setting_name=entry.setting_name,
                 diagnostic_code="unowned_local_first_default",
                 reason=(
-                    "upload_dir has a local-first filesystem default but is not "
-                    "owned by the Community edition default inventory row."
+                    "CoreSettings has a local-first literal default but the "
+                    "inventory row does not assign edition ownership with an "
+                    "effective source, compatibility path and removal criterion."
                 ),
                 remediation=(
-                    "Keep CoreSettings.upload_dir neutral, or classify the local "
-                    "upload path as edition_default_community with a Community owner."
+                    "Keep the CoreSettings default neutral, or classify the local "
+                    "value as edition_default_community with a Community owner and "
+                    "complete AF39 ownership matrix fields."
                 ),
                 line=source_field.line,
             )
@@ -641,7 +910,8 @@ def audit_core_settings_defaults(
     alias_map = _alias_by_original(aliases)
 
     findings: list[CoreSettingsFinding] = list(_validate_inventory_rows(inventory))
-    findings.extend(_validate_upload_dir_local_first_ownership(inventory, source_by_name))
+    findings.extend(_validate_source_fields_unique(source_fields))
+    findings.extend(_validate_local_first_default_ownership(inventory, source_by_name))
     baseline = set(_BASELINE_CORE_SETTING_NAMES)
 
     for field in source_fields:
@@ -752,7 +1022,11 @@ def run_public_config_stability_gate(
         finding
         for finding in report.findings
         if finding.diagnostic_code
-        in {"missing_public_core_setting", "new_unowned_core_default"}
+        in {
+            "incomplete_inventory_row",
+            "missing_public_core_setting",
+            "new_unowned_core_default",
+        }
     )
     return CoreSettingsDefaultsReport(
         entries=report.entries,

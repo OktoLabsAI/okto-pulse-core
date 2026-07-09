@@ -220,9 +220,12 @@ CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
     "src/okto_pulse/core/infra/database.py": "definition",
     "src/okto_pulse/core/models/__init__.py": "definition",
     "src/okto_pulse/core/models/db.py": "definition",
-    # -- repository (2) --
+    # -- repository (5) --
     "src/okto_pulse/core/repositories/interfaces/repositories.py": "repository",
     "src/okto_pulse/core/repositories/sqlalchemy/repositories.py": "repository",
+    "src/okto_pulse/core/repositories/sqlalchemy/resource_gate_service.py": "repository",
+    "src/okto_pulse/core/repositories/sqlalchemy/runtime_settings_service.py": "repository",
+    "src/okto_pulse/core/repositories/sqlalchemy/traceability_read_model.py": "repository",
     # -- rest (9) -- (R01C IMP3 drained cognitive_action_center.py + kg_rebuild.py
     # via the boards repository port — they no longer import core.models.db ORM.)
     "src/okto_pulse/core/api/attachments.py": "rest",
@@ -236,8 +239,10 @@ CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
     "src/okto_pulse/core/api/resource_gate.py": "rest",
     # -- mcp (1) --
     "src/okto_pulse/core/mcp/server.py": "mcp",
-    # -- service (27) -- (R01C IMP3 drained default_board_config_api.py +
-    # kg_health_readiness_service.py via the boards repository port.)
+    # -- service (24) -- (R01C IMP3 drained default_board_config_api.py +
+    # kg_health_readiness_service.py via the boards repository port; AF35-S1
+    # moved Resource Gate, runtime settings and traceability SQLAlchemy bodies
+    # behind explicit repository adapters.)
     "src/okto_pulse/core/services/amendment_revision.py": "service",
     "src/okto_pulse/core/services/amendment_revision_api.py": "service",
     "src/okto_pulse/core/services/analytics_service.py": "service",
@@ -259,13 +264,10 @@ CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
     "src/okto_pulse/core/services/kg_health_service.py": "service",
     "src/okto_pulse/core/services/main.py": "service",
     "src/okto_pulse/core/services/queue_health_service.py": "service",
-    "src/okto_pulse/core/services/resource_gate.py": "service",
-    "src/okto_pulse/core/services/settings_service.py": "service",
     "src/okto_pulse/core/services/skip_overrides.py": "service",
     "src/okto_pulse/core/services/spec_resource_propagation.py": "service",
     "src/okto_pulse/core/services/spec_structured_entities.py": "service",
-    "src/okto_pulse/core/services/traceability.py": "service",
-    # -- worker (20) --
+    # -- worker (18) --
     "src/okto_pulse/core/commands/materialize_legacy_fr_ac.py": "worker",
     "src/okto_pulse/core/events/bus.py": "worker",
     "src/okto_pulse/core/events/dispatcher.py": "worker",
@@ -283,9 +285,7 @@ CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
     "src/okto_pulse/core/kg/health.py": "worker",
     "src/okto_pulse/core/kg/parent_doc/parent_doc.py": "worker",
     "src/okto_pulse/core/kg/workers/cognitive_closeout.py": "worker",
-    "src/okto_pulse/core/kg/workers/commit_events.py": "worker",
     "src/okto_pulse/core/kg/workers/consolidation.py": "worker",
-    "src/okto_pulse/core/kg/workers/dead_letter.py": "worker",
     # -- bootstrap (1) --
     "src/okto_pulse/core/app.py": "bootstrap",
 }

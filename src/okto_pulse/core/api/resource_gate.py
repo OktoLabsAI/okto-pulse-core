@@ -6,18 +6,29 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import flag_modified
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.operational_rest import (
+    BoardNotFoundError,
+    ClearResourceNotApplicableCommand,
+    ClearResourceNotApplicableUseCase,
+    GetEffectiveResourcesUseCase,
+    GetResourceGateSummaryUseCase,
+    GetSpecResourceTaskCoverageUseCase,
+    MarkResourceNotApplicableCommand,
+    MarkResourceNotApplicableUseCase,
+    ResourceGateEntityCommand,
+    ResourceGateTaskCoverageCommand,
+    UpdateResourceGateBoardSettingsCommand,
+    UpdateResourceGateBoardSettingsUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import Board
-from okto_pulse.core.services.main import BoardService
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.resource_gate import (
     ResourceGateError,
     ResourceGateJustificationRequired,
     ResourceGateNotFound,
-    ResourceGateService,
 )
 
 router = APIRouter()
@@ -47,20 +58,6 @@ class ResourceGateBoardSettingsResponse(BaseModel):
     settings: dict[str, Any]
 
 
-async def _get_board_or_404(
-    board_id: str,
-    user_id: str,
-    db: AsyncSession,
-) -> Board:
-    board = await BoardService(db).get_board(board_id, user_id)
-    if not board:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Board not found",
-        )
-    return board
-
-
 def _resource_gate_exception(exc: ResourceGateError) -> HTTPException:
     status_code = status.HTTP_400_BAD_REQUEST
     if isinstance(exc, ResourceGateNotFound):
@@ -77,22 +74,30 @@ def _resource_gate_exception(exc: ResourceGateError) -> HTTPException:
     )
 
 
+def _board_not_found(exc: BoardNotFoundError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Board not found",
+    )
+
+
 @router.get("/resource-gate/specs/{spec_id}/task-coverage")
 async def get_spec_resource_task_coverage(
     spec_id: str,
     board_id: str = Query(...),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Validate Resource Gate Level 2 coverage for a spec."""
-    board = await _get_board_or_404(board_id, user_id, db)
-    service = ResourceGateService(db)
     try:
-        return await service.validate_spec_resource_task_coverage(
-            board_id,
-            spec_id,
-            enabled=service.is_spec_resource_task_coverage_required(board),
+        result = await GetSpecResourceTaskCoverageUseCase().execute(
+            ResourceGateTaskCoverageCommand(board_id, spec_id),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
         )
+        return result.data
+    except BoardNotFoundError as exc:
+        raise _board_not_found(exc) from exc
     except ResourceGateError as exc:
         raise _resource_gate_exception(exc) from exc
 
@@ -103,12 +108,18 @@ async def get_resource_gate_summary(
     entity_id: str,
     board_id: str = Query(...),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Return Provided/N/A/Missing Resource Gate summary for an entity."""
-    await _get_board_or_404(board_id, user_id, db)
     try:
-        return await ResourceGateService(db).get_summary(board_id, entity_type, entity_id)
+        result = await GetResourceGateSummaryUseCase().execute(
+            ResourceGateEntityCommand(board_id, entity_type, entity_id),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
+        )
+        return result.data
+    except BoardNotFoundError as exc:
+        raise _board_not_found(exc) from exc
     except ResourceGateError as exc:
         raise _resource_gate_exception(exc) from exc
 
@@ -119,16 +130,18 @@ async def get_effective_resources(
     entity_id: str,
     board_id: str = Query(...),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Return hydrated effective Resource Gate resources for UI rendering."""
-    await _get_board_or_404(board_id, user_id, db)
     try:
-        return await ResourceGateService(db).get_effective_resources(
-            board_id,
-            entity_type,
-            entity_id,
+        result = await GetEffectiveResourcesUseCase().execute(
+            ResourceGateEntityCommand(board_id, entity_type, entity_id),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
         )
+        return result.data
+    except BoardNotFoundError as exc:
+        raise _board_not_found(exc) from exc
     except ResourceGateError as exc:
         raise _resource_gate_exception(exc) from exc
 
@@ -140,24 +153,27 @@ async def mark_resource_not_applicable(
     data: ResourceNotApplicableRequest,
     board_id: str = Query(...),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Mark one mandatory resource type as not applicable."""
-    await _get_board_or_404(board_id, user_id, db)
     try:
-        result = await ResourceGateService(db).mark_not_applicable(
-            board_id,
-            entity_type,
-            entity_id,
-            data.resource_type,
-            user_id,
-            justification=data.justification,
-            source_channel=data.source_channel,
+        result = await MarkResourceNotApplicableUseCase().execute(
+            MarkResourceNotApplicableCommand(
+                board_id,
+                entity_type,
+                entity_id,
+                data.resource_type,
+                data.justification,
+                data.source_channel,
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
         )
+        return result.data
+    except BoardNotFoundError as exc:
+        raise _board_not_found(exc) from exc
     except ResourceGateError as exc:
         raise _resource_gate_exception(exc) from exc
-    await db.commit()
-    return result
 
 
 @router.delete("/resource-gate/{entity_type}/{entity_id}/not-applicable/{resource_type}")
@@ -168,24 +184,27 @@ async def clear_resource_not_applicable(
     data: ClearResourceNotApplicableRequest | None = Body(default=None),
     board_id: str = Query(...),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Clear the active N/A mark for a resource type."""
-    await _get_board_or_404(board_id, user_id, db)
     payload = data or ClearResourceNotApplicableRequest()
     try:
-        result = await ResourceGateService(db).clear_not_applicable(
-            board_id,
-            entity_type,
-            entity_id,
-            resource_type,
-            user_id,
-            reason=payload.reason,
+        result = await ClearResourceNotApplicableUseCase().execute(
+            ClearResourceNotApplicableCommand(
+                board_id,
+                entity_type,
+                entity_id,
+                resource_type,
+                payload.reason,
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
         )
+        return result.data
+    except BoardNotFoundError as exc:
+        raise _board_not_found(exc) from exc
     except ResourceGateError as exc:
         raise _resource_gate_exception(exc) from exc
-    await db.commit()
-    return result
 
 
 @router.patch(
@@ -196,18 +215,18 @@ async def update_resource_gate_board_settings(
     board_id: str,
     data: ResourceGateBoardSettingsUpdate,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ):
     """Update board-level Resource Gate settings."""
-    board = await _get_board_or_404(board_id, user_id, db)
-    settings = dict(board.settings or {})
-    settings["require_spec_resource_task_coverage"] = (
-        data.require_spec_resource_task_coverage
-    )
-    board.settings = settings
-    flag_modified(board, "settings")
-    await db.commit()
-    return {
-        "board_id": board_id,
-        "settings": settings,
-    }
+    try:
+        result = await UpdateResourceGateBoardSettingsUseCase().execute(
+            UpdateResourceGateBoardSettingsCommand(
+                board_id,
+                data.require_spec_resource_task_coverage,
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
+        )
+        return result.data
+    except BoardNotFoundError as exc:
+        raise _board_not_found(exc) from exc

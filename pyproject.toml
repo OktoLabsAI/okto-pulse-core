@@ -26,8 +26,6 @@ dependencies = [
     # sob prefixo (ex.: create_board) com "Prefix and path cannot be both empty".
     # Corrigido na 0.137.1. Exclui apenas a release ruim; demais versões OK.
     "fastapi>=0.109.0,!=0.137.0,<1.0.0",
-    "uvicorn[standard]>=0.27.0,<1.0.0",
-    "wsproto>=1.2.0,<2.0.0",
     "pydantic>=2.5.0,<2.14",
     "pydantic-core>=2.14.0,<2.47",
     "pydantic-settings>=2.1.0,<3.0.0",
@@ -44,8 +42,6 @@ dependencies = [
     "authlib>=1.6.5,<1.7.0",
     "mcp>=1.0.0,<2.0.0",
     "numpy>=1.26.0,<3.0.0",
-    "requests>=2.32.0,<3.0.0",
-    "chardet>=3.0.2,<6.0.0",
 ]
 
 [project.scripts]

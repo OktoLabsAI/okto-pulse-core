@@ -60,6 +60,9 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
 )
+from okto_pulse.core.kg.rebuild_audit import (
+    resolve_rebuild_audit_artifact_store,
+)
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_sources")
 
@@ -705,7 +708,11 @@ def _append_spec_manifest_rebaseline_audit(
         "recorded_at": recorded_at,
         **result.to_dict(),
     }
-    if artifact_store is not None:
+    resolved_store = resolve_rebuild_audit_artifact_store(
+        base_dir=base_dir,
+        artifact_store=artifact_store,
+    )
+    if resolved_store is not None:
         key = _rebaseline_audit_key(board_id)
 
         def _append(current: dict[str, Any] | None) -> dict[str, Any]:
@@ -720,7 +727,7 @@ def _append_spec_manifest_rebaseline_audit(
                 "records": records,
             }
 
-        artifact_store.replace_json(key, _append)
+        resolved_store.replace_json(key, _append)
         return
 
     if base_dir is None:
@@ -741,8 +748,12 @@ def read_spec_manifest_rebaseline_audit(
 ) -> list[dict[str, Any]]:
     """Read back the persisted spec-manifest rebaseline records for a board
     (FR7 audit evidence — queryable from the rebuild artifacts)."""
-    if artifact_store is not None:
-        payload = artifact_store.read_json(_rebaseline_audit_key(board_id))
+    resolved_store = resolve_rebuild_audit_artifact_store(
+        base_dir=base_dir,
+        artifact_store=artifact_store,
+    )
+    if resolved_store is not None:
+        payload = resolved_store.read_json(_rebaseline_audit_key(board_id))
         if not payload:
             return []
         records = payload.get("records")
@@ -784,6 +795,16 @@ class KGRebuildSourceManifest:
 
     base_dir: Path | None = None
     artifact_store: RebuildAuditArtifactStore | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
 
     @staticmethod
     def _manifest_key(manifest_ref: str) -> RebuildAuditKey:

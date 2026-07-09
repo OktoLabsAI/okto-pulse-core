@@ -14,16 +14,27 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.admin_catalog import (
+    CreateDesignSystemUseCase,
+    DeleteDesignSystemUseCase,
+    DesignSystemCommand,
+    GetBoardDesignSystemUseCase,
+    GetDesignSystemUseCase,
+    LinkBoardDesignSystemUseCase,
+    ListDesignSystemsUseCase,
+    UnlinkBoardDesignSystemUseCase,
+    UpdateDesignSystemUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.amendment_revision_api import (
     AmendmentRevisionApiError,
     reject_bypass_fields,
 )
 from okto_pulse.core.services.design_system import (
     DesignSystemError,
-    DesignSystemService,
-    serialize_design_system,
 )
 
 router = APIRouter()
@@ -72,7 +83,7 @@ def _invalid_request(exc: ValidationError) -> HTTPException:
 @router.post("/design-systems")
 async def create_design_system(
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
@@ -83,9 +94,12 @@ async def create_design_system(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        ds = await DesignSystemService(db).create_design_system(actor, **req.model_dump())
-        await db.commit()
-        return serialize_design_system(ds)
+        result = await CreateDesignSystemUseCase().execute(
+            DesignSystemCommand(payload=req.model_dump()),
+            actor=RESTAdapterContract.actor(actor, board_id=req.board_id),
+            uow=db,
+        )
+        return result.data
     except DesignSystemError as exc:
         raise _err(exc)
 
@@ -94,22 +108,30 @@ async def create_design_system(
 async def list_design_systems(
     scope: str = "global",
     board_id: str | None = None,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> list[dict[str, Any]]:
-    items = await DesignSystemService(db).list_catalog(scope=scope, board_id=board_id)
-    return [serialize_design_system(d) for d in items]
+    result = await ListDesignSystemsUseCase().execute(
+        DesignSystemCommand(scope=scope, board_id=board_id or ""),
+        actor=RESTAdapterContract.actor(actor, board_id=board_id),
+        uow=db,
+    )
+    return result.data
 
 
 @router.get("/design-systems/{design_system_id}")
 async def get_design_system(
     design_system_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
-        ds = await DesignSystemService(db).require_design_system(design_system_id)
-        return serialize_design_system(ds)
+        result = await GetDesignSystemUseCase().execute(
+            DesignSystemCommand(design_system_id=design_system_id),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
+        )
+        return result.data
     except DesignSystemError as exc:
         raise _err(exc)
 
@@ -118,7 +140,7 @@ async def get_design_system(
 async def update_design_system(
     design_system_id: str,
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
@@ -129,11 +151,15 @@ async def update_design_system(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        ds = await DesignSystemService(db).update_design_system(
-            design_system_id, actor, **req.model_dump(exclude_unset=True)
+        result = await UpdateDesignSystemUseCase().execute(
+            DesignSystemCommand(
+                design_system_id=design_system_id,
+                payload=req.model_dump(exclude_unset=True),
+            ),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
         )
-        await db.commit()
-        return serialize_design_system(ds)
+        return result.data
     except DesignSystemError as exc:
         raise _err(exc)
 
@@ -141,11 +167,15 @@ async def update_design_system(
 @router.delete("/design-systems/{design_system_id}", status_code=204)
 async def delete_design_system(
     design_system_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> None:
-    deleted = await DesignSystemService(db).delete_design_system(design_system_id, actor)
-    if not deleted:
+    result = await DeleteDesignSystemUseCase().execute(
+        DesignSystemCommand(design_system_id=design_system_id),
+        actor=RESTAdapterContract.actor(actor),
+        uow=db,
+    )
+    if not result.data:
         raise HTTPException(
             status_code=404,
             detail={
@@ -154,14 +184,13 @@ async def delete_design_system(
                 "message": "Design System not found.",
             },
         )
-    await db.commit()
 
 
 @router.post("/boards/{board_id}/design-system")
 async def link_board_design_system(
     board_id: str,
     raw: dict[str, Any] = Body(default_factory=dict),
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
     try:
@@ -172,10 +201,12 @@ async def link_board_design_system(
     except ValidationError as exc:
         raise _invalid_request(exc)
     try:
-        link = await DesignSystemService(db).link_design_system_to_board(
-            board_id, req.design_system_id
+        result = await LinkBoardDesignSystemUseCase().execute(
+            DesignSystemCommand(board_id=board_id, payload=req.model_dump()),
+            actor=RESTAdapterContract.actor(actor, board_id=board_id),
+            uow=db,
         )
-        await db.commit()
+        link = result.data
         return {
             "board_id": link.board_id,
             "design_system_id": link.design_system_id,
@@ -188,11 +219,15 @@ async def link_board_design_system(
 @router.delete("/boards/{board_id}/design-system", status_code=204)
 async def unlink_board_design_system(
     board_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> None:
-    unlinked = await DesignSystemService(db).unlink_design_system_from_board(board_id)
-    if not unlinked:
+    result = await UnlinkBoardDesignSystemUseCase().execute(
+        DesignSystemCommand(board_id=board_id),
+        actor=RESTAdapterContract.actor(actor, board_id=board_id),
+        uow=db,
+    )
+    if not result.data:
         raise HTTPException(
             status_code=404,
             detail={
@@ -201,14 +236,17 @@ async def unlink_board_design_system(
                 "message": "No Design System is linked to this board.",
             },
         )
-    await db.commit()
 
 
 @router.get("/boards/{board_id}/design-system")
 async def get_board_design_system(
     board_id: str,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
-    effective = await DesignSystemService(db).get_board_effective_design_system(board_id)
-    return {"board_id": board_id, "effective": effective}
+    result = await GetBoardDesignSystemUseCase().execute(
+        DesignSystemCommand(board_id=board_id),
+        actor=RESTAdapterContract.actor(actor, board_id=board_id),
+        uow=db,
+    )
+    return result.data

@@ -40,10 +40,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.models.db import CanonicalDebt, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import OPEN_STATES
 from okto_pulse.core.kg.rebuild_audit import (
     ACTIVE_ITEM_STATUSES,
@@ -61,6 +57,7 @@ from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
 )
 from okto_pulse.core.kg.canonical_learning_partition import HISTORICAL_DEBT_REASON
+from okto_pulse.core.ports.kg_operational import get_kg_operational_read_model_port
 
 
 def _canonical_artifact_id(source_ref: str) -> str:
@@ -427,11 +424,12 @@ class CognitiveReadinessService:
     # -- signal resolution ------------------------------------------------
 
     async def _open_canonical_debt(
-        self, db: AsyncSession, board_id: str, artifact_id: str
+        self, context: Any, board_id: str, artifact_id: str
     ) -> bool:
-        rows = (await db.execute(
-            select(CanonicalDebt).where(CanonicalDebt.board_id == board_id)
-        )).scalars().all()
+        rows = await get_kg_operational_read_model_port().list_canonical_debt_signals(
+            context,
+            board_id=board_id,
+        )
         for row in rows:
             if str(row.canonical_state or "") not in OPEN_STATES:
                 continue
@@ -441,13 +439,12 @@ class CognitiveReadinessService:
         return False
 
     async def _technical_dlq(
-        self, db: AsyncSession, board_id: str, artifact_id: str
+        self, context: Any, board_id: str, artifact_id: str
     ) -> bool:
-        rows = (await db.execute(
-            select(ConsolidationDeadLetter).where(
-                ConsolidationDeadLetter.board_id == board_id
-            )
-        )).scalars().all()
+        rows = await get_kg_operational_read_model_port().list_dead_letter_signals(
+            context,
+            board_id=board_id,
+        )
         for row in rows:
             ref = f"{row.artifact_type}:{row.artifact_id}"
             if _canonical_artifact_id(ref) == artifact_id:
@@ -469,7 +466,7 @@ class CognitiveReadinessService:
 
     async def evaluate_artifact(
         self,
-        db: AsyncSession,
+        context: Any,
         *,
         board_id: str,
         source_ref: str,
@@ -479,8 +476,8 @@ class CognitiveReadinessService:
         """Compose the 6-tier readiness verdict for one artifact (api_159e9cd0)."""
 
         artifact_id = _canonical_artifact_id(source_ref)
-        technical_dlq = await self._technical_dlq(db, board_id, artifact_id)
-        debt_open = await self._open_canonical_debt(db, board_id, artifact_id)
+        technical_dlq = await self._technical_dlq(context, board_id, artifact_id)
+        debt_open = await self._open_canonical_debt(context, board_id, artifact_id)
         items = self._items_for_artifact(board_id, artifact_id, kg_generation_id)
         return compose_readiness(
             artifact_id=artifact_id,
@@ -508,7 +505,7 @@ class CognitiveReadinessService:
 
     async def record_cognitive_skip(
         self,
-        db: AsyncSession,
+        context: Any,
         *,
         board_id: str,
         source_ref: str,
@@ -534,14 +531,14 @@ class CognitiveReadinessService:
 
         artifact_id = _canonical_artifact_id(source_ref)
         # 2. 409 — a skip must never mask technical DLQ / open canonical debt.
-        if await self._technical_dlq(db, board_id, artifact_id):
+        if await self._technical_dlq(context, board_id, artifact_id):
             raise CognitiveReadinessError(
                 "technical_debt_cannot_be_skipped",
                 "A technical dead-letter exists for this artifact; resolve it "
                 "instead of recording a cognitive skip.",
                 http_status=409,
             )
-        if await self._open_canonical_debt(db, board_id, artifact_id):
+        if await self._open_canonical_debt(context, board_id, artifact_id):
             raise CognitiveReadinessError(
                 "technical_debt_cannot_be_skipped",
                 "Canonical debt is OPEN for this artifact; resolve/retry it "
@@ -592,7 +589,7 @@ class CognitiveReadinessService:
 
     async def clear_cognitive_skip(
         self,
-        db: AsyncSession,
+        context: Any,
         *,
         board_id: str,
         source_ref: str,

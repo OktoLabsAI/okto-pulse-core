@@ -310,6 +310,8 @@ def _structured_error(
     supported: list,
     suggested_tool: str | None,
     error_msg: str | None = None,
+    *,
+    invalid_keys: list[str] | None = None,
 ) -> str:
     """Return a machine-readable structured error JSON string.
 
@@ -340,6 +342,8 @@ def _structured_error(
     }
     if suggested_tool is not None:
         payload["suggested_tool"] = suggested_tool
+    if invalid_keys is not None:
+        payload["invalid_keys"] = invalid_keys
     return json.dumps(payload)
 
 

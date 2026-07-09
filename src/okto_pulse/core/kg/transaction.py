@@ -1,27 +1,28 @@
-"""Compensating transaction pattern for Kùzu + SQLite commits.
+"""Compensating transaction pattern for graph + SQL commits.
 
-Kùzu is an embedded graph DB without distributed transactions. When we commit
-a consolidation session we need atomic semantics across two stores:
+The graph adapter may be backed by an embedded engine without distributed
+transactions. When we commit a consolidation session we need atomic semantics
+across two stores:
 
-1. Kùzu writes (CREATE nodes + edges) happen first.
-2. SQLite transaction (audit row + kuzu_node_refs + outbox event) happens second.
+1. Graph writes (CREATE nodes + edges) happen first.
+2. SQL transaction (audit row + graph refs + outbox event) happens second.
 3. On any failure of step 2, we MUST reverse step 1 — this is the "compensate".
 
-The orchestrator tracks every Kùzu write keyed by session_id so a failure can
+The orchestrator tracks every graph write keyed by session_id so a failure can
 delete exactly those nodes/edges via `source_session_id` / `created_by_session_id`
-filters. Edges use a per-rel-type DELETE loop because Kùzu has no universal
+filters. Edges use a per-rel-type DELETE loop because some graph backends lack a
 `MATCH ()-[r]-() DELETE r` that works across rel tables.
 
 Usage:
 
-    orch = TransactionOrchestrator(kuzu_conn, sqlite_session, session_id,
+    orch = TransactionOrchestrator(graph_scope, sql_session, session_id,
                                    board_id=board_id)
     orch.create_node("Decision", node_id, attrs)
     orch.create_edge("supersedes", from_id, to_id, attrs)
     try:
         await orch.commit_sqlite(sqlite_mutations)
     except Exception:
-        await orch.compensate()  # reverses Kùzu writes
+        await orch.compensate()  # reverses graph writes
         raise
 """
 
@@ -84,8 +85,8 @@ def _close_result(result: Any) -> None:
 
 
 @dataclass
-class KuzuWriteRecord:
-    """One mutation applied to Kùzu — used for compensating delete."""
+class GraphWriteRecord:
+    """One mutation applied to the graph adapter, used for compensating delete."""
 
     kind: str  # "node" | "edge"
     entity_type: str  # "Decision", "supersedes", etc.
@@ -105,7 +106,7 @@ class CommitCounters:
     nodes_superseded (SUPERSEDE) or nodes_noop (NOOP), so
     ``processed_candidates`` closes as their sum. ``merge_audit_items`` carries
     the per-merge audit payload surfaced in the commit response (NOT a
-    KuzuWriteRecord — the reused node belongs to a prior session and must not
+    GraphWriteRecord — the reused node belongs to a prior session and must not
     enter compensation rollback).
     """
 
@@ -122,37 +123,77 @@ class CompensationError(Exception):
     """Raised when compensating delete itself fails — operator intervention needed."""
 
     def __init__(self, message: str, original_exc: Exception | None = None,
-                 failed_records: list[KuzuWriteRecord] | None = None):
+                 failed_records: list[GraphWriteRecord] | None = None):
         super().__init__(message)
         self.original_exc = original_exc
         self.failed_records = failed_records or []
 
 
-@dataclass
+KuzuWriteRecord = GraphWriteRecord
+
+
+@dataclass(init=False)
 class TransactionOrchestrator:
-    """Coordinates Kùzu writes with SQLite commits using the compensating
-    transaction pattern.
+    """Coordinates graph writes with SQL commits using compensation.
 
     The orchestrator is single-use: instantiate once per commit, call
     `create_node` / `create_edge` zero or more times, then `commit_sqlite`.
-    On any SQLite failure, call `compensate` to reverse the Kùzu writes.
+    On any SQL failure, call `compensate` to reverse graph writes.
     """
 
-    kuzu_conn: Any  # kuzu.Connection
-    sqlite_session: AsyncSession
+    graph_scope: Any
+    sqlite_session: Any | None
     session_id: str
     board_id: str
-    records: list[KuzuWriteRecord] = field(default_factory=list)
+    records: list[GraphWriteRecord] = field(default_factory=list)
     counters: CommitCounters = field(default_factory=CommitCounters)
     _committed: bool = False
     _compensated: bool = False
 
+    def __init__(
+        self,
+        graph_scope: Any | None = None,
+        sqlite_session: Any | None = None,
+        session_id: str = "",
+        board_id: str = "",
+        *,
+        kuzu_conn: Any | None = None,
+    ) -> None:
+        if graph_scope is None:
+            graph_scope = kuzu_conn
+        if graph_scope is None:
+            raise TypeError("TransactionOrchestrator requires a graph_scope")
+        self.graph_scope = graph_scope
+        self.sqlite_session = sqlite_session
+        self.session_id = session_id
+        self.board_id = board_id
+        self.records = []
+        self.counters = CommitCounters()
+        self._committed = False
+        self._compensated = False
+
+    @property
+    def kuzu_conn(self) -> Any:
+        """Compatibility alias for legacy tests/helpers.
+
+        New code should use ``graph_scope`` or ``execute_graph``.
+        """
+
+        return self.graph_scope
+
+    def execute_graph(self, stmt: str, params: dict[str, Any] | None = None) -> Any:
+        """Execute a graph statement through the composed graph transaction port."""
+
+        if params is None:
+            return self.graph_scope.execute(stmt)
+        return self.graph_scope.execute(stmt, params)
+
     # ------------------------------------------------------------------
-    # Kùzu write phase
+    # Graph write phase
     # ------------------------------------------------------------------
 
     def create_node(self, node_type: str, node_id: str, attrs: dict[str, Any]) -> None:
-        """Insert a new node into Kùzu and record it for compensation.
+        """Insert a new node into the graph and record it for compensation.
 
         `attrs` must NOT include `id`, `source_session_id`, or `board_id` —
         those are injected here so the caller can't forget them.
@@ -162,7 +203,7 @@ class TransactionOrchestrator:
         params["id"] = node_id
         params["source_session_id"] = self.session_id
 
-        # Kùzu can't coerce an ISO string to TIMESTAMP via plain param
+        # The embedded adapter cannot coerce an ISO string to TIMESTAMP via plain param
         # binding — created_at must be wrapped in timestamp() (mirrors the
         # _apply_kuzu_node_create_with_timestamp shim used by the CREATE path).
         # Required so supersede_node's create works once it has real call
@@ -172,10 +213,10 @@ class TransactionOrchestrator:
             for k in params
         )
         stmt = f"CREATE (n:{node_type} {{{columns}}})"
-        self.kuzu_conn.execute(stmt, params)
+        self.execute_graph(stmt, params)
 
         self.records.append(
-            KuzuWriteRecord(kind="node", entity_type=node_type, entity_id=node_id)
+            GraphWriteRecord(kind="node", entity_type=node_type, entity_id=node_id)
         )
         self.counters.nodes_added += 1
 
@@ -199,7 +240,7 @@ class TransactionOrchestrator:
         params = {k: v for k, v in attrs.items() if k != "id"}
         params["id"] = node_id
         stmt = f"MATCH (n:{node_type} {{id: $id}}) SET {set_clauses}"
-        self.kuzu_conn.execute(stmt, params)
+        self.execute_graph(stmt, params)
         self.counters.nodes_updated += 1
 
     def supersede_node(
@@ -222,7 +263,7 @@ class TransactionOrchestrator:
         self.counters.nodes_superseded += 1
 
         # 2. Mark the old node as superseded
-        self.kuzu_conn.execute(
+        self.execute_graph(
             f"MATCH (old:{node_type} {{id: $old_id}}) "
             f"SET old.superseded_by = $new_id, "
             f"old.superseded_at = timestamp($ts), "
@@ -313,7 +354,7 @@ class TransactionOrchestrator:
         stmt = stmt.replace("created_at: $created_at",
                             "created_at: timestamp($created_at)")
 
-        result = self.kuzu_conn.execute(stmt, params)
+        result = self.execute_graph(stmt, params)
         if not _result_has_row(result):
             actual_from = self._find_node_types(from_id)
             actual_to = self._find_node_types(to_id)
@@ -326,7 +367,7 @@ class TransactionOrchestrator:
             )
 
         self.records.append(
-            KuzuWriteRecord(
+            GraphWriteRecord(
                 kind="edge",
                 entity_type=edge_type,
                 entity_id=f"{from_id}->{to_id}",
@@ -356,7 +397,7 @@ class TransactionOrchestrator:
             f"(b:{to_type} {{id: $to_id}}) "
             "RETURN r.created_by_session_id LIMIT 1"
         )
-        result = self.kuzu_conn.execute(stmt, {
+        result = self.execute_graph(stmt, {
             "from_id": from_id,
             "to_id": to_id,
         })
@@ -378,7 +419,7 @@ class TransactionOrchestrator:
         found: list[str] = []
         for node_type in NODE_TYPES:
             try:
-                result = self.kuzu_conn.execute(
+                result = self.execute_graph(
                     f"MATCH (n:{node_type} {{id: $node_id}}) "
                     "RETURN n.id LIMIT 1",
                     {"node_id": node_id},
@@ -402,13 +443,15 @@ class TransactionOrchestrator:
     ) -> CommitCounters:
         """Apply the SQLite-side mutations inside a transaction and commit.
 
-        `mutations` is a callable that takes the AsyncSession and stages all
+        `mutations` is a callable that takes the SQL session and stages all
         ORM objects (audit row, kuzu_node_refs, outbox event, etc.). The
         orchestrator owns flush/commit semantics and triggers compensating
         delete on failure.
         """
         self._guard_fresh()
         try:
+            if self.sqlite_session is None:
+                raise RuntimeError("sqlite_session is required for commit_sqlite")
             result = mutations(self.sqlite_session)
             if hasattr(result, "__await__"):
                 await result
@@ -436,7 +479,7 @@ class TransactionOrchestrator:
             raise
 
     async def compensate(self) -> None:
-        """Reverse every Kùzu write recorded so far.
+        """Reverse every graph write recorded so far.
 
         Strategy: iterate `records` in reverse insertion order. Delete edges
         first (they depend on nodes), then nodes. Uses session_id filters in
@@ -449,12 +492,12 @@ class TransactionOrchestrator:
             self._compensated = True
             return
 
-        failed: list[KuzuWriteRecord] = []
+        failed: list[GraphWriteRecord] = []
 
         # 1. Delete edges created by this session (any rel type)
         for rel_name, from_type, to_type in _relationship_pairs():
             try:
-                self.kuzu_conn.execute(
+                self.execute_graph(
                     f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
                     f"WHERE r.created_by_session_id = $sid DELETE r",
                     {"sid": self.session_id},
@@ -473,7 +516,7 @@ class TransactionOrchestrator:
         }
         for node_type in node_types:
             try:
-                self.kuzu_conn.execute(
+                self.execute_graph(
                     f"MATCH (n:{node_type}) "
                     f"WHERE n.source_session_id = $sid DETACH DELETE n",
                     {"sid": self.session_id},

@@ -8,12 +8,12 @@ import json
 import logging
 import os
 import re
+import warnings
 import uuid as _uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-import uvicorn
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -29,17 +29,20 @@ from okto_pulse.core.ports.mcp_instructions import (
     StaticFileMcpInstructionProvider,
 )
 from okto_pulse.core.ports.mcp_trace import McpTraceSink
+from okto_pulse.core.ports.mcp_auth import (
+    AuthSession,
+    McpAuthError,
+    McpAuthenticator,
+    require_authenticator,
+)
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
 from okto_pulse.core.services.activity_log import (
     activity_log_summary,
-    sanitize_activity_details,
 )
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitecturePropagationBlocked,
     ArchitectureDiagramAdapterRegistry,
-    ArchitectureDiagramStore,
-    ArchitecturePropagationService,
     ArchitectureWarningAcknowledgementRequired,
     CARD_ARCHITECTURE_READ_ONLY_MESSAGE,
     architecture_design_payload_schema,
@@ -56,19 +59,11 @@ from okto_pulse.core.services.human_control_metrics import (
     emit_human_control_required,
 )
 from okto_pulse.core.services.main import (
-    AgentService,
-    AttachmentService,
     BoardService,
     CARD_RESOURCE_READ_ONLY_MESSAGE,
     CardOperationError,
     CardService,
-    CommentService,
-    IdeationKnowledgeService,
-    IdeationQAService,
     IdeationService,
-    QAService,
-    RefinementKnowledgeService,
-    RefinementQAService,
     RefinementService,
     SpecKnowledgeService,
     SpecLockedError,
@@ -93,9 +88,7 @@ from okto_pulse.core.services.skip_overrides import (
     spec_skip_overrides,
 )
 from okto_pulse.core.services.story_permissions import (
-    story_move_permission,
     story_state,
-    story_update_permissions,
 )
 
 
@@ -587,6 +580,7 @@ def active_api_key_credential():
 
 # Session factory registration for MCP server
 _mcp_session_factory = None
+_mcp_authenticator: McpAuthenticator | None = None
 
 
 class _McpSessionFactoryRuntime:
@@ -606,13 +600,30 @@ class _McpSessionFactoryRuntime:
         return self.session_factory(*args, **kwargs)
 
 
-def register_session_factory(factory, *, scheduler_control=None):
+def register_session_factory(
+    factory,
+    *,
+    scheduler_control=None,
+    mcp_authenticator: McpAuthenticator | None = None,
+):
     """Register the MCP session factory and optional edition runtime ports."""
-    global _mcp_session_factory
+    global _mcp_session_factory, _mcp_authenticator
     _mcp_session_factory = _McpSessionFactoryRuntime(
         factory,
         scheduler_control=scheduler_control,
     )
+    _mcp_authenticator = mcp_authenticator
+
+
+def register_mcp_authenticator(authenticator: McpAuthenticator | None) -> None:
+    """Register the edition-owned MCP authenticator port."""
+    global _mcp_authenticator
+    _mcp_authenticator = authenticator
+
+
+def get_mcp_authenticator_for_mcp() -> McpAuthenticator:
+    """Return the registered MCP authenticator, failing closed when absent."""
+    return require_authenticator(_mcp_authenticator)
 
 
 def get_db_for_mcp():
@@ -697,13 +708,47 @@ def invalidate_agent_cache(agent_id: str) -> None:
 
 async def _authenticate_mcp_credential(credential):
     """Resolve an agent from a request-scoped MCP credential."""
+    session = await _authenticate_mcp_session(credential)
+    if session is None:
+        return None
+    return _agent_from_auth_session(session)
+
+
+async def _authenticate_mcp_session(credential) -> AuthSession | None:
+    """Authenticate a request-scoped credential through the registered port."""
     if credential is None:
         return None
-    async with get_db_for_mcp() as db:
-        service = AgentService(db)
-        agent = await service.get_agent_by_key(credential.value)
-        await db.commit()
-        return agent
+    try:
+        authenticator = get_mcp_authenticator_for_mcp()
+    except McpAuthError:
+        return None
+    session = await authenticator.authenticate(credential)
+    if session is None or not bool(getattr(session, "is_active", False)):
+        return None
+    return session
+
+
+class _AuthenticatedMcpAgent:
+    """Secret-free compatibility shape for legacy MCP helper consumers."""
+
+    def __init__(self, session: AuthSession) -> None:
+        self.id = session.agent_id
+        self.name = session.agent_name
+        self.is_active = session.is_active
+        self.api_key = "<redacted>"
+        self.api_key_hash = None
+        self.permissions = None
+        self.metadata = dict(getattr(session, "metadata", {}) or {})
+
+    def __repr__(self) -> str:
+        return (
+            f"_AuthenticatedMcpAgent(id={self.id!r}, name={self.name!r}, "
+            f"is_active={self.is_active!r}, api_key='<redacted>')"
+        )
+
+
+def _agent_from_auth_session(session: AuthSession) -> _AuthenticatedMcpAgent:
+    return _AuthenticatedMcpAgent(session)
 
 
 async def _get_authenticated_agent():
@@ -717,60 +762,49 @@ async def _get_agent_ctx_for_credential(board_id: str, credential) -> AgentConte
     Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s
     cache. Falls back to legacy flat permissions if permission_flags is not set.
     """
-    if credential is None:
+    auth_session = await _authenticate_mcp_session(credential)
+    if auth_session is None:
         return None
-    async with get_db_for_mcp() as db:
-        service = AgentService(db)
-        agent = await service.get_agent_by_key(credential.value)
-        if not agent:
+
+    from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+    from okto_pulse.core.services.application_agents import (
+        agent_has_board_access,
+        resolve_agent_permission_context,
+    )
+
+    actor = ActorContext(
+        auth_session.agent_id,
+        "mcp",
+        actor_name=auth_session.agent_name,
+        board_id=board_id,
+    )
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        db = session_of(uow)
+        if not await agent_has_board_access(db, auth_session.agent_id, board_id):
+            await uow.commit()
             return None
 
-        # Check board access — also loads AgentBoard record
-        from sqlalchemy import select as sa_select
-
-        from okto_pulse.core.models.db import AgentBoard
-        ab_query = sa_select(AgentBoard).where(
-            AgentBoard.agent_id == agent.id,
-            AgentBoard.board_id == board_id,
-        )
-        ab_result = await db.execute(ab_query)
-        agent_board = ab_result.scalar_one_or_none()
-        if not agent_board:
-            return None
-
-        # Check cache
-        cached = _cache_get(agent.id, board_id)
+        cached = _cache_get(auth_session.agent_id, board_id)
         if cached:
-            await db.commit()
+            await uow.commit()
             return cached
 
-        # Resolve permissions
-        agent_flags = getattr(agent, "permission_flags", None)
-        if agent_flags is not None:
-            # New granular system
-            from okto_pulse.core.infra.permissions import resolve_permissions
-            # Load preset flags if agent has a preset
-            preset_flags = None
-            preset_id = getattr(agent, "preset_id", None)
-            if preset_id:
-                from okto_pulse.core.models.db import PermissionPreset
-                preset = await db.get(PermissionPreset, preset_id)
-                if preset:
-                    preset_flags = preset.flags
-            board_overrides = getattr(agent_board, "permission_overrides", None)
-            perm_set = resolve_permissions(agent_flags, preset_flags, board_overrides)
-        else:
-            # Legacy: use flat permissions list (backward compat)
-            perm_set = agent.permissions
-
-        await db.commit()
-        ctx = AgentContext(
-            agent_id=agent.id,
-            agent_name=agent.name,
+        resolved = await resolve_agent_permission_context(
+            db,
+            auth_session.agent_id,
             board_id=board_id,
-            permissions=perm_set,
         )
-        _cache_set(agent.id, board_id, ctx)
+        if resolved is None:
+            await uow.commit()
+            return None
+        await uow.commit()
+        ctx = AgentContext(
+            agent_id=resolved.agent_id,
+            agent_name=resolved.agent_name,
+            board_id=board_id,
+            permissions=resolved.permissions,
+        )
+        _cache_set(auth_session.agent_id, board_id, ctx)
         return ctx
 
 
@@ -782,36 +816,36 @@ async def _get_agent_ctx(board_id: str) -> AgentContext | None:
 async def _get_global_agent_ctx() -> AgentContext | None:
     """Authenticate an MCP agent without granting implicit all-board scope."""
     credential = active_api_key_credential()
-    if credential is None:
+    auth_session = await _authenticate_mcp_session(credential)
+    if auth_session is None:
         return None
-    async with get_db_for_mcp() as db:
-        service = AgentService(db)
-        agent = await service.get_agent_by_key(credential.value)
-        if not agent:
+
+    from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+    from okto_pulse.core.services.application_agents import (
+        resolve_agent_permission_context,
+    )
+
+    actor = ActorContext(
+        auth_session.agent_id,
+        "mcp",
+        actor_name=auth_session.agent_name,
+        board_id="",
+    )
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        resolved = await resolve_agent_permission_context(
+            session_of(uow),
+            auth_session.agent_id,
+            board_id=None,
+        )
+        if resolved is None:
+            await uow.commit()
             return None
-
-        agent_flags = getattr(agent, "permission_flags", None)
-        if agent_flags is not None:
-            from okto_pulse.core.infra.permissions import resolve_permissions
-
-            preset_flags = None
-            preset_id = getattr(agent, "preset_id", None)
-            if preset_id:
-                from okto_pulse.core.models.db import PermissionPreset
-
-                preset = await db.get(PermissionPreset, preset_id)
-                if preset:
-                    preset_flags = preset.flags
-            perm_set = resolve_permissions(agent_flags, preset_flags, None)
-        else:
-            perm_set = agent.permissions
-
-        await db.commit()
+        await uow.commit()
         return AgentContext(
-            agent_id=agent.id,
-            agent_name=agent.name,
+            agent_id=resolved.agent_id,
+            agent_name=resolved.agent_name,
             board_id="",
-            permissions=perm_set,
+            permissions=resolved.permissions,
         )
 
 
@@ -1118,8 +1152,8 @@ def _mcp_spec_coverage_summary(spec: Any) -> dict[str, Any]:
         "api_contracts_total": coverage.get("contracts_total", 0),
         "integration_requirements_total": coverage.get("irs_total", 0),
         "observability_requirements_total": coverage.get("ors_total", 0),
-        "cards_total": len(cards),
-        "cards_done": sum(1 for c in cards if getattr(getattr(c, "status", None), "value", None) == "done"),
+        "cards_total": coverage.get("cards_total", len(cards)),
+        "cards_done": coverage.get("cards_done", 0),
     }
 
 
@@ -1160,6 +1194,23 @@ def _mcp_architecture_error(exc: Exception) -> str:
     if isinstance(exc, ArchitectureWarningAcknowledgementRequired):
         return json.dumps({"success": False, **exc.to_payload()}, default=str)
     return json.dumps({"error": str(exc)})
+
+
+def _mcp_architecture_conflict_error(exc: Any) -> str:
+    if getattr(exc, "entity_type", "") == "card_architecture_readonly":
+        return json.dumps({"error": CARD_ARCHITECTURE_READ_ONLY_MESSAGE})
+    return json.dumps(
+        {
+            "error": (
+                "Spec is locked because validation passed. Move it back to "
+                "draft or approved to edit architecture."
+            )
+        }
+    )
+
+
+def _mcp_entity_not_found_error(exc: Any) -> str:
+    return json.dumps({"error": f"{exc.entity_type} not found"})
 
 
 async def _mcp_require_architecture_mutable(db, design_id: str) -> tuple[Any | None, str | None]:
@@ -1458,28 +1509,41 @@ async def okto_pulse_update_my_profile(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        service = AgentService(db)
-        agent = await service.get_agent(agent.id)
+    from okto_pulse.core.application.use_cases import ActorContext
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_profile_activity import (
+        McpUpdateMyProfileCommand,
+        McpUpdateMyProfileUseCase,
+    )
 
-        if not agent:
+    actor = ActorContext(
+        agent.id,
+        "mcp",
+        actor_name=agent.name,
+        permissions=agent.permissions,
+    )
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        try:
+            result = await McpUpdateMyProfileUseCase().execute(
+                McpUpdateMyProfileCommand(
+                    description=description,
+                    objective=objective,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+        except EntityNotFoundError:
             return json.dumps({"error": "Agent not found"})
 
-        if description:
-            agent.description = description
-        if objective:
-            agent.objective = objective
-
-        await db.commit()
-
+        updated = result.agent
         return json.dumps(
             {
                 "success": True,
                 "profile": {
-                    "id": agent.id,
-                    "name": agent.name,
-                    "description": agent.description,
-                    "objective": agent.objective,
+                    "id": updated.id,
+                    "name": updated.name,
+                    "description": updated.description,
+                    "objective": updated.objective,
                 },
             }
         )
@@ -1494,11 +1558,24 @@ async def okto_pulse_list_my_boards() -> str:
     if not agent:
         return json.dumps({"error": "Authentication failed"})
 
-    async with get_db_for_mcp() as db:
-        service = AgentService(db)
-        boards = await service.list_boards_for_agent(agent.id)
-        await db.commit()
+    from okto_pulse.core.application.use_cases import ActorContext
+    from okto_pulse.core.application.use_cases.mcp_profile_activity import (
+        McpListMyBoardsCommand,
+        McpListMyBoardsUseCase,
+    )
 
+    actor = ActorContext(
+        agent.id,
+        "mcp",
+        actor_name=agent.name,
+        permissions=agent.permissions,
+    )
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpListMyBoardsUseCase().execute(
+            McpListMyBoardsCommand(),
+            actor=actor,
+            uow=uow,
+        )
         return json.dumps(
             {
                 "agent_id": agent.id,
@@ -1509,7 +1586,7 @@ async def okto_pulse_list_my_boards() -> str:
                         "name": b.name,
                         "description": b.description,
                     }
-                    for b in boards
+                    for b in result.boards
                 ],
             },
             default=str,
@@ -1546,176 +1623,29 @@ async def okto_pulse_list_my_mentions(board_id: str, include_seen: str = "false"
     if not ctx:
         return _auth_error()
 
-    from sqlalchemy import select, or_
+    from okto_pulse.core.application.use_cases.mcp_profile_activity import (
+        McpListMyMentionsCommand,
+        McpListMyMentionsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    from okto_pulse.core.models.db import AgentSeenItem, Card, Comment, Ideation, IdeationQAItem, QAItem, Refinement, RefinementQAItem, Spec, SpecQAItem
-
-    mention_pattern = f"%@{ctx.agent_name}%"
-    show_all = include_seen.lower() == "true"
-
-    async with get_db_for_mcp() as db:
-        # Get set of seen item IDs for this agent
-        seen_ids: set[str] = set()
-        if not show_all:
-            seen_query = select(AgentSeenItem.item_id).where(
-                AgentSeenItem.agent_id == ctx.agent_id
-            )
-            seen_ids = {r[0] for r in (await db.execute(seen_query)).all()}
-
-        # Search comments on cards
-        comment_query = (
-            select(Comment, Card.title)
-            .join(Card, Card.id == Comment.card_id)
-            .where(Card.board_id == board_id)
-            .where(Comment.content.ilike(mention_pattern))
-            .order_by(Comment.created_at.desc())
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpListMyMentionsUseCase().execute(
+            McpListMyMentionsCommand(
+                board_id,
+                include_seen=include_seen.lower() == "true",
+            ),
+            actor=actor,
+            uow=uow,
         )
-        comment_results = (await db.execute(comment_query)).all()
-
-        # Search QA on cards
-        qa_query = (
-            select(QAItem, Card.title)
-            .join(Card, Card.id == QAItem.card_id)
-            .where(Card.board_id == board_id)
-            .where(
-                or_(
-                    QAItem.question.ilike(mention_pattern),
-                    QAItem.answer.ilike(mention_pattern),
-                )
-            )
-            .order_by(QAItem.created_at.desc())
-        )
-        qa_results = (await db.execute(qa_query)).all()
-
-        # Search QA on specs
-        spec_qa_query = (
-            select(SpecQAItem, Spec.title)
-            .join(Spec, Spec.id == SpecQAItem.spec_id)
-            .where(Spec.board_id == board_id)
-            .where(
-                or_(
-                    SpecQAItem.question.ilike(mention_pattern),
-                    SpecQAItem.answer.ilike(mention_pattern),
-                )
-            )
-            .order_by(SpecQAItem.created_at.desc())
-        )
-        spec_qa_results = (await db.execute(spec_qa_query)).all()
-
-        # Search QA on ideations
-        ideation_qa_query = (
-            select(IdeationQAItem, Ideation.title)
-            .join(Ideation, Ideation.id == IdeationQAItem.ideation_id)
-            .where(Ideation.board_id == board_id)
-            .where(
-                or_(
-                    IdeationQAItem.question.ilike(mention_pattern),
-                    IdeationQAItem.answer.ilike(mention_pattern),
-                )
-            )
-            .order_by(IdeationQAItem.created_at.desc())
-        )
-        ideation_qa_results = (await db.execute(ideation_qa_query)).all()
-
-        # Search QA on refinements
-        refinement_qa_query = (
-            select(RefinementQAItem, Refinement.title)
-            .join(Refinement, Refinement.id == RefinementQAItem.refinement_id)
-            .where(Refinement.board_id == board_id)
-            .where(
-                or_(
-                    RefinementQAItem.question.ilike(mention_pattern),
-                    RefinementQAItem.answer.ilike(mention_pattern),
-                )
-            )
-            .order_by(RefinementQAItem.created_at.desc())
-        )
-        refinement_qa_results = (await db.execute(refinement_qa_query)).all()
-        await db.commit()
-
-        mentions = []
-        for comment, card_title in comment_results:
-            if not show_all and comment.id in seen_ids:
-                continue
-            mentions.append({
-                "type": "comment",
-                "item_id": comment.id,
-                "card_id": comment.card_id,
-                "card_title": card_title,
-                "content": comment.content,
-                "author": comment.author_id,
-                "created_at": comment.created_at.isoformat(),
-            })
-        for qa, card_title in qa_results:
-            if not show_all and qa.id in seen_ids:
-                continue
-            mentions.append({
-                "type": "qa",
-                "item_id": qa.id,
-                "card_id": qa.card_id,
-                "card_title": card_title,
-                "question": qa.question,
-                "answer": qa.answer,
-                "asked_by": qa.asked_by,
-                "created_at": qa.created_at.isoformat(),
-            })
-        for spec_qa, spec_title in spec_qa_results:
-            if not show_all and spec_qa.id in seen_ids:
-                continue
-            mentions.append({
-                "type": "spec_qa",
-                "item_id": spec_qa.id,
-                "spec_id": spec_qa.spec_id,
-                "spec_title": spec_title,
-                "question": spec_qa.question,
-                "question_type": spec_qa.question_type,
-                "choices": spec_qa.choices,
-                "answer": spec_qa.answer,
-                "selected": spec_qa.selected,
-                "asked_by": spec_qa.asked_by,
-                "created_at": spec_qa.created_at.isoformat(),
-            })
-        for ideation_qa, ideation_title in ideation_qa_results:
-            if not show_all and ideation_qa.id in seen_ids:
-                continue
-            mentions.append({
-                "type": "ideation_qa",
-                "item_id": ideation_qa.id,
-                "ideation_id": ideation_qa.ideation_id,
-                "ideation_title": ideation_title,
-                "question": ideation_qa.question,
-                "question_type": ideation_qa.question_type,
-                "choices": ideation_qa.choices,
-                "answer": ideation_qa.answer,
-                "selected": ideation_qa.selected,
-                "asked_by": ideation_qa.asked_by,
-                "created_at": ideation_qa.created_at.isoformat(),
-            })
-        for refinement_qa, refinement_title in refinement_qa_results:
-            if not show_all and refinement_qa.id in seen_ids:
-                continue
-            mentions.append({
-                "type": "refinement_qa",
-                "item_id": refinement_qa.id,
-                "refinement_id": refinement_qa.refinement_id,
-                "refinement_title": refinement_title,
-                "question": refinement_qa.question,
-                "question_type": refinement_qa.question_type,
-                "choices": refinement_qa.choices,
-                "answer": refinement_qa.answer,
-                "selected": refinement_qa.selected,
-                "asked_by": refinement_qa.asked_by,
-                "created_at": refinement_qa.created_at.isoformat(),
-            })
-
-        mentions.sort(key=lambda m: m["created_at"], reverse=True)
 
         return json.dumps(
             {
                 "agent_name": ctx.agent_name,
-                "unseen_count": len(mentions),
-                "filter": "unseen_only" if not show_all else "all",
-                "mentions": mentions,
+                "unseen_count": len(result.mentions),
+                "filter": "unseen_only" if not result.show_all else "all",
+                "mentions": result.mentions,
             },
             default=str,
         )
@@ -1730,10 +1660,6 @@ async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> s
     if not ctx:
         return _auth_error()
 
-    from sqlalchemy import select
-
-    from okto_pulse.core.models.db import AgentSeenItem, Comment, IdeationQAItem, QAItem, RefinementQAItem, SpecQAItem
-
     try:
         ids = coerce_to_list_str(item_ids)
     except ValueError as e:
@@ -1741,88 +1667,25 @@ async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> s
     if not ids:
         return json.dumps({"error": "No item_ids provided"})
 
-    async with get_db_for_mcp() as db:
-        marked = 0
-        for item_id in ids:
-            # Check if already seen
-            existing = await db.execute(
-                select(AgentSeenItem).where(
-                    AgentSeenItem.agent_id == ctx.agent_id,
-                    AgentSeenItem.item_id == item_id,
-                )
-            )
-            if existing.scalar_one_or_none():
-                continue
-            seen = AgentSeenItem(
-                agent_id=ctx.agent_id,
-                item_type="mention",
-                item_id=item_id,
-            )
-            db.add(seen)
-            marked += 1
-        await db.commit()
+    from okto_pulse.core.application.use_cases.mcp_profile_activity import (
+        McpMarkMentionsSeenCommand,
+        McpMarkMentionsSeenUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        # Log activity for affected cards and specs
-        if marked > 0:
-            comment_result = await db.execute(
-                select(Comment.card_id).where(Comment.id.in_(ids)).distinct()
-            )
-            qa_result = await db.execute(
-                select(QAItem.card_id).where(QAItem.id.in_(ids)).distinct()
-            )
-            card_ids = set(
-                row[0] for row in comment_result.fetchall()
-            ) | set(
-                row[0] for row in qa_result.fetchall()
-            )
-            for card_id in card_ids:
-                await _log_card_activity(db, board_id, card_id, "items_seen", ctx, {"item_count": marked})
-
-            # Log spec Q&A seen
-            spec_qa_result = await db.execute(
-                select(SpecQAItem.spec_id).where(SpecQAItem.id.in_(ids)).distinct()
-            )
-            spec_ids = {row[0] for row in spec_qa_result.fetchall()}
-            if spec_ids:
-                board_service = BoardService(db)
-                for spec_id in spec_ids:
-                    await board_service._log_activity(
-                        board_id=board_id, action="spec_qa_seen",
-                        actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
-                        details={"spec_id": spec_id, "item_count": marked},
-                    )
-
-            # Log ideation Q&A seen
-            ideation_qa_result = await db.execute(
-                select(IdeationQAItem.ideation_id).where(IdeationQAItem.id.in_(ids)).distinct()
-            )
-            ideation_ids = {row[0] for row in ideation_qa_result.fetchall()}
-            if ideation_ids:
-                board_service = BoardService(db)
-                for ideation_id in ideation_ids:
-                    await board_service._log_activity(
-                        board_id=board_id, action="ideation_qa_seen",
-                        actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
-                        details={"ideation_id": ideation_id, "item_count": marked},
-                    )
-
-            # Log refinement Q&A seen
-            refinement_qa_result = await db.execute(
-                select(RefinementQAItem.refinement_id).where(RefinementQAItem.id.in_(ids)).distinct()
-            )
-            refinement_ids = {row[0] for row in refinement_qa_result.fetchall()}
-            if refinement_ids:
-                board_service = BoardService(db)
-                for refinement_id in refinement_ids:
-                    await board_service._log_activity(
-                        board_id=board_id, action="refinement_qa_seen",
-                        actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
-                        details={"refinement_id": refinement_id, "item_count": marked},
-                    )
-            await db.commit()
-
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpMarkMentionsSeenUseCase().execute(
+            McpMarkMentionsSeenCommand(board_id, ids),
+            actor=actor,
+            uow=uow,
+        )
         return json.dumps(
-            {"success": True, "marked_count": marked, "total_requested": len(ids)}
+            {
+                "success": True,
+                "marked_count": result.marked_count,
+                "total_requested": result.total_requested,
+            }
         )
 
 
@@ -1835,131 +1698,20 @@ async def okto_pulse_get_unseen_summary(board_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    from sqlalchemy import func as sqla_func
-    from sqlalchemy import or_, select
-
-    from okto_pulse.core.models.db import (
-        ActivityLog,
-        AgentSeenItem,
-        Card,
-        Comment,
-        Ideation,
-        IdeationQAItem,
-        QAItem,
-        Refinement,
-        RefinementQAItem,
-        Spec,
-        SpecQAItem,
+    from okto_pulse.core.application.use_cases.mcp_profile_activity import (
+        McpGetUnseenSummaryCommand,
+        McpGetUnseenSummaryUseCase,
     )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    mention_pattern = f"%@{ctx.agent_name}%"
-
-    async with get_db_for_mcp() as db:
-        # Get seen IDs
-        seen_query = select(AgentSeenItem.item_id).where(
-            AgentSeenItem.agent_id == ctx.agent_id
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpGetUnseenSummaryUseCase().execute(
+            McpGetUnseenSummaryCommand(board_id),
+            actor=actor,
+            uow=uow,
         )
-        seen_ids = {r[0] for r in (await db.execute(seen_query)).all()}
-
-        # Count comment mentions
-        comment_query = (
-            select(sqla_func.count())
-            .select_from(Comment)
-            .join(Card, Card.id == Comment.card_id)
-            .where(Card.board_id == board_id)
-            .where(Comment.content.ilike(mention_pattern))
-        )
-        total_comment_mentions = (await db.execute(comment_query)).scalar() or 0
-
-        # Count card QA mentions
-        qa_query = (
-            select(sqla_func.count())
-            .select_from(QAItem)
-            .join(Card, Card.id == QAItem.card_id)
-            .where(Card.board_id == board_id)
-            .where(
-                or_(
-                    QAItem.question.ilike(mention_pattern),
-                    QAItem.answer.ilike(mention_pattern),
-                )
-            )
-        )
-        total_qa_mentions = (await db.execute(qa_query)).scalar() or 0
-
-        # Count spec QA mentions
-        spec_qa_query = (
-            select(sqla_func.count())
-            .select_from(SpecQAItem)
-            .join(Spec, Spec.id == SpecQAItem.spec_id)
-            .where(Spec.board_id == board_id)
-            .where(
-                or_(
-                    SpecQAItem.question.ilike(mention_pattern),
-                    SpecQAItem.answer.ilike(mention_pattern),
-                )
-            )
-        )
-        total_spec_qa_mentions = (await db.execute(spec_qa_query)).scalar() or 0
-
-        # Count ideation QA mentions
-        ideation_qa_query = (
-            select(sqla_func.count())
-            .select_from(IdeationQAItem)
-            .join(Ideation, Ideation.id == IdeationQAItem.ideation_id)
-            .where(Ideation.board_id == board_id)
-            .where(
-                or_(
-                    IdeationQAItem.question.ilike(mention_pattern),
-                    IdeationQAItem.answer.ilike(mention_pattern),
-                )
-            )
-        )
-        total_ideation_qa_mentions = (await db.execute(ideation_qa_query)).scalar() or 0
-
-        # Count refinement QA mentions
-        refinement_qa_query = (
-            select(sqla_func.count())
-            .select_from(RefinementQAItem)
-            .join(Refinement, Refinement.id == RefinementQAItem.refinement_id)
-            .where(Refinement.board_id == board_id)
-            .where(
-                or_(
-                    RefinementQAItem.question.ilike(mention_pattern),
-                    RefinementQAItem.answer.ilike(mention_pattern),
-                )
-            )
-        )
-        total_refinement_qa_mentions = (await db.execute(refinement_qa_query)).scalar() or 0
-
-        # Recent activity count (last 24h)
-        from datetime import timedelta
-
-        recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        activity_query = (
-            select(sqla_func.count())
-            .select_from(ActivityLog)
-            .where(
-                ActivityLog.board_id == board_id,
-                ActivityLog.created_at >= recent_cutoff,
-            )
-        )
-        recent_activity = (await db.execute(activity_query)).scalar() or 0
-        await db.commit()
-
-        total_mentions = total_comment_mentions + total_qa_mentions + total_spec_qa_mentions + total_ideation_qa_mentions + total_refinement_qa_mentions
-        unseen_mentions = total_mentions - len(seen_ids)
-        if unseen_mentions < 0:
-            unseen_mentions = 0
-
-        return json.dumps(
-            {
-                "board_id": board_id,
-                "unseen_mentions": unseen_mentions,
-                "total_mentions": total_mentions,
-                "seen_count": len(seen_ids),
-                "recent_activity_24h": recent_activity,
-            }
-        )
+        return json.dumps(result.payload)
 
 
 # ============================================================================
@@ -2180,13 +1932,20 @@ async def okto_pulse_list_agents(board_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
+    from okto_pulse.core.application.use_cases.mcp_profile_activity import (
+        McpListAgentsCommand,
+        McpListAgentsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.infra.permissions import generate_role_summary
 
-    async with get_db_for_mcp() as db:
-        service = AgentService(db)
-        agents = await service.list_agents(board_id)
-        await db.commit()
-
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpListAgentsUseCase().execute(
+            McpListAgentsCommand(board_id),
+            actor=actor,
+            uow=uow,
+        )
         return json.dumps(
             [
                 {
@@ -2201,7 +1960,7 @@ async def okto_pulse_list_agents(board_id: str) -> str:
                         a.last_used_at.isoformat() if a.last_used_at else None
                     ),
                 }
-                for a in agents
+                for a in result.agents
             ],
             default=str,
         )
@@ -2341,81 +2100,33 @@ async def okto_pulse_get_activity_log(
     legacy_offset = os.getenv("OKTO_PULSE_LEGACY_OFFSET") == "1"
     effective_offset = offset if (legacy_offset and not cursor_pair) else 0
 
-    from sqlalchemy import and_, func, or_, select
+    from okto_pulse.core.application.use_cases.mcp_profile_activity import (
+        McpGetActivityLogCommand,
+        McpGetActivityLogUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    from okto_pulse.core.models.db import ActivityLog
-
-    async with get_db_for_mcp() as db:
-        query = select(ActivityLog).where(ActivityLog.board_id == board_id)
-        if action:
-            query = query.where(ActivityLog.action == action)
-        if card_id:
-            query = query.where(ActivityLog.card_id == card_id)
-        if cursor_pair is not None:
-            ts, rid = cursor_pair
-            # Boolean-expanded keyset filter — portable across SQLite,
-            # PostgreSQL, MySQL. `tuple_(col1, col2) < (val1, val2)` row
-            # comparison is not honored by SQLite's translator and silently
-            # degrades to single-column compare, breaking the strict-less-
-            # than semantic of the tiebreaker.
-            #
-            # Microsecond normalization (SQLite quirk): SQLite's func.now()
-            # writes `'YYYY-MM-DD HH:MM:SS'` (no microseconds), but SQLAlchemy
-            # binds a Python naive datetime as `'... .000000'`. Lexicographic
-            # comparison then mis-orders: the row's bare string is "less than"
-            # the cursor's `.000000`-suffixed string, so the anchor row would
-            # leak into batch 2. Casting both sides via SQLAlchemy's DateTime
-            # adapter normalises the format and yields semantic comparison.
-            ts_normalized = ts.replace(microsecond=0)
-            query = query.where(
-                or_(
-                    func.datetime(ActivityLog.created_at) < func.datetime(ts_normalized),
-                    and_(
-                        func.datetime(ActivityLog.created_at) == func.datetime(ts_normalized),
-                        ActivityLog.id < rid,
-                    ),
-                )
-            )
-        query = (
-            query.order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
-            .offset(effective_offset)
-            .limit(limit + 1)
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpGetActivityLogUseCase().execute(
+            McpGetActivityLogCommand(
+                board_id,
+                limit=limit,
+                cursor_pair=cursor_pair,
+                effective_offset=effective_offset,
+                action=action,
+                card_id=card_id,
+                include_details=include_details,
+            ),
+            actor=actor,
+            uow=uow,
         )
-        result = await db.execute(query)
-        logs = list(result.scalars().all())
-        await db.commit()
-
-        has_more = len(logs) > limit
-        if has_more:
-            logs = logs[:limit]
-
-        rows: list[dict[str, Any]] = []
-        for log in logs:
-            row: dict[str, Any] = {
-                "id": log.id,
-                "action": log.action,
-                "card_id": log.card_id,
-                "created_at": log.created_at.isoformat(),
-                "trigger": (log.details or {}).get("trigger") if isinstance(log.details, dict) else None,
-                "summary": _activity_log_summary(log.action, log.details),
-            }
-            if include_details:
-                row["actor_type"] = log.actor_type
-                row["actor_id"] = log.actor_id
-                row["actor_name"] = log.actor_name
-                row["details"] = sanitize_activity_details(log.details)
-            rows.append(row)
-
-        next_cursor: str | None = None
-        if has_more and logs:
-            last = logs[-1]
-            next_cursor = _encode_activity_cursor(last.created_at, last.id)
 
         if envelope:
             return json.dumps(
-                {"items": rows, "next_cursor": next_cursor}, default=str
+                {"items": result.rows, "next_cursor": result.next_cursor}, default=str
             )
-        return json.dumps(rows, default=str)
+        return json.dumps(result.rows, default=str)
 
 
 # ============================================================================
@@ -3649,70 +3360,21 @@ async def _ask_question_impl(
             _telemetry("error")
             return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        if target_type == "card":
-            from okto_pulse.core.models.schemas import QACreate
-            service = QAService(db)
-            qa = await service.create_question(
-                parent_id, ctx.agent_id, QACreate(question=question)
-            )
-            if not qa:
-                _telemetry("error")
-                return json.dumps({"error": "Failed to create question (card not found)"})
-            await _log_card_activity(
-                db, board_id, parent_id, "question_added", ctx,
-                {"question": question[:100]},
-            )
-            await db.commit()
-            _telemetry("ok")
-            return json.dumps({
-                "success": True,
-                "qa": {"id": qa.id, "question": qa.question, "asked_by": qa.asked_by},
-            })
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpAskQuestionCommand,
+        McpAskQuestionUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        if target_type in ("ideation", "refinement", "spec"):
-            if target_type == "ideation":
-                from okto_pulse.core.models.schemas import IdeationQACreate as _QACreate
-                service = IdeationQAService(db)
-                action, not_found, key = "ideation_question_added", "Ideation not found", "ideation_id"
-            elif target_type == "refinement":
-                from okto_pulse.core.models.schemas import RefinementQACreate as _QACreate
-                service = RefinementQAService(db)
-                action, not_found, key = "refinement_question_added", "Refinement not found", "refinement_id"
-            else:
-                from okto_pulse.core.models.schemas import SpecQACreate as _QACreate
-                service = SpecQAService(db)
-                action, not_found, key = "spec_question_added", "Spec not found", "spec_id"
-            qa = await service.create_question(parent_id, ctx.agent_id, _QACreate(question=question))
-            if not qa:
-                _telemetry("error")
-                return json.dumps({"error": not_found})
-            board_service = BoardService(db)
-            await board_service._log_activity(
-                board_id=board_id, action=action,
-                actor_type="agent", actor_id=ctx.agent_id, actor_name=ctx.agent_name,
-                details={key: parent_id, "question": question[:100]},
-            )
-            await db.commit()
-            _telemetry("ok")
-            return json.dumps({
-                "success": True,
-                "qa": {"id": qa.id, "question": qa.question, "asked_by": qa.asked_by},
-            })
-
-        # sprint — asymmetric: raw string, no QACreate schema, no permission, no log.
-        from okto_pulse.core.services.main import SprintQAService
-        service = SprintQAService(db)
-        qa = await service.create_question(parent_id, ctx.agent_id, question)
-        await db.commit()
-        if not qa:
-            _telemetry("error")
-            return json.dumps({"error": "Sprint not found"})
-        _telemetry("ok")
-        return json.dumps({
-            "success": True,
-            "qa": {"id": qa.id, "question": qa.question, "asked_by": qa.asked_by},
-        })
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpAskQuestionUseCase().execute(
+            McpAskQuestionCommand(board_id, target_type, parent_id, question),
+            actor=actor,
+            uow=uow,
+        )
+    _telemetry("ok" if result.payload.get("success") else "error")
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -3750,43 +3412,20 @@ async def okto_pulse_answer_question(
     if perm_err:
         return _perm_error(perm_err)
 
-    from okto_pulse.core.models.schemas import QAAnswer
-    from okto_pulse.core.services import QASelfAnsweringNotAllowedError
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpAnswerQuestionCommand,
+        McpAnswerQuestionUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        service = QAService(db)
-        try:
-            qa = await service.answer_question(
-                qa_id,
-                ctx.agent_id,
-                QAAnswer(answer=answer),
-                actor_type="agent",
-                surface="mcp",
-            )
-        except QASelfAnsweringNotAllowedError as e:
-            await db.commit()
-            return json.dumps({"error": e.reason, "detail": str(e)})
-        if not qa:
-            return json.dumps(
-                {"error": "Failed to answer question (not found)"}
-            )
-        await _log_card_activity(
-            db, board_id, qa.card_id, "question_answered", ctx,
-            {"qa_id": qa_id, "answer": answer[:100]},
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpAnswerQuestionUseCase().execute(
+            McpAnswerQuestionCommand(board_id, qa_id, answer),
+            actor=actor,
+            uow=uow,
         )
-        await db.commit()
-
-        return json.dumps(
-            {
-                "success": True,
-                "qa": {
-                    "id": qa.id,
-                    "question": qa.question,
-                    "answer": qa.answer,
-                    "answered_by": qa.answered_by,
-                },
-            }
-        )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -3801,15 +3440,20 @@ async def okto_pulse_delete_question(board_id: str, qa_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        service = QAService(db)
-        deleted = await service.delete_question(qa_id)
-        await db.commit()
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpDeleteQuestionCommand,
+        McpDeleteQuestionUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        if not deleted:
-            return json.dumps({"error": "Q&A item not found"})
-
-        return json.dumps({"success": True})
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpDeleteQuestionUseCase().execute(
+            McpDeleteQuestionCommand(qa_id),
+            actor=actor,
+            uow=uow,
+        )
+    return json.dumps(result.payload)
 
 
 # ============================================================================
@@ -3829,34 +3473,20 @@ async def okto_pulse_add_comment(board_id: str, card_id: str, content: str) -> s
     if perm_err:
         return _perm_error(perm_err)
 
-    from okto_pulse.core.models.schemas import CommentCreate
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpAddCommentCommand,
+        McpAddCommentUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        service = CommentService(db)
-        comment = await service.create_comment(
-            card_id, ctx.agent_id, CommentCreate(content=content)
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpAddCommentUseCase().execute(
+            McpAddCommentCommand(board_id, card_id, content),
+            actor=actor,
+            uow=uow,
         )
-        if not comment:
-            return json.dumps(
-                {"error": "Failed to create comment (card not found)"}
-            )
-        await _log_card_activity(
-            db, board_id, card_id, "comment_added", ctx,
-            {"content": content[:100]},
-        )
-        await db.commit()
-
-        return json.dumps(
-            {
-                "success": True,
-                "comment": {
-                    "id": comment.id,
-                    "content": comment.content,
-                    "author_id": comment.author_id,
-                    "created_at": comment.created_at.isoformat(),
-                },
-            }
-        )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -3882,7 +3512,7 @@ Multi-value params (options/selected): pass a JSON array (preferred — safe for
     if perm_err:
         return _perm_error(perm_err)
 
-    from okto_pulse.core.models.schemas import ChoiceOption, CommentCreate
+    from okto_pulse.core.models.schemas import ChoiceOption
 
     try:
         parsed_objects = parse_options_json(options_json or None)
@@ -3906,37 +3536,27 @@ Multi-value params (options/selected): pass a JSON array (preferred — safe for
             for i, label in enumerate(option_labels)
         ]
 
-    async with get_db_for_mcp() as db:
-        service = CommentService(db)
-        data = CommentCreate(
-            content=question,
-            comment_type=comment_type if comment_type in ("choice", "multi_choice") else "choice",
-            choices=choice_list,
-            allow_free_text=allow_free_text.lower() == "true",
-        )
-        comment = await service.create_comment(card_id, ctx.agent_id, data)
-        if not comment:
-            return json.dumps({"error": "Failed to create choice comment (card not found)"})
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpAddChoiceCommentCommand,
+        McpAddChoiceCommentUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        await _log_card_activity(
-            db, board_id, card_id, "choice_comment_added", ctx,
-            {"question": question[:100], "option_count": len(choice_list), "type": comment_type},
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpAddChoiceCommentUseCase().execute(
+            McpAddChoiceCommentCommand(
+                board_id,
+                card_id,
+                question,
+                comment_type,
+                choice_list,
+                allow_free_text.lower() == "true",
+            ),
+            actor=actor,
+            uow=uow,
         )
-        await db.commit()
-
-        return json.dumps(
-            {
-                "success": True,
-                "comment": {
-                    "id": comment.id,
-                    "comment_type": comment.comment_type,
-                    "content": comment.content,
-                    "choices": comment.choices,
-                    "allow_free_text": comment.allow_free_text,
-                    "responses": [],
-                },
-            }
-        )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -3961,32 +3581,20 @@ Multi-value params (options/selected): pass a JSON array (preferred — safe for
     if not selected_ids:
         return json.dumps({"error": "At least one selection is required"})
 
-    async with get_db_for_mcp() as db:
-        service = CommentService(db)
-        comment = await service.respond_to_choice(
-            comment_id=comment_id,
-            responder_id=ctx.agent_id,
-            responder_name=ctx.agent_name,
-            selected=selected_ids,
-            free_text=free_text or None,
-        )
-        if not comment:
-            return json.dumps({"error": "Choice comment not found or invalid selection"})
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpRespondToChoiceCommand,
+        McpRespondToChoiceUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        await db.commit()
-
-        return json.dumps(
-            {
-                "success": True,
-                "comment": {
-                    "id": comment.id,
-                    "comment_type": comment.comment_type,
-                    "content": comment.content,
-                    "choices": comment.choices,
-                    "responses": comment.responses,
-                },
-            }
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpRespondToChoiceUseCase().execute(
+            McpRespondToChoiceCommand(comment_id, selected_ids, free_text),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -3997,26 +3605,20 @@ async def okto_pulse_get_choice_responses(board_id: str, comment_id: str) -> str
     if not ctx:
         return _auth_error()
 
-    from okto_pulse.core.models.db import Comment as CommentModel
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpGetChoiceResponsesCommand,
+        McpGetChoiceResponsesUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        comment = await db.get(CommentModel, comment_id)
-        await db.commit()
-
-        if not comment or comment.comment_type == "text":
-            return json.dumps({"error": "Choice comment not found"})
-
-        return json.dumps(
-            {
-                "id": comment.id,
-                "comment_type": comment.comment_type,
-                "question": comment.content,
-                "choices": comment.choices,
-                "allow_free_text": comment.allow_free_text,
-                "responses": comment.responses or [],
-                "response_count": len(comment.responses or []),
-            }
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpGetChoiceResponsesUseCase().execute(
+            McpGetChoiceResponsesCommand(comment_id),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4031,34 +3633,26 @@ async def okto_pulse_list_comments(board_id: str, card_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        service = CardService(db)
-        card = await service.get_card(card_id)
-        await db.commit()
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpListCommentsCommand,
+        McpListCommentsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        if not card or card.board_id != board_id:
-            return json.dumps({"error": "Card not found"})
-
-        result = []
-        for c in card.comments:
-            item: dict = {
-                "id": c.id,
-                "content": c.content,
-                "author_id": c.author_id,
-                "comment_type": getattr(c, "comment_type", "text") or "text",
-                "created_at": c.created_at.isoformat(),
-                "updated_at": c.updated_at.isoformat(),
-            }
-            if item["comment_type"] != "text":
-                item["choices"] = getattr(c, "choices", None)
-                item["responses"] = getattr(c, "responses", None) or []
-                item["allow_free_text"] = getattr(c, "allow_free_text", False)
-            result.append(item)
-        from okto_pulse.core.mcp.payload_compaction import compact_and_emit
-        return json.dumps(
-            compact_and_emit(result, tool_name="okto_pulse_list_comments"),
-            default=str,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpListCommentsUseCase().execute(
+            McpListCommentsCommand(board_id, card_id),
+            actor=actor,
+            uow=uow,
         )
+    if isinstance(result.payload, dict) and "error" in result.payload:
+        return json.dumps(result.payload)
+    from okto_pulse.core.mcp.payload_compaction import compact_and_emit
+    return json.dumps(
+        compact_and_emit(result.payload, tool_name="okto_pulse_list_comments"),
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -4075,41 +3669,20 @@ async def okto_pulse_update_comment(
     if perm_err:
         return _perm_error(perm_err)
 
-    from okto_pulse.core.models.schemas import CommentUpdate
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpUpdateCommentCommand,
+        McpUpdateCommentUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        service = CommentService(db)
-        comment = await service.update_comment(
-            comment_id, ctx.agent_id, CommentUpdate(content=content)
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpUpdateCommentUseCase().execute(
+            McpUpdateCommentCommand(board_id, comment_id, content),
+            actor=actor,
+            uow=uow,
         )
-
-        if not comment:
-            return json.dumps(
-                {"error": "Comment not found or not owned by this agent"}
-            )
-
-        await _log_card_activity(
-            db, board_id, comment.card_id, "comment_updated", ctx,
-            {"content": content[:100]},
-        )
-        await db.commit()
-        await db.refresh(comment)
-
-        return json.dumps(
-            {
-                "success": True,
-                "comment": {
-                    "id": comment.id,
-                    "content": comment.content,
-                    "updated_at": (
-                        comment.updated_at.isoformat()
-                        if comment.updated_at
-                        else None
-                    ),
-                },
-            },
-            default=str,
-        )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4124,26 +3697,20 @@ async def okto_pulse_delete_comment(board_id: str, comment_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        service = CommentService(db)
-        # Get card_id before deleting
-        from okto_pulse.core.models.db import Comment as CommentModel
-        comment_obj = await db.get(CommentModel, comment_id)
-        card_id = comment_obj.card_id if comment_obj else None
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpDeleteCommentCommand,
+        McpDeleteCommentUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        deleted = await service.delete_comment(comment_id, ctx.agent_id)
-        if not deleted:
-            return json.dumps(
-                {"error": "Comment not found or not owned by this agent"}
-            )
-
-        if card_id:
-            await _log_card_activity(
-                db, board_id, card_id, "comment_deleted", ctx,
-            )
-        await db.commit()
-
-        return json.dumps({"success": True})
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpDeleteCommentUseCase().execute(
+            McpDeleteCommentCommand(board_id, comment_id),
+            actor=actor,
+            uow=uow,
+        )
+    return json.dumps(result.payload)
 
 
 # ============================================================================
@@ -4178,34 +3745,20 @@ async def okto_pulse_upload_attachment(
     if err:
         return json.dumps({"error": err})
 
-    async with get_db_for_mcp() as db:
-        service = AttachmentService(db)
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpUploadAttachmentCommand,
+        McpUploadAttachmentUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        attachment = await service.upload_attachment(
-            card_id=card_id,
-            user_id=ctx.agent_id,
-            filename=filename,
-            content=content,
-            mime_type=mime_type,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpUploadAttachmentUseCase().execute(
+            McpUploadAttachmentCommand(card_id, filename, content, mime_type),
+            actor=actor,
+            uow=uow,
         )
-        await db.commit()
-
-        if not attachment:
-            return json.dumps(
-                {"error": "Failed to upload attachment (card not found)"}
-            )
-
-        return json.dumps(
-            {
-                "success": True,
-                "attachment": {
-                    "id": attachment.id,
-                    "filename": attachment.original_filename,
-                    "mime_type": attachment.mime_type,
-                    "size": attachment.size,
-                },
-            }
-        )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4220,28 +3773,20 @@ async def okto_pulse_list_attachments(board_id: str, card_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        service = CardService(db)
-        card = await service.get_card(card_id)
-        await db.commit()
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpListAttachmentsCommand,
+        McpListAttachmentsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        if not card or card.board_id != board_id:
-            return json.dumps({"error": "Card not found"})
-
-        return json.dumps(
-            [
-                {
-                    "id": a.id,
-                    "filename": a.original_filename,
-                    "mime_type": a.mime_type,
-                    "size": a.size,
-                    "uploaded_by": a.uploaded_by,
-                    "created_at": a.created_at.isoformat(),
-                }
-                for a in card.attachments
-            ],
-            default=str,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpListAttachmentsUseCase().execute(
+            McpListAttachmentsCommand(board_id, card_id),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4256,15 +3801,20 @@ async def okto_pulse_delete_attachment(board_id: str, attachment_id: str) -> str
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        service = AttachmentService(db)
-        deleted = await service.delete_attachment(attachment_id)
-        await db.commit()
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpDeleteAttachmentCommand,
+        McpDeleteAttachmentUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        if not deleted:
-            return json.dumps({"error": "Attachment not found"})
-
-        return json.dumps({"success": True})
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpDeleteAttachmentUseCase().execute(
+            McpDeleteAttachmentCommand(attachment_id),
+            actor=actor,
+            uow=uow,
+        )
+    return json.dumps(result.payload)
 
 
 # ============================================================================
@@ -4336,30 +3886,20 @@ async def okto_pulse_create_topic(board_id: str, name: str, description: str = "
     perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.create", Permissions.SPECS_CREATE)
     if perm_err:
         return _mcp_permission_error_response(perm_err)
-    from okto_pulse.core.models.schemas import TopicCreate
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpCreateTopicCommand,
+        McpCreateTopicUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        try:
-            topic = await StoryService(db).create_topic(
-                board_id,
-                ctx.agent_id,
-                TopicCreate(name=name, description=description or None),
-                skip_ownership_check=True,
-            )
-        except TopicOperationError as e:
-            return _topic_operation_error_response(e)
-        await db.commit()
-        if not topic:
-            return json.dumps({"error": "Board not found"})
-        return json.dumps(
-            {
-                "success": True,
-                "message": f"Topic '{topic.name}' created.",
-                "topic": _topic_payload(topic),
-                "impact": _topic_impact(topic),
-            },
-            default=str,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpCreateTopicUseCase().execute(
+            McpCreateTopicCommand(board_id, name, description),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4376,9 +3916,6 @@ async def okto_pulse_update_topic(
     perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.edit_fields", Permissions.SPECS_UPDATE)
     if perm_err:
         return _mcp_permission_error_response(perm_err)
-    from okto_pulse.core.models.db import Topic
-    from okto_pulse.core.models.schemas import TopicUpdate
-
     update_data = {}
     if name:
         update_data["name"] = name
@@ -4387,26 +3924,20 @@ async def okto_pulse_update_topic(
     if not update_data:
         return json.dumps({"success": False, "error": "Provide at least one field to update"})
 
-    async with get_db_for_mcp() as db:
-        topic = await db.get(Topic, topic_id)
-        if not topic or topic.board_id != board_id:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        try:
-            updated = await StoryService(db).update_topic(topic_id, ctx.agent_id, TopicUpdate(**update_data))
-        except TopicOperationError as e:
-            return _topic_operation_error_response(e)
-        await db.commit()
-        if not updated:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        return json.dumps(
-            {
-                "success": True,
-                "message": f"Topic '{updated.name}' updated.",
-                "topic": _topic_payload(updated),
-                "impact": _topic_impact(updated),
-            },
-            default=str,
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpUpdateTopicCommand,
+        McpUpdateTopicUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpUpdateTopicUseCase().execute(
+            McpUpdateTopicCommand(board_id, topic_id, update_data),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4418,29 +3949,20 @@ async def okto_pulse_archive_topic(board_id: str, topic_id: str) -> str:
     perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.archive", Permissions.SPECS_UPDATE)
     if perm_err:
         return _mcp_permission_error_response(perm_err)
-    from okto_pulse.core.models.db import Topic
-    from okto_pulse.core.models.schemas import TopicUpdate
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpSetTopicArchivedCommand,
+        McpSetTopicArchivedUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        topic = await db.get(Topic, topic_id)
-        if not topic or topic.board_id != board_id:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        try:
-            archived = await StoryService(db).update_topic(topic_id, ctx.agent_id, TopicUpdate(archived=True))
-        except TopicOperationError as e:
-            return _topic_operation_error_response(e)
-        await db.commit()
-        if not archived:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        return json.dumps(
-            {
-                "success": True,
-                "message": "Topic archived. Stories remain unchanged and visible through All topics/search unless the Story itself is archived.",
-                "topic": _topic_payload(archived),
-                "impact": _topic_impact(archived),
-            },
-            default=str,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpSetTopicArchivedUseCase().execute(
+            McpSetTopicArchivedCommand(board_id, topic_id, True),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4452,29 +3974,20 @@ async def okto_pulse_restore_topic(board_id: str, topic_id: str) -> str:
     perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.restore", Permissions.SPECS_UPDATE)
     if perm_err:
         return _mcp_permission_error_response(perm_err)
-    from okto_pulse.core.models.db import Topic
-    from okto_pulse.core.models.schemas import TopicUpdate
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpSetTopicArchivedCommand,
+        McpSetTopicArchivedUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        topic = await db.get(Topic, topic_id)
-        if not topic or topic.board_id != board_id:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        try:
-            restored = await StoryService(db).update_topic(topic_id, ctx.agent_id, TopicUpdate(archived=False))
-        except TopicOperationError as e:
-            return _topic_operation_error_response(e)
-        await db.commit()
-        if not restored:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        return json.dumps(
-            {
-                "success": True,
-                "message": f"Topic '{restored.name}' restored.",
-                "topic": _topic_payload(restored),
-                "impact": _topic_impact(restored),
-            },
-            default=str,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpSetTopicArchivedUseCase().execute(
+            McpSetTopicArchivedCommand(board_id, topic_id, False),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4486,28 +3999,20 @@ async def okto_pulse_delete_topic(board_id: str, topic_id: str) -> str:
     perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.delete", Permissions.SPECS_DELETE)
     if perm_err:
         return _mcp_permission_error_response(perm_err)
-    from okto_pulse.core.models.db import Topic
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpDeleteTopicCommand,
+        McpDeleteTopicUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        topic = await db.get(Topic, topic_id)
-        if not topic or topic.board_id != board_id:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        try:
-            deleted = await StoryService(db).delete_topic(topic_id, ctx.agent_id)
-        except TopicOperationError as e:
-            return _topic_operation_error_response(e)
-        await db.commit()
-        if not deleted:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        return json.dumps(
-            {
-                "success": True,
-                "message": f"Topic '{deleted.name}' deleted.",
-                "deleted_topic_id": topic_id,
-                "impact": {"topic_id": topic_id, "active_count": 0, "archived_count": 0, "total_associated_count": 0},
-            },
-            default=str,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpDeleteTopicUseCase().execute(
+            McpDeleteTopicCommand(board_id, topic_id),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4519,40 +4024,20 @@ async def okto_pulse_merge_topics(board_id: str, source_topic_id: str, target_to
     perm_err = _mcp_check_permission(ctx.permissions, "topic.entity.merge", Permissions.SPECS_UPDATE)
     if perm_err:
         return _mcp_permission_error_response(perm_err)
-    from okto_pulse.core.models.db import Topic
+    from okto_pulse.core.application.use_cases.mcp_collaboration import (
+        McpMergeTopicsCommand,
+        McpMergeTopicsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        source = await db.get(Topic, source_topic_id)
-        if not source or source.board_id != board_id:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        try:
-            result = await StoryService(db).merge_topics(source_topic_id, target_topic_id, ctx.agent_id)
-        except TopicOperationError as e:
-            return _topic_operation_error_response(e)
-        await db.commit()
-        if not result:
-            return json.dumps({"success": False, "error": "Topic not found", "code": "topic_not_found"})
-        return json.dumps(
-            {
-                "success": True,
-                "message": (
-                    f"Merged Topic '{result['source'].name}' into '{result['target'].name}'. "
-                    "Story-Ideation links were preserved and the source Topic was archived."
-                ),
-                "source": _topic_payload(result["source"]),
-                "target": _topic_payload(result["target"]),
-                "impact": {
-                    "source_topic_id": source_topic_id,
-                    "target_topic_id": target_topic_id,
-                    "moved_count": result["moved_count"],
-                    "active_count": result["active_count"],
-                    "archived_count": result["archived_count"],
-                    "target_total_before": result["target_total_before"],
-                    "target_total_after": result["target_total_after"],
-                },
-            },
-            default=str,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpMergeTopicsUseCase().execute(
+            McpMergeTopicsCommand(board_id, source_topic_id, target_topic_id),
+            actor=actor,
+            uow=uow,
         )
+    return json.dumps(result.payload, default=str)
 
 
 # ============================================================================
@@ -4583,17 +4068,23 @@ async def okto_pulse_get_resource_gate_summary(
     if perm_err:
         return _mcp_permission_error_response(perm_err)
 
-    async with get_db_for_mcp() as db:
-        try:
-            summary = await ResourceGateService(db).get_summary(
-                board_id,
-                entity_type,
-                entity_id,
+    from okto_pulse.core.application.use_cases.mcp_resource_stories import (
+        McpGetResourceGateSummaryUseCase,
+        McpResourceGateSummaryCommand,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpGetResourceGateSummaryUseCase().execute(
+                McpResourceGateSummaryCommand(board_id, entity_type, entity_id),
+                actor=actor,
+                uow=uow,
             )
-        except ResourceGateError as e:
-            return _resource_gate_error_response(e)
-        await db.commit()
-        return json.dumps({"success": True, **summary}, default=str)
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4621,21 +4112,29 @@ async def okto_pulse_mark_resource_not_applicable(
     if perm_err:
         return _mcp_permission_error_response(perm_err)
 
-    async with get_db_for_mcp() as db:
-        try:
-            result = await ResourceGateService(db).mark_not_applicable(
-                board_id,
-                entity_type,
-                entity_id,
-                resource_type,
-                ctx.agent_id,
-                justification=justification,
-                source_channel="mcp",
+    from okto_pulse.core.application.use_cases.mcp_resource_stories import (
+        McpMarkResourceNotApplicableCommand,
+        McpMarkResourceNotApplicableUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpMarkResourceNotApplicableUseCase().execute(
+                McpMarkResourceNotApplicableCommand(
+                    board_id,
+                    entity_type,
+                    entity_id,
+                    resource_type,
+                    justification,
+                ),
+                actor=actor,
+                uow=uow,
             )
-        except ResourceGateError as e:
-            return _resource_gate_error_response(e)
-        await db.commit()
-        return json.dumps(result, default=str)
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4666,20 +4165,29 @@ async def okto_pulse_clear_resource_not_applicable(
     if perm_err:
         return _mcp_permission_error_response(perm_err)
 
-    async with get_db_for_mcp() as db:
-        try:
-            result = await ResourceGateService(db).clear_not_applicable(
-                board_id,
-                entity_type,
-                entity_id,
-                resource_type,
-                ctx.agent_id,
-                reason=reason or None,
+    from okto_pulse.core.application.use_cases.mcp_resource_stories import (
+        McpClearResourceNotApplicableCommand,
+        McpClearResourceNotApplicableUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpClearResourceNotApplicableUseCase().execute(
+                McpClearResourceNotApplicableCommand(
+                    board_id,
+                    entity_type,
+                    entity_id,
+                    resource_type,
+                    reason,
+                ),
+                actor=actor,
+                uow=uow,
             )
-        except ResourceGateError as e:
-            return _resource_gate_error_response(e)
-        await db.commit()
-        return json.dumps(result, default=str)
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -4710,29 +4218,35 @@ async def okto_pulse_create_story(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    async with get_db_for_mcp() as db:
-        try:
-            story = await StoryService(db).create_story(
-                board_id,
-                ctx.agent_id,
-                StoryCreate(
-                    topic_id=topic_id,
-                    title=title,
-                    description=description.replace("\\n", "\n"),
-                    actor=actor or None,
-                    goal=goal or None,
-                    benefit=benefit or None,
-                    labels=label_list,
-                    status=story_status,
-                ),
-                skip_ownership_check=True,
+    from okto_pulse.core.application.use_cases.mcp_resource_stories import (
+        McpCreateStoryCommand,
+        McpCreateStoryUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    data = StoryCreate(
+        topic_id=topic_id,
+        title=title,
+        description=description.replace("\\n", "\n"),
+        actor=actor or None,
+        goal=goal or None,
+        benefit=benefit or None,
+        labels=label_list,
+        status=story_status,
+    )
+    actor_ctx = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor_ctx) as uow:
+            result = await McpCreateStoryUseCase().execute(
+                McpCreateStoryCommand(board_id, data),
+                actor=actor_ctx,
+                uow=uow,
             )
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
-        await db.commit()
-        if not story:
-            return json.dumps({"error": "Board not found"})
-        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    if result.board_not_found:
+        return json.dumps({"error": "Board not found"})
+    return json.dumps({"success": True, "story": _story_payload(result.story)}, default=str)
 
 
 @mcp.tool()
@@ -4774,28 +4288,32 @@ async def okto_pulse_update_story(
     if not update_data:
         return json.dumps({"success": False, "error": "Provide at least one field to update"})
 
-    async with get_db_for_mcp() as db:
-        service = StoryService(db)
-        existing = await service.get_story(story_id)
-        if not existing or existing.board_id != board_id:
-            return json.dumps({"error": "Story not found"})
-        for required_permission in story_update_permissions(update_data):
-            perm_err = _mcp_check_story_state_permission(
-                ctx.permissions,
-                required_permission,
-                existing,
-                Permissions.SPECS_UPDATE,
+    from okto_pulse.core.application.use_cases.mcp_resource_stories import (
+        McpUpdateStoryCommand,
+        McpUpdateStoryUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpUpdateStoryUseCase().execute(
+                McpUpdateStoryCommand(
+                    board_id,
+                    story_id,
+                    update_data,
+                    StoryUpdate(**update_data),
+                ),
+                actor=actor,
+                uow=uow,
             )
-            if perm_err:
-                return _mcp_permission_error_response(perm_err)
-        try:
-            story = await service.update_story(story_id, ctx.agent_id, StoryUpdate(**update_data))
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
-        await db.commit()
-        if not story or story.board_id != board_id:
-            return json.dumps({"error": "Story not found"})
-        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    if result.not_found:
+        return json.dumps({"error": "Story not found"})
+    if result.perm_err is not None:
+        return _mcp_permission_error_response(result.perm_err)
+    return json.dumps({"success": True, "story": _story_payload(result.story)}, default=str)
 
 
 @mcp.tool()
@@ -4812,27 +4330,32 @@ async def okto_pulse_move_story(board_id: str, story_id: str, status: str) -> st
     except ValueError:
         return json.dumps({"error": f"Invalid status. Must be one of: {[s.value for s in StoryStatus]}"})
 
-    async with get_db_for_mcp() as db:
-        service = StoryService(db)
-        existing = await service.get_story(story_id)
-        if not existing or existing.board_id != board_id:
-            return json.dumps({"error": "Story not found"})
-        perm_err = _mcp_check_story_state_permission(
-            ctx.permissions,
-            story_move_permission(existing.status, story_status),
-            existing,
-            Permissions.SPECS_CREATE,
-        )
-        if perm_err:
-            return _mcp_permission_error_response(perm_err)
-        try:
-            story = await service.move_story(story_id, ctx.agent_id, StoryMove(status=story_status))
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
-        await db.commit()
-        if not story or story.board_id != board_id:
-            return json.dumps({"error": "Story not found"})
-        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+    from okto_pulse.core.application.use_cases.mcp_resource_stories import (
+        McpMoveStoryCommand,
+        McpMoveStoryUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpMoveStoryUseCase().execute(
+                McpMoveStoryCommand(
+                    board_id,
+                    story_id,
+                    story_status,
+                    StoryMove(status=story_status),
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    if result.not_found:
+        return json.dumps({"error": "Story not found"})
+    if result.perm_err is not None:
+        return _mcp_permission_error_response(result.perm_err)
+    return json.dumps({"success": True, "story": _story_payload(result.story)}, default=str)
 
 
 @mcp.tool()
@@ -4841,24 +4364,24 @@ async def okto_pulse_archive_story(board_id: str, story_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    async with get_db_for_mcp() as db:
-        service = StoryService(db)
-        existing = await service.get_story(story_id)
-        if not existing or existing.board_id != board_id:
-            return json.dumps({"error": "Story not found"})
-        perm_err = _mcp_check_story_state_permission(
-            ctx.permissions,
-            "story.entity.archive",
-            existing,
-            Permissions.SPECS_UPDATE,
+    from okto_pulse.core.application.use_cases.mcp_resource_stories import (
+        McpArchiveStoryCommand,
+        McpArchiveStoryUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpArchiveStoryUseCase().execute(
+            McpArchiveStoryCommand(board_id, story_id, True),
+            actor=actor,
+            uow=uow,
         )
-        if perm_err:
-            return _mcp_permission_error_response(perm_err)
-        story = await service.archive_story(story_id, ctx.agent_id, archived=True)
-        await db.commit()
-        if not story or story.board_id != board_id:
-            return json.dumps({"error": "Story not found"})
-        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+    if result.not_found:
+        return json.dumps({"error": "Story not found"})
+    if result.perm_err is not None:
+        return _mcp_permission_error_response(result.perm_err)
+    return json.dumps({"success": True, "story": _story_payload(result.story)}, default=str)
 
 
 @mcp.tool()
@@ -4867,24 +4390,24 @@ async def okto_pulse_restore_story(board_id: str, story_id: str) -> str:
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    async with get_db_for_mcp() as db:
-        service = StoryService(db)
-        existing = await service.get_story(story_id)
-        if not existing or existing.board_id != board_id:
-            return json.dumps({"error": "Story not found"})
-        perm_err = _mcp_check_story_state_permission(
-            ctx.permissions,
-            "story.entity.restore",
-            existing,
-            Permissions.SPECS_UPDATE,
+    from okto_pulse.core.application.use_cases.mcp_resource_stories import (
+        McpArchiveStoryCommand,
+        McpArchiveStoryUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpArchiveStoryUseCase().execute(
+            McpArchiveStoryCommand(board_id, story_id, False),
+            actor=actor,
+            uow=uow,
         )
-        if perm_err:
-            return _mcp_permission_error_response(perm_err)
-        story = await service.archive_story(story_id, ctx.agent_id, archived=False)
-        await db.commit()
-        if not story or story.board_id != board_id:
-            return json.dumps({"error": "Story not found"})
-        return json.dumps({"success": True, "story": _story_payload(story)}, default=str)
+    if result.not_found:
+        return json.dumps({"error": "Story not found"})
+    if result.perm_err is not None:
+        return _mcp_permission_error_response(result.perm_err)
+    return json.dumps({"success": True, "story": _story_payload(result.story)}, default=str)
 
 
 @mcp.tool()
@@ -8147,7 +7670,10 @@ async def _link_task_to_fr_internal(
         if not card:
             return json.dumps({"error": "Card not found"})
 
-        frs = list(spec.functional_requirements or [])
+        frs = [
+            dict(fr) if isinstance(fr, dict) else fr
+            for fr in (spec.functional_requirements or [])
+        ]
         found = False
         for fr in frs:
             if isinstance(fr, dict) and fr.get("id") == fr_id:
@@ -8166,11 +7692,30 @@ async def _link_task_to_fr_internal(
             })
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        _, err = await _safe_spec_update(
-            spec_service, spec_id, ctx.agent_id, SpecUpdate(functional_requirements=frs)
-        )
-        if err:
-            return err
+        traceability_only = False
+        link_changed = True
+        try:
+            _, err = await _safe_spec_update(
+                spec_service, spec_id, ctx.agent_id, SpecUpdate(functional_requirements=frs)
+            )
+            if err:
+                return err
+        except SpecLockedError:
+            try:
+                locked_spec, link_changed, task_ids = (
+                    await spec_service.append_locked_traceability_task_link(
+                        spec_id,
+                        ctx.agent_id,
+                        target_field="functional_requirements",
+                        target_id=fr_id,
+                        card_id=card_id,
+                    )
+                )
+            except ValueError as exc:
+                return json.dumps({"error": "traceability_link_rejected", "detail": str(exc)})
+            if locked_spec is None:
+                return json.dumps({"error": "Spec not found"})
+            traceability_only = True
         await db.commit()
 
         cov = _spec_coverage(spec)
@@ -8178,6 +7723,8 @@ async def _link_task_to_fr_internal(
             "success": True,
             "fr_id": fr_id,
             "card_id": card_id,
+            "traceability_only": traceability_only,
+            "link_changed": link_changed,
             "coverage_note": (
                 "Direct FR task link persisted. The FR coverage gate is still "
                 "computed from business_rules[].linked_requirements."
@@ -8256,7 +7803,10 @@ async def _link_task_to_tr_internal(
         if not card:
             return json.dumps({"error": "Card not found"})
 
-        trs = list(spec.technical_requirements or [])
+        trs = [
+            dict(tr) if isinstance(tr, dict) else tr
+            for tr in (spec.technical_requirements or [])
+        ]
         found = False
         for tr in trs:
             if isinstance(tr, dict) and tr.get("id") == tr_id:
@@ -8275,13 +7825,41 @@ async def _link_task_to_tr_internal(
             })
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        _, err = await _safe_spec_update(spec_service, spec_id, ctx.agent_id, SpecUpdate(technical_requirements=trs))
-        if err:
-            return err
+        traceability_only = False
+        link_changed = True
+        try:
+            _, err = await _safe_spec_update(
+                spec_service, spec_id, ctx.agent_id, SpecUpdate(technical_requirements=trs)
+            )
+            if err:
+                return err
+        except SpecLockedError:
+            try:
+                locked_spec, link_changed, task_ids = (
+                    await spec_service.append_locked_traceability_task_link(
+                        spec_id,
+                        ctx.agent_id,
+                        target_field="technical_requirements",
+                        target_id=tr_id,
+                        card_id=card_id,
+                    )
+                )
+            except ValueError as exc:
+                return json.dumps({"error": "traceability_link_rejected", "detail": str(exc)})
+            if locked_spec is None:
+                return json.dumps({"error": "Spec not found"})
+            traceability_only = True
         await db.commit()
 
         cov = _spec_coverage(spec, trs=trs)
-        return json.dumps({"success": True, "tr_id": tr_id, "card_id": card_id, **_saturation_or_coverage(cov)})
+        return json.dumps({
+            "success": True,
+            "tr_id": tr_id,
+            "card_id": card_id,
+            "traceability_only": traceability_only,
+            "link_changed": link_changed,
+            **_saturation_or_coverage(cov),
+        })
 
 
 # ==================== ARCHIVE & RESTORE ====================
@@ -8378,22 +7956,32 @@ async def okto_pulse_list_architecture_designs(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        repo = ArchitectureDesignRepository(db)
-        try:
-            parent_model, _ = repo._parent_config(parent_type)
-        except ValueError as exc:
-            return json.dumps({"error": str(exc)})
-        parent = await db.get(parent_model, parent_id)
-        if not parent or getattr(parent, "board_id") != board_id:
-            return json.dumps({"error": f"{parent_type} not found"})
-        designs = await repo.list(parent_type, parent_id, include_payloads=_flag_enabled(include_payloads))
-        payload = [
-            _dump_model(repo.to_response(design) if _flag_enabled(include_payloads) else repo.to_summary(design))
-            for design in designs
-        ]
-        await db.commit()
-        return json.dumps({"success": True, "architecture_designs": payload}, default=str)
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        ListArchitectureCommand,
+        ListArchitectureUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ListArchitectureUseCase().execute(
+                ListArchitectureCommand(
+                    parent_type,
+                    parent_id,
+                    include_payloads=_flag_enabled(include_payloads),
+                    board_id=board_id,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    except EntityNotFoundError:
+        return json.dumps({"error": f"{parent_type} not found"})
+    payload = [_dump_model(item) for item in result.summaries]
+    return json.dumps({"success": True, "architecture_designs": payload}, default=str)
 
 
 @mcp.tool()
@@ -8418,21 +8006,27 @@ async def okto_pulse_list_architecture_propagation_legacy(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        from okto_pulse.core.services.architecture_propagation_legacy import (
-            build_propagation_legacy_report,
-        )
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        ArchitecturePropagationLegacyReportCommand,
+        ArchitecturePropagationLegacyReportUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        report = await build_propagation_legacy_report(
-            db,
-            board_id=board_id,
-            limit=limit,
-            offset=offset,
-            include_clean=_flag_enabled(include_clean),
-            parent_type_filter=parent_type_filter or None,
-            surface="mcp",
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await ArchitecturePropagationLegacyReportUseCase().execute(
+            ArchitecturePropagationLegacyReportCommand(
+                board_id,
+                limit=limit,
+                offset=offset,
+                include_clean=_flag_enabled(include_clean),
+                parent_type_filter=parent_type_filter,
+                surface="mcp",
+            ),
+            actor=actor,
+            uow=uow,
         )
-        return json.dumps({"success": True, **report}, default=str)
+    return json.dumps({"success": True, **result.report}, default=str)
 
 
 @mcp.tool()
@@ -8447,18 +8041,36 @@ async def okto_pulse_get_architecture_design(
     if not ctx:
         return _auth_error()
 
-    async with get_db_for_mcp() as db:
-        repo = ArchitectureDesignRepository(db)
-        design = await repo.get(design_id, include_payloads=_flag_enabled(include_payloads))
-        if not design or design.board_id != board_id:
-            return json.dumps({"error": "Architecture design not found"})
-        action = "render" if _flag_enabled(include_payloads) else "read"
-        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, action)
-        if perm_err:
-            return _perm_error(perm_err)
-        payload = _dump_model(repo.to_response(design))
-        await db.commit()
-        return json.dumps({"success": True, "architecture_design": payload}, default=str)
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        GetArchitectureDesignCommand,
+        GetArchitectureDesignUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetArchitectureDesignUseCase().execute(
+                GetArchitectureDesignCommand(
+                    design_id,
+                    include_payloads=_flag_enabled(include_payloads),
+                    board_id=board_id,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError:
+        return json.dumps({"error": "Architecture design not found"})
+    action = "render" if _flag_enabled(include_payloads) else "read"
+    parent_type = getattr(result.response, "parent_type", None)
+    perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, action)
+    if perm_err:
+        return _perm_error(perm_err)
+    return json.dumps(
+        {"success": True, "architecture_design": _dump_model(result.response)},
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -8519,101 +8131,75 @@ connectionType. Full catalog: okto-pulse://reference/tool-docs/architecture."""
     if err:
         return json.dumps({"error": f"Invalid architecture_warning_acknowledgement: {err}"})
 
-    async with get_db_for_mcp() as db:
-        repo = ArchitectureDesignRepository(db)
-        mode = "update" if design_id else "create"
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        GetArchitectureDesignCommand,
+        GetArchitectureDesignUseCase,
+        McpValidateArchitecturePayloadCommand,
+        McpValidateArchitecturePayloadUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import (
+        ConflictError,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        if design_id:
-            design, err = await _mcp_require_architecture_mutable(db, design_id)
-            if err:
-                return json.dumps({"error": err})
-            if design.board_id != board_id:
-                return json.dumps({"error": "Architecture design not found"})
-            perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "edit")
-            if perm_err:
-                return _perm_error(perm_err)
-            loaded = await repo.get(design_id, include_payloads=True)
-            if not loaded:
-                return json.dumps({"error": "Architecture design not found"})
-            candidate = {
-                "title": title or loaded.title,
-                "global_description": global_description or loaded.global_description,
-                "entities": loaded.entities or [],
-                "interfaces": loaded.interfaces or [],
-                "diagrams": loaded.diagrams or [],
-            }
-            candidate.update(parsed_fields)
-        else:
-            if not parent_type or not parent_id:
-                return json.dumps({"error": "parent_type and parent_id are required when design_id is omitted"})
-            perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, "create")
-            if perm_err:
-                return _perm_error(perm_err)
-            try:
-                parent_model, _ = repo._parent_config(parent_type)
-            except ValueError as exc:
-                return json.dumps({"error": str(exc)})
-            parent = await db.get(parent_model, parent_id)
-            if not parent or getattr(parent, "board_id") != board_id:
-                return json.dumps({"error": f"{parent_type} not found"})
-            if parent_type == "spec":
-                current_id = getattr(parent, "current_validation_id", None)
-                current = next((item for item in (getattr(parent, "validations", None) or []) if item.get("id") == current_id), None)
-                if current_id and current and current.get("outcome") == "success":
-                    return json.dumps({"error": "Spec is locked because validation passed. Move it back to draft or approved to edit architecture."})
-            candidate = {
-                "title": title,
-                "global_description": global_description,
-                "entities": parsed_fields.get("entities", []),
-                "interfaces": parsed_fields.get("interfaces", []),
-                "diagrams": parsed_fields.get("diagrams", []),
-            }
-
-        critique = repo.critique_payload(candidate)
-        if not commit or not critique.get("valid"):
-            await db.commit()
-            return json.dumps({"success": True, "mode": mode, **critique}, default=str)
-
-        try:
-            if mode == "create":
-                payload = ArchitectureDesignCreate(
-                    title=candidate["title"],
-                    global_description=candidate["global_description"],
-                    entities=candidate.get("entities") or [],
-                    interfaces=candidate.get("interfaces") or [],
-                    diagrams=candidate.get("diagrams") or [],
-                    architecture_warning_acknowledgement=acknowledgement,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            if design_id:
+                design_result = await GetArchitectureDesignUseCase().execute(
+                    GetArchitectureDesignCommand(
+                        design_id, include_payloads=False, board_id=board_id
+                    ),
+                    actor=actor,
+                    uow=uow,
                 )
-                design = await repo.create(parent_type, parent_id, payload, ctx.agent_id)
+                perm_err = _mcp_check_architecture_permission(
+                    ctx.permissions, design_result.response.parent_type, "edit"
+                )
+                if perm_err:
+                    return _perm_error(perm_err)
             else:
-                patch_payload = ArchitectureDesignUpdate(**{
-                    k: candidate[k]
-                    for k in ("title", "global_description", "entities", "interfaces", "diagrams")
-                    if candidate.get(k) is not None
-                })
-                patch_payload.architecture_warning_acknowledgement = acknowledgement
-                design = await repo.update(design_id, patch_payload, ctx.agent_id)
-            await db.commit()
-        except ValueError as exc:
-            return _mcp_architecture_error(exc)
+                if not parent_type or not parent_id:
+                    return json.dumps(
+                        {
+                            "error": (
+                                "parent_type and parent_id are required when "
+                                "design_id is omitted"
+                            )
+                        }
+                    )
+                perm_err = _mcp_check_architecture_permission(
+                    ctx.permissions, parent_type, "create"
+                )
+                if perm_err:
+                    return _perm_error(perm_err)
+            result = await McpValidateArchitecturePayloadUseCase().execute(
+                McpValidateArchitecturePayloadCommand(
+                    board_id=board_id,
+                    parent_type=parent_type,
+                    parent_id=parent_id,
+                    design_id=design_id,
+                    title=title,
+                    global_description=global_description,
+                    parsed_fields=parsed_fields,
+                    architecture_warning_acknowledgement=acknowledgement,
+                    commit_requested=commit,
+                    include_design=include_design,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "Architecture design":
+            return json.dumps({"error": "Architecture design not found"})
+        return json.dumps({"error": f"{exc.entity_type} not found"})
+    except ConflictError as exc:
+        return _mcp_architecture_conflict_error(exc)
+    except ValueError as exc:
+        return _mcp_architecture_error(exc)
 
-        warnings = list(critique.get("warnings") or [])
-        structured_warnings = list(critique.get("structured_warnings") or [])
-        suppressed_warnings = list(critique.get("suppressed_warnings") or [])
-        envelope: dict[str, Any] = {
-            "success": True,
-            "mode": mode,
-            "committed": True,
-            "id": design.id,
-            "version": design.version,
-            "warnings_count": len(warnings),
-            "structured_warnings_count": len(structured_warnings),
-            "suppressed_warnings_count": len(suppressed_warnings),
-            "normalized": bool(warnings),
-        }
-        if include_design:
-            envelope["architecture_design"] = _dump_model(repo.to_response(design))
-        return json.dumps(envelope, default=str)
+    return json.dumps(_dump_model(result.payload), default=str)
 
 
 @mcp.tool()
@@ -8659,39 +8245,46 @@ guide: okto-pulse://reference/tool-docs/architecture."""
     if err:
         return json.dumps({"error": f"Invalid architecture_warning_acknowledgement: {err}"})
 
-    async with get_db_for_mcp() as db:
-        repo = ArchitectureDesignRepository(db)
-        try:
-            parent_model, _ = repo._parent_config(parent_type)
-        except ValueError as exc:
-            return json.dumps({"error": str(exc)})
-        parent = await db.get(parent_model, parent_id)
-        if not parent or getattr(parent, "board_id") != board_id:
-            return json.dumps({"error": f"{parent_type} not found"})
-        if parent_type == "spec":
-            current_id = getattr(parent, "current_validation_id", None)
-            current = next((item for item in (getattr(parent, "validations", None) or []) if item.get("id") == current_id), None)
-            if current_id and current and current.get("outcome") == "success":
-                return json.dumps({"error": "Spec is locked because validation passed. Move it back to draft or approved to edit architecture."})
-        try:
-            design = await repo.create(
-                parent_type,
-                parent_id,
-                ArchitectureDesignCreate(
-                    title=title,
-                    global_description=global_description,
-                    entities=ents,
-                    interfaces=ifaces,
-                    diagrams=diags,
-                    architecture_warning_acknowledgement=acknowledgement,
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        CreateArchitectureCommand,
+        CreateArchitectureUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import (
+        ConflictError,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await CreateArchitectureUseCase().execute(
+                CreateArchitectureCommand(
+                    parent_type,
+                    parent_id,
+                    ArchitectureDesignCreate(
+                        title=title,
+                        global_description=global_description,
+                        entities=ents,
+                        interfaces=ifaces,
+                        diagrams=diags,
+                        architecture_warning_acknowledgement=acknowledgement,
+                    ),
+                    board_id=board_id,
                 ),
-                ctx.agent_id,
+                actor=actor,
+                uow=uow,
             )
-            payload = _dump_model(repo.to_response(design))
-            await db.commit()
-            return json.dumps({"success": True, "architecture_design": payload}, default=str)
-        except Exception as exc:
-            return _mcp_architecture_error(exc)
+    except EntityNotFoundError as exc:
+        return json.dumps({"error": f"{exc.entity_type} not found"})
+    except ConflictError as exc:
+        return _mcp_architecture_conflict_error(exc)
+    except Exception as exc:
+        return _mcp_architecture_error(exc)
+    return json.dumps(
+        {"success": True, "architecture_design": _dump_model(result.response)},
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -8738,23 +8331,50 @@ okto-pulse://reference/tool-docs/architecture."""
     if not patch:
         return json.dumps({"error": "No fields provided for update"})
 
-    async with get_db_for_mcp() as db:
-        design, err = await _mcp_require_architecture_mutable(db, design_id)
-        if err:
-            return json.dumps({"error": err})
-        if design.board_id != board_id:
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        GetArchitectureDesignCommand,
+        GetArchitectureDesignUseCase,
+        UpdateArchitectureDesignCommand,
+        UpdateArchitectureDesignUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import (
+        ConflictError,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            design_result = await GetArchitectureDesignUseCase().execute(
+                GetArchitectureDesignCommand(design_id, board_id=board_id),
+                actor=actor,
+                uow=uow,
+            )
+            perm_err = _mcp_check_architecture_permission(
+                ctx.permissions, design_result.response.parent_type, "edit"
+            )
+            if perm_err:
+                return _perm_error(perm_err)
+            result = await UpdateArchitectureDesignUseCase().execute(
+                UpdateArchitectureDesignCommand(
+                    design_id, ArchitectureDesignUpdate(**patch), board_id=board_id
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "Architecture design":
             return json.dumps({"error": "Architecture design not found"})
-        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "edit")
-        if perm_err:
-            return _perm_error(perm_err)
-        repo = ArchitectureDesignRepository(db)
-        try:
-            updated = await repo.update(design_id, ArchitectureDesignUpdate(**patch), ctx.agent_id)
-            payload = _dump_model(repo.to_response(updated))
-            await db.commit()
-            return json.dumps({"success": True, "architecture_design": payload}, default=str)
-        except Exception as exc:
-            return _mcp_architecture_error(exc)
+        return _mcp_entity_not_found_error(exc)
+    except ConflictError as exc:
+        return _mcp_architecture_conflict_error(exc)
+    except Exception as exc:
+        return _mcp_architecture_error(exc)
+    return json.dumps(
+        {"success": True, "architecture_design": _dump_model(result.response)},
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -8765,19 +8385,43 @@ async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -
     if not ctx:
         return _auth_error()
 
-    async with get_db_for_mcp() as db:
-        design, err = await _mcp_require_architecture_mutable(db, design_id)
-        if err:
-            return json.dumps({"error": err})
-        if design.board_id != board_id:
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        DeleteArchitectureDesignCommand,
+        DeleteArchitectureDesignUseCase,
+        GetArchitectureDesignCommand,
+        GetArchitectureDesignUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import (
+        ConflictError,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            design_result = await GetArchitectureDesignUseCase().execute(
+                GetArchitectureDesignCommand(design_id, board_id=board_id),
+                actor=actor,
+                uow=uow,
+            )
+            perm_err = _mcp_check_architecture_permission(
+                ctx.permissions, design_result.response.parent_type, "delete"
+            )
+            if perm_err:
+                return _perm_error(perm_err)
+            await DeleteArchitectureDesignUseCase().execute(
+                DeleteArchitectureDesignCommand(design_id, board_id=board_id),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "Architecture design":
             return json.dumps({"error": "Architecture design not found"})
-        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "delete")
-        if perm_err:
-            return _perm_error(perm_err)
-        repo = ArchitectureDesignRepository(db)
-        deleted = await repo.delete(design_id, ctx.agent_id)
-        await db.commit()
-        return json.dumps({"success": bool(deleted)})
+        return _mcp_entity_not_found_error(exc)
+    except ConflictError as exc:
+        return _mcp_architecture_conflict_error(exc)
+    return json.dumps({"success": True})
 
 
 @mcp.tool()
@@ -8802,46 +8446,59 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
     if err or payload is None:
         return json.dumps({"error": f"Invalid payload_json: {err or 'payload is required'}"})
 
-    async with get_db_for_mcp() as db:
-        design, err = await _mcp_require_architecture_mutable(db, design_id)
-        if err:
-            return json.dumps({"error": err})
-        if design.board_id != board_id:
-            return json.dumps({"error": "Architecture design not found"})
-        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "import")
-        if perm_err:
-            return _perm_error(perm_err)
-        diagrams = [dict(item) for item in design.diagrams or []]
-        imported = {
-            "title": title,
-            "diagram_type": diagram_type,
-            "format": "excalidraw_json",
-            "description": description or None,
-            "order_index": order_index,
-            "adapter_payload": payload,
-        }
-        if replace_diagram_id:
-            index = next((idx for idx, item in enumerate(diagrams) if item.get("id") == replace_diagram_id), -1)
-            if index < 0:
-                return json.dumps({"error": "Diagram not found"})
-            diagrams[index] = {**diagrams[index], **imported, "id": replace_diagram_id}
-        else:
-            diagrams.append(imported)
-        repo = ArchitectureDesignRepository(db)
-        try:
-            updated = await repo.update(
-                design_id,
-                ArchitectureDesignUpdate(
-                    diagrams=diagrams,
-                    change_summary=change_summary or "Imported Excalidraw diagram",
-                ),
-                ctx.agent_id,
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        GetArchitectureDesignCommand,
+        GetArchitectureDesignUseCase,
+        ImportExcalidrawArchitectureDiagramCommand,
+        ImportExcalidrawArchitectureDiagramUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import (
+        ConflictError,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            design_result = await GetArchitectureDesignUseCase().execute(
+                GetArchitectureDesignCommand(design_id, board_id=board_id),
+                actor=actor,
+                uow=uow,
             )
-            payload_out = _dump_model(repo.to_response(updated))
-            await db.commit()
-            return json.dumps({"success": True, "architecture_design": payload_out}, default=str)
-        except Exception as exc:
-            return json.dumps({"error": str(exc)})
+            perm_err = _mcp_check_architecture_permission(
+                ctx.permissions, design_result.response.parent_type, "import"
+            )
+            if perm_err:
+                return _perm_error(perm_err)
+            result = await ImportExcalidrawArchitectureDiagramUseCase().execute(
+                ImportExcalidrawArchitectureDiagramCommand(
+                    design_id,
+                    title,
+                    payload,
+                    diagram_type,
+                    description or None,
+                    order_index,
+                    replace_diagram_id or None,
+                    change_summary,
+                    None,
+                    board_id=board_id,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "Diagram":
+            return json.dumps({"error": "Diagram not found"})
+        return json.dumps({"error": "Architecture design not found"})
+    except ConflictError as exc:
+        return _mcp_architecture_conflict_error(exc)
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(
+        {"success": True, "architecture_design": _dump_model(result.response)},
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -8856,35 +8513,55 @@ async def okto_pulse_dump_architecture_diagram(
     if not ctx:
         return _auth_error()
 
-    async with get_db_for_mcp() as db:
-        repo = ArchitectureDesignRepository(db)
-        design = await repo.get(design_id)
-        if not design or design.board_id != board_id:
-            return json.dumps({"error": "Architecture design not found"})
-        perm_err = _mcp_check_architecture_permission(ctx.permissions, design.parent_type, "render")
-        if perm_err:
-            return _perm_error(perm_err)
-        diagram = next((item for item in design.diagrams or [] if item.get("id") == diagram_id), None)
-        if not diagram or not diagram.get("adapter_payload_ref"):
-            return json.dumps({"error": "Diagram payload not found"})
-        store = ArchitectureDiagramStore(db)
-        try:
-            payload = await store.load_payload(diagram["adapter_payload_ref"])
-            adapter = ArchitectureDiagramAdapterRegistry().get(diagram.get("format") or "raw")
-            await db.commit()
-            return json.dumps(
-                {
-                    "success": True,
-                    "design_id": design_id,
-                    "diagram_id": diagram_id,
-                    "format": diagram.get("format"),
-                    "payload": payload,
-                    "dump": adapter.dump(payload),
-                },
-                default=str,
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        GetArchitectureDesignCommand,
+        GetArchitectureDesignUseCase,
+        GetArchitectureDiagramPayloadCommand,
+        GetArchitectureDiagramPayloadUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            design_result = await GetArchitectureDesignUseCase().execute(
+                GetArchitectureDesignCommand(design_id, board_id=board_id),
+                actor=actor,
+                uow=uow,
             )
-        except Exception as exc:
-            return json.dumps({"error": str(exc)})
+            perm_err = _mcp_check_architecture_permission(
+                ctx.permissions, design_result.response.parent_type, "render"
+            )
+            if perm_err:
+                return _perm_error(perm_err)
+            payload_result = await GetArchitectureDiagramPayloadUseCase().execute(
+                GetArchitectureDiagramPayloadCommand(
+                    design_id, diagram_id, board_id=board_id
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "Architecture design":
+            return json.dumps({"error": "Architecture design not found"})
+        return json.dumps({"error": "Diagram payload not found"})
+    try:
+        response = payload_result.response
+        adapter = ArchitectureDiagramAdapterRegistry().get(response.format or "raw")
+        return json.dumps(
+            {
+                "success": True,
+                "design_id": design_id,
+                "diagram_id": diagram_id,
+                "format": response.format,
+                "payload": response.payload,
+                "dump": adapter.dump(response.payload),
+            },
+            default=str,
+        )
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
 
 
 @mcp.tool()
@@ -8930,50 +8607,55 @@ async def okto_pulse_copy_architecture_to_card(
     if err:
         return json.dumps({"error": f"Invalid architecture_warning_acknowledgement: {err}"})
 
-    async with get_db_for_mcp() as db:
-        service = ArchitecturePropagationService(db)
-        repo = ArchitectureDesignRepository(db)
-        # R3-IMP2/RG-ARCH-RO: copy DIRECT spec designs, or fall back to every
-        # effective inherited Architecture source when the spec has none direct.
-        # Card Architecture remains a read-only governed snapshot, but the
-        # propagation service is allowed to create/re-sync those snapshots and
-        # persists source_design_id (the gate-readable origin identity).
-        from okto_pulse.core.services.effective_resource_propagation import (
-            ResourcePropagationError,
-            ResourceLineageResolutionError,
-        )
-        try:
-            designs, _plan = await service.copy_effective_spec_to_card(
-                board_id=board_id,
-                spec_id=spec_id,
-                card_id=card_id,
-                actor_id=ctx.agent_id,
-                design_ids=ids,
-                architecture_warning_acknowledgement=acknowledgement,
-            )
-        except ResourceLineageResolutionError as exc:
-            return json.dumps(exc.to_error_dict())
-        except ResourcePropagationError as exc:
-            return json.dumps(exc.to_error_dict(spec_id=spec_id))
-        except ArchitecturePropagationBlocked as exc:
-            # Spec B: same canonical structured error as REST/internal services.
-            return json.dumps(exc.to_error_dict())
-        except Exception as exc:
-            return _mcp_architecture_error(exc)
-        try:
-            payload = [_dump_model(repo.to_response(design)) for design in designs]
-            # Total Architecture Designs on the card after the copy (no payloads —
-            # we only need the count for the summary metadata).
-            total_on_card = len(await repo.list("card", card_id, include_payloads=False))
-            await db.commit()
-            return json.dumps(
-                project_copy_architecture_response(
-                    payload, total_on_card=total_on_card, profile=profile
+    from okto_pulse.core.application.use_cases.architecture_crud import (
+        CopyArchitectureFromSpecToCardCommand,
+        CopyArchitectureFromSpecToCardUseCase,
+        ListArchitectureCommand,
+        ListArchitectureUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.effective_resource_propagation import (
+        ResourceLineageResolutionError,
+        ResourcePropagationError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await CopyArchitectureFromSpecToCardUseCase().execute(
+                CopyArchitectureFromSpecToCardCommand(
+                    card_id,
+                    spec_id,
+                    ids,
+                    acknowledgement,
+                    board_id=board_id,
                 ),
-                default=str,
+                actor=actor,
+                uow=uow,
             )
-        except Exception as exc:
-            return _mcp_architecture_error(exc)
+            list_result = await ListArchitectureUseCase().execute(
+                ListArchitectureCommand("card", card_id, board_id=board_id),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        return json.dumps({"error": f"{exc.entity_type} not found"})
+    except ResourceLineageResolutionError as exc:
+        return json.dumps(exc.to_error_dict())
+    except ResourcePropagationError as exc:
+        return json.dumps(exc.to_error_dict(spec_id=spec_id))
+    except ArchitecturePropagationBlocked as exc:
+        return json.dumps(exc.to_error_dict())
+    except Exception as exc:
+        return _mcp_architecture_error(exc)
+    payload = [_dump_model(item) for item in result.responses]
+    return json.dumps(
+        project_copy_architecture_response(
+            payload, total_on_card=len(list_result.summaries), profile=profile
+        ),
+        default=str,
+    )
 
 
 @mcp.tool()
@@ -8991,66 +8673,46 @@ async def okto_pulse_copy_mockups_to_card(
     if not ctx:
         return _auth_error()
 
-    async with get_db_for_mcp() as db:
-        spec_service = SpecService(db)
-        spec = await spec_service.get_spec(spec_id)
-        if not spec:
-            return json.dumps({"error": "Spec not found"})
+    try:
+        id_filter = set(coerce_to_list_str(screen_ids)) if screen_ids else None
+    except ValueError as e:
+        return json.dumps({"error": f"Invalid screen_ids: {e}"})
 
-        card_service = CardService(db)
-        card = await card_service.get_card(card_id)
-        if not card:
-            return json.dumps({"error": "Card not found"})
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpCopyMockupsToCardCommand,
+        McpCopyMockupsToCardUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.effective_resource_propagation import (
+        ResourceLineageResolutionError,
+    )
 
-        source_mockups = [m for m in (spec.screen_mockups or []) if isinstance(m, dict)]
-        fallback = False
-        if not source_mockups:
-            from okto_pulse.core.services.effective_resource_propagation import (
-                ResourceLineageResolutionError,
-                load_effective_mockup_items,
-                resolve_effective_card_copy_plan,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpCopyMockupsToCardUseCase().execute(
+                McpCopyMockupsToCardCommand(board_id, spec_id, card_id, id_filter),
+                actor=actor,
+                uow=uow,
             )
-            try:
-                plan = await resolve_effective_card_copy_plan(
-                    db, board_id=board_id, spec_id=spec_id, resource_type="mockup",
-                )
-            except ResourceLineageResolutionError as exc:
-                return json.dumps(exc.to_error_dict())
-            if not plan["fallback"]:
-                return _effective_empty_copy_response("mockup", plan)
-            source_mockups = await load_effective_mockup_items(
-                db, plan["source_entity_type"], plan["source_entity_id"]
-            )
-            if not source_mockups:
-                return _effective_empty_copy_response("mockup", plan)
-            fallback = True
-
-        if screen_ids:
-            try:
-                ids = set(coerce_to_list_str(screen_ids))
-            except ValueError as e:
-                return json.dumps({"error": f"Invalid screen_ids: {e}"})
-            source_mockups = [m for m in source_mockups if m.get("id") in ids]
-
-        existing = list(card.screen_mockups or [])
-        existing_ids = {m.get("id") for m in existing if isinstance(m, dict)}
-        copied = 0
-        for m in source_mockups:
-            if m.get("id") not in existing_ids:
-                existing.append(m)
-                existing_ids.add(m.get("id"))
-                copied += 1
-
-        from okto_pulse.core.models.schemas import CardUpdate
-        await card_service.update_card(
-            card_id,
-            ctx.agent_id,
-            CardUpdate(screen_mockups=existing),
-            allow_card_resource_write=True,
+    except EntityNotFoundError as e:
+        return json.dumps(
+            {"error": "Spec not found" if e.entity_type == "spec" else "Card not found"}
         )
-        await db.commit()
+    except ResourceLineageResolutionError as exc:
+        return json.dumps(exc.to_error_dict())
 
-    return json.dumps({"success": True, "copied": copied, "total_on_card": len(existing), "fallback": fallback})
+    if result.empty_plan is not None:
+        return _effective_empty_copy_response("mockup", result.empty_plan)
+    return json.dumps(
+        {
+            "success": True,
+            "copied": result.copied,
+            "total_on_card": result.total_on_card,
+            "fallback": result.fallback,
+        }
+    )
 
 
 def _effective_empty_copy_response(resource_type: str, plan: dict) -> str:
@@ -9188,16 +8850,26 @@ async def okto_pulse_get_card_knowledge(board_id: str, card_id: str, knowledge_i
     if not ctx:
         return _auth_error()
 
-    async with get_db_for_mcp() as db:
-        service = CardService(db)
-        card = await service.get_card(card_id)
-        if not card or card.board_id != board_id:
-            return json.dumps({"error": "Card not found"})
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpGetCardKnowledgeCommand,
+        McpGetCardKnowledgeUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    for kb in (card.knowledge_bases or []):
-        if kb.get("id") == knowledge_id:
-            return json.dumps({"success": True, "knowledge": kb}, default=str)
-    return json.dumps({"error": "Knowledge entry not found"})
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpGetCardKnowledgeUseCase().execute(
+                McpGetCardKnowledgeCommand(board_id, card_id, knowledge_id),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "card":
+            return json.dumps({"error": "Card not found"})
+        return json.dumps({"error": "Knowledge entry not found"})
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -9237,37 +8909,26 @@ async def okto_pulse_copy_qa_to_card(
     if not ctx:
         return _auth_error()
 
-    async with get_db_for_mcp() as db:
-        spec_service = SpecService(db)
-        spec = await spec_service.get_spec(spec_id)
-        if not spec:
-            return json.dumps({"error": "Spec not found"})
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpCopyQaToCardCommand,
+        McpCopyQaToCardUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        card_service = CardService(db)
-        card = await card_service.get_card(card_id)
-        if not card:
-            return json.dumps({"error": "Card not found"})
-
-        # Choice/multi-choice answers store selected option ids while
-        # ``answer`` may stay NULL. Treat either shape as answered.
-        qa_items = [qa for qa in (spec.qa_items or []) if _qa_answer_text(qa)]
-        if not qa_items:
-            return json.dumps({"error": "No answered Q&A to copy"})
-
-        lines = ["## Spec Q&A Context\n"]
-        for qa in qa_items:
-            lines.append(f"**Q:** {qa.question}\n**A:** {_qa_answer_text(qa)}\n")
-
-        from okto_pulse.core.models.db import Comment
-        comment = Comment(
-            card_id=card_id,
-            author_id=ctx.agent_id,
-            content="\n".join(lines),
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpCopyQaToCardUseCase().execute(
+                McpCopyQaToCardCommand(spec_id, card_id),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as e:
+        return json.dumps(
+            {"error": "Spec not found" if e.entity_type == "spec" else "Card not found"}
         )
-        db.add(comment)
-        await db.commit()
-
-    return json.dumps({"success": True, "copied": len(qa_items)})
+    return json.dumps(result.payload)
 
 
 # ==================== ANALYTICS TOOLS ====================
@@ -9290,291 +8951,25 @@ async def okto_pulse_get_analytics(
     if perm_err:
         return _perm_error(perm_err)
 
-    from sqlalchemy import select
-
-    from okto_pulse.core.domain.enums import CardStatus
-    from okto_pulse.core.models.db import (
-        Board,
-        Card,
-        Ideation,
-        Refinement,
-        Spec,
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpGetAnalyticsCommand,
+        McpGetAnalyticsUseCase,
     )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    def _parse_dt(value: str) -> datetime | None:
-        if not value:
-            return None
-        try:
-            dt = datetime.fromisoformat(value)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except (ValueError, TypeError):
-            return None
-
-    dt_from = _parse_dt(from_date)
-    dt_to = _parse_dt(to_date)
-
-    def _is_test(card) -> bool:
-        ids = card.test_scenario_ids
-        return bool(ids and isinstance(ids, list) and len(ids) > 0)
-
-    def _last_conclusion(card) -> dict | None:
-        conclusions = card.conclusions
-        if not conclusions or not isinstance(conclusions, list):
-            return None
-        last = conclusions[-1]
-        return last if isinstance(last, dict) else None
-
-    async with get_db_for_mcp() as db:
-        # Verify board exists
-        board = (await db.execute(select(Board).where(Board.id == board_id))).scalars().first()
-        if not board:
-            return json.dumps({"error": "Board not found"})
-
-        if metric_type == "overview":
-            from okto_pulse.core.models.db import Sprint
-
-            # Ideations
-            ideation_q = select(Ideation).where(Ideation.board_id == board_id)
-            if dt_from:
-                ideation_q = ideation_q.where(Ideation.created_at >= dt_from)
-            if dt_to:
-                ideation_q = ideation_q.where(Ideation.created_at <= dt_to)
-            ideations = list((await db.execute(ideation_q)).scalars().all())
-
-            # Refinements
-            refinement_q = select(Refinement).where(Refinement.board_id == board_id)
-            if dt_from:
-                refinement_q = refinement_q.where(Refinement.created_at >= dt_from)
-            if dt_to:
-                refinement_q = refinement_q.where(Refinement.created_at <= dt_to)
-            refinements = list((await db.execute(refinement_q)).scalars().all())
-
-            # Specs
-            spec_q = select(Spec).where(Spec.board_id == board_id)
-            if dt_from:
-                spec_q = spec_q.where(Spec.created_at >= dt_from)
-            if dt_to:
-                spec_q = spec_q.where(Spec.created_at <= dt_to)
-            specs = list((await db.execute(spec_q)).scalars().all())
-
-            # Sprints
-            sprint_q = select(Sprint).where(Sprint.board_id == board_id)
-            if dt_from:
-                sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
-            if dt_to:
-                sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
-            sprints = list((await db.execute(sprint_q)).scalars().all())
-
-            # Cards
-            card_q = select(Card).where(Card.board_id == board_id)
-            if dt_from:
-                card_q = card_q.where(Card.created_at >= dt_from)
-            if dt_to:
-                card_q = card_q.where(Card.created_at <= dt_to)
-            cards = list((await db.execute(card_q)).scalars().all())
-
-            impl_cards = [c for c in cards if not _is_test(c)]
-            test_cards = [c for c in cards if _is_test(c)]
-            done_cards = [c for c in cards if c.status == CardStatus.DONE]
-            bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
-
-            # --- Self-reported quality (from card.conclusions) ---
-            comp_vals = []
-            drift_vals = []
-            for c in cards:
-                concl = _last_conclusion(c)
-                if concl and "completeness" in concl:
-                    comp_vals.append(concl["completeness"])
-                if concl and "drift" in concl:
-                    drift_vals.append(concl["drift"])
-
-            avg_completeness = round(sum(comp_vals) / len(comp_vals), 1) if comp_vals else None
-            avg_drift = round(sum(drift_vals) / len(drift_vals), 1) if drift_vals else None
-
-            # --- Task Validation Gate (D-2 migrado em ideação #9) ---
-            # Delega ao service; MCP converge para o shape completo do REST
-            # (+ avg_attempts_per_card, first_pass_rate, rejection_reasons).
-            from okto_pulse.core.services.analytics_service import (
-                aggregate_spec_validation_gate as _agg_sv,
-            )
-            from okto_pulse.core.services.analytics_service import (
-                aggregate_task_validation_gate as _agg_tv,
-            )
-            task_validation_gate = _agg_tv(cards)
-            spec_validation_gate = _agg_sv(specs)
-
-            # Fallback: use validation scores if conclusion-based averages are empty
-            if avg_completeness is None and task_validation_gate["avg_scores"]["completeness"] is not None:
-                avg_completeness = task_validation_gate["avg_scores"]["completeness"]
-            if avg_drift is None and task_validation_gate["avg_scores"]["drift"] is not None:
-                avg_drift = task_validation_gate["avg_scores"]["drift"]
-
-            # --- Cycle time (from done cards) ---
-            cycle_times = []
-            for c in done_cards:
-                if c.created_at and c.updated_at:
-                    ct = round((c.updated_at - c.created_at).total_seconds() / 3600.0, 1)
-                    cycle_times.append(ct)
-            avg_cycle_hours = round(sum(cycle_times) / len(cycle_times), 1) if cycle_times else None
-
-            # --- Lifecycle cycle times (created_at → updated_at for done items) ---
-            def _lifecycle_cycle_time(items, done_status) -> float | None:
-                times = []
-                for item in items:
-                    if str(getattr(item, "status", "")) == str(done_status) and item.created_at and item.updated_at:
-                        times.append(round((item.updated_at - item.created_at).total_seconds() / 3600.0, 1))
-                return round(sum(times) / len(times), 1) if times else None
-
-            # --- Sprint evaluations ---
-            sprint_evals_total = 0
-            sprint_eval_scores = []
-            for sp in sprints:
-                evals = getattr(sp, "evaluations", None) or []
-                if isinstance(evals, list):
-                    sprint_evals_total += len(evals)
-                    for e in evals:
-                        if isinstance(e, dict) and e.get("overall_score") is not None:
-                            sprint_eval_scores.append(int(e["overall_score"]))
-
-            funnel = {
-                "ideations": len(ideations),
-                "refinements": len(refinements),
-                "specs": len(specs),
-                "sprints": len(sprints),
-                "cards": len(cards),
-                "done": len(done_cards),
-            }
-
-            bugs_open = sum(1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED))
-
-            return json.dumps({
-                "board_id": board_id,
-                "ideation_count": len(ideations),
-                "refinement_count": len(refinements),
-                "spec_count": len(specs),
-                "sprint_count": len(sprints),
-                "task_count": {
-                    "total": len(cards),
-                    "impl": len(impl_cards),
-                    "tests": len(test_cards),
-                    "bugs": len(bug_cards),
-                },
-                "avg_completeness": avg_completeness,
-                "avg_drift": avg_drift,
-                "avg_cycle_hours": avg_cycle_hours,
-                "cycle_time": {
-                    "ideation": _lifecycle_cycle_time(ideations, "done"),
-                    "refinement": _lifecycle_cycle_time(refinements, "done"),
-                    "spec": _lifecycle_cycle_time(specs, "done"),
-                    "sprint": _lifecycle_cycle_time(sprints, "closed"),
-                    "card": avg_cycle_hours,
-                },
-                "task_validation_gate": task_validation_gate,
-                "spec_validation_gate": spec_validation_gate,
-                "sprint_evaluation": {
-                    "total_submitted": sprint_evals_total,
-                    "avg_overall_score": round(sum(sprint_eval_scores) / len(sprint_eval_scores), 1) if sprint_eval_scores else None,
-                },
-                "funnel": funnel,
-                "bugs": {
-                    "total": len(bug_cards),
-                    "open": bugs_open,
-                    "done": sum(1 for c in bug_cards if c.status == CardStatus.DONE),
-                    "by_severity": {
-                        "critical": sum(1 for c in bug_cards if getattr(c, "severity", None) == "critical"),
-                        "major": sum(1 for c in bug_cards if getattr(c, "severity", None) == "major"),
-                        "minor": sum(1 for c in bug_cards if getattr(c, "severity", None) == "minor"),
-                    },
-                },
-            }, default=str)
-
-        elif metric_type == "funnel":
-            # Delegado para service (D-4). MCP agora recebe o shape completo
-            # do REST: status_breakdowns, cards_by_type, BR/contract counts,
-            # cycle_time_by_phase, bug metrics.
-            from okto_pulse.core.services.analytics_service import compute_funnel
-            counts = await compute_funnel(
-                db, board_id, dt_from=dt_from, dt_to=dt_to,
-                include_archived=True,  # MCP histórico
-            )
-            return json.dumps(counts, default=str)
-
-        elif metric_type == "quality":
-            q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
-            if dt_from:
-                q = q.where(Card.created_at >= dt_from)
-            if dt_to:
-                q = q.where(Card.created_at <= dt_to)
-            cards = list((await db.execute(q)).scalars().all())
-
-            result = []
-            for c in cards:
-                concl = _last_conclusion(c)
-                if concl and "completeness" in concl and "drift" in concl:
-                    result.append({
-                        "card_id": c.id,
-                        "title": c.title,
-                        "completeness": concl["completeness"],
-                        "drift": concl["drift"],
-                    })
-            return json.dumps(result, default=str)
-
-        elif metric_type == "velocity":
-            # Delegado para service (D-5). MCP agora suporta granularity=day|week,
-            # buckets configuráveis (weeks=12, days=30) e séries extras
-            # (bug, validation_bounce, spec_done, sprint_done) além de impl/test.
-            from okto_pulse.core.services.analytics_service import compute_velocity
-            velocity = await compute_velocity(
-                db, board_id,
-                granularity="week", weeks=12,
-                dt_from=dt_from, dt_to=dt_to,
-                include_archived=True,  # MCP histórico
-            )
-            return json.dumps(velocity, default=str)
-
-        elif metric_type == "coverage":
-            # Delegado para o service layer (ideação #9 / D-1). MCP agora recebe
-            # os 4 campos extras que o REST já expunha: business_rules_count,
-            # api_contracts_count, fr_with_rules_pct, fr_with_contracts_pct.
-            from okto_pulse.core.services.analytics_service import compute_coverage
-            result = await compute_coverage(
-                db, board_id, dt_from=dt_from, dt_to=dt_to,
-                include_archived=True,  # preserva comportamento histórico MCP
-            )
-            return json.dumps(result, default=str)
-
-        elif metric_type == "agents":
-            q = select(Card).where(Card.board_id == board_id)
-            if dt_from:
-                q = q.where(Card.created_at >= dt_from)
-            if dt_to:
-                q = q.where(Card.created_at <= dt_to)
-            cards = list((await db.execute(q)).scalars().all())
-
-            groups: dict[str, list] = {}
-            for c in cards:
-                groups.setdefault(c.created_by, []).append(c)
-
-            result = []
-            for actor_id, actor_cards in groups.items():
-                done = [c for c in actor_cards if c.status == CardStatus.DONE]
-                cv = [_last_conclusion(c) for c in done]
-                comp = [x["completeness"] for x in cv if x and "completeness" in x]
-                dr = [x["drift"] for x in cv if x and "drift" in x]
-                result.append({
-                    "actor_id": actor_id,
-                    "total_cards": len(actor_cards),
-                    "done_cards": len(done),
-                    "avg_completeness": round(sum(comp) / len(comp), 1) if comp else None,
-                    "avg_drift": round(sum(dr) / len(dr), 1) if dr else None,
-                })
-            result.sort(key=lambda x: x["done_cards"], reverse=True)
-            return json.dumps(result, default=str)
-
-        else:
-            return json.dumps({"error": f"Unknown metric_type: {metric_type}. Use one of: overview, funnel, quality, velocity, coverage, agents"})
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpGetAnalyticsUseCase().execute(
+            McpGetAnalyticsCommand(
+                board_id,
+                metric_type=metric_type,
+                from_date=from_date,
+                to_date=to_date,
+            ),
+            actor=actor,
+            uow=uow,
+        )
+    return json.dumps(result.data, default=str)
 
 
 @mcp.tool()
@@ -9610,17 +9005,24 @@ async def okto_pulse_list_blockers(
     if stale_hours < 1:
         return json.dumps({"error": "stale_hours must be >= 1"})
 
-    # Delegado ao service (D-6 ideação #9). REST board_blockers agora também
-    # aceita filter_type, garantindo paridade 1:1 com este tool.
-    from okto_pulse.core.services.analytics_service import compute_blockers
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpListBlockersCommand,
+        McpListBlockersUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        result = await compute_blockers(
-            db, board_id,
-            stale_hours=stale_hours,
-            filter_type=filter_type or None,
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpListBlockersUseCase().execute(
+            McpListBlockersCommand(
+                board_id,
+                stale_hours=stale_hours,
+                filter_type=filter_type or None,
+            ),
+            actor=actor,
+            uow=uow,
         )
-        return json.dumps(result, default=str)
+    return json.dumps(result.data, default=str)
 
 
 # ============================================================================
@@ -10684,7 +10086,10 @@ async def _link_task_to_decision_internal(
         if not card:
             return json.dumps({"error": "Card not found"})
 
-        decisions = list(spec.decisions or [])
+        decisions = [
+            dict(decision) if isinstance(decision, dict) else decision
+            for decision in (spec.decisions or [])
+        ]
         target = next((d for d in decisions if d.get("id") == decision_id), None)
         if target is None:
             return json.dumps({"error": f"Decision '{decision_id}' not found"})
@@ -10695,12 +10100,31 @@ async def _link_task_to_decision_internal(
         target["linked_task_ids"] = task_ids
 
         from okto_pulse.core.models.schemas import SpecUpdate
-        _, _err = await _safe_spec_update(
-            spec_service, spec_id, ctx.agent_id,
-            SpecUpdate(decisions=decisions),
-        )
-        if _err:
-            return _err
+        traceability_only = False
+        link_changed = True
+        try:
+            _, _err = await _safe_spec_update(
+                spec_service, spec_id, ctx.agent_id,
+                SpecUpdate(decisions=decisions),
+            )
+            if _err:
+                return _err
+        except SpecLockedError:
+            try:
+                locked_spec, link_changed, task_ids = (
+                    await spec_service.append_locked_traceability_task_link(
+                        spec_id,
+                        ctx.agent_id,
+                        target_field="decisions",
+                        target_id=decision_id,
+                        card_id=card_id,
+                    )
+                )
+            except ValueError as exc:
+                return json.dumps({"error": "traceability_link_rejected", "detail": str(exc)})
+            if locked_spec is None:
+                return json.dumps({"error": "Spec not found"})
+            traceability_only = True
         await db.commit()
 
         cov = _spec_coverage(spec, decisions=decisions)
@@ -10709,6 +10133,8 @@ async def _link_task_to_decision_internal(
             "decision_id": decision_id,
             "card_id": card_id,
             "linked_tasks": task_ids,
+            "traceability_only": traceability_only,
+            "link_changed": link_changed,
             **_saturation_or_coverage(cov),
         })
 
@@ -11498,48 +10924,37 @@ async def okto_pulse_add_screen_mockup(
     if entity_type == "card":
         return _card_resource_read_only_error()
 
-    import hashlib
-    import time
-
-    Gate, GateErr, normalize_ref = _mockup_gate_imports()
-    screen_id = "sm_" + hashlib.md5(f"{entity_id}{title}{time.time()}".encode()).hexdigest()[:8]
-
-    screen = {
-        "id": screen_id,
-        "title": title,
-        "description": description or None,
-        "screen_type": screen_type,
-        "html_content": _sanitize_html(html_content),
-        "annotations": [],
-        "order": 0,
-        "design_system_ref": normalize_ref(design_system_ref, design_system_version),
-        "design_system_evidence": design_system_evidence,
-    }
-
-    async with get_db_for_mcp() as db:
-        entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
-        if not entity:
-            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
-
-        # MockupDesignSystemGate runs BEFORE persistence (blocking aborts the txn).
-        try:
-            gate_outcome = await Gate(db).evaluate_screen(
-                board_id, screen, entity_type=entity_type, entity_id=entity_id
-            )
-        except GateErr as e:
-            return json.dumps(e.to_dict())
-
-        screens = list(entity.screen_mockups or [])
-        screen["order"] = len(screens)
-        screens.append(screen)
-
-        await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
-        await db.commit()
-
-    return json.dumps(
-        {"success": True, "entity_type": entity_type, "screen": screen, "design_system_gate": gate_outcome},
-        default=str,
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpAddScreenMockupUseCase,
+        McpScreenMockupCommand,
     )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpAddScreenMockupUseCase().execute(
+                McpScreenMockupCommand(
+                    board_id=board_id,
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    title=title,
+                    description=description,
+                    screen_type=screen_type,
+                    html_content=html_content,
+                    design_system_ref=design_system_ref,
+                    design_system_version=design_system_version,
+                    design_system_evidence=design_system_evidence,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError:
+        return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -11577,47 +10992,40 @@ async def okto_pulse_update_screen_mockup(
     if entity_type == "card":
         return _card_resource_read_only_error()
 
-    Gate, GateErr, normalize_ref = _mockup_gate_imports()
-
-    async with get_db_for_mcp() as db:
-        entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
-        if not entity:
-            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
-
-        screens = list(entity.screen_mockups or [])
-        screen = next((s for s in screens if s.get("id") == screen_id), None)
-        if not screen:
-            return json.dumps({"error": f"Screen '{screen_id}' not found"})
-
-        original = dict(screen)  # pre-edit snapshot for the delta comparison
-        if title:
-            screen["title"] = title
-        if description:
-            screen["description"] = description
-        if screen_type:
-            screen["screen_type"] = screen_type
-        if html_content:
-            screen["html_content"] = _sanitize_html(html_content)
-        if design_system_ref:
-            screen["design_system_ref"] = normalize_ref(design_system_ref, design_system_version)
-        if design_system_evidence is not None:
-            screen["design_system_evidence"] = design_system_evidence
-
-        # delta-only: re-gate this mockup only if a gate-relevant field changed.
-        try:
-            gate_outcomes = await Gate(db).gate_delta(
-                board_id, [original], [screen], entity_type=entity_type, entity_id=entity_id
-            )
-        except GateErr as e:
-            return json.dumps(e.to_dict())
-        gate_outcome = gate_outcomes[0] if gate_outcomes else {"outcome": "not_applicable"}
-
-        await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
-        await db.commit()
-
-    return json.dumps(
-        {"success": True, "screen": screen, "design_system_gate": gate_outcome}, default=str
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpScreenMockupCommand,
+        McpUpdateScreenMockupUseCase,
     )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpUpdateScreenMockupUseCase().execute(
+                McpScreenMockupCommand(
+                    board_id=board_id,
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    screen_id=screen_id,
+                    title=title,
+                    description=description,
+                    screen_type=screen_type,
+                    html_content=html_content,
+                    design_system_ref=design_system_ref,
+                    design_system_version=design_system_version,
+                    design_system_evidence=design_system_evidence,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "screen":
+            return json.dumps({"error": f"Screen '{screen_id}' not found"})
+        return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -11644,35 +11052,34 @@ async def okto_pulse_annotate_mockup(
     if entity_type == "card":
         return _card_resource_read_only_error()
 
-    import hashlib
-    import time
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpAnnotateMockupUseCase,
+        McpScreenMockupCommand,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    ann_id = "an_" + hashlib.md5(f"{screen_id}{text}{time.time()}".encode()).hexdigest()[:8]
-
-    annotation = {
-        "id": ann_id,
-        "text": text,
-        "author_id": ctx.agent_id,
-    }
-
-    async with get_db_for_mcp() as db:
-        entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
-        if not entity:
-            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
-
-        screens = list(entity.screen_mockups or [])
-        screen = next((s for s in screens if s.get("id") == screen_id), None)
-        if not screen:
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpAnnotateMockupUseCase().execute(
+                McpScreenMockupCommand(
+                    board_id=board_id,
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    screen_id=screen_id,
+                    text=text,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "screen":
             return json.dumps({"error": f"Screen '{screen_id}' not found"})
-
-        anns = screen.get("annotations") or []
-        anns.append(annotation)
-        screen["annotations"] = anns
-
-        await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
-        await db.commit()
-
-    return json.dumps({"success": True, "annotation": annotation})
+        return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(result.payload)
 
 
 @mcp.tool()
@@ -11692,26 +11099,31 @@ async def okto_pulse_list_screen_mockups(
 
     limit = min(limit, 200)
 
-    async with get_db_for_mcp() as db:
-        entity, service, _ = await _load_entity_mockups(db, entity_type, entity_id)
-        if not entity:
-            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpListScreenMockupsUseCase,
+        McpScreenMockupCommand,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        screens = list(entity.screen_mockups or [])
-        if screen_type:
-            screens = [s for s in screens if s.get("screen_type") == screen_type]
-
-        total = len(screens)
-        paginated = screens[offset:offset + limit]
-
-        return json.dumps({
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-            "screens": paginated,
-        }, default=str)
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpListScreenMockupsUseCase().execute(
+                McpScreenMockupCommand(
+                    board_id=board_id,
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    screen_type=screen_type,
+                    offset=offset,
+                    limit=limit,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError:
+        return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -11733,21 +11145,33 @@ async def okto_pulse_delete_screen_mockup(
     if entity_type == "card":
         return _card_resource_read_only_error()
 
-    async with get_db_for_mcp() as db:
-        entity, service, UpdateClass = await _load_entity_mockups(db, entity_type, entity_id)
-        if not entity:
-            return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpDeleteScreenMockupUseCase,
+        McpScreenMockupCommand,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        screens = list(entity.screen_mockups or [])
-        original_len = len(screens)
-        screens = [s for s in screens if s.get("id") != screen_id]
-        if len(screens) == original_len:
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpDeleteScreenMockupUseCase().execute(
+                McpScreenMockupCommand(
+                    board_id=board_id,
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    screen_id=screen_id,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "screen":
             return json.dumps({"error": f"Screen '{screen_id}' not found"})
-
-        await _save_entity_mockups(service, entity_type, entity_id, ctx.agent_id, screens, UpdateClass)
-        await db.commit()
-
-    return json.dumps({"success": True, "screen_id": screen_id})
+        return json.dumps({"error": f"{entity_type.title()} '{entity_id}' not found"})
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(result.payload)
 
 
 # ============================================================================
@@ -13850,20 +13274,32 @@ async def okto_pulse_submit_task_validation(
         "recommendation": recommendation,
     }
 
-    async with get_db_for_mcp() as db:
-        card_service = CardService(db)
-        try:
-            result = await card_service.submit_task_validation(
-                card_id, ctx.agent_id, ctx.agent_name, data
+    from okto_pulse.core.application.use_cases import (
+        EntityNotFoundError,
+        SubmitTaskValidationCommand,
+        SubmitTaskValidationUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await SubmitTaskValidationUseCase().execute(
+                SubmitTaskValidationCommand(card_id, data),
+                actor=actor,
+                uow=uow,
             )
-            await db.commit()
-            return json.dumps(result, default=str)
-        except GateContractError as e:
-            return json.dumps(e.to_dict())
-        except ResourceGateError as e:
-            return _resource_gate_error_response(e)
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
+        return json.dumps(result.validation, default=str)
+    except EntityNotFoundError as e:
+        if e.entity_type == "card":
+            return json.dumps({"error": "Card not found"})
+        return json.dumps({"error": str(e)})
+    except GateContractError as e:
+        return json.dumps(e.to_dict())
+    except ResourceGateError as e:
+        return _resource_gate_error_response(e)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
 
 
 @mcp.tool()
@@ -14464,24 +13900,31 @@ async def okto_pulse_list_default_guideline_candidates(
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
-    Svc, Err = _default_board_config_imports()
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpListDefaultGuidelineCandidatesCommand,
+        McpListDefaultGuidelineCandidatesUseCase,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.default_board_configuration import (
+        DefaultBoardConfigurationError,
+    )
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    query_scope = ActorScope.from_context(actor).query_scope(target_board_id=board_id)
-    async with get_db_for_mcp() as db:
-        try:
-            return json.dumps(
-                await Svc(db).list_default_candidates(
+    # AF23 scope marker: ActorScope.from_context(actor).query_scope; query_scope=query_scope.
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpListDefaultGuidelineCandidatesUseCase().execute(
+                McpListDefaultGuidelineCandidatesCommand(
+                    board_id,
                     scope=scope,
                     template_id=template_id,
-                    actor=actor.actor_id,
-                    query_scope=query_scope,
                 ),
-                default=str,
+                actor=actor,
+                uow=uow,
             )
-        except Err as e:
-            return json.dumps(e.to_dict())
+        return json.dumps(result.data, default=str)
+    except DefaultBoardConfigurationError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -14500,23 +13943,31 @@ async def okto_pulse_update_default_guideline_refs(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
-    Svc, Err = _default_board_config_imports()
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpUpdateDefaultGuidelineRefsCommand,
+        McpUpdateDefaultGuidelineRefsUseCase,
+    )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.default_board_configuration import (
+        DefaultBoardConfigurationError,
+    )
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    query_scope = ActorScope.from_context(actor).query_scope(target_board_id=board_id)
-    async with get_db_for_mcp() as db:
-        try:
-            result = await Svc(db).update_template_guidelines(
-                template_id=template_id,
-                guideline_default_refs=guideline_default_refs,
-                actor=actor.actor_id,
-                query_scope=query_scope,
+    # AF23 scope marker: ActorScope.from_context(actor).query_scope; query_scope=query_scope.
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpUpdateDefaultGuidelineRefsUseCase().execute(
+                McpUpdateDefaultGuidelineRefsCommand(
+                    board_id,
+                    template_id=template_id,
+                    guideline_default_refs=guideline_default_refs,
+                ),
+                actor=actor,
+                uow=uow,
             )
-            await db.commit()
-            return json.dumps(result, default=str)
-        except Err as e:
-            return json.dumps(e.to_dict())
+        return json.dumps(result.data, default=str)
+    except DefaultBoardConfigurationError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -14539,21 +13990,32 @@ async def okto_pulse_set_default_design_system(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
-    Svc, Err = _default_board_config_imports()
-    async with get_db_for_mcp() as db:
-        try:
-            result = await Svc(db).set_template_design_system(
-                template_id=template_id,
-                design_system_id=design_system_id,
-                actor=ctx.agent_id,
-                version=version,
-                snapshot=snapshot,
-                gate_mode=gate_mode,
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpSetDefaultDesignSystemCommand,
+        McpSetDefaultDesignSystemUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.default_board_configuration import (
+        DefaultBoardConfigurationError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpSetDefaultDesignSystemUseCase().execute(
+                McpSetDefaultDesignSystemCommand(
+                    template_id=template_id,
+                    design_system_id=design_system_id,
+                    gate_mode=gate_mode,
+                    version=version,
+                    snapshot=snapshot,
+                ),
+                actor=actor,
+                uow=uow,
             )
-            await db.commit()
-            return json.dumps(result, default=str)
-        except Err as e:
-            return json.dumps(e.to_dict())
+        return json.dumps(result.data, default=str)
+    except DefaultBoardConfigurationError as e:
+        return json.dumps(e.to_dict())
 
 
 def _design_system_imports():
@@ -14576,13 +14038,24 @@ async def okto_pulse_list_design_systems(board_id: str, scope: str = "global") -
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
-    Svc, Err, ser = _design_system_imports()
-    async with get_db_for_mcp() as db:
-        try:
-            items = await Svc(db).list_catalog(scope=scope, board_id=board_id)
-            return json.dumps([ser(d) for d in items], default=str)
-        except Err as e:
-            return json.dumps(e.to_dict())
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpListDesignSystemsCommand,
+        McpListDesignSystemsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpListDesignSystemsUseCase().execute(
+                McpListDesignSystemsCommand(board_id, scope=scope),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps(result.data, default=str)
+    except DesignSystemError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -14595,12 +14068,24 @@ async def okto_pulse_get_design_system(board_id: str, design_system_id: str) -> 
     perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
     if perm_err:
         return _perm_error(perm_err)
-    Svc, Err, ser = _design_system_imports()
-    async with get_db_for_mcp() as db:
-        try:
-            return json.dumps(ser(await Svc(db).require_design_system(design_system_id)), default=str)
-        except Err as e:
-            return json.dumps(e.to_dict())
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpGetDesignSystemCommand,
+        McpGetDesignSystemUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpGetDesignSystemUseCase().execute(
+                McpGetDesignSystemCommand(design_system_id),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps(result.data, default=str)
+    except DesignSystemError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -14620,21 +14105,30 @@ async def okto_pulse_create_design_system(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
-    Svc, Err, ser = _design_system_imports()
-    async with get_db_for_mcp() as db:
-        try:
-            ds = await Svc(db).create_design_system(
-                ctx.agent_id,
-                title=title,
-                scope=scope,
-                board_id=board_id if scope == "inline" else None,
-                payload=payload,
-                status=status,
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpCreateDesignSystemCommand,
+        McpCreateDesignSystemUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpCreateDesignSystemUseCase().execute(
+                McpCreateDesignSystemCommand(
+                    board_id,
+                    title=title,
+                    scope=scope,
+                    payload=payload,
+                    status=status,
+                ),
+                actor=actor,
+                uow=uow,
             )
-            await db.commit()
-            return json.dumps(ser(ds), default=str)
-        except Err as e:
-            return json.dumps(e.to_dict())
+        return json.dumps(result.data, default=str)
+    except DesignSystemError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -14653,18 +14147,29 @@ async def okto_pulse_update_design_system(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
-    Svc, Err, ser = _design_system_imports()
-    kwargs = {
-        k: v for k, v in (("title", title), ("payload", payload), ("status", status))
-        if v is not None
-    }
-    async with get_db_for_mcp() as db:
-        try:
-            ds = await Svc(db).update_design_system(design_system_id, ctx.agent_id, **kwargs)
-            await db.commit()
-            return json.dumps(ser(ds), default=str)
-        except Err as e:
-            return json.dumps(e.to_dict())
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpUpdateDesignSystemCommand,
+        McpUpdateDesignSystemUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpUpdateDesignSystemUseCase().execute(
+                McpUpdateDesignSystemCommand(
+                    design_system_id,
+                    title=title,
+                    payload=payload,
+                    status=status,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps(result.data, default=str)
+    except DesignSystemError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -14677,18 +14182,24 @@ async def okto_pulse_delete_design_system(board_id: str, design_system_id: str) 
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_UPDATE)
     if perm_err:
         return _perm_error(perm_err)
-    Svc, Err, _ser = _design_system_imports()
-    async with get_db_for_mcp() as db:
-        try:
-            deleted = await Svc(db).delete_design_system(design_system_id, ctx.agent_id)
-            if not deleted:
-                return json.dumps(
-                    {"error": "design_system_not_found", "code": "design_system_not_found"}
-                )
-            await db.commit()
-            return json.dumps({"deleted": True, "id": design_system_id})
-        except Err as e:
-            return json.dumps(e.to_dict())
+    from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
+        McpDeleteDesignSystemCommand,
+        McpDeleteDesignSystemUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpDeleteDesignSystemUseCase().execute(
+                McpDeleteDesignSystemCommand(design_system_id),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps(result.data, default=str)
+    except DesignSystemError as e:
+        return json.dumps(e.to_dict())
 
 
 @mcp.tool()
@@ -14802,18 +14313,30 @@ async def okto_pulse_list_task_validations(board_id: str, card_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        card_service = CardService(db)
-        try:
-            validations = await card_service.list_task_validations(card_id)
-            await db.commit()
-            return json.dumps({
-                "card_id": card_id,
-                "total": len(validations),
-                "validations": validations,
-            }, default=str)
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
+    from okto_pulse.core.application.use_cases import (
+        EntityNotFoundError,
+        ListTaskValidationsCommand,
+        ListTaskValidationsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ListTaskValidationsUseCase().execute(
+                ListTaskValidationsCommand(card_id),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps({
+            "card_id": card_id,
+            "total": len(result.validations),
+            "validations": result.validations,
+        }, default=str)
+    except EntityNotFoundError as e:
+        return json.dumps({"error": "Card not found" if e.entity_type == "card" else str(e)})
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
 
 
 @mcp.tool()
@@ -14830,16 +14353,28 @@ async def okto_pulse_get_task_validation(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        card_service = CardService(db)
-        try:
-            validation = await card_service.get_task_validation(card_id, validation_id)
-            await db.commit()
-            if not validation:
-                return json.dumps({"error": f"Validation '{validation_id}' not found"})
-            return json.dumps(validation, default=str)
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
+    from okto_pulse.core.application.use_cases import (
+        EntityNotFoundError,
+        GetTaskValidationCommand,
+        GetTaskValidationUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetTaskValidationUseCase().execute(
+                GetTaskValidationCommand(card_id, validation_id),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps(result.validation, default=str)
+    except EntityNotFoundError as e:
+        if e.entity_type == "task_validation":
+            return json.dumps({"error": f"Validation '{validation_id}' not found"})
+        return json.dumps({"error": "Card not found" if e.entity_type == "card" else str(e)})
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
 
 
 # ============================================================================
@@ -14920,20 +14455,21 @@ usually violate the configured thresholds."""
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        try:
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             # Thin MCP adapter (spec #09): delegate to the shared use case (it
             # validates the payload, resolves the reviewer name from the MCP agent,
             # submits and commits). The MCP-specific input checks above are kept so
             # the tool's error envelopes/order are unchanged.
             result = await SubmitSpecValidationUseCase().execute(
                 SubmitSpecValidationCommand(spec_id, data),
-                actor=MCPAdapterContract.actor(ctx, board_id=board_id),
-                uow=db,
+                actor=actor,
+                uow=uow,
             )
-            return json.dumps(result.payload, default=str)
-        except (EntityNotFoundError, ValueError) as e:
-            return MCPAdapterContract.error(e)
+        return json.dumps(result.payload, default=str)
+    except (EntityNotFoundError, ValueError) as e:
+        return MCPAdapterContract.error(e)
 
 
 @mcp.tool()
@@ -14953,17 +14489,26 @@ async def okto_pulse_list_spec_validations(board_id: str, spec_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        spec_service = SpecService(db)
-        try:
-            result = await spec_service.list_spec_validations(spec_id)
-            await db.commit()
-            return json.dumps({
-                "spec_id": spec_id,
-                **result,
-            }, default=str)
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
+    from okto_pulse.core.application.use_cases import (
+        ListSpecValidationsCommand,
+        ListSpecValidationsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ListSpecValidationsUseCase().execute(
+                ListSpecValidationsCommand(spec_id),
+                actor=actor,
+                uow=uow,
+            )
+        return json.dumps({
+            "spec_id": spec_id,
+            **result.data,
+        }, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
 
 
 # ============================================================================
@@ -17020,7 +16565,7 @@ async def okto_pulse_list_by_board(
     list_sprints, list_stories, list_topics.
 
     Use this single tool instead of the individual list_* tools."""
-    from okto_pulse.core.mcp.filters import validate_filters
+    from okto_pulse.core.mcp.filters import invalid_filter_keys, supported_filter_keys, validate_filters
 
     # Auto-deserialize string JSON (MCP transport convention — other tools use coerce_to_list_str)
     if isinstance(filters, str):
@@ -17043,7 +16588,13 @@ async def okto_pulse_list_by_board(
 
     ok, err = validate_filters(entity_type, filters or {}, scope="by_board")
     if not ok:
-        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+        return _structured_error(
+            "invalid_filter",
+            supported_filter_keys(entity_type, scope="by_board"),
+            None,
+            err,
+            invalid_keys=invalid_filter_keys(entity_type, filters or {}, scope="by_board"),
+        )
 
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -17175,6 +16726,7 @@ async def okto_pulse_list_by_board(
                         "complexity": i.complexity.value if i.complexity else None,
                         "status": i.status.value,
                         "active_refinement_count": getattr(i, "active_refinement_count", 0),
+                        "active_spec_count": getattr(i, "active_spec_count", 0),
                         "derivation_pending": is_derivation_pending_ideation(i),
                         "version": i.version,
                         "assignee_id": i.assignee_id,
@@ -17281,7 +16833,7 @@ async def okto_pulse_list_qa(
     """List Q&A items for a spec, ideation, or refinement.
 
     Consolidates: list_spec_qa, list_ideation_qa, list_refinement_qa."""
-    from okto_pulse.core.mcp.filters import validate_filters
+    from okto_pulse.core.mcp.filters import invalid_filter_keys, supported_filter_keys, validate_filters
 
     # Auto-deserialize string JSON (MCP transport convention)
     if isinstance(filters, str):
@@ -17304,7 +16856,13 @@ async def okto_pulse_list_qa(
 
     ok, err = validate_filters(entity_type, filters or {}, scope="qa")
     if not ok:
-        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+        return _structured_error(
+            "invalid_filter",
+            supported_filter_keys(entity_type, scope="qa"),
+            None,
+            err,
+            invalid_keys=invalid_filter_keys(entity_type, filters or {}, scope="qa"),
+        )
 
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -17314,46 +16872,20 @@ async def okto_pulse_list_qa(
     if perm_err:
         return _perm_error(perm_err)
 
-    filters = filters or {}
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpListQaCommand,
+        McpListQaUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    def _qa_item(qa) -> dict:
-        return {
-            "id": qa.id,
-            "question": qa.question,
-            "question_type": qa.question_type,
-            "choices": qa.choices,
-            "allow_free_text": getattr(qa, "allow_free_text", None),
-            "answer": qa.answer,
-            "selected": qa.selected,
-            "asked_by": qa.asked_by,
-            "answered_by": qa.answered_by,
-            "created_at": qa.created_at.isoformat(),
-            "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
-        }
-
-    async with get_db_for_mcp() as db:
-        if entity_type == "spec":
-            service = SpecQAService(db)
-            items = await service.list_qa(entity_id)
-        elif entity_type == "ideation":
-            service = IdeationQAService(db)
-            items = await service.list_qa(entity_id)
-        else:  # refinement
-            service = RefinementQAService(db)
-            items = await service.list_qa(entity_id)
-
-        await db.commit()
-
-        # Apply optional filters
-        if filters.get("asked_by"):
-            items = [q for q in items if q.asked_by == filters["asked_by"]]
-
-        return json.dumps({
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "count": len(items),
-            "qa_items": [_qa_item(q) for q in items],
-        }, default=str)
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpListQaUseCase().execute(
+            McpListQaCommand(entity_type, entity_id, filters or {}),
+            actor=actor,
+            uow=uow,
+        )
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -17367,7 +16899,7 @@ async def okto_pulse_list_knowledge(
 
     Consolidates: list_spec_knowledge, list_ideation_knowledge,
     list_refinement_knowledge, list_card_knowledge."""
-    from okto_pulse.core.mcp.filters import validate_filters
+    from okto_pulse.core.mcp.filters import invalid_filter_keys, supported_filter_keys, validate_filters
 
     # Auto-deserialize string JSON (MCP transport convention)
     if isinstance(filters, str):
@@ -17390,7 +16922,13 @@ async def okto_pulse_list_knowledge(
 
     ok, err = validate_filters(entity_type, filters or {}, scope="knowledge")
     if not ok:
-        return _structured_error("invalid_filter", list((filters or {}).keys()), None, err)
+        return _structured_error(
+            "invalid_filter",
+            supported_filter_keys(entity_type, scope="knowledge"),
+            None,
+            err,
+            invalid_keys=invalid_filter_keys(entity_type, filters or {}, scope="knowledge"),
+        )
 
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -17400,87 +16938,28 @@ async def okto_pulse_list_knowledge(
     if perm_err:
         return _perm_error(perm_err)
 
-    filters = filters or {}
-    mime_filter: str | None = filters.get("mime_type")
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpListKnowledgeCommand,
+        McpListKnowledgeUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-    async with get_db_for_mcp() as db:
-        if entity_type == "spec":
-            service = SpecKnowledgeService(db)
-            items = await service.list_knowledge(entity_id)
-            await db.commit()
-            if mime_filter:
-                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
-            return json.dumps({
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "count": len(items),
-                "knowledge_bases": [
-                    {
-                        "id": kb.id,
-                        "title": kb.title,
-                        "description": kb.description,
-                        "mime_type": kb.mime_type,
-                        "created_at": kb.created_at.isoformat(),
-                    }
-                    for kb in items
-                ],
-            }, default=str)
-
-        elif entity_type == "ideation":
-            ideation = await IdeationService(db).get_ideation(entity_id)
-            if not ideation or ideation.board_id != board_id:
-                return json.dumps({"error": "Ideation not found"})
-            service = IdeationKnowledgeService(db)
-            items = await service.list_knowledge(entity_id)
-            await db.commit()
-            if mime_filter:
-                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
-            return json.dumps({
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "count": len(items),
-                "knowledge_bases": [
-                    _serialize_knowledge_base(kb, include_content=False)
-                    for kb in items
-                ],
-            }, default=str)
-
-        elif entity_type == "refinement":
-            service = RefinementKnowledgeService(db)
-            items = await service.list_knowledge(entity_id)
-            await db.commit()
-            if mime_filter:
-                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
-            return json.dumps({
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "count": len(items),
-                "knowledge_bases": [
-                    {
-                        "id": kb.id,
-                        "title": kb.title,
-                        "description": kb.description,
-                        "mime_type": kb.mime_type,
-                        "created_at": kb.created_at.isoformat(),
-                    }
-                    for kb in items
-                ],
-            }, default=str)
-
-        else:  # card
-            service = CardService(db)
-            card = await service.get_card(entity_id)
-            if not card or card.board_id != board_id:
-                return json.dumps({"error": "Card not found"})
-            kbs = list(card.knowledge_bases or [])
-            if mime_filter:
-                kbs = [kb for kb in kbs if kb.get("mime_type") == mime_filter]
-            return json.dumps({
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "count": len(kbs),
-                "knowledge_bases": kbs,
-            }, default=str)
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await McpListKnowledgeUseCase().execute(
+                McpListKnowledgeCommand(board_id, entity_type, entity_id, filters or {}),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError as exc:
+        if exc.entity_type == "ideation":
+            return json.dumps({"error": "Ideation not found"})
+        if exc.entity_type == "card":
+            return json.dumps({"error": "Card not found"})
+        return _mcp_entity_not_found_error(exc)
+    return json.dumps(result.payload, default=str)
 
 
 @mcp.tool()
@@ -17512,45 +16991,20 @@ async def okto_pulse_list_snapshots(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
-        if entity_type == "ideation":
-            service = IdeationService(db)
-            snapshots = await service.list_snapshots(entity_id)
-            await db.commit()
-            return json.dumps({
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "count": len(snapshots),
-                "snapshots": [
-                    {
-                        "version": s.version,
-                        "title": s.title,
-                        "complexity": s.complexity,
-                        "created_by": s.created_by,
-                        "created_at": s.created_at.isoformat(),
-                    }
-                    for s in snapshots
-                ],
-            }, default=str)
+    from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
+        McpListSnapshotsCommand,
+        McpListSnapshotsUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        else:  # refinement
-            service = RefinementService(db)
-            snapshots = await service.list_snapshots(entity_id)
-            await db.commit()
-            return json.dumps({
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "count": len(snapshots),
-                "snapshots": [
-                    {
-                        "version": s.version,
-                        "title": s.title,
-                        "created_by": s.created_by,
-                        "created_at": s.created_at.isoformat(),
-                    }
-                    for s in snapshots
-                ],
-            }, default=str)
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await McpListSnapshotsUseCase().execute(
+            McpListSnapshotsCommand(entity_type, entity_id),
+            actor=actor,
+            uow=uow,
+        )
+    return json.dumps(result.payload, default=str)
 
 
 # ============================================================================
@@ -17608,6 +17062,16 @@ def run_mcp_server():
     This core-only standalone path also does not inject a trace sink; local
     MCP replay JSONL is enabled by the Community composition root.
     """
+    warnings.warn(
+        "okto_pulse.core.mcp.server.run_mcp_server is a legacy debug shim. "
+        "Use okto_pulse.community.main.serve for productive Community MCP "
+        "serving, or build_mcp_asgi_app/mount_mcp for core ASGI composition. "
+        "Removal criterion: no supported caller imports this shim from core "
+        "after AF41 ownership gates are enforced.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     from okto_pulse.core.infra.config import get_settings
     from okto_pulse.core.infra.database import (
         get_session_factory,
@@ -17620,6 +17084,14 @@ def run_mcp_server():
             "Standalone core MCP requires an edition-configured relational runtime."
         )
     register_session_factory(get_session_factory())
+    try:
+        import uvicorn
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Standalone core MCP legacy shim requires an edition-owned server "
+            "runtime dependency. Productive serving is owned by Community "
+            "composition."
+        ) from exc
 
     # Read port from environment (set by CLI) or use settings
     port = int(os.environ.get("MCP_PORT", str(settings.mcp_port)))

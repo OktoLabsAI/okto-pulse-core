@@ -41,18 +41,40 @@ from okto_pulse.core.ports import McpCredential
 _HASH = AgentService.hash_api_key
 
 
+class _HarnessMcpAuthenticator:
+    def __init__(self, session_factory):
+        self._session_factory = session_factory
+
+    async def authenticate(self, credential):
+        if credential is None:
+            return None
+        async with self._session_factory() as db:
+            from okto_pulse.core.services.application_agents import (
+                authenticate_agent_by_api_key,
+            )
+
+            return await authenticate_agent_by_api_key(
+                db,
+                credential.value,
+                credential_source=credential.source,
+            )
+
+
 @pytest.fixture
 def _seeded():
     """Temp SQLite DB seeded with A1->B1, A2->B2, plus an inactive agent; the MCP
     session factory registered. Restores settings/engine/factory/cache/env."""
     import okto_pulse.core.infra.config as _config
     from okto_pulse.core.infra.config import CoreSettings
+    from okto_pulse.core import runtime_registry as _runtime_registry
 
     saved = dict(
         settings=_config._settings_instance,
         engine=_db_mod._engine,
         factory=_db_mod._session_factory,
         mcp_sf=server._mcp_session_factory,
+        mcp_auth=server._mcp_authenticator,
+        uow_factory=_runtime_registry._unit_of_work_factory,
         data=os.environ.get("DATA_DIR"),
     )
     cache = dict(server._permission_cache)
@@ -72,6 +94,8 @@ def _seeded():
         _db_mod._engine = saved["engine"]
         _db_mod._session_factory = saved["factory"]
         server._mcp_session_factory = saved["mcp_sf"]
+        server._mcp_authenticator = saved["mcp_auth"]
+        _runtime_registry._unit_of_work_factory = saved["uow_factory"]
         server._permission_cache.clear()
         server._permission_cache.update(cache)
         if saved["data"] is None:
@@ -82,10 +106,17 @@ def _seeded():
 
 async def _seed(tmp: str) -> None:
     from okto_pulse.core.models.db import Agent, AgentBoard, Board
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from okto_pulse.core.runtime_registry import register_unit_of_work_factory
 
     _db_mod.create_database(f"sqlite+aiosqlite:///{Path(tmp) / 'r08c.db'}")
     await _db_mod.init_db()
-    server.register_session_factory(_db_mod.get_session_factory())
+    session_factory = _db_mod.get_session_factory()
+    register_unit_of_work_factory(SQLAlchemyUnitOfWorkFactory(session_factory))
+    server.register_session_factory(
+        session_factory,
+        mcp_authenticator=_HarnessMcpAuthenticator(session_factory),
+    )
     now = datetime.now(timezone.utc)
     async with _db_mod.get_session_factory()() as s:
         s.add(Board(id="B1", name="B1", owner_id="A1", created_at=now, updated_at=now))

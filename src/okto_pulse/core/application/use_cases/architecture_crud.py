@@ -96,11 +96,19 @@ def _spec_architecture_locked(spec: Any) -> bool:
 
 
 class ListArchitectureCommand:
-    __slots__ = ("parent_type", "parent_id")
+    __slots__ = ("parent_type", "parent_id", "include_payloads", "board_id")
 
-    def __init__(self, parent_type: str, parent_id: str) -> None:
+    def __init__(
+        self,
+        parent_type: str,
+        parent_id: str,
+        include_payloads: bool = False,
+        board_id: str | None = None,
+    ) -> None:
         self.parent_type = parent_type
         self.parent_id = parent_id
+        self.include_payloads = include_payloads
+        self.board_id = board_id
 
 
 class ListArchitectureResult:
@@ -120,9 +128,17 @@ class ListArchitectureUseCase:
         self, command: ListArchitectureCommand, *, actor: ActorContext, uow: Any
     ) -> ListArchitectureResult:
         session = session_of(uow)
-        await _resolve_parent(session, command.parent_type, command.parent_id)
+        parent = await _resolve_parent(session, command.parent_type, command.parent_id)
+        if command.board_id and getattr(parent, "board_id", None) != command.board_id:
+            raise EntityNotFoundError(command.parent_type, command.parent_id)
         repo = ArchitectureDesignRepository(session)
-        designs = await repo.list(command.parent_type, command.parent_id)
+        designs = await repo.list(
+            command.parent_type,
+            command.parent_id,
+            include_payloads=command.include_payloads,
+        )
+        if command.include_payloads:
+            return ListArchitectureResult([repo.to_response(design) for design in designs])
         return ListArchitectureResult([repo.to_summary(design) for design in designs])
 
 
@@ -130,12 +146,19 @@ class ListArchitectureUseCase:
 
 
 class CreateArchitectureCommand:
-    __slots__ = ("parent_type", "parent_id", "data")
+    __slots__ = ("parent_type", "parent_id", "data", "board_id")
 
-    def __init__(self, parent_type: str, parent_id: str, data: Any) -> None:
+    def __init__(
+        self,
+        parent_type: str,
+        parent_id: str,
+        data: Any,
+        board_id: str | None = None,
+    ) -> None:
         self.parent_type = parent_type
         self.parent_id = parent_id
         self.data = data
+        self.board_id = board_id
 
 
 class CreateArchitectureResult:
@@ -159,6 +182,8 @@ class CreateArchitectureUseCase:
     ) -> CreateArchitectureResult:
         session = session_of(uow)
         parent = await _resolve_parent(session, command.parent_type, command.parent_id)
+        if command.board_id and getattr(parent, "board_id", None) != command.board_id:
+            raise EntityNotFoundError(command.parent_type, command.parent_id)
         if command.parent_type == "spec" and _spec_architecture_locked(parent):
             raise ConflictError("spec_architecture_locked", command.parent_id)
         repo = ArchitectureDesignRepository(session)
@@ -182,7 +207,9 @@ class CreateArchitectureUseCase:
 # lookup → gate → mutate → commit envelope.
 
 
-async def _resolve_mutable_design(session: Any, design_id: str) -> Any:
+async def _resolve_mutable_design(
+    session: Any, design_id: str, board_id: str | None = None
+) -> Any:
     """Transport-free twin of the legacy ``_ensure_design_mutable`` gate.
 
     Loads the Architecture Design via ``ArchitectureDesignRepository.get`` (the
@@ -199,6 +226,8 @@ async def _resolve_mutable_design(session: Any, design_id: str) -> Any:
     design = await ArchitectureDesignRepository(session).get(design_id)
     if design is None:
         raise EntityNotFoundError("Architecture design", design_id)
+    if board_id and design.board_id != board_id:
+        raise EntityNotFoundError("Architecture design", design_id)
     if design.parent_type == "card":
         raise ConflictError("card_architecture_readonly", design_id)
     if design.parent_type == "spec":
@@ -214,11 +243,17 @@ async def _resolve_mutable_design(session: Any, design_id: str) -> Any:
 
 
 class GetArchitectureDesignCommand:
-    __slots__ = ("design_id", "include_payloads")
+    __slots__ = ("design_id", "include_payloads", "board_id")
 
-    def __init__(self, design_id: str, include_payloads: bool = False) -> None:
+    def __init__(
+        self,
+        design_id: str,
+        include_payloads: bool = False,
+        board_id: str | None = None,
+    ) -> None:
         self.design_id = design_id
         self.include_payloads = include_payloads
+        self.board_id = board_id
 
 
 class GetArchitectureDesignResult:
@@ -244,6 +279,8 @@ class GetArchitectureDesignUseCase:
         )
         if design is None:
             raise EntityNotFoundError("Architecture design", command.design_id)
+        if command.board_id and design.board_id != command.board_id:
+            raise EntityNotFoundError("Architecture design", command.design_id)
         return GetArchitectureDesignResult(repo.to_response(design))
 
 
@@ -251,11 +288,17 @@ class GetArchitectureDesignUseCase:
 
 
 class UpdateArchitectureDesignCommand:
-    __slots__ = ("design_id", "data")
+    __slots__ = ("design_id", "data", "board_id")
 
-    def __init__(self, design_id: str, data: Any) -> None:
+    def __init__(
+        self,
+        design_id: str,
+        data: Any,
+        board_id: str | None = None,
+    ) -> None:
         self.design_id = design_id
         self.data = data
+        self.board_id = board_id
 
 
 class UpdateArchitectureDesignResult:
@@ -279,7 +322,7 @@ class UpdateArchitectureDesignUseCase:
         self, command: UpdateArchitectureDesignCommand, *, actor: ActorContext, uow: Any
     ) -> UpdateArchitectureDesignResult:
         session = session_of(uow)
-        await _resolve_mutable_design(session, command.design_id)
+        await _resolve_mutable_design(session, command.design_id, board_id=command.board_id)
         repo = ArchitectureDesignRepository(session)
         design = await repo.update(command.design_id, command.data, actor.actor_id)
         response = repo.to_response(design)
@@ -291,10 +334,11 @@ class UpdateArchitectureDesignUseCase:
 
 
 class DeleteArchitectureDesignCommand:
-    __slots__ = ("design_id",)
+    __slots__ = ("design_id", "board_id")
 
-    def __init__(self, design_id: str) -> None:
+    def __init__(self, design_id: str, board_id: str | None = None) -> None:
         self.design_id = design_id
+        self.board_id = board_id
 
 
 class DeleteArchitectureDesignResult:
@@ -313,7 +357,7 @@ class DeleteArchitectureDesignUseCase:
         self, command: DeleteArchitectureDesignCommand, *, actor: ActorContext, uow: Any
     ) -> DeleteArchitectureDesignResult:
         session = session_of(uow)
-        await _resolve_mutable_design(session, command.design_id)
+        await _resolve_mutable_design(session, command.design_id, board_id=command.board_id)
         repo = ArchitectureDesignRepository(session)
         deleted = await repo.delete(command.design_id, actor.actor_id)
         if not deleted:
@@ -370,11 +414,189 @@ class ValidateArchitecturePayloadUseCase:
         return ValidateArchitecturePayloadResult(critique)
 
 
+class McpValidateArchitecturePayloadCommand:
+    __slots__ = (
+        "board_id",
+        "parent_type",
+        "parent_id",
+        "design_id",
+        "title",
+        "global_description",
+        "parsed_fields",
+        "architecture_warning_acknowledgement",
+        "commit_requested",
+        "include_design",
+    )
+
+    def __init__(
+        self,
+        *,
+        board_id: str,
+        parent_type: str,
+        parent_id: str,
+        design_id: str,
+        title: str,
+        global_description: str,
+        parsed_fields: dict[str, Any],
+        architecture_warning_acknowledgement: Any,
+        commit_requested: bool,
+        include_design: bool,
+    ) -> None:
+        self.board_id = board_id
+        self.parent_type = parent_type
+        self.parent_id = parent_id
+        self.design_id = design_id
+        self.title = title
+        self.global_description = global_description
+        self.parsed_fields = parsed_fields
+        self.architecture_warning_acknowledgement = architecture_warning_acknowledgement
+        self.commit_requested = commit_requested
+        self.include_design = include_design
+
+
+class McpValidateArchitecturePayloadResult:
+    __slots__ = ("payload", "parent_type")
+
+    def __init__(self, payload: dict[str, Any], parent_type: str) -> None:
+        self.payload = payload
+        self.parent_type = parent_type
+
+
+class McpValidateArchitecturePayloadUseCase:
+    """MCP architecture payload validation, including the legacy commit=true path.
+
+    The wrapper owns permission checks and JSON parsing. This use case owns the
+    parent/design lookup, candidate merge, critique, optional create/update and
+    commit through the MCP UnitOfWork.
+    """
+
+    async def execute(
+        self,
+        command: McpValidateArchitecturePayloadCommand,
+        *,
+        actor: ActorContext,
+        uow: Any,
+    ) -> McpValidateArchitecturePayloadResult:
+        session = session_of(uow)
+        repo = ArchitectureDesignRepository(session)
+        mode = "update" if command.design_id else "create"
+
+        if command.design_id:
+            design = await _resolve_mutable_design(
+                session, command.design_id, board_id=command.board_id
+            )
+            loaded = await repo.get(command.design_id, include_payloads=True)
+            if not loaded:
+                raise EntityNotFoundError("Architecture design", command.design_id)
+            candidate = {
+                "title": command.title or loaded.title,
+                "global_description": command.global_description or loaded.global_description,
+                "entities": loaded.entities or [],
+                "interfaces": loaded.interfaces or [],
+                "diagrams": loaded.diagrams or [],
+            }
+            candidate.update(command.parsed_fields)
+            parent_type = design.parent_type
+        else:
+            if not command.parent_type or not command.parent_id:
+                raise ValueError(
+                    "parent_type and parent_id are required when design_id is omitted"
+                )
+            parent = await _resolve_parent(
+                session, command.parent_type, command.parent_id
+            )
+            if getattr(parent, "board_id", None) != command.board_id:
+                raise EntityNotFoundError(command.parent_type, command.parent_id)
+            if command.parent_type == "spec" and _spec_architecture_locked(parent):
+                raise ConflictError("spec_architecture_locked", command.parent_id)
+            candidate = {
+                "title": command.title,
+                "global_description": command.global_description,
+                "entities": command.parsed_fields.get("entities", []),
+                "interfaces": command.parsed_fields.get("interfaces", []),
+                "diagrams": command.parsed_fields.get("diagrams", []),
+            }
+            parent_type = command.parent_type
+
+        critique = repo.critique_payload(candidate)
+        if not command.commit_requested or not critique.get("valid"):
+            await commit(uow)
+            return McpValidateArchitecturePayloadResult(
+                {"success": True, "mode": mode, **critique}, parent_type
+            )
+
+        if mode == "create":
+            design = await repo.create(
+                command.parent_type,
+                command.parent_id,
+                ArchitectureDesignCreate(
+                    title=candidate["title"],
+                    global_description=candidate["global_description"],
+                    entities=candidate.get("entities") or [],
+                    interfaces=candidate.get("interfaces") or [],
+                    diagrams=candidate.get("diagrams") or [],
+                    architecture_warning_acknowledgement=(
+                        command.architecture_warning_acknowledgement
+                    ),
+                ),
+                actor.actor_id,
+            )
+        else:
+            patch_payload = ArchitectureDesignUpdate(
+                **{
+                    key: candidate[key]
+                    for key in (
+                        "title",
+                        "global_description",
+                        "entities",
+                        "interfaces",
+                        "diagrams",
+                    )
+                    if candidate.get(key) is not None
+                }
+            )
+            patch_payload.architecture_warning_acknowledgement = (
+                command.architecture_warning_acknowledgement
+            )
+            design = await repo.update(command.design_id, patch_payload, actor.actor_id)
+        await commit(uow)
+
+        warnings = list(critique.get("warnings") or [])
+        structured_warnings = list(critique.get("structured_warnings") or [])
+        suppressed_warnings = list(critique.get("suppressed_warnings") or [])
+        envelope: dict[str, Any] = {
+            "success": True,
+            "mode": mode,
+            "committed": True,
+            "id": design.id,
+            "version": design.version,
+            "warnings_count": len(warnings),
+            "structured_warnings_count": len(structured_warnings),
+            "suppressed_warnings_count": len(suppressed_warnings),
+            "normalized": bool(warnings),
+        }
+        if command.include_design:
+            response = repo.to_response(design)
+            envelope["architecture_design"] = (
+                response.model_dump(mode="json")
+                if hasattr(response, "model_dump")
+                else response
+            )
+        return McpValidateArchitecturePayloadResult(envelope, parent_type)
+
+
 # --- propagation legacy report (read-only diagnostic) -----------------------
 
 
 class ArchitecturePropagationLegacyReportCommand:
-    __slots__ = ("board_id", "limit", "offset", "include_clean", "parent_type_filter")
+    __slots__ = (
+        "board_id",
+        "limit",
+        "offset",
+        "include_clean",
+        "parent_type_filter",
+        "surface",
+    )
 
     def __init__(
         self,
@@ -384,12 +606,14 @@ class ArchitecturePropagationLegacyReportCommand:
         offset: int = 0,
         include_clean: bool = False,
         parent_type_filter: str = "",
+        surface: str = "rest",
     ) -> None:
         self.board_id = board_id
         self.limit = limit
         self.offset = offset
         self.include_clean = include_clean
         self.parent_type_filter = parent_type_filter
+        self.surface = surface
 
 
 class ArchitecturePropagationLegacyReportResult:
@@ -424,7 +648,7 @@ class ArchitecturePropagationLegacyReportUseCase:
             offset=command.offset,
             include_clean=command.include_clean,
             parent_type_filter=command.parent_type_filter or None,
-            surface="rest",
+            surface=command.surface,
         )
         return ArchitecturePropagationLegacyReportResult(report)
 
@@ -446,11 +670,17 @@ class ArchitecturePropagationLegacyReportUseCase:
 
 
 class GetArchitectureDiagramPayloadCommand:
-    __slots__ = ("design_id", "diagram_id")
+    __slots__ = ("design_id", "diagram_id", "board_id")
 
-    def __init__(self, design_id: str, diagram_id: str) -> None:
+    def __init__(
+        self,
+        design_id: str,
+        diagram_id: str,
+        board_id: str | None = None,
+    ) -> None:
         self.design_id = design_id
         self.diagram_id = diagram_id
+        self.board_id = board_id
 
 
 class GetArchitectureDiagramPayloadResult:
@@ -483,6 +713,8 @@ class GetArchitectureDiagramPayloadUseCase:
         repo = ArchitectureDesignRepository(session)
         design = await repo.get(command.design_id)
         if design is None:
+            raise EntityNotFoundError("Architecture design", command.design_id)
+        if command.board_id and design.board_id != command.board_id:
             raise EntityNotFoundError("Architecture design", command.design_id)
         diagram = next(
             (
@@ -523,6 +755,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         "payload",
         "change_summary",
         "architecture_warning_acknowledgement",
+        "board_id",
     )
 
     def __init__(
@@ -533,6 +766,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         payload: Any,
         change_summary: str | None,
         architecture_warning_acknowledgement: Any,
+        board_id: str | None = None,
     ) -> None:
         self.design_id = design_id
         self.diagram_id = diagram_id
@@ -540,6 +774,7 @@ class UpdateArchitectureDiagramPayloadCommand:
         self.payload = payload
         self.change_summary = change_summary
         self.architecture_warning_acknowledgement = architecture_warning_acknowledgement
+        self.board_id = board_id
 
 
 class UpdateArchitectureDiagramPayloadResult:
@@ -568,7 +803,9 @@ class UpdateArchitectureDiagramPayloadUseCase:
         uow: Any,
     ) -> UpdateArchitectureDiagramPayloadResult:
         session = session_of(uow)
-        design = await _resolve_mutable_design(session, command.design_id)
+        design = await _resolve_mutable_design(
+            session, command.design_id, board_id=command.board_id
+        )
         diagrams = [dict(item) for item in design.diagrams or []]
         target = next(
             (item for item in diagrams if item.get("id") == command.diagram_id), None
@@ -607,6 +844,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         "replace_diagram_id",
         "change_summary",
         "architecture_warning_acknowledgement",
+        "board_id",
     )
 
     def __init__(
@@ -620,6 +858,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         replace_diagram_id: str | None,
         change_summary: str | None,
         architecture_warning_acknowledgement: Any,
+        board_id: str | None = None,
     ) -> None:
         self.design_id = design_id
         self.title = title
@@ -630,6 +869,7 @@ class ImportExcalidrawArchitectureDiagramCommand:
         self.replace_diagram_id = replace_diagram_id
         self.change_summary = change_summary
         self.architecture_warning_acknowledgement = architecture_warning_acknowledgement
+        self.board_id = board_id
 
 
 class ImportExcalidrawArchitectureDiagramResult:
@@ -659,7 +899,9 @@ class ImportExcalidrawArchitectureDiagramUseCase:
         uow: Any,
     ) -> ImportExcalidrawArchitectureDiagramResult:
         session = session_of(uow)
-        design = await _resolve_mutable_design(session, command.design_id)
+        design = await _resolve_mutable_design(
+            session, command.design_id, board_id=command.board_id
+        )
         diagrams = [dict(item) for item in design.diagrams or []]
         imported = {
             "id": command.replace_diagram_id or None,
@@ -750,6 +992,7 @@ class CopyArchitectureFromSpecToCardCommand:
         "spec_id",
         "design_ids",
         "architecture_warning_acknowledgement",
+        "board_id",
     )
 
     def __init__(
@@ -758,11 +1001,13 @@ class CopyArchitectureFromSpecToCardCommand:
         spec_id: str,
         design_ids: list[str] | None,
         architecture_warning_acknowledgement: Any,
+        board_id: str | None = None,
     ) -> None:
         self.card_id = card_id
         self.spec_id = spec_id
         self.design_ids = design_ids
         self.architecture_warning_acknowledgement = architecture_warning_acknowledgement
+        self.board_id = board_id
 
 
 class CopyArchitectureFromSpecToCardResult:
@@ -795,9 +1040,11 @@ class CopyArchitectureFromSpecToCardUseCase:
     ) -> CopyArchitectureFromSpecToCardResult:
         session = session_of(uow)
         card = await _resolve_parent(session, "card", command.card_id)
+        if command.board_id and getattr(card, "board_id", None) != command.board_id:
+            raise EntityNotFoundError("card", command.card_id)
         service = ArchitecturePropagationService(session)
         designs, _plan = await service.copy_effective_spec_to_card(
-            board_id=card.board_id,
+            board_id=command.board_id or card.board_id,
             spec_id=command.spec_id,
             card_id=command.card_id,
             actor_id=actor.actor_id,

@@ -7,9 +7,9 @@ Responsibilities:
 - Delegates to graph_store (SemanticGraphStore) via the provider registry
 - Returns typed dicts; callers (MCP/REST) wrap into Pydantic models
 
-Async methods that call Kùzu use ``_run_kuzu`` to offload the synchronous
-``Connection.execute()`` calls to a dedicated thread pool, keeping the
-event loop responsive under concurrent load.
+Async methods that call a synchronous graph adapter use ``_run_graph_io`` to
+offload the blocking work to a dedicated thread pool, keeping the event loop
+responsive under concurrent load.
 """
 
 from __future__ import annotations
@@ -32,19 +32,22 @@ from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
 logger = logging.getLogger("okto_pulse.kg.service")
 
 # ---------------------------------------------------------------------------
-# Thread pool for offloading synchronous Kùzu operations from the event loop
+# Thread pool for offloading synchronous graph adapter IO from the event loop
 # ---------------------------------------------------------------------------
 
-_kuzu_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="kuzu")
+_graph_io_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="graph-io")
 
 
-async def _run_kuzu(func, *args, **kwargs):
-    """Run a synchronous Kùzu operation in a dedicated thread pool."""
+async def _run_graph_io(func, *args, **kwargs):
+    """Run synchronous graph adapter IO in a dedicated thread pool."""
     loop = asyncio.get_running_loop()
     if kwargs:
         pfunc = partial(func, *args, **kwargs)
-        return await loop.run_in_executor(_kuzu_executor, pfunc)
-    return await loop.run_in_executor(_kuzu_executor, func, *args)
+        return await loop.run_in_executor(_graph_io_executor, pfunc)
+    return await loop.run_in_executor(_graph_io_executor, func, *args)
+
+
+_run_kuzu = _run_graph_io
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +489,7 @@ class KGService:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         try:
-            await _run_kuzu(
+            await _run_graph_io(
                 _flush_to_kuzu, board_id, node_type, node_id, delta, now_iso,
             )
         except Exception as exc:

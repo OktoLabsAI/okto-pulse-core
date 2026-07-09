@@ -135,6 +135,23 @@ def validate_filters(
     return True, None
 
 
+def supported_filter_keys(entity_type: str, scope: str = "by_board") -> list[str]:
+    """Return the allow-listed filter keys for an entity/scope pair."""
+    return list(_SCOPE_MAP.get(scope, {}).get(entity_type, []))
+
+
+def invalid_filter_keys(
+    entity_type: str,
+    filters: dict | None,
+    scope: str = "by_board",
+) -> list[str]:
+    """Return caller-supplied keys that are not in the central allow-list."""
+    if not filters:
+        return []
+    allowed = set(supported_filter_keys(entity_type, scope=scope))
+    return [key for key in filters.keys() if key not in allowed]
+
+
 def supported_entity_types(scope: str = "by_board") -> list[str]:
     """Return the entity types recognised by a given handler scope.
 

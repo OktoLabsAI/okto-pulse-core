@@ -1,7 +1,8 @@
-"""LadybugDB runtime config-change guard (KG-01 FR10, contract api_4e07374f).
+"""Graph runtime config-change guard (KG-01 FR10, contract api_4e07374f).
 
-Any change to LadybugDB-relevant runtime settings (buffer pool size,
-max DB size, WAL behaviour, cache thresholds, …) MUST flow through
+Any change to graph-runtime settings exposed through the legacy public
+Kuzu/Ladybug setting names (buffer pool size, max DB size, WAL behaviour,
+cache thresholds, connection pool size, ...) MUST flow through
 ``KGConfigChangeGuard.validate`` before being applied or persisted.
 The spec rejects "hot config changes that could silently invalidate
 graph storage": resizing the buffer pool while writes are in flight,
@@ -19,8 +20,9 @@ The guard is the canonical decision point:
 
 Two typed errors short-circuit the decision:
 
-* ``unsupported_ladybug_setting`` (non-retryable) — caller asked for
-  a key the guard does not know how to validate. Reject loudly.
+* ``unsupported_ladybug_setting`` (non-retryable, legacy error code) —
+  caller asked for a key the guard does not know how to validate. Reject
+  loudly.
 * ``atomic_validation_unavailable`` (retryable) — the supporting
   infrastructure (lock / DB probe) is temporarily not available.
 
@@ -56,15 +58,18 @@ SETTING_GROUP_STORAGE = "storage"
 SETTING_GROUP_WAL = "wal"
 SETTING_GROUP_CACHE = "cache"
 SETTING_GROUP_INDEX = "index"
+SETTING_GROUP_CONNECTION_POOL = "connection_pool"
 SETTING_GROUP_UNRELATED = "unrelated"
 
-# Map setting name -> setting_group. Anything not in this map and that
-# matches one of the KG-relevant prefixes (kg_*, ladybug_*) raises
-# unsupported_ladybug_setting. Keys outside the KG namespace are
-# silently ignored — the guard only governs LadybugDB-relevant changes.
+# Map setting name -> setting_group. The public names are legacy compatibility
+# names; the owner is the graph runtime capability. Anything not in this map
+# and that matches one of the KG-relevant prefixes (kg_*, ladybug_*) raises
+# unsupported_ladybug_setting. Keys outside the KG namespace are silently
+# ignored because the guard only governs graph-runtime changes.
 _KG_SETTING_GROUPS: dict[str, str] = {
     "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
     "kg_kuzu_max_db_size_gb": SETTING_GROUP_STORAGE,
+    "kg_connection_pool_size": SETTING_GROUP_CONNECTION_POOL,
     "kg_kuzu_wal_mode": SETTING_GROUP_WAL,
     "kg_kuzu_cache_threshold_pct": SETTING_GROUP_CACHE,
     "kg_kuzu_index_rebuild_on_open": SETTING_GROUP_INDEX,
@@ -85,12 +90,24 @@ _GROUPS_REQUIRING_RESTART: frozenset[str] = frozenset({
     SETTING_GROUP_BUFFER,
     SETTING_GROUP_STORAGE,
     SETTING_GROUP_WAL,
+    SETTING_GROUP_CONNECTION_POOL,
 })
 
-# Prefixes considered LadybugDB-relevant. A setting starting with one of
-# these prefixes but not in ``_KG_SETTING_GROUPS`` raises
-# ``unsupported_ladybug_setting``. This forces explicit allow-listing.
-_KG_PREFIXES = ("kg_kuzu_", "kg_ladybug_", "ladybug_")
+# Prefixes considered legacy graph-runtime compatibility. A setting starting
+# with one of these prefixes but not in ``_KG_SETTING_GROUPS`` raises the
+# legacy ``unsupported_ladybug_setting`` error. This forces explicit
+# allow-listing.
+_KG_PREFIXES = ("kg_kuzu_", "kg_ladybug_", "kg_connection_", "ladybug_")
+
+_GRAPH_RUNTIME_SETTING_METADATA: dict[str, dict[str, str]] = {
+    setting_name: {
+        "setting_group": setting_group,
+        "owner": "graph_runtime_capability",
+        "public_contract": "legacy_runtime_settings_api",
+        "compatibility_path": "provider_neutral_graph_runtime_alias_required",
+    }
+    for setting_name, setting_group in _KG_SETTING_GROUPS.items()
+}
 
 
 # --- Reason codes (bounded for OR or_731d308e label cardinality) -------------
@@ -300,7 +317,7 @@ class KGConfigChangeGuard:
                 reason=f"invalid restart_policy: {restart_policy}",
             )
 
-        # Identify changed KG/Ladybug settings (others are out-of-scope).
+        # Identify changed graph-runtime settings (others are out-of-scope).
         changed: list[tuple[str, str, Any, Any]] = []
         for name, requested_value in requested_settings.items():
             group = _classify_setting(name)
@@ -312,7 +329,7 @@ class KGConfigChangeGuard:
             changed.append((name, group, current_value, requested_value))
 
         if not changed:
-            # Nothing actually changes in the KG/Ladybug namespace.
+            # Nothing actually changes in the graph-runtime namespace.
             return ConfigChangeDecision(
                 allowed=True,
                 reason=ConfigBlockReason.VALUE_NOT_CHANGED.value,
@@ -490,6 +507,21 @@ def get_setting_groups() -> dict[str, str]:
     return dict(_KG_SETTING_GROUPS)
 
 
+def get_graph_runtime_setting_metadata() -> dict[str, dict[str, str]]:
+    """Public read-only metadata for legacy graph-runtime settings.
+
+    The returned rows make the ownership explicit without renaming the public
+    settings API: legacy ``kg_kuzu_*``/``kg_connection_pool_size`` names stay
+    stable, while the capability owner and required alias path are visible to
+    docs, gates and tests.
+    """
+
+    return {
+        setting: dict(metadata)
+        for setting, metadata in _GRAPH_RUNTIME_SETTING_METADATA.items()
+    }
+
+
 __all__ = [
     "ConfigBlockReason",
     "ConfigChangeDecision",
@@ -499,6 +531,7 @@ __all__ = [
     "RestartPolicy",
     "SETTING_GROUP_BUFFER",
     "SETTING_GROUP_CACHE",
+    "SETTING_GROUP_CONNECTION_POOL",
     "SETTING_GROUP_INDEX",
     "SETTING_GROUP_STORAGE",
     "SETTING_GROUP_UNRELATED",
@@ -506,6 +539,7 @@ __all__ = [
     "get_config_block_count",
     "get_config_block_counter_labels",
     "get_config_block_samples",
+    "get_graph_runtime_setting_metadata",
     "get_setting_groups",
     "reset_config_block_counter",
 ]

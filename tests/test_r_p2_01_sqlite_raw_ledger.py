@@ -31,7 +31,10 @@ def test_rebuild_ingestion_adapter_is_registered_as_community_owned() -> None:
     entry = _by_key(_ADAPTER_KEY)
     assert entry.owner == "okto-pulse-community/kg"
     assert entry.current_module == _COMMUNITY_MODULE
-    assert entry.port_ref == "RebuildIngestionPort/StepAdapterFactory"
+    assert entry.port_ref == (
+        "okto_pulse.core.application.rebuild_ports."
+        "RebuildIngestionPort/StepAdapterFactory"
+    )
     assert entry.status == "ready"
     assert ("moved_by", "R10B") in entry.metadata
 

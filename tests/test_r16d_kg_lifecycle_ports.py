@@ -165,7 +165,8 @@ def test_ts_8077c637_app_py_wires_the_06_ports():
         encoding="utf-8"
     )
     assert "sweep_board_schemas" in sweep_wiring_src
-    assert "graph_path_resolver" in sweep_wiring_src
+    assert "graph_runtime_store" in sweep_wiring_src
+    assert "graph_path_resolver=kg_registry.graph_path_resolver" not in sweep_wiring_src
     assert "graph_schema_manager" in sweep_wiring_src
     assert "get_kg_registry" in sweep_wiring_src
 

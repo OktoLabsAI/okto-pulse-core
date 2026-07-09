@@ -62,6 +62,7 @@ def _harness_env():
     import okto_pulse.core.infra.config as _config
     from okto_pulse.core.infra.config import CoreSettings
     from okto_pulse.core.kg.interfaces import registry as _reg
+    from okto_pulse.core import runtime_registry as _runtime_registry
 
     saved = dict(
         settings=_config._settings_instance,
@@ -69,6 +70,8 @@ def _harness_env():
         factory=_db_mod._session_factory,
         reg=(_reg._registry, _reg._configured),
         mcp_sf=server._mcp_session_factory,
+        mcp_auth=server._mcp_authenticator,
+        uow_factory=_runtime_registry._unit_of_work_factory,
         data=os.environ.get("DATA_DIR"),
     )
     cache_snapshot = dict(server._permission_cache)
@@ -93,6 +96,8 @@ def _harness_env():
         _db_mod._session_factory = saved["factory"]
         _reg._registry, _reg._configured = saved["reg"]
         server._mcp_session_factory = saved["mcp_sf"]
+        server._mcp_authenticator = saved["mcp_auth"]
+        _runtime_registry._unit_of_work_factory = saved["uow_factory"]
         server._permission_cache.clear()
         server._permission_cache.update(cache_snapshot)
         if saved["data"] is None:
@@ -106,10 +111,21 @@ async def _seed(tmp: str) -> None:
     register the AuthContext factory bound to the REAL server agent/db providers."""
     from kg_registry_testing import configure_test_kg_registry
     from okto_pulse.core.models.db import Agent, AgentBoard, Board
+    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from okto_pulse.core.runtime_registry import register_unit_of_work_factory
 
     _db_mod.create_database(f"sqlite+aiosqlite:///{Path(tmp) / 'r08d.db'}")
     await _db_mod.init_db()
-    server.register_session_factory(_db_mod.get_session_factory())
+    session_factory = _db_mod.get_session_factory()
+    register_unit_of_work_factory(SQLAlchemyUnitOfWorkFactory(session_factory))
+
+    bridge = pytest.importorskip("okto_pulse.community.adapters.mcp_auth")
+    server.register_session_factory(
+        session_factory,
+        mcp_authenticator=bridge.make_community_mcp_authenticator(
+            session_factory=session_factory
+        ),
+    )
 
     now = datetime.now(timezone.utc)
     async with _db_mod.get_session_factory()() as s:
@@ -202,9 +218,8 @@ async def _agent_full_snapshot():
 
 async def _agent_security_snapshot():
     """Security-relevant agent state only (the credential hash, active flag and
-    permission flags) — EXCLUDES last_used_at, which get_agent_by_key updates on
-    any VALID credential by design (a proper audit write, not a security
-    side-effect)."""
+    permission flags) — excludes display metadata. MCP read auth is non-mutating,
+    so tests that need to prove no audit touch compare the full snapshot."""
     async with _db_mod.get_session_factory()() as s:
         from okto_pulse.core.models.db import Agent
 
@@ -219,16 +234,19 @@ async def test_ts_722505d6_transport_replay_same_agent(_harness_env):
     async def scenario():
         await _seed(_harness_env)
         app = _build_app()
+        before = await _agent_full_snapshot()
         async with _client(app) as c:
             via_query = await c.get("/whoami", params={"api_key": "kA1"})
             via_header = await c.get("/whoami", headers={"X-API-Key": "kA1"})
             via_bearer = await c.get("/whoami", headers={"Authorization": "Bearer kA1"})
-        return via_query, via_header, via_bearer
+        after = await _agent_full_snapshot()
+        return via_query, via_header, via_bearer, before, after
 
-    q, h, b = await scenario()
+    q, h, b, before, after = await scenario()
     assert q.status_code == h.status_code == b.status_code == 200
     # SAME agent + equivalent result across all three transports.
     assert q.json() == h.json() == b.json() == {"agent_id": "A1"}
+    assert after == before
 
 
 # ===========================================================================
@@ -262,17 +280,16 @@ async def test_ts_f7f329c5_auth_negatives_401_zero_mutation(_harness_env):
 
 async def test_ts_f7f329c5_no_board_access_403_no_privilege_escalation(_harness_env):
     """A VALID agent (A2) denied at the board ACL -> 403. No privilege escalation:
-    the permission cache is NOT populated and the security-relevant agent state is
-    unchanged (last_used_at MAY update — a proper audit write on a valid key)."""
+    the permission cache is NOT populated and the agent state is unchanged."""
 
     async def scenario():
         await _seed(_harness_env)
         app = _build_app()
-        before_sec = await _agent_security_snapshot()
+        before_sec = await _agent_full_snapshot()
         before_cache = dict(server._permission_cache)
         async with _client(app) as c:
             no_board = await c.get("/board/B1", params={"api_key": "kA2"})  # A2 != B1
-        after_sec = await _agent_security_snapshot()
+        after_sec = await _agent_full_snapshot()
         after_cache = dict(server._permission_cache)
         return no_board, before_sec, after_sec, before_cache, after_cache
 

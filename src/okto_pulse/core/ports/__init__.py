@@ -7,6 +7,8 @@ framework, persistence, scheduler or transport import at runtime.
 
 from __future__ import annotations
 
+import importlib
+
 from .data_bootstrapper import (
     BOOTSTRAP_DOMAINS,
     BootstrapDomain,
@@ -83,6 +85,34 @@ from .relational_effects import (
     register_relational_effects_port,
     reset_relational_effects_port_for_tests,
 )
+from .kg_operational import (
+    KGCanonicalDebtSignal,
+    KGDeadLetterSignal,
+    KGGovernanceEffectsPort,
+    KGOperationalProviderMissing,
+    KGOperationalReadModelPort,
+    KGOutboxCounts,
+    KGQueueEntrySnapshot,
+    KGWorkerAuditPort,
+    KGWorkerQueuePort,
+    get_kg_governance_effects_port,
+    get_kg_operational_read_model_port,
+    get_kg_worker_audit_port,
+    get_kg_worker_queue_port,
+    register_kg_operational_ports,
+    reset_kg_operational_ports_for_tests,
+)
+from .relational_runtime import (
+    RelationalDatabasePathUnavailable,
+    close_db,
+    configure_database_runtime,
+    get_engine,
+    get_session_factory,
+    init_db,
+    is_database_runtime_configured,
+    reset_database_runtime_for_tests,
+    resolve_sqlite_database_path,
+)
 from .capability_descriptor import (
     CapabilityDescriptor,
     CapabilityDescriptorSource,
@@ -150,6 +180,7 @@ from .telemetry import (
 )
 
 __all__ = [
+    "Base",
     "HEALTH_REPORT_FIELDS",
     "PRODUCT_AGGREGATE_FAMILIES",
     "PRODUCT_METRIC_KEYS",
@@ -209,6 +240,15 @@ __all__ = [
     "JobSpec",
     "KG_DAILY_TICK_JOB_ID",
     "KGTickRunUpsert",
+    "KGCanonicalDebtSignal",
+    "KGDeadLetterSignal",
+    "KGGovernanceEffectsPort",
+    "KGOperationalProviderMissing",
+    "KGOperationalReadModelPort",
+    "KGOutboxCounts",
+    "KGQueueEntrySnapshot",
+    "KGWorkerAuditPort",
+    "KGWorkerQueuePort",
     "MCP_AUTH_FAILURE_REASONS",
     "MCP_CREDENTIAL_SOURCES",
     "McpAuthError",
@@ -230,6 +270,7 @@ __all__ = [
     "MigrationStepResult",
     "RESCHEDULE_FAILED_FORBIDDEN_FIELDS",
     "RESCHEDULE_FAILED_REQUIRED_FIELDS",
+    "RelationalDatabasePathUnavailable",
     "RelationalSchemaMigrator",
     "RelationalEffectsPort",
     "RelationalEffectsProviderMissing",
@@ -256,15 +297,46 @@ __all__ = [
     "build_reschedule_failed_signal",
     "get_claim_repository",
     "get_config_validation_port",
+    "get_engine",
     "get_lease_provider",
     "get_relational_effects_port",
+    "get_kg_governance_effects_port",
+    "get_kg_operational_read_model_port",
+    "get_kg_worker_audit_port",
+    "get_kg_worker_queue_port",
     "get_runtime_settings_provider",
+    "get_session_factory",
     "get_write_lock_port",
+    "close_db",
+    "configure_database_runtime",
+    "init_db",
+    "is_database_runtime_configured",
     "require_bootstrapper",
     "require_migrator",
     "register_coordination_providers",
+    "register_kg_operational_ports",
     "register_relational_effects_port",
     "reset_coordination_providers_for_tests",
+    "reset_database_runtime_for_tests",
+    "reset_kg_operational_ports_for_tests",
     "reset_relational_effects_port_for_tests",
+    "resolve_sqlite_database_path",
     "sanitize_message",
 ]
+
+_LAZY_EXPORTS = {
+    "Base": "okto_pulse.core.ports.relational_runtime",
+}
+
+
+def __getattr__(name: str):
+    module = _LAZY_EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(importlib.import_module(module), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *_LAZY_EXPORTS})

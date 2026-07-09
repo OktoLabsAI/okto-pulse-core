@@ -17,18 +17,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.operational_rest import (
+    BugNotFoundError,
+    EvaluateBugCognitiveClosureByBugIdCommand,
+    EvaluateBugCognitiveClosureByBugIdUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.kg.bug_cognitive_closure import evaluate_bug_cognitive_closure
-from okto_pulse.core.kg.cognitive_readiness import (
-    CognitiveReadinessError,
-    CognitiveReadinessService,
-)
-from okto_pulse.core.kg.rebuild_audit import (
-    CognitiveConsolidationItemStore,
-    require_rebuild_audit_artifact_store,
-)
-from okto_pulse.core.models.db import Card
+from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter()
 
@@ -44,14 +42,6 @@ class BugCognitiveClosureEvaluateRequest(BaseModel):
     revisit_at: str | None = None
 
 
-def build_default_readiness_service() -> CognitiveReadinessService:
-    return CognitiveReadinessService(
-        CognitiveConsolidationItemStore(
-            artifact_store=require_rebuild_audit_artifact_store()
-        )
-    )
-
-
 @router.post(
     "/bugs/{bug_id}/cognitive-closure/evaluate",
     tags=["bug-cognitive-closure"],
@@ -59,29 +49,28 @@ def build_default_readiness_service() -> CognitiveReadinessService:
 async def evaluate_bug_cognitive_closure_endpoint(
     bug_id: str,
     payload: BugCognitiveClosureEvaluateRequest,
-    db=Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
     actor: str = Depends(require_user),
 ) -> dict[str, Any]:
-    card = await db.get(Card, bug_id)
-    if card is None or getattr(card, "board_id", None) is None:
+    try:
+        result = await EvaluateBugCognitiveClosureByBugIdUseCase().execute(
+            EvaluateBugCognitiveClosureByBugIdCommand(
+                bug_id,
+                payload.evidence,
+                payload.requested_action,
+                payload.reason_code,
+                payload.justification,
+                payload.evidence_refs,
+                payload.revisit_at,
+            ),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
+        )
+        return result.data
+    except BugNotFoundError as exc:
         raise HTTPException(
             status_code=404,
             detail={"code": "bug_not_found", "message": f"Bug {bug_id!r} not found."},
-        )
-    service = build_default_readiness_service()
-    try:
-        return await evaluate_bug_cognitive_closure(
-            service,
-            db,
-            board_id=card.board_id,
-            bug_id=bug_id,
-            evidence=payload.evidence,
-            requested_action=payload.requested_action,
-            reason_code=payload.reason_code,
-            actor=actor,
-            justification=payload.justification,
-            evidence_refs=payload.evidence_refs,
-            revisit_at=payload.revisit_at,
-        )
+        ) from exc
     except CognitiveReadinessError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc

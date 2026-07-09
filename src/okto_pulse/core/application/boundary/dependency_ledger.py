@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 #: Bump when the ledger schema or its accepted-exception set changes.
-LEDGER_VERSION = "R05-E.2"
+LEDGER_VERSION = "R05-E.3"
 
 #: Disposition of a non-agnostic technical token (br_913a9a9a / fr_4f86d9f0).
 DependencyClassification = Literal[
@@ -108,14 +108,30 @@ class LedgerEntry:
         }
 
 
-#: The temporary-exception tokens that R05-E MUST keep ledgered while they remain
-#: in the core (ac_69911a08 / TS-R05E-03). ``requests`` + ``chardet`` are the
-#: "requests/chardet" telemetry pair.
+#: The temporary-exception tokens that remain direct core dependencies after AF40.
+#: ``requests`` + ``chardet`` moved to Community ownership and are kept in the
+#: AF40 matrix below, not in this exception set.
 CANONICAL_TEMPORARY_EXCEPTION_TOKENS: tuple[str, ...] = (
     "aiosqlite",
     "numpy",
+)
+
+#: AF40 dependency-ownership matrix tokens. Every token here must have a ledger
+#: row with owner, consumer, manifest state, removal/permanence criterion and an
+#: executable oracle.
+CANONICAL_AF40_DEPENDENCY_TOKENS: tuple[str, ...] = (
     "requests",
     "chardet",
+    "aiosqlite",
+    "numpy",
+)
+
+#: AF40 tokens that intentionally remain direct core dependencies for now. They
+#: are non-telemetry carry-forward items; changing them to removed or
+#: community-owned requires their relational/KG owner specs and oracles.
+CANONICAL_AF40_CARRY_FORWARD_TOKENS: tuple[str, ...] = (
+    "aiosqlite",
+    "numpy",
 )
 
 
@@ -186,22 +202,28 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
             token="aiosqlite",
             classification="temporary_exception",
             kind="dependency",
-            owner_wave="#04_repository_uow + #16_schema_migrations (#05-D relational boundary)",
+            owner_wave=(
+                "AF40-R1 carry-forward: #04_repository_uow + "
+                "#16_schema_migrations (#05-D relational boundary)"
+            ),
             current_owner="okto-pulse-community/adapters",
             reason=(
-                "Async SQLite driver loaded BY URL by SQLAlchemy for local "
-                "Community databases (sqlite+aiosqlite). Direct dependency with "
-                "no explicit import in src/okto_pulse/core — SQLAlchemy resolves "
-                "the dbapi from the connection URL."
+                "Non-telemetry carry-forward. Async SQLite driver loaded BY URL "
+                "by SQLAlchemy for local Community databases "
+                "(sqlite+aiosqlite). Direct dependency with no explicit import "
+                "in src/okto_pulse/core — SQLAlchemy resolves the dbapi from the "
+                "connection URL."
             ),
             removal_criterion=(
-                "Remove from the core package once packaging/dependency ownership "
+                "Do not remove or classify as telemetry-owned in AF40. Remove "
+                "from the core package only once packaging/dependency ownership "
                 "fully moves the relational driver to the Community distribution "
                 "without breaking core test/runtime fixtures."
             ),
             validation_oracle=(
-                "dependency_conformance accepts aiosqlite as a ledgered "
-                "direct-dep/no-import exception; #05-D relational boundary gate "
+                "dependency_conformance AF40 carry-forward guard accepts "
+                "aiosqlite only as a ledgered direct-dep/no-import temporary "
+                "exception; #05-D relational boundary gate "
                 "(test_r05d_data_ownership) governs the actual move."
             ),
             direct_dep_no_import=True,
@@ -212,24 +234,26 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
             token="numpy",
             classification="temporary_exception",
             kind="dependency",
-            owner_wave="#13_llm_embedding_rerank",
+            owner_wave="AF40-R1 carry-forward: #13_llm_embedding_rerank / KG vector stack",
             current_owner="okto-pulse-core/kg",
             reason=(
-                "Numeric backing for the embedding / rerank vector stack. Direct "
-                "dependency with NO import in src/okto_pulse/core (only a comment "
-                "in kg/rerank/cross_encoder.py); pulled transitively by the ML "
-                "stack (sentence-transformers / transformers / scikit-learn / "
-                "scipy)."
+                "Non-telemetry carry-forward. Numeric backing for the embedding "
+                "/ rerank vector stack. Direct dependency with NO import in "
+                "src/okto_pulse/core (only a comment in "
+                "kg/rerank/cross_encoder.py); pulled transitively by the ML stack "
+                "(sentence-transformers / transformers / scikit-learn / scipy)."
             ),
             removal_criterion=(
-                "Remove from the core default once the embedding/rerank adapters "
+                "Do not remove or classify as telemetry-owned in AF40. Remove "
+                "from the core default only once the embedding/rerank adapters "
                 "(#13) move to the Community edition and the vector stack is "
                 "composition-owned; audit D3 (numpy domain-scoring usage) before "
                 "removal."
             ),
             validation_oracle=(
-                "dependency_conformance accepts numpy as a ledgered "
-                "direct-dep/no-import exception pinned by the #13 embedding stack."
+                "dependency_conformance AF40 carry-forward guard accepts numpy "
+                "only as a ledgered direct-dep/no-import temporary exception "
+                "pinned by the #13 embedding stack."
             ),
             direct_dep_no_import=True,
             transitive_consumer="sentence-transformers / transformers / scikit-learn / scipy",
@@ -237,54 +261,60 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
         ),
         LedgerEntry(
             token="requests",
-            classification="temporary_exception",
-            kind="dependency",
-            owner_wave="#10_telemetry",
-            current_owner="okto-pulse-core (manifest only; transport owned by Community)",
+            classification="community_owned",
+            kind="dependency_and_import",
+            owner_wave="AF40-R1 (#10_telemetry)",
+            current_owner="okto-pulse-community/adapters/telemetry_sender.py",
             reason=(
-                "HTTP transport for the telemetry beacon sender. Direct dependency "
-                "with no import in src/okto_pulse/core — the telemetry_sender_"
-                "ownership_gate already BLOCKS `import requests` inside "
-                "core/telemetry, so the concrete sender lives in the Community "
-                "edition."
+                "HTTP transport for the concrete telemetry beacon sender. The "
+                "sender is Community-owned; core exposes only telemetry ports, "
+                "DTOs and the fail-closed sender registry."
             ),
             removal_criterion=(
-                "Remove once #10 telemetry transport is fully Community-owned with a "
-                "green telemetry oracle. tr_03abf5ab: R05-E may ledger/audit but "
-                "must NOT change requests/chardet/telemetry without a green "
-                "telemetry oracle (#10)."
+                "Already transferred by AF40-R1: requests must be absent from core "
+                "direct manifest dependencies, the core lock package metadata, core "
+                "wheel Requires-Dist and runtime imports under src/okto_pulse/core. "
+                "Community must declare it directly while telemetry_sender imports "
+                "and uses requests.Session."
             ),
             validation_oracle=(
-                "telemetry_sender_ownership_gate (no requests import in "
-                "core/telemetry) + #10 telemetry oracle; dependency_conformance "
-                "accepts it as a ledgered direct-dep/no-import exception."
+                "dependency_conformance blocks any core manifest/lock/wheel/source "
+                "reintroduction as community_owned; community_packaging_audit "
+                "requires the Community manifest declaration for the "
+                "local_telemetry_store adapter; telemetry_sender_ownership_gate "
+                "continues to block core requests imports."
             ),
-            direct_dep_no_import=True,
-            transitive_consumer="telemetry beacon sender HTTP transport (Community-owned, governed by #10)",
-            expected_source_import_roots=(),
+            direct_dep_no_import=False,
+            transitive_consumer=None,
+            expected_source_import_roots=("requests",),
         ),
         LedgerEntry(
             token="chardet",
-            classification="temporary_exception",
-            kind="dependency",
-            owner_wave="#10_telemetry",
-            current_owner="okto-pulse-core (manifest only; governed by #10)",
+            classification="community_owned",
+            kind="dependency_and_import",
+            owner_wave="AF40-R1 (#10_telemetry)",
+            current_owner="okto-pulse-community packaging for telemetry transport",
             reason=(
-                "Charset detection companion of the telemetry/requests HTTP "
-                "transport. Direct dependency with no import in src/okto_pulse/core."
+                "Charset detection companion governed with the requests telemetry "
+                "transport pair. The concrete HTTP transport belongs to Community "
+                "packaging, not the core package."
             ),
             removal_criterion=(
-                "Remove together with the telemetry transport once #10 telemetry is "
-                "Community-owned with a green oracle. tr_03abf5ab: do not change "
-                "without a green telemetry oracle (#10)."
+                "Already transferred by AF40-R1: chardet must be absent from core "
+                "direct manifest dependencies, the core lock package metadata, core "
+                "wheel Requires-Dist and runtime imports under src/okto_pulse/core. "
+                "Community declares it together with requests so the telemetry "
+                "transport pair cannot drift."
             ),
             validation_oracle=(
-                "dependency_conformance accepts chardet as a ledgered "
-                "direct-dep/no-import exception governed by #10."
+                "dependency_conformance blocks any core manifest/lock/wheel/source "
+                "reintroduction as community_owned; community_packaging_audit "
+                "requires the Community manifest declaration for the "
+                "local_telemetry_store adapter."
             ),
-            direct_dep_no_import=True,
-            transitive_consumer="telemetry/requests HTTP transport charset detection (governed by #10)",
-            expected_source_import_roots=(),
+            direct_dep_no_import=False,
+            transitive_consumer=None,
+            expected_source_import_roots=("chardet",),
         ),
         # --- transferred to Community: must not reappear in core --------------
         LedgerEntry(
@@ -400,6 +430,8 @@ __all__ = [
     "TokenKind",
     "REQUIRED_ENTRY_FIELDS",
     "CANONICAL_TEMPORARY_EXCEPTION_TOKENS",
+    "CANONICAL_AF40_DEPENDENCY_TOKENS",
+    "CANONICAL_AF40_CARRY_FORWARD_TOKENS",
     "LedgerEntry",
     "normalize_token",
     "build_dependency_ledger",

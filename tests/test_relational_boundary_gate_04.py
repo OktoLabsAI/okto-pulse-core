@@ -177,10 +177,10 @@ def test_gate_catches_aliased_relational_module_bypasses(tmp_path):
 # The exact frozen snapshot shape the drift checker is fed in the unit tests
 # below (the 3 aggregates + the per-surface breakdown of classified call-sites).
 _SNAP = {
-    "relational_imports": 308,
-    "relational_symbols": 827,
-    "classified_call_sites": 1389,
-    "by_surface": {"rest": 163, "service": 1112, "mcp": 114},
+    "relational_imports": 236,
+    "relational_symbols": 637,
+    "classified_call_sites": 1030,
+    "by_surface": {"rest": 32, "service": 954, "mcp": 44},
 }
 
 
@@ -205,17 +205,17 @@ def test_relational_coverage_frozen_snapshot_clears_floors_and_no_drift():
 
 def test_relational_coverage_undeclared_drift_fails():
     # (a) a DROP with no declaration is undeclared drift — even while the
-    #     aggregate is still ABOVE its floor (800 >= 605).
+    #     aggregate is still ABOVE its floor.
     live_drop = {
         **_SNAP,
-        "relational_symbols": _SNAP["relational_symbols"] - 41,
+        "relational_symbols": _SNAP["relational_symbols"] - 20,
         "by_surface": dict(_SNAP["by_surface"]),
     }
     verdict = relational_coverage_drift(live_drop, snapshot=_SNAP)
     assert verdict["ok"] is False
     assert verdict["floor_violations"] == []  # still above the 605 floor
     assert any(
-        d["counter"] == "relational_symbols" and d["delta"] == -41
+        d["counter"] == "relational_symbols" and d["delta"] == -20
         for d in verdict["undeclared_drift"]
     )
 

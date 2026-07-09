@@ -62,6 +62,7 @@ def _base_with_required_slots_only() -> KGProviderRegistry:
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
         InMemoryGraphPathResolver,
+        InMemoryGraphRuntimeStore,
         InMemoryGraphSchemaManager,
         InMemoryGraphStore,
         InMemoryGraphTransaction,
@@ -84,6 +85,11 @@ def _base_with_required_slots_only() -> KGProviderRegistry:
             schema_manager=schema_manager,
         ),
         graph_path_resolver=resolver,
+        graph_runtime_store=InMemoryGraphRuntimeStore(
+            store=store,
+            resolver=resolver,
+            schema_manager=schema_manager,
+        ),
         safe_write_step_adapter=in_memory_safe_write_step_adapter,
         global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
         board_source_reader=InMemoryBoardSourceReader(),
@@ -155,6 +161,7 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
         InMemoryGraphPathResolver,
+        InMemoryGraphRuntimeStore,
         InMemoryGraphSchemaManager,
         InMemoryGraphStore,
         InMemoryGraphTransaction,
@@ -179,11 +186,16 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
                     resolver=resolver,
                     schema_manager=schema_manager,
                 ),
-                    graph_path_resolver=resolver,
-                    safe_write_step_adapter=in_memory_safe_write_step_adapter,
-                    global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
-                    board_source_reader=InMemoryBoardSourceReader(),
-                )
+                graph_path_resolver=resolver,
+                graph_runtime_store=InMemoryGraphRuntimeStore(
+                    store=store,
+                    resolver=resolver,
+                    schema_manager=schema_manager,
+                ),
+                safe_write_step_adapter=in_memory_safe_write_step_adapter,
+                global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
+                board_source_reader=InMemoryBoardSourceReader(),
+            )
             )
         assert getattr(get_kg_registry(), slot) is None, (
             f"{slot} was implicitly defaulted by the core in the composed path"
@@ -217,6 +229,7 @@ def test_required_data_slots_fail_closed_when_composition_omits_one(
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
         InMemoryGraphPathResolver,
+        InMemoryGraphRuntimeStore,
         InMemoryGraphSchemaManager,
         InMemoryGraphStore,
         InMemoryGraphTransaction,
@@ -239,6 +252,11 @@ def test_required_data_slots_fail_closed_when_composition_omits_one(
             schema_manager=schema_manager,
         ),
         "graph_path_resolver": resolver,
+        "graph_runtime_store": InMemoryGraphRuntimeStore(
+            store=store,
+            resolver=resolver,
+            schema_manager=schema_manager,
+        ),
         "safe_write_step_adapter": in_memory_safe_write_step_adapter,
         "global_discovery_runtime": InMemoryGlobalDiscoveryRuntime(),
         "board_source_reader": InMemoryBoardSourceReader(),

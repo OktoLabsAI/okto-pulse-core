@@ -38,6 +38,20 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "after the inbound MCP server resolves it from composition."
         ),
     },
+    "_mcp_authenticator": {
+        "file": "okto_pulse/core/mcp/server.py",
+        "owner": "okto-pulse-core/inbound-mcp",
+        "target_provider": "mcp_authenticator",
+        "expected_adapter": (
+            "Edition-owned McpAuthenticator port registered by the composition "
+            "root while auth_bootstrap migrates away from direct DB lookup."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once the inbound MCP server resolves "
+            "McpAuthenticator from RuntimeComposition instead of a process-wide "
+            "register-before-remove bridge."
+        ),
+    },
     "_permission_cache": {
         "file": "okto_pulse/core/mcp/server.py",
         "owner": "okto-pulse-core/inbound-mcp",
@@ -373,6 +387,63 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
             "composition object for every runtime entrypoint."
         ),
     },
+    "_kg_operational_read_model_port": {
+        "file": "okto_pulse/core/ports/kg_operational.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_operational_read_model_port",
+        "expected_adapter": (
+            "Edition KG operational read-model adapter (AF35-S2) — core readers "
+            "depend on the narrow port while Community owns SQLAlchemy queries "
+            "and concrete local-first operational projections."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once KG operational read models are supplied "
+            "through RuntimeComposition or another edition-scoped composition object "
+            "for every runtime entrypoint."
+        ),
+    },
+    "_kg_governance_effects_port": {
+        "file": "okto_pulse/core/ports/kg_operational.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_governance_effects_port",
+        "expected_adapter": (
+            "Edition KG governance effects adapter (AF35-S2) — core governance "
+            "commands depend on this port while Community owns concrete relational "
+            "state transitions."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once KG governance effects are supplied through "
+            "RuntimeComposition or another edition-scoped composition object."
+        ),
+    },
+    "_kg_worker_queue_port": {
+        "file": "okto_pulse/core/ports/kg_operational.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_worker_queue_port",
+        "expected_adapter": (
+            "Edition KG worker queue adapter (AF35-S2) — workers route and retry "
+            "queue entries through the port while Community owns concrete "
+            "persistence and dialect behavior."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once KG worker queue composition is owned by "
+            "RuntimeComposition or another edition-scoped provider registry."
+        ),
+    },
+    "_kg_worker_audit_port": {
+        "file": "okto_pulse/core/ports/kg_operational.py",
+        "owner": "okto-pulse-core/kg",
+        "target_provider": "kg_worker_audit_port",
+        "expected_adapter": (
+            "Edition KG worker audit adapter (AF35-S2) — workers emit outbox and "
+            "audit records through the port while Community owns SQLAlchemy-backed "
+            "writes."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once KG worker audit composition is owned by "
+            "RuntimeComposition or another edition-scoped provider registry."
+        ),
+    },
     "_orchestrator": {
         "file": "okto_pulse/core/infra/schema_lifecycle.py",
         "owner": "okto-pulse-core/runtime",
@@ -419,6 +490,20 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
         "retirement_criterion": (
             "Remove the module global once version resolution is supplied by "
             "edition/runtime composition or immutable installed metadata only."
+        ),
+    },
+    "_IMPL_CLS": {
+        "file": "okto_pulse/core/services/resource_gate.py",
+        "owner": "okto-pulse-core/resource-gate",
+        "target_provider": "resource_gate_service_facade",
+        "expected_adapter": (
+            "Lazy ResourceGateService facade over the adapter-owned implementation "
+            "while preserving the historical core.services.resource_gate import path."
+        ),
+        "retirement_criterion": (
+            "Remove the module global once ResourceGateService is provided through "
+            "composition or all call sites import the adapter-owned implementation "
+            "through an explicit port/factory."
         ),
     },
 }
@@ -506,11 +591,11 @@ RUNTIME_SINGLETON_BASELINE_LEDGER: dict[str, dict[str, str]] = {
         "target_provider": "kg_service",
         "retirement_criterion": "Resolve KG service instances through application/runtime composition.",
     },
-    "okto_pulse/core/kg/primitives.py::_kuzu_executor": {
+    "okto_pulse/core/kg/primitives.py::_graph_io_executor": {
         "file": "okto_pulse/core/kg/primitives.py",
         "owner": "okto-pulse-core/kg",
         "target_provider": "semantic_graph_executor",
-        "retirement_criterion": "Replace the legacy Kuzu executor global with a graph runtime store capability.",
+        "retirement_criterion": "Replace the graph IO executor global with a graph runtime store capability.",
     },
     "okto_pulse/core/kg/session_manager.py::_singleton": {
         "file": "okto_pulse/core/kg/session_manager.py",
@@ -555,7 +640,7 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/kg/interfaces/registry.py::_registry",
         "okto_pulse/core/kg/interfaces/registry.py::_configured",
         "okto_pulse/core/kg/kg_service.py::_default_service",
-        "okto_pulse/core/kg/primitives.py::_kuzu_executor",
+        "okto_pulse/core/kg/primitives.py::_graph_io_executor",
         "okto_pulse/core/kg/session_manager.py::_singleton",
         "okto_pulse/core/kg/workers/cleanup.py::_singleton",
         "okto_pulse/core/kg/workers/consolidation.py::_singleton",
@@ -564,12 +649,17 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/kg/llm_provider_bridge_cache.py::_bridge_cache_registry",
         "okto_pulse/core/kg/write_barrier.py::_current_mode",
         "okto_pulse/core/kg/write_barrier.py::_active_guards",
+        "okto_pulse/core/mcp/server.py::_mcp_authenticator",
         "okto_pulse/core/mcp/server.py::_mcp_session_factory",
         "okto_pulse/core/ports/coordination.py::_lease_provider",
         "okto_pulse/core/ports/coordination.py::_write_lock_port",
         "okto_pulse/core/ports/coordination.py::_claim_repository",
         "okto_pulse/core/ports/coordination.py::_runtime_settings_provider",
         "okto_pulse/core/ports/coordination.py::_config_validation_port",
+        "okto_pulse/core/ports/kg_operational.py::_kg_operational_read_model_port",
+        "okto_pulse/core/ports/kg_operational.py::_kg_governance_effects_port",
+        "okto_pulse/core/ports/kg_operational.py::_kg_worker_queue_port",
+        "okto_pulse/core/ports/kg_operational.py::_kg_worker_audit_port",
         "okto_pulse/core/ports/relational_effects.py::_relational_effects_port",
         "okto_pulse/core/runtime_registry.py::_unit_of_work_factory",
         "okto_pulse/core/runtime_registry.py::_relational_runtime_factory",
@@ -581,6 +671,7 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/mcp/server.py::_resource_catalog_frozen",
         "okto_pulse/core/mcp/server.py::_RESOURCE_REGISTRY",
         "okto_pulse/core/mcp/server.py::_XML_SAFETY_DECORATED_COUNT",
+        "okto_pulse/core/services/resource_gate.py::_IMPL_CLS",
         "okto_pulse/core/services/queue_health_service.py::_ALERT_FIRED_TOTAL",
         "okto_pulse/core/telemetry/event_store_registry.py::_factory",
         "okto_pulse/core/telemetry/product_aggregator_registry.py::_product_aggregator_factory",

@@ -31,6 +31,7 @@ from okto_pulse.core.application.use_cases import (
 )
 from okto_pulse.core.models import BoardCreate, IdeationMove
 from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
 ACTOR = "uc09-actor"
 
@@ -48,6 +49,10 @@ _VALID_VALIDATION_PAYLOAD = {
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+def _wrap_uow(db):
+    return resolve_unit_of_work_factory().wrap(db)
 
 
 # --------------------------------------------------------------------------- #
@@ -104,7 +109,7 @@ def test_actor_context_is_transport_neutral_data():
 
 
 @pytest.mark.asyncio
-async def test_uow_bridge_supports_unitofwork_and_session():
+async def test_uow_bridge_requires_unitofwork_shape():
     class _FakeUow:
         def __init__(self, session):
             self.session = session
@@ -119,9 +124,10 @@ async def test_uow_bridge_supports_unitofwork_and_session():
     await commit(uow)
     assert uow.commits == 1
 
-    # A bare session (no `.session` attribute) is returned as-is (transitional).
+    # A bare session (no `.session` attribute) is rejected at the application boundary.
     bare = object()
-    assert session_of(bare) is bare
+    with pytest.raises(TypeError, match="bare sessions are not accepted"):
+        session_of(bare)
 
 
 # --------------------------------------------------------------------------- #
@@ -162,7 +168,7 @@ async def test_create_board_use_case_persists_and_shapes(db_factory):
         result = await CreateBoardUseCase().execute(
             CreateBoardCommand(BoardCreate(name="UC09 Board")),
             actor=ActorContext(ACTOR, "rest"),
-            uow=db,
+            uow=_wrap_uow(db),
         )
         board = result.board
         assert board is not None
@@ -193,7 +199,7 @@ async def test_move_ideation_use_case_changes_status(db_factory):
         result = await MoveIdeationUseCase().execute(
             MoveIdeationCommand(ideation_id, IdeationMove(status=IdeationStatus.REVIEW)),
             actor=ActorContext(ACTOR, "rest"),
-            uow=db,
+            uow=_wrap_uow(db),
         )
         assert result.ideation is not None
         assert result.ideation.status == IdeationStatus.REVIEW
@@ -206,7 +212,7 @@ async def test_move_ideation_missing_raises_not_found(db_factory):
             await MoveIdeationUseCase().execute(
                 MoveIdeationCommand("missing-id", IdeationMove(status=IdeationStatus.REVIEW)),
                 actor=ActorContext(ACTOR, "rest"),
-                uow=db,
+                uow=_wrap_uow(db),
             )
         assert exc_info.value.entity_type == "ideation"
 
@@ -218,6 +224,6 @@ async def test_submit_spec_validation_missing_spec_raises_not_found(db_factory):
             await SubmitSpecValidationUseCase().execute(
                 SubmitSpecValidationCommand("missing-spec", _VALID_VALIDATION_PAYLOAD),
                 actor=ActorContext(ACTOR, "rest"),
-                uow=db,
+                uow=_wrap_uow(db),
             )
         assert exc_info.value.entity_type == "spec"

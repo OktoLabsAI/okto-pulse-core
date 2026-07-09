@@ -12,15 +12,18 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.kg.canonical_partition_integrity import (
-    get_canonical_partition_integrity_detail,
-    list_canonical_partition_integrity,
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.operational_rest import (
+    CanonicalPartitionDetailCommand,
+    CanonicalPartitionListCommand,
+    GetCanonicalPartitionIntegrityDetailUseCase,
+    ListCanonicalPartitionIntegrityUseCase,
 )
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.infra.auth import require_user
 from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
+from okto_pulse.core.repositories import PulseUnitOfWork
 
 router = APIRouter()
 
@@ -38,8 +41,8 @@ async def list_canonical_partition_integrity_endpoint(
     status: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    _user: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_user),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict[str, Any]:
     """Read-only list of canonical-partition-integrity signals.
 
@@ -50,17 +53,21 @@ async def list_canonical_partition_integrity_endpoint(
     Errors: 400 ``invalid_filter`` (bad enum filter) / 503 ``kg_health_unavailable``.
     """
     try:
-        return await list_canonical_partition_integrity(
-            db,
-            board_id=board_id,
-            reason_code=reason_code,
-            graph_layer=graph_layer,
-            source_ref=source_ref,
-            node_id=node_id,
-            status=status,
-            limit=limit,
-            offset=offset,
+        result = await ListCanonicalPartitionIntegrityUseCase().execute(
+            CanonicalPartitionListCommand(
+                board_id,
+                reason_code,
+                graph_layer,
+                source_ref,
+                node_id,
+                status,
+                limit,
+                offset,
+            ),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
         )
+        return result.data
     except CognitiveReadinessError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc
 
@@ -72,8 +79,8 @@ async def list_canonical_partition_integrity_endpoint(
 async def get_canonical_partition_integrity_detail_endpoint(
     board_id: str,
     node_id: str,
-    _user: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_user),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict[str, Any]:
     """Read-only detail for one canonical Learning node.
 
@@ -84,8 +91,11 @@ async def get_canonical_partition_integrity_detail_endpoint(
     Error: 404 ``canonical_partition_item_not_found``.
     """
     try:
-        return await get_canonical_partition_integrity_detail(
-            db, board_id=board_id, node_id=node_id
+        result = await GetCanonicalPartitionIntegrityDetailUseCase().execute(
+            CanonicalPartitionDetailCommand(board_id, node_id),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=db,
         )
+        return result.data
     except CognitiveReadinessError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.to_dict()) from exc

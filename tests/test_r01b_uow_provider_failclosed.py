@@ -16,6 +16,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from okto_pulse.core.api.deps import get_unit_of_work
 from okto_pulse.core.mcp import server as mcp_server
@@ -34,8 +35,11 @@ async def test_rest_get_unit_of_work_fails_closed_without_provider(db_factory):
     assert not is_unit_of_work_factory_registered()
     fake_request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
     async with db_factory() as session:
-        with pytest.raises(RuntimeError, match="No relational UnitOfWorkFactory"):
+        with pytest.raises(HTTPException) as exc_info:
             await get_unit_of_work(request=fake_request, db=session)
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail["code"] == "persistence_provider_not_configured"
+    assert "No relational UnitOfWorkFactory" in exc_info.value.detail["message"]
 
 
 def test_mcp_factory_fails_closed_without_provider():

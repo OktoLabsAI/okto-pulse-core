@@ -25,9 +25,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-from sqlalchemy import func, select
+from typing import Any
 
 from okto_pulse.core.kg.global_discovery.metrics import (
     get_missing_embedding_skipped_count,
@@ -35,14 +33,9 @@ from okto_pulse.core.kg.global_discovery.metrics import (
 from okto_pulse.core.kg.global_discovery.outbox_worker import DIGESTED_NODE_TYPES
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
-from okto_pulse.core.models.db import (
-    ConsolidationQueue,
-    GlobalUpdateOutbox,
-    KuzuNodeRef,
+from okto_pulse.core.ports.kg_operational import (
+    get_kg_operational_read_model_port,
 )
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("okto_pulse.kg.health")
 
@@ -69,19 +62,13 @@ class LayerHealth:
     details: str = ""
 
 
-async def check_queue(db: "AsyncSession", board_id: str) -> LayerHealth:
+async def check_queue(context: Any, board_id: str) -> LayerHealth:
     """Inspect the ``consolidation_queue`` for a given board.
 
     Healthy when no ``pending`` or ``claimed`` rows remain. ``failed`` is a
     warning, not a fatal — the worker may retry on the next tick, but an
     operator should still see it in the CLI output.
     """
-    status_col = ConsolidationQueue.status
-    result = await db.execute(
-        select(status_col, func.count())
-        .where(ConsolidationQueue.board_id == board_id)
-        .group_by(status_col)
-    )
     buckets: dict[str, int] = {
         "pending": 0,
         "claimed": 0,
@@ -89,7 +76,11 @@ async def check_queue(db: "AsyncSession", board_id: str) -> LayerHealth:
         "failed": 0,
         "paused": 0,
     }
-    for status, count in result.all():
+    rows = await get_kg_operational_read_model_port().queue_status_counts(
+        context,
+        board_id=board_id,
+    )
+    for status, count in rows.items():
         buckets[status] = int(count)
 
     backlog = buckets["pending"] + buckets["claimed"]
@@ -183,7 +174,7 @@ def check_kuzu(board_id: str) -> LayerHealth:
 
 
 async def check_kuzu_node_refs(
-    db: "AsyncSession",
+    context: Any,
     board_id: str,
     kuzu_total: int | None = None,
 ) -> LayerHealth:
@@ -195,14 +186,12 @@ async def check_kuzu_node_refs(
     silently-aborted session. Pass ``kuzu_total`` to avoid a second Kùzu
     scan when :func:`check_kuzu` already ran.
     """
-    op_col = KuzuNodeRef.operation
-    result = await db.execute(
-        select(op_col, func.count())
-        .where(KuzuNodeRef.board_id == board_id)
-        .group_by(op_col)
-    )
     by_op: dict[str, int] = {"add": 0, "update": 0, "supersede": 0}
-    for op, count in result.all():
+    rows = await get_kg_operational_read_model_port().kuzu_node_ref_operation_counts(
+        context,
+        board_id=board_id,
+    )
+    for op, count in rows.items():
         by_op[op] = int(count)
     # Kùzu node count = add+update net of supersede (supersede replaces, not deletes).
     # The mirror is append-only so we compare against total rows.
@@ -231,7 +220,7 @@ async def check_kuzu_node_refs(
     )
 
 
-async def check_outbox(db: "AsyncSession", board_id: str) -> LayerHealth:
+async def check_outbox(context: Any, board_id: str) -> LayerHealth:
     """Inspect ``global_update_outbox`` for a board.
 
     Buckets:
@@ -243,42 +232,27 @@ async def check_outbox(db: "AsyncSession", board_id: str) -> LayerHealth:
 
     Healthy when ``pending == 0`` AND ``dead_letter == 0``.
     """
-    # Pending: still in the worker's retry window.
-    pending_q = select(func.count()).where(
-        GlobalUpdateOutbox.board_id == board_id,
-        GlobalUpdateOutbox.processed_at.is_(None),
-        GlobalUpdateOutbox.retry_count >= 0,
-        GlobalUpdateOutbox.retry_count < MAX_OUTBOX_RETRIES,
+    outbox = await get_kg_operational_read_model_port().global_outbox_counts(
+        context,
+        board_id=board_id,
+        max_retries=MAX_OUTBOX_RETRIES,
+        dead_letter_retry_sentinel=DEAD_LETTER_RETRY_SENTINEL,
     )
-    pending = int((await db.execute(pending_q)).scalar_one())
-
-    # Dead letter: worker gave up (either hit MAX_RETRIES or set sentinel).
-    dead_q = select(func.count()).where(
-        GlobalUpdateOutbox.board_id == board_id,
-        GlobalUpdateOutbox.processed_at.is_(None),
-        (GlobalUpdateOutbox.retry_count >= MAX_OUTBOX_RETRIES)
-        | (GlobalUpdateOutbox.retry_count == DEAD_LETTER_RETRY_SENTINEL),
-    )
-    dead_letter = int((await db.execute(dead_q)).scalar_one())
-
-    processed_q = select(func.count()).where(
-        GlobalUpdateOutbox.board_id == board_id,
-        GlobalUpdateOutbox.processed_at.is_not(None),
-    )
-    processed = int((await db.execute(processed_q)).scalar_one())
 
     counts = {
-        "pending": pending,
-        "dead_letter": dead_letter,
-        "processed": processed,
+        "pending": int(outbox.pending),
+        "dead_letter": int(outbox.dead_letter),
+        "processed": int(outbox.processed),
     }
-    healthy = pending == 0 and dead_letter == 0
+    healthy = counts["pending"] == 0 and counts["dead_letter"] == 0
     if healthy:
-        details = f"{processed} processed, 0 pending"
-    elif pending > 0 and dead_letter == 0:
-        details = f"{pending} pending — worker will retry"
+        details = f"{counts['processed']} processed, 0 pending"
+    elif counts["pending"] > 0 and counts["dead_letter"] == 0:
+        details = f"{counts['pending']} pending — worker will retry"
     else:
-        details = f"{dead_letter} dead-lettered event(s) — inspect last_error"
+        details = (
+            f"{counts['dead_letter']} dead-lettered event(s) — inspect last_error"
+        )
 
     return LayerHealth(
         layer="outbox",

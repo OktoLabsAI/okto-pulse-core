@@ -384,6 +384,9 @@ async def test_list_by_board_invalid_filter_key():
     )
     data = _parse(result)
     assert data.get("error_code") == "invalid_filter"
+    assert data.get("supported") == ["status", "labels", "assignee_id"]
+    assert data.get("invalid_keys") == ["invalid_key"]
+    assert "invalid_key" not in data.get("supported", [])
 
 
 @pytest.mark.asyncio
@@ -396,6 +399,9 @@ async def test_list_knowledge_invalid_filter_key():
     )
     data = _parse(result)
     assert data.get("error_code") == "invalid_filter"
+    assert data.get("supported") == ["mime_type"]
+    assert data.get("invalid_keys") == ["invalid_key"]
+    assert "invalid_key" not in data.get("supported", [])
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +561,7 @@ async def test_list_by_board_ideation_structure(seeded_board):
             "complexity",
             "status",
             "active_refinement_count",
+            "active_spec_count",
             "derivation_pending",
             "version",
             "assignee_id",
@@ -617,6 +624,7 @@ async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, d
     active_id = str(uuid.uuid4())
     cancelled_child_id = str(uuid.uuid4())
     small_id = str(uuid.uuid4())
+    small_active_id = str(uuid.uuid4())
     draft_id = str(uuid.uuid4())
 
     async with db_factory() as db:
@@ -656,6 +664,15 @@ async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, d
             labels=[label],
             created_by=AGENT_ID,
         )
+        small_active = Ideation(
+            id=small_active_id,
+            board_id=BOARD_ID,
+            title="MCP small active-direct-spec ideation",
+            status=IdeationStatus.DONE,
+            complexity=IdeationComplexity.SMALL,
+            labels=[label],
+            created_by=AGENT_ID,
+        )
         draft = Ideation(
             id=draft_id,
             board_id=BOARD_ID,
@@ -665,7 +682,7 @@ async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, d
             labels=[label],
             created_by=AGENT_ID,
         )
-        db.add_all([pending, active, cancelled_child, small, draft])
+        db.add_all([pending, active, cancelled_child, small, small_active, draft])
         db.add(Refinement(
             id=str(uuid.uuid4()),
             board_id=BOARD_ID,
@@ -680,6 +697,24 @@ async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, d
             ideation_id=cancelled_child_id,
             title="MCP cancelled refinement child",
             status=RefinementStatus.CANCELLED,
+            created_by=AGENT_ID,
+        ))
+        db.add(Spec(
+            id=str(uuid.uuid4()),
+            board_id=BOARD_ID,
+            ideation_id=small_active_id,
+            refinement_id=None,
+            title="MCP active direct spec child",
+            status=SpecStatus.DRAFT,
+            functional_requirements=[],
+            technical_requirements=[],
+            acceptance_criteria=[],
+            test_scenarios=[],
+            business_rules=[],
+            api_contracts=[],
+            integration_requirements=[],
+            observability_requirements=[],
+            decisions=[],
             created_by=AGENT_ID,
         ))
         await db.commit()
@@ -697,9 +732,11 @@ async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, d
     assert set(by_title) == {
         "MCP pending ideation",
         "MCP cancelled-child ideation",
+        "MCP small ideation",
     }
     assert all(item["derivation_pending"] is True for item in by_title.values())
-    assert all(item["active_refinement_count"] == 0 for item in by_title.values())
+    assert by_title["MCP small ideation"]["active_spec_count"] == 0
+    assert "MCP small active-direct-spec ideation" not in by_title
 
 
 @pytest.mark.asyncio

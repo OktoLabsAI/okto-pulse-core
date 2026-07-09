@@ -46,6 +46,52 @@ from okto_pulse.core.repositories.sqlalchemy import (
     SQLAlchemyUnitOfWork,
     SQLAlchemyUnitOfWorkFactory,
 )
+from okto_pulse.core.services.resource_gate_contracts import (
+    ENTITY_TYPES,
+    RESOURCE_TYPES,
+    SOURCE_CHANNELS,
+    EntityType,
+    ResourceGateError,
+    ResourceGateJustificationRequired,
+    ResourceGateNotFound,
+    ResourceGateViolation,
+    ResourceState,
+    ResourceType,
+    SourceChannel,
+)
+from okto_pulse.core.repositories.sqlalchemy.runtime_settings_service import (
+    DECAY_TICK_KEYS,
+    EVENT_QUEUE_KEYS,
+    GRAPH_DB_KEYS,
+    RUNTIME_KEYS,
+    SETTINGS_RUNTIME_EFFECT_PORTS,
+    AppSetting,
+    ConfigChangeBlocked,
+    _apply_live_tick_settings,
+    _resolve_legacy_env_aliases,
+    apply_persisted_settings_to_core_settings,
+    apply_tick_runtime_effects,
+    get_runtime_settings,
+    put_runtime_settings,
+)
+from okto_pulse.core.repositories.sqlalchemy.traceability_read_model import (
+    TraceabilityReadError,
+    build_lineage_graph,
+    build_traceability_report,
+    resolve_lineage_root,
+    resolve_root_ideation_id,
+    spec_coverage_summary,
+)
+
+
+def sqlalchemy_resource_gate_service_class() -> type:
+    """Return the adapter-owned Resource Gate service class lazily."""
+    from okto_pulse.core.repositories.sqlalchemy.resource_gate_service import (
+        ResourceGateService,
+    )
+
+    return ResourceGateService
+
 
 __all__ = [
     # ports
@@ -61,6 +107,37 @@ __all__ = [
     "SQLAlchemySpecRepository",
     "SQLAlchemyUnitOfWork",
     "SQLAlchemyUnitOfWorkFactory",
+    "ENTITY_TYPES",
+    "RESOURCE_TYPES",
+    "SOURCE_CHANNELS",
+    "EntityType",
+    "ResourceGateError",
+    "ResourceGateJustificationRequired",
+    "ResourceGateNotFound",
+    "ResourceGateViolation",
+    "ResourceState",
+    "ResourceType",
+    "SourceChannel",
+    "DECAY_TICK_KEYS",
+    "EVENT_QUEUE_KEYS",
+    "GRAPH_DB_KEYS",
+    "RUNTIME_KEYS",
+    "SETTINGS_RUNTIME_EFFECT_PORTS",
+    "AppSetting",
+    "ConfigChangeBlocked",
+    "_apply_live_tick_settings",
+    "_resolve_legacy_env_aliases",
+    "apply_persisted_settings_to_core_settings",
+    "apply_tick_runtime_effects",
+    "get_runtime_settings",
+    "put_runtime_settings",
+    "TraceabilityReadError",
+    "build_lineage_graph",
+    "build_traceability_report",
+    "resolve_lineage_root",
+    "resolve_root_ideation_id",
+    "sqlalchemy_resource_gate_service_class",
+    "spec_coverage_summary",
     # debt ledger
     "ORM_BASE_CLASS_BASELINE",
     "ORM_RETURN_DEBT",

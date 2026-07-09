@@ -215,12 +215,32 @@ async def list_canonical_partition_integrity(*args: Any, **kwargs: Any) -> Any:
     return await _list(*args, **kwargs)
 
 
+async def get_canonical_partition_integrity_detail(*args: Any, **kwargs: Any) -> Any:
+    from okto_pulse.core.kg.canonical_partition_integrity import (
+        get_canonical_partition_integrity_detail as _get,
+    )
+
+    return await _get(*args, **kwargs)
+
+
 async def list_digest_layer_mismatches(*args: Any, **kwargs: Any) -> Any:
     from okto_pulse.core.kg.global_discovery.layer_parity import (
         list_digest_layer_mismatches as _list,
     )
 
     return await _list(*args, **kwargs)
+
+
+def max_orphan_sample_limit() -> int:
+    from okto_pulse.core.kg.orphan_integrity import MAX_ORPHAN_SAMPLE_LIMIT
+
+    return MAX_ORPHAN_SAMPLE_LIMIT
+
+
+def create_orphan_backfill_reconciler() -> Any:
+    from okto_pulse.core.kg.orphan_integrity import OrphanBackfillReconciler
+
+    return OrphanBackfillReconciler()
 
 
 def audit_originates_from_contract(*args: Any, **kwargs: Any) -> Any:

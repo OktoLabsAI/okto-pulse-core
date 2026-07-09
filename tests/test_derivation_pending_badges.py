@@ -66,7 +66,7 @@ def _refinement(
 def _spec(
     board_id: str,
     ideation_id: str,
-    refinement_id: str,
+    refinement_id: str | None,
     title: str,
     *,
     status: SpecStatus = SpecStatus.DRAFT,
@@ -135,6 +135,44 @@ async def test_ideation_summary_counts_only_active_refinements() -> None:
     assert summaries["cancelled"].active_refinement_count == 0
     assert summaries["archived"].active_refinement_count == 0
     assert summaries["mixed"].active_refinement_count == 1
+
+
+@pytest.mark.asyncio
+async def test_ideation_summary_counts_only_active_direct_specs() -> None:
+    board_id = _id("board")
+    db_factory = get_session_factory()
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Direct spec derivation counts", owner_id=USER))
+        zero = _ideation(board_id, "zero direct specs")
+        active = _ideation(board_id, "active direct spec")
+        cancelled = _ideation(board_id, "cancelled direct spec")
+        archived = _ideation(board_id, "archived direct spec")
+        nested = _ideation(board_id, "nested spec")
+        db.add_all([zero, active, cancelled, archived, nested])
+        refinement = _refinement(board_id, nested.id, "nested refinement")
+        db.add(refinement)
+        db.add(_spec(board_id, active.id, None, "active direct"))
+        db.add(
+            _spec(
+                board_id,
+                cancelled.id,
+                None,
+                "cancelled direct",
+                status=SpecStatus.CANCELLED,
+            )
+        )
+        db.add(_spec(board_id, archived.id, None, "archived direct", archived=True))
+        db.add(_spec(board_id, nested.id, refinement.id, "nested spec is not direct"))
+        await db.commit()
+
+        rows = await IdeationService(db).list_ideations(board_id)
+
+    summaries = {row.title: IdeationSummary.model_validate(row) for row in rows}
+    assert summaries["zero direct specs"].active_spec_count == 0
+    assert summaries["active direct spec"].active_spec_count == 1
+    assert summaries["cancelled direct spec"].active_spec_count == 0
+    assert summaries["archived direct spec"].active_spec_count == 0
+    assert summaries["nested spec"].active_spec_count == 0
 
 
 @pytest.mark.asyncio
@@ -207,6 +245,7 @@ async def test_active_derivation_counts_return_after_archived_children_are_resto
         ideation_before = (await IdeationService(db).list_ideations(board_id))[0]
         refinement_before = await RefinementService(db).get_refinement(refinement.id)
         assert IdeationSummary.model_validate(ideation_before).active_refinement_count == 0
+        assert IdeationSummary.model_validate(ideation_before).active_spec_count == 0
         assert RefinementSummary.model_validate(refinement_before).active_spec_count == 0
 
         refinement.archived = False
@@ -218,5 +257,6 @@ async def test_active_derivation_counts_return_after_archived_children_are_resto
         nested_refinement = (await IdeationService(db).get_ideation(ideation.id)).refinements[0]
 
     assert IdeationSummary.model_validate(ideation_after).active_refinement_count == 1
+    assert IdeationSummary.model_validate(ideation_after).active_spec_count == 0
     assert RefinementSummary.model_validate(refinement_after).active_spec_count == 1
     assert RefinementSummary.model_validate(nested_refinement).active_spec_count == 1

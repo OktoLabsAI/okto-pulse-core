@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.operational_rest import (
+    GetLineageGraphCommand,
+    GetLineageGraphUseCase,
+)
+from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.traceability import (
     TraceabilityReadError,
-    build_lineage_graph,
 )
 
 router = APIRouter(prefix="/boards", tags=["traceability"])
@@ -20,17 +24,21 @@ async def get_lineage_graph(
     entity_type: str = Query(..., min_length=1),
     entity_id: str = Query(..., min_length=1),
     include_artifacts: bool = False,
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> dict:
     """Return a UI-only SDLC lineage graph rooted at the selected entity."""
     try:
-        return await build_lineage_graph(
-            db,
-            board_id,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            include_artifacts=include_artifacts,
+        result = await GetLineageGraphUseCase().execute(
+            GetLineageGraphCommand(
+                board_id,
+                entity_type,
+                entity_id,
+                include_artifacts,
+            ),
+            actor=RESTAdapterContract.actor("traceability-rest", board_id=board_id),
+            uow=db,
         )
+        return result.data
     except TraceabilityReadError as exc:
         raise HTTPException(
             status_code=exc.status_code,

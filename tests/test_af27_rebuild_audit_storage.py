@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-import ast
 import uuid
 from pathlib import Path
 
+from okto_pulse.core.application.boundary.rebuild_audit_storage_gate import (
+    rebuild_audit_storage_fallback_ledger,
+    run_rebuild_audit_storage_gate,
+)
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
     InMemoryRebuildAuditArtifactStore,
@@ -94,54 +97,65 @@ def test_af27_rebuild_audit_consumers_use_in_memory_store_without_base_dir() -> 
     assert store.list_json(RebuildAuditKey("confirmation_audit", board_id))
 
 
-_ALLOWLISTED_BASE_DIR_PATH_CONSUMERS = {
-    "candidate_decision_store.py",
-    "contingency.py",
-    "global_discovery_reindex.py",
-    "quarantine.py",
-    "rebuild_audit.py",
-    "rebuild_confirmation.py",
-    "rebuild_generation.py",
-    "rebuild_report.py",
-    "rebuild_service.py",
-    "rebuild_sources.py",
-    "single_writer_lock.py",
-    "stress_chaos_executor.py",
-    "stress_runner.py",
-}
-
-
-def _path_store_offenders(root: Path) -> set[str]:
-    offenders: set[str] = set()
-    for path in root.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.arg) and node.arg == "base_dir":
-                annotation = ast.unparse(node.annotation) if node.annotation else ""
-                if "Path" in annotation:
-                    offenders.add(path.name)
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if node.target.id == "base_dir":
-                    annotation = ast.unparse(node.annotation)
-                    if "Path" in annotation:
-                        offenders.add(path.name)
-    return offenders
-
-
 def test_af27_base_dir_path_gate_current_tree_matches_inventory() -> None:
-    core_kg = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core" / "kg"
-    offenders = _path_store_offenders(core_kg)
-    assert offenders <= _ALLOWLISTED_BASE_DIR_PATH_CONSUMERS
+    core_root = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
+    assert run_rebuild_audit_storage_gate(core_root, enforce_stale_ledger=True) == ()
+
+    ledger = rebuild_audit_storage_fallback_ledger()
+    assert ledger
+    assert all(entry.owner for entry in ledger)
+    assert all(entry.classification for entry in ledger)
+    assert all(entry.reason for entry in ledger)
+    assert all(entry.removal_criterion for entry in ledger)
+    assert {
+        "legacy_compat_injection",
+        "stress_chaos_evidence",
+        "static_bundled_resource_path",
+    } <= {entry.classification for entry in ledger}
 
 
 def test_af27_base_dir_path_gate_catches_synthetic_durable_store(tmp_path: Path) -> None:
-    fixture = tmp_path / "core" / "kg"
+    core_root = tmp_path / "core"
+    fixture = core_root / "kg"
     fixture.mkdir(parents=True)
-    (fixture / "new_durable_store.py").write_text(
+    target = fixture / "new_durable_store.py"
+    target.write_text(
         "from pathlib import Path\n"
         "class NewDurableStore:\n"
         "    def __init__(self, base_dir: Path) -> None:\n"
         "        self.base_dir = base_dir\n",
         encoding="utf-8",
     )
-    assert _path_store_offenders(fixture) == {"new_durable_store.py"}
+
+    violations = run_rebuild_audit_storage_gate(core_root)
+
+    assert [(v.rule, v.path, v.symbol) for v in violations] == [
+        (
+            "base_dir_path_consumer",
+            "kg/new_durable_store.py",
+            "NewDurableStore.__init__.base_dir",
+        )
+    ]
+
+
+def test_af27_base_dir_gate_is_occurrence_scoped_not_file_scoped(
+    tmp_path: Path,
+) -> None:
+    core_root = tmp_path / "core"
+    historical_file = core_root / "kg" / "rebuild_audit.py"
+    historical_file.parent.mkdir(parents=True)
+    historical_file.write_text(
+        "from pathlib import Path\n"
+        "class RogueStore:\n"
+        "    base_dir: Path | None = None\n",
+        encoding="utf-8",
+    )
+
+    violations = run_rebuild_audit_storage_gate(
+        core_root,
+        enforce_stale_ledger=False,
+    )
+
+    assert [(v.rule, v.path, v.symbol) for v in violations] == [
+        ("base_dir_path_consumer", "kg/rebuild_audit.py", "RogueStore.base_dir")
+    ]

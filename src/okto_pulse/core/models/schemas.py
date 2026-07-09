@@ -1020,8 +1020,11 @@ class IdeationSummary(BaseSchema):
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
     open_qa_count: int = 0
     # Count of non-archived, non-cancelled child refinements — drives the
-    # "Sem refinamento" derivation-pending badge.
+    # "No refinement" derivation-pending badge.
     active_refinement_count: int = 0
+    # Count of non-archived, non-cancelled direct specs (no refinement) — drives
+    # the "No spec" derivation-pending badge for done small ideations.
+    active_spec_count: int = 0
     id: str
     board_id: str
     title: str

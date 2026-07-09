@@ -4,11 +4,11 @@ import hashlib
 import logging
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -32,6 +32,7 @@ from okto_pulse.core.models.db import (
     ActivityLog,
     Agent,
     AgentBoard,
+    AgentSeenItem,
     AmendmentHotfixRevision,
     Attachment,
     Board,
@@ -459,6 +460,26 @@ async def _attach_active_spec_counts(db: AsyncSession, rows: list[Refinement]) -
             Spec.status != SpecStatus.CANCELLED,
         )
         .group_by(Spec.refinement_id)
+    )
+    counts = dict(result.all())
+    for r in rows:
+        r.active_spec_count = counts.get(r.id, 0)
+
+
+async def _attach_active_direct_spec_counts(db: AsyncSession, rows: list[Ideation]) -> None:
+    """Attach active direct-spec counts for small ideation derivation badges."""
+    if not rows:
+        return
+    ids = [r.id for r in rows]
+    result = await db.execute(
+        select(Spec.ideation_id, func.count())
+        .where(
+            Spec.ideation_id.in_(ids),
+            Spec.refinement_id.is_(None),
+            Spec.archived.is_(False),
+            Spec.status != SpecStatus.CANCELLED,
+        )
+        .group_by(Spec.ideation_id)
     )
     counts = dict(result.all())
     for r in rows:
@@ -1234,6 +1255,86 @@ async def resolve_actor_name(
     if user_id == "dev-user":
         return "Owner"
     return user_id[:20]
+
+
+async def log_card_collaboration_activity(
+    db: Any,
+    card_id: str,
+    action: str,
+    *,
+    actor_id: str,
+    actor_type: str,
+    actor_name: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Log card collaboration activity from a transport-neutral caller."""
+    card = await db.get(Card, card_id)
+    if not card:
+        return
+    resolved_name = actor_name or await resolve_actor_name(db, actor_id, card.board_id)
+    await BoardService(db)._log_activity(
+        board_id=card.board_id,
+        card_id=card_id,
+        action=action,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        actor_name=resolved_name,
+        details=details,
+    )
+
+
+async def card_belongs_to_board(db: Any, board_id: str, card_id: str) -> bool:
+    """Return whether a card exists on the given board."""
+    card = await db.get(Card, card_id)
+    return bool(card and card.board_id == board_id)
+
+
+async def update_resource_gate_board_settings(
+    db: Any,
+    board_id: str,
+    user_id: str,
+    *,
+    require_spec_resource_task_coverage: bool,
+) -> dict[str, Any] | None:
+    """Update the Resource Gate board setting and return the persisted map.
+
+    AF35-S3 C4 keeps SQLAlchemy JSON mutation mechanics inside services instead
+    of the REST wrapper. The caller owns the transaction boundary.
+    """
+
+    board = await BoardService(db).get_board(board_id, user_id)
+    if not board:
+        return None
+    settings = dict(board.settings or {})
+    settings["require_spec_resource_task_coverage"] = (
+        require_spec_resource_task_coverage
+    )
+    board.settings = settings
+    flag_modified(board, "settings")
+    return settings
+
+
+async def comment_card_id(db: Any, comment_id: str) -> str | None:
+    """Return a comment's card id, if the comment exists."""
+    comment = await db.get(Comment, comment_id)
+    return comment.card_id if comment else None
+
+
+async def resolve_choice_comment_actor_name(
+    db: Any, comment_id: str, actor_id: str
+) -> str | None:
+    """Resolve the display name for a choice-comment response actor."""
+    comment = await db.get(Comment, comment_id)
+    if not comment:
+        return None
+    board_id = comment.card.board_id if comment.card else ""
+    return await resolve_actor_name(db, actor_id, board_id)
+
+
+async def qa_card_id(db: Any, qa_id: str) -> str | None:
+    """Return a card Q&A item's card id, if the item exists."""
+    qa = await db.get(QAItem, qa_id)
+    return qa.card_id if qa else None
 
 
 async def compute_card_activity(
@@ -4266,15 +4367,26 @@ class AgentService:
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
-    async def get_agent_by_key(self, api_key: str) -> Agent | None:
-        """Get an agent by API key."""
+    async def get_agent_by_key(
+        self,
+        api_key: str,
+        *,
+        touch_last_used_at: bool = True,
+    ) -> Agent | None:
+        """Get an agent by API key, optionally recording credential usage."""
         key_hash = self.hash_api_key(api_key)
         query = select(Agent).where(Agent.api_key_hash == key_hash, Agent.is_active.is_(True))
         result = await self.db.execute(query)
         agent = result.scalar_one_or_none()
-        if agent:
+        if agent and touch_last_used_at:
             agent.last_used_at = datetime.now(timezone.utc)
         return agent
+
+    async def touch_agent_last_used_at(self, agent_id: str) -> None:
+        """Explicitly record API-key usage without overloading read auth paths."""
+        agent = await self.get_agent(agent_id)
+        if agent:
+            agent.last_used_at = datetime.now(timezone.utc)
 
     async def list_agents_for_user(self, user_id: str) -> list[Agent]:
         """List all agents owned by a user."""
@@ -4545,6 +4657,9 @@ class CommentService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def get_comment(self, comment_id: str) -> Comment | None:
+        return await self.db.get(Comment, comment_id)
 
     async def create_comment(
         self, card_id: str, user_id: str, data: CommentCreate
@@ -5884,6 +5999,115 @@ class SpecService:
                 trigger="spec_mockups_changed",
             )
         return spec
+
+    async def append_locked_traceability_task_link(
+        self,
+        spec_id: str,
+        user_id: str,
+        *,
+        target_field: str,
+        target_id: str,
+        card_id: str,
+    ) -> tuple[Spec | None, bool, list[str]]:
+        """Append an allowed traceability-only task link on a content-locked spec.
+
+        This narrow path does not unlock ``update_spec``. It only appends
+        ``linked_task_ids`` on FR/TR/Decision records, does not bump version, and
+        refuses archived/cancelled/cross-spec cards.
+        """
+        allowed_fields = {
+            "functional_requirements": "functional_requirement",
+            "technical_requirements": "technical_requirement",
+            "decisions": "decision",
+        }
+        if target_field not in allowed_fields:
+            raise ValueError("Traceability-only links are limited to FR, TR, and Decision targets")
+
+        spec = await self.get_spec(spec_id)
+        if not spec:
+            return None, False, []
+        if not spec_is_content_locked(spec):
+            raise ValueError("Traceability-only path is only available for content-locked specs")
+        if getattr(spec, "archived", False):
+            raise ValueError("This spec is archived. Restore it first before linking tasks.")
+
+        card = await self.db.get(Card, card_id)
+        if card is None:
+            raise ValueError("Card not found")
+        card_status = getattr(getattr(card, "status", None), "value", getattr(card, "status", None))
+        if getattr(card, "spec_id", None) != spec.id:
+            raise ValueError("Traceability-only links require a card on the same spec")
+        if getattr(card, "archived", False) or card_status == "cancelled":
+            raise ValueError("Traceability-only links require a non-archived, non-cancelled card")
+
+        collection = list(getattr(spec, target_field, None) or [])
+        target = next(
+            (item for item in collection if isinstance(item, dict) and item.get("id") == target_id),
+            None,
+        )
+        if target is None:
+            raise ValueError(f"{allowed_fields[target_field]} '{target_id}' not found in spec")
+        if target_field == "decisions" and target.get("status", "active") != "active":
+            raise ValueError("Traceability-only decision links require an active decision")
+
+        task_ids = list(target.get("linked_task_ids") or [])
+        old_task_ids = list(task_ids)
+        changed = card_id not in task_ids
+        if changed:
+            task_ids.append(card_id)
+            target["linked_task_ids"] = task_ids
+            setattr(spec, target_field, collection)
+            flag_modified(spec, target_field)
+
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import SpecSemanticChanged
+
+            await event_publish(
+                SpecSemanticChanged(
+                    board_id=spec.board_id,
+                    actor_id=user_id,
+                    spec_id=spec.id,
+                    changed_fields=[target_field],
+                ),
+                session=self.db,
+            )
+
+        actor_name = await resolve_actor_name(self.db, user_id, spec.board_id)
+        await self._log_activity(
+            board_id=spec.board_id,
+            action="spec_traceability_linked",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={
+                "spec_id": spec.id,
+                "target_field": target_field,
+                "target_id": target_id,
+                "card_id": card_id,
+                "traceability_only": True,
+                "changed": changed,
+            },
+        )
+        if changed:
+            await self._record_history(
+                spec_id=spec.id,
+                action="traceability_linked",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=[
+                    {
+                        "field": f"{target_field}.linked_task_ids",
+                        "old": old_task_ids,
+                        "new": task_ids,
+                    }
+                ],
+                version=spec.version,
+                summary=(
+                    f"Traceability-only task link appended to "
+                    f"{allowed_fields[target_field]} {target_id}"
+                ),
+            )
+        return spec, changed, task_ids
 
     # ---- Spec state machine ----
     # Direct APPROVED→DRAFT and VALIDATED→DRAFT transitions added for the Spec
@@ -7929,6 +8153,7 @@ class IdeationService:
         ideation = result.scalar_one_or_none()
         if ideation:
             await _attach_active_refinement_counts(self.db, [ideation])
+            await _attach_active_direct_spec_counts(self.db, [ideation])
             await _attach_active_spec_counts(self.db, list(ideation.refinements or []))
         return ideation
 
@@ -7948,6 +8173,7 @@ class IdeationService:
         rows = list(result.scalars().all())
         await _attach_open_qa_counts(self.db, rows, IdeationQAItem, "ideation_id")
         await _attach_active_refinement_counts(self.db, rows)
+        await _attach_active_direct_spec_counts(self.db, rows)
         return rows
 
     async def update_ideation(self, ideation_id: str, user_id: str, data: IdeationUpdate) -> Ideation | None:
@@ -9455,7 +9681,7 @@ class GuidelineService:
             board_id=board_id,
             user_id=scoped_owner_id,
             query_scope=query_scope,
-            require_ownership=True,
+            require_ownership=query_scope.require_ownership if query_scope else True,
         )
         if query is None:
             return False
@@ -10984,3 +11210,424 @@ class SprintQAService:
             return False
         await self.db.delete(qa)
         return True
+
+
+async def mcp_list_my_mentions(
+    db: AsyncSession,
+    *,
+    board_id: str,
+    agent_id: str,
+    agent_name: str | None,
+    include_seen: bool = False,
+) -> tuple[list[dict[str, Any]], bool]:
+    mention_pattern = f"%@{agent_name or ''}%"
+    show_all = include_seen
+
+    seen_ids: set[str] = set()
+    if not show_all:
+        seen_query = select(AgentSeenItem.item_id).where(AgentSeenItem.agent_id == agent_id)
+        seen_ids = {r[0] for r in (await db.execute(seen_query)).all()}
+
+    comment_results = (
+        await db.execute(
+            select(Comment, Card.title)
+            .join(Card, Card.id == Comment.card_id)
+            .where(Card.board_id == board_id)
+            .where(Comment.content.ilike(mention_pattern))
+            .order_by(Comment.created_at.desc())
+        )
+    ).all()
+    qa_results = (
+        await db.execute(
+            select(QAItem, Card.title)
+            .join(Card, Card.id == QAItem.card_id)
+            .where(Card.board_id == board_id)
+            .where(or_(QAItem.question.ilike(mention_pattern), QAItem.answer.ilike(mention_pattern)))
+            .order_by(QAItem.created_at.desc())
+        )
+    ).all()
+    spec_qa_results = (
+        await db.execute(
+            select(SpecQAItem, Spec.title)
+            .join(Spec, Spec.id == SpecQAItem.spec_id)
+            .where(Spec.board_id == board_id)
+            .where(
+                or_(
+                    SpecQAItem.question.ilike(mention_pattern),
+                    SpecQAItem.answer.ilike(mention_pattern),
+                )
+            )
+            .order_by(SpecQAItem.created_at.desc())
+        )
+    ).all()
+    ideation_qa_results = (
+        await db.execute(
+            select(IdeationQAItem, Ideation.title)
+            .join(Ideation, Ideation.id == IdeationQAItem.ideation_id)
+            .where(Ideation.board_id == board_id)
+            .where(
+                or_(
+                    IdeationQAItem.question.ilike(mention_pattern),
+                    IdeationQAItem.answer.ilike(mention_pattern),
+                )
+            )
+            .order_by(IdeationQAItem.created_at.desc())
+        )
+    ).all()
+    refinement_qa_results = (
+        await db.execute(
+            select(RefinementQAItem, Refinement.title)
+            .join(Refinement, Refinement.id == RefinementQAItem.refinement_id)
+            .where(Refinement.board_id == board_id)
+            .where(
+                or_(
+                    RefinementQAItem.question.ilike(mention_pattern),
+                    RefinementQAItem.answer.ilike(mention_pattern),
+                )
+            )
+            .order_by(RefinementQAItem.created_at.desc())
+        )
+    ).all()
+
+    mentions: list[dict[str, Any]] = []
+    for comment, card_title in comment_results:
+        if not show_all and comment.id in seen_ids:
+            continue
+        mentions.append(
+            {
+                "type": "comment",
+                "item_id": comment.id,
+                "card_id": comment.card_id,
+                "card_title": card_title,
+                "content": comment.content,
+                "author": comment.author_id,
+                "created_at": comment.created_at.isoformat(),
+            }
+        )
+    for qa, card_title in qa_results:
+        if not show_all and qa.id in seen_ids:
+            continue
+        mentions.append(
+            {
+                "type": "qa",
+                "item_id": qa.id,
+                "card_id": qa.card_id,
+                "card_title": card_title,
+                "question": qa.question,
+                "answer": qa.answer,
+                "asked_by": qa.asked_by,
+                "created_at": qa.created_at.isoformat(),
+            }
+        )
+    for spec_qa, spec_title in spec_qa_results:
+        if not show_all and spec_qa.id in seen_ids:
+            continue
+        mentions.append(
+            {
+                "type": "spec_qa",
+                "item_id": spec_qa.id,
+                "spec_id": spec_qa.spec_id,
+                "spec_title": spec_title,
+                "question": spec_qa.question,
+                "question_type": spec_qa.question_type,
+                "choices": spec_qa.choices,
+                "answer": spec_qa.answer,
+                "selected": spec_qa.selected,
+                "asked_by": spec_qa.asked_by,
+                "created_at": spec_qa.created_at.isoformat(),
+            }
+        )
+    for ideation_qa, ideation_title in ideation_qa_results:
+        if not show_all and ideation_qa.id in seen_ids:
+            continue
+        mentions.append(
+            {
+                "type": "ideation_qa",
+                "item_id": ideation_qa.id,
+                "ideation_id": ideation_qa.ideation_id,
+                "ideation_title": ideation_title,
+                "question": ideation_qa.question,
+                "question_type": ideation_qa.question_type,
+                "choices": ideation_qa.choices,
+                "answer": ideation_qa.answer,
+                "selected": ideation_qa.selected,
+                "asked_by": ideation_qa.asked_by,
+                "created_at": ideation_qa.created_at.isoformat(),
+            }
+        )
+    for refinement_qa, refinement_title in refinement_qa_results:
+        if not show_all and refinement_qa.id in seen_ids:
+            continue
+        mentions.append(
+            {
+                "type": "refinement_qa",
+                "item_id": refinement_qa.id,
+                "refinement_id": refinement_qa.refinement_id,
+                "refinement_title": refinement_title,
+                "question": refinement_qa.question,
+                "question_type": refinement_qa.question_type,
+                "choices": refinement_qa.choices,
+                "answer": refinement_qa.answer,
+                "selected": refinement_qa.selected,
+                "asked_by": refinement_qa.asked_by,
+                "created_at": refinement_qa.created_at.isoformat(),
+            }
+        )
+    mentions.sort(key=lambda m: m["created_at"], reverse=True)
+    return mentions, show_all
+
+
+async def mcp_mark_mentions_seen(
+    db: AsyncSession,
+    *,
+    board_id: str,
+    agent_id: str,
+    agent_name: str | None,
+    item_ids: list[str],
+) -> tuple[int, int]:
+    marked = 0
+    for item_id in item_ids:
+        existing = await db.execute(
+            select(AgentSeenItem).where(
+                AgentSeenItem.agent_id == agent_id,
+                AgentSeenItem.item_id == item_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            continue
+        db.add(AgentSeenItem(agent_id=agent_id, item_type="mention", item_id=item_id))
+        marked += 1
+    await db.flush()
+
+    if marked > 0:
+        comment_result = await db.execute(
+            select(Comment.card_id).where(Comment.id.in_(item_ids)).distinct()
+        )
+        qa_result = await db.execute(
+            select(QAItem.card_id).where(QAItem.id.in_(item_ids)).distinct()
+        )
+        card_ids = {row[0] for row in comment_result.fetchall()} | {
+            row[0] for row in qa_result.fetchall()
+        }
+        board_service = BoardService(db)
+        for card_id in card_ids:
+            await board_service._log_activity(
+                board_id=board_id,
+                card_id=card_id,
+                action="items_seen",
+                actor_type="agent",
+                actor_id=agent_id,
+                actor_name=agent_name,
+                details={"item_count": marked},
+            )
+
+        spec_qa_result = await db.execute(
+            select(SpecQAItem.spec_id).where(SpecQAItem.id.in_(item_ids)).distinct()
+        )
+        for spec_id in {row[0] for row in spec_qa_result.fetchall()}:
+            await board_service._log_activity(
+                board_id=board_id,
+                action="spec_qa_seen",
+                actor_type="agent",
+                actor_id=agent_id,
+                actor_name=agent_name,
+                details={"spec_id": spec_id, "item_count": marked},
+            )
+
+        ideation_qa_result = await db.execute(
+            select(IdeationQAItem.ideation_id)
+            .where(IdeationQAItem.id.in_(item_ids))
+            .distinct()
+        )
+        for ideation_id in {row[0] for row in ideation_qa_result.fetchall()}:
+            await board_service._log_activity(
+                board_id=board_id,
+                action="ideation_qa_seen",
+                actor_type="agent",
+                actor_id=agent_id,
+                actor_name=agent_name,
+                details={"ideation_id": ideation_id, "item_count": marked},
+            )
+
+        refinement_qa_result = await db.execute(
+            select(RefinementQAItem.refinement_id)
+            .where(RefinementQAItem.id.in_(item_ids))
+            .distinct()
+        )
+        for refinement_id in {row[0] for row in refinement_qa_result.fetchall()}:
+            await board_service._log_activity(
+                board_id=board_id,
+                action="refinement_qa_seen",
+                actor_type="agent",
+                actor_id=agent_id,
+                actor_name=agent_name,
+                details={"refinement_id": refinement_id, "item_count": marked},
+            )
+    return marked, len(item_ids)
+
+
+async def mcp_get_unseen_summary(
+    db: AsyncSession,
+    *,
+    board_id: str,
+    agent_id: str,
+    agent_name: str | None,
+) -> dict[str, Any]:
+    mention_pattern = f"%@{agent_name or ''}%"
+    seen_query = select(AgentSeenItem.item_id).where(AgentSeenItem.agent_id == agent_id)
+    seen_ids = {r[0] for r in (await db.execute(seen_query)).all()}
+
+    total_comment_mentions = (
+        await db.execute(
+            select(func.count())
+            .select_from(Comment)
+            .join(Card, Card.id == Comment.card_id)
+            .where(Card.board_id == board_id)
+            .where(Comment.content.ilike(mention_pattern))
+        )
+    ).scalar() or 0
+    total_qa_mentions = (
+        await db.execute(
+            select(func.count())
+            .select_from(QAItem)
+            .join(Card, Card.id == QAItem.card_id)
+            .where(Card.board_id == board_id)
+            .where(or_(QAItem.question.ilike(mention_pattern), QAItem.answer.ilike(mention_pattern)))
+        )
+    ).scalar() or 0
+    total_spec_qa_mentions = (
+        await db.execute(
+            select(func.count())
+            .select_from(SpecQAItem)
+            .join(Spec, Spec.id == SpecQAItem.spec_id)
+            .where(Spec.board_id == board_id)
+            .where(
+                or_(
+                    SpecQAItem.question.ilike(mention_pattern),
+                    SpecQAItem.answer.ilike(mention_pattern),
+                )
+            )
+        )
+    ).scalar() or 0
+    total_ideation_qa_mentions = (
+        await db.execute(
+            select(func.count())
+            .select_from(IdeationQAItem)
+            .join(Ideation, Ideation.id == IdeationQAItem.ideation_id)
+            .where(Ideation.board_id == board_id)
+            .where(
+                or_(
+                    IdeationQAItem.question.ilike(mention_pattern),
+                    IdeationQAItem.answer.ilike(mention_pattern),
+                )
+            )
+        )
+    ).scalar() or 0
+    total_refinement_qa_mentions = (
+        await db.execute(
+            select(func.count())
+            .select_from(RefinementQAItem)
+            .join(Refinement, Refinement.id == RefinementQAItem.refinement_id)
+            .where(Refinement.board_id == board_id)
+            .where(
+                or_(
+                    RefinementQAItem.question.ilike(mention_pattern),
+                    RefinementQAItem.answer.ilike(mention_pattern),
+                )
+            )
+        )
+    ).scalar() or 0
+
+    recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    recent_activity = (
+        await db.execute(
+            select(func.count())
+            .select_from(ActivityLog)
+            .where(ActivityLog.board_id == board_id, ActivityLog.created_at >= recent_cutoff)
+        )
+    ).scalar() or 0
+
+    total_mentions = (
+        total_comment_mentions
+        + total_qa_mentions
+        + total_spec_qa_mentions
+        + total_ideation_qa_mentions
+        + total_refinement_qa_mentions
+    )
+    unseen_mentions = max(total_mentions - len(seen_ids), 0)
+    return {
+        "board_id": board_id,
+        "unseen_mentions": unseen_mentions,
+        "total_mentions": total_mentions,
+        "seen_count": len(seen_ids),
+        "recent_activity_24h": recent_activity,
+    }
+
+
+async def mcp_get_activity_log_rows(
+    db: AsyncSession,
+    *,
+    board_id: str,
+    limit: int,
+    cursor_pair: tuple[datetime, str] | None,
+    effective_offset: int,
+    action: str = "",
+    card_id: str = "",
+    include_details: bool = False,
+) -> tuple[list[dict[str, Any]], tuple[datetime, str] | None]:
+    from okto_pulse.core.services.activity_log import (
+        activity_log_summary,
+        sanitize_activity_details,
+    )
+
+    query = select(ActivityLog).where(ActivityLog.board_id == board_id)
+    if action:
+        query = query.where(ActivityLog.action == action)
+    if card_id:
+        query = query.where(ActivityLog.card_id == card_id)
+    if cursor_pair is not None:
+        ts, rid = cursor_pair
+        ts_normalized = ts.replace(microsecond=0)
+        query = query.where(
+            or_(
+                func.datetime(ActivityLog.created_at) < func.datetime(ts_normalized),
+                and_(
+                    func.datetime(ActivityLog.created_at) == func.datetime(ts_normalized),
+                    ActivityLog.id < rid,
+                ),
+            )
+        )
+    query = (
+        query.order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
+        .offset(effective_offset)
+        .limit(limit + 1)
+    )
+    logs = list((await db.execute(query)).scalars().all())
+
+    has_more = len(logs) > limit
+    if has_more:
+        logs = logs[:limit]
+
+    rows: list[dict[str, Any]] = []
+    for log in logs:
+        row: dict[str, Any] = {
+            "id": log.id,
+            "action": log.action,
+            "card_id": log.card_id,
+            "created_at": log.created_at.isoformat(),
+            "trigger": (
+                (log.details or {}).get("trigger")
+                if isinstance(log.details, dict)
+                else None
+            ),
+            "summary": activity_log_summary(log.action, log.details),
+        }
+        if include_details:
+            row["actor_type"] = log.actor_type
+            row["actor_id"] = log.actor_id
+            row["actor_name"] = log.actor_name
+            row["details"] = sanitize_activity_details(log.details)
+        rows.append(row)
+
+    next_cursor_pair = (logs[-1].created_at, logs[-1].id) if has_more and logs else None
+    return rows, next_cursor_pair

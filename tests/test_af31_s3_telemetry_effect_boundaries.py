@@ -86,19 +86,43 @@ def _core_src(relative: str) -> str:
 
 def test_core_telemetry_has_no_local_metrics_or_beacon_defaults() -> None:
     settings_src = _core_src("telemetry/settings.py")
+    effect_config_src = _core_src("telemetry/effect_config_registry.py")
     config_src = _core_src("infra/config.py")
 
     assert "Path.home" not in settings_src
+    assert "Path.home" not in effect_config_src
+    assert "OKTO_PULSE_HOME" not in settings_src
+    assert "OKTO_PULSE_HOME" not in effect_config_src
     assert ".okto-pulse\" / \"metrics" not in settings_src
+    assert ".okto-pulse\" / \"metrics" not in effect_config_src
     assert "metrics.oktolabs.ai" not in config_src
     assert "metrics.oktolabs.ai" not in settings_src
+    assert "metrics.oktolabs.ai" not in effect_config_src
 
 
-def test_metrics_dir_requires_explicit_setting_or_provider() -> None:
+def test_explicit_metrics_dir_is_accepted_without_provider(tmp_path: Path) -> None:
+    settings = CoreSettings(
+        metrics_dir=str(tmp_path / "explicit-metrics"),
+        metrics_beacon_url="",
+    )
+
+    assert metrics_dir_for(settings) == (tmp_path / "explicit-metrics").resolve()
+
+
+def test_metrics_dir_requires_explicit_setting_or_provider(caplog) -> None:
     settings = CoreSettings(metrics_dir="", metrics_beacon_url="")
 
-    with pytest.raises(RuntimeError, match="No telemetry metrics_dir configured"):
-        metrics_dir_for(settings)
+    with caplog.at_level("ERROR", logger="okto_pulse.telemetry.effect_config"):
+        with pytest.raises(RuntimeError, match="No telemetry metrics_dir configured"):
+            metrics_dir_for(settings)
+
+    assert any(
+        getattr(record, "metric_name", None)
+        == "telemetry_effect_config_no_metrics_dir_total"
+        and getattr(record, "reason", None) == "no_metrics_dir_provider"
+        and getattr(record, "outcome", None) == "fail_closed"
+        for record in caplog.records
+    )
 
 
 def test_telemetry_effect_config_provider_supplies_runtime_defaults(

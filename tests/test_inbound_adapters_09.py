@@ -32,6 +32,7 @@ from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.models import BoardCreate, IdeationMove
 from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
 from okto_pulse.core.services import BoardService, IdeationService
@@ -47,6 +48,10 @@ AGENT_NAME = "inbound09-agent"
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+def _wrap_uow(db):
+    return resolve_unit_of_work_factory().wrap(db)
 
 
 # --------------------------------------------------------------------------- #
@@ -266,7 +271,7 @@ async def test_move_ideation_rest_equivalent(db_factory):
                 ideation_id=id_after,
                 data=IdeationMove(status=IdeationStatus.REVIEW),
                 user_id=USER_ID,
-                uow=db,
+                uow=_wrap_uow(db),
             )
 
     before = await capture_outcome(_before, normalize=_norm_ideation)
@@ -284,7 +289,7 @@ async def test_move_ideation_rest_not_found_is_404(db_factory):
                 ideation_id="missing-09",
                 data=IdeationMove(status=IdeationStatus.REVIEW),
                 user_id=USER_ID,
-                uow=db,
+                uow=_wrap_uow(db),
             )
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Ideation not found"

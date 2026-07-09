@@ -19,6 +19,7 @@ from okto_pulse.core.kg.config_guard import (
     RestartPolicy,
     SETTING_GROUP_BUFFER,
     SETTING_GROUP_CACHE,
+    SETTING_GROUP_CONNECTION_POOL,
     SETTING_GROUP_INDEX,
     SETTING_GROUP_STORAGE,
     SETTING_GROUP_UNRELATED,
@@ -26,6 +27,7 @@ from okto_pulse.core.kg.config_guard import (
     get_config_block_count,
     get_config_block_counter_labels,
     get_config_block_samples,
+    get_graph_runtime_setting_metadata,
     get_setting_groups,
     reset_config_block_counter,
 )
@@ -83,6 +85,25 @@ def test_cache_setting_change_with_no_extras_is_allowed():
     assert decision.setting_group == SETTING_GROUP_CACHE
 
 
+def test_public_graph_runtime_knobs_have_groups_and_metadata():
+    groups = get_setting_groups()
+    metadata = get_graph_runtime_setting_metadata()
+
+    expected = {
+        "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
+        "kg_kuzu_max_db_size_gb": SETTING_GROUP_STORAGE,
+        "kg_connection_pool_size": SETTING_GROUP_CONNECTION_POOL,
+    }
+    for setting_name, setting_group in expected.items():
+        assert groups[setting_name] == setting_group
+        assert metadata[setting_name] == {
+            "setting_group": setting_group,
+            "owner": "graph_runtime_capability",
+            "public_contract": "legacy_runtime_settings_api",
+            "compatibility_path": "provider_neutral_graph_runtime_alias_required",
+        }
+
+
 def test_buffer_change_with_restart_required_is_allowed_with_requires_restart():
     guard = KGConfigChangeGuard()
     decision = guard.validate(
@@ -95,6 +116,20 @@ def test_buffer_change_with_restart_required_is_allowed_with_requires_restart():
     assert decision.allowed is True
     assert decision.requires_restart is True
     assert decision.setting_group == SETTING_GROUP_BUFFER
+
+
+def test_connection_pool_change_requires_restart_and_is_allowed_with_policy():
+    guard = KGConfigChangeGuard()
+    decision = guard.validate(
+        board_id="b1",
+        current_settings={"kg_connection_pool_size": 8},
+        requested_settings={"kg_connection_pool_size": 12},
+        actor_id="actor-1",
+        restart_policy=RestartPolicy.REQUIRED.value,
+    )
+    assert decision.allowed is True
+    assert decision.requires_restart is True
+    assert decision.setting_group == SETTING_GROUP_CONNECTION_POOL
 
 
 def test_storage_grow_with_migration_plan_and_restart_is_allowed():
@@ -198,6 +233,20 @@ def test_buffer_change_without_restart_policy_is_blocked():
     assert decision.reason == ConfigBlockReason.RESTART_POLICY_REQUIRED.value
 
 
+def test_connection_pool_change_without_restart_policy_is_blocked():
+    guard = KGConfigChangeGuard()
+    decision = guard.validate(
+        board_id="b1",
+        current_settings={"kg_connection_pool_size": 8},
+        requested_settings={"kg_connection_pool_size": 12},
+        actor_id="actor-1",
+        restart_policy=RestartPolicy.NONE.value,
+    )
+    assert decision.allowed is False
+    assert decision.reason == ConfigBlockReason.RESTART_POLICY_REQUIRED.value
+    assert decision.setting_group == SETTING_GROUP_CONNECTION_POOL
+
+
 # --- Unsupported settings + atomic validation infra --------------------------
 
 
@@ -211,6 +260,19 @@ def test_unsupported_kg_setting_raises():
             board_id="b1",
             current_settings={},
             requested_settings={"kg_kuzu_dangerous_undocumented_flag": True},
+            actor_id="actor-1",
+        )
+    assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_LADYBUG_SETTING
+    assert excinfo.value.retryable is False
+
+
+def test_unsupported_connection_setting_raises():
+    guard = KGConfigChangeGuard()
+    with pytest.raises(ConfigGuardError) as excinfo:
+        guard.validate(
+            board_id="b1",
+            current_settings={},
+            requested_settings={"kg_connection_pool_backend": "direct"},
             actor_id="actor-1",
         )
     assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_LADYBUG_SETTING

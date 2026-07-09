@@ -5,29 +5,21 @@ payload + reason codes + mutation restrictions.
 
 Fail-closed + never a bypass (FR5): there is NO skip_gate/override_gate path here;
 the REST request models forbid extra fields and the MCP tools have no such args.
-Every mutation is audit-backed (delegated to AmendmentRevisionService) and every
-failure is a structured ``AmendmentRevisionApiError`` (code/message/status_code +
-to_dict) — never a silent no-op (TR4).
+Every mutation is audit-backed by the persistence backend and every failure is a
+structured ``AmendmentRevisionApiError`` (code/message/status_code + to_dict) —
+never a silent no-op (TR4).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any, Protocol
 
 from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
 from okto_pulse.core.domain.enums import CardType, SpecStatus
-from okto_pulse.core.models.db import Card, Spec
-from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
-from okto_pulse.core.services.bug_regression_preview import (
-    BugRegressionScenarioPreviewError,
-    BugRegressionScenarioPreviewService,
-)
 
 #: Spec statuses that are ALWAYS content-locked (immutable) — a Path B amendment
 #: always attaches here. ``in_progress`` is handled separately by the
@@ -35,7 +27,7 @@ from okto_pulse.core.services.bug_regression_preview import (
 _DONE_OR_LOCKED_SPEC_STATUSES = frozenset({SpecStatus.VALIDATED, SpecStatus.DONE})
 
 
-def _path_b_eligible(spec: Spec) -> bool:
+def _path_b_eligible(spec: Any) -> bool:
     """Content-lock-aware Path B eligibility (spec 62cf2d36, fr_0d2f84a1/fr_58b6aa0b).
 
     A bug's original spec admits a Path B amendment when it is either:
@@ -71,7 +63,7 @@ BYPASS_FIELD_NAMES = frozenset(
 @dataclass  # NOT frozen: an Exception must stay mutable (Python sets __traceback__ on
 # propagation; a frozen dataclass raises FrozenInstanceError -> 500). See DesignSystemError.
 class AmendmentRevisionApiError(Exception):
-    """Structured error for REST + MCP (mirrors BugRegressionScenarioPreviewError).
+    """Structured error for REST + MCP callers.
 
     The payload is enough for an agent to know the next safe action without
     parsing raw exception text (AC3)."""
@@ -105,12 +97,109 @@ def reject_bypass_fields(payload: dict[str, Any] | None) -> None:
             )
 
 
+class AmendmentRevisionApiBackend(Protocol):
+    async def get_bug(self, board_id: str, bug_id: str) -> Any | None: ...
+
+    async def get_spec(self, board_id: str, spec_id: str) -> Any | None: ...
+
+    async def create_amendment(
+        self,
+        *,
+        board_id: str,
+        original_spec_id: str,
+        origin_bug_id: str,
+        author: str,
+        origin_task_ids: list[str] | None = None,
+        affected_task_ids: list[str] | None = None,
+        revision_spec_id: str | None = None,
+        regression_scenario_ids: list[str] | None = None,
+        regression_test_task_ids: list[str] | None = None,
+        automated_regression_refs: list[str] | None = None,
+    ) -> Any: ...
+
+    async def get_amendment(self, amendment_id: str) -> Any | None: ...
+
+    async def list_amendments_for_bug(
+        self,
+        *,
+        board_id: str,
+        original_spec_id: str,
+        origin_bug_id: str,
+    ) -> list[Any]: ...
+
+    async def associate_artifacts(
+        self,
+        amendment_id: str,
+        *,
+        regression_test_task_ids: list[str] | None = None,
+        regression_scenario_ids: list[str] | None = None,
+        automated_regression_refs: list[str] | None = None,
+        actor: str,
+    ) -> Any: ...
+
+    async def set_lineage_state(
+        self,
+        amendment_id: str,
+        lineage_state: AmendmentLineageState,
+        actor: str,
+    ) -> Any: ...
+
+    async def set_status(
+        self,
+        amendment_id: str,
+        new_status: AmendmentRevisionStatus,
+        actor: str,
+    ) -> Any: ...
+
+    async def refresh(self, entity: Any) -> None: ...
+
+    async def path_b_resolution(
+        self,
+        *,
+        board_id: str,
+        bug_id: str,
+        candidate_scenario_ids: list[str],
+    ) -> dict[str, Any]: ...
+
+    def eligibility(self, amendment: Any) -> Any: ...
+
+
+_BACKEND_METHODS = frozenset(
+    {
+        "get_bug",
+        "get_spec",
+        "create_amendment",
+        "get_amendment",
+        "list_amendments_for_bug",
+        "associate_artifacts",
+        "set_lineage_state",
+        "set_status",
+        "refresh",
+        "path_b_resolution",
+        "eligibility",
+    }
+)
+
+
+def _is_backend(candidate: Any) -> bool:
+    return all(callable(getattr(candidate, name, None)) for name in _BACKEND_METHODS)
+
+
 class AmendmentRevisionApiService:
     """Validate + orchestrate amendment-revision operations for a bug."""
 
-    def __init__(self, db: AsyncSession) -> None:
-        self._db = db
-        self._store = AmendmentRevisionService(db)
+    def __init__(self, backend: AmendmentRevisionApiBackend | Any) -> None:
+        self._backend = (
+            backend if _is_backend(backend) else self._legacy_backend(backend)
+        )
+
+    @staticmethod
+    def _legacy_backend(session_like: Any) -> AmendmentRevisionApiBackend:
+        from okto_pulse.core.repositories.sqlalchemy.amendment_revision_api_backend import (
+            SQLAlchemyAmendmentRevisionApiBackend,
+        )
+
+        return SQLAlchemyAmendmentRevisionApiBackend(session_like)
 
     async def create(
         self,
@@ -140,7 +229,7 @@ class AmendmentRevisionApiService:
                 status_code=422,
             )
 
-        spec = await self._db.get(Spec, resolved_spec_id)
+        spec = await self._backend.get_spec(board_id, resolved_spec_id)
         if spec is None or spec.board_id != board_id:
             raise AmendmentRevisionApiError(
                 "original_spec_not_found",
@@ -175,7 +264,7 @@ class AmendmentRevisionApiService:
                 status_code=422,
             )
 
-        amendment = await self._store.create(
+        amendment = await self._backend.create_amendment(
             board_id=board_id,
             original_spec_id=resolved_spec_id,
             origin_bug_id=bug_id,
@@ -186,14 +275,10 @@ class AmendmentRevisionApiService:
             regression_scenario_ids=regression_scenario_ids,
             regression_test_task_ids=regression_test_task_ids,
             automated_regression_refs=automated_regression_refs,
-            # NEVER accept coverage_confirmation here — the reserved key is
-            # writable only by the validator-only confirm_amendment_coverage
-            # writer (non-forgeable). create() also strips it defensively.
-            validation_metadata=None,
         )
         # Load server-side columns (created_at/updated_at) inside the async
         # context before serializing — avoids a lazy MissingGreenlet.
-        await self._db.refresh(amendment)
+        await self._backend.refresh(amendment)
         return self._serialize_revision(amendment)
 
     async def get(self, *, board_id: str, bug_id: str, amendment_id: str) -> dict[str, Any]:
@@ -203,7 +288,7 @@ class AmendmentRevisionApiService:
 
     async def list_for_bug(self, *, board_id: str, bug_id: str) -> dict[str, Any]:
         bug = await self._require_bug(board_id, bug_id)
-        amendments = await self._store.list_for_bug(
+        amendments = await self._backend.list_amendments_for_bug(
             board_id=board_id,
             original_spec_id=bug.spec_id,
             origin_bug_id=bug_id,
@@ -247,14 +332,14 @@ class AmendmentRevisionApiService:
                 "regression_scenario_ids or automated_regression_refs.",
                 status_code=422,
             )
-        amendment = await self._store.associate_artifacts(
+        amendment = await self._backend.associate_artifacts(
             amendment_id,
             regression_test_task_ids=regression_test_task_ids,
             regression_scenario_ids=regression_scenario_ids,
             automated_regression_refs=automated_regression_refs,
             actor=actor,
         )
-        await self._db.refresh(amendment)  # load onupdate updated_at (no MissingGreenlet)
+        await self._backend.refresh(amendment)
         return self._serialize_revision(amendment)
 
     async def transition_lifecycle(
@@ -345,10 +430,12 @@ class AmendmentRevisionApiService:
         # Apply lineage before status so a combined call lands consistently. Coverage
         # is NEVER touched here — it stays validator-only via confirm_amendment_coverage.
         if new_lineage is not None:
-            amendment = await self._store.set_lineage_state(amendment_id, new_lineage, actor)
+            amendment = await self._backend.set_lineage_state(
+                amendment_id, new_lineage, actor
+            )
         if new_status is not None:
-            amendment = await self._store.set_status(amendment_id, new_status, actor)
-        await self._db.refresh(amendment)
+            amendment = await self._backend.set_status(amendment_id, new_status, actor)
+        await self._backend.refresh(amendment)
         return self._serialize_revision(amendment)
 
     # -- internals ---------------------------------------------------------
@@ -384,8 +471,8 @@ class AmendmentRevisionApiService:
             and bug.origin_task_id in membership
         )
 
-    async def _require_bug(self, board_id: str, bug_id: str) -> Card:
-        bug = await self._db.get(Card, bug_id)
+    async def _require_bug(self, board_id: str, bug_id: str) -> Any:
+        bug = await self._backend.get_bug(board_id, bug_id)
         if bug is None or bug.board_id != board_id:
             raise AmendmentRevisionApiError(
                 "bug_not_found", f"Bug '{bug_id}' was not found on this board.", 404
@@ -401,7 +488,7 @@ class AmendmentRevisionApiService:
         return bug
 
     async def _require_scoped_amendment(self, board_id: str, bug_id: str, amendment_id: str):
-        amendment = await self._store.get(amendment_id)
+        amendment = await self._backend.get_amendment(amendment_id)
         if amendment is None:
             raise AmendmentRevisionApiError(
                 "amendment_not_found",
@@ -420,31 +507,14 @@ class AmendmentRevisionApiService:
     async def _path_b_resolution(
         self, board_id: str, bug_id: str, candidate_scenario_ids: list[str]
     ) -> dict[str, Any]:
-        try:
-            payload = await BugRegressionScenarioPreviewService(self._db).resolve(
-                board_id=board_id,
-                bug_id=bug_id,
-                candidate_scenario_ids=candidate_scenario_ids or None,
-            )
-        except BugRegressionScenarioPreviewError as exc:
-            # structured, not an exception leak (AC3): surface why the bug-level
-            # resolution could not be computed.
-            return {"available": False, **exc.to_dict()}
-        return {
-            "available": True,
-            "coverage_state": payload.get("coverage_state"),
-            "coverage_pending_scenarios": payload.get("coverage_pending_scenarios"),
-            "missing_links": payload.get("missing_links"),
-            "safe_next_actions": payload.get("safe_next_actions"),
-            "next_action": payload.get("next_action"),
-            "eligible_regression_artifacts": payload.get("eligible_regression_artifacts"),
-            "rejected_regression_artifacts": payload.get("rejected_regression_artifacts"),
-            "rejected_scenarios": payload.get("rejected_scenarios"),
-            "amendment_revision_id": payload.get("amendment_revision_id"),
-        }
+        return await self._backend.path_b_resolution(
+            board_id=board_id,
+            bug_id=bug_id,
+            candidate_scenario_ids=candidate_scenario_ids,
+        )
 
     def _serialize_revision(self, amendment) -> dict[str, Any]:
-        verdict = AmendmentRevisionService.eligibility(amendment)
+        verdict = self._backend.eligibility(amendment)
         return {
             "id": amendment.id,
             "board_id": amendment.board_id,

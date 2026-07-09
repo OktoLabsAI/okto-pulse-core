@@ -350,10 +350,13 @@ class SubmitTaskValidationUseCase:
         card = await service.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
-        try:
-            reviewer_name = await resolve_actor_name(session, actor.actor_id, card.board_id)
-        except Exception:
-            reviewer_name = actor.actor_id
+        if actor.actor_name:
+            reviewer_name = actor.actor_name
+        else:
+            try:
+                reviewer_name = await resolve_actor_name(session, actor.actor_id, card.board_id)
+            except Exception:
+                reviewer_name = actor.actor_id
 
         result = await service.submit_task_validation(
             card_id=command.card_id,

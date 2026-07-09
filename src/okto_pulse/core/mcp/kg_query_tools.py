@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from typing import Any
 
 from okto_pulse.core.application.scope import ActorScope
@@ -60,6 +61,44 @@ def _err_from(e: KGToolError) -> str:
     if "graph_state" in details:
         return _err(e.code, e.message, graph_state=details["graph_state"])
     return _err(e.code, e.message)
+
+
+_RELATED_CONTEXT_TYPED_REF_PREFIXES = frozenset({"spec", "card"})
+
+
+def _raw_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _validate_related_context_artifact_ref(artifact_id: str) -> str | None:
+    """Validate KG related-context anchors at the MCP boundary.
+
+    ``spec:<uuid>`` and ``card:<uuid>`` are unambiguous and supported. Existing
+    non-UUID artifact refs remain accepted for backward compatibility with
+    historical ``source_artifact_ref`` values. Raw UUIDs fail before any graph
+    store query so the core does not infer relational type.
+    """
+    value = (artifact_id or "").strip()
+    if not value:
+        return "artifact_id is required. Use spec:<uuid> or card:<uuid>."
+    if ":" in value:
+        prefix, raw_id = value.split(":", 1)
+        if prefix not in _RELATED_CONTEXT_TYPED_REF_PREFIXES or not raw_id:
+            return (
+                "artifact_id must use a typed reference: spec:<uuid> or card:<uuid>. "
+                "Do not pass raw UUIDs."
+            )
+        return None
+    if _raw_uuid(value):
+        return (
+            "artifact_id is ambiguous as a raw UUID. Use spec:<uuid> or card:<uuid> "
+            "so KG queries do not infer relational type."
+        )
+    return None
 
 
 async def _get_auth_context():
@@ -175,6 +214,14 @@ okto-pulse://reference/tool-docs/kg."""
             # R6-IMP3: normalize at the boundary (fail-closed on invalid) + echo the
             # applied layer top-level so the explored scope is auditable.
             applied_layer = normalize_graph_layer(graph_layer)
+            ref_error = _validate_related_context_artifact_ref(artifact_id)
+            if ref_error:
+                return _err(
+                    "invalid_artifact_ref",
+                    ref_error,
+                    supported=["spec:<uuid>", "card:<uuid>"],
+                    examples=["spec:11111111-1111-1111-1111-111111111111"],
+                )
             parsed_types: list[str] | None = None
             if rel_types:
                 tokens = [t.strip() for t in rel_types.replace("|", ",").split(",")]

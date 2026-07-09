@@ -22,6 +22,25 @@ from okto_pulse.core.services import AgentService
 USER = "af14-user"
 
 
+class _HarnessMcpAuthenticator:
+    def __init__(self, session_factory):
+        self._session_factory = session_factory
+
+    async def authenticate(self, credential):
+        if credential is None:
+            return None
+        async with self._session_factory() as db:
+            from okto_pulse.core.services.application_agents import (
+                authenticate_agent_by_api_key,
+            )
+
+            return await authenticate_agent_by_api_key(
+                db,
+                credential.value,
+                credential_source=credential.source,
+            )
+
+
 def _client() -> TestClient:
     app = FastAPI()
     app.include_router(agents_router, prefix="/api/v1/agents")
@@ -69,7 +88,11 @@ async def test_af14_service_persists_marker_and_authenticates_by_hash():
 async def test_af14_mcp_query_header_and_bearer_authenticate_by_hash():
     from okto_pulse.core.mcp import server as mcp_server
 
-    mcp_server.register_session_factory(get_session_factory())
+    session_factory = get_session_factory()
+    mcp_server.register_session_factory(
+        session_factory,
+        mcp_authenticator=_HarnessMcpAuthenticator(session_factory),
+    )
 
     async with get_session_factory()() as db:
         service = AgentService(db)

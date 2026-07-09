@@ -258,6 +258,8 @@ def test_ts4_current_core_common_contracts_are_backend_agnostic() -> None:
     from okto_pulse.core.application.boundary import (
         GraphRuntimeSurfaceGate,
         GraphRuntimeSurfaceGateInput,
+        LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER,
+        REQUIRED_COMPATIBILITY_FIELDS,
     )
 
     report = GraphRuntimeSurfaceGate().run(
@@ -270,3 +272,60 @@ def test_ts4_current_core_common_contracts_are_backend_agnostic() -> None:
         "okto_pulse/core/kg/interfaces/board_graph_runtime.py",
         "okto_pulse/core/kg/schema.py",
     ]
+    assert report.evidence["compatibility_ledger_findings"] == []
+
+    by_token = {
+        entry.token: entry
+        for entry in LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER
+    }
+    assert {
+        "board_kuzu_path",
+        "open_kuzu_db",
+        "apply_ladybug_lifecycle_step",
+        "KuzuNodeRef",
+        "kuzu_node_id",
+        "kg_kuzu_",
+        "kg_connection_pool_size",
+        "graph_lbug_bytes",
+        "kuzu_error",
+        "kuzu_lock_retries_5m",
+    } <= set(by_token)
+    for entry in LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER:
+        for field in REQUIRED_COMPATIBILITY_FIELDS:
+            value = getattr(entry, field)
+            assert value, f"{entry.token}.{field} is empty"
+        assert entry.owner
+        assert entry.removal_criterion
+        assert entry.validation_oracle
+
+
+def test_ts4_graph_runtime_compatibility_ledger_fails_when_stale(tmp_path: Path) -> None:
+    from okto_pulse.core.application.boundary import (
+        GraphRuntimeSurfaceGate,
+        GraphRuntimeSurfaceGateInput,
+    )
+
+    api_dir = tmp_path / "okto_pulse" / "core" / "api"
+    api_dir.mkdir(parents=True)
+    (api_dir / "kg_health.py").write_text(
+        "class StorageFootprintProxy:\n"
+        "    total_bytes = None\n",
+        encoding="utf-8",
+    )
+
+    report = GraphRuntimeSurfaceGate().run(
+        GraphRuntimeSurfaceGateInput(source_root=tmp_path, mode="blocking")
+    )
+
+    assert report.status == "blocking"
+    findings = report.evidence["compatibility_ledger_findings"]
+    assert {
+        "token": "graph_lbug_bytes",
+        "diagnostic_code": "stale_compatibility_entry",
+        "files": ["okto_pulse/core/api/kg_health.py"],
+        "owner": "okto-pulse-core/kg-health",
+        "removal_criterion": (
+            "Remove only after REST/MCP/UI consumers read total_bytes/primary_bytes "
+            "and a compatibility test proves no client depends on graph_lbug_bytes."
+        ),
+    } in findings

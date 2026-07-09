@@ -1,13 +1,14 @@
 """KG-01.5 endpoint integration — IR ir_4039d470 (val_06cd6809 rework).
 
 Proves that the real settings endpoint (PUT /api/v1/settings/runtime)
-routes LadybugDB-relevant changes through KGConfigChangeGuard BEFORE
+routes graph-runtime changes through KGConfigChangeGuard BEFORE
 persisting. Tests cover:
 
 * Allowed change persists (buffer with implicit restart_required).
 * Blocked changes do NOT persist and return HTTP 400 with bounded reason.
 * Storage shrink below current is blocked.
 * Storage grow without migration_plan_ref is blocked.
+* Connection-pool changes require restart policy.
 * Bounded audit_event surfaces in the response — no raw values leak.
 * Existing legacy tests continue to pass (no regression).
 """
@@ -22,6 +23,7 @@ from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_s
 from okto_pulse.core.kg.config_guard import (
     ConfigBlockReason,
     SETTING_GROUP_BUFFER,
+    SETTING_GROUP_CONNECTION_POOL,
     SETTING_GROUP_STORAGE,
     get_config_block_count,
     reset_config_block_counter,
@@ -99,6 +101,21 @@ async def test_put_buffer_change_persists_with_implicit_restart_required(
     )
     assert put_resp.status_code == 200
     body = put_resp.json()
+    assert body["restart_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_put_connection_pool_change_persists_with_implicit_restart_required(
+    settings_client,
+):
+    configure_settings(CoreSettings())
+    put_resp = await settings_client.put(
+        "/api/v1/settings/runtime",
+        json={"kg_connection_pool_size": 12},
+    )
+    assert put_resp.status_code == 200
+    body = put_resp.json()
+    assert body["kg_connection_pool_size"] == 8
     assert body["restart_required"] is True
 
 
@@ -223,7 +240,26 @@ async def test_put_buffer_with_restart_policy_none_is_blocked(
     assert detail["setting_group"] == SETTING_GROUP_BUFFER
 
 
-# --- Non-graph-DB keys bypass the guard --------------------------------------
+@pytest.mark.asyncio
+async def test_put_connection_pool_with_restart_policy_none_is_blocked(
+    settings_client,
+):
+    """Connection-pool changes are graph-runtime constructor-time settings."""
+    configure_settings(CoreSettings())
+    put_resp = await settings_client.put(
+        "/api/v1/settings/runtime",
+        json={
+            "kg_connection_pool_size": 12,
+            "restart_policy": "none",
+        },
+    )
+    assert put_resp.status_code == 400
+    detail = put_resp.json()["detail"]
+    assert detail["reason"] == ConfigBlockReason.RESTART_POLICY_REQUIRED.value
+    assert detail["setting_group"] == SETTING_GROUP_CONNECTION_POOL
+
+
+# --- Non-graph-runtime keys bypass the guard ---------------------------------
 
 
 @pytest.mark.asyncio

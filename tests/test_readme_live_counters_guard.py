@@ -28,6 +28,10 @@ CORE_README_COUNTERS = (
 COMMUNITY_SOURCE_MAP_ENTRIES = (
     "community/main.py",
     "community/adapters/composition.py",
+    "community/adapters/mcp_auth.py",
+    "community/adapters/resources.py",
+    "community/adapters/capability_descriptors.py",
+    "community/adapters/mcp_trace.py",
     "community/adapters/scheduler.py",
     "community/adapters/workers.py",
     "community/adapters/board_source_reader.py",
@@ -229,6 +233,10 @@ def test_community_readme_live_mcp_count_and_source_map_match_filesystem() -> No
         assert documented, f"{adapter_file} is missing from Community live source map"
 
     for required_adapter in (
+        "community/adapters/mcp_auth.py",
+        "community/adapters/resources.py",
+        "community/adapters/capability_descriptors.py",
+        "community/adapters/mcp_trace.py",
         "community/adapters/scheduler.py",
         "community/adapters/workers.py",
         "community/adapters/board_source_reader.py",
@@ -238,3 +246,31 @@ def test_community_readme_live_mcp_count_and_source_map_match_filesystem() -> No
         "community/adapters/sqlalchemy_database.py",
     ):
         assert required_adapter in adapter_files
+
+
+def test_af41_readmes_pin_mcp_runtime_ownership_and_provider_preservation() -> None:
+    _require_community_repo()
+    core_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    community_readme = (COMMUNITY_ROOT / "README.md").read_text(encoding="utf-8")
+
+    for marker in (
+        "Core exposes `build_mcp_asgi_app()` and `mount_mcp()`",
+        "deprecated\n`okto_pulse.core.mcp.server.run_mcp_server` debug shim",
+        "`register_instruction_provider`",
+        "`register_resource_catalog`",
+        "`register_package_version_provider`",
+        "`McpAuthenticator`",
+        "`McpTraceSink`",
+    ):
+        assert marker in core_readme
+
+    for marker in (
+        "Community declares `uvicorn[standard]` and\n`wsproto` directly",
+        "`CommunityMcpAuthenticator`",
+        "`build_community_resource_catalog`",
+        "`CommunityCapabilityDescriptorSource`",
+        "`build_mcp_trace_sink_from_env`",
+        "`JsonlMcpTraceSink`",
+        "`core.ports.McpTraceSink`",
+    ):
+        assert marker in community_readme

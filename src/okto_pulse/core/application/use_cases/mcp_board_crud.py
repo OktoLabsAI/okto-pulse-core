@@ -31,7 +31,14 @@ _MCP_HUMAN_ONLY_DEFAULT_BOARD_CONFIG_FIELDS = (
 
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
-    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
+    actor_scope = ActorScope.from_context(actor)
+    if board_id is None:
+        return actor_scope.query_scope(target_board_id=board_id)
+    return actor_scope.query_scope(
+        target_board_id=board_id,
+        allowed_board_ids=[board_id],
+        require_ownership=False,
+    )
 
 
 # --- get_board (multi-service aggregation read) -----------------------------
@@ -545,12 +552,15 @@ def _optional_bool(value: Any) -> bool | None:
 def is_derivation_pending_ideation(item: Any) -> bool:
     status = _enum_value(getattr(item, "status", None))
     complexity = _enum_value(getattr(item, "complexity", None))
-    active_count = int(getattr(item, "active_refinement_count", 0) or 0)
-    return (
-        status == "done"
-        and complexity in {"medium", "large"}
-        and active_count == 0
-    )
+    if status != "done":
+        return False
+    if complexity in {"medium", "large"}:
+        active_refinements = int(getattr(item, "active_refinement_count", 0) or 0)
+        return active_refinements == 0
+    if complexity == "small":
+        active_specs = int(getattr(item, "active_spec_count", 0) or 0)
+        return active_specs == 0
+    return False
 
 
 def is_derivation_pending_refinement(item: Any) -> bool:
