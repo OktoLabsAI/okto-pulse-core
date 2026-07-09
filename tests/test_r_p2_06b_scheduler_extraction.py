@@ -121,16 +121,14 @@ def test_create_app_preserves_composition_on_app_state(monkeypatch):
         get_settings,
     )
 
-    # This test only asserts composition preservation on app.state. Letting
-    # create_app open a real database would re-register the process-global
-    # engine from CoreSettings() (i.e. the CURRENT env) and hijack db_factory
-    # for every test that runs after this file — same guard as
-    # test_runtime_composition_03.
-    db_calls: list[str] = []
+    # This test only asserts composition preservation on app.state. The core
+    # app factory no longer opens a concrete database; it only verifies that an
+    # edition-owned relational runtime was configured before default lifespan.
+    runtime_checks: list[str] = []
     monkeypatch.setattr(
         app_mod,
-        "create_database",
-        lambda *args, **kwargs: db_calls.append("create_database"),
+        "is_database_runtime_configured",
+        lambda: runtime_checks.append("is_database_runtime_configured") or True,
     )
 
     class _Auth:
@@ -165,8 +163,6 @@ def test_create_app_preserves_composition_on_app_state(monkeypatch):
         )
     finally:
         configure_settings(original_settings)
-    # The productive path still initialises the database — just not against
-    # this test process' engine.
-    assert db_calls == ["create_database"]
+    assert runtime_checks == ["is_database_runtime_configured"]
     assert app.state.runtime_composition is composition
     assert app.state.runtime_composition.scheduler_control is composition.scheduler_control
