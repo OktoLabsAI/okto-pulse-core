@@ -36,6 +36,17 @@ from okto_pulse.core.application.use_cases.guidelines_crud import (
     UpdateGuidelineCommand,
     UpdateGuidelineUseCase,
 )
+from okto_pulse.core.application.use_cases.import_export import (
+    KIND_GUIDELINES,
+    EnvelopeError,
+    ExportGuidelinesCommand,
+    ExportGuidelinesUseCase,
+    ImportGuidelinesCommand,
+    ImportGuidelinesUseCase,
+    ImportItemError,
+    parse_import_envelope,
+    validate_items,
+)
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.models.schemas import (
@@ -97,6 +108,75 @@ async def create_guideline(
         uow=uow,
     )
     return result.guideline
+
+
+# NOTE: the literal /guidelines/export and /guidelines/import routes MUST be
+# declared BEFORE the parametric /guidelines/{guideline_id} below — FastAPI
+# matches in registration order, so the param route would otherwise swallow
+# "export" as a guideline id (same shadowing as /guidelines/default-candidates,
+# see api/router.py).
+
+
+@router.get("/guidelines/export")
+async def export_guidelines(
+    board_id: str | None = Query(None),
+    user_id: str = Depends(require_user),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
+):
+    """Export the actor's global guidelines + (if board_id) the board's inline
+    guidelines as a schema_version-1 envelope (kind=guidelines)."""
+    try:
+        return await ExportGuidelinesUseCase().execute(
+            ExportGuidelinesCommand(board_id=board_id),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_not_found(exc))
+
+
+@router.post("/guidelines/import")
+async def import_guidelines(
+    envelope: dict,
+    dry_run: bool = Query(False),
+    board_id: str | None = Query(None),
+    user_id: str = Depends(require_user),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
+):
+    """Import a kind=guidelines envelope. Items are validated against the same
+    ``GuidelineCreate`` schema as POST /guidelines; identical titles in the
+    target partition are skipped as duplicates; any invalid item → 400 and
+    NOTHING is mutated (all-or-nothing). ``dry_run=true`` validates and reports
+    without persisting. ``board_id`` retargets inline items to that board."""
+    try:
+        raw_items = parse_import_envelope(envelope, kind=KIND_GUIDELINES)
+    except EnvelopeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "invalid_envelope", "message": str(exc)},
+        )
+    parsed, errors = validate_items(raw_items, GuidelineCreate.model_validate)
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"created": 0, "skipped": [], "errors": errors},
+        )
+    try:
+        result = await ImportGuidelinesUseCase().execute(
+            ImportGuidelinesCommand(items=parsed, board_id=board_id, dry_run=dry_run),
+            actor=RESTAdapterContract.actor(user_id, board_id=board_id),
+            uow=uow,
+        )
+    except ImportItemError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "created": 0,
+                "skipped": [],
+                "errors": [{"index": exc.index, "detail": exc.detail}],
+            },
+        )
+    return result.payload(dry_run=dry_run)
 
 
 @router.get("/guidelines/{guideline_id}", response_model=GuidelineResponse)

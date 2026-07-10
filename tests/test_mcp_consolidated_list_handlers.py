@@ -983,7 +983,76 @@ async def test_list_snapshots_refinement(seeded_board):
 
 
 # ---------------------------------------------------------------------------
-# 10. TS-b624b4d8: agent_instructions.md has no primary refs to old tools
+# 10. ITEM 18 — derivation_pending discoverability guards
+# ---------------------------------------------------------------------------
+
+
+def test_list_by_board_description_documents_filters_per_entity_type():
+    """Discoverability regression guard (ITEM 18): the live tools/list
+    description of okto_pulse_list_by_board must enumerate the allowed filter
+    keys per entity_type — sourced from filters.py so the docstring cannot
+    silently drift — highlight derivation_pending with a copy-pastable inline
+    example, document the invalid_filter behaviour, and point at the lazy
+    list_tools resource, all within the R1.1 per-tool budget (900 chars)."""
+    import okto_pulse.core.mcp.server as _srv
+    from okto_pulse.core.mcp.filters import ALLOWED_FILTERS_BY_BOARD
+
+    tool = _srv.mcp._tool_manager._tools.get("okto_pulse_list_by_board")
+    assert tool is not None, "okto_pulse_list_by_board not registered"
+    desc = tool.description or ""
+
+    for entity_type, allowed in ALLOWED_FILTERS_BY_BOARD.items():
+        assert entity_type in desc, f"description missing entity_type {entity_type!r}"
+        for key in allowed:
+            assert key in desc, (
+                f"description missing filter key {key!r} for entity_type={entity_type!r}"
+            )
+
+    # derivation_pending triage carries a copy-pastable example.
+    assert '{"derivation_pending": true}' in desc
+    # Unknown-filter behaviour is documented.
+    assert "invalid_filter" in desc
+    # Lazy long-form docs remain referenced.
+    assert "okto-pulse://reference/list_tools" in desc
+    # R1.1 compaction budget still holds (see test_r1_tool_compaction.py).
+    assert len(desc) <= 900, f"description is {len(desc)} chars (budget 900)"
+
+
+@pytest.mark.asyncio
+async def test_list_by_board_invalid_filter_error_teaches_derivation_pending():
+    """ITEM 18: the invalid_filter structured error must list the allowed keys
+    for the entity_type (including derivation_pending for ideations) so an
+    agent can self-correct from the error payload alone."""
+    result = await _call_tool("okto_pulse_list_by_board",
+        board_id=BOARD_ID,
+        entity_type="ideation",
+        filters={"pending_derivation": True},  # plausible agent key inversion
+    )
+    data = _parse(result)
+    assert data.get("error_code") == "invalid_filter"
+    assert data.get("supported") == ["status", "labels", "derivation_pending"]
+    assert data.get("invalid_keys") == ["pending_derivation"]
+    # The human-readable message names the allowed keys too.
+    assert "derivation_pending" in data.get("error", "")
+
+
+def test_list_tools_resource_documents_derivation_pending_triage():
+    """ITEM 18: the lazy reference/list_tools resource must carry the filter
+    table and the end-to-end pending-derivation triage example."""
+    import okto_pulse.core.mcp.server as _srv
+
+    content = _srv._load_resource_file("reference/list_tools.md")
+    assert content, "reference/list_tools.md resolved to empty content"
+    assert "Filters by entity_type" in content
+    assert '"derivation_pending": true' in content
+    # Small done ideations expose pending direct-spec derivation.
+    assert "small ideations with zero active direct specs" in content
+    assert "okto_pulse_derive_spec_from_ideation" in content
+    assert "okto_pulse_derive_spec_from_refinement" in content
+
+
+# ---------------------------------------------------------------------------
+# 11. TS-b624b4d8: agent_instructions.md has no primary refs to old tools
 # ---------------------------------------------------------------------------
 
 

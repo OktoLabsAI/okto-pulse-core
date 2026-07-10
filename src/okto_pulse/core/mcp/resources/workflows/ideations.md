@@ -57,6 +57,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
 4. **Evaluation only in "evaluating"**: `okto_pulse_evaluate_ideation` only works when status is `evaluating`
 5. **Editing only in "draft"**: `okto_pulse_update_ideation` only works when status is `draft`
 6. **Derivations only from "done"**: Specs and refinements can only be created from a `done` ideation (immutable snapshot)
+7. **Triage pending derivations**: the canonical surface to find done ideations that still lack a derived child is `okto_pulse_list_by_board(entity_type="ideation", filters={"derivation_pending": true})` — see `okto-pulse://reference/list_tools`
 
 ## 2.1a Ambiguity-Killer Protocol — ASK Before Advancing (MANDATORY)
 

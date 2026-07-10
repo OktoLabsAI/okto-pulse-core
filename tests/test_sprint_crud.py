@@ -1084,10 +1084,16 @@ class TestSprintStateMachine:
         from okto_pulse.core.services.main import SprintService
         async with db_factory() as db:
             service = SprintService(db)
-            data = SprintMove(status=SprintStatus.CANCELLED)
+            data = SprintMove(
+                status=SprintStatus.CANCELLED,
+                cancellation_reason="Sprint scope superseded by a newer plan",
+            )
             sprint = await service.move_sprint(sprint_id, AGENT_ID, data)
 
         assert sprint.status == SprintStatus.CANCELLED
+        assert sprint.cancellation_reason == "Sprint scope superseded by a newer plan"
+        assert sprint.cancelled_by == AGENT_ID
+        assert sprint.cancelled_at is not None
 
     async def test_transition_review_to_active(self, db_factory):
         """review → active should succeed (re-open sprint)."""
@@ -1862,7 +1868,10 @@ class TestSprintHistory:
             assert "tasks_assigned" in action_types
 
             # Move to cancelled
-            data = SprintMove(status=SprintStatus.CANCELLED)
+            data = SprintMove(
+                status=SprintStatus.CANCELLED,
+                cancellation_reason="Cancelled for the history-logging test",
+            )
             await service.move_sprint(sprint_id, AGENT_ID, data)
 
             history = await service.list_history(sprint_id)

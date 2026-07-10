@@ -80,6 +80,7 @@ from okto_pulse.core.models.schemas import (
 )
 from okto_pulse.core.models.schemas import SpecHistoryResponse, SpecQAAnswer, SpecQACreate, SpecQAResponse
 from okto_pulse.core.services import (
+    CancellationReasonRequiredError,
     CardOperationError,
     QASelfAnsweringNotAllowedError,
     ResourceGateError,
@@ -457,6 +458,8 @@ async def move_spec(
             status_code=status.HTTP_409_CONFLICT,
             detail=_resource_gate_detail(e),
         )
+    except CancellationReasonRequiredError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.to_dict())
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except EntityNotFoundError:

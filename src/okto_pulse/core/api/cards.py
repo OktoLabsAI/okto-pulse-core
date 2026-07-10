@@ -63,6 +63,7 @@ from okto_pulse.core.models import (
 )
 from okto_pulse.core.services import (
     CARD_RESOURCE_READ_ONLY_MESSAGE,
+    CancellationReasonRequiredError,
     CardOperationError,
     CardResourceReadOnlyError,
     ResourceGateError,
@@ -163,6 +164,8 @@ async def move_card(
             actor=RESTAdapterContract.actor(user_id),
             uow=uow,
         )
+    except CancellationReasonRequiredError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.to_dict())
     except CardOperationError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.to_dict())
     except GateContractError as e:

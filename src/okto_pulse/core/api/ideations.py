@@ -69,6 +69,7 @@ from okto_pulse.core.models.schemas import (
 )
 from okto_pulse.core.services import (
     AmbiguityGateError,
+    CancellationReasonRequiredError,
     QASelfAnsweringNotAllowedError,
 )
 
@@ -177,6 +178,8 @@ async def move_ideation(
             actor=RESTAdapterContract.actor(user_id),
             uow=uow,
         )
+    except CancellationReasonRequiredError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.to_dict()) from e
     except (AmbiguityGateError, EntityNotFoundError) as e:
         raise RESTAdapterContract.http_error(e, not_found_detail="Ideation not found") from e
     return result.ideation

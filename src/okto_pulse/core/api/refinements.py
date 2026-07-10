@@ -73,7 +73,10 @@ from okto_pulse.core.models.schemas import (
     SpecResponse,
 )
 from okto_pulse.core.repositories import PulseUnitOfWork
-from okto_pulse.core.services import QASelfAnsweringNotAllowedError
+from okto_pulse.core.services import (
+    CancellationReasonRequiredError,
+    QASelfAnsweringNotAllowedError,
+)
 
 router = APIRouter()
 
@@ -192,6 +195,8 @@ async def move_refinement(
             actor=RESTAdapterContract.actor(user_id),
             uow=uow,
         )
+    except CancellationReasonRequiredError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.to_dict())
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except EntityNotFoundError as exc:

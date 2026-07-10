@@ -469,6 +469,11 @@ class Ideation(Base):
     # scope_assessment (which is evaluation-owned). Default false; the write
     # path works while the ideation is in evaluating status.
     skip_ambiguity_gate: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
+    # Cancellation justification (ITEM 17): required when moving to 'cancelled';
+    # reopening (cancelled -> any other status) clears all three fields.
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="ideations")
@@ -619,6 +624,11 @@ class Refinement(Base):
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Cancellation justification (ITEM 17): required when moving to 'cancelled';
+    # reopening (cancelled -> any other status) clears all three fields.
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
     ideation: Mapped["Ideation"] = relationship("Ideation", back_populates="refinements")
@@ -816,6 +826,11 @@ class Spec(Base):
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Cancellation justification (ITEM 17): required when moving to 'cancelled';
+    # reopening (cancelled -> any other status) clears all three fields.
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[SpecStatus] = mapped_column(
         SpecStatusType(), default=SpecStatus.DRAFT, nullable=False
     )
@@ -1015,6 +1030,11 @@ class Sprint(Base):
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Cancellation justification (ITEM 17): required when moving to 'cancelled';
+    # reopening (cancelled -> any other status) clears all three fields.
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -1155,6 +1175,11 @@ class Card(Base):
     # Archive support
     archived: Mapped[bool] = mapped_column(nullable=False, server_default=text("false"))
     pre_archive_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Cancellation justification (ITEM 17): required when moving to 'cancelled';
+    # reopening (cancelled -> any other status) clears all three fields.
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
     board: Mapped["Board"] = relationship("Board", back_populates="cards")

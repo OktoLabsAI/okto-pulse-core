@@ -140,6 +140,7 @@ from okto_pulse.core.services.bug_workflow_remediation import (
     BugWorkflowRemediationMessageBuilder,
     serialize_bug_workflow_remediation,
 )
+from okto_pulse.core.services.cancellation import apply_cancellation_policy
 from okto_pulse.core.services.critical_context_guard import (
     CRITICAL_CONTEXT_DECISION_ACTION,
     CriticalAction,
@@ -4128,6 +4129,17 @@ class CardService:
                 phase="card_done",
             )
 
+        # Cancellation justification (ITEM 17): cancel requires a reason
+        # (replacing any previous one); reopening clears it.
+        apply_cancellation_policy(
+            card,
+            entity_type="card",
+            from_status=old_status,
+            to_status=data.status,
+            reason=getattr(data, "cancellation_reason", None),
+            actor_id=user_id,
+        )
+
         card.status = data.status
         if data.position is not None:
             card.position = data.position
@@ -6381,6 +6393,18 @@ class SpecService:
             )
 
         old_status = spec.status
+
+        # Cancellation justification (ITEM 17): cancel requires a reason
+        # (replacing any previous one); reopening clears it.
+        apply_cancellation_policy(
+            spec,
+            entity_type="spec",
+            from_status=old_status,
+            to_status=data.status,
+            reason=getattr(data, "cancellation_reason", None),
+            actor_id=user_id,
+        )
+
         spec.status = data.status
 
         # Spec Validation Gate: any backward transition from validated/in_progress/done
@@ -8452,6 +8476,17 @@ class IdeationService:
         if data.status == IdeationStatus.DRAFT and old_status == IdeationStatus.DONE:
             ideation.version += 1
 
+        # Cancellation justification (ITEM 17): cancel requires a reason
+        # (replacing any previous one); reopening clears it.
+        apply_cancellation_policy(
+            ideation,
+            entity_type="ideation",
+            from_status=old_status,
+            to_status=data.status,
+            reason=getattr(data, "cancellation_reason", None),
+            actor_id=user_id,
+        )
+
         ideation.status = data.status
 
         await self._log_activity(
@@ -9277,6 +9312,17 @@ class RefinementService:
         # Version bump on back-to-draft from done
         if data.status == RefinementStatus.DRAFT and old_status == RefinementStatus.DONE:
             refinement.version += 1
+
+        # Cancellation justification (ITEM 17): cancel requires a reason
+        # (replacing any previous one); reopening clears it.
+        apply_cancellation_policy(
+            refinement,
+            entity_type="refinement",
+            from_status=old_status,
+            to_status=data.status,
+            reason=getattr(data, "cancellation_reason", None),
+            actor_id=user_id,
+        )
 
         refinement.status = data.status
         from okto_pulse.core.events import publish as event_publish
@@ -10740,6 +10786,18 @@ class SprintService:
                     )
 
         old_status = sprint.status
+
+        # Cancellation justification (ITEM 17): cancel requires a reason
+        # (replacing any previous one); reopening clears it.
+        apply_cancellation_policy(
+            sprint,
+            entity_type="sprint",
+            from_status=old_status,
+            to_status=data.status,
+            reason=getattr(data, "cancellation_reason", None),
+            actor_id=user_id,
+        )
+
         sprint.status = data.status
 
         if old_status != data.status:

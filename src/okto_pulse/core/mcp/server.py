@@ -50,6 +50,7 @@ from okto_pulse.core.services.architecture import (
     CARD_ARCHITECTURE_READ_ONLY_MESSAGE,
     architecture_design_payload_schema,
 )
+from okto_pulse.core.services.cancellation import CancellationReasonRequiredError
 from okto_pulse.core.services.gate_contracts import (
     GateContractError,
     human_control_required_envelope,
@@ -2984,6 +2985,7 @@ async def okto_pulse_move_card(
     completeness_justification: str = "",
     drift: int = -1,
     drift_justification: str = "",
+    cancellation_reason: str = "",
 ) -> str:
     """Move a card to a different column/position on the board.
 
@@ -2991,6 +2993,7 @@ async def okto_pulse_move_card(
     completeness_justification, drift (0-100), and drift_justification so the
     reviewer can validate the claim. Use -1 for completeness/drift when no
     execution report is required (e.g. moving to on_hold or started).
+    status='cancelled' requires cancellation_reason; reopening clears it.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -3033,6 +3036,7 @@ async def okto_pulse_move_card(
             completeness_justification=completeness_justification or None,
             drift=drift if drift >= 0 else None,
             drift_justification=drift_justification or None,
+            cancellation_reason=cancellation_reason or None,
         )
 
         try:
@@ -3055,6 +3059,8 @@ async def okto_pulse_move_card(
             return json.dumps(e.to_dict())
         except ResourceGateError as e:
             return _resource_gate_error_response(e)
+        except CancellationReasonRequiredError as e:
+            return json.dumps({"error": e.code, **e.to_dict()})
         except ValueError as e:
             return json.dumps({"error": str(e), "blocked_by_dependencies": True})
 
@@ -4918,7 +4924,9 @@ async def okto_pulse_update_ideation(
 
 
 @mcp.tool()
-async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str) -> str:
+async def okto_pulse_move_ideation(
+    board_id: str, ideation_id: str, status: str, cancellation_reason: str = ""
+) -> str:
     """
     Change an ideation's status (draft -> review -> approved -> evaluating -> done).
 
@@ -4927,7 +4935,8 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
     - review → draft, approved, cancelled
     - approved → review, evaluating, cancelled
     - evaluating → approved, done, cancelled
-    - done → draft (new version)"""
+    - done → draft (new version)
+    status='cancelled' requires cancellation_reason; reopening clears it."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4969,7 +4978,13 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
             # re-fetches via the uow). board pre-check, old_status, compact MCP
             # payload, error envelopes and actor_name are preserved.
             result = await MoveIdeationUseCase().execute(
-                MoveIdeationCommand(ideation_id, IdeationMove(status=ideation_status)),
+                MoveIdeationCommand(
+                    ideation_id,
+                    IdeationMove(
+                        status=ideation_status,
+                        cancellation_reason=cancellation_reason or None,
+                    ),
+                ),
                 actor=actor,
                 uow=uow,
             )
@@ -4978,6 +4993,8 @@ async def okto_pulse_move_ideation(board_id: str, ideation_id: str, status: str)
             # the ideation is removed between pre-check and the use case — preserve
             # the original "Ideation not found" envelope (not a ValueError).
             return json.dumps({"error": "Ideation not found"})
+        except CancellationReasonRequiredError as e:
+            return json.dumps({"error": e.code, **e.to_dict()})
         except ValueError as e:
             return MCPAdapterContract.error(e)
 
@@ -6029,7 +6046,9 @@ async def okto_pulse_update_refinement(
 
 
 @mcp.tool()
-async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: str) -> str:
+async def okto_pulse_move_refinement(
+    board_id: str, refinement_id: str, status: str, cancellation_reason: str = ""
+) -> str:
     """
     Change a refinement's status (draft -> review -> approved -> done).
 
@@ -6037,7 +6056,8 @@ async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: 
     - draft → review, cancelled
     - review → draft, approved, cancelled
     - approved → review, done, cancelled
-    - done → draft (new version)"""
+    - done → draft (new version)
+    status='cancelled' requires cancellation_reason; reopening clears it."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6072,7 +6092,12 @@ async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: 
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             _r = await McpMoveRefinementUseCase().execute(
                 McpMoveRefinementCommand(
-                    refinement_id, board_id, RefinementMove(status=refinement_status)
+                    refinement_id,
+                    board_id,
+                    RefinementMove(
+                        status=refinement_status,
+                        cancellation_reason=cancellation_reason or None,
+                    ),
                 ),
                 actor=actor,
                 uow=uow,
@@ -6088,6 +6113,8 @@ async def okto_pulse_move_refinement(board_id: str, refinement_id: str, status: 
             )
     except EntityNotFoundError:
         return json.dumps({"error": "Refinement not found"})
+    except CancellationReasonRequiredError as e:
+        return json.dumps({"error": e.code, **e.to_dict()})
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -6954,9 +6981,12 @@ async def okto_pulse_update_spec(
 
 
 @mcp.tool()
-async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
+async def okto_pulse_move_spec(
+    board_id: str, spec_id: str, status: str, cancellation_reason: str = ""
+) -> str:
     """
-    Change a spec's status (e.g. draft → review → approved → validated → in_progress → done)."""
+    Change a spec's status (e.g. draft → review → approved → validated → in_progress → done).
+    status='cancelled' requires cancellation_reason; reopening clears it."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6990,7 +7020,14 @@ async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             _r = await McpMoveSpecUseCase().execute(
-                McpMoveSpecCommand(spec_id, board_id, SpecMove(status=spec_status)),
+                McpMoveSpecCommand(
+                    spec_id,
+                    board_id,
+                    SpecMove(
+                        status=spec_status,
+                        cancellation_reason=cancellation_reason or None,
+                    ),
+                ),
                 actor=actor,
                 uow=uow,
             )
@@ -7007,6 +7044,8 @@ async def okto_pulse_move_spec(board_id: str, spec_id: str, status: str) -> str:
         return json.dumps({"error": "Spec not found"})
     except GateContractError as e:
         return json.dumps(e.to_dict())
+    except CancellationReasonRequiredError as e:
+        return json.dumps({"error": e.code, **e.to_dict()})
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -12662,12 +12701,14 @@ async def okto_pulse_move_sprint(
     board_id: str,
     sprint_id: str,
     status: str,
+    cancellation_reason: str = "",
 ) -> str:
     """
     Move a sprint to a new status. State machine: draft→active→review→closed.
     Gates: draft→active requires cards, active→review requires scoped test
     scenarios in passed status, review→closed requires evaluation. Automated
-    test pointers alone do not satisfy sprint review."""
+    test pointers alone do not satisfy sprint review.
+    status='cancelled' requires cancellation_reason; reopening clears it."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12697,7 +12738,13 @@ async def okto_pulse_move_sprint(
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             sprint = (
                 await MoveSprintUseCase().execute(
-                    MoveSprintCommand(sprint_id, SprintMove(status=sprint_status)),
+                    MoveSprintCommand(
+                        sprint_id,
+                        SprintMove(
+                            status=sprint_status,
+                            cancellation_reason=cancellation_reason or None,
+                        ),
+                    ),
                     actor=actor,
                     uow=uow,
                 )
@@ -12708,6 +12755,8 @@ async def okto_pulse_move_sprint(
             })
     except EntityNotFoundError:
         return json.dumps({"error": "Sprint not found"})
+    except CancellationReasonRequiredError as e:
+        return json.dumps({"error": e.code, **e.to_dict()})
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -16669,12 +16718,22 @@ async def okto_pulse_list_by_board(
     limit: int = 100,
     offset: int = 0,
 ) -> str:
-    """List top-level entities of a board by type.
+    """List top-level entities of a board by type (replaces the entity-specific
+    list_* tools: specs, ideations, refinements, sprints, stories, topics).
 
-    Consolidates: list_specs, list_ideations, list_refinements,
-    list_sprints, list_stories, list_topics.
+    filters by entity_type (unknown keys -> error_code='invalid_filter' + allowed keys):
+    - spec: status, labels, assignee_id
+    - ideation: status, labels, derivation_pending
+    - refinement: ideation_id (required), status, labels, derivation_pending
+    - sprint: spec_id (required), status
+    - story: status, topic_id, linked, converted, include_archived
+    - topic: include_archived
 
-    Use this single tool instead of the individual list_* tools."""
+    derivation_pending (bool) — canonical triage for done ideations/refinements
+    still lacking a derived child (medium/large ideation -> refinement; small
+    ideation or refinement -> spec). Example: entity_type='ideation',
+    filters={"derivation_pending": true}; then derive_spec_from_ideation /
+    derive_spec_from_refinement. Docs: okto-pulse://reference/list_tools"""
     from okto_pulse.core.mcp.filters import invalid_filter_keys, supported_filter_keys, validate_filters
 
     # Auto-deserialize string JSON (MCP transport convention — other tools use coerce_to_list_str)

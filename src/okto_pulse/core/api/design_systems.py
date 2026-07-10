@@ -26,6 +26,17 @@ from okto_pulse.core.application.use_cases.admin_catalog import (
     UnlinkBoardDesignSystemUseCase,
     UpdateDesignSystemUseCase,
 )
+from okto_pulse.core.application.use_cases.import_export import (
+    KIND_DESIGN_SYSTEMS,
+    EnvelopeError,
+    ExportDesignSystemsCommand,
+    ExportDesignSystemsUseCase,
+    ImportDesignSystemsCommand,
+    ImportDesignSystemsUseCase,
+    ImportItemError,
+    parse_import_envelope,
+    validate_items,
+)
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.repositories import PulseUnitOfWork
@@ -117,6 +128,96 @@ async def list_design_systems(
         uow=db,
     )
     return result.data
+
+
+# NOTE: the literal /design-systems/export and /design-systems/import routes
+# MUST be declared BEFORE the parametric /design-systems/{design_system_id}
+# below — FastAPI matches in registration order, so the param route would
+# otherwise swallow "export"/"import" as a design_system_id.
+
+
+@router.get("/design-systems/export")
+async def export_design_systems(
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
+    actor: str = Depends(require_user),
+) -> dict[str, Any]:
+    """Export the whole GLOBAL Design System catalog as a schema_version-1
+    envelope (kind=design_systems)."""
+    result = await ExportDesignSystemsUseCase().execute(
+        ExportDesignSystemsCommand(),
+        actor=RESTAdapterContract.actor(actor),
+        uow=db,
+    )
+    return result
+
+
+@router.post("/design-systems/import")
+async def import_design_systems(
+    envelope: dict[str, Any] = Body(default_factory=dict),
+    dry_run: bool = False,
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
+    actor: str = Depends(require_user),
+) -> dict[str, Any]:
+    """Import a kind=design_systems envelope. Items are validated against the
+    same ``CreateDesignSystemRequest`` schema (+ bypass-field rejection) as
+    POST /design-systems; matching titles in the same catalog partition are
+    skipped as duplicates; any invalid item → 400 and NOTHING is mutated
+    (all-or-nothing). ``dry_run=true`` validates and reports without persisting."""
+    try:
+        raw_items = parse_import_envelope(envelope, kind=KIND_DESIGN_SYSTEMS)
+    except EnvelopeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_envelope", "message": str(exc)},
+        )
+
+    def _validate(raw: dict[str, Any]) -> dict[str, Any]:
+        try:
+            reject_bypass_fields(raw)
+        except AmendmentRevisionApiError as exc:
+            raise ImportItemError(-1, exc.to_dict())
+        return CreateDesignSystemRequest.model_validate(raw).model_dump()
+
+    parsed, errors = validate_items(raw_items, _validate)
+    if errors:
+        raise HTTPException(
+            status_code=400,
+            detail={"created": 0, "skipped": [], "errors": errors},
+        )
+    try:
+        result = await ImportDesignSystemsUseCase().execute(
+            ImportDesignSystemsCommand(items=parsed, dry_run=dry_run),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
+        )
+    except ImportItemError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "created": 0,
+                "skipped": [],
+                "errors": [{"index": exc.index, "detail": exc.detail}],
+            },
+        )
+    return result.payload(dry_run=dry_run)
+
+
+@router.get("/design-systems/{design_system_id}/export")
+async def export_design_system(
+    design_system_id: str,
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
+    actor: str = Depends(require_user),
+) -> dict[str, Any]:
+    """Export a single Design System (any scope) as a one-item envelope."""
+    try:
+        result = await ExportDesignSystemsUseCase().execute(
+            ExportDesignSystemsCommand(design_system_id=design_system_id),
+            actor=RESTAdapterContract.actor(actor),
+            uow=db,
+        )
+        return result
+    except DesignSystemError as exc:
+        raise _err(exc)
 
 
 @router.get("/design-systems/{design_system_id}")

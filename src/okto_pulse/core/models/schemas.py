@@ -994,6 +994,10 @@ class IdeationMove(BaseModel):
     """Schema for changing ideation status."""
 
     status: IdeationStatus
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
 
 
 class IdeationAmbiguityGateSkipUpdate(BaseModel):
@@ -1301,6 +1305,10 @@ class RefinementMove(BaseModel):
     """Schema for changing refinement status."""
 
     status: RefinementStatus
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
 
 
 class RefinementSummary(BaseSchema):
@@ -1545,6 +1553,10 @@ class SpecMove(BaseModel):
     """Schema for changing spec status."""
 
     status: SpecStatus
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
 
 
 class SpecSummary(BaseSchema):
@@ -1593,6 +1605,10 @@ class IdeationResponse(BaseSchema):
     pre_archive_status: str | None = None
     # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
     skip_ambiguity_gate: bool = False
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
     refinements: list[RefinementSummary] = []
     stories: list[StorySummary] = []
     specs: list[SpecSummary] = []
@@ -1623,6 +1639,10 @@ class RefinementResponse(BaseSchema):
     labels: list[str] | None
     archived: bool = False
     pre_archive_status: str | None = None
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
     specs: list[SpecSummary] = []
     knowledge_bases: list[RefinementKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
@@ -1809,6 +1829,10 @@ class SpecResponse(BaseSchema):
     skip_or_coverage: bool = False
     archived: bool = False
     pre_archive_status: str | None = None
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
     status: SpecStatus
     version: int
     assignee_id: str | None
@@ -1956,6 +1980,7 @@ class CardMove(BaseModel):
     completeness_justification: str | None = Field(None, description="Justificativa para o score de completeness (obrigatorio em validation/done).")
     drift: int | None = Field(None, description="0-100: o quanto a implementacao desviou do plano (0=exato, 100=completamente diferente).")
     drift_justification: str | None = Field(None, description="Justificativa para o score de drift — explica desvios do plano original.")
+    cancellation_reason: str | None = Field(None, description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.")
 
 
 class CardResponse(BaseSchema):
@@ -1998,6 +2023,10 @@ class CardResponse(BaseSchema):
     validations: list[dict] | None = None
     archived: bool = False
     pre_archive_status: str | None = None
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
 
 
 class CardSummary(BaseSchema):
@@ -2430,6 +2459,10 @@ class SprintMove(BaseModel):
     """Schema for changing sprint status."""
 
     status: SprintStatus
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
 
 
 class SprintEvaluationCreate(BaseModel):
@@ -2555,6 +2588,10 @@ class SprintResponse(BaseSchema):
     labels: list[str] | None = None
     archived: bool = False
     pre_archive_status: str | None = None
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime

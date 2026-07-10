@@ -53,6 +53,7 @@ from okto_pulse.core.models.schemas import (
     SprintUpdate,
 )
 from okto_pulse.core.repositories import PulseUnitOfWork
+from okto_pulse.core.services.cancellation import CancellationReasonRequiredError
 from okto_pulse.core.services.main import SprintOperationError
 
 router = APIRouter()
@@ -189,6 +190,8 @@ async def move_sprint(
             actor=RESTAdapterContract.actor(user_id),
             uow=uow,
         )
+    except CancellationReasonRequiredError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.to_dict())
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except EntityNotFoundError as exc:

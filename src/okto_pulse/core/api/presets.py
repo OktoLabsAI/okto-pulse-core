@@ -10,6 +10,17 @@ from okto_pulse.core.application.use_cases import (
     EntityNotFoundError,
     PermissionDeniedError,
 )
+from okto_pulse.core.application.use_cases.import_export import (
+    KIND_PRESETS,
+    EnvelopeError,
+    ExportPresetsCommand,
+    ExportPresetsUseCase,
+    ImportItemError,
+    ImportPresetsCommand,
+    ImportPresetsUseCase,
+    parse_import_envelope,
+    validate_items,
+)
 from okto_pulse.core.application.use_cases.permission_presets import (
     ClonePermissionPresetCommand,
     ClonePermissionPresetUseCase,
@@ -96,6 +107,63 @@ async def create_preset(
         uow=uow,
     )
     return result.preset
+
+
+@router.get("/export")
+async def export_presets(
+    user_id: str = Depends(require_user),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
+):
+    """Export every preset visible to the user (built-in + own custom) as a
+    schema_version-1 envelope (kind=presets)."""
+    return await ExportPresetsUseCase().execute(
+        ExportPresetsCommand(),
+        actor=RESTAdapterContract.actor(user_id),
+        uow=uow,
+    )
+
+
+@router.post("/import")
+async def import_presets(
+    envelope: dict,
+    dry_run: bool = False,
+    user_id: str = Depends(require_user),
+    uow: PulseUnitOfWork = Depends(get_unit_of_work),
+):
+    """Import a kind=presets envelope. Items are validated against the same
+    ``PresetCreate`` schema as POST /presets and always create CUSTOM presets;
+    names matching a preset the user can already see (built-in or custom) are
+    skipped as duplicates; any invalid item → 400 and NOTHING is mutated
+    (all-or-nothing). ``dry_run=true`` validates and reports without persisting."""
+    try:
+        raw_items = parse_import_envelope(envelope, kind=KIND_PRESETS)
+    except EnvelopeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "invalid_envelope", "message": str(exc)},
+        )
+    parsed, errors = validate_items(raw_items, PresetCreate.model_validate)
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"created": 0, "skipped": [], "errors": errors},
+        )
+    try:
+        result = await ImportPresetsUseCase().execute(
+            ImportPresetsCommand(items=parsed, dry_run=dry_run),
+            actor=RESTAdapterContract.actor(user_id),
+            uow=uow,
+        )
+    except ImportItemError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "created": 0,
+                "skipped": [],
+                "errors": [{"index": exc.index, "detail": exc.detail}],
+            },
+        )
+    return result.payload(dry_run=dry_run)
 
 
 @router.post("/{preset_id}/clone", response_model=PresetResponse, status_code=status.HTTP_201_CREATED)

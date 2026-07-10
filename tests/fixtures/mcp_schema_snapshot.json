@@ -404,6 +404,19 @@
           "default": null,
           "description": "Justificativa para o score de drift \u2014 explica desvios do plano original.",
           "title": "Drift Justification"
+        },
+        "cancellation_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+          "title": "Cancellation Reason"
         }
       },
       "required": [

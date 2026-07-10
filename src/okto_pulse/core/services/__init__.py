@@ -68,6 +68,10 @@ from okto_pulse.core.services.critical_context_guard import (
     critical_actions_for_entity,
     get_critical_action_definition,
 )
+from okto_pulse.core.services.cancellation import (
+    CancellationReasonRequiredError,
+    apply_cancellation_policy,
+)
 from okto_pulse.core.services.governance_observability import (
     GovernanceAuditPayloadError,
     GovernanceMetricEvent,
@@ -209,6 +213,8 @@ __all__ = [
     "ArchiveService",
     "AttachmentService",
     "BoardService",
+    "CancellationReasonRequiredError",
+    "apply_cancellation_policy",
     "CardOperationError",
     "CardResourceReadOnlyError",
     "CardService",

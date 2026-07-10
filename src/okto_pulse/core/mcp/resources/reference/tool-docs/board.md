@@ -172,11 +172,16 @@ List top-level entities of a board by type.
         JSON {items: [...], total: int, entity_type: str} or structured error
 
     Notes:
-        derivation_pending=true is available for ideation and refinement only.
+        derivation_pending=true is available for ideation and refinement only,
+        and is the canonical triage for done work lacking a derived child.
         For ideations it means DONE medium/large ideations with zero active
-        child refinements. For refinements it means DONE refinements with zero
-        active child specs. Archived or cancelled children are not active
-        derivations.
+        child refinements, plus DONE small ideations with zero active direct
+        specs. For refinements it means DONE refinements with zero active
+        child specs. Archived or cancelled children are not active
+        derivations. Follow-up tools: okto_pulse_derive_spec_from_ideation
+        (small), okto_pulse_create_refinement (medium/large),
+        okto_pulse_derive_spec_from_refinement.
+        Full table + examples: okto-pulse://reference/list_tools
 
 ## `okto_pulse_list_my_boards`
 
