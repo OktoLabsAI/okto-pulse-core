@@ -108,6 +108,6 @@ jobs:
         # Pinned to commit SHA for supply-chain integrity (audit C1).
         # SHA below is v3.95.2 (released 2026-04-21). When bumping, update
         # both the SHA and the trailing version comment together.
-        uses: trufflesecurity/trufflehog@17456f8c7d042d8c82c9a8ca9e937231f9f42e26 # v3.95.2
+        uses: trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55 # v3.95.9
         with:
           extra_args: --only-verified
