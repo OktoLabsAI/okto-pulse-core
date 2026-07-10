@@ -48,7 +48,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemListOutcome,

@@ -19,10 +19,7 @@ def test_af02_transport_gate_real_tree_has_only_bootstrap_allowlist():
     report = run_transport_session_factory_gate(CORE_REPO_ROOT / "src/okto_pulse/core")
 
     assert report.ok, report.as_dict()
-    assert {
-        (finding.file, finding.function, finding.allowlisted)
-        for finding in report.findings
-    } == {("mcp/server.py", "run_mcp_server", True)}
+    assert report.findings == ()
     assert not any(finding.file == "api/kg_events_hub.py" for finding in report.findings)
     assert not any(finding.file == "api/kg_tick.py" for finding in report.findings)
 

@@ -14,7 +14,7 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class McpInstructionProvider(Protocol):
-    """A source for the FastMCP session instructions text."""
+    """A source for the command-catalog session instructions text."""
 
     @property
     def provider_id(self) -> str: ...

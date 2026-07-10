@@ -43,7 +43,7 @@ DATA_ADAPTER_SYMBOLS: frozenset[str] = frozenset(
     }
 )
 
-SETTINGS_CONFIG_MODULE = "okto_pulse.core.kg.providers.embedded.settings_config"
+SETTINGS_CONFIG_MODULE = "okto_pulse.core.kg.providers.testing.settings_config"
 
 #: R-P2-02 retires the last relational data-provider fallback in core. This stays
 #: as an empty public constant so previous conformance tests can assert the

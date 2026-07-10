@@ -8,7 +8,9 @@ Provides:
 - Fresh environment per test (complete isolation)
 """
 
+import hashlib
 import logging
+import copy
 import json
 import os
 import sys
@@ -21,7 +23,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import event, func, select
+from sqlalchemy import and_, asc, event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ---------------------------------------------------------------------------
@@ -75,6 +77,8 @@ from okto_pulse.core.models import db as _models  # noqa: E402, F401
 from okto_pulse.core.models.db import (  # noqa: E402
     Board,
     Card,
+    Agent,
+    AgentBoard,
     CanonicalDebt,
     ConsolidationAudit,
     ConsolidationDeadLetter,
@@ -84,6 +88,7 @@ from okto_pulse.core.models.db import (  # noqa: E402
     KGTickRun,
     KuzuNodeRef,
     Refinement,
+    PermissionPreset,
     Spec,
     Sprint,
 )
@@ -98,12 +103,26 @@ from okto_pulse.core.ports.kg_operational import (  # noqa: E402
     register_kg_operational_ports,
     reset_kg_operational_ports_for_tests,
 )
+from okto_pulse.core.ports.kg_events import (  # noqa: E402
+    HISTORICAL_PROGRESS_SETTINGS_KEY,
+    KGEventsPoll,
+    KGOutboxEvent,
+    register_kg_events_reader_port,
+    reset_kg_events_reader_port_for_tests,
+)
 from okto_pulse.core.ports.relational_effects import (  # noqa: E402
     ConsolidationQueueUpsert,
     KGTickRunUpsert,
     RelationalEffectsPort,
     register_relational_effects_port,
     reset_relational_effects_port_for_tests,
+)
+from okto_pulse.core.ports.relational_application import (  # noqa: E402
+    AgentPermissionContext,
+    EffectivePermissions,
+    PermissionPresetView,
+    register_relational_application_adapter,
+    reset_relational_application_adapter_for_tests,
 )
 # Ensure AppSetting (0.1.4) is registered with Base before init_db() runs;
 # otherwise the app_settings table is missing and runtime settings tests fail.
@@ -258,6 +277,426 @@ class _CoreTestRelationalEffects(RelationalEffectsPort):
             )
         )
         await session.execute(stmt)
+
+
+def _test_preset_view(preset):
+    return PermissionPresetView(
+        id=preset.id,
+        owner_id=preset.owner_id,
+        name=preset.name,
+        description=preset.description,
+        is_builtin=bool(preset.is_builtin),
+        base_preset_id=preset.base_preset_id,
+        flags=copy.deepcopy(preset.flags) if preset.flags else preset.flags,
+        created_at=preset.created_at,
+        updated_at=preset.updated_at,
+    )
+
+
+class _CoreTestPermissionPresetGateway:
+    """SQLAlchemy test double for the Community permission-preset adapter."""
+
+    def __init__(self, session):
+        self._session = session
+
+    async def get_effective_permissions(self, *, user_id, board_id):
+        from okto_pulse.core.infra.permissions import (
+            _match_builtin_preset_name,
+            map_legacy_permissions,
+            resolve_permissions,
+        )
+
+        result = await self._session.execute(
+            select(Agent).where(Agent.created_by == user_id).limit(1)
+        )
+        agent = result.scalar_one_or_none()
+        agent_flags = None
+        preset_flags = None
+        preset_name = None
+        if agent is not None:
+            if isinstance(agent.permission_flags, dict) and agent.permission_flags:
+                agent_flags = agent.permission_flags
+            elif isinstance(agent.permissions, list) and agent.permissions:
+                agent_flags = map_legacy_permissions(agent.permissions)
+            if agent.preset_id:
+                preset = await self._session.get(PermissionPreset, agent.preset_id)
+                if preset is not None and preset.flags:
+                    preset_flags = preset.flags
+                    preset_name = preset.name
+        effective = resolve_permissions(agent_flags, preset_flags, None)
+        return EffectivePermissions(
+            board_id=board_id,
+            preset_name=preset_name or _match_builtin_preset_name(effective.flags),
+            flags=effective.flags,
+        )
+
+    async def list_presets(self, *, user_id):
+        result = await self._session.execute(
+            select(PermissionPreset)
+            .where(
+                (PermissionPreset.is_builtin.is_(True))
+                | (PermissionPreset.owner_id == user_id)
+            )
+            .order_by(PermissionPreset.is_builtin.desc(), PermissionPreset.name)
+        )
+        return [_test_preset_view(row) for row in result.scalars().all()]
+
+    async def create_preset(self, *, user_id, name, description, flags):
+        preset = PermissionPreset(
+            id=str(uuid.uuid4()),
+            owner_id=user_id,
+            name=name,
+            description=description or None,
+            is_builtin=False,
+            flags=copy.deepcopy(flags) if flags else flags,
+        )
+        self._session.add(preset)
+        await self._session.flush()
+        await self._session.refresh(preset)
+        return _test_preset_view(preset)
+
+    async def clone_preset(
+        self, *, source_preset_id, user_id, name, description, flags
+    ):
+        from okto_pulse.core.infra.permissions import (
+            _flatten_registry,
+            _get_nested,
+            _set_nested,
+        )
+
+        source = await self._session.get(PermissionPreset, source_preset_id)
+        if source is None:
+            return None
+        cloned_flags = copy.deepcopy(source.flags) if source.flags else {}
+        if flags:
+            for path in _flatten_registry(flags):
+                value = _get_nested(flags, path)
+                if value is not None:
+                    _set_nested(cloned_flags, path, value)
+        preset = PermissionPreset(
+            id=str(uuid.uuid4()),
+            owner_id=user_id,
+            name=name,
+            description=description or source.description,
+            is_builtin=False,
+            base_preset_id=source_preset_id,
+            flags=cloned_flags,
+        )
+        self._session.add(preset)
+        await self._session.flush()
+        await self._session.refresh(preset)
+        return _test_preset_view(preset)
+
+    async def update_preset(
+        self, *, preset_id, user_id, name, description, flags
+    ):
+        preset = await self._session.get(PermissionPreset, preset_id)
+        if preset is None:
+            return None
+        if preset.is_builtin:
+            raise PermissionError("Built-in presets cannot be modified or deleted")
+        if preset.owner_id != user_id:
+            raise PermissionError("You can only modify your own presets")
+        if name is not None:
+            preset.name = name
+        if description is not None:
+            preset.description = description
+        if flags is not None:
+            preset.flags = copy.deepcopy(flags)
+        await self._session.flush()
+        await self._session.refresh(preset)
+        return _test_preset_view(preset)
+
+    async def delete_preset(self, *, preset_id, user_id):
+        preset = await self._session.get(PermissionPreset, preset_id)
+        if preset is None:
+            return False
+        if preset.is_builtin:
+            raise PermissionError("Built-in presets cannot be modified or deleted")
+        if preset.owner_id != user_id:
+            raise PermissionError("You can only delete your own presets")
+        await self._session.delete(preset)
+        await self._session.flush()
+        return True
+
+
+class _CoreTestAgentAuthenticationGateway:
+    """SQLAlchemy test double for the edition-owned agent lookup port."""
+
+    def __init__(self, session):
+        self._session = session
+
+    async def authenticate_agent_by_api_key(self, api_key, *, credential_source):
+        from okto_pulse.core.ports import AgentAuthSession
+
+        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        result = await self._session.execute(
+            select(Agent).where(
+                Agent.api_key_hash == key_hash,
+                Agent.is_active.is_(True),
+            )
+        )
+        agent = result.scalar_one_or_none()
+        if agent is None:
+            return None
+        return AgentAuthSession(
+            agent_id=agent.id,
+            agent_name=agent.name,
+            is_active=True,
+            metadata={"credential_source": credential_source},
+        )
+
+    async def list_accessible_board_ids_for_agent(self, agent_id):
+        result = await self._session.execute(
+            select(Board.id)
+            .join(AgentBoard, AgentBoard.board_id == Board.id)
+            .where(AgentBoard.agent_id == agent_id)
+            .order_by(Board.name)
+        )
+        return list(result.scalars().all())
+
+    async def agent_has_board_access(self, agent_id, board_id):
+        result = await self._session.execute(
+            select(AgentBoard.id).where(
+                AgentBoard.agent_id == agent_id,
+                AgentBoard.board_id == board_id,
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def resolve_agent_permission_context(self, agent_id, *, board_id=None):
+        from okto_pulse.core.infra.permissions import resolve_permissions
+
+        agent = await self._session.get(Agent, agent_id)
+        if agent is None or not bool(getattr(agent, "is_active", True)):
+            return None
+        agent_board = None
+        if board_id:
+            result = await self._session.execute(
+                select(AgentBoard).where(
+                    AgentBoard.agent_id == agent.id,
+                    AgentBoard.board_id == board_id,
+                )
+            )
+            agent_board = result.scalar_one_or_none()
+            if agent_board is None:
+                return None
+        agent_flags = getattr(agent, "permission_flags", None)
+        if agent_flags is None:
+            permissions = agent.permissions
+        else:
+            preset_flags = None
+            if agent.preset_id:
+                preset = await self._session.get(PermissionPreset, agent.preset_id)
+                if preset is not None:
+                    preset_flags = preset.flags
+            board_overrides = (
+                agent_board.permission_overrides if agent_board is not None else None
+            )
+            permissions = resolve_permissions(
+                agent_flags,
+                preset_flags,
+                board_overrides,
+            )
+        return AgentPermissionContext(
+            agent_id=agent.id,
+            agent_name=agent.name,
+            permissions=permissions,
+        )
+
+
+class _CoreTestAmendmentRevisionApiBackend:
+    """SQLAlchemy test double for the Community amendment backend."""
+
+    def __init__(self, session):
+        from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
+
+        self._session = session
+        self._store = AmendmentRevisionService(session)
+
+    async def get_bug(self, board_id, bug_id):
+        return await self._session.get(Card, bug_id)
+
+    async def get_spec(self, board_id, spec_id):
+        return await self._session.get(Spec, spec_id)
+
+    async def create_amendment(self, **kwargs):
+        return await self._store.create(validation_metadata=None, **kwargs)
+
+    async def get_amendment(self, amendment_id):
+        return await self._store.get(amendment_id)
+
+    async def list_amendments_for_bug(
+        self, *, board_id, original_spec_id, origin_bug_id
+    ):
+        return await self._store.list_for_bug(
+            board_id=board_id,
+            original_spec_id=original_spec_id,
+            origin_bug_id=origin_bug_id,
+        )
+
+    async def associate_artifacts(self, amendment_id, *, actor, **kwargs):
+        return await self._store.associate_artifacts(
+            amendment_id,
+            actor=actor,
+            **kwargs,
+        )
+
+    async def set_lineage_state(self, amendment_id, lineage_state, actor):
+        return await self._store.set_lineage_state(amendment_id, lineage_state, actor)
+
+    async def set_status(self, amendment_id, new_status, actor):
+        return await self._store.set_status(amendment_id, new_status, actor)
+
+    async def refresh(self, entity):
+        await self._session.refresh(entity)
+
+    async def path_b_resolution(
+        self, *, board_id, bug_id, candidate_scenario_ids
+    ):
+        from okto_pulse.core.services.bug_regression_preview import (
+            BugRegressionScenarioPreviewError,
+            BugRegressionScenarioPreviewService,
+        )
+
+        try:
+            payload = await BugRegressionScenarioPreviewService(self._session).resolve(
+                board_id=board_id,
+                bug_id=bug_id,
+                candidate_scenario_ids=candidate_scenario_ids or None,
+            )
+        except BugRegressionScenarioPreviewError as exc:
+            return {"available": False, **exc.to_dict()}
+        return {
+            "available": True,
+            "coverage_state": payload.get("coverage_state"),
+            "coverage_pending_scenarios": payload.get("coverage_pending_scenarios"),
+            "missing_links": payload.get("missing_links"),
+            "safe_next_actions": payload.get("safe_next_actions"),
+            "next_action": payload.get("next_action"),
+            "eligible_regression_artifacts": payload.get("eligible_regression_artifacts"),
+            "rejected_regression_artifacts": payload.get("rejected_regression_artifacts"),
+            "rejected_scenarios": payload.get("rejected_scenarios"),
+            "amendment_revision_id": payload.get("amendment_revision_id"),
+        }
+
+    def eligibility(self, amendment):
+        from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
+
+        return AmendmentRevisionService.eligibility(amendment)
+
+
+class _CoreTestRelationalApplicationAdapter:
+    """Explicit test-only relational adapter bundle for Core use cases."""
+
+    def permission_presets(self, session):
+        return _CoreTestPermissionPresetGateway(session)
+
+    def amendment_revision_backend(self, session):
+        return _CoreTestAmendmentRevisionApiBackend(session)
+
+    def agent_authentication(self, session):
+        return _CoreTestAgentAuthenticationGateway(session)
+
+
+class _CoreTestKGEventsReader:
+    """Explicit SQLAlchemy test double for the edition-owned events reader."""
+
+    def __init__(self, session_factory) -> None:
+        self._session_factory = session_factory
+
+    async def poll(self, *, board_id, after, limit):
+        from okto_pulse.core.infra.database import cancel_safe_session_scope
+
+        async with cancel_safe_session_scope(self._session_factory) as session:
+            events = await self._query_outbox_rows(
+                session,
+                board_id=board_id,
+                after=after,
+                limit=limit,
+            )
+            progress = await self._query_queue_snapshot(session, board_id=board_id)
+        return KGEventsPoll(events=events, progress=progress)
+
+    async def replay(self, *, board_id, after, limit):
+        from okto_pulse.core.infra.database import cancel_safe_session_scope
+
+        async with cancel_safe_session_scope(self._session_factory) as session:
+            return await self._query_outbox_rows(
+                session,
+                board_id=board_id,
+                after=after,
+                limit=limit,
+            )
+
+    async def _query_outbox_rows(self, session, *, board_id, after, limit):
+        rows = (
+            await session.execute(
+                select(GlobalUpdateOutbox)
+                .where(
+                    and_(
+                        GlobalUpdateOutbox.board_id == board_id,
+                        GlobalUpdateOutbox.created_at > after,
+                    )
+                )
+                .order_by(asc(GlobalUpdateOutbox.created_at))
+                .limit(limit)
+            )
+        ).scalars().all()
+        return [
+            KGOutboxEvent(
+                event_id=row.event_id,
+                session_id=row.session_id,
+                event_type=row.event_type,
+                created_at=row.created_at,
+                payload=dict(row.payload) if isinstance(row.payload, dict) else {},
+            )
+            for row in rows
+        ]
+
+    async def _query_queue_snapshot(self, session, *, board_id):
+        rows = (
+            await session.execute(
+                select(ConsolidationQueue.status, ConsolidationQueue.source, func.count())
+                .where(ConsolidationQueue.board_id == board_id)
+                .group_by(ConsolidationQueue.status, ConsolidationQueue.source)
+            )
+        ).all()
+        snapshot = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
+        historical = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
+        for status, source, count in rows:
+            if status in snapshot:
+                snapshot[status] += int(count)
+                if source == "historical_backfill":
+                    historical[status] += int(count)
+
+        live_total = sum(snapshot.values())
+        historical_active = (
+            historical["pending"] + historical["claimed"] + historical["paused"]
+        )
+        historical_total = 0
+        if historical_active > 0:
+            board = await session.get(Board, board_id)
+            if board is not None and isinstance(board.settings, dict):
+                state = board.settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
+                if isinstance(state, dict):
+                    try:
+                        historical_total = int(state.get("total") or 0)
+                    except (TypeError, ValueError):
+                        historical_total = 0
+
+        non_historical_total = live_total - sum(historical.values())
+        if historical_active > 0 and historical_total > 0:
+            snapshot["total"] = max(live_total, historical_total + non_historical_total)
+            snapshot["processed"] = max(
+                0,
+                snapshot["total"]
+                - (snapshot["pending"] + snapshot["claimed"] + snapshot["paused"]),
+            )
+        else:
+            snapshot["total"] = live_total
+            snapshot["processed"] = snapshot["done"]
+        return snapshot
 
 
 class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
@@ -1072,6 +1511,82 @@ def _register_test_unit_of_work_factory():
 
 
 @pytest.fixture(autouse=True)
+def _register_test_relational_application_adapter():
+    """Compose the test-only relational application adapter explicitly."""
+
+    reset_relational_application_adapter_for_tests()
+    register_relational_application_adapter(_CoreTestRelationalApplicationAdapter())
+    yield
+    reset_relational_application_adapter_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _register_test_mcp_host_provider():
+    """Use an explicit test host while Core exercises the command catalog."""
+
+    from okto_pulse.core.ports.mcp_host import (
+        register_mcp_host_provider,
+        reset_mcp_host_provider_for_tests,
+    )
+
+    class _CoreTestMcpHost:
+        def active_credential(self):
+            return None
+
+        def build_asgi_app(self, catalog, *, trace_sink=None):
+            _ = (catalog, trace_sink)
+
+            async def _catalog_unavailable(scope, receive, send):
+                _ = (scope, receive, send)
+
+            return self.wrap_session_middleware(_catalog_unavailable)
+
+        def mount(self, app, catalog, *, mount_path, trace_sink=None):
+            app.mount(
+                mount_path,
+                self.build_asgi_app(catalog, trace_sink=trace_sink),
+            )
+
+        def wrap_session_middleware(self, app):
+            from okto_pulse.core.ports import mcp_credential_from_sources
+
+            class _TestCredentialMiddleware:
+                def __init__(self, downstream):
+                    self._downstream = downstream
+
+                async def __call__(self, scope, receive, send):
+                    if scope.get("type") == "http":
+                        query = scope.get("query_string", b"").decode("utf-8")
+                        query_value = next(
+                            (
+                                part.split("=", 1)[1]
+                                for part in query.split("&")
+                                if part.startswith("api_key=") and "=" in part
+                            ),
+                            None,
+                        )
+                        headers = {
+                            key.decode("latin-1").lower(): value.decode("latin-1")
+                            for key, value in scope.get("headers", [])
+                        }
+                        credential = mcp_credential_from_sources(
+                            query_param=query_value,
+                            x_api_key_header=headers.get("x-api-key"),
+                            authorization_header=headers.get("authorization"),
+                        )
+                        if credential is not None:
+                            scope["okto_pulse.mcp_credential"] = credential
+                    await self._downstream(scope, receive, send)
+
+            return _TestCredentialMiddleware(app)
+
+    reset_mcp_host_provider_for_tests()
+    register_mcp_host_provider(_CoreTestMcpHost())
+    yield
+    reset_mcp_host_provider_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _test_relational_runtime_factory_is_stable():
     """Keep the explicit test relational runtime factory registered."""
     register_relational_runtime_factory(_build_test_relational_runtime)
@@ -1099,6 +1614,32 @@ def _register_test_kg_operational_read_model_port():
     )
     yield
     reset_kg_operational_ports_for_tests()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _register_test_kg_events_reader_port():
+    """Compose the test-only KG event reader and drain pollers between tests."""
+
+    from okto_pulse.core.application.kg_events_hub import (
+        configure_kg_events_hub,
+        shutdown_kg_events_hub,
+    )
+
+    await shutdown_kg_events_hub()
+    reset_kg_events_reader_port_for_tests()
+    reader = _CoreTestKGEventsReader(get_session_factory())
+    register_kg_events_reader_port(reader)
+    configure_kg_events_hub(reader)
+    yield
+    await shutdown_kg_events_hub()
+    reset_kg_events_reader_port_for_tests()
+
+
+@pytest.fixture
+def kg_events_reader():
+    """Return an isolated test reader for unit-level hub construction."""
+
+    return _CoreTestKGEventsReader(get_session_factory())
 
 
 @pytest.fixture

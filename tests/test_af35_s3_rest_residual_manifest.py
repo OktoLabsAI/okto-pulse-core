@@ -46,18 +46,16 @@ def test_real_rest_manifest_classifies_current_productive_residue() -> None:
     payload = report.as_dict()
 
     assert report.ok, payload
-    assert report.scanned_files == 47
-    assert len(report.findings) == 46
+    assert report.scanned_files == 48
+    assert len(report.findings) == 4
     assert payload["by_classification"] == {
         CLASS_ALLOWED_UOW_SEAM_API_DEPS: 4,
-        CLASS_DEFERRED_WITH_OWNER: 42,
     }
     assert payload["by_pattern"] == {
-        "async_session_annotation": 17,
-        "async_session_import": 6,
-        "depends_get_db": 12,
-        "get_db_import": 6,
-        "session_execute_call": 5,
+        "async_session_annotation": 1,
+        "async_session_import": 1,
+        "depends_get_db": 1,
+        "get_db_import": 1,
     }
     assert report.as_gate_report().status == "passed"
 

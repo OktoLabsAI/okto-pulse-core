@@ -10,29 +10,32 @@ import os
 import re
 import warnings
 import uuid as _uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from fastmcp import FastMCP
-from starlette.requests import Request
-from starlette.types import ASGIApp, Receive, Scope, Send
-
 from okto_pulse.core.application.scope import ActorScope
 from okto_pulse.core.infra.config import get_mcp_settings, get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
+from okto_pulse.core.mcp.catalog import CoreMcpCatalog
 from okto_pulse.core.mcp.helpers import _structured_error, coerce_to_list_str, parse_multi_value, parse_options_json
-from okto_pulse.core.mcp.trace_middleware import install_trace_sink as _install_trace
 from okto_pulse.core.ports.content_ingestion import ContentIngestionError
 from okto_pulse.core.ports.mcp_instructions import (
     McpInstructionProvider,
     StaticFileMcpInstructionProvider,
 )
 from okto_pulse.core.ports.mcp_trace import McpTraceSink
+from okto_pulse.core.ports.mcp_host import (
+    McpHostProviderMissing,
+    get_mcp_host_provider,
+)
 from okto_pulse.core.ports.mcp_auth import (
     AuthSession,
+    MCP_CREDENTIAL_SCOPE_KEY,
     McpAuthError,
     McpAuthenticator,
+    principal_from_auth_session,
     require_authenticator,
 )
 from okto_pulse.core.models.schemas import ArchitectureDesignCreate, ArchitectureDesignUpdate
@@ -160,12 +163,12 @@ _instruction_providers: tuple[McpInstructionProvider, ...] = (_core_instruction_
 _instruction_providers_frozen = False
 
 
-def _refresh_fastmcp_instructions() -> None:
+def _refresh_catalog_instructions() -> None:
     mcp.instructions = _load_instructions()
 
 
 def _load_instructions() -> str:
-    """Load FastMCP instructions through registered edition providers."""
+    """Load command-catalog instructions through registered edition providers."""
     for provider in _instruction_providers:
         text = provider.load_instructions()
         if text:
@@ -182,14 +185,14 @@ def register_instruction_provider(provider: McpInstructionProvider) -> None:
             "registration/mutation is forbidden."
         )
     _instruction_providers = (provider, *_instruction_providers)
-    _refresh_fastmcp_instructions()
+    _refresh_catalog_instructions()
 
 
 def freeze_instruction_providers() -> None:
     """Freeze MCP instruction provider registration after composition."""
     global _instruction_providers_frozen
     _instruction_providers_frozen = True
-    _refresh_fastmcp_instructions()
+    _refresh_catalog_instructions()
 
 
 def has_instruction_provider(provider_id: str) -> bool:
@@ -202,11 +205,11 @@ def reset_instruction_providers_for_tests() -> None:
     global _instruction_providers, _instruction_providers_frozen
     _instruction_providers = (_core_instruction_provider,)
     _instruction_providers_frozen = False
-    _refresh_fastmcp_instructions()
+    _refresh_catalog_instructions()
 
 
-# Initialize MCP server
-mcp = FastMCP(
+# Initialize the transport-neutral command catalog.
+mcp = CoreMcpCatalog(
     name=get_settings().mcp_server_name,
     version=get_settings().mcp_server_version,
     instructions=_load_instructions(),
@@ -409,7 +412,7 @@ def freeze_resource_catalog() -> None:
 
 def reset_resource_catalog_for_tests() -> None:
     """Tests only: rebuild the core-only effective catalog, clear the freeze, AND
-    drop any FastMCP resource handlers registered beyond the core baseline so a
+    drop any catalog resource handlers registered beyond the core baseline so a
     previously-injected catalog leaves NO residual state (isolation)."""
     global _effective_resource_catalog, _resource_catalog_frozen
     reset_instruction_providers_for_tests()
@@ -418,16 +421,14 @@ def reset_resource_catalog_for_tests() -> None:
     )
     _resource_catalog_frozen = False
     _rebuild_resource_registry_projection()
-    try:
-        resources = mcp._resource_manager._resources
-        for _uri in list(resources):
-            if _uri not in _CORE_FASTMCP_RESOURCE_URIS:
-                del resources[_uri]
-    except Exception:  # pragma: no cover - FastMCP internals are best-effort here
-        pass
+    resources = mcp._resource_manager._resources
+    for _uri in list(resources):
+        if _uri not in _CORE_MCP_RESOURCE_URIS:
+            del resources[_uri]
 
 
-# Register the CORE catalog with FastMCP + build the initial projection at import.
+# Register the Core resources with the command catalog and build the initial
+# projection at import.
 for _spec in _effective_resource_catalog.specs():
     _register_resource_spec(_spec)
 _rebuild_resource_registry_projection()
@@ -435,12 +436,9 @@ _rebuild_resource_registry_projection()
 for _spec in _effective_resource_catalog.specs():
     _spec.read()
 
-#: FastMCP resource URIs registered by the CORE catalog at import — the baseline a
+#: Core catalog resource URIs registered at import — the baseline a
 #: test reset restores to (any injected-catalog handler beyond this is dropped).
-try:
-    _CORE_FASTMCP_RESOURCE_URIS = frozenset(mcp._resource_manager._resources.keys())
-except Exception:  # pragma: no cover
-    _CORE_FASTMCP_RESOURCE_URIS = frozenset()
+_CORE_MCP_RESOURCE_URIS = frozenset(mcp._resource_manager._resources.keys())
 
 
 # R1.1 — canonical map from a compacted tool to its single lazy long-form doc
@@ -504,36 +502,30 @@ def tool_docs_uri(tool_name: str) -> str:
 # SESSION-BASED AUTH (API key extracted from request)
 # ============================================================================
 
-_MCP_CREDENTIAL_SCOPE_KEY = "okto_pulse.mcp_credential"
+# Compatibility alias retained for callers that imported the old server symbol.
+_MCP_CREDENTIAL_SCOPE_KEY = MCP_CREDENTIAL_SCOPE_KEY
 
 
-class ApiKeySessionMiddleware:
-    """ASGI middleware that stores the MCP credential on the request scope."""
+def ApiKeySessionMiddleware(app):
+    """Compatibility factory for the edition-owned MCP credential middleware."""
 
-    def __init__(self, app: ASGIApp):
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        if scope["type"] == "http":
-            request = Request(scope)
-            credential = extract_mcp_credential_from_request(request)
-            if credential is not None:
-                scope[_MCP_CREDENTIAL_SCOPE_KEY] = credential
-
-        await self.app(scope, receive, send)
+    return get_mcp_host_provider().wrap_session_middleware(app)
 
 
 # ----------------------------------------------------------------------------
 # R08-A: transport -> McpCredential conversion shims (tr_7d105709).
 #
-# These convert the inbound transports into the pure ``McpCredential`` port DTO
-# and keep it attached to the ASGI request scope. No Okto-owned ContextVar or
-# process-global credential carrier participates in request authentication.
+# Community's MCP host converts inbound HTTP data into the pure
+# ``McpCredential`` DTO and attaches it to this scope key. No Okto-owned
+# ContextVar or process-global credential carrier participates in request
+# authentication.
 # ----------------------------------------------------------------------------
 def extract_mcp_credential_from_request(request):
-    """Build an ``McpCredential`` from a Starlette ``Request`` preserving the
-    canonical precedence (query param > X-API-Key > Authorization Bearer) — the
-    SAME order ``ApiKeySessionMiddleware`` applies above."""
+    """Build an ``McpCredential`` from an HTTP request-like object.
+
+    The Community MCP host owns the concrete Starlette middleware and uses the
+    same precedence: query parameter, ``X-API-Key``, then Bearer header.
+    """
     from okto_pulse.core.ports import mcp_credential_from_sources
 
     return mcp_credential_from_sources(
@@ -549,28 +541,16 @@ def request_scope_mcp_credential(scope):
 
 
 def active_api_key_credential():
-    """Resolve the current MCP credential from FastMCP's HTTP request context.
+    """Resolve a request credential through the composed edition host.
 
-    The credential is request-scoped: ``ApiKeySessionMiddleware`` stores the
-    transport-extracted :class:`McpCredential` on the ASGI ``scope`` and this
-    shim reads it through FastMCP's current request provider. If the middleware is
-    absent, the function can still extract from the active request headers/query;
-    if no request context exists it fails closed with ``None``.
+    The HTTP request context belongs to the host adapter.  Core only consumes
+    its already-extracted credential and fails closed outside a composed
+    edition runtime.
     """
     try:
-        from fastmcp.server.dependencies import get_http_request
-    except ImportError:
+        return get_mcp_host_provider().active_credential()
+    except McpHostProviderMissing:
         return None
-
-    try:
-        request = get_http_request()
-    except RuntimeError:
-        return None
-
-    credential = request_scope_mcp_credential(request.scope)
-    if credential is not None:
-        return credential
-    return extract_mcp_credential_from_request(request)
 
 
 # ============================================================================
@@ -600,6 +580,35 @@ class _McpSessionFactoryRuntime:
         return self.session_factory(*args, **kwargs)
 
 
+class _PortBackedSessionFactoryAuthenticator:
+    """Compatibility authenticator backed by the composed relational port.
+
+    Productive Community composition supplies its own ``McpAuthenticator``.
+    This adapter only preserves legacy ``register_session_factory(factory)``
+    callers while keeping credential lookup behind the edition-owned relational
+    application adapter rather than importing ORM models into the MCP catalog.
+    """
+
+    def __init__(self, session_factory) -> None:
+        self._session_factory = session_factory
+
+    async def authenticate(self, credential):
+        if credential is None or not getattr(credential, "value", None):
+            return None
+        from okto_pulse.core.ports.relational_application import (
+            require_relational_application_adapter,
+        )
+
+        async with self._session_factory() as session:
+            gateway = require_relational_application_adapter().agent_authentication(
+                session
+            )
+            return await gateway.authenticate_agent_by_api_key(
+                credential.value,
+                credential_source=str(getattr(credential, "source", "mcp")),
+            )
+
+
 def register_session_factory(
     factory,
     *,
@@ -612,7 +621,11 @@ def register_session_factory(
         factory,
         scheduler_control=scheduler_control,
     )
-    _mcp_authenticator = mcp_authenticator
+    _mcp_authenticator = (
+        mcp_authenticator
+        if mcp_authenticator is not None
+        else _PortBackedSessionFactoryAuthenticator(factory)
+    )
 
 
 def register_mcp_authenticator(authenticator: McpAuthenticator | None) -> None:
@@ -626,11 +639,30 @@ def get_mcp_authenticator_for_mcp() -> McpAuthenticator:
     return require_authenticator(_mcp_authenticator)
 
 
+@asynccontextmanager
+async def get_uow_session_for_mcp():
+    """Yield the transitional relational context from the composed MCP UoW.
+
+    Legacy command handlers still call Core services that accept a relational
+    context.  The context now originates from the edition-owned
+    ``UnitOfWorkFactory`` rather than the MCP server's concrete session factory;
+    no command opens a Local First database session directly.
+    """
+
+    from okto_pulse.core.application.use_cases.base import session_of
+
+    async with get_unit_of_work_factory_for_mcp()() as uow:
+        yield session_of(uow)
+
+
 def get_db_for_mcp():
-    """Get database session for MCP operations."""
-    if _mcp_session_factory is None:
-        raise RuntimeError("Session factory not registered. Call register_session_factory() first.")
-    return _mcp_session_factory()
+    """Legacy alias for the UoW-backed MCP relational context scope.
+
+    Kept for public compatibility only. New MCP commands must use
+    :func:`get_uow_session_for_mcp` so the boundary is explicit in source.
+    """
+
+    return get_uow_session_for_mcp()
 
 
 def get_scheduler_control_for_mcp():
@@ -766,16 +798,21 @@ async def _get_agent_ctx_for_credential(board_id: str, credential) -> AgentConte
     if auth_session is None:
         return None
 
-    from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+    from okto_pulse.core.application.use_cases.base import (
+        actor_context_from_principal,
+        session_of,
+    )
     from okto_pulse.core.services.application_agents import (
         agent_has_board_access,
         resolve_agent_permission_context,
     )
 
-    actor = ActorContext(
-        auth_session.agent_id,
-        "mcp",
-        actor_name=auth_session.agent_name,
+    principal = principal_from_auth_session(auth_session)
+    if principal is None:
+        return None
+    actor = actor_context_from_principal(
+        principal,
+        source="mcp",
         board_id=board_id,
     )
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -820,17 +857,18 @@ async def _get_global_agent_ctx() -> AgentContext | None:
     if auth_session is None:
         return None
 
-    from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+    from okto_pulse.core.application.use_cases.base import (
+        actor_context_from_principal,
+        session_of,
+    )
     from okto_pulse.core.services.application_agents import (
         resolve_agent_permission_context,
     )
 
-    actor = ActorContext(
-        auth_session.agent_id,
-        "mcp",
-        actor_name=auth_session.agent_name,
-        board_id="",
-    )
+    principal = principal_from_auth_session(auth_session)
+    if principal is None:
+        return None
+    actor = actor_context_from_principal(principal, source="mcp", board_id="")
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         resolved = await resolve_agent_permission_context(
             session_of(uow),
@@ -1407,25 +1445,12 @@ _XML_SAFETY_DECORATED_COUNT = 0
 
 
 def _patch_mcp_tool_for_xml_safety() -> None:
-    """Patch ``mcp.tool()`` so every registered tool gets the XML safety wrapper.
+    """Wrap every registered command while preserving its public signature.
 
-    Note (FastMCP 2.14+): the original implementation called
-    ``_original_mcp_tool(*args, **kwargs)`` first to obtain the registrar
-    decorator, then applied ``_wrap`` to the user function. With FastMCP 2.14
-    the decorator path returns ``partial(self.tool, ...)`` and ``self.tool``
-    is resolved at call time via instance attribute lookup — which finds the
-    *patched* ``mcp.tool`` and recurses, so the value that lands in the
-    module namespace ends up being our local ``_wrap`` instead of the
-    expected ``FunctionTool``. Tests that probe ``inspect.signature(fn.fn)``
-    therefore see ``(func)`` and not the real tool signature.
-
-    Fix: bypass the partial entirely by always calling
-    ``_original_mcp_tool(wrapped, *args, **kwargs)`` — i.e. pass the wrapped
-    function as the first positional argument so FastMCP takes the
-    ``isroutine(name_or_fn)`` direct-registration path. This returns the
-    ``FunctionTool`` whose ``.fn`` exposes the wrapped function with the
-    original signature preserved by ``functools.wraps`` inside
-    ``_xml_safety_log_decorator``.
+    The catalog supports both direct and decorator registration. Passing the
+    wrapped function through its direct-registration path ensures the module
+    receives a catalog tool whose ``.fn`` retains the original signature via
+    ``functools.wraps``.
     """
     if getattr(mcp.tool, "_xml_safety_patched", False):
         return
@@ -1442,8 +1467,7 @@ def _patch_mcp_tool_for_xml_safety() -> None:
             return _original_mcp_tool(wrapped, *args[1:], **kwargs)
 
         # ``@mcp.tool()`` / ``@mcp.tool("name")`` / ``@mcp.tool(name=...)`` —
-        # return a decorator that, when applied, routes through the same
-        # direct-registration path (no partial recursion).
+        # route decoration through the same direct-registration path.
         def _wrap(func):
             global _XML_SAFETY_DECORATED_COUNT
             wrapped = _xml_safety_log_decorator(func)
@@ -2456,7 +2480,7 @@ async def okto_pulse_resolve_bug_regression_scenarios(
         BugRegressionScenarioPreviewService,
     )
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         try:
             payload = await BugRegressionScenarioPreviewService(db).resolve(
                 board_id=board_id,
@@ -2518,7 +2542,7 @@ async def okto_pulse_get_task_context(
     _inc_architecture = _flag_enabled(include_architecture)
     _inc_superseded = _flag_enabled(include_superseded)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         card_service = CardService(db)
         card = await card_service.get_card(card_id)
         await db.commit()
@@ -2787,7 +2811,7 @@ async def okto_pulse_get_task_conclusions(board_id: str, card_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = CardService(db)
         card = await service.get_card(card_id)
         await db.commit()
@@ -3218,7 +3242,7 @@ async def okto_pulse_list_cards_by_status(
 
     limit = min(limit, 200)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = BoardService(db)
         board = await service.get_board(board_id)
         await db.commit()
@@ -7610,7 +7634,7 @@ async def _link_task_to_rule_internal(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         spec_service = SpecService(db)
         spec = await spec_service.get_spec(spec_id)
         if not spec:
@@ -7659,7 +7683,7 @@ async def _link_task_to_fr_internal(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         spec_service = SpecService(db)
         spec = await spec_service.get_spec(spec_id)
         if not spec:
@@ -7745,7 +7769,7 @@ async def _link_task_to_contract_internal(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         spec_service = SpecService(db)
         spec = await spec_service.get_spec(spec_id)
         if not spec:
@@ -7792,7 +7816,7 @@ async def _link_task_to_tr_internal(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         spec_service = SpecService(db)
         spec = await spec_service.get_spec(spec_id)
         if not spec:
@@ -7878,7 +7902,7 @@ async def okto_pulse_archive_tree(
 
     from okto_pulse.core.services.main import ArchiveService
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = ArchiveService(db)
         try:
             counts = await service.archive_tree(entity_type, entity_id)
@@ -7913,7 +7937,7 @@ async def okto_pulse_restore_tree(
 
     from okto_pulse.core.services.main import ArchiveService
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = ArchiveService(db)
         try:
             counts = await service.restore_tree(entity_type, entity_id)
@@ -9572,7 +9596,7 @@ async def _link_task_to_integration_requirement_internal(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         spec_service = SpecService(db)
         spec = await spec_service.get_spec(spec_id)
         if not spec or spec.board_id != board_id:
@@ -9787,7 +9811,7 @@ async def _link_task_to_observability_requirement_internal(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         spec_service = SpecService(db)
         spec = await spec_service.get_spec(spec_id)
         if not spec or spec.board_id != board_id:
@@ -10075,7 +10099,7 @@ async def _link_task_to_decision_internal(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         spec_service = SpecService(db)
         spec = await spec_service.get_spec(spec_id)
         if not spec:
@@ -11584,7 +11608,7 @@ async def _link_card_to_spec_internal(board_id: str, spec_id: str, card_id: str)
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = SpecService(db)
         linked = await service.link_card(spec_id, card_id, user_id=ctx.agent_id)
         await db.commit()
@@ -11630,7 +11654,7 @@ async def okto_pulse_submit_spec_evaluation(
     # Caminho de escrita único: SpecService.submit_spec_evaluation — o mesmo
     # consumido pelo gêmeo REST POST /specs/{id}/evaluations (paridade de
     # superfícies; evita drift de validação/shape entre MCP e REST).
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         from okto_pulse.core.services.critical_context_guard import FullContextGuardError
         from okto_pulse.core.services.main import SpecService
 
@@ -11697,7 +11721,7 @@ async def okto_pulse_list_spec_evaluations(board_id: str, spec_id: str) -> str:
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         from okto_pulse.core.services.main import SpecService
         service = SpecService(db)
         spec = await service.get_spec(spec_id)
@@ -11753,7 +11777,7 @@ async def okto_pulse_get_spec_evaluation(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         from okto_pulse.core.services.main import SpecService
         service = SpecService(db)
         spec = await service.get_spec(spec_id)
@@ -11781,7 +11805,7 @@ async def okto_pulse_delete_spec_evaluation(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         from okto_pulse.core.services.main import SpecService
         service = SpecService(db)
         spec = await service.get_spec(spec_id)
@@ -11932,7 +11956,7 @@ Multi-value params (options/selected): pass a JSON array (preferred — safe for
             for i, label in enumerate(option_labels)
         ]
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = SpecQAService(db)
         data = SpecQACreate(
             question=question,
@@ -11990,7 +12014,7 @@ Multi-value params (options/selected): pass a JSON array (preferred — safe for
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = SpecQAService(db)
         try:
             qa = await service.answer_question(
@@ -12054,7 +12078,7 @@ async def okto_pulse_get_traceability_report(
 
     _include_artifacts = _flag_enabled(include_artifacts)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         from okto_pulse.core.services.traceability import (
             TraceabilityReadError,
             build_traceability_report,
@@ -12124,7 +12148,7 @@ async def okto_pulse_get_spec_knowledge(board_id: str, spec_id: str, knowledge_i
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = SpecKnowledgeService(db)
         kb = await service.get_knowledge(knowledge_id)
         await db.commit()
@@ -12176,7 +12200,7 @@ async def okto_pulse_add_spec_knowledge(
 
     from okto_pulse.core.models.schemas import SpecKnowledgeCreate
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = SpecKnowledgeService(db)
         kb_data = SpecKnowledgeCreate(
             title=title,
@@ -12215,7 +12239,7 @@ async def okto_pulse_delete_spec_knowledge(board_id: str, spec_id: str, knowledg
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = SpecKnowledgeService(db)
         kb = await service.get_knowledge(knowledge_id)
         if not kb or kb.spec_id != spec_id:
@@ -13067,7 +13091,7 @@ async def okto_pulse_delete_spec_question(board_id: str, spec_id: str, qa_id: st
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         service = SpecQAService(db)
         deleted = await service.delete_question(qa_id)
         if not deleted:
@@ -13333,7 +13357,7 @@ async def okto_pulse_confirm_amendment_coverage(
     if perm_err:
         return _perm_error(perm_err)
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         card_service = CardService(db)
         try:
             result = await card_service.confirm_amendment_coverage(
@@ -13401,7 +13425,7 @@ async def okto_pulse_create_amendment_revision(
         AmendmentRevisionApiService,
     )
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         try:
             result = await AmendmentRevisionApiService(db).create(
                 board_id=board_id,
@@ -13441,7 +13465,7 @@ async def okto_pulse_list_amendment_revisions(board_id: str, bug_id: str) -> str
         AmendmentRevisionApiService,
     )
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         try:
             result = await AmendmentRevisionApiService(db).list_for_bug(
                 board_id=board_id, bug_id=bug_id
@@ -13472,7 +13496,7 @@ async def okto_pulse_get_amendment_revision(
         AmendmentRevisionApiService,
     )
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         try:
             result = await AmendmentRevisionApiService(db).get(
                 board_id=board_id, bug_id=bug_id, amendment_id=amendment_id
@@ -13509,7 +13533,7 @@ async def okto_pulse_associate_amendment_revision_artifacts(
         AmendmentRevisionApiService,
     )
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         try:
             result = await AmendmentRevisionApiService(db).associate(
                 board_id=board_id,
@@ -13556,7 +13580,7 @@ async def okto_pulse_transition_amendment_revision(
         AmendmentRevisionApiService,
     )
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         try:
             result = await AmendmentRevisionApiService(db).transition_lifecycle(
                 board_id=board_id,
@@ -13602,7 +13626,7 @@ async def _refuse_mcp_default_config_activation_if_human_skip_changes(
 
     from okto_pulse.core.models.db import DefaultBoardConfiguration
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         target = await db.get(DefaultBoardConfiguration, template_id)
         if target is None:
             return None
@@ -13639,7 +13663,7 @@ async def _refuse_mcp_default_config_deactivation_if_human_skip_changes(
 ) -> str | None:
     from okto_pulse.core.models.db import DefaultBoardConfiguration
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         target = await db.get(DefaultBoardConfiguration, template_id)
         if target is None or not target.is_active:
             return None
@@ -15378,7 +15402,7 @@ def _kg_orphan_graph_unavailable_payload(board_id: str, exc: Exception) -> dict[
 async def _kg_orphan_backfill_health_refusal(board_id: str) -> dict[str, Any] | None:
     from okto_pulse.core.services.kg_health_service import get_kg_health
 
-    async with get_db_for_mcp() as db:
+    async with get_uow_session_for_mcp() as db:
         health = await get_kg_health(
             board_id,
             db,
@@ -15884,7 +15908,7 @@ async def okto_pulse_kg_migrate_schema(
         from okto_pulse.core.models.db import Board as _Board
 
         results: list[dict[str, Any]] = []
-        async with get_db_for_mcp() as db:
+        async with get_uow_session_for_mcp() as db:
             rows = await db.execute(_select(_Board.id, _Board.name))
             board_pairs = list(rows.all())
         query_scope = actor_scope.query_scope(
@@ -16000,7 +16024,7 @@ async def okto_pulse_kg_tick_run_now(
     if board_id:
         from okto_pulse.core.api.kg_tick import _refuse_tick_if_degraded
 
-        async with get_db_for_mcp() as _health_session:
+        async with get_uow_session_for_mcp() as _health_session:
             refusal = await _refuse_tick_if_degraded(
                 board_id,
                 _health_session,
@@ -16036,7 +16060,7 @@ async def okto_pulse_kg_tick_run_now(
                 tick_id=tick_id,
                 board_id=board_id or None,
                 force_full_rebuild=force_full_rebuild,
-                session_scope_factory=get_db_for_mcp,
+                session_scope_factory=get_uow_session_for_mcp,
             )
         except Exception as exc:
             _tick_logger.error(
@@ -16543,6 +16567,92 @@ async def okto_pulse_kg_rebuild_run(
     }, default=str)
 
 
+@mcp.tool()
+async def okto_pulse_kg_quarantine_restore(
+    quarantine_id: str,
+    apply: bool = False,
+) -> str:
+    """
+    Restore de quarentena do KG — dry-run/apply com backup-swap (KGD-01 FR4/BR4).
+
+    A quarentena (<kg_base>/quarantine/<quarantine_id>/) preserva snapshots de
+    grafos quarentenados; esta tool torna esses snapshots restauráveis. Com
+    apply=false (default) retorna o plano auditável (arquivos, destinos,
+    conflitos, tamanhos) SEM nenhuma mutação. Com apply=true move os arquivos
+    vivos do board para uma NOVA quarentena com manifest (backup-swap;
+    backup_quarantine_id no resultado), copia o snapshot de volta, valida o
+    open do board e emite os eventos kg.quarantine.restore_dry_run /
+    kg.quarantine.restored.
+
+    Response: {plan: array, applied: bool, backup_quarantine_id?: string}.
+    Erros estruturados: quarantine_not_found (id inexistente), board_locked
+    (servidor ativo segurando o board — exigir janela de manutenção),
+    partial_restore (falha no meio — o manifest da operação registra o estado
+    exato para rollback; nunca um board meio-restaurado silencioso).
+    """
+    agent = await _get_authenticated_agent()
+    if agent is None:
+        return _auth_error()
+
+    from starlette.concurrency import run_in_threadpool
+
+    from okto_pulse.core.composition import RuntimeProviderMissing
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+    from okto_pulse.core.kg.interfaces.quarantine_restore import (
+        QuarantineRestoreError,
+    )
+
+    try:
+        restore = get_kg_registry().require_quarantine_restore()
+    except RuntimeProviderMissing as exc:
+        return json.dumps({
+            "error": "runtime_provider_missing",
+            "detail": str(exc),
+        })
+
+    # KGD-01: o handler no core fala só com a PORTA QuarantineRestore; o
+    # adapter concreto (filesystem/Ladybug) é injetado pela composition do
+    # Community (hexagonal — TR1).
+    try:
+        plan = await run_in_threadpool(restore.plan, quarantine_id)
+    except QuarantineRestoreError as exc:
+        return json.dumps(exc.to_payload(), default=str)
+
+    plan_payload = plan.to_payload()
+    if not apply:
+        return json.dumps({
+            "plan": plan_payload,
+            "applied": False,
+            "quarantine_id": plan.quarantine_id,
+            "board_id": plan.board_id,
+            "board_dir": plan.board_dir,
+            "conflicts": list(plan.conflicts),
+            "total_bytes": plan.total_bytes,
+        }, default=str)
+
+    # apply MUTA o board de destino — exige acesso do agente ao board
+    # resolvido pelo manifest da quarentena.
+    ctx = await _get_agent_ctx(plan.board_id)
+    if ctx is None:
+        return _auth_error()
+
+    try:
+        report = await run_in_threadpool(restore.apply, quarantine_id)
+    except QuarantineRestoreError as exc:
+        return json.dumps(exc.to_payload(), default=str)
+
+    return json.dumps({
+        "plan": plan_payload,
+        "applied": report.applied,
+        "backup_quarantine_id": report.backup_quarantine_id,
+        "quarantine_id": report.quarantine_id,
+        "board_id": report.board_id,
+        "restored_files": list(report.restored_files),
+        "open_validated": report.open_validated,
+        "errors": list(report.errors),
+    }, default=str)
+
+
 # ============================================================================
 # CONSOLIDATED POLYMORPHIC LIST HANDLERS (spec P0.B — TR-B1)
 #
@@ -17013,22 +17123,14 @@ async def okto_pulse_list_snapshots(
 
 
 def build_mcp_asgi_app(trace_sink: McpTraceSink | None = None):
-    """Build the MCP ASGI application wrapped with the API-key middleware.
+    """Compatibility facade to the edition-owned MCP host provider.
 
-    Returns the ASGI app that should be served by uvicorn (or mounted
-    elsewhere). Single-process callers (``okto_pulse.community.main.serve``)
-    use this to bind the MCP transport to its own port while sharing the
-    same Python process as the API server, so the graph-store lock is held by a
-    single process. The caller is responsible for invoking
-    ``register_session_factory`` once before the first MCP request lands.
-
-    The core factory never resolves local trace paths. When ``trace_sink`` is
-    ``None`` no trace middleware is installed; editions that want replay traces
-    must inject a concrete sink from their composition root.
+    Core retains the command catalog and tool rules only.  The ASGI stack,
+    credential middleware and concrete listener are selected by an edition
+    through :class:`~okto_pulse.core.ports.mcp_host.McpHostProvider`.
     """
-    _install_trace(mcp, trace_sink)
-    http_app = mcp.http_app(transport="streamable-http")
-    return ApiKeySessionMiddleware(http_app)
+
+    return get_mcp_host_provider().build_asgi_app(mcp, trace_sink=trace_sink)
 
 
 def mount_mcp(
@@ -17037,70 +17139,31 @@ def mount_mcp(
     mount_path: str = "/mcp",
     trace_sink: McpTraceSink | None = None,
 ) -> None:
-    """Mount the MCP sub-app at ``mount_path`` on a FastAPI/Starlette app.
+    """Compatibility facade to the edition-owned MCP mount operation."""
 
-    Kept for callers that prefer path-based routing on the same port as the
-    API. The default deployment path (``okto_pulse.community.main.serve``)
-    serves the MCP on its own port via :func:`build_mcp_asgi_app`. Tracing is
-    disabled unless the caller injects a sink.
-    """
-    app.mount(mount_path, build_mcp_asgi_app(trace_sink=trace_sink))
+    get_mcp_host_provider().mount(
+        app,
+        mcp,
+        mount_path=mount_path,
+        trace_sink=trace_sink,
+    )
 
 
 def run_mcp_server():
-    """Run the MCP server standalone (compat shim for debug / legacy).
+    """Reject legacy Core-owned listener startup.
 
-    Production path is :func:`okto_pulse.community.main.serve`, which runs
-    the API server and the MCP server in the same Python process on
-    separate ports. This function is preserved for stand-alone debug runs
-    (``python -m okto_pulse.core.mcp.server``) only.
-
-    The concrete relational runtime is no longer created here. An edition
-    composition root must configure the shared database runtime before this
-    function can register the MCP session factory.
-
-    This core-only standalone path also does not inject a trace sink; local
-    MCP replay JSONL is enabled by the Community composition root.
+    Starting a concrete MCP listener is an edition concern. Community serves
+    the catalog through its Local First host in ``community.main.serve``.
     """
     warnings.warn(
-        "okto_pulse.core.mcp.server.run_mcp_server is a legacy debug shim. "
-        "Use okto_pulse.community.main.serve for productive Community MCP "
-        "serving, or build_mcp_asgi_app/mount_mcp for core ASGI composition. "
-        "Removal criterion: no supported caller imports this shim from core "
-        "after AF41 ownership gates are enforced.",
+        "okto_pulse.core.mcp.server.run_mcp_server is retired. Use the "
+        "edition-owned MCP host (Community: okto_pulse.community.main.serve).",
         DeprecationWarning,
         stacklevel=2,
     )
-
-    from okto_pulse.core.infra.config import get_settings
-    from okto_pulse.core.infra.database import (
-        get_session_factory,
-        is_database_runtime_configured,
+    raise RuntimeError(
+        "Core cannot start an MCP listener. Compose an edition MCP host instead."
     )
-
-    settings = get_settings()
-    if not is_database_runtime_configured():
-        raise RuntimeError(
-            "Standalone core MCP requires an edition-configured relational runtime."
-        )
-    register_session_factory(get_session_factory())
-    try:
-        import uvicorn
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "Standalone core MCP legacy shim requires an edition-owned server "
-            "runtime dependency. Productive serving is owned by Community "
-            "composition."
-        ) from exc
-
-    # Read port from environment (set by CLI) or use settings
-    port = int(os.environ.get("MCP_PORT", str(settings.mcp_port)))
-    # Read host from environment (set by CLI / Docker / compose) or fall back
-    # to loopback so a stray binary doesn't accidentally expose the MCP server.
-    # Override via MCP_HOST=0.0.0.0 in docker-compose.yml when port-mapping is
-    # required from outside the container.
-    host = os.environ.get("MCP_HOST", "127.0.0.1")
-    uvicorn.run(build_mcp_asgi_app(), host=host, port=port, ws="wsproto")
 
 
 if __name__ == "__main__":

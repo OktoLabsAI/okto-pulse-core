@@ -1,10 +1,8 @@
 """AF41 MCP runtime ownership gate.
 
-The Community edition owns productive ASGI serving. Core may expose MCP ASGI
-composition helpers, but it must not ship the concrete server runtime
-dependencies. The only accepted Core source import is the lazy ``uvicorn`` import
-inside ``okto_pulse.core.mcp.server.run_mcp_server``, which is a deprecated
-debug shim.
+The Community edition owns productive ASGI serving. Core may expose port-backed
+MCP composition facades, but it must not ship or import concrete server runtime
+dependencies.
 """
 
 from __future__ import annotations
@@ -18,12 +16,11 @@ from typing import Literal
 
 from .report import GateReport
 
-FORBIDDEN_CORE_MCP_RUNTIME_DEPENDENCIES: tuple[str, ...] = ("uvicorn", "wsproto")
-ALLOWED_LEGACY_UVICORN_IMPORT: tuple[str, str] = (
-    "okto_pulse/core/mcp/server.py",
-    "run_mcp_server",
+FORBIDDEN_CORE_MCP_RUNTIME_DEPENDENCIES: tuple[str, ...] = (
+    "fastmcp",
+    "uvicorn",
+    "wsproto",
 )
-
 McpRuntimeSurface = Literal["manifest", "lock", "source", "wheel"]
 
 
@@ -68,10 +65,7 @@ class McpRuntimeOwnershipReport:
             "forbidden_core_mcp_runtime_dependencies": list(
                 FORBIDDEN_CORE_MCP_RUNTIME_DEPENDENCIES
             ),
-            "allowed_legacy_uvicorn_import": {
-                "file": ALLOWED_LEGACY_UVICORN_IMPORT[0],
-                "function": ALLOWED_LEGACY_UVICORN_IMPORT[1],
-            },
+            "allowed_legacy_uvicorn_import": None,
         }
 
     def to_gate_report(self) -> GateReport:
@@ -240,23 +234,6 @@ def _location(path: Path, source_root: Path, line: int) -> str:
     return f"{rel}:{line}"
 
 
-def _is_allowed_legacy_uvicorn_import(
-    ref: _ImportReference,
-    *,
-    source_root: Path,
-) -> bool:
-    try:
-        rel = ref.path.relative_to(source_root).as_posix()
-    except ValueError:
-        return False
-    return (
-        ref.root == "uvicorn"
-        and rel == ALLOWED_LEGACY_UVICORN_IMPORT[0]
-        and ref.function_stack
-        and ref.function_stack[-1] == ALLOWED_LEGACY_UVICORN_IMPORT[1]
-    )
-
-
 def _scan_source_imports(source_root: Path) -> tuple[list[_ImportReference], tuple[str, ...]]:
     core_dir = _core_dir_from_source_root(source_root)
     references: list[_ImportReference] = []
@@ -336,14 +313,10 @@ def run_mcp_runtime_ownership_gate(
     surfaces.append("source")
     imports, source_paths = _scan_source_imports(source)
     analyzed.extend(source_paths)
-    allowed: list[str] = []
     for ref in imports:
         if ref.root not in forbidden:
             continue
         location = _location(ref.path, source, ref.line)
-        if _is_allowed_legacy_uvicorn_import(ref, source_root=source):
-            allowed.append(location)
-            continue
         findings.append(
             McpRuntimeOwnershipFinding(
                 surface="source",
@@ -351,9 +324,8 @@ def run_mcp_runtime_ownership_gate(
                 diagnostic_code="core_runtime_import_present",
                 location=location,
                 remediation=(
-                    f"Move the '{ref.root}' import out of Core. The only allowed "
-                    "Core uvicorn import is the lazy legacy debug shim inside "
-                    "okto_pulse.core.mcp.server.run_mcp_server."
+                    f"Move the '{ref.root}' import out of Core. Community owns "
+                    "the concrete MCP/ASGI listener."
                 ),
             )
         )
@@ -392,7 +364,7 @@ def run_mcp_runtime_ownership_gate(
         surfaces_audited=tuple(surfaces),
         analyzed_paths=tuple(analyzed),
         findings=tuple(findings),
-        allowed_source_imports=tuple(sorted(allowed)),
+        allowed_source_imports=(),
     )
 
 
@@ -418,7 +390,6 @@ def render_mcp_runtime_ownership_report(report: McpRuntimeOwnershipReport) -> st
 
 __all__ = [
     "FORBIDDEN_CORE_MCP_RUNTIME_DEPENDENCIES",
-    "ALLOWED_LEGACY_UVICORN_IMPORT",
     "McpRuntimeOwnershipFinding",
     "McpRuntimeOwnershipReport",
     "run_mcp_runtime_ownership_gate",

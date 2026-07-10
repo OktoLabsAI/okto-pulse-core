@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import pytest
 
-import okto_pulse.core.kg.providers.embedded.memory_cache as _cache_mod
-import okto_pulse.core.kg.providers.embedded.memory_rate_limiter as _rl_mod
-import okto_pulse.core.kg.providers.embedded.memory_session_store as _ss_mod
+import okto_pulse.core.kg.providers.testing.memory as _cache_mod
+import okto_pulse.core.kg.providers.testing.memory as _rl_mod
+import okto_pulse.core.kg.providers.testing.memory as _ss_mod
 import okto_pulse.core.kg.providers.testing.embedding as _emb_mod
 from okto_pulse.core.kg.interfaces.registry import (
     KGProviderRegistry,
@@ -114,6 +114,7 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
             graph_schema_manager=_Sentinel(),
             graph_lifecycle=_Sentinel(),
             graph_path_resolver=_Sentinel(),
+            graph_runtime_store=_Sentinel(),
             safe_write_step_adapter=_Sentinel(),
             global_discovery_runtime=_Sentinel(),
             board_source_reader=_Sentinel(),
@@ -139,6 +140,7 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
         assert reg.graph_schema_manager is base.graph_schema_manager
         assert reg.graph_lifecycle is base.graph_lifecycle
         assert reg.graph_path_resolver is base.graph_path_resolver
+        assert reg.graph_runtime_store is base.graph_runtime_store
         # audit_repo / event_bus are composition-supplied, never auto-wired.
         assert reg.audit_repo is base.audit_repo
         assert reg.event_bus is base.event_bus
@@ -183,6 +185,7 @@ def test_ts_66c96a7e_defaults_factory_path_also_composes(monkeypatch):
                 graph_schema_manager=_Sentinel(),
                 graph_lifecycle=_Sentinel(),
                 graph_path_resolver=_Sentinel(),
+                graph_runtime_store=_Sentinel(),
                 safe_write_step_adapter=_Sentinel(),
                 global_discovery_runtime=_Sentinel(),
                 board_source_reader=_Sentinel(),

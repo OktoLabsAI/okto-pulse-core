@@ -240,10 +240,10 @@ def test_ac6_violations_filterable_by_key_module_and_path():
             object_type="InMemoryGraphStore",
             composition_path="RuntimeComposition.providers.graph_store",
         ),
-        RuntimeProviderObservation(
-            provider_key="storage_provider",
-            module="okto_pulse.core.kg.providers.embedded.memory_session_store",
-            object_type="MemorySessionStore",
+            RuntimeProviderObservation(
+                provider_key="storage_provider",
+                module="okto_pulse.community.adapters.memory",
+                object_type="CommunityInMemorySessionStore",
             composition_path="RuntimeComposition.providers.storage_provider",
         ),
     ]
@@ -269,7 +269,7 @@ def test_ac6_violations_filterable_by_key_module_and_path():
     assert len(by_path) == 1
     assert by_path[0].module == f"{TESTING_PROVIDER_PREFIX}.memory_graph_store"
 
-    # The embedded (non-test-only) provider is never a violation.
+    # The edition-owned Community provider is never a test-only violation.
     assert report.filter_violations(provider_key="storage_provider") == ()
 
 
@@ -325,9 +325,9 @@ def test_report_is_deterministic_and_violations_sorted_by_path():
             module=f"{TESTING_PROVIDER_PREFIX}.zeta",
             composition_path="RuntimeComposition.providers.zeta",
         ),
-        RuntimeProviderObservation(
-            provider_key="r",
-            module="okto_pulse.core.kg.providers.embedded.real",
+            RuntimeProviderObservation(
+                provider_key="r",
+                module="okto_pulse.community.adapters.memory",
             composition_path="RuntimeComposition.providers.real",
         ),
         RuntimeProviderObservation(
@@ -343,7 +343,7 @@ def test_report_is_deterministic_and_violations_sorted_by_path():
     assert first.as_dict() == second.as_dict()
     paths = [v.composition_path for v in first.violations]
     assert paths == sorted(paths)
-    # Only the two test-only providers are violations; the embedded one is not.
+    # Only the two test-only providers are violations; the Community one is not.
     assert {v.provider_key for v in first.violations} == {"a", "z"}
 
 
@@ -351,13 +351,13 @@ def test_report_is_deterministic_and_violations_sorted_by_path():
 # Reuse proof: the guard consumes the D-IMP1 policy (no reclassification here)
 # --------------------------------------------------------------------------- #
 def test_guard_consumes_d_imp1_policy_classification():
-    # A provider OUTSIDE the test-only namespace is production_allowed in both
+    # An edition-owned provider OUTSIDE the test-only namespace is production_allowed in both
     # contexts (the policy governs only the test-only namespace) — proving the
     # guard delegates the decision to classify_provider rather than inventing it.
     obs = [
-        RuntimeProviderObservation(
-            provider_key="storage_provider",
-            module="okto_pulse.core.kg.providers.embedded.memory_session_store",
+            RuntimeProviderObservation(
+                provider_key="storage_provider",
+                module="okto_pulse.community.adapters.memory",
             composition_path="RuntimeComposition.providers.storage_provider",
         )
     ]

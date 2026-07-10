@@ -11,7 +11,6 @@ Thin adapters over `kg_service` + `tier_power`. All endpoints share:
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -39,9 +38,11 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     session_of,
 )
-from okto_pulse.core.infra.auth import get_current_user, get_realm_id, require_user
+from okto_pulse.core.kg.cursor_codec import decode_cursor, encode_cursor
+from okto_pulse.core.api.auth_deps import get_current_user, get_realm_id, require_user
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.repositories import PulseUnitOfWork
+from okto_pulse.core.ports.authentication import Principal
 from okto_pulse.core.application.use_cases.kg_routes_crud import (
     BoostNodeCommand,
     BoostNodeUseCase,
@@ -67,28 +68,11 @@ from okto_pulse.core.application.use_cases.kg_routes_crud import (
 
 router = APIRouter(prefix="/kg", tags=["knowledge-graph"])
 
+# Legacy import surface retained while cursor semantics live in core.kg.
+__all__ = ["decode_cursor", "encode_cursor", "router"]
+
 logger = logging.getLogger("okto_pulse.api.kg_routes")
 _KG_ADMIN_PERMISSION = "kg.admin.historical_consolidation"
-
-
-def _roles_from_user(user: dict[str, Any] | None) -> tuple[str, ...]:
-    if not user:
-        return ()
-    value = user.get("roles", user.get("role", ()))
-    if isinstance(value, str):
-        return (value,)
-    if isinstance(value, (list, tuple, set)):
-        return tuple(str(item) for item in value if item)
-    return ()
-
-
-def _permissions_from_user(user: dict[str, Any] | None) -> Any:
-    if not user:
-        return ()
-    for key in ("permissions", "permission_flags", "flags"):
-        if key in user:
-            return user[key]
-    return ()
 
 
 def _permission_enabled(permissions: Any, required: str) -> bool:
@@ -117,12 +101,9 @@ def _kg_actor(
     realm_id: str | None,
     board_id: str | None = None,
 ) -> ActorContext:
-    return RESTAdapterContract.actor(
-        user_id,
-        realm_id=realm_id,
+    return RESTAdapterContract.actor_from_principal(
+        Principal(user_id, realm_id=realm_id, claims=user or {}),
         board_id=board_id,
-        permissions=_permissions_from_user(user),
-        roles=_roles_from_user(user),
     )
 
 
@@ -170,7 +151,12 @@ async def require_kg_board_actor(
     realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> ActorContext:
-    actor = _kg_actor(user_id=user_id, user=user, realm_id=realm_id, board_id=board_id)
+    actor = _kg_actor(
+        user_id=user_id,
+        user=user,
+        realm_id=realm_id,
+        board_id=board_id,
+    )
     await _ensure_board_access(board_id=board_id, actor=actor, uow=uow)
     return actor
 
@@ -182,7 +168,12 @@ async def require_kg_admin_board_actor(
     realm_id: str | None = Depends(get_realm_id),
     uow: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> ActorContext:
-    actor = _kg_actor(user_id=user_id, user=user, realm_id=realm_id, board_id=board_id)
+    actor = _kg_actor(
+        user_id=user_id,
+        user=user,
+        realm_id=realm_id,
+        board_id=board_id,
+    )
     await _ensure_board_access(board_id=board_id, actor=actor, uow=uow)
     _require_kg_admin(actor)
     return actor
@@ -239,41 +230,8 @@ def _compute_etag(board_id: str) -> str:
     return f'W/"{hashlib.md5(raw.encode()).hexdigest()[:16]}"'
 
 
-# ---------------------------------------------------------------------------
-# Cursor pagination helpers
-# ---------------------------------------------------------------------------
-
-
-def encode_cursor(created_at_iso: str, node_id: str) -> str:
-    """Encode a (created_at, id) tuple as an opaque base64 cursor.
-
-    Format: ``base64("<iso_timestamp>;<node_id>")`` — a semicolon separator
-    keeps the codec trivial and survives round-tripping through the query
-    string. Spec 8 / S1.2.
-    """
-    if not created_at_iso or not node_id:
-        raise ValueError("cursor components must be non-empty")
-    payload = f"{created_at_iso};{node_id}"
-    return base64.b64encode(payload.encode()).decode()
-
-
-def decode_cursor(cursor: str) -> tuple[str, str]:
-    """Decode a cursor produced by :func:`encode_cursor`.
-
-    Raises ``ValueError`` on any corruption — the route handler translates
-    that into HTTP 410 Gone per AC-12 / S1.5. Returning a sentinel would
-    hide a corrupted cursor behind "first page" which is worse UX.
-    """
-    try:
-        payload = base64.b64decode(cursor.encode()).decode()
-    except Exception as exc:
-        raise ValueError(f"cursor is not valid base64: {exc}") from exc
-    if ";" not in payload:
-        raise ValueError("cursor missing separator")
-    created_at, _, node_id = payload.partition(";")
-    if not created_at or not node_id:
-        raise ValueError("cursor has empty components")
-    return created_at, node_id
+# ``encode_cursor`` and ``decode_cursor`` remain module exports for existing REST
+# callers, but their implementation lives in the transport-free KG contract.
 
 
 # ---------------------------------------------------------------------------
@@ -1206,25 +1164,22 @@ async def stream_kg_events(
     entire outbox backlog. Absence ⇒ start from now().
 
     Root-cause fix (pool leak → exaustão → "travamento", 2026-06-09): o
-    generator NÃO toca mais no DB. O polling do outbox + queue snapshot vive
-    no :mod:`okto_pulse.core.api.kg_events_hub` — uma task em background por
-    board, com fan-out para uma ``asyncio.Queue`` por assinante. A versão
-    anterior abria uma sessão por iteração DENTRO do generator; quando o
-    cliente desconectava, o hard-cancel da request interrompia o close da
-    conexão e ela nunca voltava ao pool. O único acesso a DB remanescente
-    aqui é o replay de reconexão (``since``), feito via
-    ``cancel_safe_session`` (close blindado contra cancelamento).
+    generator não toca mais no banco. O polling do outbox + queue snapshot
+    vive em um hub genérico do Core, alimentado por um reader de eventos
+    composto pela edição. Community usa o adaptador Local First; uma edição
+    SaaS pode fornecer outra fonte sem alterar esta rota. A versão anterior
+    abria uma sessão por iteração dentro do generator; quando o cliente
+    desconectava, o hard-cancel interrompia o close da conexão e ela nunca
+    voltava ao pool.
     """
     import asyncio as _asyncio
     from datetime import datetime as _dt, timezone as _tz
 
-    from okto_pulse.core.api.kg_events_hub import (
+    from okto_pulse.core.application.kg_events_hub import (
         format_outbox_row_sse,
         format_progress_sse,
         get_kg_events_hub,
-        query_outbox_rows,
     )
-    from okto_pulse.core.infra.database import cancel_safe_session
 
     try:
         since_cursor = _dt.fromisoformat(since) if since else None
@@ -1235,9 +1190,9 @@ async def stream_kg_events(
         return value if value.tzinfo is not None else value.replace(tzinfo=_tz.utc)
 
     hub = get_kg_events_hub()
-    subscription = hub.subscribe(board_id)
 
     async def _iter():
+        subscription = hub.subscribe(board_id)
         try:
             # Initial heartbeat so the client knows the connection is alive.
             yield "event: hello\ndata: {}\n\n"
@@ -1247,15 +1202,19 @@ async def stream_kg_events(
             # (sem gap nem duplicata). Best-effort — nunca quebra o stream.
             if since_cursor is not None:
                 try:
-                    async with cancel_safe_session() as session:
-                        backlog = await query_outbox_rows(
-                            session, board_id, since_cursor, limit=500,
-                        )
-                    for row in backlog:
-                        raw = row.pop("_created_at_raw")
-                        if raw is not None and _as_utc(raw) > _as_utc(subscription.cursor):
+                    backlog = await hub.replay(
+                        board_id=board_id,
+                        after=since_cursor,
+                        limit=500,
+                    )
+                    for event in backlog:
+                        if (
+                            event.created_at is not None
+                            and _as_utc(event.created_at)
+                            > _as_utc(subscription.cursor)
+                        ):
                             break  # daqui em diante a queue do hub entrega
-                        yield format_outbox_row_sse(row)
+                        yield format_outbox_row_sse(event)
                 except Exception:
                     pass
 

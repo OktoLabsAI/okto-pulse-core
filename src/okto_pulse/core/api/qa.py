@@ -14,7 +14,7 @@ from okto_pulse.core.application.use_cases.card_collaboration import (
     QuestionNotFoundError,
 )
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.models import QACreate, QAAnswer, QAResponse
 from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services import QASelfAnsweringNotAllowedError

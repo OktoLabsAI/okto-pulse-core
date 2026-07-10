@@ -274,9 +274,9 @@ async def _stub_get_agent():
 
 
 def _fresh_mcp(name: str):
-    from fastmcp import FastMCP
+    from okto_pulse.core.mcp.catalog import CoreMcpCatalog
 
-    return FastMCP(name)
+    return CoreMcpCatalog(name=name, version="test")
 
 
 @pytest.mark.asyncio

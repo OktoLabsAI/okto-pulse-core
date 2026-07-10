@@ -1,6 +1,7 @@
 """Database configuration and session management."""
 
 import asyncio
+from collections.abc import Callable
 import contextlib
 import logging
 from contextlib import asynccontextmanager
@@ -94,6 +95,54 @@ def get_pool_status() -> str:
 _pending_session_closes: set[asyncio.Task] = set()
 
 
+async def _cancel_safe_close(awaitable: Awaitable[None]) -> None:
+    loop = asyncio.get_running_loop()
+    close_task = loop.create_task(awaitable)
+    _pending_session_closes.add(close_task)
+    close_task.add_done_callback(_pending_session_closes.discard)
+    try:
+        await asyncio.shield(close_task)
+    except asyncio.CancelledError:
+        # O close continua em background na task referenciada acima.
+        raise
+    except Exception:
+        logger.exception("db.session.cancel_safe_close_failed")
+
+
+@asynccontextmanager
+async def cancel_safe_session_scope(
+    session_factory: Callable[[], Any],
+) -> AsyncGenerator[Any, None]:
+    """Session scope cujo fechamento sobrevive a hard-cancel.
+
+    Preserva factories injetadas: aceita tanto uma factory que devolve um
+    ``AsyncSession`` quanto uma que devolve um async context manager.
+    """
+    scope = session_factory()
+    enter = getattr(scope, "__aenter__", None)
+    exit_ = getattr(scope, "__aexit__", None)
+    if callable(enter) and callable(exit_):
+        session = await enter()
+    else:
+        session = scope
+        exit_ = None
+    exc_info: tuple[type[BaseException] | None, BaseException | None, Any] = (
+        None,
+        None,
+        None,
+    )
+    try:
+        yield session
+    except BaseException as exc:
+        exc_info = (type(exc), exc, exc.__traceback__)
+        raise
+    finally:
+        if exit_ is not None:
+            await _cancel_safe_close(exit_(*exc_info))
+        else:
+            await _cancel_safe_close(session.close())
+
+
 @asynccontextmanager
 async def cancel_safe_session() -> AsyncGenerator[AsyncSession, None]:
     """AsyncSession cujo fechamento sobrevive a um hard-cancel da request.
@@ -102,22 +151,8 @@ async def cancel_safe_session() -> AsyncGenerator[AsyncSession, None]:
     cliente cancela a task no meio de awaits. Fora de streaming, o
     ``async with session_factory() as s`` normal continua sendo o padrão.
     """
-    session = get_session_factory()()
-    try:
+    async with cancel_safe_session_scope(get_session_factory()) as session:
         yield session
-    finally:
-        loop = asyncio.get_running_loop()
-        close_task = loop.create_task(session.close())
-        _pending_session_closes.add(close_task)
-        close_task.add_done_callback(_pending_session_closes.discard)
-        try:
-            await asyncio.shield(close_task)
-        except asyncio.CancelledError:
-            # Request cancelada — o close continua em background na task
-            # referenciada acima e a conexão volta ao pool de qualquer forma.
-            raise
-        except Exception:
-            logger.exception("db.session.cancel_safe_close_failed")
 
 
 def get_engine():

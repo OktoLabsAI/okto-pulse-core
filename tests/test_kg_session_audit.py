@@ -25,7 +25,7 @@ from okto_pulse.core.kg.interfaces.registry import (
 )
 from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
-from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
+from okto_pulse.core.kg.providers.testing.memory import InMemorySessionStore
 from okto_pulse.core.kg.providers.testing.memory_audit_repo import InMemoryAuditRepository
 
 

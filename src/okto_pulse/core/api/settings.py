@@ -24,7 +24,7 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     PutRuntimeSettingsUseCase,
 )
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.infra.config import validate_graph_db_max_size_gb
 from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.settings_service import (
@@ -46,6 +46,12 @@ class RuntimeSettingsResponse(BaseModel):
     kg_kuzu_buffer_pool_mb: int
     kg_kuzu_max_db_size_gb: int
     kg_connection_pool_size: int
+    # KGD-01 FR1/TR3 — WAL salvage toggle (bool persistido como 0/1;
+    # restart-required como as demais GRAPH_DB_KEYS).
+    kg_wal_salvage_enabled: bool
+    # KGD-01 FR3/BR2 — wal-only recovery toggle (degrau 2 da escada; bool
+    # persistido como 0/1; restart-required como as demais GRAPH_DB_KEYS).
+    kg_wal_only_recovery_enabled: bool
     # Event Queue tab — hot-reload (no restart needed).
     kg_queue_max_concurrent_workers: int
     kg_queue_min_interval_ms: int
@@ -71,6 +77,10 @@ class RuntimeSettingsPayload(BaseModel):
     kg_kuzu_buffer_pool_mb: int | None = Field(default=None, ge=128, le=512)
     kg_kuzu_max_db_size_gb: int | None = Field(default=None, ge=2, le=64)
     kg_connection_pool_size: int | None = Field(default=None, ge=1, le=32)
+    # KGD-01 FR1/TR3 — WAL salvage toggle.
+    kg_wal_salvage_enabled: bool | None = Field(default=None)
+    # KGD-01 FR3/BR2 — wal-only recovery toggle (degrau 2).
+    kg_wal_only_recovery_enabled: bool | None = Field(default=None)
     # Event Queue tab (spec bdcda842).
     kg_queue_max_concurrent_workers: int | None = Field(default=None, ge=1, le=16)
     kg_queue_min_interval_ms: int | None = Field(default=None, ge=0, le=1000)

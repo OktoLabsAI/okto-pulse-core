@@ -29,6 +29,7 @@ from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.event_bus import EventBus
 from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycle
 from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphPathResolver
+from okto_pulse.core.kg.interfaces.graph_recovery import GraphRecovery
 from okto_pulse.core.kg.interfaces.graph_runtime_store import GraphRuntimeStore
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
@@ -37,6 +38,7 @@ from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
     GlobalDiscoveryRuntime,
 )
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
+from okto_pulse.core.kg.interfaces.quarantine_restore import QuarantineRestore
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
 from okto_pulse.core.kg.interfaces.rebuild_ingestion import RebuildIngestionPort
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
@@ -79,6 +81,16 @@ class KGProviderRegistry:
     rebuild_ingestion_port: RebuildIngestionPort | None = None
     rebuild_audit_artifact_store: RebuildAuditArtifactStore | None = None
     cognitive_pending_work_provider: CognitivePendingWorkProvider | None = None
+    # KGD-01 FR4 — quarantine restore port (dry-run/apply with backup-swap).
+    # Optional slot: supplied by the Community composition; read-time
+    # fail-closed via require_quarantine_restore (never a configure-time
+    # required slot, so existing compositions/tests stay valid).
+    quarantine_restore: QuarantineRestore | None = None
+    # KGD-01 FR3/BR2 — wal-only recovery port (degrau 2 da escada de
+    # recovery). Same optional-slot contract as quarantine_restore: supplied
+    # by the Community composition; read-time fail-closed via
+    # require_graph_recovery.
+    graph_recovery: GraphRecovery | None = None
 
     # ------------------------------------------------------------------ R03 IMP1
     # AC3 (base fail-closed): cache_backend, rate_limiter and session_store are
@@ -126,6 +138,12 @@ class KGProviderRegistry:
     def require_cognitive_pending_work_provider(self) -> CognitivePendingWorkProvider:
         return self._require_provider("cognitive_pending_work_provider")
 
+    def require_quarantine_restore(self) -> QuarantineRestore:
+        return self._require_provider("quarantine_restore")
+
+    def require_graph_recovery(self) -> GraphRecovery:
+        return self._require_provider("graph_recovery")
+
 
 _registry: KGProviderRegistry | None = None
 _lock = threading.Lock()
@@ -140,10 +158,12 @@ def _build_defaults() -> KGProviderRegistry:
     defaulted here: real runtimes must compose them explicitly and tests must
     provide fakes via defaults_factory/overrides.
     """
-    from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
-    from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
-    from okto_pulse.core.kg.providers.embedded.memory_rate_limiter import InMemoryTokenBucket
-    from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
+    from okto_pulse.core.kg.providers.testing.memory import (
+        InMemoryCacheBackend,
+        InMemorySessionStore,
+        InMemoryTokenBucket,
+    )
+    from okto_pulse.core.kg.providers.testing.settings_config import SettingsKGConfig
     from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryCypherExecutor,
         InMemoryBoardGraphRuntime,

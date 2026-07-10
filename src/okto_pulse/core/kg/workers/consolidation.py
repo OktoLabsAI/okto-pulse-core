@@ -102,6 +102,32 @@ logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 AGENT_ID = "system:historical_consolidation"
 CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
 
+# KGD-01 (TR7): budget generoso do join do passo de lifecycle pós-commit
+# (CHECKPOINT/fsync em to_thread) durante o stop() — a thread NÃO é cancelável
+# e abandoná-la mid-write é o mecanismo do escritor stale que zera o WAL.
+_LIFECYCLE_JOIN_TIMEOUT_S = 30.0
+
+# Tasks de lifecycle pós-commit em voo (asyncio.to_thread). O run-loop pode
+# ser cancelado no shutdown enquanto um CHECKPOINT roda na worker thread;
+# registrá-las aqui permite ao ConsolidationWorker.stop() aguardá-las (join)
+# em vez de abandoná-las. Module-level: todos os workers do processo partilham
+# o mesmo registro e qualquer stop() drena o conjunto inteiro.
+_INFLIGHT_LIFECYCLE_TASKS: set["asyncio.Task[Any]"] = set()
+
+
+def _on_lifecycle_task_done(task: "asyncio.Task[Any]") -> None:
+    _INFLIGHT_LIFECYCLE_TASKS.discard(task)
+    if not task.cancelled():
+        # Consome a exceção para não emitir "Task exception was never
+        # retrieved" quando o awaiter foi cancelado no shutdown; no caminho
+        # normal o await do shield re-levanta a MESMA exceção ao caller.
+        task.exception()
+
+
+def _track_lifecycle_task(task: "asyncio.Task[Any]") -> None:
+    _INFLIGHT_LIFECYCLE_TASKS.add(task)
+    task.add_done_callback(_on_lifecycle_task_done)
+
 # Spec 3d89c192 (FR-4): o commit incremental do worker usa o subset
 # não-destrutivo do lifecycle — checkpoint real + verificação + fsync, SEM o
 # close_reopen_probe. O probe fecha o Database compartilhado (use-after-close
@@ -222,12 +248,22 @@ async def _commit_consolidation_with_board_graph_lifecycle(
         # bloqueavam o event loop INTEIRO a cada commit durante janelas de
         # scan. asyncio.to_thread copia contextvars, então o write barrier
         # de under_safe_write continua visível para o owner probe.
-        await asyncio.to_thread(
-            _apply_board_graph_lifecycle_after_commit,
-            board_id=entry.board_id,
-            owner_token=owner_token,
-            mutation_ref=mutation_ref,
+        #
+        # KGD-01 (TR7): ensure_future + shield — se a task async for
+        # cancelada no shutdown, a worker thread do CHECKPOINT continua e a
+        # task registrada segue viva para o join do stop(); sem isto o close
+        # dos grafos podia fechar o Database debaixo do CHECKPOINT (escritor
+        # stale → zeros no WAL). O cancel ainda propaga ao caller.
+        lifecycle_task = asyncio.ensure_future(
+            asyncio.to_thread(
+                _apply_board_graph_lifecycle_after_commit,
+                board_id=entry.board_id,
+                owner_token=owner_token,
+                mutation_ref=mutation_ref,
+            )
         )
+        _track_lifecycle_task(lifecycle_task)
+        await asyncio.shield(lifecycle_task)
     return commit_resp
 
 
@@ -1434,6 +1470,21 @@ class ConsolidationWorker:
                 await asyncio.wait_for(recovery_task, timeout=timeout)
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
+        # KGD-01 (TR7): um lifecycle pós-commit (CHECKPOINT/fsync em
+        # to_thread) pode continuar rodando após o cancel do run-loop — join
+        # com timeout generoso em vez de abandonar a thread mid-write.
+        pending_lifecycle = {t for t in _INFLIGHT_LIFECYCLE_TASKS if not t.done()}
+        if pending_lifecycle:
+            _done, still_pending = await asyncio.wait(
+                pending_lifecycle, timeout=_LIFECYCLE_JOIN_TIMEOUT_S
+            )
+            if still_pending:
+                logger.warning(
+                    "kg.consolidation_worker.lifecycle_join_timeout pending=%d "
+                    "timeout_s=%.0f — thread de CHECKPOINT ainda em execução",
+                    len(still_pending),
+                    _LIFECYCLE_JOIN_TIMEOUT_S,
+                )
         self._task = None
         self._recovery_task = None
         self._wake_event = None

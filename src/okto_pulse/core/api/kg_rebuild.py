@@ -29,17 +29,18 @@ FR10 — per-board scope (community edition):
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from okto_pulse.core.api.deps import scheduler_control_from_request
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.api.deps import get_unit_of_work, scheduler_control_from_request
+from okto_pulse.core.api.auth_deps import require_user
+from okto_pulse.core.application.use_cases.base import relational_context_from_uow
 from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 from okto_pulse.core.ports.scheduler import SchedulerControl
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 logger = logging.getLogger("okto_pulse.api.kg_rebuild")
@@ -60,7 +61,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
-async def _require_board_access(board_id: str, user_id: str, db: AsyncSession) -> None:
+async def _require_board_access(board_id: str, user_id: str, db: Any) -> None:
     """Verify *user_id* has ownership or membership access to *board_id*.
 
     Raises:
@@ -69,7 +70,8 @@ async def _require_board_access(board_id: str, user_id: str, db: AsyncSession) -
     """
     from okto_pulse.core.services.main import ShareService
 
-    service = ShareService(db)
+    context = relational_context_from_uow(db)
+    service = ShareService(context)
     # get_user_permission returns:
     #   None  → board not found OR user has no access to an existing board.
     # Distinguish the two by checking board existence explicitly.
@@ -81,7 +83,7 @@ async def _require_board_access(board_id: str, user_id: str, db: AsyncSession) -
     # ``service.get_user_permission`` below (403), exactly as before.
     from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
-    board_obj = await resolve_unit_of_work_factory().wrap(db).boards.get(board_id)
+    board_obj = await resolve_unit_of_work_factory().wrap(context).boards.get(board_id)
     if board_obj is None:
         raise HTTPException(status_code=404, detail="Board not found")
 
@@ -117,7 +119,7 @@ _REBUILD_REJECT_STATES: frozenset[str] = frozenset({"quarantined"})
 
 async def _refuse_rebuild_if_quarantined(
     board_id: str,
-    db: AsyncSession,
+    db: Any,
     *,
     scheduler_control: SchedulerControl | None = None,
 ) -> dict | None:
@@ -133,7 +135,7 @@ async def _refuse_rebuild_if_quarantined(
     """
     health = await get_kg_health(
         board_id,
-        db,
+        relational_context_from_uow(db),
         scheduler_control=scheduler_control,
     )
     graph_state = health.get("graph_state")
@@ -234,7 +236,7 @@ async def post_rebuild_preflight(
     request: Request,
     board_id: str = Query(..., description="Board ID (uuid)"),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> RebuildPreflightResponse:
     """Run preflight + persist the immutable source manifest. READ-ONLY (TR13).
 
@@ -287,7 +289,7 @@ async def post_rebuild_preflight(
     # independent of the gate's internal copy.
     _raw_health = await get_kg_health(
         board_id,
-        db,
+        relational_context_from_uow(db),
         scheduler_control=scheduler_control,
     )
 
@@ -371,7 +373,7 @@ class RebuildConfirmResponse(BaseModel):
 async def post_rebuild_confirm(
     body: RebuildConfirmRequest,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> RebuildConfirmResponse:
     """Bind the operator's confirmation to an existing manifest.
 
@@ -517,7 +519,7 @@ class RebuildRunResponse(BaseModel):
 async def post_rebuild_run(
     body: RebuildRunRequest,
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> RebuildRunResponse:
     """Execute the KG rebuild under the KG-01 admin lane.
 

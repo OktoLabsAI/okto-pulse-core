@@ -29,9 +29,11 @@ COMMUNITY_SOURCE_MAP_ENTRIES = (
     "community/main.py",
     "community/adapters/composition.py",
     "community/adapters/mcp_auth.py",
+    "community/adapters/mcp_host.py",
     "community/adapters/resources.py",
     "community/adapters/capability_descriptors.py",
     "community/adapters/mcp_trace.py",
+    "community/adapters/mcp_trace_middleware.py",
     "community/adapters/scheduler.py",
     "community/adapters/workers.py",
     "community/adapters/board_source_reader.py",
@@ -40,6 +42,8 @@ COMMUNITY_SOURCE_MAP_ENTRIES = (
     "community/adapters/sqlalchemy_unit_of_work.py",
     "community/adapters/sqlalchemy_repositories.py",
     "community/adapters/sqlalchemy_database.py",
+    "community/adapters/relational_application.py",
+    "community/adapters/kg_events.py",
     "community/adapters/sqlite_outbox_event_bus.py",
     "community/adapters/sqlalchemy_audit_repo.py",
     "install_community_sqlite_pragmas",
@@ -126,7 +130,7 @@ def _assert_core_readme_live_counters(readme: str) -> None:
         "`core/models/db.py`",
         "classes ending in `Service`",
         "`core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`",
-        "FastMCP registry",
+        "transport-neutral Core catalog",
         "`len(KGEdgeType)`",
     ):
         assert source in live
@@ -159,9 +163,9 @@ def test_api_route_module_counter_documents_infrastructure_exclusions() -> None:
     live = _markdown_section(readme, "What's inside")
     api_py = sorted((CORE_SRC / "api").glob("*.py"))
 
-    assert len(api_py) == 47
-    assert len([path for path in api_py if path.name != "__init__.py"]) == 46
-    assert len(_api_route_modules()) == 44
+    assert len(api_py) == 48
+    assert len([path for path in api_py if path.name != "__init__.py"]) == 47
+    assert len(_api_route_modules()) == 45
     assert "`deps.py`" in live
     assert "`router.py`" in live
 
@@ -172,7 +176,6 @@ def test_api_route_module_counter_documents_infrastructure_exclusions() -> None:
 
 def test_changelog_counters_are_anchor_protected() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    live = _markdown_section(readme, "What's inside")
     history = _release_notes(readme)
 
     assert "52 models / 28 services / 33 API modules / 215 MCP tools" in history
@@ -204,7 +207,7 @@ def test_core_architecture_documents_live_counter_maintenance_sources() -> None:
         "`core/models/db.py`",
         "classes ending in `Service`",
         "`core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`",
-        "FastMCP registry",
+        "transport-neutral Core command catalog",
         "`len(KGEdgeType)`",
         "Community adapter source map",
     ):
@@ -255,7 +258,7 @@ def test_af41_readmes_pin_mcp_runtime_ownership_and_provider_preservation() -> N
 
     for marker in (
         "Core exposes `build_mcp_asgi_app()` and `mount_mcp()`",
-        "deprecated\n`okto_pulse.core.mcp.server.run_mcp_server` debug shim",
+        "deprecated\n`okto_pulse.core.mcp.server.run_mcp_server` shim always rejects listener startup",
         "`register_instruction_provider`",
         "`register_resource_catalog`",
         "`register_package_version_provider`",
@@ -265,7 +268,7 @@ def test_af41_readmes_pin_mcp_runtime_ownership_and_provider_preservation() -> N
         assert marker in core_readme
 
     for marker in (
-        "Community declares `uvicorn[standard]` and\n`wsproto` directly",
+        "Community declares `fastmcp`, `uvicorn[standard]` and\n`wsproto` directly",
         "`CommunityMcpAuthenticator`",
         "`build_community_resource_catalog`",
         "`CommunityCapabilityDescriptorSource`",

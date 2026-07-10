@@ -30,7 +30,8 @@ sources changes:
   checked against `Base.registry.mappers`.
 - Service classes: classes ending in `Service` under `core/services`.
 - API route modules: `core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`; infrastructure modules are intentionally not counted as route modules.
-- MCP tools: the FastMCP registry after importing `okto_pulse.core.mcp.server`.
+- MCP tools: the transport-neutral Core command catalog after importing
+  `okto_pulse.core.mcp.server`.
 - Knowledge Graph relationship types: `len(KGEdgeType)` from
   `core/kg/schemas.py`.
 - Community adapter source map: the sibling Community README must describe the
@@ -93,7 +94,9 @@ Community builds the local runtime in:
 The local serve topology remains a single Python process with two uvicorn
 listeners: API/UI and MCP. The shared runtime state is no longer an MCP auth
 `ContextVar`; MCP credentials ride the ASGI/FastMCP request scope and the KG
-runtime is resolved through `KGProviderRegistry`.
+runtime is resolved through `KGProviderRegistry`. The Community MCP host owns
+the concrete request-context lookup and projects its credential through the
+`McpHostProvider` port.
 
 ## Core Ports
 

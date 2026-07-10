@@ -15,7 +15,7 @@ from okto_pulse.core.kg.interfaces.registry import (
     reset_registry_for_tests,
 )
 from kg_registry_testing import configure_test_kg_registry
-from okto_pulse.core.kg.providers.embedded.memory_session_store import InMemorySessionStore
+from okto_pulse.core.kg.providers.testing.memory import InMemorySessionStore
 from okto_pulse.core.kg.providers.testing.memory_audit_repo import InMemoryAuditRepository
 from okto_pulse.core.kg.providers.testing.memory_event_bus import InMemoryEventBus
 from okto_pulse.core.kg.providers.testing.memory_graph_store import InMemoryGraphStore

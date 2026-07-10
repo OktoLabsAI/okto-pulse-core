@@ -19,27 +19,28 @@ import logging
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import AsyncContextManager
+from typing import Any, AsyncContextManager
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.api.deps import scheduler_control_from_request
+from okto_pulse.core.api.auth_deps import require_user
+from okto_pulse.core.api.deps import get_unit_of_work, scheduler_control_from_request
+from okto_pulse.core.application.use_cases.base import relational_context_from_uow
 from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.ports.coordination import (
     CoordinationProviderMissing,
     get_lease_provider,
 )
+from okto_pulse.core.ports.kg_operational import get_kg_operational_read_model_port
 from okto_pulse.core.ports.scheduler import SchedulerControl
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 logger = logging.getLogger("okto_pulse.api.kg_tick")
 router = APIRouter()
 
-SessionScopeFactory = Callable[[], AsyncContextManager[AsyncSession]]
+SessionScopeFactory = Callable[[], AsyncContextManager[Any]]
 
 
 class TickRunNowRequest(BaseModel):
@@ -55,7 +56,7 @@ class TickRunNowResponse(BaseModel):
 
 async def _refuse_tick_if_degraded(
     board_id: str | None,
-    db: AsyncSession,
+    db: Any,
     *,
     scheduler_control: SchedulerControl | None = None,
 ) -> dict | None:
@@ -73,7 +74,7 @@ async def _refuse_tick_if_degraded(
         return None
     health = await get_kg_health(
         board_id,
-        db,
+        relational_context_from_uow(db),
         scheduler_control=scheduler_control,
     )
     graph_state = health.get("graph_state")
@@ -100,7 +101,7 @@ async def run_tick_now(
     payload: TickRunNowRequest,
     request: Request,
     user: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> TickRunNowResponse:
     """Trigger the KG decay tick manually (idempotent — concurrent calls
     return 409 until the in-flight tick releases the lease).
@@ -178,7 +179,7 @@ async def run_tick_now(
                 tick_id=tick_id,
                 board_id=payload.board_id,
                 force_full_rebuild=payload.force_full_rebuild,
-                session=db,
+                session=relational_context_from_uow(db),
             )
             await db.commit()
         except Exception as exc:
@@ -220,7 +221,7 @@ async def _dispatch_manual_tick(
     tick_id: str,
     board_id: str | None,
     force_full_rebuild: bool,
-    session: AsyncSession | None = None,
+    session: Any | None = None,
     session_scope_factory: SessionScopeFactory | None = None,
 ) -> None:
     """Persist KGDailyTick event(s) through the same path as the cron.
@@ -274,7 +275,7 @@ async def _dispatch_manual_tick(
 
 
 async def _reset_last_recomputed_at(
-    board_id: str | None, *, session: AsyncSession | None = None
+    board_id: str | None, *, session: Any | None = None
 ) -> None:
     """Zero out `last_recomputed_at` for nodes in scope (board or global).
 
@@ -289,9 +290,6 @@ async def _reset_last_recomputed_at(
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
     from okto_pulse.core.kg.write_barrier import require_write_token
-    from okto_pulse.core.models.db import Board
-    from sqlalchemy import select
-
     if board_id:
         board_ids = [board_id]
     else:
@@ -299,8 +297,12 @@ async def _reset_last_recomputed_at(
             raise RuntimeError(
                 "session is required to reset all boards for force_full_rebuild"
             )
-        rows = (await session.execute(select(Board.id))).scalars().all()
-        board_ids = list(rows)
+        board_ids = list(
+            await get_kg_operational_read_model_port().list_all_board_ids(
+                session,
+                limit=10_000,
+            )
+        )
 
     for bid in board_ids:
         # KG-01.3.1 boundary: force_full_rebuild is a write path against

@@ -513,8 +513,36 @@ SINGLETON_LEDGER: dict[str, dict[str, str]] = {
 #: ``SINGLETON_LEDGER`` stays keyed by name for public compatibility; this keyed
 #: ledger removes ambiguity when enforcing BASELINE_SINGLETONS coverage.
 RUNTIME_SINGLETON_BASELINE_LEDGER: dict[str, dict[str, str]] = {
-    "okto_pulse/core/api/kg_events_hub.py::_hub": {
-        "file": "okto_pulse/core/api/kg_events_hub.py",
+    "okto_pulse/core/ports/mcp_host.py::_mcp_host_provider": {
+        "file": "okto_pulse/core/ports/mcp_host.py",
+        "owner": "okto-pulse-core/mcp-host-boundary",
+        "target_provider": "mcp_host_provider",
+        "retirement_criterion": (
+            "Remove the process registry when inbound MCP host composition is "
+            "carried by RuntimeComposition rather than a global bridge."
+        ),
+    },
+    "okto_pulse/core/ports/kg_events.py::_kg_events_reader_port": {
+        "file": "okto_pulse/core/ports/kg_events.py",
+        "owner": "okto-pulse-core/kg-events-boundary",
+        "target_provider": "kg_events_reader_port",
+        "retirement_criterion": (
+            "Remove the process registry when request/application composition "
+            "passes the edition-owned KG events reader directly."
+        ),
+    },
+    "okto_pulse/core/ports/relational_application.py::_adapter": {
+        "file": "okto_pulse/core/ports/relational_application.py",
+        "owner": "okto-pulse-core/relational-application-boundary",
+        "target_provider": "relational_application_adapter",
+        "retirement_criterion": (
+            "Remove the process registry when every inbound/application entry "
+            "receives the edition-owned relational adapter bundle directly from "
+            "RuntimeComposition or its scoped UnitOfWork."
+        ),
+    },
+    "okto_pulse/core/application/kg_events_hub.py::_hub": {
+        "file": "okto_pulse/core/application/kg_events_hub.py",
         "owner": "okto-pulse-core/inbound-events",
         "target_provider": "kg_events_hub",
         "retirement_criterion": "Move the process-wide KG event hub behind an inbound event-bus provider.",
@@ -624,7 +652,9 @@ RUNTIME_SINGLETON_BASELINE_LEDGER: dict[str, dict[str, str]] = {
 #: SINGLETON_LEDGER, not by this detector.
 BASELINE_SINGLETONS: frozenset[str] = frozenset(
     {
-        "okto_pulse/core/api/kg_events_hub.py::_hub",
+        "okto_pulse/core/ports/mcp_host.py::_mcp_host_provider",
+        "okto_pulse/core/ports/kg_events.py::_kg_events_reader_port",
+        "okto_pulse/core/application/kg_events_hub.py::_hub",
         "okto_pulse/core/events/dispatcher.py::_dispatcher",
         "okto_pulse/core/infra/auth.py::_auth_provider",
         "okto_pulse/core/infra/config.py::_settings_instance",
@@ -661,6 +691,7 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/ports/kg_operational.py::_kg_worker_queue_port",
         "okto_pulse/core/ports/kg_operational.py::_kg_worker_audit_port",
         "okto_pulse/core/ports/relational_effects.py::_relational_effects_port",
+        "okto_pulse/core/ports/relational_application.py::_adapter",
         "okto_pulse/core/runtime_registry.py::_unit_of_work_factory",
         "okto_pulse/core/runtime_registry.py::_relational_runtime_factory",
         "okto_pulse/core/runtime_registry.py::_sqlite_pragma_installer",

@@ -39,7 +39,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.kg.candidate_decision_store import (
     CandidateDecisionRecord,
     CandidateDecisionStatus,

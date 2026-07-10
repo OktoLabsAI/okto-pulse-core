@@ -123,6 +123,21 @@ class CoreSettings(BaseSettings):
     kg_kuzu_buffer_pool_mb: int = Field(512, ge=128, le=512)
     kg_kuzu_max_db_size_gb: int = Field(2, ge=2, le=64)
     kg_connection_pool_size: int = Field(8, ge=1, le=32)
+    # KGD-01 (FR1/TR3) — habilita o salvage nativo de WAL do LadybugDB na
+    # fábrica única de opens do adapter da edição (retry com
+    # throw_on_wal_replay_failure=False após falha de open com marcador de
+    # corrupção). Default true: rasgos triviais de cauda do WAL deixam de ser
+    # board-death. Restart-required (mesmo contrato das demais GRAPH_DB_KEYS).
+    kg_wal_salvage_enabled: bool = True
+    # KGD-01 (FR3/BR2) — degrau 2 da escada de recovery (salvage → wal-only →
+    # restore/operador): quando o open falha com marcador de corrupção e o
+    # salvage (degrau 1) falhou ou está desligado/indisponível, o adapter da
+    # edição quarentena SOMENTE graph.lbug.wal + sidecars (.shadow /
+    # .wal.checkpoint) com manifest completo e re-tenta o open UMA vez. O main
+    # graph.lbug NUNCA é movido/alterado por caminho automático (BR2). Default
+    # true: perder commits pós-checkpoint (preservados na quarentena) é melhor
+    # que board-death. Restart-required (mesmo contrato das GRAPH_DB_KEYS).
+    kg_wal_only_recovery_enabled: bool = True
 
     @field_validator("kg_kuzu_max_db_size_gb")
     @classmethod

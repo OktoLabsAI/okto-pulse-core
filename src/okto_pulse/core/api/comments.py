@@ -18,7 +18,7 @@ from okto_pulse.core.application.use_cases.card_collaboration import (
     UpdateCardCommentUseCase,
 )
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.models import CommentCreate, CommentUpdate, CommentResponse
 from okto_pulse.core.repositories import PulseUnitOfWork
 

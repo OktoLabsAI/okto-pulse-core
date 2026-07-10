@@ -75,6 +75,7 @@ AF35_S3_CLEAN_REST_TARGET_FILES: tuple[str, ...] = (
     "api/amendment_revisions.py",
     "api/architecture.py",
     "api/attachments.py",
+    "api/auth_deps.py",
     "api/boards.py",
     "api/bug_cognitive_closure.py",
     "api/cards.py",
@@ -90,13 +91,19 @@ AF35_S3_CLEAN_REST_TARGET_FILES: tuple[str, ...] = (
     "api/kg_canonical_partition_integrity.py",
     "api/kg_cognitive_badges.py",
     "api/kg_cognitive_candidates.py",
+    "api/kg_cognitive_candidate_commands.py",
     "api/kg_cognitive_pending.py",
     "api/kg_digest_layer_mismatch.py",
+    "api/kg_events_hub.py",
     "api/kg_health.py",
     "api/kg_orphan_integrity.py",
+    "api/kg_rebuild.py",
     "api/kg_routes.py",
     "api/kg_stale_canonical_parity.py",
+    "api/kg_tick.py",
+    "api/me.py",
     "api/metrics.py",
+    "api/presets.py",
     "api/qa.py",
     "api/queue_health.py",
     "api/refinements.py",
@@ -155,44 +162,7 @@ _API_DEPS_RETIREMENT = (
     "edition composition can provide request-scoped UoW without this seam."
 )
 
-_DEFERRED_PATTERN_COUNTS: dict[str, dict[str, int]] = {
-    "api/kg_cognitive_candidate_commands.py": {
-        PATTERN_ASYNC_SESSION_IMPORT: 1,
-        PATTERN_ASYNC_SESSION_ANNOTATION: 1,
-        PATTERN_GET_DB_IMPORT: 1,
-        PATTERN_DEPENDS_GET_DB: 1,
-    },
-    "api/kg_events_hub.py": {
-        PATTERN_SESSION_EXECUTE_CALL: 2,
-    },
-    "api/kg_rebuild.py": {
-        PATTERN_ASYNC_SESSION_IMPORT: 1,
-        PATTERN_ASYNC_SESSION_ANNOTATION: 5,
-        PATTERN_GET_DB_IMPORT: 1,
-        PATTERN_DEPENDS_GET_DB: 3,
-    },
-    "api/kg_tick.py": {
-        PATTERN_ASYNC_SESSION_IMPORT: 1,
-        PATTERN_ASYNC_SESSION_ANNOTATION: 4,
-        PATTERN_GET_DB_IMPORT: 1,
-        PATTERN_DEPENDS_GET_DB: 1,
-        PATTERN_SESSION_EXECUTE_CALL: 1,
-    },
-    "api/me.py": {
-        PATTERN_ASYNC_SESSION_IMPORT: 1,
-        PATTERN_ASYNC_SESSION_ANNOTATION: 1,
-        PATTERN_GET_DB_IMPORT: 1,
-        PATTERN_DEPENDS_GET_DB: 1,
-        PATTERN_SESSION_EXECUTE_CALL: 1,
-    },
-    "api/presets.py": {
-        PATTERN_ASYNC_SESSION_IMPORT: 1,
-        PATTERN_ASYNC_SESSION_ANNOTATION: 5,
-        PATTERN_GET_DB_IMPORT: 1,
-        PATTERN_DEPENDS_GET_DB: 5,
-        PATTERN_SESSION_EXECUTE_CALL: 1,
-    },
-}
+_DEFERRED_PATTERN_COUNTS: dict[str, dict[str, int]] = {}
 
 _ALLOWED_UOW_SEAM_COUNTS: dict[str, dict[str, int]] = {
     "api/deps.py": {

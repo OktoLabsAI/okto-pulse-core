@@ -122,7 +122,7 @@ class TestRegistryWiring:
             KGProviderRegistry,
             configure_kg_registry,
         )
-        from okto_pulse.core.kg.providers.embedded.settings_config import (
+        from okto_pulse.core.kg.providers.testing.settings_config import (
             SettingsKGConfig,
         )
 

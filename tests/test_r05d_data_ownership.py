@@ -148,7 +148,7 @@ def test_r07_gate_blocks_community_settingskgconfig_subclass(tmp_path):
     (community_pkg / "adapters").mkdir(parents=True, exist_ok=True)
     core_pkg.mkdir(parents=True, exist_ok=True)
     (community_pkg / "adapters" / "data.py").write_text(
-        "from okto_pulse.core.kg.providers.embedded.settings_config "
+        "from okto_pulse.core.kg.providers.testing.settings_config "
         "import SettingsKGConfig\n"
         "class CommunityKGConfig(SettingsKGConfig):\n"
         "    pass\n",
@@ -176,7 +176,7 @@ def test_r07_gate_blocks_community_module_alias_reference(tmp_path):
     community_pkg.mkdir(parents=True, exist_ok=True)
     core_pkg.mkdir(parents=True, exist_ok=True)
     (community_pkg / "rogue.py").write_text(
-        "import okto_pulse.core.kg.providers.embedded.settings_config as sc\n"
+        "import okto_pulse.core.kg.providers.testing.settings_config as sc\n"
         "cfg = sc.SettingsKGConfig()\n",
         encoding="utf-8",
     )
@@ -263,6 +263,7 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
             graph_schema_manager=object(),
             graph_lifecycle=object(),
             graph_path_resolver=object(),
+            graph_runtime_store=object(),
             safe_write_step_adapter=object(),
             global_discovery_runtime=object(),
             board_source_reader=object(),

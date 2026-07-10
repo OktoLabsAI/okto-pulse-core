@@ -20,12 +20,12 @@ from okto_pulse.core.api.kg_events_hub import (
     SUBSCRIBER_QUEUE_MAXSIZE,
     KgEventsHub,
     _BoardStream,
-    configure_kg_events_hub_session_factory,
     get_kg_events_hub,
     shutdown_kg_events_hub,
 )
 from okto_pulse.core.infra.database import get_engine, get_session_factory
 from okto_pulse.core.models.db import GlobalUpdateOutbox
+from okto_pulse.core.ports.kg_events import KGEventsPoll
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -59,10 +59,10 @@ async def _drain_until(queue: asyncio.Queue, predicate, timeout: float = 6.0) ->
             return chunk
 
 
-async def test_fanout_outbox_event_to_multiple_subscribers():
+async def test_fanout_outbox_event_to_multiple_subscribers(kg_events_reader):
     hub = KgEventsHub(
+        kg_events_reader,
         poll_interval=0.1,
-        session_scope_factory=get_session_factory(),
     )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub_a = hub.subscribe(board_id)
@@ -79,10 +79,10 @@ async def test_fanout_outbox_event_to_multiple_subscribers():
         await hub.aclose()
 
 
-async def test_progress_snapshot_broadcast_on_first_cycle():
+async def test_progress_snapshot_broadcast_on_first_cycle(kg_events_reader):
     hub = KgEventsHub(
+        kg_events_reader,
         poll_interval=0.1,
-        session_scope_factory=get_session_factory(),
     )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub = hub.subscribe(board_id)
@@ -96,10 +96,10 @@ async def test_progress_snapshot_broadcast_on_first_cycle():
         await hub.aclose()
 
 
-async def test_poller_stops_when_last_subscriber_leaves():
+async def test_poller_stops_when_last_subscriber_leaves(kg_events_reader):
     hub = KgEventsHub(
+        kg_events_reader,
         poll_interval=0.1,
-        session_scope_factory=get_session_factory(),
     )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub = hub.subscribe(board_id)
@@ -127,46 +127,23 @@ async def test_subscriber_queue_is_bounded_and_keeps_newest():
     assert items[0] == "chunk-100"
 
 
-async def test_hub_poller_uses_injected_session_scope(monkeypatch):
-    from okto_pulse.core.api import kg_events_hub
-    from okto_pulse.core.infra import database as database_module
-
-    class _SessionScope:
+async def test_hub_poller_uses_injected_reader():
+    class _Reader:
         def __init__(self) -> None:
-            self.entered = False
-            self.exited = False
+            self.calls = 0
 
-        async def __aenter__(self):
-            self.entered = True
-            return object()
+        async def poll(self, *, board_id, after, limit):
+            self.calls += 1
+            return KGEventsPoll(
+                events=[],
+                progress={"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0},
+            )
 
-        async def __aexit__(self, *_args) -> None:
-            self.exited = True
+        async def replay(self, *, board_id, after, limit):
+            return []
 
-    scopes: list[_SessionScope] = []
-
-    def _factory() -> _SessionScope:
-        scope = _SessionScope()
-        scopes.append(scope)
-        return scope
-
-    async def _fake_rows(_session, _board_id, _after, limit=50):
-        return []
-
-    async def _fake_snapshot(_session, _board_id):
-        return {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-
-    monkeypatch.setattr(kg_events_hub, "query_outbox_rows", _fake_rows)
-    monkeypatch.setattr(kg_events_hub, "query_queue_snapshot", _fake_snapshot)
-    monkeypatch.setattr(
-        database_module,
-        "get_session_factory",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("concrete get_session_factory must not be called")
-        ),
-    )
-
-    hub = KgEventsHub(poll_interval=0.01, session_scope_factory=_factory)
+    reader = _Reader()
+    hub = KgEventsHub(reader, poll_interval=0.01)
     sub = hub.subscribe("board-injected")
     try:
         await _drain_until(sub.queue, lambda c: "kg.queue.progress" in c, timeout=2.0)
@@ -174,9 +151,37 @@ async def test_hub_poller_uses_injected_session_scope(monkeypatch):
         hub.unsubscribe(sub)
         await hub.aclose()
 
-    assert scopes
-    assert scopes[0].entered is True
-    assert scopes[0].exited is True
+    assert reader.calls >= 1
+
+
+async def test_hub_unsubscribe_cancels_an_inflight_reader_poll():
+    poll_started = asyncio.Event()
+    poll_cancelled = asyncio.Event()
+
+    class _Reader:
+        async def poll(self, *, board_id, after, limit):
+            poll_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                poll_cancelled.set()
+                raise
+
+        async def replay(self, *, board_id, after, limit):
+            return []
+
+    hub = KgEventsHub(_Reader(), poll_interval=30.0)
+    sub = hub.subscribe("board-cancel-exit")
+    stream_task = hub._streams["board-cancel-exit"].task
+    assert stream_task is not None
+
+    await asyncio.wait_for(poll_started.wait(), timeout=2.0)
+    hub.unsubscribe(sub)
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(stream_task, timeout=2.0)
+    assert poll_cancelled.is_set()
+    await hub.aclose()
 
 
 async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
@@ -185,11 +190,9 @@ async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
     checked-out e o hub remove o assinante."""
     from okto_pulse.core.api.kg_routes import stream_kg_events
 
-    configure_kg_events_hub_session_factory(get_session_factory())
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     response = await stream_kg_events(board_id, since=None)
     hub = get_kg_events_hub()
-    assert board_id in hub._streams
 
     consumed: list[str] = []
 
@@ -204,6 +207,7 @@ async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
     while len(consumed) < 2 and asyncio.get_running_loop().time() < deadline:
         await asyncio.sleep(0.05)
     assert consumed, "stream nunca emitiu o hello"
+    assert board_id in hub._streams
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -221,7 +225,6 @@ async def test_sse_route_replays_backlog_since_cursor():
     """Reconexão com `since` re-entrega eventos perdidos via cancel_safe_session."""
     from okto_pulse.core.api.kg_routes import stream_kg_events
 
-    configure_kg_events_hub_session_factory(get_session_factory())
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     event_id = await _insert_outbox_event(board_id)
     # O evento foi inserido com created_at ~1s no futuro; `since` bem no

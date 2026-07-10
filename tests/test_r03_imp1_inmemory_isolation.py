@@ -63,7 +63,7 @@ def test_token_bucket_semantics_preserved_in_port_adapter():
     """FR2 'sem alterar a semantica de token bucket': the canonical concrete keeps
     30 tokens / 60s and the same allow()/reset() contract the removed duplicate
     had."""
-    from okto_pulse.core.kg.providers.embedded.memory_rate_limiter import (
+    from okto_pulse.core.kg.providers.testing.memory import (
         InMemoryTokenBucket,
     )
 

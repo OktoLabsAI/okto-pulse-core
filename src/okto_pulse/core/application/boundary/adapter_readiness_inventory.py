@@ -255,51 +255,54 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         # --- KG registry in-memory providers (#06) ---
         _entry(
             adapter_key="inmemory_cache_backend",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/memory_cache.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/memory.py",
             port_ref="CacheBackend",
             wave="R05-REGISTRY",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="composition-owned cache provider",
+            target_destination="community/adapters/memory.py (Local First cache)",
             packages=("stdlib",),
             oracles_required=("cache_get_set_roundtrip",),
             removal_criterion=(
-                "A composition cache provider is registered with the CacheBackend "
-                "port oracle; the in-memory default stays until then."
+                "S06 done: Community composition registers CommunityInMemoryCache; "
+                "Core retains only an explicit providers.testing fake."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "S06"),),
         ),
         _entry(
             adapter_key="inmemory_token_bucket_rate_limiter",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/memory_rate_limiter.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/memory.py",
             port_ref="RateLimiter",
             wave="R05-REGISTRY",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="composition-owned rate limiter provider",
+            target_destination="community/adapters/memory.py (Local First limiter)",
             packages=("stdlib",),
             oracles_required=("rate_limit_token_consumption",),
             removal_criterion=(
-                "A composition rate limiter is registered with the RateLimiter "
-                "port oracle; the in-memory bucket stays until then."
+                "S06 done: Community composition registers CommunityInMemoryRateLimiter; "
+                "Core retains only an explicit providers.testing fake."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "S06"),),
         ),
         _entry(
             adapter_key="inmemory_session_store",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/memory_session_store.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/memory.py",
             port_ref="SessionStore",
             wave="R05-REGISTRY",
             predecessor_refs=("#06_kg_ports",),
-            target_destination="composition-owned session store provider",
+            target_destination="community/adapters/memory.py (Local First sessions)",
             packages=("stdlib",),
             oracles_required=("session_ttl_expiry",),
             removal_criterion=(
-                "A composition session store is registered with the SessionStore "
-                "port oracle; the in-memory store stays until then."
+                "S06 done: Community composition registers CommunityInMemorySessionStore; "
+                "Core retains only an explicit providers.testing fake."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "S06"),),
         ),
         # --- MCP auth context (#08 — concrete bridge owned by Community, fail-closed on read) ---
         _entry(
@@ -456,19 +459,20 @@ def build_adapter_inventory() -> tuple[AdapterInventoryEntry, ...]:
         # --- infra config providers ---
         _entry(
             adapter_key="settings_kg_config",
-            owner="okto-pulse-core/kg",
-            current_module="okto_pulse/core/kg/providers/embedded/settings_config.py",
+            owner="okto-pulse-community/kg",
+            current_module="okto_pulse/community/adapters/data.py",
             port_ref="KGConfig",
             wave="R05-INFRA",
             predecessor_refs=("#15_settings_conformance",),
-            target_destination="composition-owned KGConfig provider",
+            target_destination="community/adapters/data.py (Local First KGConfig)",
             packages=("stdlib",),
             oracles_required=("kg_config_settings_parity",),
             removal_criterion=(
-                "A composition KGConfig provider is registered with the conformance "
-                "oracle; the settings-backed default stays until then."
+                "S06 done: Community composition registers CommunityKGConfig; Core "
+                "retains only a providers.testing settings fake."
             ),
-            status="blocked",
+            status="ready",
+            metadata=(("moved_by", "S06"),),
         ),
         # --- runtime / scheduler (#03) ---
         _entry(

@@ -33,6 +33,10 @@ from okto_pulse.core.kg.interfaces.graph_path_resolver import (
     GraphPathResolver,
     GraphStorageState,
 )
+from okto_pulse.core.kg.interfaces.graph_recovery import (
+    GraphRecovery,
+    WalRecoveryReport,
+)
 from okto_pulse.core.kg.interfaces.graph_runtime_store import (
     GraphPurgeResult,
     GraphRuntimeState,
@@ -52,6 +56,14 @@ from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
     GlobalDiscoveryRuntime,
 )
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
+from okto_pulse.core.kg.interfaces.quarantine_restore import (
+    QuarantineRestore,
+    QuarantineRestoreError,
+    QuarantineRestoreErrorCode,
+    RestoreFileEntry,
+    RestorePlan,
+    RestoreReport,
+)
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
 from okto_pulse.core.kg.interfaces.rebuild_ingestion import (
     RebuildIngestionPort,
@@ -86,6 +98,7 @@ __all__ = [
     "GraphHandle",
     "GraphLifecycle",
     "GraphPathResolver",
+    "GraphRecovery",
     "GraphPurgeResult",
     "GraphRuntimeState",
     "GraphRuntimeStore",
@@ -101,8 +114,14 @@ __all__ = [
     "KGConfig",
     "KGEvent",
     "KGProviderRegistry",
+    "QuarantineRestore",
+    "QuarantineRestoreError",
+    "QuarantineRestoreErrorCode",
     "QueryFilters",
     "RateLimiter",
+    "RestoreFileEntry",
+    "RestorePlan",
+    "RestoreReport",
     "RebuildIngestionPort",
     "RebuildAuditArtifactStore",
     "RebuildAuditKey",
@@ -115,6 +134,7 @@ __all__ = [
     "SourceReadError",
     "SourceReadFailure",
     "SourceUnavailableError",
+    "WalRecoveryReport",
     "configure_kg_registry",
     "get_kg_registry",
     "reset_registry_for_tests",

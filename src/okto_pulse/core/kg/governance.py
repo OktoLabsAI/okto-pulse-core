@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.domain.enums import SpecStatus, SprintStatus
+from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
 from okto_pulse.core.models.db import (
     Board,
     ConsolidationAudit,
@@ -33,9 +34,6 @@ from okto_pulse.core.models.db import (
 )
 
 logger = logging.getLogger("okto_pulse.kg.governance")
-
-HISTORICAL_PROGRESS_SETTINGS_KEY = "kg_historical_consolidation"
-
 
 def _historical_progress_state(board: Board | None) -> dict[str, Any]:
     if board is None or not isinstance(board.settings, dict):

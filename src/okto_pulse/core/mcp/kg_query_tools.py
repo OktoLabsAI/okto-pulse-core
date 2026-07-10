@@ -140,7 +140,7 @@ async def _get_user_boards(get_agent=None, get_uow=None) -> tuple[Any, list[str]
 
 
 def register_kg_query_tools(mcp, *, get_agent, get_uow) -> None:
-    """Register the 9 tier primario query tools on the FastMCP instance.
+    """Register the 9 tier primario query tools on the command catalog.
 
     Spec R01A MCP-FU4: the shared ``_get_user_boards`` helper is injected with the
     MCP UnitOfWorkFactory (``get_uow``) instead of a raw ``get_db`` session source,

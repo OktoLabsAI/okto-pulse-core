@@ -99,45 +99,6 @@ class ImportBaselineLedgerEntry:
 
 
 IMPORT_BOUNDARY_BASELINE_LEDGER: dict[str, ImportBaselineLedgerEntry] = {
-    "okto_pulse/core/infra/auth.py|fastapi|forbidden_import_root": ImportBaselineLedgerEntry(
-        owner="okto-pulse-core/auth-boundary",
-        reason=(
-            "Local API-key auth still imports FastAPI primitives in the outbound "
-            "auth provider while the inbound auth port is being split."
-        ),
-        removal_criterion=(
-            "Move HTTP credential extraction to inbound/composition and keep the "
-            "core auth provider transport-agnostic."
-        ),
-        spec_or_wave="AF20-R1 non-relational import-boundary ledger",
-        risk="medium: transport framework remains visible in an outbound adapter.",
-    ),
-    "okto_pulse/core/infra/auth.py|fastapi.security|forbidden_import_root": ImportBaselineLedgerEntry(
-        owner="okto-pulse-core/auth-boundary",
-        reason=(
-            "The current local auth seam still references FastAPI security helpers "
-            "before the auth provider is fully transport-agnostic."
-        ),
-        removal_criterion=(
-            "Replace FastAPI security helper usage with an inbound-only adapter and "
-            "inject a framework-neutral auth credential object into core services."
-        ),
-        spec_or_wave="AF20-R1 non-relational import-boundary ledger",
-        risk="medium: transport-specific security helper is coupled to core auth.",
-    ),
-    "okto_pulse/core/kg/kg_service.py|okto_pulse.core.api.kg_routes|forbidden_target_layer:inbound": ImportBaselineLedgerEntry(
-        owner="okto-pulse-core/kg-boundary",
-        reason=(
-            "KG service still reaches an inbound API route helper for compatibility "
-            "during the KG route/use-case split."
-        ),
-        removal_criterion=(
-            "Move the shared helper behind an application/KG port or DTO module so "
-            "outbound KG code no longer imports inbound API modules."
-        ),
-        spec_or_wave="AF20-R1 non-relational import-boundary ledger",
-        risk="high: outbound KG code depends on inbound API shape.",
-    ),
 }
 
 

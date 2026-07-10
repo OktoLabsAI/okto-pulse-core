@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Any, Literal, Mapping, Protocol, TypeVar, runtime_checkable
 
+from okto_pulse.core.ports.authentication import Principal
+
 Source = Literal["rest", "mcp", "system"]
 
 
@@ -62,6 +64,45 @@ class ActorContext:
             f"actor_name={self.actor_name!r}, board_id={self.board_id!r}, "
             f"realm_id={self.realm_id!r})"
         )
+
+
+def actor_context_from_principal(
+    principal: Principal,
+    *,
+    source: Source,
+    board_id: str | None = None,
+) -> ActorContext:
+    """Normalize a transport-free principal for application authorization.
+
+    Claim interpretation is intentionally centralized here so REST, MCP and a
+    future SaaS worker feed identical identity, realm, role and permission data
+    into board/state-transition policies.
+    """
+    claims = principal.claims
+    raw_roles = claims.get("roles", claims.get("role", ()))
+    if isinstance(raw_roles, str):
+        roles = (raw_roles,)
+    elif isinstance(raw_roles, (list, tuple, set, frozenset)):
+        roles = tuple(str(role) for role in raw_roles if role)
+    else:
+        roles = ()
+
+    permissions: Any = ()
+    for key in ("permissions", "permission_flags", "flags"):
+        if key in claims:
+            permissions = claims[key]
+            break
+
+    actor_name = claims.get("name", claims.get("agent_name"))
+    return ActorContext(
+        principal.subject,
+        source,
+        actor_name=str(actor_name) if actor_name else None,
+        board_id=board_id,
+        realm_id=principal.realm_id,
+        permissions=permissions,
+        roles=roles,
+    )
 
 
 CommandT = TypeVar("CommandT", contravariant=True)
@@ -144,3 +185,16 @@ async def commit(uow: Any) -> None:
     if commit_fn is None:
         raise TypeError("uow must provide an awaitable commit()")
     await commit_fn()
+
+
+def relational_context_from_uow(value: Any) -> Any:
+    """Expose an adapter-neutral relational context to legacy Core services.
+
+    Migrated inbound adapters receive a ``PulseUnitOfWork``.  A small number of
+    pre-strangler Core application services still accept their relational
+    context directly; this bridge unwraps the UoW without importing a concrete
+    session type.  Passing a context directly remains supported for non-HTTP
+    callers while MCP finishes its own UoW migration.
+    """
+
+    return getattr(value, "session", value)

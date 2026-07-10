@@ -39,7 +39,7 @@ from okto_pulse.core.application.use_cases.boards_crud import (
 )
 from okto_pulse.core.domain.enums import CardStatus
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
-from okto_pulse.core.infra.auth import require_user, get_realm_id
+from okto_pulse.core.api.auth_deps import require_user, get_realm_id
 from okto_pulse.core.models import (
     BoardCreate,
     BoardResponse,

@@ -27,6 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
+from .authentication import Principal
+
 #: Where a credential was extracted from. ``unknown`` is kept for backward
 #: compatibility with callers that cannot preserve the originating transport.
 McpCredentialSource = Literal[
@@ -41,6 +43,11 @@ MCP_CREDENTIAL_SOURCES: tuple[McpCredentialSource, ...] = (
     "authorization_bearer",
     "unknown",
 )
+
+#: Shared ASGI scope key.  The concrete host writes it and the Core catalog
+#: reads it only through the host port; keeping the literal here avoids a
+#: transport-specific module dependency in Core.
+MCP_CREDENTIAL_SCOPE_KEY = "okto_pulse.mcp_credential"
 
 #: Bounded, secret-free failure reasons for observability. ``authenticate``
 #: returns ``None`` (fail-closed) on any of these — the reason set is for
@@ -126,6 +133,19 @@ class McpAuthenticator(Protocol):
         ...
 
 
+def principal_from_auth_session(session: AuthSession | None) -> Principal | None:
+    """Project an active MCP auth session to the shared pure principal DTO."""
+    if session is None or not session.is_active:
+        return None
+    return Principal(
+        subject=session.agent_id,
+        claims={
+            "agent_name": session.agent_name,
+            "auth_channel": "mcp",
+        },
+    )
+
+
 def mcp_credential_from_sources(
     *,
     query_param: str | None,
@@ -169,6 +189,7 @@ def require_authenticator(
 
 
 __all__ = [
+    "MCP_CREDENTIAL_SCOPE_KEY",
     "MCP_CREDENTIAL_SOURCES",
     "MCP_AUTH_FAILURE_REASONS",
     "McpCredentialSource",
@@ -179,5 +200,6 @@ __all__ = [
     "AgentAuthSession",
     "McpAuthenticator",
     "mcp_credential_from_sources",
+    "principal_from_auth_session",
     "require_authenticator",
 ]

@@ -20,6 +20,9 @@ from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentRevisionStatus,
 )
 from okto_pulse.core.domain.enums import CardType, SpecStatus
+from okto_pulse.core.ports.relational_application import (
+    require_relational_application_adapter,
+)
 
 #: Spec statuses that are ALWAYS content-locked (immutable) — a Path B amendment
 #: always attaches here. ``in_progress`` is handled separately by the
@@ -195,11 +198,9 @@ class AmendmentRevisionApiService:
 
     @staticmethod
     def _legacy_backend(session_like: Any) -> AmendmentRevisionApiBackend:
-        from okto_pulse.core.repositories.sqlalchemy.amendment_revision_api_backend import (
-            SQLAlchemyAmendmentRevisionApiBackend,
+        return require_relational_application_adapter().amendment_revision_backend(
+            session_like
         )
-
-        return SQLAlchemyAmendmentRevisionApiBackend(session_like)
 
     async def create(
         self,

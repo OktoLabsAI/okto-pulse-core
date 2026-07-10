@@ -26,6 +26,7 @@ from functools import partial
 from typing import Any
 
 from okto_pulse.core.kg import cypher_templates as tpl
+from okto_pulse.core.kg.cursor_codec import decode_cursor
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
 
@@ -694,7 +695,7 @@ class KGService:
         """Return nodes ordered ``(created_at DESC, id DESC)`` — Spec 8 / S1.3.
 
         When ``cursor`` is provided it must be a string produced by
-        :func:`okto_pulse.core.api.kg_routes.encode_cursor`; the query then
+        :func:`okto_pulse.core.kg.cursor_codec.encode_cursor`; the query then
         returns rows strictly "after" that cursor in the stable order.
         """
         layer = normalize_graph_layer(graph_layer)
@@ -708,7 +709,6 @@ class KGService:
         if node_type:
             params["node_type"] = node_type
         if cursor:
-            from okto_pulse.core.api.kg_routes import decode_cursor
             cursor_ts, cursor_id = decode_cursor(cursor)
             params["cursor_ts"] = cursor_ts
             params["cursor_id"] = cursor_id

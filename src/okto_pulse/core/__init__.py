@@ -19,14 +19,24 @@ __version__ = "0.3.0"
 # touch infra.database, init_db, the migrations, Base.metadata/create_all or any
 # runtime wiring.
 _LAZY_EXPORTS: dict[str, str] = {
-    # infra.auth
-    "AuthProvider": "okto_pulse.core.infra.auth",
+    # authentication port and registration seam
+    "AuthProvider": "okto_pulse.core.ports.authentication",
+    "AuthenticationError": "okto_pulse.core.ports.authentication",
+    "AuthenticationPort": "okto_pulse.core.ports.authentication",
+    "AuthorizationDenied": "okto_pulse.core.ports.authentication",
+    "Credential": "okto_pulse.core.ports.authentication",
+    "InvalidCredential": "okto_pulse.core.ports.authentication",
+    "MissingCredential": "okto_pulse.core.ports.authentication",
+    "Principal": "okto_pulse.core.ports.authentication",
     "configure_auth": "okto_pulse.core.infra.auth",
     "get_auth_provider": "okto_pulse.core.infra.auth",
-    "get_current_user": "okto_pulse.core.infra.auth",
-    "get_current_user_id": "okto_pulse.core.infra.auth",
-    "get_realm_id": "okto_pulse.core.infra.auth",
-    "require_user": "okto_pulse.core.infra.auth",
+    "reset_auth_for_tests": "okto_pulse.core.infra.auth",
+    "get_current_principal": "okto_pulse.core.api.auth_deps",
+    "get_current_user": "okto_pulse.core.api.auth_deps",
+    "get_current_user_id": "okto_pulse.core.api.auth_deps",
+    "get_realm_id": "okto_pulse.core.api.auth_deps",
+    "require_principal": "okto_pulse.core.api.auth_deps",
+    "require_user": "okto_pulse.core.api.auth_deps",
     # infra.config
     "CoreSettings": "okto_pulse.core.infra.config",
     "get_settings": "okto_pulse.core.infra.config",
@@ -53,12 +63,26 @@ __all__ = ["__version__", *_LAZY_EXPORTS]
 
 if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbols
     from okto_pulse.core.infra.auth import (
-        AuthProvider,
         configure_auth,
         get_auth_provider,
+        reset_auth_for_tests,
+    )
+    from okto_pulse.core.ports.authentication import (
+        AuthProvider,
+        AuthenticationError,
+        AuthenticationPort,
+        AuthorizationDenied,
+        Credential,
+        InvalidCredential,
+        MissingCredential,
+        Principal,
+    )
+    from okto_pulse.core.api.auth_deps import (
+        get_current_principal,
         get_current_user,
         get_current_user_id,
         get_realm_id,
+        require_principal,
         require_user,
     )
     from okto_pulse.core.infra.config import (

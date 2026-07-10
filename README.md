@@ -11,9 +11,9 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 - **59 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, KG queues, rebuild/cognitive-candidate records, discovery entities and audit/outbox records. Source: classes with `__tablename__` in `core/models/db.py`, checked against `Base.registry.mappers`; historical Skills entities remain removed.
 - **33 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
-- **44 API route modules** — FastAPI REST endpoints. Source: `core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`; the raw glob has 47 Python files, or 46 without only `__init__.py`.
+- **45 API route modules** — FastAPI REST endpoints. Source: `core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`; the raw glob has 48 Python files, or 47 without only `__init__.py`.
 - **17 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence, bug traceability and sprint health controls.
-- **262 MCP tools** — Complete Model Context Protocol server for AI agent integration, counted from the FastMCP registry after importing the server, including:
+- **262 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
@@ -59,7 +59,7 @@ Shared by composition:
 - SQLAlchemy session factory registered by the edition lifespan
 - RuntimeComposition providers for settings, auth, storage, events and scheduler control
 - KGProviderRegistry providers supplied by the active edition
-- MCP credential resolved from the ASGI/FastMCP request scope
+- MCP credential resolved by the edition-owned MCP host request context
 ```
 
 The Community package mounts the bundled React SPA and owns the local-first
@@ -103,12 +103,12 @@ must follow those gates, not the other way around.
 | `numpy` | `temporary_exception` | AF40-R1 carry-forward: non-telemetry KG/vector dependency for embedding/rerank transitives. The AF40 carry-forward guard requires direct-dep/no-import plus a named KG/vector consumer. | Not a telemetry dependency and not moved by AF40. A later KG/vector or embedding owner spec must provide the oracle before this can leave core packaging. |
 | `apscheduler` | `community_owned` | AF31-S1R moved the concrete scheduler runtime out of core. Core keeps only `JobSpec`/`SchedulerControl` and the KG daily tick policy; `dependency_conformance` now blocks manifest, lock, wheel or runtime-import reintroduction. | Declared by Community and mapped in `community/adapters/scheduler.py` from core `JobSpec` to APScheduler/`IntervalTrigger`. |
 
-AF41 MCP runtime ownership: `uvicorn[standard]` and `wsproto` are Community
-serving dependencies. Core exposes `build_mcp_asgi_app()` and `mount_mcp()`, but
-its manifest, lock and wheel metadata must not declare the concrete server
-runtime. `mcp_runtime_ownership_gate.py` enforces that boundary and allows only
-the lazy `uvicorn` import inside the deprecated
-`okto_pulse.core.mcp.server.run_mcp_server` debug shim.
+AF41 MCP runtime ownership: `fastmcp`, `uvicorn[standard]` and `wsproto` are
+Community serving dependencies. Core exposes `build_mcp_asgi_app()` and `mount_mcp()`
+as port-backed compatibility facades, but its manifest, lock,
+wheel metadata and source must not declare or import the concrete server
+runtime. `mcp_runtime_ownership_gate.py` enforces that boundary; the deprecated
+`okto_pulse.core.mcp.server.run_mcp_server` shim always rejects listener startup.
 
 AF41 provider preservation: this change does not recreate the delivered MCP
 instruction, resource, version, auth or trace adapters. Core keeps only the
@@ -359,8 +359,8 @@ What you get:
 - **One lifespan** — `init_db`, KG worker startup, scheduler boot, and `register_session_factory` all run once on the API listener; the MCP sub-app picks up the registered factory automatically.
 
 Public surface:
-- `okto_pulse.core.mcp.build_mcp_asgi_app(trace_sink=None)` — returns the MCP ASGI app wrapped in the `ApiKeySessionMiddleware` (handles `?api_key=` / `X-API-Key` / `Authorization: Bearer` and binds the credential to the current ASGI/FastMCP request scope). Pass an implementation of `okto_pulse.core.ports.McpTraceSink` to record MCP calls; omit it to keep tracing disabled.
-- `okto_pulse.core.mcp.mount_mcp(app, mount_path="/mcp", trace_sink=None)` — mounts the same ASGI app onto an existing FastAPI app at the given path (community does this when an embedded mount is needed) and forwards the optional trace sink.
+- `okto_pulse.core.mcp.build_mcp_asgi_app(trace_sink=None)` — delegates the Core command catalog and optional `okto_pulse.core.ports.McpTraceSink` to the MCP host selected by the edition composition root. Core does not construct HTTP middleware or an ASGI listener.
+- `okto_pulse.core.mcp.mount_mcp(app, mount_path="/mcp", trace_sink=None)` — delegates mounting of the same command catalog to the selected edition host.
 - `okto_pulse.core.mcp.register_session_factory(factory)` — call from the API lifespan so the MCP sub-app finds the DB. Idempotent.
 
 #### Spec Skills entity removed in its entirety

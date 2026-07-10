@@ -1,7 +1,7 @@
 """MCP tool wrappers for the 7 consolidation primitives.
 
 Tools are registered via `register_kg_tools(mcp)` which is called from
-`server.py` AFTER the `mcp` FastMCP instance is constructed. This avoids the
+`server.py` after the Core command catalog is constructed. This avoids the
 circular import that would happen if `kg_tools` imported `mcp` at module load.
 
 Each tool:
@@ -113,10 +113,10 @@ def _maybe_record_r7_cognitive_hold(
 
 
 def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
-    """Register the 7 KG primitive tools on the given FastMCP instance.
+    """Register the 7 KG primitive tools on the given command catalog.
 
     Args:
-        mcp: FastMCP instance from okto_pulse.core.mcp.server
+        mcp: Core command catalog from okto_pulse.core.mcp.server
         get_agent: async callable returning the authenticated agent, or None
                    on auth failure (shared helper from server.py)
         get_uow: callable returning the MCP UnitOfWorkFactory (spec R01A MCP-FU1);

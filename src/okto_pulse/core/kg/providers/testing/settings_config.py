@@ -1,13 +1,14 @@
-"""SettingsKGConfig — wraps CoreSettings as KGConfig Protocol implementation."""
+"""Settings-backed ``KGConfig`` fake for explicit test compositions."""
 
 from __future__ import annotations
 
 
 class SettingsKGConfig:
-    """Default KGConfig that delegates to CoreSettings. Satisfies KGConfig Protocol."""
+    """Expose configured Core settings through the ``KGConfig`` test contract."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         from okto_pulse.core.infra.config import get_settings
+
         self._settings = get_settings()
 
     @property
@@ -37,3 +38,6 @@ class SettingsKGConfig:
     @property
     def kg_cleanup_enabled(self) -> bool:
         return self._settings.kg_cleanup_enabled
+
+
+__all__ = ["SettingsKGConfig"]

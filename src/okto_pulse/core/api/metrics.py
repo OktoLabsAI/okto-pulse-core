@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.telemetry.publish_health import HEALTH_SOURCE_UNAVAILABLE
 from okto_pulse.core.telemetry.schema import SchemaReject, count_rejected_payload_fields, sanitize_payload

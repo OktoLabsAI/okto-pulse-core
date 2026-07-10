@@ -130,23 +130,12 @@ async def _seed(tmp: str) -> None:
         await s.commit()
 
 
-class _Req:
-    def __init__(self, credential=None):
-        self.scope = {}
-        self.query_params = {}
-        self.headers = {}
-        if credential is not None:
-            self.scope[server._MCP_CREDENTIAL_SCOPE_KEY] = credential
-
-
 def _set_request_scope(monkeypatch, key: str | None):
-    """Simulate FastMCP exposing the current HTTP request to server.py."""
-    import fastmcp.server.dependencies as deps
-
+    """Supply an edition-host credential to the transport-free Core facade."""
     credential = (
         McpCredential(source="query_param", value=key) if key is not None else None
     )
-    monkeypatch.setattr(deps, "get_http_request", lambda: _Req(credential))
+    monkeypatch.setattr(server, "active_api_key_credential", lambda: credential)
 
 
 # ===========================================================================

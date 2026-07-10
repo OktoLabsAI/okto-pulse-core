@@ -11,10 +11,14 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
     session_of,
 )
-from okto_pulse.core.services.permission_presets import (
+from okto_pulse.core.ports.relational_application import (
     EffectivePermissions,
-    PermissionPresetRestService,
+    require_relational_application_adapter,
 )
+
+
+def _gateway(uow: Any):
+    return require_relational_application_adapter().permission_presets(session_of(uow))
 
 
 class GetMyPermissionsCommand:
@@ -39,8 +43,7 @@ class GetMyPermissionsUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> GetMyPermissionsResult:
-        service = PermissionPresetRestService(session_of(uow))
-        permissions = await service.get_effective_permissions(
+        permissions = await _gateway(uow).get_effective_permissions(
             user_id=actor.actor_id,
             board_id=command.board_id,
         )
@@ -66,9 +69,8 @@ class ListPermissionPresetsUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> ListPermissionPresetsResult:
-        service = PermissionPresetRestService(session_of(uow))
         return ListPermissionPresetsResult(
-            await service.list_presets(user_id=actor.actor_id)
+            await _gateway(uow).list_presets(user_id=actor.actor_id)
         )
 
 
@@ -102,15 +104,14 @@ class CreatePermissionPresetUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> PermissionPresetResult:
-        service = PermissionPresetRestService(session_of(uow))
-        preset = await service.create_preset(
+        preset = await _gateway(uow).create_preset(
             user_id=actor.actor_id,
             name=command.name,
             description=command.description,
             flags=command.flags,
         )
         await commit(uow)
-        return PermissionPresetResult(await service.refresh(preset))
+        return PermissionPresetResult(preset)
 
 
 class ClonePermissionPresetCommand:
@@ -138,8 +139,7 @@ class ClonePermissionPresetUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> PermissionPresetResult:
-        service = PermissionPresetRestService(session_of(uow))
-        preset = await service.clone_preset(
+        preset = await _gateway(uow).clone_preset(
             source_preset_id=command.preset_id,
             user_id=actor.actor_id,
             name=command.name,
@@ -149,7 +149,7 @@ class ClonePermissionPresetUseCase:
         if preset is None:
             raise EntityNotFoundError("source_preset", command.preset_id)
         await commit(uow)
-        return PermissionPresetResult(await service.refresh(preset))
+        return PermissionPresetResult(preset)
 
 
 class UpdatePermissionPresetCommand:
@@ -177,9 +177,8 @@ class UpdatePermissionPresetUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> PermissionPresetResult:
-        service = PermissionPresetRestService(session_of(uow))
         try:
-            preset = await service.update_preset(
+            preset = await _gateway(uow).update_preset(
                 preset_id=command.preset_id,
                 user_id=actor.actor_id,
                 name=command.name,
@@ -191,7 +190,7 @@ class UpdatePermissionPresetUseCase:
         if preset is None:
             raise EntityNotFoundError("preset", command.preset_id)
         await commit(uow)
-        return PermissionPresetResult(await service.refresh(preset))
+        return PermissionPresetResult(preset)
 
 
 class DeletePermissionPresetCommand:
@@ -209,9 +208,8 @@ class DeletePermissionPresetUseCase:
         actor: ActorContext,
         uow: Any,
     ) -> None:
-        service = PermissionPresetRestService(session_of(uow))
         try:
-            deleted = await service.delete_preset(
+            deleted = await _gateway(uow).delete_preset(
                 preset_id=command.preset_id,
                 user_id=actor.actor_id,
             )

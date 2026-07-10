@@ -200,6 +200,41 @@ def test_zero_direct_kuzu_database_call_sites():
     )
 
 
+def test_open_kuzu_db_controls_wal_salvage_flag():
+    """AC1 extension (KGD-01 FR1/TR2/BR1): the single open factory carries
+    ``throw_on_wal_replay_failure`` on every open path.
+
+    The primary open is fail-closed (``throw_on_wal_replay_failure=True``);
+    the salvage retry (``False``) only runs on a corruption-marked failure and
+    is gated by ``kg_wal_salvage_enabled``. Both the C-API path and the pybind
+    fallback must carry the flag so no open bypasses the salvage contract.
+    """
+    import inspect
+
+    import okto_pulse.community.adapters.kg_runtime as kg_runtime
+
+    factory_src = inspect.getsource(kg_runtime._open_kuzu_db)
+    assert "throw_on_wal_replay_failure" in factory_src, (
+        "_open_kuzu_db must pass throw_on_wal_replay_failure on its opens"
+    )
+    assert "kg_wal_salvage_enabled" in factory_src, (
+        "_open_kuzu_db must gate the salvage retry on kg_wal_salvage_enabled"
+    )
+
+    pybind_src = inspect.getsource(kg_runtime._open_ladybug_database_forced_pybind)
+    assert "throw_on_wal_replay_failure" in pybind_src, (
+        "the pybind fallback must propagate throw_on_wal_replay_failure"
+    )
+
+    salvage_src = inspect.getsource(kg_runtime._try_open_with_wal_salvage)
+    assert "throw_on_wal_replay_failure=False" in salvage_src, (
+        "the salvage retry must open with throw_on_wal_replay_failure=False"
+    )
+
+    # The setting exists in CoreSettings with the safe default (salvage ON).
+    assert CoreSettings().kg_wal_salvage_enabled is True
+
+
 # ----------------------------------------------------------------------
 # AC4 — connection_pool reads CoreSettings + honours env var override
 # ----------------------------------------------------------------------

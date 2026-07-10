@@ -47,7 +47,7 @@ _READ_TIME_FAIL_CLOSED_SLOTS = (
 
 
 def _base_with_required_slots_only() -> KGProviderRegistry:
-    from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+    from okto_pulse.core.kg.providers.testing.settings_config import SettingsKGConfig
     from okto_pulse.core.kg.providers.testing.memory_audit_repo import (
         InMemoryAuditRepository,
     )
@@ -146,7 +146,7 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
     ``configure_kg_registry`` fails closed before we can observe the slot. R-P2-02
     also requires event_bus/audit_repo, so this test supplies opaque fakes for the
     data ports while proving cache/rate/session are not silently defaulted."""
-    from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+    from okto_pulse.core.kg.providers.testing.settings_config import SettingsKGConfig
     from okto_pulse.core.kg.providers.testing.memory_audit_repo import (
         InMemoryAuditRepository,
     )
@@ -214,7 +214,7 @@ def test_required_data_slots_fail_closed_when_composition_omits_one(
     actionable error — never a late ``AttributeError`` when a consumer reads
     ``registry.config``. R-P2-02 applies the same fail-closed contract to the
     relational data ports: event_bus and audit_repo."""
-    from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+    from okto_pulse.core.kg.providers.testing.settings_config import SettingsKGConfig
     from okto_pulse.core.kg.providers.testing.memory_audit_repo import (
         InMemoryAuditRepository,
     )

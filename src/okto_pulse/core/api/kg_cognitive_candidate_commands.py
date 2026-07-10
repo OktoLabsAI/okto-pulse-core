@@ -47,10 +47,10 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.infra.auth import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.core.api.auth_deps import require_user
+from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.core.application.use_cases.base import relational_context_from_uow
 from okto_pulse.core.kg.candidate_decision_store import (
     CandidateDecisionAction,
     CandidateDecisionError,
@@ -66,6 +66,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.models.schemas import SpecUpdate
+from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.main import SpecService
 
 
@@ -518,7 +519,7 @@ async def submit_candidate_decision_command(
     body: CandidateDecisionCommandRequest,
     candidate_id: str = Path(..., min_length=1),
     user_id: str = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
+    db: PulseUnitOfWork = Depends(get_unit_of_work),
 ) -> CandidateDecisionCommandResponse:
     """Submit a lifecycle command against a candidate decision.
 
@@ -552,7 +553,7 @@ async def submit_candidate_decision_command(
         )
 
     audit_ref = _generate_audit_ref()
-    service = SpecService(db)
+    service = SpecService(relational_context_from_uow(db))
     formal_decision: dict[str, Any] | None = None
 
     if body.action == "promote_to_spec_decision":

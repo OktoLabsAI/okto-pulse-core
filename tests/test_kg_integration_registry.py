@@ -80,7 +80,7 @@ class TestCacheBackendIntegration:
         assert "ttl_seconds" in s
 
     def test_ttl_expiry(self):
-        from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend
 
         cache = InMemoryCacheBackend(ttl_seconds=0.05)
         cache.put("tool", "b1", {"k": 1}, "val")
@@ -92,7 +92,7 @@ class TestCacheBackendIntegration:
         assert hit is False
 
     def test_lru_eviction_at_max_size(self):
-        from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend
 
         cache = InMemoryCacheBackend(max_size=3)
         for i in range(4):

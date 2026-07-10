@@ -36,7 +36,7 @@ from okto_pulse.core.application.use_cases import (
     UpdateBoardOverridesUseCase,
 )
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.models import (
     AgentBoardOverridesUpdate,
     AgentBoardResponse,

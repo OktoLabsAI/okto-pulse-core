@@ -245,13 +245,6 @@ class AF35S5RelationalFinalReport:
 
 
 _AF35_S5_MCP_DIRECT_GET_DB_LEDGER: dict[str, frozenset[str]] = {
-    "auth_bootstrap": frozenset(
-        {
-            "_authenticate_mcp_credential",
-            "_get_agent_ctx_for_credential",
-            "_get_global_agent_ctx",
-        }
-    ),
     "cards_and_task_context": frozenset(
         {
             "okto_pulse_resolve_bug_regression_scenarios",
@@ -315,17 +308,6 @@ _AF35_S5_MCP_DIRECT_GET_DB_LEDGER: dict[str, frozenset[str]] = {
 }
 
 _AF35_S5_MCP_GROUP_METADATA: dict[str, dict[str, str]] = {
-    "auth_bootstrap": {
-        "owner": "AF35-S5 MCP auth provider",
-        "rationale": (
-            "Credential and global-agent bootstrap still resolves identity before "
-            "a board-scoped actor/UoW exists."
-        ),
-        "removal_criterion": (
-            "Provider-backed MCP auth context resolves credentials without "
-            "opening get_db_for_mcp in server.py."
-        ),
-    },
     "cards_and_task_context": {
         "owner": "AF35-S4 card context migration",
         "rationale": (
@@ -393,6 +375,14 @@ _AF35_S5_MCP_GROUP_METADATA: dict[str, dict[str, str]] = {
         ),
     },
 }
+
+# Historical inventory retained for audit only. Every former opener now flows
+# through ``get_uow_session_for_mcp`` and no longer participates in the active
+# temporary-exception ledger.
+_AF35_S5_RETIRED_MCP_DIRECT_GET_DB_LEDGER = _AF35_S5_MCP_DIRECT_GET_DB_LEDGER
+_AF35_S5_RETIRED_MCP_GROUP_METADATA = _AF35_S5_MCP_GROUP_METADATA
+_AF35_S5_MCP_DIRECT_GET_DB_LEDGER: dict[str, frozenset[str]] = {}
+_AF35_S5_MCP_GROUP_METADATA: dict[str, dict[str, str]] = {}
 
 
 def build_af35_s5_mcp_direct_session_ledger() -> tuple[AF35S5McpDirectSessionEntry, ...]:

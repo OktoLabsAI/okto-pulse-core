@@ -320,7 +320,7 @@ def auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
 #
 # R03 IMP1 (FR2/AC2): the in-memory token bucket lives ONLY behind the
 # RateLimiter port — the canonical concrete is
-# ``kg.providers.embedded.memory_rate_limiter.InMemoryTokenBucket`` (the Community
+# ``community.adapters.memory.CommunityInMemoryRateLimiter`` (the Community
 # edition composes ``CommunityInMemoryRateLimiter``). The duplicate module-global
 # ``_TokenBucket`` / ``_rate_limiter`` that used to live here was vestigial — the
 # runtime resolves the slot through ``require_rate_limiter()`` — so it is removed,

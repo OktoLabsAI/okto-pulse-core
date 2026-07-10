@@ -36,14 +36,11 @@ def test_af41_core_mcp_facade_does_not_export_legacy_runner() -> None:
     assert not hasattr(core_mcp, "run_mcp_server")
 
 
-def test_af41_legacy_runner_warns_and_fails_without_edition_runtime(monkeypatch) -> None:
-    import okto_pulse.core.infra.database as database
+def test_af41_legacy_runner_warns_and_rejects_core_listener_startup() -> None:
     from okto_pulse.core.mcp import server
 
-    monkeypatch.setattr(database, "is_database_runtime_configured", lambda: False)
-
-    with pytest.warns(DeprecationWarning, match="legacy debug shim"):
-        with pytest.raises(RuntimeError, match="edition-configured relational runtime"):
+    with pytest.warns(DeprecationWarning, match="retired"):
+        with pytest.raises(RuntimeError, match="Core cannot start an MCP listener"):
             server.run_mcp_server()
 
 
@@ -56,10 +53,7 @@ def test_af41_core_mcp_runtime_ownership_gate_passes_real_repo() -> None:
 
     assert report.ok, [finding.as_dict() for finding in report.findings]
     assert set(report.surfaces_audited) >= {"manifest", "lock", "source"}
-    assert any(
-        "okto_pulse/core/mcp/server.py" in location
-        for location in report.allowed_source_imports
-    )
+    assert report.allowed_source_imports == ()
 
 
 def test_af41_core_dist_wheel_metadata_does_not_require_server_runtime() -> None:
@@ -93,7 +87,7 @@ def test_af41_runtime_ownership_gate_fails_closed_on_core_packaging_and_source(
         "[project]\n"
         'name = "synthetic-core"\n'
         'version = "0"\n'
-        'dependencies = ["uvicorn[standard]>=0.27", "wsproto>=1.2"]\n',
+        'dependencies = ["fastmcp>=2.0", "uvicorn[standard]>=0.27", "wsproto>=1.2"]\n',
         encoding="utf-8",
     )
     lock = tmp_path / "uv.lock"
@@ -103,11 +97,13 @@ def test_af41_runtime_ownership_gate_fails_closed_on_core_packaging_and_source(
         'name = "okto-pulse-core"\n'
         'version = "0"\n'
         "dependencies = [\n"
+        '  { name = "fastmcp" },\n'
         '  { name = "uvicorn", extra = ["standard"] },\n'
         '  { name = "wsproto" },\n'
         "]\n"
         "[package.metadata]\n"
         "requires-dist = [\n"
+        '  { name = "fastmcp", specifier = ">=2.0" },\n'
         '  { name = "uvicorn", extras = ["standard"], specifier = ">=0.27" },\n'
         '  { name = "wsproto", specifier = ">=1.2" },\n'
         "]\n",
@@ -117,7 +113,7 @@ def test_af41_runtime_ownership_gate_fails_closed_on_core_packaging_and_source(
     core_dir = source_root / "okto_pulse" / "core"
     core_dir.mkdir(parents=True)
     (core_dir / "bad_runtime.py").write_text(
-        "import uvicorn\nfrom wsproto import WSConnection\n",
+        "from fastmcp import FastMCP\nimport uvicorn\nfrom wsproto import WSConnection\n",
         encoding="utf-8",
     )
     metadata = tmp_path / "METADATA"
@@ -125,6 +121,7 @@ def test_af41_runtime_ownership_gate_fails_closed_on_core_packaging_and_source(
         "Metadata-Version: 2.1\n"
         "Name: okto-pulse-core\n"
         "Version: 0\n"
+        "Requires-Dist: fastmcp>=2.0\n"
         "Requires-Dist: uvicorn[standard]>=0.27\n"
         "Requires-Dist: wsproto>=1.2\n",
         encoding="utf-8",
@@ -142,7 +139,7 @@ def test_af41_runtime_ownership_gate_fails_closed_on_core_packaging_and_source(
         for finding in report.findings
     }
     for surface in ("manifest", "lock", "source", "wheel"):
-        for dependency in ("uvicorn", "wsproto"):
+        for dependency in ("fastmcp", "uvicorn", "wsproto"):
             expected_code = (
                 "core_runtime_import_present"
                 if surface == "source"
@@ -157,6 +154,7 @@ def test_af41_core_manifest_and_lock_do_not_directly_declare_server_runtime() ->
         dep.split("[", 1)[0].split(">", 1)[0].split("<", 1)[0].strip().lower()
         for dep in pyproject["project"]["dependencies"]
     }
+    assert "fastmcp" not in deps
     assert "uvicorn" not in deps
     assert "wsproto" not in deps
 
@@ -165,8 +163,10 @@ def test_af41_core_manifest_and_lock_do_not_directly_declare_server_runtime() ->
     direct = {dep["name"] for dep in core.get("dependencies", [])}
     metadata = {dep["name"] for dep in core.get("metadata", {}).get("requires-dist", [])}
 
+    assert "fastmcp" not in direct
     assert "uvicorn" not in direct
     assert "wsproto" not in direct
+    assert "fastmcp" not in metadata
     assert "uvicorn" not in metadata
     assert "wsproto" not in metadata
 

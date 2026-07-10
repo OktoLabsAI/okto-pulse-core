@@ -115,8 +115,8 @@ class TestProtocolDuckTyping:
         assert not isinstance(Incomplete(), EmbeddingProvider)
 
     def test_embedded_implementations_satisfy_protocols(self):
-        from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
-        from okto_pulse.core.kg.providers.embedded.memory_rate_limiter import InMemoryTokenBucket
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryTokenBucket
 
         assert isinstance(InMemoryCacheBackend(), CacheBackend)
         assert isinstance(InMemoryTokenBucket(), RateLimiter)
@@ -145,19 +145,19 @@ class TestRegistryDefaults:
         assert reg.embedding_provider is not None
 
     def test_lazy_init_config_is_settings_based(self):
-        from okto_pulse.core.kg.providers.embedded.settings_config import SettingsKGConfig
+        from okto_pulse.core.kg.providers.testing.settings_config import SettingsKGConfig
 
         reg = get_kg_registry()
         assert isinstance(reg.config, SettingsKGConfig)
 
     def test_lazy_init_cache_is_in_memory(self):
-        from okto_pulse.core.kg.providers.embedded.memory_cache import InMemoryCacheBackend
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend
 
         reg = get_kg_registry()
         assert isinstance(reg.cache_backend, InMemoryCacheBackend)
 
     def test_lazy_init_rate_limiter_is_token_bucket(self):
-        from okto_pulse.core.kg.providers.embedded.memory_rate_limiter import InMemoryTokenBucket
+        from okto_pulse.core.kg.providers.testing.memory import InMemoryTokenBucket
 
         reg = get_kg_registry()
         assert isinstance(reg.rate_limiter, InMemoryTokenBucket)

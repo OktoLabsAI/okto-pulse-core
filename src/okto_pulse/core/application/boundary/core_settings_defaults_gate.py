@@ -93,6 +93,8 @@ _BASELINE_CORE_SETTING_NAMES: tuple[str, ...] = (
     "kg_kuzu_buffer_pool_mb",
     "kg_kuzu_max_db_size_gb",
     "kg_connection_pool_size",
+    "kg_wal_salvage_enabled",
+    "kg_wal_only_recovery_enabled",
     "kg_queue_max_concurrent_workers",
     "kg_queue_min_interval_ms",
     "kg_queue_claim_timeout_s",
@@ -144,6 +146,16 @@ _KG_RUNTIME_OWNERS: dict[str, str] = {
     "kg_kuzu_max_db_size_gb": (
         "Legacy public storage knob retained for API/env compatibility; AF37 "
         "tracks the neutral graph_runtime_* alias plan."
+    ),
+    "kg_wal_salvage_enabled": (
+        "WAL salvage toggle (KGD-01 FR1/TR3) exposed through the public "
+        "runtime settings API; consumed by the edition graph adapter's "
+        "single open factory."
+    ),
+    "kg_wal_only_recovery_enabled": (
+        "Wal-only recovery toggle (KGD-01 FR3/BR2, degrau 2 of the recovery "
+        "ladder) exposed through the public runtime settings API; consumed "
+        "by the edition graph adapter's single open factory."
     ),
     "kg_connection_pool_size": (
         "Legacy public connection-pool knob retained for API/env compatibility; "

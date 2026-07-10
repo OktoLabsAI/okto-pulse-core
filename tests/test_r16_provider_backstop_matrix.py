@@ -13,6 +13,7 @@ from okto_pulse.core.application.boundary.provider_backstop_matrix import (
     audit_provider_backstop,
     audit_source_for_provider_backstop_leaks,
     build_provider_backstop_matrix,
+    default_source_roots,
     run_provider_backstop_gate,
     validate_provider_backstop_matrix,
 )
@@ -40,6 +41,13 @@ def test_ts_c814ac43_sanctioned_fake_providers_are_test_only_policy() -> None:
     assert row.test_allowed is True
     assert "composition" in row.migration_path
     assert validate_provider_backstop_matrix() == ()
+
+
+def test_default_source_roots_never_expand_to_site_packages() -> None:
+    roots = default_source_roots()
+
+    assert roots
+    assert all(path.name != "site-packages" for path in roots)
 
 
 def test_ts_5ec04dd2_rejects_production_bootstrap_using_test_defaults(

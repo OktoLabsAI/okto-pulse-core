@@ -15,7 +15,7 @@ import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
 
-AF35_S4_EXPECTED_DIRECT_GET_DB_COUNT = 36
+AF35_S4_EXPECTED_DIRECT_GET_DB_COUNT = 0
 AF35_S4_UOW_CALLSITE_FLOOR = 193
 
 AF35_S4_DIRECT_GET_DB_LEDGER: dict[str, frozenset[str]] = {
@@ -117,6 +117,14 @@ AF35_S4_RESIDUAL_GROUP_METADATA: dict[str, dict[str, str]] = {
         "removal_trigger": "KG residual tools are either UoW-backed or explicitly deferred to AF35-S5 with this ledger updated.",
     },
 }
+
+# The former 36 direct session openers are retained in the source history above
+# for traceability. The active catalog routes all of them through the composed
+# UoW session scope, so the live residual ledger is empty.
+AF35_S4_RETIRED_DIRECT_GET_DB_LEDGER = AF35_S4_DIRECT_GET_DB_LEDGER
+AF35_S4_RETIRED_RESIDUAL_GROUP_METADATA = AF35_S4_RESIDUAL_GROUP_METADATA
+AF35_S4_DIRECT_GET_DB_LEDGER: dict[str, frozenset[str]] = {}
+AF35_S4_RESIDUAL_GROUP_METADATA: dict[str, dict[str, str]] = {}
 
 AF35_S4_MIGRATED_MCP_WRAPPERS = frozenset(
     {

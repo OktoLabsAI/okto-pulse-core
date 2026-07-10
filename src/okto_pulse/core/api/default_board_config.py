@@ -28,7 +28,7 @@ from okto_pulse.core.application.use_cases.admin_catalog import (
     UpdateDefaultGuidelineRefsUseCase,
 )
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.repositories import PulseUnitOfWork
 from okto_pulse.core.services.amendment_revision_api import AmendmentRevisionApiError
 from okto_pulse.core.services.default_board_config_api import (

@@ -1,8 +1,9 @@
 """Runtime settings persistence for operator-tunable values (0.1.4).
 
-Exposes three graph-runtime knobs through the legacy public field names
+Exposes the graph-runtime knobs through the public field names
 (``kg_kuzu_buffer_pool_mb``, ``kg_kuzu_max_db_size_gb``,
-``kg_connection_pool_size``) via a key-value table in the main app SQLite DB,
+``kg_connection_pool_size``, ``kg_wal_salvage_enabled``) via a key-value
+table in the main app SQLite DB,
 read by the UI (``Settings`` menu) and by the backend at boot to override
 :class:`CoreSettings` defaults.
 
@@ -52,10 +53,19 @@ logger = logging.getLogger("okto_pulse.services.settings")
 # requires a full process restart because the active graph backend and its pool
 # consume them at construction time. The frontend amber banner is triggered iff
 # one of these diverges from the boot snapshot.
+# kg_wal_salvage_enabled (KGD-01 FR1/TR3) e kg_wal_only_recovery_enabled
+# (KGD-01 FR3/BR2) são bools persistidos como 0/1 — o open factory do adapter
+# lê os valores de CoreSettings, que só é re-hidratado do app_settings no
+# boot, logo o contrato restart-required das GRAPH_DB_KEYS se aplica. O
+# KGConfigChangeGuard não governa as chaves (fora do allow-list
+# kg_kuzu_*/ladybug_*): são toggles de comportamento de open/recovery, não
+# mudanças que invalidam storage.
 GRAPH_DB_KEYS: tuple[str, ...] = (
     "kg_kuzu_buffer_pool_mb",
     "kg_kuzu_max_db_size_gb",
     "kg_connection_pool_size",
+    "kg_wal_salvage_enabled",
+    "kg_wal_only_recovery_enabled",
 )
 
 # Event Queue keys (spec bdcda842) — hot-reload, no restart required.
@@ -131,6 +141,14 @@ def _validate_runtime_setting_value(key: str, value: int) -> int:
             )
     elif key == "kg_kuzu_max_db_size_gb":
         validate_graph_db_max_size_gb(value)
+    elif key in ("kg_wal_salvage_enabled", "kg_wal_only_recovery_enabled"):
+        # Bools persistidos como 0/1 (KGD-01 TR3 / FR3). Rejeitar outros ints
+        # aqui impede que uma linha inválida na tabela quebre o boot quando
+        # CoreSettings(**merged) coagir o valor para bool.
+        if value not in (0, 1):
+            raise ValueError(
+                f"{key} must be 0 or 1 (persisted boolean)."
+            )
     return value
 
 

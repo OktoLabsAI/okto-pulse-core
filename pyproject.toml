@@ -38,7 +38,6 @@ dependencies = [
     # The removal is enforced by the R05-E dependency conformance auditor
     # (core.application.boundary.dependency_conformance) against this manifest,
     # uv.lock, the source tree and the installed wheel.
-    "fastmcp>=2.0.0,<3.0.0",
     "authlib>=1.6.5,<1.7.0",
     "mcp>=1.0.0,<2.0.0",
     "numpy>=1.26.0,<3.0.0",

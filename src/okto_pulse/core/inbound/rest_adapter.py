@@ -20,6 +20,8 @@ from okto_pulse.core.application.use_cases import (
     EntityNotFoundError,
     PermissionDeniedError,
 )
+from okto_pulse.core.application.use_cases.base import actor_context_from_principal
+from okto_pulse.core.ports.authentication import Principal
 from okto_pulse.core.services.main import AmbiguityGateError
 from okto_pulse.core.services.resource_gate import ResourceGateError
 
@@ -46,6 +48,19 @@ class RESTAdapterContract:
             realm_id=realm_id,
             permissions=permissions,
             roles=roles,
+        )
+
+    @staticmethod
+    def actor_from_principal(
+        principal: Principal,
+        *,
+        board_id: str | None = None,
+    ) -> ActorContext:
+        """Build an actor from the normalized authentication contract."""
+        return actor_context_from_principal(
+            principal,
+            source="rest",
+            board_id=board_id,
         )
 
     @staticmethod

@@ -16,7 +16,7 @@ from okto_pulse.core.infra.daily_tick import (
     emit_daily_tick as _emit_daily_tick,
     tick_next_run_from_last as _tick_next_run_from_last,  # noqa: F401
 )
-from okto_pulse.core.infra.auth import AuthProvider, configure_auth
+from okto_pulse.core.infra.auth import configure_auth
 from okto_pulse.core.infra.config import CoreSettings, configure_settings
 from okto_pulse.core.infra.database import (
     close_db,
@@ -41,6 +41,7 @@ from okto_pulse.core.ports.scheduler import (
     SchedulerControl,
     SchedulerResult,
 )
+from okto_pulse.core.ports.authentication import AuthenticationPort
 
 if TYPE_CHECKING:
     from okto_pulse.core.ports.runtime_workers import RuntimeWorkerRegistry
@@ -244,7 +245,7 @@ async def register_kg_daily_tick_job(
 
 def create_app(
     settings: CoreSettings,
-    auth_provider: AuthProvider,
+    auth_provider: AuthenticationPort,
     storage_provider: StorageProvider,
     *,
     cors_origins: list[str] | None = None,
@@ -344,12 +345,8 @@ def create_app(
         # timestamp). Idempotente — só carimba linhas respondidas órfãs.
         try:
             from okto_pulse.core.services.main import backfill_qa_answered_at
-            from okto_pulse.core.api.kg_events_hub import (
-                configure_kg_events_hub_session_factory,
-            )
 
             factory = get_session_factory()
-            configure_kg_events_hub_session_factory(factory)
             async with factory() as _qa_session:
                 _qa_fixed = await backfill_qa_answered_at(_qa_session)
             if _qa_fixed:
@@ -462,14 +459,6 @@ def create_app(
                     await scheduler_control.shutdown(wait=False)
                 except Exception:
                     pass
-            # Para os pollers SSE antes do DB fechar — eles abrem sessões
-            # próprias fora do escopo de qualquer request.
-            try:
-                from okto_pulse.core.api.kg_events_hub import shutdown_kg_events_hub
-
-                await shutdown_kg_events_hub()
-            except Exception:
-                pass
             if runtime_worker_registry is not None:
                 for failure in await runtime_worker_registry.stop_all():
                     logger.warning(

@@ -21,7 +21,7 @@ from okto_pulse.core.application.use_cases.card_collaboration import (
     UploadCardAttachmentUseCase,
 )
 from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.infra.storage import StorageObjectStat, get_storage_provider
 from okto_pulse.core.models import AttachmentResponse
 from okto_pulse.core.repositories import PulseUnitOfWork

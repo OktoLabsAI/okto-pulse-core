@@ -23,7 +23,7 @@ Plus catalog-aware gate helpers (R11-A IMP4):
     local-paths fail in the ``core``/``common`` edition but are allowed in
     ``community`` (operational catalogs may name their backend).
 
-Pure: stdlib only; no community / server / FastMCP import.
+Pure: stdlib only; no Community, listener or framework import.
 """
 
 from __future__ import annotations

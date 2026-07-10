@@ -37,7 +37,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.core.api.auth_deps import require_user
 from okto_pulse.core.kg.cognitive_badge_resolver import (
     BADGE_LABEL_ACTIVE,
     CognitiveBadgeReason,

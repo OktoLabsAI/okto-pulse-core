@@ -163,16 +163,34 @@ def test_race_continuous_reader_vs_exclusive_close(nd_board):
     )
 
 
-def test_close_guard_fail_open_emits_warning(nd_board, monkeypatch, caplog):
+def test_close_guard_fail_closed_defers_and_emits_warning(nd_board, monkeypatch, caplog):
+    # KGD-01 FR6 (spec 26b46ef3, C6) — mudança de contrato INTENCIONAL.
+    # ANTES: o close legítimo era FAIL-OPEN — após o timeout do dreno fechava
+    # o Database com leitores vivos e emitia kg.close_guard.timeout (este
+    # teste assertava esse warning). Esse fail-open é o produtor provável do
+    # "escritor stale" que zera páginas interiores do WAL (KB1/H3).
+    # AGORA: fail-closed — o close é ADIADO (kg.close_guard.deferred), o
+    # Database permanece aberto/utilizável pelo leitor, e só o caminho de
+    # shutdown pode forçar (force_after_drain_timeout=True →
+    # kg.close_guard.forced_on_shutdown).
     # Encurta o dreno para o teste não custar 5s.
     monkeypatch.setattr(kg_runtime, "_CLOSE_DRAIN_TIMEOUT_S", 0.2)
     bc = schema.BoardConnection(nd_board)  # leitor "vazado" proposital
     try:
         with caplog.at_level("WARNING", logger="okto_pulse.kg.schema"):
             close_board_db_cache(nd_board)
-        assert any("kg.close_guard.timeout" in rec.message for rec in caplog.records), (
-            "fail-open nao emitiu o warning kg.close_guard.timeout"
-        )
+        assert any(
+            "kg.close_guard.deferred" in rec.message for rec in caplog.records
+        ), "fail-closed nao emitiu o warning kg.close_guard.deferred"
+        assert not any(
+            "kg.close_guard.timeout" in rec.message for rec in caplog.records
+        ), "caminho fail-open antigo (kg.close_guard.timeout) ainda ativo"
+        # Fail-closed de verdade: o Database NAO foi fechado sob o leitor —
+        # a conexao segue utilizavel (o fail-open antigo causava
+        # use-after-close nativo aqui).
+        res = bc.conn.execute("MATCH (m:BoardMeta) RETURN count(m)")
+        res.get_next()
+        res.close()
     finally:
         bc.close()
 

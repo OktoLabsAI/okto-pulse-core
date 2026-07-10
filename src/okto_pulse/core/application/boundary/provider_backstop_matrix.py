@@ -242,7 +242,7 @@ def build_provider_backstop_matrix() -> tuple[ProviderBackstopEntry, ...]:
             ),
             notes=(
                 "Legacy core concrete: "
-                "okto_pulse.core.kg.providers.embedded.settings_config.SettingsKGConfig."
+                "okto_pulse.core.kg.providers.testing.settings_config.SettingsKGConfig."
             ),
         ),
         ProviderBackstopEntry(
@@ -523,13 +523,29 @@ class _ProviderBackstopVisitor(ast.NodeVisitor):
 
 
 def _community_src_root() -> Path | None:
+    # Workspace checkout takes precedence during cross-repository validation.
+    # A normal installed package has no ``src`` ancestor, so returning
+    # ``package.parents[1]`` there would scan the entire site-packages tree.
+    local_checkout = (
+        Path(__file__).resolve().parents[5].parent
+        / "okto_labs_pulse_community"
+        / "src"
+    )
+    if (local_checkout / "okto_pulse" / "community").is_dir():
+        return local_checkout.resolve()
+
     spec = importlib_util.find_spec("okto_pulse.community")
     if spec is None or spec.submodule_search_locations is None:
         return None
     for location in spec.submodule_search_locations:
         package = Path(location).resolve()
         if package.exists() and package.name == "community":
-            return package.parents[1]
+            source_root = package.parents[1]
+            if (source_root / "okto_pulse" / "community").is_dir():
+                return source_root
+            # Wheel installation: constrain the scan to the distribution
+            # package, never its full site-packages parent.
+            return package.parent
     return None
 
 
