@@ -8,11 +8,64 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
+from typing import Any, Protocol, runtime_checkable
 
 
 WorkerFactory = Callable[[], Any | Awaitable[Any]]
 WorkerStopper = Callable[[Any], None | Awaitable[None]]
+
+
+@runtime_checkable
+class WorkerClockPort(Protocol):
+    """Clock used by deterministic worker processors."""
+
+    def now(self) -> datetime:
+        ...
+
+
+@runtime_checkable
+class BlockingExecutionPort(Protocol):
+    """Edition-owned execution of a blocking durability operation."""
+
+    async def run(self, operation: Callable[[], Any]) -> Any:
+        ...
+
+    async def join(self, timeout: float) -> int:
+        """Wait for owned operations and return the number still pending."""
+        ...
+
+
+@runtime_checkable
+class QueueWorkPort(Protocol):
+    """Application processor consumed by a queue runner."""
+
+    async def process_batch(self) -> int:
+        ...
+
+
+@runtime_checkable
+class OutboxWorkPort(Protocol):
+    """Application processor consumed by an outbox runner."""
+
+    async def process_once(self) -> int:
+        ...
+
+
+@runtime_checkable
+class LeaseRecoveryPort(Protocol):
+    """Recovers work abandoned by a previous process or lease owner."""
+
+    async def recover_stale_claims(self) -> int:
+        ...
+
+
+@runtime_checkable
+class DeliverySignalPort(Protocol):
+    """Wake-up boundary exposed by an edition-owned runner."""
+
+    def notify(self) -> None:
+        ...
 
 
 @dataclass(frozen=True)
@@ -73,6 +126,54 @@ class RuntimeWorkerRegistry:
 
     def start_count(self, family: str) -> int:
         return self._start_counts.get(family, 0)
+
+    def get_handle(self, family: str) -> Any | None:
+        """Return an active edition-owned runner without constructing one."""
+
+        return self._active.get(family)
+
+    def is_running(self, family: str) -> bool:
+        handle = self.get_handle(family)
+        if handle is None:
+            return False
+        return bool(getattr(handle, "is_running", True))
+
+    def notify(self, family: str) -> bool:
+        handle = self.get_handle(family)
+        notify = getattr(handle, "notify", None) if handle is not None else None
+        if not callable(notify):
+            return False
+        notify()
+        return True
+
+    async def process_once(self, family: str) -> int:
+        """Run one application-processor iteration through an active runner."""
+
+        handle = self.get_handle(family)
+        if handle is None:
+            return 0
+        operation = getattr(handle, "process_once", None)
+        if not callable(operation):
+            operation = getattr(handle, "process_batch", None)
+        if not callable(operation):
+            return 0
+        return int(await _maybe_await(operation()))
+
+    def snapshot(self, family: str, **context: Any) -> dict[str, Any]:
+        handle = self.get_handle(family)
+        if handle is None:
+            return {}
+        snapshot = getattr(handle, "snapshot", None)
+        if not callable(snapshot):
+            snapshot = getattr(handle, "snapshot_pool", None)
+        if not callable(snapshot):
+            value = {}
+        else:
+            try:
+                value = snapshot(**context)
+            except TypeError:
+                value = snapshot()
+        return dict(value or {})
 
     @property
     def start_failures(self) -> tuple[RuntimeWorkerStartFailure, ...]:
@@ -152,8 +253,14 @@ async def _maybe_await(value: Any | Awaitable[Any]) -> Any:
 
 
 __all__ = [
+    "BlockingExecutionPort",
+    "DeliverySignalPort",
+    "LeaseRecoveryPort",
+    "OutboxWorkPort",
+    "QueueWorkPort",
     "RuntimeWorkerRegistry",
     "RuntimeWorkerSpec",
     "RuntimeWorkerStartFailure",
     "RuntimeWorkerStopFailure",
+    "WorkerClockPort",
 ]

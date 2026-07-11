@@ -12,12 +12,10 @@ __version__ = "0.3.0"
 # Public names are resolved LAZILY (PEP 562 module ``__getattr__``) so importing
 # ``okto_pulse.core`` — or any submodule, which runs this ``__init__`` first —
 # does NOT eagerly pull ``infra.database`` / SQLAlchemy / auth / storage. The
-# established API is unchanged: ``from okto_pulse.core import Base`` (etc.) still
-# works; the first access imports the owning module on demand. This keeps the
+# the first access imports the owning module on demand. This keeps the
 # pure ports (e.g. ``core.ports.relational_schema_migrator``, R16-A) importable
 # without dragging the relational/ORM stack. Boundary fix only — it does NOT
-# touch infra.database, init_db, the migrations, Base.metadata/create_all or any
-# runtime wiring.
+# touch edition-owned schema metadata or runtime wiring.
 _LAZY_EXPORTS: dict[str, str] = {
     # authentication port and registration seam
     "AuthProvider": "okto_pulse.core.ports.authentication",
@@ -31,12 +29,6 @@ _LAZY_EXPORTS: dict[str, str] = {
     "configure_auth": "okto_pulse.core.infra.auth",
     "get_auth_provider": "okto_pulse.core.infra.auth",
     "reset_auth_for_tests": "okto_pulse.core.infra.auth",
-    "get_current_principal": "okto_pulse.core.api.auth_deps",
-    "get_current_user": "okto_pulse.core.api.auth_deps",
-    "get_current_user_id": "okto_pulse.core.api.auth_deps",
-    "get_realm_id": "okto_pulse.core.api.auth_deps",
-    "require_principal": "okto_pulse.core.api.auth_deps",
-    "require_user": "okto_pulse.core.api.auth_deps",
     # infra.config
     "CoreSettings": "okto_pulse.core.infra.config",
     "get_settings": "okto_pulse.core.infra.config",
@@ -44,7 +36,6 @@ _LAZY_EXPORTS: dict[str, str] = {
     "register_package_version_provider": "okto_pulse.core.infra.config",
     "reset_package_version_provider_for_tests": "okto_pulse.core.infra.config",
     # infra.database
-    "Base": "okto_pulse.core.infra.database",
     "get_db": "okto_pulse.core.infra.database",
     "get_db_session": "okto_pulse.core.infra.database",
     "init_db": "okto_pulse.core.infra.database",
@@ -77,14 +68,6 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         MissingCredential,
         Principal,
     )
-    from okto_pulse.core.api.auth_deps import (
-        get_current_principal,
-        get_current_user,
-        get_current_user_id,
-        get_realm_id,
-        require_principal,
-        require_user,
-    )
     from okto_pulse.core.infra.config import (
         CoreSettings,
         configure_settings,
@@ -93,7 +76,6 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         reset_package_version_provider_for_tests,
     )
     from okto_pulse.core.infra.database import (
-        Base,
         close_db,
         get_db,
         get_db_session,

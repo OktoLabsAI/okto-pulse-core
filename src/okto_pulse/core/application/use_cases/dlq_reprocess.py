@@ -20,9 +20,11 @@ The public signatures are transport-neutral (no ``AsyncSession``); the worker
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, commit, session_of
+from okto_pulse.core.application.use_cases.base import ActorContext, commit
 
 
 class ReprocessDeadLetterRowsCommand:
@@ -47,14 +49,9 @@ class ReprocessDeadLetterRowsUseCase:
     """Requeue dead-lettered KG consolidation rows (WRITE, commits)."""
 
     async def execute(
-        self, command: ReprocessDeadLetterRowsCommand, *, actor: ActorContext, uow: Any
+        self, command: ReprocessDeadLetterRowsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ReprocessDeadLetterRowsResult:
-        from okto_pulse.core.services.dead_letter_inspector_service import (
-            reprocess_dead_letter_rows,
-        )
-
-        data = await reprocess_dead_letter_rows(
-            session_of(uow),
+        data = await uow.services.kg.reprocess_dead_letter_rows(
             command.board_id,
             dead_letter_ids=command.dead_letter_ids,
             limit=command.limit,
@@ -81,13 +78,11 @@ class DiagnoseConnectivityDlqUseCase:
     """Diagnose the connectivity-guard technical_dlq class (READ-ONLY)."""
 
     async def execute(
-        self, command: DiagnoseConnectivityDlqCommand, *, actor: ActorContext, uow: Any
+        self, command: DiagnoseConnectivityDlqCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DiagnoseConnectivityDlqResult:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            diagnose_connectivity_guard_dlq,
+        data = await uow.services.kg.diagnose_connectivity_guard_dlq(
+            command.board_id
         )
-
-        data = await diagnose_connectivity_guard_dlq(session_of(uow), command.board_id)
         return DiagnoseConnectivityDlqResult(data)
 
 
@@ -114,14 +109,11 @@ class ReprocessConnectivityDlqUseCase:
     """
 
     async def execute(
-        self, command: ReprocessConnectivityDlqCommand, *, actor: ActorContext, uow: Any
+        self, command: ReprocessConnectivityDlqCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ReprocessConnectivityDlqResult:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            reprocess_connectivity_guard_dlq,
-        )
-
-        data = await reprocess_connectivity_guard_dlq(
-            session_of(uow), command.board_id, command.dead_letter_ids
+        data = await uow.services.kg.reprocess_connectivity_guard_dlq(
+            command.board_id,
+            command.dead_letter_ids,
         )
         if not data.get("blocked"):
             await commit(uow)
@@ -147,13 +139,10 @@ class VerifyConnectivityClassUseCase:
     """Confirm the connectivity-guard class is cleared (READ-ONLY)."""
 
     async def execute(
-        self, command: VerifyConnectivityClassCommand, *, actor: ActorContext, uow: Any
+        self, command: VerifyConnectivityClassCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> VerifyConnectivityClassResult:
-        from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
-            verify_connectivity_class_cleared,
-        )
-
-        data = await verify_connectivity_class_cleared(
-            session_of(uow), command.board_id, artifact_refs=command.artifact_refs
+        data = await uow.services.kg.verify_connectivity_class_cleared(
+            command.board_id,
+            artifact_refs=command.artifact_refs,
         )
         return VerifyConnectivityClassResult(data)

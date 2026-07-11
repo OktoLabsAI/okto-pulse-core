@@ -39,7 +39,7 @@ from coordination_fakes import (
     FakeRebuildAuditArtifactStore,
     FakeWriteLockPort,
 )
-from okto_pulse.core.kg.stress_chaos_executor import KGChaosExecutor
+from okto_pulse.community.adapters.kg_chaos_executor import KGChaosExecutor
 from okto_pulse.core.kg.stress_runner import (
     CI_DESTRUCTIVE_ITERATIONS_FLOOR,
     ChaosMode,

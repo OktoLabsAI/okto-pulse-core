@@ -26,10 +26,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import architecture as architecture_api
-from okto_pulse.core.api.architecture import router as architecture_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import architecture as architecture_api
+from okto_pulse.community.api.architecture import router as architecture_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.services.architecture import CARD_ARCHITECTURE_READ_ONLY_MESSAGE
 
@@ -223,7 +223,7 @@ def _topology_warning_body() -> dict:
 async def _seed_parents() -> dict[str, str]:
     """Seed Board + one of each architecture parent (ideation/spec/card) via raw
     models. Unique per call so tests do not collide on the shared session factory."""
-    from okto_pulse.core.models.db import Board, Card, Ideation, Spec
+    from sqlalchemy_test_models import Board, Card, Ideation, Spec
 
     suffix = uuid.uuid4().hex[:8]
     ids = {
@@ -286,7 +286,7 @@ async def _seed_design(parent_type: str, parent_id: str, title: str = "Seed") ->
 
 async def _lock_spec(spec_id: str) -> None:
     """Mark a spec's current validation outcome as success (architecture locked)."""
-    from okto_pulse.core.models.db import Spec
+    from sqlalchemy_test_models import Spec
 
     async with get_session_factory()() as db:
         spec = await db.get(Spec, spec_id)
@@ -468,8 +468,7 @@ async def test_get_architecture_design_use_case_raises_for_missing_design() -> N
         ActorContext,
         EntityNotFoundError,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

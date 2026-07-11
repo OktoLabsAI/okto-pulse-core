@@ -47,6 +47,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Iterator
 
+from okto_pulse.core.runtime_context import register_runtime_value, resolve_runtime_value
+
 logger = logging.getLogger("okto_pulse.kg.write_barrier")
 
 
@@ -72,12 +74,12 @@ _DEFAULT_MODE = (
     os.environ.get(_BARRIER_MODE_ENV_VAR, BarrierMode.SOFT).strip().lower()
     or BarrierMode.SOFT
 )
-_mode_lock = threading.Lock()
-_current_mode = (
+_DEFAULT_RESOLVED_MODE = (
     BarrierMode.STRICT
     if _DEFAULT_MODE == BarrierMode.STRICT
     else BarrierMode.SOFT
 )
+_MODE_KEY = "kg.write_barrier.mode"
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,16 +155,13 @@ def reset_unguarded_counter() -> None:
 
 def set_barrier_mode(mode: str) -> None:
     """Switch the global barrier mode. Tests call this with 'strict'."""
-    global _current_mode
     if mode not in (BarrierMode.SOFT, BarrierMode.STRICT):
         raise ValueError(f"unknown barrier mode: {mode}")
-    with _mode_lock:
-        _current_mode = mode
+    register_runtime_value(_MODE_KEY, mode)
 
 
 def get_barrier_mode() -> str:
-    with _mode_lock:
-        return _current_mode
+    return resolve_runtime_value(_MODE_KEY) or _DEFAULT_RESOLVED_MODE
 
 
 # --- Public API ----------------------------------------------------------------

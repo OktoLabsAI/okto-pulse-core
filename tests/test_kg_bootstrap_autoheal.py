@@ -24,7 +24,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     bootstrap_board_graph,
     board_kuzu_path,
     close_all_connections,
@@ -38,7 +38,6 @@ from okto_pulse.core.kg.schema import (
 def _real_board_graph_registry(_kg_registry_test_fakes):
     from kg_registry_testing import (
         RealBoardCypherExecutorForTests,
-        RealBoardGraphPathResolverForTests,
         RealBoardGraphTransactionForTests,
         configure_test_kg_registry,
     )
@@ -46,7 +45,6 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
         graph_transaction=RealBoardGraphTransactionForTests(),
-        graph_path_resolver=RealBoardGraphPathResolverForTests(),
     )
 
 

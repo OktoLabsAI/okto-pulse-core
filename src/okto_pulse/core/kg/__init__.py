@@ -49,7 +49,6 @@ from okto_pulse.core.kg.contingency import (
     get_contingency_samples,
     reset_contingency_counter,
 )
-from okto_pulse.core.kg.stress_chaos_executor import KGChaosExecutor
 from okto_pulse.core.kg.stress_runner import (
     CANONICAL_CHAOS_MODES,
     CI_DESTRUCTIVE_ITERATIONS_FLOOR,
@@ -424,7 +423,6 @@ __all__ = [
     "ChaosMode",
     "ChaosOutcome",
     "EVIDENCE_FILENAME",
-    "KGChaosExecutor",
     "KGStressProfileRunner",
     "STRESS_DIRNAME",
     "StressCounters",

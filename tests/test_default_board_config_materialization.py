@@ -31,7 +31,7 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import func, select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     BoardGuideline,
     DefaultBoardConfigurationAudit,

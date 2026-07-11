@@ -48,7 +48,7 @@ async def test_e2e_parallel_commits_on_real_kuzu():
         reset_commit_locks_for_tests,
         run_with_commit_lock_and_retry,
     )
-    from okto_pulse.core.kg.schema import _open_kuzu_db
+    from kg_schema_testing import _open_kuzu_db
 
     reset_commit_locks_for_tests()
 
@@ -123,7 +123,7 @@ async def test_e2e_mixed_board_parallelism():
         reset_commit_locks_for_tests,
         run_with_commit_lock_and_retry,
     )
-    from okto_pulse.core.kg.schema import _open_kuzu_db
+    from kg_schema_testing import _open_kuzu_db
 
     reset_commit_locks_for_tests()
 

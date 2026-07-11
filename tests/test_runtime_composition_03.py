@@ -110,7 +110,7 @@ def test_kg_registry_deferred_not_required() -> None:
 
 
 def test_create_app_strict_runtime_without_composition_fails_fast() -> None:
-    from okto_pulse.core.app import create_app
+    from okto_pulse.community.app import create_app
 
     with pytest.raises(RuntimeProviderMissing) as exc:
         create_app(object(), object(), object(), strict_runtime=True)
@@ -119,7 +119,7 @@ def test_create_app_strict_runtime_without_composition_fails_fast() -> None:
 
 
 def test_create_app_strict_runtime_with_incomplete_composition_fails_fast() -> None:
-    from okto_pulse.core.app import create_app
+    from okto_pulse.community.app import create_app
 
     incomplete = _full_composition(session_factory=None)
     with pytest.raises(RuntimeProviderMissing) as exc:
@@ -130,7 +130,7 @@ def test_create_app_strict_runtime_with_incomplete_composition_fails_fast() -> N
 def test_create_app_strict_runtime_empty_lifecycle_hooks_fails_before_database(
     monkeypatch,
 ) -> None:
-    from okto_pulse.core import app as app_mod
+    from okto_pulse.community import app as app_mod
 
     calls: list[str] = []
     monkeypatch.setattr(
@@ -153,7 +153,7 @@ def test_create_app_strict_runtime_empty_lifecycle_hooks_fails_before_database(
 
 
 def test_create_app_runtime_shell_only_skips_database_when_explicit(monkeypatch) -> None:
-    from okto_pulse.core import app as app_mod
+    from okto_pulse.community import app as app_mod
     from okto_pulse.core.infra.config import configure_settings, get_settings
 
     calls: list[str] = []
@@ -191,7 +191,7 @@ def test_create_app_runtime_shell_only_lifespan_avoids_default_side_effects(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from okto_pulse.core import app as app_mod
+    from okto_pulse.community import app as app_mod
     from okto_pulse.core.infra.config import configure_settings, get_settings
 
     events: list[str] = []

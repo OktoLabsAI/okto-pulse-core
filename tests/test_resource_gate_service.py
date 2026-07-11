@@ -6,7 +6,7 @@ import uuid
 import pytest
 
 from okto_pulse.core.services import resource_gate as resource_gate_module
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
     Card,

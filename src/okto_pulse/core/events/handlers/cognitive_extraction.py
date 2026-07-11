@@ -43,8 +43,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import CardMoved, DomainEvent, SpecMoved
 from okto_pulse.core.kg.agent.extractors import (
@@ -55,7 +53,11 @@ from okto_pulse.core.kg.agent.extractors import (
     extract_assumptions,
 )
 from okto_pulse.core.domain.enums import CardType
-from okto_pulse.core.models.db import Board, Card, Spec
+from okto_pulse.core.ports.domain_event_delivery import (
+    CognitiveCardFacts,
+    CognitiveSpecFacts,
+    get_domain_event_fact_reader,
+)
 
 logger = logging.getLogger("okto_pulse.core.events.cognitive_extraction")
 
@@ -70,7 +72,7 @@ class CognitiveExtractionHandler:
     reaching done triggers the Learning closeout.
     """
 
-    async def handle(self, event: DomainEvent, session: AsyncSession) -> None:
+    async def handle(self, event: DomainEvent, session: object) -> None:
         # FR1/AC1: a spec reaching done is the canonical spec-closeout trigger.
         # Ledger-only open here (safe in the drain); the worker persists later.
         if isinstance(event, SpecMoved):
@@ -109,13 +111,18 @@ class CognitiveExtractionHandler:
             # RKG-03: open DURABLE cognitive closeout work in the ledger (no graph
             # write here — safe in the drain). The dedicated cognitive worker
             # drains it and persists outside this transaction.
-            self._open_closeout_pending(event.board_id, f"bug:{card.id}", "bug")
+            self._open_closeout_pending(
+                event.board_id, f"bug:{card.card_id}", "bug"
+            )
 
         # Spec branch → Alternative + Assumption candidate logs (legacy behaviour).
         # The spec-done CLOSEOUT pending is opened on SpecMoved(done) above — NOT
         # here: one card going done does not mean the spec is done.
         if card.spec_id:
-            spec = await session.get(Spec, card.spec_id)
+            spec = await get_domain_event_fact_reader().load_cognitive_spec_facts(
+                session,
+                spec_id=card.spec_id,
+            )
             if spec is not None:
                 self._extract_alternatives(spec, event)
                 self._extract_assumptions(spec, event)
@@ -146,7 +153,7 @@ class CognitiveExtractionHandler:
 
     async def _maybe_extract_learning(
         self,
-        card: Card,
+        card: CognitiveCardFacts,
         llm_config: dict | None,
         event: CardMoved,
     ) -> None:
@@ -156,7 +163,7 @@ class CognitiveExtractionHandler:
         if len(action_plan) < LEARNING_MIN_ACTION_PLAN_CHARS:
             return
 
-        bug_node_id = _bug_node_id(card.id)
+        bug_node_id = _bug_node_id(card.card_id)
 
         # BR5 / D3: idempotency check via Kuzu MATCH. Skip silently if a
         # Learning is already linked to this Bug. Errors during the probe
@@ -166,11 +173,11 @@ class CognitiveExtractionHandler:
             logger.debug(
                 "cognitive.extraction.learning.skipped reason=already_exists "
                 "card_id=%s bug_node_id=%s",
-                card.id, bug_node_id,
+                card.card_id, bug_node_id,
                 extra={
                     "event": "cognitive.extraction.learning.skipped",
                     "reason": "already_exists",
-                    "card_id": card.id,
+                    "card_id": card.card_id,
                     "bug_node_id": bug_node_id,
                     "board_id": event.board_id,
                 },
@@ -183,11 +190,11 @@ class CognitiveExtractionHandler:
             logger.info(
                 "cognitive.extraction.learning.skipped reason=no_llm_config "
                 "card_id=%s board=%s",
-                card.id, event.board_id,
+                card.card_id, event.board_id,
                 extra={
                     "event": "cognitive.extraction.learning.skipped",
                     "reason": "no_llm_config",
-                    "card_id": card.id,
+                    "card_id": card.card_id,
                     "board_id": event.board_id,
                 },
             )
@@ -202,11 +209,11 @@ class CognitiveExtractionHandler:
             logger.info(
                 "cognitive.extraction.learning.skipped reason=unknown_provider "
                 "card_id=%s provider=%s",
-                card.id, llm_config.get("provider"),
+                card.card_id, llm_config.get("provider"),
                 extra={
                     "event": "cognitive.extraction.learning.skipped",
                     "reason": "unknown_provider",
-                    "card_id": card.id,
+                    "card_id": card.card_id,
                     "board_id": event.board_id,
                     "llm_provider": llm_config.get("provider"),
                 },
@@ -216,10 +223,10 @@ class CognitiveExtractionHandler:
         logger.info(
             "cognitive.extraction.learning.candidate "
             "card_id=%s board=%s provider=%s",
-            card.id, event.board_id, llm_config.get("provider"),
+            card.card_id, event.board_id, llm_config.get("provider"),
             extra={
                 "event": "cognitive.extraction.learning.candidate",
-                "card_id": card.id,
+                "card_id": card.card_id,
                 "board_id": event.board_id,
                 "bug_node_id": bug_node_id,
                 "action_plan_excerpt": action_plan[:500],
@@ -228,10 +235,12 @@ class CognitiveExtractionHandler:
             },
         )
 
-    def _extract_alternatives(self, spec: Spec, event: CardMoved) -> None:
+    def _extract_alternatives(
+        self, spec: CognitiveSpecFacts, event: CardMoved
+    ) -> None:
         # FR1/FR3: per-concept ref. The base ref is spec:<id>; the extractor
         # appends spec:<id>:alternative:<content_hash8> per candidate.
-        base_ref = f"spec:{spec.id}"
+        base_ref = f"spec:{spec.spec_id}"
         results: list[AlternativeExtraction] = extract_alternatives(
             spec_context=spec.context or "",
             qa_texts=None,
@@ -248,11 +257,11 @@ class CognitiveExtractionHandler:
                 logger.debug(
                     "cognitive.extraction.alternative.skipped reason=already_exists "
                     "spec_id=%s source_ref=%s",
-                    spec.id, cand.source_ref,
+                    spec.spec_id, cand.source_ref,
                     extra={
                         "event": "cognitive.extraction.alternative.skipped",
                         "reason": "already_exists",
-                        "spec_id": spec.id,
+                        "spec_id": spec.spec_id,
                         "source_ref": cand.source_ref,
                         "board_id": event.board_id,
                     },
@@ -261,10 +270,10 @@ class CognitiveExtractionHandler:
             logger.info(
                 "cognitive.extraction.alternative.candidate "
                 "spec_id=%s board=%s title=%s",
-                spec.id, event.board_id, cand.title[:40],
+                spec.spec_id, event.board_id, cand.title[:40],
                 extra={
                     "event": "cognitive.extraction.alternative.candidate",
-                    "spec_id": spec.id,
+                    "spec_id": spec.spec_id,
                     "board_id": event.board_id,
                     "source_ref": cand.source_ref,
                     "source_section": cand.source_section,
@@ -273,9 +282,11 @@ class CognitiveExtractionHandler:
                 },
             )
 
-    def _extract_assumptions(self, spec: Spec, event: CardMoved) -> None:
+    def _extract_assumptions(
+        self, spec: CognitiveSpecFacts, event: CardMoved
+    ) -> None:
         # FR1/FR3: per-concept ref (spec:<id>:assumption:<content_hash8>).
-        base_ref = f"spec:{spec.id}"
+        base_ref = f"spec:{spec.spec_id}"
         results: list[AssumptionExtraction] = extract_assumptions(
             spec_context=spec.context or "",
             qa_texts=None,
@@ -290,11 +301,11 @@ class CognitiveExtractionHandler:
                 logger.debug(
                     "cognitive.extraction.assumption.skipped reason=already_exists "
                     "spec_id=%s source_ref=%s",
-                    spec.id, cand.source_ref,
+                    spec.spec_id, cand.source_ref,
                     extra={
                         "event": "cognitive.extraction.assumption.skipped",
                         "reason": "already_exists",
-                        "spec_id": spec.id,
+                        "spec_id": spec.spec_id,
                         "source_ref": cand.source_ref,
                         "board_id": event.board_id,
                     },
@@ -303,10 +314,10 @@ class CognitiveExtractionHandler:
             logger.info(
                 "cognitive.extraction.assumption.candidate "
                 "spec_id=%s board=%s title=%s",
-                spec.id, event.board_id, cand.title[:40],
+                spec.spec_id, event.board_id, cand.title[:40],
                 extra={
                     "event": "cognitive.extraction.assumption.candidate",
-                    "spec_id": spec.id,
+                    "spec_id": spec.spec_id,
                     "board_id": event.board_id,
                     "source_ref": cand.source_ref,
                     "source_section": cand.source_section,
@@ -319,23 +330,21 @@ class CognitiveExtractionHandler:
     # DB helpers
     # ------------------------------------------------------------------
 
-    async def _load_card(self, session: AsyncSession, card_id: str) -> Card | None:
-        return await session.get(Card, card_id)
+    async def _load_card(
+        self, session: object, card_id: str
+    ) -> CognitiveCardFacts | None:
+        return await get_domain_event_fact_reader().load_cognitive_card_facts(
+            session,
+            card_id=card_id,
+        )
 
     async def _load_board_settings(
-        self, session: AsyncSession, board_id: str
+        self, session: object, board_id: str
     ) -> dict | None:
-        board = await session.get(Board, board_id)
-        if board is None:
-            return None
-        settings = board.settings or {}
-        if isinstance(settings, dict):
-            return settings
-        # Pydantic model fallback when SA loads it as a typed object.
-        try:
-            return settings.model_dump()
-        except Exception:
-            return None
+        return await get_domain_event_fact_reader().load_board_settings(
+            session,
+            board_id=board_id,
+        )
 
 
 def _card_type_value(value: Any) -> str:

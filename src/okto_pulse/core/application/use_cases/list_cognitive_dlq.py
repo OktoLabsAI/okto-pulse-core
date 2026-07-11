@@ -11,9 +11,11 @@ framing, response envelope) stays in the adapter so the payload is unchanged.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+from okto_pulse.core.application.use_cases.base import ActorContext
 
 
 class ListCognitiveDlqCommand:
@@ -39,14 +41,9 @@ class ListCognitiveDlqUseCase:
     """List the board's technical-DLQ rows, transport-free."""
 
     async def execute(
-        self, command: ListCognitiveDlqCommand, *, actor: ActorContext, uow: Any
+        self, command: ListCognitiveDlqCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCognitiveDlqResult:
-        from okto_pulse.core.services.dead_letter_inspector_service import (
-            list_cognitive_dlq_rows,
-        )
-
-        total, rows = await list_cognitive_dlq_rows(
-            session_of(uow),
+        total, rows = await uow.services.kg.list_cognitive_dlq_rows(
             command.board_id,
             limit=command.limit,
             offset=command.offset,

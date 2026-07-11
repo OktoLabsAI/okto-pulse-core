@@ -21,7 +21,7 @@ def _calls(path: Path) -> list[ast.Call]:
 
 
 def test_af29_core_outbox_flush_has_no_local_artifact_calls() -> None:
-    path = CORE_ROOT / "kg" / "global_discovery" / "outbox_worker.py"
+    path = CORE_ROOT / "application" / "processors" / "global_outbox.py"
     offenders: list[str] = []
 
     for call in _calls(path):

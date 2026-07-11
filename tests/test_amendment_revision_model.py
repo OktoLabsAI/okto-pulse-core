@@ -19,7 +19,7 @@ from okto_pulse.core.domain.amendment_eligibility import (
     amendment_status_is_blocking,
     evaluate_amendment_eligibility,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     AmendmentHotfixRevision,
     Board,

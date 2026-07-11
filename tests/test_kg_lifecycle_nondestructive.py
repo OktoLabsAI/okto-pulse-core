@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.kg import schema
+import kg_schema_testing as schema
 from okto_pulse.core.kg.safe_write_lifecycle import (
     DEFAULT_REQUIRED_STEPS,
     STEP_CHECKPOINT,
@@ -28,7 +28,7 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     STEP_FLUSH,
     STEP_FSYNC,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     apply_ladybug_lifecycle_step,
     bootstrap_board_graph,
     close_all_connections,
@@ -210,7 +210,7 @@ sys.path.insert(0, os.environ["ND_COMMUNITY_SRC"])
 sys.path.insert(0, os.environ["ND_TESTS"])
 from kg_registry_testing import configure_test_kg_registry
 configure_test_kg_registry(graph_provider="real")
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     BoardConnection, apply_ladybug_lifecycle_step, bootstrap_board_graph,
 )
 bid = os.environ["ND_BOARD"]
@@ -234,7 +234,7 @@ sys.path.insert(0, os.environ["ND_COMMUNITY_SRC"])
 sys.path.insert(0, os.environ["ND_TESTS"])
 from kg_registry_testing import configure_test_kg_registry
 configure_test_kg_registry(graph_provider="real")
-from okto_pulse.core.kg.schema import BoardConnection
+from kg_schema_testing import BoardConnection
 bid = os.environ["ND_BOARD"]
 bc = BoardConnection(bid)
 res = bc.conn.execute("MATCH (k:KillT) RETURN count(k)")
@@ -325,7 +325,7 @@ def test_destructive_probe_fails_closed_under_stuck_reader(nd_board, monkeypatch
 
 
 def test_worker_subset_constant_excludes_probe():
-    from okto_pulse.core.kg.workers.consolidation import WORKER_COMMIT_LIFECYCLE_STEPS
+    from okto_pulse.core.application.processors.consolidation import WORKER_COMMIT_LIFECYCLE_STEPS
 
     assert WORKER_COMMIT_LIFECYCLE_STEPS == (STEP_CHECKPOINT, STEP_FLUSH, STEP_FSYNC)
     assert STEP_CLOSE_REOPEN_PROBE not in WORKER_COMMIT_LIFECYCLE_STEPS
@@ -469,7 +469,7 @@ def test_checkpoint_and_fallback_failure_blocks_queue_ack(nd_board, monkeypatch)
     """BR-3 preservada no caso terminal: se o CHECKPOINT falha E o fallback
     close também falha (falha REAL de close, não skip por leitor), o step
     falha e o worker NÃO ACKa o queue entry."""
-    from okto_pulse.core.kg.workers.consolidation import (
+    from okto_pulse.core.application.processors.consolidation import (
         _apply_board_graph_lifecycle_after_commit,
     )
 

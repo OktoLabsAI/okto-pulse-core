@@ -70,11 +70,10 @@ from okto_pulse.core.infra.database import create_database, get_session_factory,
 from okto_pulse.core.infra import database as _database_mod  # noqa: E402
 from okto_pulse.core.infra import schema_lifecycle as _schema_lifecycle  # noqa: E402
 from okto_pulse.core.kg.embedding import reset_embedding_provider_cache  # noqa: E402
-from okto_pulse.core.kg.schema import bootstrap_board_graph  # noqa: E402
+from kg_schema_testing import bootstrap_board_graph  # noqa: E402
 from okto_pulse.core.kg.session_manager import reset_session_manager_for_tests  # noqa: E402
-from okto_pulse.core.kg.workers import reset_cleanup_worker_for_tests  # noqa: E402
-from okto_pulse.core.models import db as _models  # noqa: E402, F401
-from okto_pulse.core.models.db import (  # noqa: E402
+import sqlalchemy_test_models as _models  # noqa: E402, F401
+from sqlalchemy_test_models import (  # noqa: E402
     Board,
     Card,
     Agent,
@@ -124,9 +123,21 @@ from okto_pulse.core.ports.relational_application import (  # noqa: E402
     register_relational_application_adapter,
     reset_relational_application_adapter_for_tests,
 )
-# Ensure AppSetting (0.1.4) is registered with Base before init_db() runs;
-# otherwise the app_settings table is missing and runtime settings tests fail.
-from okto_pulse.core.services import settings_service as _settings_svc  # noqa: E402, F401
+
+# Register test-owned relational service adapters. Production Core never builds
+# or imports these SQLAlchemy implementations.
+import sqlalchemy_test_runtime_settings_service as _settings_svc  # noqa: E402
+import sqlalchemy_test_traceability_read_model as _traceability_adapter  # noqa: E402
+from sqlalchemy_test_resource_gate_service import ResourceGateService as _TestResourceGateService  # noqa: E402
+from okto_pulse.core.ports.relational_services import (  # noqa: E402
+    register_resource_gate_service_class,
+    register_runtime_settings_adapter,
+    register_traceability_adapter,
+)
+
+register_resource_gate_service_class(_TestResourceGateService)
+register_runtime_settings_adapter(_settings_svc)
+register_traceability_adapter(_traceability_adapter)
 
 
 def _build_test_relational_runtime(url: str, *, echo: bool = False):
@@ -135,22 +146,27 @@ def _build_test_relational_runtime(url: str, *, echo: bool = False):
         "future": True,
     }
     if url.startswith("postgresql"):
-        engine_kwargs.update({
-            "pool_size": 10,
-            "max_overflow": 20,
-            "pool_pre_ping": True,
-        })
+        engine_kwargs.update(
+            {
+                "pool_size": 10,
+                "max_overflow": 20,
+                "pool_pre_ping": True,
+            }
+        )
     elif url.startswith("sqlite"):
-        engine_kwargs.update({
-            "pool_size": 20,
-            "max_overflow": 30,
-            "pool_timeout": 10,
-            "pool_recycle": 1800,
-            "pool_pre_ping": True,
-        })
+        engine_kwargs.update(
+            {
+                "pool_size": 20,
+                "max_overflow": 30,
+                "pool_timeout": 10,
+                "pool_recycle": 1800,
+                "pool_pre_ping": True,
+            }
+        )
 
     engine = create_async_engine(url, **engine_kwargs)
     if engine.url.get_backend_name() == "sqlite":
+
         @event.listens_for(engine.sync_engine, "connect")
         def _install_test_sqlite_pragmas(dbapi_conn, _conn_record):  # noqa: ANN001
             cursor = dbapi_conn.cursor()
@@ -177,7 +193,7 @@ register_relational_runtime_factory(_build_test_relational_runtime)
 class _CoreTestSchemaLifecycle:
     async def initialize_schema(self) -> None:
         async with _database_mod.get_engine().begin() as conn:
-            await conn.run_sync(_database_mod.Base.metadata.create_all)
+            await conn.run_sync(_models.Base.metadata.create_all)
 
 
 class _CoreTestRelationalEffects(RelationalEffectsPort):
@@ -238,13 +254,17 @@ class _CoreTestRelationalEffects(RelationalEffectsPort):
 
     async def read_latest_kg_tick_completed_at(self, session):
         return (
-            await session.execute(
-                select(KGTickRun.completed_at)
-                .where(KGTickRun.completed_at.is_not(None))
-                .order_by(KGTickRun.completed_at.desc())
-                .limit(1)
+            (
+                await session.execute(
+                    select(KGTickRun.completed_at)
+                    .where(KGTickRun.completed_at.is_not(None))
+                    .order_by(KGTickRun.completed_at.desc())
+                    .limit(1)
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
 
     async def upsert_kg_tick_run(
         self,
@@ -387,9 +407,7 @@ class _CoreTestPermissionPresetGateway:
         await self._session.refresh(preset)
         return _test_preset_view(preset)
 
-    async def update_preset(
-        self, *, preset_id, user_id, name, description, flags
-    ):
+    async def update_preset(self, *, preset_id, user_id, name, description, flags):
         preset = await self._session.get(PermissionPreset, preset_id)
         if preset is None:
             return None
@@ -548,12 +566,7 @@ class _CoreTestAmendmentRevisionApiBackend:
     async def set_status(self, amendment_id, new_status, actor):
         return await self._store.set_status(amendment_id, new_status, actor)
 
-    async def refresh(self, entity):
-        await self._session.refresh(entity)
-
-    async def path_b_resolution(
-        self, *, board_id, bug_id, candidate_scenario_ids
-    ):
+    async def path_b_resolution(self, *, board_id, bug_id, candidate_scenario_ids):
         from okto_pulse.core.services.bug_regression_preview import (
             BugRegressionScenarioPreviewError,
             BugRegressionScenarioPreviewService,
@@ -574,8 +587,12 @@ class _CoreTestAmendmentRevisionApiBackend:
             "missing_links": payload.get("missing_links"),
             "safe_next_actions": payload.get("safe_next_actions"),
             "next_action": payload.get("next_action"),
-            "eligible_regression_artifacts": payload.get("eligible_regression_artifacts"),
-            "rejected_regression_artifacts": payload.get("rejected_regression_artifacts"),
+            "eligible_regression_artifacts": payload.get(
+                "eligible_regression_artifacts"
+            ),
+            "rejected_regression_artifacts": payload.get(
+                "rejected_regression_artifacts"
+            ),
             "rejected_scenarios": payload.get("rejected_scenarios"),
             "amendment_revision_id": payload.get("amendment_revision_id"),
         }
@@ -631,18 +648,22 @@ class _CoreTestKGEventsReader:
 
     async def _query_outbox_rows(self, session, *, board_id, after, limit):
         rows = (
-            await session.execute(
-                select(GlobalUpdateOutbox)
-                .where(
-                    and_(
-                        GlobalUpdateOutbox.board_id == board_id,
-                        GlobalUpdateOutbox.created_at > after,
+            (
+                await session.execute(
+                    select(GlobalUpdateOutbox)
+                    .where(
+                        and_(
+                            GlobalUpdateOutbox.board_id == board_id,
+                            GlobalUpdateOutbox.created_at > after,
+                        )
                     )
+                    .order_by(asc(GlobalUpdateOutbox.created_at))
+                    .limit(limit)
                 )
-                .order_by(asc(GlobalUpdateOutbox.created_at))
-                .limit(limit)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [
             KGOutboxEvent(
                 event_id=row.event_id,
@@ -657,7 +678,9 @@ class _CoreTestKGEventsReader:
     async def _query_queue_snapshot(self, session, *, board_id):
         rows = (
             await session.execute(
-                select(ConsolidationQueue.status, ConsolidationQueue.source, func.count())
+                select(
+                    ConsolidationQueue.status, ConsolidationQueue.source, func.count()
+                )
                 .where(ConsolidationQueue.board_id == board_id)
                 .group_by(ConsolidationQueue.status, ConsolidationQueue.source)
             )
@@ -770,12 +793,16 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         depth: int = 5,
     ) -> dict:
         q_rows = (
-            await context.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id
+            (
+                await context.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         q_by_artifact: dict[tuple[str, str], ConsolidationQueue] = {
             (r.artifact_type, r.artifact_id): r for r in q_rows
         }
@@ -805,22 +832,38 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
             }
 
         ideas = (
-            await context.execute(select(Ideation).where(Ideation.board_id == board_id))
-        ).scalars().all()
-        refs = (
-            await context.execute(
-                select(Refinement).where(Refinement.board_id == board_id)
+            (
+                await context.execute(
+                    select(Ideation).where(Ideation.board_id == board_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
+        refs = (
+            (
+                await context.execute(
+                    select(Refinement).where(Refinement.board_id == board_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         specs = (
-            await context.execute(select(Spec).where(Spec.board_id == board_id))
-        ).scalars().all()
+            (await context.execute(select(Spec).where(Spec.board_id == board_id)))
+            .scalars()
+            .all()
+        )
         sprints = (
-            await context.execute(select(Sprint).where(Sprint.board_id == board_id))
-        ).scalars().all()
+            (await context.execute(select(Sprint).where(Sprint.board_id == board_id)))
+            .scalars()
+            .all()
+        )
         cards = (
-            await context.execute(select(Card).where(Card.board_id == board_id))
-        ).scalars().all()
+            (await context.execute(select(Card).where(Card.board_id == board_id)))
+            .scalars()
+            .all()
+        )
 
         refs_by_ideation: dict[str, list] = defaultdict(list)
         for row in refs:
@@ -920,16 +963,20 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         for row in ideas:
             meta = _queue_meta("ideation", row.id)
             _tally("ideations", "ideation", row.id)
-            ref_children = [_refinement_node(r) for r in refs_by_ideation.get(row.id, [])]
+            ref_children = [
+                _refinement_node(r) for r in refs_by_ideation.get(row.id, [])
+            ]
             if depth < 2:
                 ref_children = []
-            tree.append({
-                "id": row.id,
-                "type": "ideation",
-                "title": row.title,
-                **meta,
-                "children": ref_children,
-            })
+            tree.append(
+                {
+                    "id": row.id,
+                    "type": "ideation",
+                    "title": row.title,
+                    **meta,
+                    "children": ref_children,
+                }
+            )
         for row in specs_orphan:
             tree.append(_spec_node(row))
 
@@ -955,7 +1002,7 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         ).all()
         return {str(status): int(count) for status, count in rows}
 
-    async def kuzu_node_ref_operation_counts(
+    async def graph_node_ref_operation_counts(
         self,
         context,
         *,
@@ -1013,10 +1060,14 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         board_id: str,
     ) -> list[KGCanonicalDebtSignal]:
         rows = (
-            await context.execute(
-                select(CanonicalDebt).where(CanonicalDebt.board_id == board_id)
+            (
+                await context.execute(
+                    select(CanonicalDebt).where(CanonicalDebt.board_id == board_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [
             KGCanonicalDebtSignal(
                 artifact_type=str(row.artifact_type or ""),
@@ -1036,12 +1087,16 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         board_id: str,
     ) -> list[KGDeadLetterSignal]:
         rows = (
-            await context.execute(
-                select(ConsolidationDeadLetter).where(
-                    ConsolidationDeadLetter.board_id == board_id
+            (
+                await context.execute(
+                    select(ConsolidationDeadLetter).where(
+                        ConsolidationDeadLetter.board_id == board_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [
             KGDeadLetterSignal(
                 artifact_type=str(row.artifact_type or ""),
@@ -1088,6 +1143,115 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def list_dead_letter_page(
+        self,
+        context,
+        *,
+        board_id: str,
+        limit: int,
+        offset: int,
+    ):
+        total = int(
+            await context.scalar(
+                select(func.count())
+                .select_from(ConsolidationDeadLetter)
+                .where(ConsolidationDeadLetter.board_id == board_id)
+            )
+            or 0
+        )
+        rows = (
+            await context.execute(
+                select(ConsolidationDeadLetter)
+                .where(ConsolidationDeadLetter.board_id == board_id)
+                .order_by(ConsolidationDeadLetter.id)
+                .limit(limit)
+                .offset(offset)
+            )
+        ).scalars().all()
+        return total, list(rows)
+
+    async def reprocess_dead_letter_rows(
+        self,
+        context,
+        *,
+        board_id: str,
+        dead_letter_ids,
+        limit: int,
+    ):
+        query = select(ConsolidationDeadLetter).where(
+            ConsolidationDeadLetter.board_id == board_id
+        )
+        if dead_letter_ids:
+            query = query.where(
+                ConsolidationDeadLetter.id.in_(dead_letter_ids)
+            )
+        rows = list(
+            (
+                await context.execute(
+                    query.order_by(
+                        ConsolidationDeadLetter.dead_lettered_at.asc()
+                    ).limit(limit)
+                )
+            ).scalars().all()
+        )
+        requeued = []
+        already_queued = []
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            existing = (
+                await context.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == row.board_id,
+                        ConsolidationQueue.artifact_type == row.artifact_type,
+                        ConsolidationQueue.artifact_id == row.artifact_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            target = existing
+            if target is None:
+                target = ConsolidationQueue(
+                    board_id=row.board_id,
+                    artifact_type=row.artifact_type,
+                    artifact_id=row.artifact_id,
+                    priority="high",
+                    source="dead_letter_reprocess",
+                    status="pending",
+                    triggered_at=now,
+                    triggered_by_event="dlq_reprocess",
+                    attempts=0,
+                )
+                context.add(target)
+                await context.flush()
+                bucket = requeued
+            else:
+                target.status = "pending"
+                target.attempts = 0
+                target.last_error = None
+                target.next_retry_at = None
+                target.claimed_at = None
+                target.claim_timeout_at = None
+                target.worker_id = None
+                target.claimed_by_session_id = None
+                bucket = already_queued
+            bucket.append(
+                {
+                    "dead_letter_id": row.id,
+                    "queue_id": target.id,
+                    "artifact_type": row.artifact_type,
+                    "artifact_id": row.artifact_id,
+                }
+            )
+            await context.delete(row)
+        return {
+            "success": True,
+            "requested": len(dead_letter_ids) if dead_letter_ids else None,
+            "selected": len(rows),
+            "requeued": requeued,
+            "already_queued": already_queued,
+            "requeued_count": len(requeued),
+            "already_queued_count": len(already_queued),
+        }
 
     async def retry_pending_entry(
         self,
@@ -1181,6 +1345,7 @@ def pytest_collection_modifyitems(config, items):
 # Session-scoped database init (unchanged from original)
 # ============================================================================
 
+
 @pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")
 async def _db_init():
     """Create the SQLite schema once per session.
@@ -1200,6 +1365,7 @@ async def _db_init():
 # ============================================================================
 # Test lifecycle logging fixture (autouse — applies to ALL tests)
 # ============================================================================
+
 
 @pytest.fixture(autouse=True)
 def _register_test_telemetry_state_carrier():
@@ -1227,7 +1393,9 @@ def _register_test_telemetry_state_carrier():
             base = Path(metrics_dir)
             base.mkdir(parents=True, exist_ok=True)
             tmp = (base / "state.json").with_suffix(".tmp")
-            tmp.write_text(json.dumps(dict(state), indent=2, sort_keys=True), encoding="utf-8")
+            tmp.write_text(
+                json.dumps(dict(state), indent=2, sort_keys=True), encoding="utf-8"
+            )
             tmp.replace(base / "state.json")
 
     reset_telemetry_state_carrier_for_tests()
@@ -1237,13 +1405,23 @@ def _register_test_telemetry_state_carrier():
 
 
 @pytest.fixture(autouse=True)
-def _reset_telemetry_effect_config_provider():
-    """Keep telemetry effect defaults explicit per test."""
+def _reset_telemetry_effect_config_provider(tmp_path: Path):
+    """Provide an explicit test-only telemetry runtime adapter."""
     from okto_pulse.core.telemetry.effect_config_registry import (
+        register_telemetry_effect_config_provider,
         reset_telemetry_effect_config_provider_for_tests,
     )
 
+    class _TestTelemetryEffectConfigProvider:
+        def state_ref(self, settings) -> str:
+            raw = getattr(settings, "metrics_dir", "") or str(tmp_path / "metrics")
+            return str(Path(raw).resolve())
+
+        def delivery_target(self, settings) -> str:
+            return str(getattr(settings, "metrics_beacon_url", "") or "")
+
     reset_telemetry_effect_config_provider_for_tests()
+    register_telemetry_effect_config_provider(_TestTelemetryEffectConfigProvider())
     yield
     reset_telemetry_effect_config_provider_for_tests()
 
@@ -1260,10 +1438,14 @@ def _test_logging(request: pytest.FixtureRequest):
     logger = setup_test_logging(test_id=test_id)
 
     # Log test metadata
-    func_name = getattr(request.node, "function_name", None) or getattr(request.node, "name", request.node.nodeid)
-    logger.info(f"TEST_METADATA class={request.node.cls.__name__ if request.node.cls else 'N/A'} "
-                f"function={func_name} "
-                f"params={dict(request.node.callspec.params) if hasattr(request.node, 'callspec') and request.node.callspec else '{}'}")
+    func_name = getattr(request.node, "function_name", None) or getattr(
+        request.node, "name", request.node.nodeid
+    )
+    logger.info(
+        f"TEST_METADATA class={request.node.cls.__name__ if request.node.cls else 'N/A'} "
+        f"function={func_name} "
+        f"params={dict(request.node.callspec.params) if hasattr(request.node, 'callspec') and request.node.callspec else '{}'}"
+    )
 
     # Track KG operation loggers
     kg_logger = logging.getLogger(f"test.kg.{test_id}")
@@ -1293,7 +1475,11 @@ def _get_timeout(request: pytest.FixtureRequest) -> float:
     """Extract timeout from pytest.mark.timeout or use default."""
     mark = request.node.get_closest_marker("timeout")
     if mark:
-        return float(mark.args[0]) if mark.args else float(mark.kwargs.get("seconds", _DEFAULT_TIMEOUT))
+        return (
+            float(mark.args[0])
+            if mark.args
+            else float(mark.kwargs.get("seconds", _DEFAULT_TIMEOUT))
+        )
     return _DEFAULT_TIMEOUT
 
 
@@ -1327,6 +1513,7 @@ def _test_timeout(request: pytest.FixtureRequest):
 # Test isolation — fresh environment per test (extends original)
 # ============================================================================
 
+
 @pytest.fixture(autouse=True)
 def _isolation_reset(request: pytest.FixtureRequest):
     """Ensure complete test isolation.
@@ -1336,21 +1523,427 @@ def _isolation_reset(request: pytest.FixtureRequest):
     """
     # Pre-test: reset all singletons
     reset_session_manager_for_tests()
-    reset_cleanup_worker_for_tests()
     reset_embedding_provider_cache()
     _reset_commit_health_cache()
 
     logger = get_test_logger(request.node.nodeid)
-    logger.debug("ISOLATION: singletons reset (session_mgr, cleanup_worker, embedding_cache)")
+    logger.debug("ISOLATION: singletons reset (session_mgr, embedding_cache)")
 
     yield
 
     # Post-test: one more reset to ensure clean state for next test
     reset_session_manager_for_tests()
-    reset_cleanup_worker_for_tests()
     reset_embedding_provider_cache()
     _reset_commit_health_cache()
     logger.debug("ISOLATION: singletons reset after teardown")
+
+
+@pytest.fixture(autouse=True)
+def _coordination_test_fakes():
+    """Install explicit coordination fakes used by processor tests."""
+    from okto_pulse.core.ports.coordination import (
+        register_coordination_providers,
+        reset_coordination_providers_for_tests,
+    )
+    from coordination_fakes import (
+        FakeClaimRepository,
+        FakeLeaseProvider,
+        FakeWriteLockPort,
+    )
+
+    register_coordination_providers(
+        claim_repository=FakeClaimRepository(),
+        lease_provider=FakeLeaseProvider(),
+        write_lock_port=FakeWriteLockPort(),
+    )
+    yield
+    reset_coordination_providers_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _domain_event_publisher_test_fake():
+    """Install the explicit relational publisher used by integration tests."""
+    from okto_pulse.core.ports.domain_event_delivery import (
+        register_domain_event_fact_reader,
+        register_domain_event_publisher,
+        reset_domain_event_publisher_for_tests,
+    )
+    from sqlalchemy_domain_event_delivery_store import (
+        TestSqlAlchemyDomainEventFactReader,
+        TestSqlAlchemyDomainEventPublisher,
+    )
+
+    register_domain_event_publisher(TestSqlAlchemyDomainEventPublisher())
+    register_domain_event_fact_reader(TestSqlAlchemyDomainEventFactReader())
+    yield
+    reset_domain_event_publisher_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _queue_health_test_reader():
+    from okto_pulse.core.ports.queue_health import (
+        register_queue_health_read_port,
+        reset_queue_health_read_port_for_tests,
+    )
+    from sqlalchemy_queue_health_reader import TestSqlAlchemyQueueHealthReader
+
+    register_queue_health_read_port(TestSqlAlchemyQueueHealthReader())
+    yield
+    reset_queue_health_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _canonical_debt_test_store():
+    from okto_pulse.core.ports.canonical_debt import (
+        register_canonical_debt_store,
+        reset_canonical_debt_store_for_tests,
+    )
+    from sqlalchemy_canonical_debt_store import TestSqlAlchemyCanonicalDebtStore
+
+    register_canonical_debt_store(TestSqlAlchemyCanonicalDebtStore())
+    yield
+    reset_canonical_debt_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _cognitive_effectiveness_test_reader():
+    from okto_pulse.core.ports.cognitive_effectiveness import (
+        register_cognitive_effectiveness_read_port,
+        reset_cognitive_effectiveness_read_port_for_tests,
+    )
+    from sqlalchemy_cognitive_effectiveness_reader import (
+        TestSqlAlchemyCognitiveEffectivenessReader,
+    )
+
+    register_cognitive_effectiveness_read_port(
+        TestSqlAlchemyCognitiveEffectivenessReader()
+    )
+    yield
+    reset_cognitive_effectiveness_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _skip_override_test_reader():
+    from okto_pulse.core.ports.skip_overrides import (
+        register_skip_override_read_port,
+        reset_skip_override_read_port_for_tests,
+    )
+    from sqlalchemy_skip_override_reader import TestSqlAlchemySkipOverrideReader
+
+    register_skip_override_read_port(TestSqlAlchemySkipOverrideReader())
+    yield
+    reset_skip_override_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _discovery_catalog_test_reader():
+    from okto_pulse.core.ports.discovery_catalog import (
+        register_discovery_catalog_read_port,
+        reset_discovery_catalog_read_port_for_tests,
+    )
+    from sqlalchemy_discovery_catalog_reader import (
+        TestSqlAlchemyDiscoveryCatalogReader,
+    )
+
+    register_discovery_catalog_read_port(TestSqlAlchemyDiscoveryCatalogReader())
+    yield
+    reset_discovery_catalog_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _amendment_revision_test_store():
+    from okto_pulse.core.ports.amendment_revision import (
+        register_amendment_revision_store,
+        reset_amendment_revision_store_for_tests,
+    )
+    from sqlalchemy_amendment_revision_store import (
+        TestSqlAlchemyAmendmentRevisionStore,
+    )
+
+    register_amendment_revision_store(TestSqlAlchemyAmendmentRevisionStore())
+    yield
+    reset_amendment_revision_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _parent_artifact_test_reader():
+    from okto_pulse.core.ports.parent_artifact import (
+        register_parent_artifact_read_port,
+        reset_parent_artifact_read_port_for_tests,
+    )
+    from sqlalchemy_parent_artifact_reader import TestSqlAlchemyParentArtifactReader
+
+    register_parent_artifact_read_port(TestSqlAlchemyParentArtifactReader())
+    yield
+    reset_parent_artifact_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _architecture_legacy_test_reader():
+    from okto_pulse.core.ports.architecture_legacy import (
+        register_architecture_legacy_snapshot_read_port,
+        reset_architecture_legacy_snapshot_read_port_for_tests,
+    )
+    from sqlalchemy_architecture_legacy_reader import (
+        TestSqlAlchemyArchitectureLegacySnapshotReader,
+    )
+
+    register_architecture_legacy_snapshot_read_port(
+        TestSqlAlchemyArchitectureLegacySnapshotReader()
+    )
+    yield
+    reset_architecture_legacy_snapshot_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _bug_regression_preview_test_reader():
+    from okto_pulse.core.ports.bug_regression_preview import (
+        register_bug_regression_preview_read_port,
+        reset_bug_regression_preview_read_port_for_tests,
+    )
+    from sqlalchemy_bug_regression_preview_reader import (
+        TestSqlAlchemyBugRegressionPreviewReader,
+    )
+
+    register_bug_regression_preview_read_port(
+        TestSqlAlchemyBugRegressionPreviewReader()
+    )
+    yield
+    reset_bug_regression_preview_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _discovery_selector_test_reader():
+    from okto_pulse.core.ports.discovery_selector import (
+        register_discovery_selector_read_port,
+        reset_discovery_selector_read_port_for_tests,
+    )
+    from sqlalchemy_discovery_selector_reader import (
+        TestSqlAlchemyDiscoverySelectorReader,
+    )
+
+    register_discovery_selector_read_port(TestSqlAlchemyDiscoverySelectorReader())
+    yield
+    reset_discovery_selector_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _board_relational_cleanup_test_port():
+    from okto_pulse.core.ports.board_relational_cleanup import (
+        register_board_relational_cleanup_port,
+        reset_board_relational_cleanup_port_for_tests,
+    )
+    from sqlalchemy_board_cleanup import TestSqlAlchemyBoardRelationalCleanup
+
+    register_board_relational_cleanup_port(TestSqlAlchemyBoardRelationalCleanup())
+    yield
+    reset_board_relational_cleanup_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _structured_spec_test_store():
+    from okto_pulse.core.ports.structured_spec import (
+        register_structured_spec_store,
+        reset_structured_spec_store_for_tests,
+    )
+    from sqlalchemy_structured_spec_store import TestSqlAlchemyStructuredSpecStore
+
+    register_structured_spec_store(TestSqlAlchemyStructuredSpecStore())
+    yield
+    reset_structured_spec_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _effective_resource_test_port():
+    from okto_pulse.core.ports.effective_resource import (
+        register_effective_resource_persistence_port,
+        reset_effective_resource_persistence_port_for_tests,
+    )
+    from sqlalchemy_effective_resource import (
+        TestSqlAlchemyEffectiveResourcePersistence,
+    )
+
+    register_effective_resource_persistence_port(
+        TestSqlAlchemyEffectiveResourcePersistence()
+    )
+    yield
+    reset_effective_resource_persistence_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _spec_resource_propagation_test_store():
+    from okto_pulse.core.ports.spec_resource_propagation import (
+        register_spec_resource_propagation_store,
+        reset_spec_resource_propagation_store_for_tests,
+    )
+    from sqlalchemy_spec_resource_propagation_store import (
+        TestSqlAlchemySpecResourcePropagationStore,
+    )
+
+    register_spec_resource_propagation_store(
+        TestSqlAlchemySpecResourcePropagationStore()
+    )
+    yield
+    reset_spec_resource_propagation_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _critical_context_test_reader():
+    from okto_pulse.core.ports.critical_context import (
+        register_critical_context_read_port,
+        reset_critical_context_read_port_for_tests,
+    )
+    from sqlalchemy_critical_context_reader import (
+        TestSqlAlchemyCriticalContextReader,
+    )
+
+    register_critical_context_read_port(TestSqlAlchemyCriticalContextReader())
+    yield
+    reset_critical_context_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _default_board_configuration_test_store():
+    from okto_pulse.core.ports.default_board_configuration import (
+        register_default_board_configuration_store,
+        reset_default_board_configuration_store_for_tests,
+    )
+    from sqlalchemy_default_board_configuration_store import (
+        TestSqlAlchemyDefaultBoardConfigurationStore,
+    )
+
+    register_default_board_configuration_store(
+        TestSqlAlchemyDefaultBoardConfigurationStore()
+    )
+    yield
+    reset_default_board_configuration_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _design_system_test_store():
+    from okto_pulse.core.ports.design_system import (
+        register_design_system_store,
+        reset_design_system_store_for_tests,
+    )
+    from sqlalchemy_design_system_store import TestSqlAlchemyDesignSystemStore
+
+    register_design_system_store(TestSqlAlchemyDesignSystemStore())
+    yield
+    reset_design_system_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _global_outbox_test_store():
+    from okto_pulse.core.ports.global_outbox import (
+        register_global_outbox_store,
+        reset_global_outbox_store_for_tests,
+    )
+    from sqlalchemy_global_outbox_store import TestSqlAlchemyGlobalOutboxStore
+
+    register_global_outbox_store(TestSqlAlchemyGlobalOutboxStore())
+    yield
+    reset_global_outbox_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _consolidation_test_store():
+    from okto_pulse.core.ports.consolidation import (
+        register_consolidation_persistence_port,
+        reset_consolidation_persistence_port_for_tests,
+    )
+    from sqlalchemy_consolidation_store import (
+        TestSqlAlchemyConsolidationPersistence,
+    )
+
+    register_consolidation_persistence_port(
+        TestSqlAlchemyConsolidationPersistence()
+    )
+    yield
+    reset_consolidation_persistence_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _kg_health_test_reader():
+    from okto_pulse.core.ports.kg_health import (
+        register_kg_health_read_port,
+        reset_kg_health_read_port_for_tests,
+    )
+    from sqlalchemy_kg_health_reader import TestSqlAlchemyKGHealthReader
+
+    register_kg_health_read_port(TestSqlAlchemyKGHealthReader())
+    yield
+    reset_kg_health_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _kg_governance_test_store():
+    from okto_pulse.core.ports.kg_governance import (
+        register_kg_governance_store,
+        reset_kg_governance_store_for_tests,
+    )
+    from sqlalchemy_kg_governance_store import TestSqlAlchemyKGGovernanceStore
+
+    register_kg_governance_store(TestSqlAlchemyKGGovernanceStore())
+    yield
+    reset_kg_governance_store_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _discovery_execution_test_reader():
+    from okto_pulse.core.ports.discovery_execution import (
+        register_discovery_execution_read_port,
+        reset_discovery_execution_read_port_for_tests,
+    )
+    from sqlalchemy_discovery_execution_reader import (
+        TestSqlAlchemyDiscoveryExecutionReader,
+    )
+
+    register_discovery_execution_read_port(TestSqlAlchemyDiscoveryExecutionReader())
+    yield
+    reset_discovery_execution_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _analytics_test_reader():
+    from okto_pulse.core.ports.analytics_read import (
+        register_analytics_read_port,
+        reset_analytics_read_port_for_tests,
+    )
+    from sqlalchemy_analytics_read import TestSqlAlchemyAnalyticsReader
+
+    register_analytics_read_port(TestSqlAlchemyAnalyticsReader())
+    yield
+    reset_analytics_read_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _architecture_test_persistence():
+    from okto_pulse.core.ports.architecture_persistence import (
+        register_architecture_persistence_port,
+        reset_architecture_persistence_port_for_tests,
+    )
+    from sqlalchemy_architecture_persistence import (
+        TestSqlAlchemyArchitecturePersistence,
+    )
+
+    register_architecture_persistence_port(TestSqlAlchemyArchitecturePersistence())
+    yield
+    reset_architecture_persistence_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _application_test_persistence():
+    from okto_pulse.core.ports.application_persistence import (
+        register_application_persistence_port,
+        reset_application_persistence_port_for_tests,
+    )
+    from sqlalchemy_application_persistence import (
+        TestSqlAlchemyApplicationPersistence,
+    )
+
+    register_application_persistence_port(TestSqlAlchemyApplicationPersistence())
+    yield
+    reset_application_persistence_port_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -1426,6 +2019,7 @@ def _reset_commit_health_cache() -> None:
 # Standard fixtures (from original, unchanged)
 # ============================================================================
 
+
 @pytest.fixture
 def board_id():
     return BOARD_ID
@@ -1444,13 +2038,15 @@ def db_factory():
 # Modules SANCTIONED to swap the process-global engine/env during their own
 # tests (each restores it on teardown). Every other test runs under the
 # backstop below.
-_ENGINE_SWAP_SANCTIONED = frozenset({
-    "test_kg_governance.py",
-    "test_kg_dedup_nc8.py",
-    "test_kg_dedup_migration.py",
-    "test_kg_pipeline_e2e.py",
-    "test_kg_real_integration.py",
-})
+_ENGINE_SWAP_SANCTIONED = frozenset(
+    {
+        "test_kg_governance.py",
+        "test_kg_dedup_nc8.py",
+        "test_kg_dedup_migration.py",
+        "test_kg_pipeline_e2e.py",
+        "test_kg_real_integration.py",
+    }
+)
 
 
 @pytest.fixture(autouse=True)
@@ -1499,7 +2095,7 @@ def _register_test_unit_of_work_factory():
     CORE-ONLY provider over the global session factory so the migrated REST/MCP
     consumers resolve a provider. This is test wiring, NOT a runtime fallback —
     reset on teardown so the negative fail-closed test can prove the empty seam."""
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.runtime_registry import (
         register_unit_of_work_factory,
         reset_unit_of_work_factory,
@@ -1651,6 +2247,7 @@ def board_handle():
 # KG operation tracing helpers (available as fixtures for tests that need them)
 # ============================================================================
 
+
 @pytest.fixture
 def kg_tracer(board_id: str):
     """Provide a KG operation tracer that logs all KG operations.
@@ -1667,7 +2264,9 @@ def kg_tracer(board_id: str):
             log_kg_event(logger, operation, board_id=board_id, **(details or {}))
 
         def begin(self, session_id: str, artifact_type: str, artifact_id: str) -> None:
-            logger.info(f"KG_BEGIN session={session_id} type={artifact_type} artifact={artifact_id}")
+            logger.info(
+                f"KG_BEGIN session={session_id} type={artifact_type} artifact={artifact_id}"
+            )
 
         def commit(self, session_id: str, nodes_added: int) -> None:
             logger.info(f"KG_COMMIT session={session_id} nodes_added={nodes_added}")
@@ -1681,6 +2280,7 @@ def kg_tracer(board_id: str):
 # ============================================================================
 # Utility fixtures for testing with timeouts
 # ============================================================================
+
 
 @pytest.fixture
 def heartbeat():

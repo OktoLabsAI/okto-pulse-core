@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
-from okto_pulse.core.models.db import ConsolidationDeadLetter, ConsolidationQueue
+from sqlalchemy_test_models import ConsolidationDeadLetter, ConsolidationQueue
 from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
     CONNECTIVITY_GUARD_SIGNATURE,
 )

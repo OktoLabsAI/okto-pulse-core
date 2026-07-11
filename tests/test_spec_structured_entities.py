@@ -10,7 +10,7 @@ import pytest_asyncio
 from sqlalchemy import func, select
 
 from okto_pulse.core.infra.permissions import get_builtin_presets, resolve_permissions
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -50,7 +50,7 @@ async def structured_rest_client(db_factory, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api import specs as specs_api
+    from okto_pulse.community.api import specs as specs_api
     from okto_pulse.core.infra import auth as auth_mod
     from okto_pulse.core.infra.database import get_db
 

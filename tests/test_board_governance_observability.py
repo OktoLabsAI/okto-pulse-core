@@ -186,7 +186,7 @@ def test_full_context_failure_and_latency_metric_labels_are_safe():
 
 @pytest.mark.asyncio
 async def test_board_setting_change_records_safe_metric_sample(db_factory):
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.core.models.schemas import BoardUpdate
     from okto_pulse.core.services.governance_observability import (
         get_governance_metric_samples,
@@ -239,7 +239,7 @@ async def test_board_setting_change_records_safe_metric_sample(db_factory):
 
 @pytest.mark.asyncio
 async def test_empty_board_guidelines_emit_missing_context_warning_metric(db_factory):
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.core.services.governance_observability import (
         get_governance_metric_samples,
         reset_governance_metric_samples,
@@ -284,7 +284,7 @@ async def test_empty_board_guidelines_emit_missing_context_warning_metric(db_fac
 
 @pytest.mark.asyncio
 async def test_empty_board_description_update_emits_missing_context_warning_metric(db_factory):
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.core.models.schemas import BoardUpdate
     from okto_pulse.core.services.governance_observability import (
         get_governance_metric_samples,

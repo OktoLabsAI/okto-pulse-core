@@ -38,16 +38,16 @@ count is the number actually cleared).
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
-from okto_pulse.core.services.main import CardService, SprintService
 
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
@@ -91,10 +91,9 @@ class ListBoardSprintsUseCase:
     status and/or spec — the legacy endpoint had no ownership/permission gate."""
 
     async def execute(
-        self, command: ListBoardSprintsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListBoardSprintsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListBoardSprintsResult:
-        session = session_of(uow)
-        sprints = await SprintService(session).list_board_sprints(
+        sprints = await uow.services.sprints.list_board_sprints(
             command.board_id,
             command.status_filter,
             command.spec_id,
@@ -124,10 +123,9 @@ class ListSprintsUseCase:
     """List a spec's sprints (read, no commit)."""
 
     async def execute(
-        self, command: ListSprintsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListSprintsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSprintsResult:
-        session = session_of(uow)
-        sprints = await SprintService(session).list_sprints(command.spec_id)
+        sprints = await uow.services.sprints.list_sprints(command.spec_id)
         return ListSprintsResult(sprints)
 
 
@@ -153,10 +151,9 @@ class GetSprintUseCase:
     ``EntityNotFoundError("sprint")`` (adapter → 404 "Sprint not found")."""
 
     async def execute(
-        self, command: GetSprintCommand, *, actor: ActorContext, uow: Any
+        self, command: GetSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetSprintResult:
-        session = session_of(uow)
-        sprint = await SprintService(session).get_sprint(command.sprint_id)
+        sprint = await uow.services.sprints.get_sprint(command.sprint_id)
         if not sprint:
             raise EntityNotFoundError("sprint", command.sprint_id)
         return GetSprintResult(sprint)
@@ -184,10 +181,9 @@ class ListSprintHistoryUseCase:
     service result directly with no not-found gate."""
 
     async def execute(
-        self, command: ListSprintHistoryCommand, *, actor: ActorContext, uow: Any
+        self, command: ListSprintHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSprintHistoryResult:
-        session = session_of(uow)
-        history = await SprintService(session).list_history(command.sprint_id)
+        history = await uow.services.sprints.list_history(command.sprint_id)
         return ListSprintHistoryResult(history)
 
 
@@ -214,10 +210,9 @@ class SuggestSprintsUseCase:
     (e.g. spec not found / not ready) propagates for the adapter → 400."""
 
     async def execute(
-        self, command: SuggestSprintsCommand, *, actor: ActorContext, uow: Any
+        self, command: SuggestSprintsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SuggestSprintsResult:
-        session = session_of(uow)
-        suggestions = await SprintService(session).suggest_sprints(
+        suggestions = await uow.services.sprints.suggest_sprints(
             command.spec_id, command.threshold
         )
         return SuggestSprintsResult(suggestions)
@@ -256,10 +251,9 @@ class CreateSprintUseCase:
     the legacy service call — the path ``spec_id`` was unused there too."""
 
     async def execute(
-        self, command: CreateSprintCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateSprintResult:
-        session = session_of(uow)
-        service = SprintService(session)
+        service = uow.services.sprints
         sprint = await service.create_sprint(
             command.board_id,
             actor.actor_id,
@@ -296,10 +290,9 @@ class UpdateSprintUseCase:
     found"). Re-fetches via ``get_sprint`` after commit."""
 
     async def execute(
-        self, command: UpdateSprintCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateSprintResult:
-        session = session_of(uow)
-        service = SprintService(session)
+        service = uow.services.sprints
         sprint = await service.update_sprint(command.sprint_id, actor.actor_id, command.data)
         if not sprint:
             raise EntityNotFoundError("sprint", command.sprint_id)
@@ -333,10 +326,9 @@ class MoveSprintUseCase:
     The state/coverage/evaluation gates live entirely in ``SprintService.move_sprint``."""
 
     async def execute(
-        self, command: MoveSprintCommand, *, actor: ActorContext, uow: Any
+        self, command: MoveSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveSprintResult:
-        session = session_of(uow)
-        service = SprintService(session)
+        service = uow.services.sprints
         sprint = await service.move_sprint(command.sprint_id, actor.actor_id, command.data)
         if not sprint:
             raise EntityNotFoundError("sprint", command.sprint_id)
@@ -364,10 +356,9 @@ class DeleteSprintUseCase:
     commit, mirroring the legacy 204 endpoint."""
 
     async def execute(
-        self, command: DeleteSprintCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteSprintResult:
-        session = session_of(uow)
-        deleted = await SprintService(session).delete_sprint(command.sprint_id, actor.actor_id)
+        deleted = await uow.services.sprints.delete_sprint(command.sprint_id, actor.actor_id)
         if not deleted:
             raise EntityNotFoundError("sprint", command.sprint_id)
         await commit(uow)
@@ -400,10 +391,9 @@ class SubmitSprintEvaluationUseCase:
     ``evaluation_id`` envelope, exactly as the legacy endpoint."""
 
     async def execute(
-        self, command: SubmitSprintEvaluationCommand, *, actor: ActorContext, uow: Any
+        self, command: SubmitSprintEvaluationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SubmitSprintEvaluationResult:
-        session = session_of(uow)
-        sprint = await SprintService(session).submit_evaluation(
+        sprint = await uow.services.sprints.submit_evaluation(
             command.sprint_id, actor.actor_id, command.evaluation
         )
         if not sprint:
@@ -439,10 +429,9 @@ class AssignSprintTasksUseCase:
     (``lane_type`` / ``accepted_card_types``), exactly as the legacy endpoint."""
 
     async def execute(
-        self, command: AssignSprintTasksCommand, *, actor: ActorContext, uow: Any
+        self, command: AssignSprintTasksCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AssignSprintTasksResult:
-        session = session_of(uow)
-        service = SprintService(session)
+        service = uow.services.sprints
         count = await service.assign_tasks(command.sprint_id, command.card_ids, actor.actor_id)
         await commit(uow)
         sprint = await service.get_sprint(command.sprint_id)
@@ -476,10 +465,9 @@ class UnassignSprintTasksUseCase:
     legacy endpoint."""
 
     async def execute(
-        self, command: UnassignSprintTasksCommand, *, actor: ActorContext, uow: Any
+        self, command: UnassignSprintTasksCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UnassignSprintTasksResult:
-        session = session_of(uow)
-        service = CardService(session)
+        service = uow.services.cards
         count = 0
         for card_id in command.card_ids:
             card = await service.get_card(card_id)

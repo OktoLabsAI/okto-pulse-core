@@ -28,7 +28,6 @@ from okto_pulse.core.kg.schemas import (
 def _real_board_graph_registry(_kg_registry_test_fakes):
     from kg_registry_testing import (
         RealBoardCypherExecutorForTests,
-        RealBoardGraphPathResolverForTests,
         RealBoardGraphTransactionForTests,
         configure_test_kg_registry,
     )
@@ -36,7 +35,6 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
         graph_transaction=RealBoardGraphTransactionForTests(),
-        graph_path_resolver=RealBoardGraphPathResolverForTests(),
     )
 
 
@@ -81,7 +79,7 @@ def _seed_learning_with_optional_parent(
     source_ref: str,
     connected: bool,
 ) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     learning_id = f"learning_seed_{uuid.uuid4().hex[:12]}"
@@ -108,7 +106,7 @@ def _seed_learning_with_optional_parent(
 
 
 def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -127,7 +125,7 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
 
 
 def _count_learning_belongs_to(board_id: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -147,7 +145,7 @@ def _count_learning_belongs_to(board_id: str, source_ref: str) -> int:
 
 
 def _seed_bug_with_parent(board_id: str, *, graph_layer: str = "canonical") -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     bug_id = f"bug_seed_{uuid.uuid4().hex[:12]}"
@@ -186,7 +184,7 @@ def _seed_bug_with_parent(board_id: str, *, graph_layer: str = "canonical") -> s
 
 
 def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str]:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
@@ -217,7 +215,7 @@ def _count_decision_belongs_to_root(
     decision_source_ref: str,
     root_id: str,
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -243,7 +241,7 @@ def _count_assumption_belongs_to_root(
     assumption_source_ref: str,
     root_id: str,
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -269,7 +267,7 @@ def _count_learning_validates_bug(
     learning_source_ref: str,
     bug_id: str,
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -454,7 +452,7 @@ async def test_degraded_graph_returns_contextual_error_without_opening_kuzu(
         raise AssertionError("degraded commit must not open LadybugDB")
 
     import okto_pulse.core.services.kg_health_service as health_service
-    import okto_pulse.core.kg.schema as kg_schema
+    import kg_schema_testing as kg_schema
 
     original_open = kg_schema.open_board_connection
     monkeypatch.setattr(health_service, "get_kg_health", fake_get_kg_health)

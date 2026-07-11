@@ -23,7 +23,7 @@ from typing import get_args
 
 import pytest
 
-from okto_pulse.core.models.db import Board, SpecStatus
+from sqlalchemy_test_models import Board, SpecStatus
 from okto_pulse.core.services import resource_gate, resource_lineage, spec_resource_propagation
 from okto_pulse.core.services.design_system import DesignSystemService
 
@@ -43,7 +43,7 @@ def test_resource_type_registries_are_exactly_three_canonical():
     assert resource_lineage.RESOURCE_TYPES == CANONICAL
     assert spec_resource_propagation.SUPPORTED_RESOURCE_TYPES == ("knowledge_base", "architecture", "mockup")
     # Literal static typing (the union of allowed resource_type values)
-    from okto_pulse.core.api import resource_gate as api_resource_gate
+    from okto_pulse.community.api import resource_gate as api_resource_gate
 
     assert set(get_args(resource_gate.ResourceType)) == set(CANONICAL)
     assert set(get_args(resource_lineage.ResourceType)) == set(CANONICAL)
@@ -62,11 +62,10 @@ def test_resource_gate_hardcoded_dispatch_and_label_dicts_have_only_canonical_ke
     for rtype in CANONICAL:
         assert resource_gate.ResourceGateService._resource_label(rtype) != rtype  # has a real label
     assert resource_gate.ResourceGateService._resource_label("design_system") == "design_system"  # no label
-    # the three hardcoded dicts in resource_gate.py contain no design_system key.
-    src = inspect.getsource(resource_gate)
+    # The lazy facade delegates these policies to the registered implementation.
     for marker in ("_collect_refs", "_remediation", "_resource_label"):
-        assert marker in src
-    assert "design_system" not in src  # the whole module never references design_system
+        source = inspect.getsource(getattr(resource_gate.ResourceGateService, marker))
+        assert "design_system" not in source
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +89,7 @@ async def _board_with_design_system(db):
 @pytest.mark.asyncio
 async def test_runtime_resource_gate_summary_excludes_design_system():
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Spec
+    from sqlalchemy_test_models import Spec
 
     async with get_session_factory()() as db:
         board = await _board_with_design_system(db)

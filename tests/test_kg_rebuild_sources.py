@@ -54,7 +54,7 @@ def _make_rebuild_test_app(board_id: str = "b-test"):
 
     from fastapi import FastAPI
 
-    from okto_pulse.core.api.router import api_router
+    from okto_pulse.community.api.router import api_router
     from okto_pulse.core.infra.database import get_db
 
     _fake_board = SimpleNamespace(id=board_id, owner_id="user-lifecycle-test")
@@ -973,10 +973,10 @@ def _client_with_router(board_id: str = "b-life"):
     session whose Board SELECT always succeeds and also patch get_kg_health
     to return a healthy state so the admission gate never blocks.
     """
-    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
+    import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.auth_deps import require_user
 
     async def _fake_health(_board_id, _db, scheduler_control=None):
         return {"graph_state": "healthy", "metric_status": "available",
@@ -1209,7 +1209,7 @@ def test_validate_manifest_ref_rejects_traversal_and_alias():
 def test_post_rebuild_confirm_rejects_unsupported_operation():
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.auth_deps import require_user
 
     app = _make_rebuild_test_app(board_id="b1")
 

@@ -29,7 +29,7 @@ from okto_pulse.core.mcp.payload_compaction import (
     compact_payload,
     compute_compaction_stats,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     BugSeverity,
     Card,

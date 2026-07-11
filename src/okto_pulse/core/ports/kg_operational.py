@@ -7,6 +7,8 @@ not expose SQLAlchemy symbols or ORM rows.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
@@ -103,7 +105,7 @@ class KGOperationalReadModelPort(Protocol):
     ) -> Mapping[str, int]:
         ...
 
-    async def kuzu_node_ref_operation_counts(
+    async def graph_node_ref_operation_counts(
         self,
         context: Any,
         *,
@@ -205,6 +207,26 @@ class KGWorkerQueuePort(Protocol):
     ) -> Sequence[Any]:
         ...
 
+    async def list_dead_letter_page(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[int, Sequence[Any]]:
+        ...
+
+    async def reprocess_dead_letter_rows(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        dead_letter_ids: Sequence[str],
+        limit: int,
+    ) -> Mapping[str, Any]:
+        ...
+
     async def retry_pending_entry(
         self,
         context: Any,
@@ -241,10 +263,10 @@ class KGWorkerAuditPort(Protocol):
         ...
 
 
-_kg_operational_read_model_port: KGOperationalReadModelPort | None = None
-_kg_governance_effects_port: KGGovernanceEffectsPort | None = None
-_kg_worker_queue_port: KGWorkerQueuePort | None = None
-_kg_worker_audit_port: KGWorkerAuditPort | None = None
+_READ_MODEL_KEY = "ports.kg_operational.read_model"
+_GOVERNANCE_KEY = "ports.kg_operational.governance"
+_WORKER_QUEUE_KEY = "ports.kg_operational.worker_queue"
+_WORKER_AUDIT_KEY = "ports.kg_operational.worker_audit"
 
 
 def register_kg_operational_ports(
@@ -256,57 +278,50 @@ def register_kg_operational_ports(
 ) -> None:
     """Register edition-owned KG operational providers."""
 
-    global _kg_operational_read_model_port
-    global _kg_governance_effects_port
-    global _kg_worker_queue_port
-    global _kg_worker_audit_port
-
     if read_model is not None:
-        _kg_operational_read_model_port = read_model
+        register_runtime_value(_READ_MODEL_KEY, read_model)
     if governance_effects is not None:
-        _kg_governance_effects_port = governance_effects
+        register_runtime_value(_GOVERNANCE_KEY, governance_effects)
     if worker_queue is not None:
-        _kg_worker_queue_port = worker_queue
+        register_runtime_value(_WORKER_QUEUE_KEY, worker_queue)
     if worker_audit is not None:
-        _kg_worker_audit_port = worker_audit
+        register_runtime_value(_WORKER_AUDIT_KEY, worker_audit)
 
 
 def get_kg_operational_read_model_port() -> KGOperationalReadModelPort:
-    if _kg_operational_read_model_port is None:
+    port = resolve_runtime_value(_READ_MODEL_KEY)
+    if port is None:
         raise KGOperationalProviderMissing("read_model")
-    return _kg_operational_read_model_port
+    return port
 
 
 def get_kg_governance_effects_port() -> KGGovernanceEffectsPort:
-    if _kg_governance_effects_port is None:
+    port = resolve_runtime_value(_GOVERNANCE_KEY)
+    if port is None:
         raise KGOperationalProviderMissing("governance_effects")
-    return _kg_governance_effects_port
+    return port
 
 
 def get_kg_worker_queue_port() -> KGWorkerQueuePort:
-    if _kg_worker_queue_port is None:
+    port = resolve_runtime_value(_WORKER_QUEUE_KEY)
+    if port is None:
         raise KGOperationalProviderMissing("worker_queue")
-    return _kg_worker_queue_port
+    return port
 
 
 def get_kg_worker_audit_port() -> KGWorkerAuditPort:
-    if _kg_worker_audit_port is None:
+    port = resolve_runtime_value(_WORKER_AUDIT_KEY)
+    if port is None:
         raise KGOperationalProviderMissing("worker_audit")
-    return _kg_worker_audit_port
+    return port
 
 
 def reset_kg_operational_ports_for_tests() -> None:
     """Drop registered providers for deterministic test isolation."""
 
-    global _kg_operational_read_model_port
-    global _kg_governance_effects_port
-    global _kg_worker_queue_port
-    global _kg_worker_audit_port
-
-    _kg_operational_read_model_port = None
-    _kg_governance_effects_port = None
-    _kg_worker_queue_port = None
-    _kg_worker_audit_port = None
+    reset_runtime_values(
+        _READ_MODEL_KEY, _GOVERNANCE_KEY, _WORKER_QUEUE_KEY, _WORKER_AUDIT_KEY
+    )
 
 
 __all__ = [

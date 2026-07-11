@@ -10,7 +10,7 @@ source_artifact_ref retornava zero).
 Esta regressão prova a cadeia COMPLETA, end-to-end, pelos caminhos de produção:
 
   submit_task_validation(approve) → DomainEventRow card.moved (validation→done)
-  → EventDispatcher drena → ConsolidationQueue(card) → _process_queue_entry
+  → EventDeliveryProcessor drena → ConsolidationQueue(card) → _process_queue_entry
   → card:<id> aparece em canonical-only com graph_layer=canonical.
 
 Dentes: sem o evento card.moved não há enqueue; sem enqueue o node permanece
@@ -25,12 +25,11 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from okto_pulse.core.events.dispatcher import EventDispatcher
 from okto_pulse.core.kg.cypher_templates import layer_filter_clause
 from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
-from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
-from okto_pulse.core.models.db import (
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
+from okto_pulse.core.application.processors.consolidation import _process_queue_entry
+from sqlalchemy_test_models import (
     Board,
     ConsolidationQueue,
     DomainEventRow,
@@ -38,10 +37,11 @@ from okto_pulse.core.models.db import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove
-from okto_pulse.core.models.db import CardStatus
+from sqlalchemy_test_models import CardStatus
 from okto_pulse.core.services.main import CardService
 from okto_pulse.core.services.resource_gate import ResourceGateService
 from kg_registry_testing import configure_real_graph_test_kg_registry
+from sqlalchemy_domain_event_delivery_store import build_test_event_processor
 
 
 async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str) -> str:
@@ -189,13 +189,13 @@ async def test_validation_gate_promotes_card_to_canonical(db_factory):
     await _approve_via_validation_gate(db_factory, board_id, card_id)
 
     # O ConsolidationEnqueuer consome os DomainEventRow via dispatcher.
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory)
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as db:
         card_q = (
             await db.execute(

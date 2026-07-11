@@ -7,7 +7,6 @@ import logging
 import threading
 from typing import Any, Mapping
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.observability.sample_buffer import BoundedSampleBuffer
 from okto_pulse.core.events import publish as event_publish
@@ -255,7 +254,7 @@ async def record_bug_regression_decision(
     coverage_state: str = "",
     actor_id: str | None = None,
     actor_type: str = "user",
-    session: AsyncSession | None = None,
+    session: object | None = None,
 ) -> None:
     """Persist the bounded decision audit event.
 

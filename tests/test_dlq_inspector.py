@@ -16,7 +16,7 @@ pytestmark = pytest.mark.asyncio
 
 async def _insert_dlq_row(db, board_id: str, idx: int) -> str:
     """Insert one fabricated DLQ row + return its id."""
-    from okto_pulse.core.models.db import ConsolidationDeadLetter
+    from sqlalchemy_test_models import ConsolidationDeadLetter
     row_id = f"dlq_test_{uuid.uuid4().hex[:8]}_{idx}"
     row = ConsolidationDeadLetter(
         id=row_id,
@@ -138,7 +138,7 @@ async def test_ts3_helper_signature_shared_between_rest_and_mcp():
 async def test_malformed_error_payload_is_normalised():
     """A malformed legacy DLQ errors value should not break the inspector."""
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import ConsolidationDeadLetter
+    from sqlalchemy_test_models import ConsolidationDeadLetter
     from okto_pulse.core.services.dead_letter_inspector_service import (
         list_dead_letter_rows,
     )
@@ -179,7 +179,7 @@ async def test_reprocess_moves_dlq_row_back_to_queue():
     from sqlalchemy import select
 
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         ConsolidationDeadLetter,
         ConsolidationQueue,
     )

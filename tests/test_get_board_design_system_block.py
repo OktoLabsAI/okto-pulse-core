@@ -30,7 +30,7 @@ from sqlalchemy import delete
 from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, BoardDesignSystem, DesignSystem
+from sqlalchemy_test_models import Board, BoardDesignSystem, DesignSystem
 from okto_pulse.core.models.schemas import BoardCreate
 from okto_pulse.core.services.design_system import DesignSystemService
 from okto_pulse.core.services.main import BoardService

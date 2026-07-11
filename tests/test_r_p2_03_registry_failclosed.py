@@ -61,16 +61,13 @@ def _base_with_required_slots_only() -> KGProviderRegistry:
     from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
-        InMemoryGraphPathResolver,
         InMemoryGraphRuntimeStore,
         InMemoryGraphSchemaManager,
         InMemoryGraphStore,
         InMemoryGraphTransaction,
-        in_memory_safe_write_step_adapter,
     )
 
     store = InMemoryGraphStore()
-    resolver = InMemoryGraphPathResolver()
     schema_manager = InMemoryGraphSchemaManager(store)
     return KGProviderRegistry(
         config=SettingsKGConfig(),
@@ -81,16 +78,12 @@ def _base_with_required_slots_only() -> KGProviderRegistry:
         graph_transaction=InMemoryGraphTransaction(),
         graph_schema_manager=schema_manager,
         graph_lifecycle=InMemoryGraphLifecycle(
-            resolver=resolver,
             schema_manager=schema_manager,
         ),
-        graph_path_resolver=resolver,
         graph_runtime_store=InMemoryGraphRuntimeStore(
             store=store,
-            resolver=resolver,
             schema_manager=schema_manager,
         ),
-        safe_write_step_adapter=in_memory_safe_write_step_adapter,
         global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
         board_source_reader=InMemoryBoardSourceReader(),
     )
@@ -160,17 +153,14 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
     from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
-        InMemoryGraphPathResolver,
         InMemoryGraphRuntimeStore,
         InMemoryGraphSchemaManager,
         InMemoryGraphStore,
         InMemoryGraphTransaction,
-        in_memory_safe_write_step_adapter,
     )
 
     reset_registry_for_tests()
     store = InMemoryGraphStore()
-    resolver = InMemoryGraphPathResolver()
     schema_manager = InMemoryGraphSchemaManager(store)
     try:
         configure_kg_registry(
@@ -183,16 +173,12 @@ def test_onda_a_slot_not_implicitly_defaulted_in_composed_path(slot: str) -> Non
                 graph_transaction=InMemoryGraphTransaction(),
                 graph_schema_manager=schema_manager,
                 graph_lifecycle=InMemoryGraphLifecycle(
-                    resolver=resolver,
                     schema_manager=schema_manager,
                 ),
-                graph_path_resolver=resolver,
                 graph_runtime_store=InMemoryGraphRuntimeStore(
                     store=store,
-                    resolver=resolver,
                     schema_manager=schema_manager,
                 ),
-                safe_write_step_adapter=in_memory_safe_write_step_adapter,
                 global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
                 board_source_reader=InMemoryBoardSourceReader(),
             )
@@ -228,16 +214,13 @@ def test_required_data_slots_fail_closed_when_composition_omits_one(
     from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
-        InMemoryGraphPathResolver,
         InMemoryGraphRuntimeStore,
         InMemoryGraphSchemaManager,
         InMemoryGraphStore,
         InMemoryGraphTransaction,
-        in_memory_safe_write_step_adapter,
     )
 
     store = InMemoryGraphStore()
-    resolver = InMemoryGraphPathResolver()
     schema_manager = InMemoryGraphSchemaManager(store)
     providers = {
         "config": SettingsKGConfig(),
@@ -248,16 +231,12 @@ def test_required_data_slots_fail_closed_when_composition_omits_one(
         "graph_transaction": InMemoryGraphTransaction(),
         "graph_schema_manager": schema_manager,
         "graph_lifecycle": InMemoryGraphLifecycle(
-            resolver=resolver,
             schema_manager=schema_manager,
         ),
-        "graph_path_resolver": resolver,
         "graph_runtime_store": InMemoryGraphRuntimeStore(
             store=store,
-            resolver=resolver,
             schema_manager=schema_manager,
         ),
-        "safe_write_step_adapter": in_memory_safe_write_step_adapter,
         "global_discovery_runtime": InMemoryGlobalDiscoveryRuntime(),
         "board_source_reader": InMemoryBoardSourceReader(),
     }

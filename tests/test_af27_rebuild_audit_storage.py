@@ -102,19 +102,12 @@ def test_af27_base_dir_path_gate_current_tree_matches_inventory() -> None:
     assert run_rebuild_audit_storage_gate(core_root, enforce_stale_ledger=True) == ()
 
     ledger = rebuild_audit_storage_fallback_ledger()
-    assert ledger
-    assert all(entry.owner for entry in ledger)
-    assert all(entry.classification for entry in ledger)
-    assert all(entry.reason for entry in ledger)
-    assert all(entry.removal_criterion for entry in ledger)
-    assert {
-        "legacy_compat_injection",
-        "stress_chaos_evidence",
-        "static_bundled_resource_path",
-    } <= {entry.classification for entry in ledger}
+    assert ledger == ()
 
 
-def test_af27_base_dir_path_gate_catches_synthetic_durable_store(tmp_path: Path) -> None:
+def test_af27_base_dir_path_gate_catches_synthetic_durable_store(
+    tmp_path: Path,
+) -> None:
     core_root = tmp_path / "core"
     fixture = core_root / "kg"
     fixture.mkdir(parents=True)

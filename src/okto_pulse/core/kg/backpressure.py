@@ -57,6 +57,8 @@ writers and Prometheus emission around it.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 import logging
 import threading
 import time
@@ -632,8 +634,8 @@ class KGBackpressureGate:
         return max(1, int(round(seconds)))
 
 
-_default_gate: KGBackpressureGate | None = None
 _default_gate_lock = threading.Lock()
+_RUNTIME_KEY = "kg.backpressure.default_gate"
 
 
 def get_default_gate() -> KGBackpressureGate:
@@ -642,18 +644,18 @@ def get_default_gate() -> KGBackpressureGate:
     Tests should construct their own ``KGBackpressureGate`` rather than
     sharing this singleton.
     """
-    global _default_gate
     with _default_gate_lock:
-        if _default_gate is None:
-            _default_gate = KGBackpressureGate()
-        return _default_gate
+        gate = resolve_runtime_value(_RUNTIME_KEY)
+        if gate is None:
+            gate = KGBackpressureGate()
+            register_runtime_value(_RUNTIME_KEY, gate)
+        return gate
 
 
 def reset_default_gate_for_tests() -> None:
     """Drop the module-level singleton (used by tests)."""
-    global _default_gate
     with _default_gate_lock:
-        _default_gate = None
+        reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [

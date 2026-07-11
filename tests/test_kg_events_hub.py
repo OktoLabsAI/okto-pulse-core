@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from okto_pulse.core.api.kg_events_hub import (
+from okto_pulse.community.api.kg_events_hub import (
     SUBSCRIBER_QUEUE_MAXSIZE,
     KgEventsHub,
     _BoardStream,
@@ -24,7 +24,7 @@ from okto_pulse.core.api.kg_events_hub import (
     shutdown_kg_events_hub,
 )
 from okto_pulse.core.infra.database import get_engine, get_session_factory
-from okto_pulse.core.models.db import GlobalUpdateOutbox
+from sqlalchemy_test_models import GlobalUpdateOutbox
 from okto_pulse.core.ports.kg_events import KGEventsPoll
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -188,7 +188,7 @@ async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
     """O cenário de produção: cliente SSE desconecta → task da request é
     hard-cancelada. O contrato do fix: nenhuma conexão do pool fica
     checked-out e o hub remove o assinante."""
-    from okto_pulse.core.api.kg_routes import stream_kg_events
+    from okto_pulse.community.api.kg_routes import stream_kg_events
 
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     response = await stream_kg_events(board_id, since=None)
@@ -223,7 +223,7 @@ async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
 
 async def test_sse_route_replays_backlog_since_cursor():
     """Reconexão com `since` re-entrega eventos perdidos via cancel_safe_session."""
-    from okto_pulse.core.api.kg_routes import stream_kg_events
+    from okto_pulse.community.api.kg_routes import stream_kg_events
 
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     event_id = await _insert_outbox_event(board_id)

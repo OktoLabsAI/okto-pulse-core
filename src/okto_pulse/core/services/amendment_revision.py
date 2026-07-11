@@ -1,20 +1,10 @@
-"""Path B AmendmentHotfixRevision store/service (spec 7ea1e4be, card f5dca74a).
-
-I/O layer: persistence + audit for the amendment lineage artifact. The pure
-``status x lineage_state`` eligibility predicate lives in
-``core.domain.amendment_eligibility`` (imported here, never the reverse), so the
-bug-regression resolver/gate can read eligibility without this DB service. This
-service NEVER mutates the original spec (AC1) — it only writes amendment rows
-and emits audit entries on create/status/lineage changes (TR5).
-"""
+"""Core amendment/hotfix revision rules over an edition-owned store."""
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
-
-from sqlalchemy import select
-from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.domain.amendment_eligibility import (
     COVERAGE_CONFIRMATION_KEY,
@@ -23,17 +13,17 @@ from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentRevisionStatus,
     evaluate_amendment_eligibility,
 )
-
-from okto_pulse.core.models.db import ActivityLog, AmendmentHotfixRevision
+from okto_pulse.core.ports.amendment_revision import (
+    AmendmentAuditRecord,
+    AmendmentRevisionRecord,
+    get_amendment_revision_store,
+)
 
 logger = logging.getLogger("okto_pulse.services.amendment_revision")
 
 
 class AmendmentRevisionError(ValueError):
-    """Raised on an invalid amendment write (unknown status/lineage, not found).
-
-    Fail-closed: an unknown status or lineage value is never silently coerced to
-    a valid one (spec 7ea1e4be — unknown states are blocking)."""
+    """Invalid amendment write or unknown lifecycle value."""
 
 
 def _coerce_status(value: AmendmentRevisionStatus | str) -> AmendmentRevisionStatus:
@@ -55,9 +45,7 @@ def _coerce_lineage(value: AmendmentLineageState | str) -> AmendmentLineageState
 
 
 class AmendmentRevisionService:
-    """Create/read/update Path B amendment revisions with audit (TR5)."""
-
-    def __init__(self, db) -> None:
+    def __init__(self, db: object) -> None:
         self.db = db
 
     async def create(
@@ -74,22 +62,15 @@ class AmendmentRevisionService:
         regression_test_task_ids: list[str] | None = None,
         automated_regression_refs: list[str] | None = None,
         validation_metadata: dict | None = None,
-    ) -> AmendmentHotfixRevision:
-        """Persist a new amendment in DRAFT/INCOMPLETE. Never touches the
-        original spec (AC1)."""
-        # NON-FORGEABLE (G2 / card c9cf9781): the coverage attestation reserved
-        # key may ONLY be written by ``CardService.confirm_amendment_coverage``.
-        # A generic create can never inject it (would forge validator coverage),
-        # so strip it here regardless of caller input.
+    ) -> AmendmentRevisionRecord:
         safe_metadata = dict(validation_metadata) if validation_metadata else None
         if safe_metadata and COVERAGE_CONFIRMATION_KEY in safe_metadata:
             safe_metadata.pop(COVERAGE_CONFIRMATION_KEY, None)
             logger.warning(
-                "amendment_revision.create.stripped_reserved_key key=%s "
-                "(coverage_confirmation is writable only via confirm_amendment_coverage)",
+                "amendment_revision.create.stripped_reserved_key key=%s",
                 COVERAGE_CONFIRMATION_KEY,
             )
-        amendment = AmendmentHotfixRevision(
+        record = AmendmentRevisionRecord(
             board_id=board_id,
             original_spec_id=original_spec_id,
             origin_bug_id=origin_bug_id,
@@ -99,23 +80,24 @@ class AmendmentRevisionService:
             regression_scenario_ids=list(regression_scenario_ids or []),
             regression_test_task_ids=list(regression_test_task_ids or []),
             automated_regression_refs=list(automated_regression_refs or []),
-            status=AmendmentRevisionStatus.DRAFT,
-            lineage_state=AmendmentLineageState.INCOMPLETE,
             validation_metadata=safe_metadata,
             created_by=author,
         )
-        self.db.add(amendment)
-        await self.db.flush()
-        self._audit(
-            amendment,
+        return await self._save(
+            record,
             "amendment_revision_created",
             author,
-            {"original_spec_id": original_spec_id, "origin_bug_id": origin_bug_id},
+            {
+                "original_spec_id": original_spec_id,
+                "origin_bug_id": origin_bug_id,
+            },
         )
-        return amendment
 
-    async def get(self, amendment_id: str) -> AmendmentHotfixRevision | None:
-        return await self.db.get(AmendmentHotfixRevision, amendment_id)
+    async def get(self, amendment_id: str) -> AmendmentRevisionRecord | None:
+        return await get_amendment_revision_store().get(
+            self.db,
+            amendment_id=amendment_id,
+        )
 
     async def list_for_bug(
         self,
@@ -123,53 +105,51 @@ class AmendmentRevisionService:
         board_id: str,
         original_spec_id: str,
         origin_bug_id: str,
-    ) -> list[AmendmentHotfixRevision]:
-        """Read-only: amendments formally linked to this bug+spec on this board.
-
-        Used by the bug-regression gate/preview to build pure Path B lineage
-        facts (spec f5a7cae7 / card ead17e4d). Never mutates anything; the
-        ``board_id``/``original_spec_id``/``origin_bug_id`` filter mirrors the
-        formal-link requirement (FR2)."""
-        result = await self.db.execute(
-            select(AmendmentHotfixRevision).where(
-                AmendmentHotfixRevision.board_id == board_id,
-                AmendmentHotfixRevision.original_spec_id == original_spec_id,
-                AmendmentHotfixRevision.origin_bug_id == origin_bug_id,
-            )
+    ) -> list[AmendmentRevisionRecord]:
+        rows = await get_amendment_revision_store().list_for_bug(
+            self.db,
+            board_id=board_id,
+            original_spec_id=original_spec_id,
+            origin_bug_id=origin_bug_id,
         )
-        return list(result.scalars())
+        return list(rows)
 
-    async def _require(self, amendment_id: str) -> AmendmentHotfixRevision:
+    async def _require(self, amendment_id: str) -> AmendmentRevisionRecord:
         amendment = await self.get(amendment_id)
         if amendment is None:
             raise AmendmentRevisionError(f"amendment_not_found: {amendment_id}")
         return amendment
 
     async def set_status(
-        self, amendment_id: str, new_status: AmendmentRevisionStatus | str, actor: str
-    ) -> AmendmentHotfixRevision:
+        self,
+        amendment_id: str,
+        new_status: AmendmentRevisionStatus | str,
+        actor: str,
+    ) -> AmendmentRevisionRecord:
         amendment = await self._require(amendment_id)
-        status = _coerce_status(new_status)  # fail-closed on unknown
+        status = _coerce_status(new_status)
         old = amendment.status
         amendment.status = status
-        await self.db.flush()
-        self._audit(
+        amendment.updated_at = datetime.now(timezone.utc)
+        return await self._save(
             amendment,
             "amendment_revision_status_changed",
             actor,
             {"old_status": getattr(old, "value", old), "new_status": status.value},
         )
-        return amendment
 
     async def set_lineage_state(
-        self, amendment_id: str, lineage_state: AmendmentLineageState | str, actor: str
-    ) -> AmendmentHotfixRevision:
+        self,
+        amendment_id: str,
+        lineage_state: AmendmentLineageState | str,
+        actor: str,
+    ) -> AmendmentRevisionRecord:
         amendment = await self._require(amendment_id)
-        lineage = _coerce_lineage(lineage_state)  # fail-closed on unknown
+        lineage = _coerce_lineage(lineage_state)
         old = amendment.lineage_state
         amendment.lineage_state = lineage
-        await self.db.flush()
-        self._audit(
+        amendment.updated_at = datetime.now(timezone.utc)
+        return await self._save(
             amendment,
             "amendment_revision_lineage_changed",
             actor,
@@ -178,7 +158,6 @@ class AmendmentRevisionService:
                 "new_lineage_state": lineage.value,
             },
         )
-        return amendment
 
     async def set_coverage_confirmation(
         self,
@@ -186,30 +165,25 @@ class AmendmentRevisionService:
         *,
         confirmation: dict[str, Any],
         actor: str,
-    ) -> AmendmentHotfixRevision:
-        """Persist the validator coverage attestation under the reserved key (G2).
-
-        This is the ONLY writer of ``validation_metadata.coverage_confirmation``.
-        The caller (``CardService.confirm_amendment_coverage``) MUST have already
-        authorized the validator role and validated the artifact binding; this
-        method only persists + audits (non-forgeability is enforced by the caller
-        + the reserved-key strip in ``create``)."""
+    ) -> AmendmentRevisionRecord:
         amendment = await self._require(amendment_id)
         metadata = dict(amendment.validation_metadata or {})
         metadata[COVERAGE_CONFIRMATION_KEY] = dict(confirmation)
         amendment.validation_metadata = metadata
-        flag_modified(amendment, "validation_metadata")
-        await self.db.flush()
-        self._audit(
+        amendment.updated_at = datetime.now(timezone.utc)
+        return await self._save(
             amendment,
             "amendment_coverage_confirmed",
             actor,
             {
-                "regression_test_task_id": confirmation.get("regression_test_task_id"),
-                "regression_scenario_id": confirmation.get("regression_scenario_id"),
+                "regression_test_task_id": confirmation.get(
+                    "regression_test_task_id"
+                ),
+                "regression_scenario_id": confirmation.get(
+                    "regression_scenario_id"
+                ),
             },
         )
-        return amendment
 
     async def associate_artifacts(
         self,
@@ -219,40 +193,30 @@ class AmendmentRevisionService:
         regression_scenario_ids: list[str] | None = None,
         automated_regression_refs: list[str] | None = None,
         actor: str,
-    ) -> AmendmentHotfixRevision:
-        """Additively associate regression artifacts/evidence to an existing
-        amendment (spec be089cd3 / card 4e7e1143). NEVER reparents
-        origin_bug_id/original_spec_id (caller enforces bug/spec scope). Audit-
-        backed, order-preserving de-dup, no silent no-op."""
+    ) -> AmendmentRevisionRecord:
         amendment = await self._require(amendment_id)
 
-        def _merge(existing: list[str] | None, incoming: list[str] | None) -> list[str]:
-            out = list(existing or [])
-            seen = set(out)
+        def merge(existing: list[str], incoming: list[str] | None) -> list[str]:
+            result = list(existing)
+            seen = set(result)
             for value in incoming or []:
                 text = str(value)
                 if text not in seen:
                     seen.add(text)
-                    out.append(text)
-            return out
+                    result.append(text)
+            return result
 
-        amendment.regression_test_task_ids = _merge(
+        amendment.regression_test_task_ids = merge(
             amendment.regression_test_task_ids, regression_test_task_ids
         )
-        amendment.regression_scenario_ids = _merge(
+        amendment.regression_scenario_ids = merge(
             amendment.regression_scenario_ids, regression_scenario_ids
         )
-        amendment.automated_regression_refs = _merge(
+        amendment.automated_regression_refs = merge(
             amendment.automated_regression_refs, automated_regression_refs
         )
-        for column in (
-            "regression_test_task_ids",
-            "regression_scenario_ids",
-            "automated_regression_refs",
-        ):
-            flag_modified(amendment, column)
-        await self.db.flush()
-        self._audit(
+        amendment.updated_at = datetime.now(timezone.utc)
+        return await self._save(
             amendment,
             "amendment_revision_artifacts_associated",
             actor,
@@ -262,34 +226,29 @@ class AmendmentRevisionService:
                 "automated_regression_refs": list(automated_regression_refs or []),
             },
         )
-        return amendment
 
     @staticmethod
-    def eligibility(amendment: AmendmentHotfixRevision) -> AmendmentEligibility:
-        """Deterministic status x lineage verdict (delegates to the pure policy).
+    def eligibility(amendment: AmendmentRevisionRecord) -> AmendmentEligibility:
+        return evaluate_amendment_eligibility(
+            amendment.status,
+            amendment.lineage_state,
+        )
 
-        ``lineage_eligible`` is NOT closure — final bug closure also needs the
-        shared predicate + coverage_confirmed from later cards.
-        """
-        return evaluate_amendment_eligibility(amendment.status, amendment.lineage_state)
-
-    def _audit(
+    async def _save(
         self,
-        amendment: AmendmentHotfixRevision,
+        amendment: AmendmentRevisionRecord,
         action: str,
         actor: str,
-        extra: dict[str, Any],
-    ) -> None:
-        self.db.add(
-            ActivityLog(
-                board_id=amendment.board_id,
-                card_id=amendment.origin_bug_id,
+        details: dict[str, Any],
+    ) -> AmendmentRevisionRecord:
+        return await get_amendment_revision_store().save(
+            self.db,
+            amendment,
+            audit=AmendmentAuditRecord(
                 action=action,
-                actor_type="agent",
-                actor_id=actor,
-                actor_name=actor,
-                details={"amendment_id": amendment.id, **extra},
-            )
+                actor=actor,
+                details={"amendment_id": amendment.id, **details},
+            ),
         )
 
 

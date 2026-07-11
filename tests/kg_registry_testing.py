@@ -13,10 +13,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from okto_pulse.core.kg.interfaces.registry import (
-    _build_defaults,
-    configure_kg_registry,
-)
+from okto_pulse.core.kg.interfaces.registry import configure_kg_registry
+from okto_pulse.core.kg.providers.testing.registry import build_testing_kg_registry
 
 _GRAPH_PROVIDER_KEYS = {
     "graph_store",
@@ -24,10 +22,7 @@ _GRAPH_PROVIDER_KEYS = {
     "graph_transaction",
     "graph_schema_manager",
     "graph_lifecycle",
-    "graph_path_resolver",
     "graph_runtime_store",
-    "safe_write_step_adapter",
-    "board_graph_runtime",
     "global_discovery_runtime",
 }
 
@@ -58,32 +53,22 @@ def _community_rebuild_ingestion() -> dict[str, Any]:
     }
 
 
+def _community_rebuild_artifact_scope_resolver() -> dict[str, Any]:
+    from okto_pulse.community.adapters.rebuild_audit_storage import (
+        CommunityRebuildAuditArtifactStoreResolver,
+    )
+
+    return {
+        "rebuild_audit_artifact_store_resolver": (
+            CommunityRebuildAuditArtifactStoreResolver()
+        )
+    }
+
+
 def _community_graph_providers() -> dict[str, Any]:
-    from okto_pulse.community.adapters.board_graph_runtime import (
-        CommunityBoardGraphRuntime,
-    )
     from okto_pulse.community.adapters.kg import build_community_graph_providers
-    from okto_pulse.community.adapters.kg_runtime import apply_ladybug_lifecycle_step
 
-    return {
-        **build_community_graph_providers(),
-        "safe_write_step_adapter": apply_ladybug_lifecycle_step,
-        "board_graph_runtime": CommunityBoardGraphRuntime(),
-    }
-
-
-def _community_board_graph_runtime() -> dict[str, Any]:
-    from okto_pulse.community.adapters.board_graph_runtime import (
-        CommunityBoardGraphRuntime,
-    )
-    from okto_pulse.community.adapters.global_discovery_runtime import (
-        CommunityGlobalDiscoveryRuntime,
-    )
-
-    return {
-        "board_graph_runtime": CommunityBoardGraphRuntime(),
-        "global_discovery_runtime": CommunityGlobalDiscoveryRuntime(),
-    }
+    return build_community_graph_providers()
 
 
 def _skip_missing_community_integration(exc: ModuleNotFoundError) -> None:
@@ -153,9 +138,14 @@ relational fallback). The test-only ``_build_defaults`` does NOT supply them, so
             defaults.update(_community_rebuild_ingestion())
         except ModuleNotFoundError:
             pass
+    if "rebuild_audit_artifact_store_resolver" not in overrides:
+        try:
+            defaults.update(_community_rebuild_artifact_scope_resolver())
+        except ModuleNotFoundError:
+            pass
 
     defaults.update(overrides)
-    configure_kg_registry(defaults_factory=_build_defaults, **defaults)
+    configure_kg_registry(defaults_factory=build_testing_kg_registry, **defaults)
 
 
 def configure_real_graph_test_kg_registry(**overrides: Any) -> None:
@@ -237,9 +227,11 @@ class _RealBoardGraphTransactionScopeForTests:
         self._connection = open_board_connection(board_id)
 
     def execute(self, cypher: str, params: dict[str, Any] | None = None) -> Any:
+        from okto_pulse.community.adapters.kuzu_graph_transaction import _materialize
+
         if params:
-            return self._connection.conn.execute(cypher, params)
-        return self._connection.conn.execute(cypher)
+            return _materialize(self._connection.conn.execute(cypher, params))
+        return _materialize(self._connection.conn.execute(cypher))
 
     async def commit(self) -> None:
         self._connection.close()
@@ -264,44 +256,6 @@ class RealBoardGraphTransactionForTests:
         return _RealBoardGraphTransactionScopeForTests(board_id)
 
 
-class RealBoardGraphPathResolverForTests:
-    """Test-only GraphPathResolver bridge over the legacy real board path."""
-
-    def board_graph_path(self, board_id: str):
-        from okto_pulse.community.adapters.kg_runtime import board_kuzu_path
-
-        return board_kuzu_path(board_id)
-
-    def exists(self, board_id: str) -> bool:
-        return self.board_graph_path(board_id).exists()
-
-    def storage_state(self, board_id: str):
-        from okto_pulse.core.kg.interfaces.graph_path_resolver import (
-            GraphStorageState,
-        )
-
-        path = self.board_graph_path(board_id)
-        exists = path.exists()
-        sidecars: tuple[str, ...] = ()
-        if path.parent.exists():
-            sidecars = tuple(
-                sorted(
-                    p.name for p in path.parent.glob(path.name + "*")
-                    if p.name != path.name
-                )
-            )
-        return GraphStorageState(
-            board_id=board_id,
-            path=path,
-            exists=exists,
-            size_bytes=path.stat().st_size if exists else 0,
-            backend="ladybug_embedded_test",
-            locked=(path.parent / (path.name + ".wal")).exists(),
-            quarantined=path.parent.exists() and not exists,
-            sidecars=sidecars,
-        )
-
-
 class RealBoardGraphLifecycleForTests:
     """Test-only GraphLifecycle bridge over the Community Ladybug adapter."""
 
@@ -323,3 +277,6 @@ class RealBoardGraphLifecycleForTests:
 
     async def purge(self, board_id: str, *, reason: str):
         return await self._delegate.purge(board_id, reason=reason)
+
+    def apply_step(self, board_id: str, graph_type: str, step: str):
+        return self._delegate.apply_step(board_id, graph_type, step)

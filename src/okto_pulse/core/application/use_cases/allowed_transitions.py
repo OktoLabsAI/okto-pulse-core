@@ -7,6 +7,8 @@ consumers, so display affordances cannot drift into a parallel lifecycle map.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
@@ -16,10 +18,10 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
     EntityNotFoundError,
-    session_of,
 )
 from okto_pulse.core.domain.enums import IdeationStatus, RefinementStatus, SpecStatus
-from okto_pulse.core.services import BoardService, IdeationService, RefinementService, SpecService
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.services import IdeationService, RefinementService, SpecService
 
 ALLOWED_TRANSITIONS_SOURCE = "programmatic_backend_transition_authority"
 ALLOWED_TRANSITIONS_DRIFT_METRIC = "allowed_transitions_contract_drift_total"
@@ -241,15 +243,14 @@ class ListAllowedTransitionsUseCase:
         command: ListAllowedTransitionsCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListAllowedTransitionsResult:
-        session = session_of(uow)
         entity_type = (command.entity_type or "").strip().lower()
         _authority_for(entity_type)
         if actor.source == "mcp":
-            board = await BoardService(session).get_board(command.board_id)
+            board = await uow.services.boards.get_board(command.board_id)
         else:
-            board = await BoardService(session).get_board(
+            board = await uow.services.boards.get_board(
                 command.board_id,
                 actor.actor_id,
                 query_scope=ActorScope.from_context(actor).query_scope(
@@ -261,7 +262,7 @@ class ListAllowedTransitionsUseCase:
 
         entity_id = (command.entity_id or "").strip() or None
         if entity_id:
-            entity = await self._load_entity(session, entity_type, entity_id)
+            entity = await self._load_entity(uow.services, entity_type, entity_id)
             if not entity or getattr(entity, "board_id", None) != command.board_id:
                 raise EntityNotFoundError(entity_type, entity_id)
             current_status = str(entity.status.value)
@@ -282,11 +283,16 @@ class ListAllowedTransitionsUseCase:
         )
         return ListAllowedTransitionsResult(read_model)
 
-    async def _load_entity(self, session: Any, entity_type: str, entity_id: str) -> Any:
+    async def _load_entity(
+        self,
+        services: ApplicationServiceCatalog,
+        entity_type: str,
+        entity_id: str,
+    ) -> Any:
         if entity_type == "ideation":
-            return await IdeationService(session).get_ideation(entity_id)
+            return await services.ideations.get_ideation(entity_id)
         if entity_type == "refinement":
-            return await RefinementService(session).get_refinement(entity_id)
+            return await services.refinements.get_refinement(entity_id)
         if entity_type == "spec":
-            return await SpecService(session).get_spec(entity_id)
+            return await services.specs.get_spec(entity_id)
         raise CommandValidationError(f"Invalid entity_type: {entity_type}")

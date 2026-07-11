@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from okto_pulse.core.api.router import api_router
+from okto_pulse.community.api.router import api_router
 
 
 def _openapi_paths():

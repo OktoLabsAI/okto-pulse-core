@@ -12,7 +12,7 @@ import asyncio
 
 import pytest
 
-from okto_pulse.core.app import _TelemetryASGIMiddleware
+from okto_pulse.community.app import _TelemetryASGIMiddleware
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

@@ -137,8 +137,10 @@ def principal_from_auth_session(session: AuthSession | None) -> Principal | None
     """Project an active MCP auth session to the shared pure principal DTO."""
     if session is None or not session.is_active:
         return None
+    metadata = dict(getattr(session, "metadata", {}) or {})
     return Principal(
         subject=session.agent_id,
+        realm_id=metadata.get("realm_id"),
         claims={
             "agent_name": session.agent_name,
             "auth_channel": "mcp",

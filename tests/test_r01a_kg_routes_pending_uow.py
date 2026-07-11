@@ -27,10 +27,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import kg_routes as kg_routes_api
-from okto_pulse.core.api.kg_routes import router as kg_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import get_current_user, get_realm_id, require_user
+from okto_pulse.community.api import kg_routes as kg_routes_api
+from okto_pulse.community.api.kg_routes import router as kg_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import get_current_user, get_realm_id, require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 PREFIX = "/api/v1"
@@ -72,7 +72,7 @@ def client():
 
 
 async def _seed_board(name: str = "fu5s3") -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu5s3-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -89,7 +89,7 @@ async def _seed_pending_entry(
     source: str = "historical_backfill",
     claimed_by_session_id: str | None = None,
 ) -> str:
-    from okto_pulse.core.models.db import ConsolidationQueue
+    from sqlalchemy_test_models import ConsolidationQueue
 
     entry = ConsolidationQueue(
         board_id=board_id,
@@ -108,7 +108,7 @@ async def _seed_pending_entry(
 
 async def _seed_chain() -> dict[str, str]:
     """Seed a single ideation→refinement→spec→sprint→card chain. Returns the ids."""
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Board, Card, Ideation, Refinement, Spec, Sprint,
     )
 
@@ -222,7 +222,7 @@ async def test_pending_tree_hierarchical_shape_200(client) -> None:
 async def test_pending_tree_counters_track_queue_status_200(client) -> None:
     ids = await _seed_chain()
     # Queue the spec as pending — the spec level counter must reflect it.
-    from okto_pulse.core.models.db import ConsolidationQueue
+    from sqlalchemy_test_models import ConsolidationQueue
 
     async with get_session_factory()() as db:
         db.add(ConsolidationQueue(
@@ -266,7 +266,7 @@ async def test_retry_404_when_entry_missing(client) -> None:
 
 @pytest.mark.asyncio
 async def test_retry_200_resets_failed_entry(client) -> None:
-    from okto_pulse.core.models.db import ConsolidationQueue
+    from sqlalchemy_test_models import ConsolidationQueue
 
     board_id = await _seed_board()
     entry_id = await _seed_pending_entry(
@@ -291,7 +291,7 @@ async def test_retry_200_resets_failed_entry(client) -> None:
 
 @pytest.mark.asyncio
 async def test_retry_recursive_reopens_descendants_200(client) -> None:
-    from okto_pulse.core.models.db import ConsolidationQueue
+    from sqlalchemy_test_models import ConsolidationQueue
 
     ids = await _seed_chain()
     async with get_session_factory()() as db:
@@ -351,8 +351,7 @@ async def test_pending_tree_use_case_runs_over_unit_of_work() -> None:
         ListPendingTreeCommand,
         ListPendingTreeUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     ids = await _seed_chain()
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(ACTOR, "rest")
@@ -374,8 +373,7 @@ async def test_retry_use_case_raises_not_found_for_missing_entry() -> None:
         RetryPendingEntryCommand,
         RetryPendingEntryUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     board_id = await _seed_board()
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(ACTOR, "rest")

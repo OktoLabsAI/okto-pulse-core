@@ -8,7 +8,6 @@ time while core keeps a bundled fallback.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 
@@ -25,24 +24,6 @@ class McpInstructionProvider(Protocol):
 
 
 @dataclass(frozen=True)
-class StaticFileMcpInstructionProvider:
-    """Instruction provider backed by a file confined to ``base_dir``."""
-
-    provider_id: str
-    base_dir: Path
-    relative_path: str
-
-    def load_instructions(self) -> str:
-        base = self.base_dir.resolve()
-        candidate = (base / self.relative_path).resolve()
-        try:
-            candidate.relative_to(base)
-        except ValueError:
-            return ""
-        return candidate.read_text(encoding="utf-8") if candidate.exists() else ""
-
-
-@dataclass(frozen=True)
 class StaticMcpInstructionProvider:
     """Instruction provider backed by an in-memory string."""
 
@@ -55,6 +36,5 @@ class StaticMcpInstructionProvider:
 
 __all__ = [
     "McpInstructionProvider",
-    "StaticFileMcpInstructionProvider",
     "StaticMcpInstructionProvider",
 ]

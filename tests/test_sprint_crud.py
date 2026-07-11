@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from sqlalchemy.orm.attributes import flag_modified
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     Card,

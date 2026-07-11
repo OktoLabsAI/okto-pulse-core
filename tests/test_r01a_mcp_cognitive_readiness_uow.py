@@ -24,8 +24,7 @@ from okto_pulse.core.application.use_cases import (
     ListCognitiveReadinessItemsUseCase,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
-from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 ACTOR = ActorContext("fu3-mcp-agent", "mcp")
 
 
@@ -55,7 +54,7 @@ def _service():
 
 async def _seed_board(board_id: str) -> None:
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     async with get_session_factory()() as db:
         if await db.get(Board, board_id) is None:

@@ -6,7 +6,6 @@ must not import the embedded graph runtime or any Community adapter.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.kg.cognitive_policy import (
@@ -16,14 +15,6 @@ from okto_pulse.core.kg.cognitive_policy import (
 
 SCHEMA_VERSION = "0.3.7"
 
-
-@dataclass(frozen=True)
-class BoardGraphHandle:
-    """Compatibility DTO returned by board graph bootstrap implementations."""
-
-    board_id: str
-    path: Any
-    schema_version: str
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
 # `layer` is a closed enum validated by the worker/agent and the layer_isolation
@@ -199,35 +190,28 @@ def resolve_relationship_endpoint_pair(
     )
 
 
-_COMMON_NODE_ATTRS = """
-    id STRING PRIMARY KEY,
-    title STRING,
-    content STRING,
-    context STRING,
-    justification STRING,
-    source_artifact_ref STRING,
-    graph_layer STRING,
-    maturity_status STRING,
-    source_session_id STRING,
-    created_at TIMESTAMP,
-    created_by_agent STRING,
-    source_confidence DOUBLE,
-    relevance_score DOUBLE,
-    query_hits INT64,
-    last_queried_at STRING,
-    last_recomputed_at STRING,
-    priority_boost DOUBLE,
-    superseded_by STRING,
-    superseded_at TIMESTAMP,
-    revocation_reason STRING,
-    human_curated BOOLEAN,
-    embedding DOUBLE[384]
-""".strip()
-
-STABLE_NODE_PROPERTIES: tuple[str, ...] = tuple(
-    line.strip().split()[0]
-    for line in _COMMON_NODE_ATTRS.splitlines()
-    if line.strip() and line.strip().split()[0] != "embedding"
+STABLE_NODE_PROPERTIES: tuple[str, ...] = (
+    "id",
+    "title",
+    "content",
+    "context",
+    "justification",
+    "source_artifact_ref",
+    "graph_layer",
+    "maturity_status",
+    "source_session_id",
+    "created_at",
+    "created_by_agent",
+    "source_confidence",
+    "relevance_score",
+    "query_hits",
+    "last_queried_at",
+    "last_recomputed_at",
+    "priority_boost",
+    "superseded_by",
+    "superseded_at",
+    "revocation_reason",
+    "human_curated",
 )
 
 RELEVANCE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -259,43 +243,12 @@ LEGACY_NODE_COLUMNS: tuple[str, ...] = (
 )
 
 
-def _build_node_ddl(node_type: str) -> str:
-    return f"CREATE NODE TABLE IF NOT EXISTS {node_type} ({_COMMON_NODE_ATTRS})"
-
-
-def _build_rel_ddl(rel_name: str, from_type: str, to_type: str) -> str:
-    extra_cols = ", ".join(f"{name} {dtype}" for name, dtype in EDGE_METADATA_COLUMNS)
-    return (
-        f"CREATE REL TABLE IF NOT EXISTS {rel_name} "
-        f"(FROM {from_type} TO {to_type}, "
-        f"confidence DOUBLE, "
-        f"created_by_session_id STRING, "
-        f"created_at TIMESTAMP, "
-        f"{extra_cols})"
-    )
-
-
-def _build_multi_rel_ddl(rel_name: str, pairs: tuple[tuple[str, str], ...]) -> str:
-    """Build a single REL TABLE statement covering many endpoint pairs."""
-    extra_cols = ", ".join(f"{name} {dtype}" for name, dtype in EDGE_METADATA_COLUMNS)
-    pair_clauses = ", ".join(f"FROM {from_type} TO {to_type}" for from_type, to_type in pairs)
-    return (
-        f"CREATE REL TABLE IF NOT EXISTS {rel_name} "
-        f"({pair_clauses}, "
-        f"confidence DOUBLE, "
-        f"created_by_session_id STRING, "
-        f"created_at TIMESTAMP, "
-        f"{extra_cols})"
-    )
-
-
 def vector_index_name(node_type: str) -> str:
     """Canonical HNSW index name per node type."""
     return f"{node_type.lower()}_embedding_idx"
 
 
 __all__ = [
-    "BoardGraphHandle",
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
     "HUMAN_CURATED_COLUMNS",
@@ -310,10 +263,6 @@ __all__ = [
     "SCHEMA_VERSION",
     "STABLE_NODE_PROPERTIES",
     "VECTOR_INDEX_TYPES",
-    "_COMMON_NODE_ATTRS",
-    "_build_multi_rel_ddl",
-    "_build_node_ddl",
-    "_build_rel_ddl",
     "relationship_endpoint_pairs",
     "resolve_relationship_endpoint_pair",
     "stable_rel_type_entries",

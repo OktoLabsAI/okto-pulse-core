@@ -21,9 +21,9 @@ import pytest
 from sqlalchemy import select
 
 from okto_pulse.core.kg.cypher_templates import layer_filter_clause
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
-from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
-from okto_pulse.core.models.db import Board, ConsolidationQueue, Spec
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
+from okto_pulse.core.application.processors.consolidation import _process_queue_entry
+from sqlalchemy_test_models import Board, ConsolidationQueue, Spec
 
 
 # Estados não-finais: por CANONICAL_STATUS_BY_ARTIFACT_TYPE["spec"] == {"done"},

@@ -32,20 +32,15 @@ import logging
 import re
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.discovery_params_schema import (
     DISCOVERY_PARAM_TYPE_ENTITY_SELECTOR,
     DISCOVERY_PARAM_TYPE_SPEC_CHILD_SELECTOR,
     normalize_discovery_params_schema,
 )
-from okto_pulse.core.models.db import (
-    ActivityLog,
-    Card,
-    Comment,
-    DiscoveryIntent,
-    Spec,
+from okto_pulse.core.ports.discovery_execution import (
+    DiscoveryCardFact,
+    DiscoverySpecFact,
+    get_discovery_execution_read_port,
 )
 from okto_pulse.core.services.discovery_selector_catalog import (
     SPEC_CHILD_REFERENCE_GROUPS,
@@ -101,10 +96,10 @@ class ValidatedSpecChildSelector:
 
 
 async def execute_intent(
-    db: AsyncSession,
+    db: Any,
     user_id: str,
     board_id: str,
-    intent: DiscoveryIntent,
+    intent: Any,
     params: dict[str, Any],
 ) -> dict[str, Any]:
     """Dispatch an intent to its real implementation.
@@ -322,15 +317,17 @@ def _normalize_spec_child_selector_payload(value: Any) -> dict[str, str]:
     }
 
 
-async def _load_spec_by_id(db: AsyncSession, spec_id: str) -> Spec | None:
-    result = await db.execute(select(Spec).where(Spec.id == spec_id))
-    return result.scalar_one_or_none()
+async def _load_spec_by_id(db: Any, spec_id: str) -> DiscoverySpecFact | None:
+    return await get_discovery_execution_read_port().get_spec_by_id(
+        db,
+        spec_id=spec_id,
+    )
 
 
 async def _can_read_selector_spec(
-    db: AsyncSession,
+    db: Any,
     user_id: str,
-    spec: Spec,
+    spec: DiscoverySpecFact,
 ) -> bool:
     from okto_pulse.core.services import ShareService
 
@@ -353,7 +350,7 @@ def _child_identity_for_item(
 
 
 def _find_child_item(
-    spec: Spec,
+    spec: DiscoverySpecFact,
     *,
     child_type: SpecChildType,
     child_id: str,
@@ -377,7 +374,7 @@ def _find_child_item(
 
 
 async def _validate_spec_child_selector_param(
-    db: AsyncSession,
+    db: Any,
     *,
     user_id: str,
     board_id: str,
@@ -484,13 +481,15 @@ def _normalize_entity_selector_id(value: Any, *, expected_entity_type: str) -> s
     )
 
 
-async def _load_card_by_id(db: AsyncSession, card_id: str) -> Card | None:
-    result = await db.execute(select(Card).where(Card.id == card_id))
-    return result.scalar_one_or_none()
+async def _load_card_by_id(db: Any, card_id: str) -> DiscoveryCardFact | None:
+    return await get_discovery_execution_read_port().get_card_by_id(
+        db,
+        card_id=card_id,
+    )
 
 
 async def _validate_entity_selector_param(
-    db: AsyncSession,
+    db: Any,
     *,
     user_id: str,
     board_id: str,
@@ -540,7 +539,7 @@ async def _validate_entity_selector_param(
 
 
 async def _validate_selector_params(
-    db: AsyncSession,
+    db: Any,
     *,
     user_id: str,
     board_id: str,
@@ -675,43 +674,20 @@ _ACTION_VERBS: dict[str, str] = {
 
 
 async def _resolve_entity_titles(
-    db: AsyncSession, refs: list[tuple[str, str]]
+    db: Any, refs: list[tuple[str, str]]
 ) -> dict[tuple[str, str], str]:
     """Batch-resolve (entity_type, entity_id) → title.
 
     Avoids N+1 queries against the activity log. Unknown ids stay out of
     the dict and the caller falls back to truncated id hints.
     """
-    from okto_pulse.core.models.db import Card as _Card
-    from okto_pulse.core.models.db import Ideation as _Ideation
-    from okto_pulse.core.models.db import Refinement as _Refinement
-    from okto_pulse.core.models.db import Sprint as _Sprint
-
-    by_type: dict[str, set[str]] = {}
-    for etype, eid in refs:
-        by_type.setdefault(etype, set()).add(eid)
-
-    out: dict[tuple[str, str], str] = {}
-    models = {
-        "card": _Card,
-        "spec": Spec,
-        "ideation": _Ideation,
-        "refinement": _Refinement,
-        "sprint": _Sprint,
-    }
-    for etype, ids in by_type.items():
-        model = models.get(etype)
-        if not model or not ids:
-            continue
-        res = await db.execute(
-            select(model.id, model.title).where(model.id.in_(ids))
-        )
-        for row_id, row_title in res.all():
-            out[(etype, row_id)] = row_title or ""
-    return out
+    return await get_discovery_execution_read_port().resolve_entity_titles(
+        db,
+        refs=refs,
+    )
 
 
-async def _exec_activity_log(db: AsyncSession, board_id: str) -> dict:
+async def _exec_activity_log(db: Any, board_id: str) -> dict:
     """Discovery intent `recent_activity` — enriched (ideação 33cb4fa3).
 
     Previously rows carried just the verb (``card_moved``) and a
@@ -731,13 +707,13 @@ async def _exec_activity_log(db: AsyncSession, board_id: str) -> dict:
     transitions found in ``details`` so the modal can render the full
     delta without a round-trip.
     """
-    q = (
-        select(ActivityLog)
-        .where(ActivityLog.board_id == board_id)
-        .order_by(ActivityLog.created_at.desc())
-        .limit(50)
+    logs = list(
+        await get_discovery_execution_read_port().list_recent_activity(
+            db,
+            board_id=board_id,
+            limit=50,
+        )
     )
-    logs = list((await db.execute(q)).scalars().all())
 
     refs: list[tuple[str, str]] = []
     for a in logs:
@@ -796,7 +772,7 @@ async def _exec_activity_log(db: AsyncSession, board_id: str) -> dict:
     )
 
 
-async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
+async def _exec_blockers(db: Any, board_id: str) -> dict:
     """Discovery intent `blockers_current_sprint` — honest implementation.
 
     Ideação bf6a3766: the v1 dispatch called ``compute_blockers`` (a
@@ -816,20 +792,16 @@ async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 
     from okto_pulse.core.domain.enums import CardStatus, SprintStatus
-    from okto_pulse.core.models.db import (
-        CardDependency,
-        Sprint,
-    )
 
+    reader = get_discovery_execution_read_port()
+    sprints = await reader.list_sprints(
+        db,
+        board_id=board_id,
+    )
     active_sprints = list(
-        (
-            await db.execute(
-                select(Sprint).where(
-                    Sprint.board_id == board_id,
-                    Sprint.status == SprintStatus.ACTIVE,
-                )
-            )
-        ).scalars().all()
+        sprint
+        for sprint in sprints
+        if sprint.status == SprintStatus.ACTIVE
     )
 
     if not active_sprints:
@@ -847,29 +819,20 @@ async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
     sprint_title_by_id = {s.id: s.title for s in active_sprints}
 
     cards = list(
-        (
-            await db.execute(
-                select(Card).where(
-                    Card.board_id == board_id,
-                    Card.archived.is_(False),
-                    Card.sprint_id.in_(active_sprint_ids),
-                )
-            )
-        ).scalars().all()
+        await reader.list_cards_for_sprints(
+            db,
+            board_id=board_id,
+            sprint_ids=active_sprint_ids,
+        )
     )
     card_by_id = {c.id: c for c in cards}
 
-    deps_rows: list[CardDependency] = []
-    if cards:
-        deps_rows = list(
-            (
-                await db.execute(
-                    select(CardDependency).where(
-                        CardDependency.card_id.in_([c.id for c in cards])
-                    )
-                )
-            ).scalars().all()
+    deps_rows = list(
+        await reader.list_dependencies_for_cards(
+            db,
+            card_ids=[c.id for c in cards],
         )
+    )
     deps_by_card: dict[str, list[str]] = {}
     for d in deps_rows:
         deps_by_card.setdefault(d.card_id, []).append(d.depends_on_id)
@@ -884,11 +847,10 @@ async def _exec_blockers(db: AsyncSession, board_id: str) -> dict:
     }
     if external_dep_ids:
         external_cards = list(
-            (
-                await db.execute(
-                    select(Card).where(Card.id.in_(external_dep_ids))
-                )
-            ).scalars().all()
+            await reader.list_cards_by_ids(
+                db,
+                card_ids=tuple(external_dep_ids),
+            )
         )
         for c in external_cards:
             card_by_id[c.id] = c
@@ -1116,9 +1078,7 @@ async def _exec_query_natural(board_id: str, params: dict) -> dict:
     )
 
 
-async def _exec_card_dependencies(db: AsyncSession, params: dict) -> dict:
-    from okto_pulse.core.models.db import CardDependency
-
+async def _exec_card_dependencies(db: Any, params: dict) -> dict:
     try:
         card_id = _normalize_entity_selector_id(
             params.get("card_id"),
@@ -1128,14 +1088,14 @@ async def _exec_card_dependencies(db: AsyncSession, params: dict) -> dict:
         card_id = ""
     if not card_id:
         raise ValueError("card_id is required")
-    # dependents = cards that depend on this one
-    q = (
-        select(CardDependency, Card)
-        .join(Card, Card.id == CardDependency.card_id)
-        .where(CardDependency.depends_on_id == card_id)
-    )
     rows = []
-    for dep, card in (await db.execute(q)).all():
+    dependents = await get_discovery_execution_read_port().list_card_dependents(
+        db,
+        card_id=card_id,
+    )
+    for dependent in dependents:
+        dep = dependent.dependency
+        card = dependent.card
         rows.append(
             {
                 "id": card.id,
@@ -1166,36 +1126,37 @@ async def _exec_card_dependencies(db: AsyncSession, params: dict) -> dict:
     )
 
 
-async def _exec_my_mentions(db: AsyncSession, user_id: str, board_id: str) -> dict:
+async def _exec_my_mentions(db: Any, user_id: str, board_id: str) -> dict:
     # Match @user_id or @username in Comment.content. We keep it simple:
     # anything starting with @user_id literal. User display names aren't
     # canonical, so this is a starting point — future work tracked in the
     # discovery ideation follow-up.
     mention_token = f"@{user_id}"
-    q = (
-        select(Comment, Card)
-        .join(Card, Card.id == Comment.card_id)
-        .where(Card.board_id == board_id)
-        .where(Comment.content.contains(mention_token))
-        .order_by(Comment.created_at.desc())
-        .limit(50)
+    mentions = await get_discovery_execution_read_port().list_mentions(
+        db,
+        board_id=board_id,
+        mention_token=mention_token,
+        limit=50,
     )
     rows = []
-    for c, card in (await db.execute(q)).all():
+    for mention in mentions:
+        card = mention.card
         rows.append(
             {
-                "id": c.id,
+                "id": mention.id,
                 "type": "Mention",
                 "title": card.title,
-                "summary": (c.content or "")[:200],
+                "summary": mention.content[:200],
                 "meta": {
                     "entity_type": "card",
                     "entity_id": card.id,
                     "entity_title": card.title,
                     "card_id": card.id,
-                    "comment_id": c.id,
-                    "created_at": c.created_at.isoformat() if c.created_at else None,
-                    "author_id": c.author_id,
+                    "comment_id": mention.id,
+                    "created_at": (
+                        mention.created_at.isoformat() if mention.created_at else None
+                    ),
+                    "author_id": mention.author_id,
                 },
             }
         )
@@ -1283,16 +1244,18 @@ def _selected_child_meta(
 
 
 async def _exec_test_scenarios(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
-    intent: DiscoveryIntent,
+    intent: Any,
     params: dict,
     *,
     selector_values: dict[str, ValidatedSpecChildSelector] | None = None,
 ) -> dict:
     """Handles both coverage_for_fr (param fr_id) and scenarios_without_tasks."""
-    q = select(Spec).where(Spec.board_id == board_id)
-    specs = (await db.execute(q)).scalars().all()
+    specs = await get_discovery_execution_read_port().list_specs(
+        db,
+        board_id=board_id,
+    )
     rows: list[dict] = []
     raw_fr_id_filter = params.get("fr_id")
     fr_id_filter = raw_fr_id_filter.strip() if isinstance(raw_fr_id_filter, str) else ""
@@ -1417,7 +1380,7 @@ def _uncovered_child_row(
     }
 
 
-async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
+async def _exec_uncovered_requirements(db: Any, board_id: str) -> dict:
     """NEW aggregator (ideação d1783b03): lists spec children that have
     incomplete deterministic coverage across the specs on the board.
 
@@ -1439,13 +1402,10 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
        categoria ou filtrar "só acionáveis".
     """
     from okto_pulse.core.domain.enums import SpecStatus
-    from okto_pulse.core.models.db import Board
     from okto_pulse.core.services.analytics_service import spec_coverage_summary
 
-    board = (
-        await db.execute(select(Board).where(Board.id == board_id))
-    ).scalar_one_or_none()
-    board_settings = (board.settings or {}) if board else {}
+    reader = get_discovery_execution_read_port()
+    board_settings = await reader.get_board_settings(db, board_id=board_id)
 
     IN_FLIGHT = {
         SpecStatus.DRAFT,
@@ -1455,27 +1415,20 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
         SpecStatus.IN_PROGRESS,
     }
 
-    specs = (
-        await db.execute(
-            select(Spec).where(
-                Spec.board_id == board_id,
-                Spec.status != SpecStatus.CANCELLED,
-            )
+    specs = [
+        spec
+        for spec in await reader.list_specs(
+            db,
+            board_id=board_id,
         )
-    ).scalars().all()
+        if spec.status != SpecStatus.CANCELLED
+    ]
 
     # Spec 233eaad3: 1 query batch para cards do board + groupby spec_id —
     # evita N+1 dentro do loop e permite cancelled-card filter no
     # spec_coverage_summary (cards cancelled descobrem suas linkagens).
     from collections import defaultdict
-    all_cards = (
-        await db.execute(
-            select(Card).where(
-                Card.board_id == board_id,
-                Card.archived.is_(False),
-            )
-        )
-    ).scalars().all()
+    all_cards = await reader.list_board_cards(db, board_id=board_id)
     cards_by_spec: dict[str, list] = defaultdict(list)
     for c in all_cards:
         if c.spec_id:
@@ -1669,15 +1622,16 @@ async def _exec_uncovered_requirements(db: AsyncSession, board_id: str) -> dict:
     )
 
 
-async def _exec_supersedence_chains(db: AsyncSession, board_id: str) -> dict:
+async def _exec_supersedence_chains(db: Any, board_id: str) -> dict:
     """NEW aggregator (ideação d1783b03): walks spec.decisions JSON on every
     spec of the board, collects all entries whose supersedes_decision_id
     points to another decision (on the same spec — cross-spec chains are
     intentionally out of scope, matching the constraint expressed in
     decision_8b8139e5ba98 on the KG)."""
-    specs = (
-        await db.execute(select(Spec).where(Spec.board_id == board_id))
-    ).scalars().all()
+    specs = await get_discovery_execution_read_port().list_specs(
+        db,
+        board_id=board_id,
+    )
 
     # Flatten all decisions across specs, indexed by id (same scope as the
     # canonical supersedence constraint).

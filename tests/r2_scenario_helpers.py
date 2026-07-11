@@ -20,7 +20,7 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
     BeginConsolidationRequest,
@@ -32,12 +32,12 @@ from okto_pulse.core.kg.source_maturity import (
     MATURITY_CANONICAL_ELIGIBLE,
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
-from okto_pulse.core.models.db import Board, Card, Spec
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from sqlalchemy_test_models import Board, Card, Spec
 
 USER_ID = "user-r2-scenarios"
 WORKER_AGENT = "system:layer1_worker"

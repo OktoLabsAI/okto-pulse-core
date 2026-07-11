@@ -38,7 +38,7 @@ async def compute_tick_catch_up_next_run(
 ) -> datetime | None:
     """Read the last persisted tick and return the scheduler next_run_time."""
 
-    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.ports.relational_runtime import get_session_factory
     from okto_pulse.core.ports.relational_effects import (
         get_relational_effects_port,
     )
@@ -62,7 +62,7 @@ async def emit_daily_tick(
 ) -> None:
     """Emit KGDailyTick events when this replica owns the lease."""
 
-    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.ports.relational_runtime import get_session_factory
     from okto_pulse.core.ports.coordination import (
         CoordinationProviderMissing,
         get_lease_provider,

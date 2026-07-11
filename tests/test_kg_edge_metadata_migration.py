@@ -14,9 +14,9 @@ import os
 
 import pytest
 
-import okto_pulse.core.kg.schema as kg_schema
-from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
-from okto_pulse.core.kg.schema import (
+import kg_schema_testing as kg_schema
+from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
+from kg_schema_testing import (
     EDGE_LAYERS,
     EDGE_METADATA_COLUMNS,
     REL_TYPES,

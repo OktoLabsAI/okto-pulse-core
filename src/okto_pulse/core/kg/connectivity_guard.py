@@ -1021,6 +1021,7 @@ def _snapshot_existing_ref(ref: Any) -> KGNodeRef:
     node_id = (
         _get_field(ref, "ref_id", None)
         or _get_field(ref, "node_id", None)
+        or _get_field(ref, "graph_node_id", None)
         or _get_field(ref, "kuzu_node_id", None)
         or _get_field(ref, "id", "")
     )

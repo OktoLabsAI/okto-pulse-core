@@ -1,7 +1,7 @@
 [project]
 name = "okto-pulse-core"
 version = "0.3.0"
-description = "Okto Pulse Core — spec-driven project management engine with MCP support for AI agents"
+description = "Okto Pulse Core - transport-neutral domain and application engine"
 requires-python = ">=3.11"
 license = {text = "Elastic-2.0"}
 authors = [
@@ -17,30 +17,12 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Office/Business :: Scheduling",
-    "Framework :: FastAPI",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    # 0.137.0 regrediu include_router: o guard de path vazio passou a rodar
-    # contra a sub-rota sem prefixo, quebrando rotas de coleção @router.post("")
-    # sob prefixo (ex.: create_board) com "Prefix and path cannot be both empty".
-    # Corrigido na 0.137.1. Exclui apenas a release ruim; demais versões OK.
-    "fastapi>=0.109.0,!=0.137.0,<1.0.0",
     "pydantic>=2.5.0,<2.14",
-    "pydantic-core>=2.14.0,<2.47",
     "pydantic-settings>=2.1.0,<3.0.0",
-    "python-multipart>=0.0.6,<1.0.0",
-    "sqlalchemy[asyncio]>=2.0.0,<3.0.0",
-    "aiosqlite>=0.19.0,<1.0.0",
-    # asyncpg removed in R05-E (spec d9d30831): the Postgres async driver is a
-    # future SaaS relational adapter with ZERO import in src/okto_pulse/core and
-    # no core default requires it. It is NOT moved to Community in this phase.
-    # The removal is enforced by the R05-E dependency conformance auditor
-    # (core.application.boundary.dependency_conformance) against this manifest,
-    # uv.lock, the source tree and the installed wheel.
-    "authlib>=1.6.5,<1.7.0",
-    "mcp>=1.0.0,<2.0.0",
-    "numpy>=1.26.0,<3.0.0",
+    "PyYAML>=6.0.0,<7.0.0",
 ]
 
 [project.scripts]
@@ -67,7 +49,7 @@ packages = ["src/okto_pulse"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/okto_pulse/core/mcp/agent_instructions.md" = "okto_pulse/core/mcp/agent_instructions.md"
-"src/okto_pulse/core/kg/workers/tech_entities.yml" = "okto_pulse/core/kg/workers/tech_entities.yml"
+"src/okto_pulse/core/application/processors/tech_entities.yml" = "okto_pulse/core/application/processors/tech_entities.yml"
 "src/okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md" = "okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md"
 "src/okto_pulse/core/mcp/resources/workflows/stories.md" = "okto_pulse/core/mcp/resources/workflows/stories.md"
 "src/okto_pulse/core/mcp/resources/workflows/ideations.md" = "okto_pulse/core/mcp/resources/workflows/ideations.md"

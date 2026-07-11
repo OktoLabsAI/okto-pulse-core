@@ -6,7 +6,6 @@ don't need to inherit — they just need to implement the methods.
 
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
 from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
-from okto_pulse.core.kg.interfaces.board_graph_runtime import BoardGraphRuntime
 from okto_pulse.core.kg.interfaces.board_source_reader import (
     BoardSourceReader,
     BoardSourceRow,
@@ -26,12 +25,9 @@ from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_lifecycle import (
     GraphHandle,
     GraphLifecycle,
+    GraphLifecycleStepResult,
     PurgeReport,
     RebuildReport,
-)
-from okto_pulse.core.kg.interfaces.graph_path_resolver import (
-    GraphPathResolver,
-    GraphStorageState,
 )
 from okto_pulse.core.kg.interfaces.graph_recovery import (
     GraphRecovery,
@@ -49,6 +45,7 @@ from okto_pulse.core.kg.interfaces.graph_schema_manager import (
 )
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters, SemanticGraphStore
 from okto_pulse.core.kg.interfaces.graph_transaction import (
+    GraphStatementResult,
     GraphTransaction,
     GraphTransactionScope,
 )
@@ -76,6 +73,7 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditNamespace,
 )
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 from okto_pulse.core.kg.interfaces.registry import (
     KGProviderRegistry,
     configure_kg_registry,
@@ -86,7 +84,6 @@ from okto_pulse.core.kg.interfaces.registry import (
 __all__ = [
     "AuthContext",
     "AuditRepository",
-    "BoardGraphRuntime",
     "BoardSourceReader",
     "BoardSourceRow",
     "CacheBackend",
@@ -97,14 +94,14 @@ __all__ = [
     "EventBus",
     "GraphHandle",
     "GraphLifecycle",
-    "GraphPathResolver",
+    "GraphLifecycleStepResult",
     "GraphRecovery",
     "GraphPurgeResult",
     "GraphRuntimeState",
     "GraphRuntimeStore",
     "GraphSchemaManager",
-    "GraphStorageState",
     "GraphStorageFootprint",
+    "GraphStatementResult",
     "GraphTransaction",
     "GraphTransactionScope",
     "GlobalDiscoveryRuntime",
@@ -131,6 +128,7 @@ __all__ = [
     "SchemaValidationResult",
     "SemanticGraphStore",
     "SessionStore",
+    "StorageRef",
     "SourceReadError",
     "SourceReadFailure",
     "SourceUnavailableError",

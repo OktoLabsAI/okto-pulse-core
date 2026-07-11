@@ -14,9 +14,13 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     PermissionDeniedError,
     commit,
-    session_of,
+)
+from okto_pulse.core.ports.application_services import (
+    ApplicationServiceCatalog,
+    KnowledgeGraphOperations,
 )
 from okto_pulse.core.ports.scheduler import SchedulerControl
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 
 @dataclass(frozen=True)
@@ -34,25 +38,28 @@ class BugNotFoundError(EntityNotFoundError):
         super().__init__("bug", bug_id)
 
 
-async def _require_board_for_actor(session: Any, board_id: str, actor: ActorContext) -> Any:
-    from okto_pulse.core.services.main import BoardService
-
-    board = await BoardService(session).get_board(board_id, actor.actor_id)
+async def _require_board_for_actor(
+    services: ApplicationServiceCatalog,
+    board_id: str,
+    actor: ActorContext,
+) -> Any:
+    board = await services.boards.get_board(board_id, actor.actor_id)
     if not board:
         raise BoardNotFoundError(board_id)
     return board
 
 
-async def _require_board_access(session: Any, board_id: str, actor: ActorContext) -> None:
-    from okto_pulse.core.services.main import ShareService
-    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
-
-    board = await resolve_unit_of_work_factory().wrap(session).boards.get(board_id)
+async def _require_board_access(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> None:
+    board = await uow.boards.get(board_id)
     if board is None:
         raise BoardNotFoundError(board_id)
     if getattr(board, "owner_id", None) == actor.actor_id:
         return
-    perm = await ShareService(session).get_user_permission(board_id, actor.actor_id)
+    perm = await uow.services.shares.get_user_permission(board_id, actor.actor_id)
     if perm is None:
         raise PermissionDeniedError(
             "Access denied: user does not have access to this board"
@@ -93,13 +100,11 @@ class UpdateResourceGateBoardSettingsCommand:
 
 class GetSpecResourceTaskCoverageUseCase:
     async def execute(
-        self, command: ResourceGateTaskCoverageCommand, *, actor: ActorContext, uow: Any
+        self, command: ResourceGateTaskCoverageCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.resource_gate import ResourceGateService
 
-        session = session_of(uow)
-        board = await _require_board_for_actor(session, command.board_id, actor)
-        service = ResourceGateService(session)
+        board = await _require_board_for_actor(uow.services, command.board_id, actor)
+        service = uow.services.resource_gate
         data = await service.validate_spec_resource_task_coverage(
             command.board_id,
             command.spec_id,
@@ -110,14 +115,12 @@ class GetSpecResourceTaskCoverageUseCase:
 
 class GetResourceGateSummaryUseCase:
     async def execute(
-        self, command: ResourceGateEntityCommand, *, actor: ActorContext, uow: Any
+        self, command: ResourceGateEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.resource_gate import ResourceGateService
 
-        session = session_of(uow)
-        await _require_board_for_actor(session, command.board_id, actor)
+        await _require_board_for_actor(uow.services, command.board_id, actor)
         return DataResult(
-            await ResourceGateService(session).get_summary(
+            await uow.services.resource_gate.get_summary(
                 command.board_id, command.entity_type, command.entity_id
             )
         )
@@ -125,14 +128,12 @@ class GetResourceGateSummaryUseCase:
 
 class GetEffectiveResourcesUseCase:
     async def execute(
-        self, command: ResourceGateEntityCommand, *, actor: ActorContext, uow: Any
+        self, command: ResourceGateEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.resource_gate import ResourceGateService
 
-        session = session_of(uow)
-        await _require_board_for_actor(session, command.board_id, actor)
+        await _require_board_for_actor(uow.services, command.board_id, actor)
         return DataResult(
-            await ResourceGateService(session).get_effective_resources(
+            await uow.services.resource_gate.get_effective_resources(
                 command.board_id, command.entity_type, command.entity_id
             )
         )
@@ -140,13 +141,11 @@ class GetEffectiveResourcesUseCase:
 
 class MarkResourceNotApplicableUseCase:
     async def execute(
-        self, command: MarkResourceNotApplicableCommand, *, actor: ActorContext, uow: Any
+        self, command: MarkResourceNotApplicableCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.resource_gate import ResourceGateService
 
-        session = session_of(uow)
-        await _require_board_for_actor(session, command.board_id, actor)
-        data = await ResourceGateService(session).mark_not_applicable(
+        await _require_board_for_actor(uow.services, command.board_id, actor)
+        data = await uow.services.resource_gate.mark_not_applicable(
             command.board_id,
             command.entity_type,
             command.entity_id,
@@ -161,13 +160,11 @@ class MarkResourceNotApplicableUseCase:
 
 class ClearResourceNotApplicableUseCase:
     async def execute(
-        self, command: ClearResourceNotApplicableCommand, *, actor: ActorContext, uow: Any
+        self, command: ClearResourceNotApplicableCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.resource_gate import ResourceGateService
 
-        session = session_of(uow)
-        await _require_board_for_actor(session, command.board_id, actor)
-        data = await ResourceGateService(session).clear_not_applicable(
+        await _require_board_for_actor(uow.services, command.board_id, actor)
+        data = await uow.services.resource_gate.clear_not_applicable(
             command.board_id,
             command.entity_type,
             command.entity_id,
@@ -185,12 +182,9 @@ class UpdateResourceGateBoardSettingsUseCase:
         command: UpdateResourceGateBoardSettingsCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
-        from okto_pulse.core.services.main import update_resource_gate_board_settings
-
-        settings = await update_resource_gate_board_settings(
-            session_of(uow),
+        settings = await uow.services.update_resource_gate_board_settings(
             command.board_id,
             actor.actor_id,
             require_spec_resource_task_coverage=(
@@ -218,22 +212,17 @@ class PutRuntimeSettingsCommand:
 
 class GetRuntimeSettingsUseCase:
     async def execute(
-        self, command: GetRuntimeSettingsCommand, *, actor: ActorContext, uow: Any
+        self, command: GetRuntimeSettingsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.settings_service import get_runtime_settings
-
-        return DataResult(await get_runtime_settings(session_of(uow)))
+        return DataResult(await uow.services.get_runtime_settings())
 
 
 class PutRuntimeSettingsUseCase:
     async def execute(
-        self, command: PutRuntimeSettingsCommand, *, actor: ActorContext, uow: Any
+        self, command: PutRuntimeSettingsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.settings_service import put_runtime_settings
-
         return DataResult(
-            await put_runtime_settings(
-                session_of(uow),
+            await uow.services.put_runtime_settings(
                 command.values,
                 actor_id=actor.actor_id,
                 migration_plan_ref=command.migration_plan_ref,
@@ -253,13 +242,10 @@ class GetLineageGraphCommand:
 
 class GetLineageGraphUseCase:
     async def execute(
-        self, command: GetLineageGraphCommand, *, actor: ActorContext, uow: Any
+        self, command: GetLineageGraphCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.traceability import build_lineage_graph
-
         return DataResult(
-            await build_lineage_graph(
-                session_of(uow),
+            await uow.services.build_lineage_graph(
                 command.board_id,
                 entity_type=command.entity_type,
                 entity_id=command.entity_id,
@@ -285,16 +271,14 @@ class EvaluateBugCognitiveClosureByBugIdUseCase:
         command: EvaluateBugCognitiveClosureByBugIdCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
         from okto_pulse.core.application.use_cases.cognitive_readiness import (
             EvaluateBugCognitiveClosureCommand,
             EvaluateBugCognitiveClosureUseCase,
         )
-        from okto_pulse.core.services.main import CardService
 
-        session = session_of(uow)
-        card = await CardService(session).get_card(command.bug_id)
+        card = await uow.services.cards.get_card(command.bug_id)
         board_id = getattr(card, "board_id", None) if card is not None else None
         if not board_id:
             raise BugNotFoundError(command.bug_id)
@@ -347,14 +331,11 @@ class RecordCognitiveSkipUseCase:
         return build_cognitive_readiness_service()
 
     async def execute(
-        self, command: CognitiveSkipCommand, *, actor: ActorContext, uow: Any
+        self, command: CognitiveSkipCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.main import cognitive_enforcement_active
-
-        session = session_of(uow)
         service = self._readiness_service()
-        item = await service.record_cognitive_skip(
-            session,
+        item = await uow.services.kg.record_cognitive_skip(
+            service,
             board_id=command.board_id,
             source_ref=command.source_ref,
             reason_code=command.reason_code,
@@ -365,13 +346,15 @@ class RecordCognitiveSkipUseCase:
             revisit_at=command.revisit_at,
             kg_generation_id=command.kg_generation_id,
         )
-        verdict = await service.evaluate_artifact(
-            session,
+        verdict = await uow.services.kg.evaluate_cognitive_readiness(
+            service,
             board_id=command.board_id,
             source_ref=command.source_ref,
             kg_generation_id=command.kg_generation_id,
         )
-        enforcement_active = await cognitive_enforcement_active(session, command.board_id)
+        enforcement_active = await uow.services.kg.cognitive_enforcement_active(
+            command.board_id
+        )
         return DataResult(
             {
                 "item": item,
@@ -395,27 +378,26 @@ class ClearCognitiveSkipUseCase:
         return build_cognitive_readiness_service()
 
     async def execute(
-        self, command: CognitiveClearCommand, *, actor: ActorContext, uow: Any
+        self, command: CognitiveClearCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.main import cognitive_enforcement_active
-
-        session = session_of(uow)
         service = self._readiness_service()
-        item = await service.clear_cognitive_skip(
-            session,
+        item = await uow.services.kg.clear_cognitive_skip(
+            service,
             board_id=command.board_id,
             source_ref=command.source_ref,
             actor=actor.actor_id,
             actor_is_human=True,
             kg_generation_id=command.kg_generation_id,
         )
-        verdict = await service.evaluate_artifact(
-            session,
+        verdict = await uow.services.kg.evaluate_cognitive_readiness(
+            service,
             board_id=command.board_id,
             source_ref=command.source_ref,
             kg_generation_id=command.kg_generation_id,
         )
-        enforcement_active = await cognitive_enforcement_active(session, command.board_id)
+        enforcement_active = await uow.services.kg.cognitive_enforcement_active(
+            command.board_id
+        )
         return DataResult(
             {
                 "item": item,
@@ -449,18 +431,11 @@ class GetCognitiveReadinessMetricsUseCase:
         command: CognitiveReadinessMetricsCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
-        from okto_pulse.core.services.application_kg import (
-            build_cognitive_action_center_read_model,
-        )
-
-        read_model = build_cognitive_action_center_read_model(
-            self._readiness_service()
-        )
         return DataResult(
-            await read_model.metrics(
-                session_of(uow),
+            await uow.services.kg.cognitive_readiness_metrics(
+                self._readiness_service(),
                 board_id=command.board_id,
                 kg_generation_id=command.kg_generation_id,
             )
@@ -482,22 +457,14 @@ class GetCognitiveEffectivenessInventoryUseCase:
         command: CognitiveEffectivenessInventoryCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
-        from okto_pulse.core.services.cognitive_effectiveness_service import (
-            build_cognitive_effectiveness_inventory,
-        )
-        from okto_pulse.core.services.kg_health_service import get_kg_health
-
-        session = session_of(uow)
-        health = await get_kg_health(
+        health = await uow.services.kg.health(
             command.board_id,
-            session,
             scheduler_control=command.scheduler_control,
         )
         return DataResult(
-            await build_cognitive_effectiveness_inventory(
-                session,
+            await uow.services.kg.cognitive_effectiveness_inventory(
                 command.board_id,
                 artifact_id=command.artifact_id,
                 include_candidate_logs=command.include_candidate_logs,
@@ -525,15 +492,11 @@ class CanonicalDebtRetryCommand:
 
 class ListCanonicalDebtUseCase:
     async def execute(
-        self, command: CanonicalDebtListCommand, *, actor: ActorContext, uow: Any
+        self, command: CanonicalDebtListCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.canonical_debt_service import list_canonical_debt
-
-        session = session_of(uow)
-        await _require_board_access(session, command.board_id, actor)
+        await _require_board_access(uow, command.board_id, actor)
         return DataResult(
-            await list_canonical_debt(
-                session,
+            await uow.services.kg.list_canonical_debt(
                 board_id=command.board_id,
                 artifact_type=command.artifact_type,
                 state=command.state,
@@ -545,23 +508,15 @@ class ListCanonicalDebtUseCase:
 
 class RetryCanonicalDebtUseCase:
     async def execute(
-        self, command: CanonicalDebtRetryCommand, *, actor: ActorContext, uow: Any
+        self, command: CanonicalDebtRetryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.canonical_debt_service import (
-            schedule_canonical_debt_retry,
-        )
-        from okto_pulse.core.services.kg_health_service import get_kg_health
-
-        session = session_of(uow)
-        await _require_board_access(session, command.board_id, actor)
-        health = await get_kg_health(
+        await _require_board_access(uow, command.board_id, actor)
+        health = await uow.services.kg.health(
             command.board_id,
-            session,
             scheduler_control=command.scheduler_control,
         )
         return DataResult(
-            await schedule_canonical_debt_retry(
-                session,
+            await uow.services.kg.schedule_canonical_debt_retry(
                 board_id=command.board_id,
                 debt_id=command.debt_id,
                 actor_id=actor.actor_id,
@@ -596,15 +551,10 @@ class ListCanonicalPartitionIntegrityUseCase:
         command: CanonicalPartitionListCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
-        from okto_pulse.core.services.application_kg import (
-            list_canonical_partition_integrity,
-        )
-
         return DataResult(
-            await list_canonical_partition_integrity(
-                session_of(uow),
+            await uow.services.kg.list_canonical_partition_integrity(
                 board_id=command.board_id,
                 reason_code=command.reason_code,
                 graph_layer=command.graph_layer,
@@ -623,15 +573,12 @@ class GetCanonicalPartitionIntegrityDetailUseCase:
         command: CanonicalPartitionDetailCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
-        from okto_pulse.core.services.application_kg import (
-            get_canonical_partition_integrity_detail,
-        )
-
         return DataResult(
-            await get_canonical_partition_integrity_detail(
-                session_of(uow), board_id=command.board_id, node_id=command.node_id
+            await uow.services.kg.canonical_partition_integrity_detail(
+                board_id=command.board_id,
+                node_id=command.node_id,
             )
         )
 
@@ -649,15 +596,10 @@ class ListDigestLayerMismatchUseCase:
         command: DigestLayerMismatchListCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
-        from okto_pulse.core.services.application_kg import (
-            list_digest_layer_mismatches,
-        )
-
         return DataResult(
-            await list_digest_layer_mismatches(
-                session_of(uow),
+            await uow.services.kg.list_digest_layer_mismatches(
                 board_id=command.board_id,
                 limit=command.limit,
                 offset=command.offset,
@@ -680,18 +622,19 @@ class RunOrphanBackfillUseCase:
         self._health_reader = health_reader
         self._reconciler_factory = reconciler_factory
 
-    async def _get_health(self, command: OrphanBackfillCommand, session: Any) -> dict:
+    async def _get_health(
+        self,
+        command: OrphanBackfillCommand,
+        kg: KnowledgeGraphOperations,
+    ) -> dict:
         if self._health_reader is not None:
-            return await self._health_reader(
+            return await kg.invoke_health_reader(
+                self._health_reader,
                 command.board_id,
-                session,
                 scheduler_control=command.scheduler_control,
             )
-        from okto_pulse.core.services.kg_health_service import get_kg_health
-
-        return await get_kg_health(
+        return await kg.health(
             command.board_id,
-            session,
             scheduler_control=command.scheduler_control,
         )
 
@@ -705,11 +648,11 @@ class RunOrphanBackfillUseCase:
         return create_orphan_backfill_reconciler()
 
     async def execute(
-        self, command: OrphanBackfillCommand, *, actor: ActorContext, uow: Any
+        self, command: OrphanBackfillCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.application_kg import max_orphan_sample_limit
 
-        health = await self._get_health(command, session_of(uow))
+        health = await self._get_health(command, uow.services.kg)
         state = str(health.get("overall_state") or health.get("graph_state") or "")
         if state in {"recovery_needed", "quarantined"}:
             return DataResult(

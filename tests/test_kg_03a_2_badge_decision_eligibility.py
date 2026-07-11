@@ -27,8 +27,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.router import api_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api.router import api_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.kg.cognitive_badge_resolver import (
     CognitiveBadgeReason,
     ELIGIBLE_ENTITY_TYPES,

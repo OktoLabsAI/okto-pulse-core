@@ -37,16 +37,15 @@ from r2_scenario_helpers import (
 
 from okto_pulse.core.kg.canonical_stale_reconciler import reconcile_stale_canonical
 from okto_pulse.core.kg.cypher_templates import layer_filter_clause
-from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
-from okto_pulse.core.kg.global_discovery.schema import (
+from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
+from global_graph_testing import (
     bootstrap_global_discovery,
     open_global_connection,
     reset_global_discovery_runtime_for_tests,
 )
-from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
-    RealBoardGraphPathResolverForTests,
     RealBoardGraphTransactionForTests,
     configure_test_kg_registry,
 )
@@ -57,7 +56,6 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
         graph_transaction=RealBoardGraphTransactionForTests(),
-        graph_path_resolver=RealBoardGraphPathResolverForTests(),
     )
 
 
@@ -90,11 +88,11 @@ async def _digest_node_via_gd_worker(db_factory, board_id, node_id, node_type) -
             payload={"session_id": session_id, "nodes_added": 1},
         ))
         await db.commit()
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 async def _drain_gd_worker(db_factory) -> int:
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 def _digest_layer(board_id, node_id) -> str | None:

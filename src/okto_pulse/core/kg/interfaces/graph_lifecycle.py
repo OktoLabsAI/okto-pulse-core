@@ -1,26 +1,21 @@
-"""GraphLifecycle port (spec #06, tr_9ce8349f).
-
-Owns open/close/rebuild/purge of a board's graph (including lock/quarantine
-handling) WITHOUT exposing ``kg.schema.close_all_connections`` to consumers.
-Async: the contract is the boundary; edition adapters run the underlying
-runtime calls. open/rebuild/purge return structured reports (status / evidence
-/ reason) so consumers never inspect raw locators or handles.
-"""
+"""Semantic lifecycle port for edition-owned graph storage."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
+
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 
 
 @dataclass(frozen=True)
 class GraphHandle:
-    """Result of opening a board graph (expresses lock/quarantine state)."""
+    """Typed result of making a board graph available."""
 
     board_id: str
-    path: Any
+    storage_ref: StorageRef
     opened: bool
-    backend: str
+    status: str
     locked: bool
     quarantined: bool
 
@@ -42,8 +37,16 @@ class PurgeReport:
     board_id: str
     status: str  # "purged" | "noop"
     reason: str
-    affected_paths: tuple[str, ...] = field(default_factory=tuple)
+    affected_storage_refs: tuple[StorageRef, ...] = ()
     quarantined: bool = False
+
+
+@dataclass(frozen=True)
+class GraphLifecycleStepResult:
+    """Typed result for one durability step in the safe-write policy."""
+
+    ok: bool
+    detail: str | None = None
 
 
 @runtime_checkable
@@ -53,21 +56,26 @@ class GraphLifecycle(Protocol):
         ...
 
     async def close(self, board_id: str | None = None) -> None:
-        """Release connections so the storage dir can be moved/removed.
-
-        ``board_id=None`` closes the global singleton and every pooled
-        per-board connection (replaces close_all_connections).
-        """
+        """Release active runtime resources for one board or all boards."""
         ...
 
     async def rebuild(self, board_id: str) -> RebuildReport:
         """Recycle the board's graph handle (release + re-ensure).
 
-        Connection-level rebuild primitive; the full data-rebuild orchestration
+        Runtime-session rebuild primitive; the full data-rebuild orchestration
         (kg rebuild) consumes this primitive rather than duplicating it.
         """
         ...
 
     async def purge(self, board_id: str, *, reason: str) -> PurgeReport:
         """Quarantine-then-clear the board's graph storage."""
+        ...
+
+    def apply_step(
+        self,
+        board_id: str,
+        graph_type: str,
+        step: str,
+    ) -> GraphLifecycleStepResult:
+        """Apply one named durability step without exposing driver primitives."""
         ...

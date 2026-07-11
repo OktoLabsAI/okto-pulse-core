@@ -34,6 +34,8 @@ mutation, then return the projected ``to_response`` — exactly as the legacy
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -41,40 +43,36 @@ from okto_pulse.core.application.use_cases.base import (
     ConflictError,
     EntityNotFoundError,
     commit,
-    session_of,
 )
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.models import ArchitectureDesignCreate
 from okto_pulse.core.services.application_schemas import (
     ArchitectureDesignUpdate,
     ArchitectureDiagramPayloadResponse,
 )
-from okto_pulse.core.services import (
-    CardService,
-    IdeationService,
-    RefinementService,
-    SpecService,
-)
 from okto_pulse.core.services.architecture import (
-    ArchitectureDesignRepository,
-    ArchitectureDiagramStore,
-    ArchitecturePropagationService,
     stable_architecture_finding_key,
 )
 
 
-async def _resolve_parent(session: Any, parent_type: str, parent_id: str) -> Any:
+async def _resolve_parent(
+    services: ApplicationServiceCatalog,
+    parent_type: str,
+    parent_id: str,
+) -> Any:
     """Fetch the architecture parent via the existing service ``get_*`` reader,
     raising ``EntityNotFoundError(parent_type, …)`` when it is missing — the
     transport-free equivalent of the legacy ``_ensure_parent`` (a bare
     ``db.get(model, id)`` → 404 ``"{parent_type} not found"``). Returns the parent
     so the spec-lock gate can reuse it without a second fetch."""
     if parent_type == "ideation":
-        parent = await IdeationService(session).get_ideation(parent_id)
+        parent = await services.ideations.get_ideation(parent_id)
     elif parent_type == "refinement":
-        parent = await RefinementService(session).get_refinement(parent_id)
+        parent = await services.refinements.get_refinement(parent_id)
     elif parent_type == "spec":
-        parent = await SpecService(session).get_spec(parent_id)
+        parent = await services.specs.get_spec(parent_id)
     elif parent_type == "card":
-        parent = await CardService(session).get_card(parent_id)
+        parent = await services.cards.get_card(parent_id)
     else:  # pragma: no cover - parent_type is a fixed literal per endpoint
         raise ValueError(f"unsupported architecture parent type: {parent_type}")
     if parent is None:
@@ -125,13 +123,12 @@ class ListArchitectureUseCase:
     ``to_summary`` — the ``select`` and the projection stay in the repository."""
 
     async def execute(
-        self, command: ListArchitectureCommand, *, actor: ActorContext, uow: Any
+        self, command: ListArchitectureCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListArchitectureResult:
-        session = session_of(uow)
-        parent = await _resolve_parent(session, command.parent_type, command.parent_id)
+        parent = await _resolve_parent(uow.services, command.parent_type, command.parent_id)
         if command.board_id and getattr(parent, "board_id", None) != command.board_id:
             raise EntityNotFoundError(command.parent_type, command.parent_id)
-        repo = ArchitectureDesignRepository(session)
+        repo = uow.services.architecture_designs
         designs = await repo.list(
             command.parent_type,
             command.parent_id,
@@ -178,15 +175,14 @@ class CreateArchitectureUseCase:
     ``to_response`` then ``commit(uow)`` — the legacy project-then-commit order."""
 
     async def execute(
-        self, command: CreateArchitectureCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateArchitectureCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateArchitectureResult:
-        session = session_of(uow)
-        parent = await _resolve_parent(session, command.parent_type, command.parent_id)
+        parent = await _resolve_parent(uow.services, command.parent_type, command.parent_id)
         if command.board_id and getattr(parent, "board_id", None) != command.board_id:
             raise EntityNotFoundError(command.parent_type, command.parent_id)
         if command.parent_type == "spec" and _spec_architecture_locked(parent):
             raise ConflictError("spec_architecture_locked", command.parent_id)
-        repo = ArchitectureDesignRepository(session)
+        repo = uow.services.architecture_designs
         design = await repo.create(
             command.parent_type, command.parent_id, command.data, actor.actor_id
         )
@@ -208,7 +204,9 @@ class CreateArchitectureUseCase:
 
 
 async def _resolve_mutable_design(
-    session: Any, design_id: str, board_id: str | None = None
+    services: ApplicationServiceCatalog,
+    design_id: str,
+    board_id: str | None = None,
 ) -> Any:
     """Transport-free twin of the legacy ``_ensure_design_mutable`` gate.
 
@@ -223,7 +221,7 @@ async def _resolve_mutable_design(
     ``EntityNotFoundError("Spec", …)`` (adapter → 404 "Spec not found"); a locked
     spec raises ``ConflictError("spec_architecture_locked", …)`` (adapter → 409
     locked detail). Returns the design so callers reuse it without a re-fetch."""
-    design = await ArchitectureDesignRepository(session).get(design_id)
+    design = await services.architecture_designs.get(design_id)
     if design is None:
         raise EntityNotFoundError("Architecture design", design_id)
     if board_id and design.board_id != board_id:
@@ -231,7 +229,7 @@ async def _resolve_mutable_design(
     if design.parent_type == "card":
         raise ConflictError("card_architecture_readonly", design_id)
     if design.parent_type == "spec":
-        spec = await SpecService(session).get_spec(design.spec_id)
+        spec = await services.specs.get_spec(design.spec_id)
         if spec is None:
             raise EntityNotFoundError("Spec", design.spec_id)
         if _spec_architecture_locked(spec):
@@ -271,9 +269,9 @@ class GetArchitectureDesignUseCase:
     ``to_response`` — exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: GetArchitectureDesignCommand, *, actor: ActorContext, uow: Any
+        self, command: GetArchitectureDesignCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetArchitectureDesignResult:
-        repo = ArchitectureDesignRepository(session_of(uow))
+        repo = uow.services.architecture_designs
         design = await repo.get(
             command.design_id, include_payloads=command.include_payloads
         )
@@ -319,11 +317,10 @@ class UpdateArchitectureDesignUseCase:
     project-then-commit order."""
 
     async def execute(
-        self, command: UpdateArchitectureDesignCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateArchitectureDesignCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateArchitectureDesignResult:
-        session = session_of(uow)
-        await _resolve_mutable_design(session, command.design_id, board_id=command.board_id)
-        repo = ArchitectureDesignRepository(session)
+        await _resolve_mutable_design(uow.services, command.design_id, board_id=command.board_id)
+        repo = uow.services.architecture_designs
         design = await repo.update(command.design_id, command.data, actor.actor_id)
         response = repo.to_response(design)
         await commit(uow)
@@ -354,11 +351,10 @@ class DeleteArchitectureDesignUseCase:
     exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: DeleteArchitectureDesignCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteArchitectureDesignCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteArchitectureDesignResult:
-        session = session_of(uow)
-        await _resolve_mutable_design(session, command.design_id, board_id=command.board_id)
-        repo = ArchitectureDesignRepository(session)
+        await _resolve_mutable_design(uow.services, command.design_id, board_id=command.board_id)
+        repo = uow.services.architecture_designs
         deleted = await repo.delete(command.design_id, actor.actor_id)
         if not deleted:
             raise EntityNotFoundError("Architecture design", command.design_id)
@@ -397,9 +393,9 @@ class ValidateArchitecturePayloadUseCase:
         command: ValidateArchitecturePayloadCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ValidateArchitecturePayloadResult:
-        repo = ArchitectureDesignRepository(session_of(uow))
+        repo = uow.services.architecture_designs
         critique = repo.critique_payload(command.payload)
         if command.design_id:
             critique["structured_warnings"] = [
@@ -475,15 +471,14 @@ class McpValidateArchitecturePayloadUseCase:
         command: McpValidateArchitecturePayloadCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> McpValidateArchitecturePayloadResult:
-        session = session_of(uow)
-        repo = ArchitectureDesignRepository(session)
+        repo = uow.services.architecture_designs
         mode = "update" if command.design_id else "create"
 
         if command.design_id:
             design = await _resolve_mutable_design(
-                session, command.design_id, board_id=command.board_id
+                uow.services, command.design_id, board_id=command.board_id
             )
             loaded = await repo.get(command.design_id, include_payloads=True)
             if not loaded:
@@ -503,7 +498,7 @@ class McpValidateArchitecturePayloadUseCase:
                     "parent_type and parent_id are required when design_id is omitted"
                 )
             parent = await _resolve_parent(
-                session, command.parent_type, command.parent_id
+                uow.services, command.parent_type, command.parent_id
             )
             if getattr(parent, "board_id", None) != command.board_id:
                 raise EntityNotFoundError(command.parent_type, command.parent_id)
@@ -635,14 +630,9 @@ class ArchitecturePropagationLegacyReportUseCase:
         command: ArchitecturePropagationLegacyReportCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ArchitecturePropagationLegacyReportResult:
-        from okto_pulse.core.services.architecture_propagation_legacy import (
-            build_propagation_legacy_report,
-        )
-
-        report = await build_propagation_legacy_report(
-            session_of(uow),
+        report = await uow.services.build_propagation_legacy_report(
             board_id=command.board_id,
             limit=command.limit,
             offset=command.offset,
@@ -707,10 +697,9 @@ class GetArchitectureDiagramPayloadUseCase:
         command: GetArchitectureDiagramPayloadCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> GetArchitectureDiagramPayloadResult:
-        session = session_of(uow)
-        repo = ArchitectureDesignRepository(session)
+        repo = uow.services.architecture_designs
         design = await repo.get(command.design_id)
         if design is None:
             raise EntityNotFoundError("Architecture design", command.design_id)
@@ -726,7 +715,7 @@ class GetArchitectureDiagramPayloadUseCase:
         )
         if not diagram or not diagram.get("adapter_payload_ref"):
             raise EntityNotFoundError("Diagram payload", command.diagram_id)
-        store = ArchitectureDiagramStore(session)
+        store = uow.services.architecture_diagrams
         try:
             payload = await store.load_payload(diagram["adapter_payload_ref"])
             stat_info = await store.stat(diagram["adapter_payload_ref"])
@@ -800,11 +789,10 @@ class UpdateArchitectureDiagramPayloadUseCase:
         command: UpdateArchitectureDiagramPayloadCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> UpdateArchitectureDiagramPayloadResult:
-        session = session_of(uow)
         design = await _resolve_mutable_design(
-            session, command.design_id, board_id=command.board_id
+            uow.services, command.design_id, board_id=command.board_id
         )
         diagrams = [dict(item) for item in design.diagrams or []]
         target = next(
@@ -814,7 +802,7 @@ class UpdateArchitectureDiagramPayloadUseCase:
             raise EntityNotFoundError("Diagram", command.diagram_id)
         target["format"] = command.format or target.get("format") or "raw"
         target["adapter_payload"] = command.payload
-        repo = ArchitectureDesignRepository(session)
+        repo = uow.services.architecture_designs
         updated = await repo.update(
             command.design_id,
             ArchitectureDesignUpdate(
@@ -896,11 +884,10 @@ class ImportExcalidrawArchitectureDiagramUseCase:
         command: ImportExcalidrawArchitectureDiagramCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ImportExcalidrawArchitectureDiagramResult:
-        session = session_of(uow)
         design = await _resolve_mutable_design(
-            session, command.design_id, board_id=command.board_id
+            uow.services, command.design_id, board_id=command.board_id
         )
         diagrams = [dict(item) for item in design.diagrams or []]
         imported = {
@@ -931,7 +918,7 @@ class ImportExcalidrawArchitectureDiagramUseCase:
         else:
             imported.pop("id")
             diagrams.append(imported)
-        repo = ArchitectureDesignRepository(session)
+        repo = uow.services.architecture_designs
         updated = await repo.update(
             command.design_id,
             ArchitectureDesignUpdate(
@@ -974,9 +961,9 @@ class GetArchitectureDiffUseCase:
     legacy endpoint did. Never mutates anything."""
 
     async def execute(
-        self, command: GetArchitectureDiffCommand, *, actor: ActorContext, uow: Any
+        self, command: GetArchitectureDiffCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetArchitectureDiffResult:
-        repo = ArchitectureDesignRepository(session_of(uow))
+        repo = uow.services.architecture_designs
         diff = await repo.diff(
             command.design_id, command.from_version, command.to_version
         )
@@ -1036,13 +1023,12 @@ class CopyArchitectureFromSpecToCardUseCase:
         command: CopyArchitectureFromSpecToCardCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> CopyArchitectureFromSpecToCardResult:
-        session = session_of(uow)
-        card = await _resolve_parent(session, "card", command.card_id)
+        card = await _resolve_parent(uow.services, "card", command.card_id)
         if command.board_id and getattr(card, "board_id", None) != command.board_id:
             raise EntityNotFoundError("card", command.card_id)
-        service = ArchitecturePropagationService(session)
+        service = uow.services.architecture_propagation
         designs, _plan = await service.copy_effective_spec_to_card(
             board_id=command.board_id or card.board_id,
             spec_id=command.spec_id,
@@ -1051,7 +1037,7 @@ class CopyArchitectureFromSpecToCardUseCase:
             design_ids=command.design_ids,
             architecture_warning_acknowledgement=command.architecture_warning_acknowledgement,
         )
-        repo = ArchitectureDesignRepository(session)
+        repo = uow.services.architecture_designs
         responses = [repo.to_response(design) for design in designs]
         await commit(uow)
         return CopyArchitectureFromSpecToCardResult(responses)

@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastapi.routing import APIRoute
 
-from okto_pulse.core.api.analytics import router
+from okto_pulse.community.api.analytics import router
 
 
 class TestBlockersEndpointContract:

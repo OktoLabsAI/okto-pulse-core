@@ -243,7 +243,7 @@ async def test_ac2b_regression_session_add_raises_integrity_error(
     is load-bearing.
     """
     from sqlalchemy.exc import IntegrityError
-    from okto_pulse.core.models.db import KGTickRun
+    from sqlalchemy_test_models import KGTickRun
 
     session = clean_tick_run_session
     now = datetime.now(timezone.utc)
@@ -447,12 +447,12 @@ async def test_ac8_global_tick_not_health_gated():
     """AC8: _refuse_tick_if_degraded(None, db) must return None immediately
     without ever calling get_kg_health (FR9 — global tick is not health-gated).
     """
-    from okto_pulse.core.api.kg_tick import _refuse_tick_if_degraded
+    from okto_pulse.community.api.kg_tick import _refuse_tick_if_degraded
 
     mock_db = AsyncMock()
 
     with patch(
-        "okto_pulse.core.api.kg_tick.get_kg_health",
+        "okto_pulse.community.api.kg_tick.get_kg_health",
         new_callable=AsyncMock,
     ) as mock_health:
         result = await _refuse_tick_if_degraded(None, mock_db)
@@ -483,7 +483,7 @@ async def test_tick_fanout_publishes_per_real_board_never_star(db_session):
     from okto_pulse.core.events.handlers.kg_decay_tick import (
         publish_tick_events,
     )
-    from okto_pulse.core.models.db import Board, DomainEventRow
+    from sqlalchemy_test_models import Board, DomainEventRow
 
     bids = [f"board-tickfk-{_uuid.uuid4().hex[:8]}" for _ in range(2)]
     for bid in bids:
@@ -518,7 +518,7 @@ async def test_tick_fanout_scoped_to_single_board(db_session):
     from okto_pulse.core.events.handlers.kg_decay_tick import (
         publish_tick_events,
     )
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-tickfk-{_uuid.uuid4().hex[:8]}"
     db_session.add(Board(id=bid, name=bid, owner_id="user-tickfk"))
@@ -533,7 +533,7 @@ def test_tick_next_run_catch_up_semantics():
     o next_run_time explícito honra o último tick persistido."""
     from datetime import timedelta
 
-    from okto_pulse.core.app import _tick_next_run_from_last
+    from okto_pulse.community.app import _tick_next_run_from_last
 
     now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=timezone.utc)
     floor = now + timedelta(seconds=120)

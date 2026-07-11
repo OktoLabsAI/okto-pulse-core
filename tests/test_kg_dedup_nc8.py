@@ -64,7 +64,7 @@ def dedup_tempdir(monkeypatch):
     yield base
 
     try:
-        from okto_pulse.core.kg.schema import close_all_connections
+        from kg_schema_testing import close_all_connections
         close_all_connections()
     except Exception:
         pass
@@ -269,11 +269,13 @@ async def _drive_spec_worker_session(
         NodeCandidate,
         ProposeReconciliationRequest,
     )
-    from okto_pulse.core.kg.workers.consolidation import (
+    from okto_pulse.core.application.processors.consolidation import (
         _worker_edge_to_candidate,
         _worker_node_to_candidate,
     )
-    from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+    from okto_pulse.core.application.processors.deterministic_kg import (
+        DeterministicWorker,
+    )
 
     worker_result = DeterministicWorker().process_spec(spec_payload)
     begin = await begin_consolidation(
@@ -348,7 +350,7 @@ async def _bootstrap_test_board(monkeypatch):
         reset_registry_for_tests,
     )
     from kg_registry_testing import configure_real_graph_test_kg_registry
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
 
     db_url = os.environ["DATABASE_URL"]
     create_database(db_url, echo=False)
@@ -378,7 +380,7 @@ async def _bootstrap_test_board(monkeypatch):
 
 def _count_entities(board_id: str, source_artifact_ref: str) -> int:
     """Direct Kuzu count of Entity nodes by source_artifact_ref."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
@@ -400,7 +402,7 @@ def _count_nodes_by_source_prefix(
     node_type: str,
     source_prefix: str,
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
@@ -418,7 +420,7 @@ def _count_nodes_by_source_prefix(
 
 
 def _count_nodes(board_id: str, node_type: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(f"MATCH (n:{node_type}) RETURN count(n)")
@@ -433,7 +435,7 @@ def _count_nodes(board_id: str, node_type: str) -> int:
 
 def _query_one(board_id: str, source_artifact_ref: str):
     """Return (id, title, content) of the first Entity for a given ref."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
@@ -754,7 +756,7 @@ async def test_ts3_human_curated_preserves_node(dedup_tempdir, monkeypatch):
 
     # Mark as human_curated=true via direct Cypher (simulating a back-office
     # action). The fix must honour this flag in the dedup branch.
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         kconn.execute(
@@ -901,7 +903,7 @@ async def test_ts7_tech_entity_dedup_cross_spec(dedup_tempdir, monkeypatch):
     for sid in spec_ids:
         await _emit_python_mention(sid)
 
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(

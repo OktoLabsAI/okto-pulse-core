@@ -21,10 +21,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import boards as boards_api
-from okto_pulse.core.api.boards import router as boards_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import get_realm_id, require_user
+from okto_pulse.community.api import boards as boards_api
+from okto_pulse.community.api.boards import router as boards_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu7-s1-user"
@@ -66,7 +66,7 @@ def client():
 
 
 async def _seed_board(owner: str = USER, name: str = "fu7s1") -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu7s1-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -78,7 +78,7 @@ async def _seed_board(owner: str = USER, name: str = "fu7s1") -> str:
 async def _seed_board_spec_card() -> tuple[str, str, str]:
     """Board + Spec + Card via raw models (bypasses CardService.create_card's
     spec-status gate — these endpoints read/group/archive, not create)."""
-    from okto_pulse.core.models.db import Board, Card, Spec
+    from sqlalchemy_test_models import Board, Card, Spec
 
     bid = f"board-fu7s1-{uuid.uuid4().hex[:8]}"
     sid = f"spec-fu7s1-{uuid.uuid4().hex[:8]}"
@@ -351,8 +351,7 @@ async def test_get_board_use_case_raises_for_missing_board() -> None:
         GetBoardCommand,
         GetBoardUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

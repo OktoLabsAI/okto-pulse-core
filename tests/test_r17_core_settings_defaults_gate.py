@@ -96,7 +96,7 @@ def test_inventory_covers_current_core_settings_and_required_r17_rows():
         entry = by_name[field]
         assert entry.classification == "core_consumed_community_observable"
         assert entry.cleanup_status == "register_before_remove"
-        assert "okto_pulse.core.kg.connection_pool" in entry.core_consumers
+        assert "okto_pulse.community.adapters.graph_connection_pool" in entry.core_consumers
         assert "/api/v1/settings/runtime" in entry.community_surfaces
         assert (
             entry.migration_plan_ref

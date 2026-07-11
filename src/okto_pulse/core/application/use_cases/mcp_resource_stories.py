@@ -7,13 +7,14 @@ the MCP UnitOfWork path so wrappers do not open ``get_db_for_mcp`` directly.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
-    session_of,
 )
 
 
@@ -35,11 +36,10 @@ class McpGetResourceGateSummaryUseCase:
         command: McpResourceGateSummaryCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
-        from okto_pulse.core.services.resource_gate import ResourceGateService
 
-        summary = await ResourceGateService(session_of(uow)).get_summary(
+        summary = await uow.services.resource_gate.get_summary(
             command.board_id,
             command.entity_type,
             command.entity_id,
@@ -63,11 +63,10 @@ class McpMarkResourceNotApplicableUseCase:
         command: McpMarkResourceNotApplicableCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
-        from okto_pulse.core.services.resource_gate import ResourceGateService
 
-        result = await ResourceGateService(session_of(uow)).mark_not_applicable(
+        result = await uow.services.resource_gate.mark_not_applicable(
             command.board_id,
             command.entity_type,
             command.entity_id,
@@ -95,11 +94,10 @@ class McpClearResourceNotApplicableUseCase:
         command: McpClearResourceNotApplicableCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
-        from okto_pulse.core.services.resource_gate import ResourceGateService
 
-        result = await ResourceGateService(session_of(uow)).clear_not_applicable(
+        result = await uow.services.resource_gate.clear_not_applicable(
             command.board_id,
             command.entity_type,
             command.entity_id,
@@ -176,11 +174,10 @@ class McpStoryMutationResult:
 
 class McpCreateStoryUseCase:
     async def execute(
-        self, command: McpCreateStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: McpCreateStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpStoryMutationResult:
-        from okto_pulse.core.services import StoryService
 
-        story = await StoryService(session_of(uow)).create_story(
+        story = await uow.services.stories.create_story(
             command.board_id,
             actor.actor_id,
             command.data,
@@ -194,13 +191,12 @@ class McpCreateStoryUseCase:
 
 class McpUpdateStoryUseCase:
     async def execute(
-        self, command: McpUpdateStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpStoryMutationResult:
-        from okto_pulse.core.services import StoryService
         from okto_pulse.core.services.permission_policy import Permissions
         from okto_pulse.core.services.story_permissions import story_update_permissions
 
-        service = StoryService(session_of(uow))
+        service = uow.services.stories
         existing = await service.get_story(command.story_id)
         if not existing or existing.board_id != command.board_id:
             return McpStoryMutationResult(not_found=True)
@@ -222,13 +218,12 @@ class McpUpdateStoryUseCase:
 
 class McpMoveStoryUseCase:
     async def execute(
-        self, command: McpMoveStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: McpMoveStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpStoryMutationResult:
-        from okto_pulse.core.services import StoryService
         from okto_pulse.core.services.permission_policy import Permissions
         from okto_pulse.core.services.story_permissions import story_move_permission
 
-        service = StoryService(session_of(uow))
+        service = uow.services.stories
         existing = await service.get_story(command.story_id)
         if not existing or existing.board_id != command.board_id:
             return McpStoryMutationResult(not_found=True)
@@ -249,12 +244,11 @@ class McpMoveStoryUseCase:
 
 class McpArchiveStoryUseCase:
     async def execute(
-        self, command: McpArchiveStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: McpArchiveStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpStoryMutationResult:
-        from okto_pulse.core.services import StoryService
         from okto_pulse.core.services.permission_policy import Permissions
 
-        service = StoryService(session_of(uow))
+        service = uow.services.stories
         existing = await service.get_story(command.story_id)
         if not existing or existing.board_id != command.board_id:
             return McpStoryMutationResult(not_found=True)

@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gdt_"))
 
-from okto_pulse.core.kg.global_discovery.schema import (
+from global_graph_testing import (
     GLOBAL_SCHEMA_VERSION,
     bootstrap_global_discovery,
     open_global_connection,
@@ -26,24 +26,22 @@ from okto_pulse.core.kg.global_discovery.clustering import (
     normalize_name,
     string_fuzzy_ratio,
 )
-from okto_pulse.core.kg.global_discovery.outbox_worker import (
+from okto_pulse.core.application.processors.global_outbox import (
     DEAD_LETTER_SENTINEL,
     MAX_RETRIES,
-    OutboxWorker,
+    GlobalOutboxProcessor,
     _is_retryable_board_read_error,
     _is_retryable_global_open_error,
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
-from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
-from kg_registry_testing import (
-    RealBoardCypherExecutorForTests,
-    configure_test_kg_registry,
-)
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
+from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
 def _real_board_graph_registry(_kg_registry_test_fakes):
-    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
+    configure_real_graph_test_kg_registry()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -84,7 +82,7 @@ class TestGlobalSchema:
         del conn
 
     def test_corrupt_global_discovery_wal_is_preserved_and_blocks_rebootstrap(self, monkeypatch, tmp_path):
-        from okto_pulse.core.kg.global_discovery import schema as global_schema
+        import global_graph_testing as global_schema
         from okto_pulse.core.kg.interfaces import get_kg_registry
 
         reset_global_discovery_runtime_for_tests()
@@ -117,13 +115,13 @@ class TestGlobalSchema:
             return FakeDB()
 
         global_runtime = get_kg_registry().global_discovery_runtime
-        monkeypatch.setattr(global_runtime, "global_graph_path", lambda: path)
-        board_runtime = get_kg_registry().board_graph_runtime
+        monkeypatch.setattr(global_runtime, "_global_graph_path", lambda: path)
+        board_runtime = global_runtime._runtime()
         monkeypatch.setattr(board_runtime, "open_kuzu_db", fake_open)
         monkeypatch.setattr(board_runtime, "new_connection", lambda _db: FakeConn())
         monkeypatch.setattr(board_runtime, "load_vector_extension", lambda _conn: None)
 
-        with pytest.raises(RuntimeError, match="refusing to auto-bootstrap"):
+        with pytest.raises(RuntimeError, match="refusing automatic bootstrap"):
             bootstrap_global_discovery()
 
         assert calls["open"] == 1
@@ -212,7 +210,7 @@ class TestGC:
         assert isinstance(counts["entities_removed"], int)
 
 
-class TestOutboxWorker:
+class TestGlobalOutboxProcessor:
     def test_max_retries(self):
         assert MAX_RETRIES == 5
         assert DEAD_LETTER_SENTINEL == -1
@@ -246,7 +244,7 @@ class TestOutboxWorker:
         monkeypatch,
     ):
         import uuid
-        import okto_pulse.core.kg.global_discovery.outbox_worker as worker_mod
+        import okto_pulse.core.application.processors.global_outbox as worker_mod
 
         board_id = f"board-outbox-recover-{uuid.uuid4().hex[:8]}"
         event_id = str(uuid.uuid4())
@@ -274,21 +272,26 @@ class TestOutboxWorker:
         class FakeConn:
             pass
 
-        def fake_open_global_connection():
+        def fake_global_execute(*_args, **_kwargs):
             calls["open"] += 1
-            return object(), FakeConn()
+            return GraphStatementResult()
 
         async def fake_apply_event(self, event, db):
             calls["apply"] += 1
 
         monkeypatch.setattr(
-            worker_mod,
-            "open_global_connection",
-            fake_open_global_connection,
+            worker_mod._global_discovery_runtime(),
+            "execute",
+            fake_global_execute,
         )
-        monkeypatch.setattr(OutboxWorker, "_apply_event", fake_apply_event)
+        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fake_apply_event)
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_flush_global_discovery_storage_after_batch",
+            lambda self: None,
+        )
 
-        worker = OutboxWorker(db_factory, interval_seconds=5)
+        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
         processed = await worker.process_once()
 
         assert processed == 1
@@ -297,7 +300,7 @@ class TestOutboxWorker:
         async with db_factory() as db:
             row = (
                 await db.execute(
-                    worker_mod.select(GlobalUpdateOutbox)
+                    select(GlobalUpdateOutbox)
                     .where(GlobalUpdateOutbox.event_id == event_id)
                 )
             ).scalar_one()
@@ -314,7 +317,7 @@ class TestOutboxWorker:
         monkeypatch,
     ):
         import uuid
-        import okto_pulse.core.kg.global_discovery.outbox_worker as worker_mod
+        import okto_pulse.core.application.processors.global_outbox as worker_mod
 
         board_id = f"board-outbox-board-recover-{uuid.uuid4().hex[:8]}"
         event_id = str(uuid.uuid4())
@@ -344,13 +347,13 @@ class TestOutboxWorker:
             calls["apply"] += 1
 
         monkeypatch.setattr(
-            OutboxWorker,
+            GlobalOutboxProcessor,
             "_board_graph_is_queryable",
             staticmethod(fake_probe),
         )
-        monkeypatch.setattr(OutboxWorker, "_apply_event", fake_apply_event)
+        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fake_apply_event)
 
-        worker = OutboxWorker(db_factory, interval_seconds=5)
+        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
         processed = await worker.process_once()
 
         assert processed == 1
@@ -359,7 +362,7 @@ class TestOutboxWorker:
         async with db_factory() as db:
             row = (
                 await db.execute(
-                    worker_mod.select(GlobalUpdateOutbox)
+                    select(GlobalUpdateOutbox)
                     .where(GlobalUpdateOutbox.event_id == event_id)
                 )
             ).scalar_one()
@@ -394,7 +397,7 @@ class TestOutboxWorker:
             await db.commit()
 
         monkeypatch.setattr(
-            OutboxWorker,
+            GlobalOutboxProcessor,
             "_board_graph_is_queryable",
             staticmethod(lambda _board_id: False),
         )
@@ -402,9 +405,9 @@ class TestOutboxWorker:
         async def fail_if_called(self, event, db):
             raise AssertionError("event should stay dead-lettered")
 
-        monkeypatch.setattr(OutboxWorker, "_apply_event", fail_if_called)
+        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fail_if_called)
 
-        worker = OutboxWorker(db_factory, interval_seconds=5)
+        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
         processed = await worker.process_once()
 
         assert processed == 0
@@ -428,7 +431,7 @@ class TestOutboxWorker:
         monkeypatch,
     ):
         import uuid
-        import okto_pulse.core.kg.global_discovery.outbox_worker as worker_mod
+        import okto_pulse.core.application.processors.global_outbox as worker_mod
 
         event_id = str(uuid.uuid4())
         async with db_factory() as db:
@@ -447,19 +450,19 @@ class TestOutboxWorker:
             raise AssertionError("global recovery should not run")
 
         monkeypatch.setattr(
-            worker_mod,
-            "open_global_connection",
+            worker_mod._global_discovery_runtime(),
+            "execute",
             fail_if_called,
         )
 
-        worker = OutboxWorker(db_factory, interval_seconds=5)
+        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
         processed = await worker.process_once()
 
         assert processed == 0
         async with db_factory() as db:
             row = (
                 await db.execute(
-                    worker_mod.select(GlobalUpdateOutbox)
+                    select(GlobalUpdateOutbox)
                     .where(GlobalUpdateOutbox.event_id == event_id)
                 )
             ).scalar_one()
@@ -501,14 +504,14 @@ class TestOutboxWorker:
         def fake_flush(self):
             calls["flush"] += 1
 
-        monkeypatch.setattr(OutboxWorker, "_apply_event", fake_apply_event)
+        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fake_apply_event)
         monkeypatch.setattr(
-            OutboxWorker,
+            GlobalOutboxProcessor,
             "_flush_global_discovery_storage_after_batch",
             fake_flush,
         )
 
-        worker = OutboxWorker(db_factory, interval_seconds=5)
+        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
         processed = await worker.process_once()
 
         assert processed == 1
@@ -532,7 +535,7 @@ class TestOutboxWorker:
         monkeypatch,
     ):
         import uuid
-        import okto_pulse.core.kg.global_discovery.outbox_worker as worker_mod
+        import okto_pulse.core.application.processors.global_outbox as worker_mod
 
         board_id = f"board-outbox-read-fail-{uuid.uuid4().hex[:8]}"
         event_id = str(uuid.uuid4())
@@ -563,24 +566,24 @@ class TestOutboxWorker:
                 return FakeResult()
 
         monkeypatch.setattr(
-            worker_mod,
-            "open_global_connection",
-            lambda: (object(), FakeConn()),
+            worker_mod._global_discovery_runtime(),
+            "execute",
+            lambda *_args, **_kwargs: GraphStatementResult(),
         )
         monkeypatch.setattr(
-            OutboxWorker,
+            GlobalOutboxProcessor,
             "_read_board_nodes_for_refs",
             staticmethod(lambda _board_id, _refs: None),
         )
 
-        worker = OutboxWorker(db_factory, interval_seconds=5)
+        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
         processed = await worker.process_once()
 
         assert processed == 0
         async with db_factory() as db:
             row = (
                 await db.execute(
-                    worker_mod.select(GlobalUpdateOutbox)
+                    select(GlobalUpdateOutbox)
                     .where(GlobalUpdateOutbox.event_id == event_id)
                 )
             ).scalar_one()

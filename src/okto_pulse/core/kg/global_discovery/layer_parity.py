@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.canonical_partition_integrity import (
     evaluate_canonical_learning_publication,
@@ -82,7 +81,7 @@ def resolve_expected_digest_layer(
 
 
 async def detect_digest_layer_mismatches(
-    db: AsyncSession, *, board_id: str
+    db: object, *, board_id: str
 ) -> list[dict[str, Any]]:
     """List digests whose published layer != expected_digest_layer.
 
@@ -93,19 +92,19 @@ async def detect_digest_layer_mismatches(
     from okto_pulse.core.kg.canonical_partition_integrity import (
         pending_or_debt_exclusions,
     )
-    from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
+    from okto_pulse.core.application.processors.global_outbox import (
+        GlobalOutboxProcessor,
+    )
     from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
 
     try:
-        _gdb, gconn = (
-            get_kg_registry().require_global_discovery_runtime().open_connection()
-        )
+        global_runtime = get_kg_registry().require_global_discovery_runtime()
     except Exception:
         return []
     try:
         digests: list[dict[str, Any]] = []
-        res = gconn.execute(
+        res = global_runtime.execute(
             "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
             "RETURN d.id, d.original_node_id, d.node_type, "
             "coalesce(d.graph_layer, 'legacy_unknown')",
@@ -124,13 +123,11 @@ async def detect_digest_layer_mismatches(
             })
     except Exception:
         return []
-    finally:
-        del gconn, _gdb
     if not digests:
         return []
 
     # Reuse the R1-IMP1 board-layer reader (no IMP1 change).
-    board_meta = OutboxWorker._read_board_layer_meta(
+    board_meta = GlobalOutboxProcessor._read_board_layer_meta(
         board_id, {d["original_node_id"]: d["node_type"] for d in digests}
     )
     if board_meta is None:
@@ -173,7 +170,7 @@ async def detect_digest_layer_mismatches(
 
 
 async def list_digest_layer_mismatches(
-    db: AsyncSession, *, board_id: str, limit: int = 50, offset: int = 0
+    db: object, *, board_id: str, limit: int = 50, offset: int = 0
 ) -> dict[str, Any]:
     """Drilldown read model (MCP/REST). Emits one bounded
     ``kg_discovery_digest_layer_mismatch_total`` sample per observed mismatch

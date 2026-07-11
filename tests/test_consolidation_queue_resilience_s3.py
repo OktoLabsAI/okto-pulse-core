@@ -20,7 +20,7 @@ from okto_pulse.core.kg.commit_coordinator import (
     record_kuzu_lock_retry,
     reset_kuzu_lock_retries_for_tests,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     ConsolidationDeadLetter,
     ConsolidationQueue,
@@ -66,27 +66,19 @@ async def s3_board(db_factory):
 async def s3_clean(db_factory, s3_board):
     async with db_factory() as session:
         await session.execute(
-            ConsolidationQueue.__table__.delete().where(
-                ConsolidationQueue.board_id == BOARD_ID_S3
-            )
+            ConsolidationQueue.__table__.delete()
         )
         await session.execute(
-            ConsolidationDeadLetter.__table__.delete().where(
-                ConsolidationDeadLetter.board_id == BOARD_ID_S3
-            )
+            ConsolidationDeadLetter.__table__.delete()
         )
         await session.commit()
     yield
     async with db_factory() as session:
         await session.execute(
-            ConsolidationQueue.__table__.delete().where(
-                ConsolidationQueue.board_id == BOARD_ID_S3
-            )
+            ConsolidationQueue.__table__.delete()
         )
         await session.execute(
-            ConsolidationDeadLetter.__table__.delete().where(
-                ConsolidationDeadLetter.board_id == BOARD_ID_S3
-            )
+            ConsolidationDeadLetter.__table__.delete()
         )
         await session.commit()
 
@@ -95,8 +87,8 @@ async def s3_clean(db_factory, s3_board):
 async def health_client():
     """Minimal ASGI client wrapping just the queue_health router."""
     from fastapi import FastAPI
-    from okto_pulse.core.api.queue_health import router
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.queue_health import router
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     app = FastAPI()
@@ -404,17 +396,10 @@ def test_ac15_settings_change_does_not_corrupt_in_flight_state():
 
 
 def test_ac18_snapshot_pool_reports_steady_state():
-    """AC18 (structural): worker.snapshot_pool() returns active/idle/
-    draining counts. At rest (no pool started), draining == 0."""
-    from okto_pulse.core.kg.workers.consolidation import (
-        get_consolidation_worker,
-        reset_consolidation_worker_for_tests,
-    )
+    """Pool state belongs to the edition runner, not the Core processor."""
+    from okto_pulse.core.application.processors import ConsolidationProcessor
 
-    reset_consolidation_worker_for_tests()
-    worker = get_consolidation_worker()
-    snap = worker.snapshot_pool()
-    assert set(snap.keys()) == {"active", "idle", "draining"}
-    assert snap["draining"] == 0
-    # At rest: not started, active=0
-    assert snap["active"] == 0
+    processor = ConsolidationProcessor(session_factory=lambda: None)
+    assert not hasattr(processor, "snapshot_pool")
+    assert not hasattr(processor, "is_running")
+    assert not hasattr(processor, "_task")

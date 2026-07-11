@@ -44,8 +44,8 @@ from okto_pulse.core.kg.connectivity_guard import (
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.global_discovery import metrics as gdm
-from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
-from okto_pulse.core.kg.global_discovery.schema import (
+from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
+from global_graph_testing import (
     bootstrap_global_discovery,
     open_global_connection,
     reset_global_discovery_runtime_for_tests,
@@ -56,7 +56,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     normalize_cognitive_artifact_id,
     record_cognitive_working_only_hold,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
@@ -64,7 +64,7 @@ from okto_pulse.core.kg.source_maturity import (
     MATURITY_WORKING_IMMATURE,
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
-from okto_pulse.core.models.db import Board, GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import Board, GlobalUpdateOutbox, KuzuNodeRef
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
@@ -219,7 +219,7 @@ async def _run_outbox(db_factory, board_id, refs) -> int:
             payload={"session_id": session_id, "nodes_added": len(refs)},
         ))
         await db.commit()
-    worker = OutboxWorker(db_factory, interval_seconds=5)
+    worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
     return await worker.process_once()
 
 

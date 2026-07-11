@@ -12,7 +12,7 @@ import inspect
 
 import pytest
 
-from okto_pulse.core.app import create_app
+from okto_pulse.community.app import create_app
 from okto_pulse.core.application.boundary import (
     DEFAULT_ONLY_EXCLUSIONS,
     REQUIRED_LIFECYCLE_EVENTS,
@@ -288,8 +288,8 @@ def test_boundary_gate_blocking_mode_real_tree_uses_versioned_catalogue() -> Non
     baseline_keys = {
         f"{f['file']}::{f['symbol']}" for f in findings if f["status"] == "baseline"
     }
-    assert baseline_keys, "the known catalogued debt must classify as baseline"
-    assert baseline_keys <= DEFAULT_COMPOSITION_BASELINE
+    assert baseline_keys == set()
+    assert DEFAULT_COMPOSITION_BASELINE == frozenset()
 
 
 # --------------------------------------------------------------------------- #
@@ -525,7 +525,7 @@ def test_runtime_worker_boundary_gate_blocks_private_tick_import(tmp_path) -> No
     community = tmp_path / "okto_pulse" / "community"
     community.mkdir(parents=True)
     (community / "main.py").write_text(
-        "from okto_pulse.core.app import _emit_daily_tick\n",
+        "from okto_pulse.community.app import _emit_daily_tick\n",
         encoding="utf-8",
     )
 
@@ -546,7 +546,7 @@ def test_runtime_worker_boundary_gate_blocks_private_tick_module_alias(
     community = tmp_path / "okto_pulse" / "community"
     community.mkdir(parents=True)
     (community / "main.py").write_text(
-        "import okto_pulse.core.app as core_app\n\n"
+        "import okto_pulse.community.app as core_app\n\n"
         "async def tick():\n"
         "    await core_app._emit_daily_tick()\n",
         encoding="utf-8",
@@ -558,7 +558,7 @@ def test_runtime_worker_boundary_gate_blocks_private_tick_module_alias(
     offenders = report.evidence["offenders"]
     assert any(
         item["kind"] == "private_tick_module_import"
-        and item["symbol"] == "okto_pulse.core.app"
+        and item["symbol"] == "okto_pulse.community.app"
         for item in offenders
     )
     assert any(

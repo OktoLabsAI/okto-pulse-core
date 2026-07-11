@@ -7,6 +7,8 @@ provides the concrete Local First or SaaS event source.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 import asyncio
 import json
 import logging
@@ -210,37 +212,42 @@ class KgEventsHub:
             await asyncio.sleep(self._poll_interval)
 
 
-_hub: KgEventsHub | None = None
+_RUNTIME_KEY = "application.kg_events_hub"
 
 
 def configure_kg_events_hub(reader: KGEventsReaderPort) -> KgEventsHub:
     """Compose the generic hub with the edition-owned event reader."""
 
-    global _hub
     register_kg_events_reader_port(reader)
-    if _hub is None or _hub._closed:
-        _hub = KgEventsHub(reader)
+    hub = resolve_runtime_value(_RUNTIME_KEY)
+    if hub is None or hub._closed:
+        hub = KgEventsHub(reader)
+        register_runtime_value(_RUNTIME_KEY, hub)
     else:
-        _hub.configure_reader(reader)
-    return _hub
+        hub.configure_reader(reader)
+    return hub
 
 
 def get_kg_events_hub() -> KgEventsHub:
     """Resolve the composed hub, never creating a concrete data provider."""
 
-    global _hub
-    if _hub is None or _hub._closed:
-        _hub = KgEventsHub()
-    return _hub
+    hub = resolve_runtime_value(_RUNTIME_KEY)
+    if hub is None or hub._closed:
+        hub = KgEventsHub()
+        register_runtime_value(_RUNTIME_KEY, hub)
+    return hub
 
 
 async def shutdown_kg_events_hub() -> None:
     """Stop active pollers before the edition closes its data runtime."""
 
-    global _hub
-    if _hub is not None:
-        await _hub.aclose()
-        _hub = None
+    hub = resolve_runtime_value(_RUNTIME_KEY)
+    if hub is not None:
+        await hub.aclose()
+        reset_runtime_values(_RUNTIME_KEY)
+
+
+BoardStream = _BoardStream
 
 
 __all__ = [
@@ -249,7 +256,7 @@ __all__ = [
     "SUBSCRIBER_QUEUE_MAXSIZE",
     "KgEventsHub",
     "KgEventsSubscription",
-    "_BoardStream",
+    "BoardStream",
     "configure_kg_events_hub",
     "format_outbox_row_sse",
     "format_progress_sse",

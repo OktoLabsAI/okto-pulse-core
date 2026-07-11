@@ -36,7 +36,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,

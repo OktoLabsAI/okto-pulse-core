@@ -19,8 +19,7 @@ from okto_pulse.core.application.use_cases import (
     ListCognitiveDlqUseCase,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
-from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 ACTOR = ActorContext("fu3b-mcp-agent", "mcp")
 
 
@@ -32,7 +31,7 @@ def _uowf():
 
 async def _seed_dlq(board_id: str, n: int) -> list[str]:
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import ConsolidationDeadLetter
+    from sqlalchemy_test_models import ConsolidationDeadLetter
 
     ids: list[str] = []
     async with get_session_factory()() as db:

@@ -48,6 +48,7 @@ from okto_pulse.core.telemetry.service import TelemetryService
 # The behavioral contract is tested by community/tests/test_r10b_telemetry_store_adapter.py.
 # ---------------------------------------------------------------------------
 
+
 def _parse_iso(value: str) -> datetime | None:
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -91,13 +92,22 @@ class _SimpleFileEventStore:
         return self.metrics_dir / "snapshots"
 
     def _ensure_dirs(self) -> None:
-        for d in (self.metrics_dir, self.events_dir, self.sent_dir,
-                  self.failures_dir, self.exports_dir, self.snapshots_dir):
+        for d in (
+            self.metrics_dir,
+            self.events_dir,
+            self.sent_dir,
+            self.failures_dir,
+            self.exports_dir,
+            self.snapshots_dir,
+        ):
             d.mkdir(parents=True, exist_ok=True)
 
     def append_event(self, event: dict[str, Any]) -> Path:
         self._ensure_dirs()
-        dt = str(event.get("occurred_at", ""))[:10] or datetime.now(timezone.utc).date().isoformat()
+        dt = (
+            str(event.get("occurred_at", ""))[:10]
+            or datetime.now(timezone.utc).date().isoformat()
+        )
         path = self.events_dir / f"events-{dt}.jsonl"
         with path.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(event, sort_keys=True) + "\n")
@@ -116,7 +126,10 @@ class _SimpleFileEventStore:
 
     def append_snapshot(self, record: dict[str, Any]) -> Path:
         self._ensure_dirs()
-        dt = str(record.get("snapshot_at", ""))[:10] or datetime.now(timezone.utc).date().isoformat()
+        dt = (
+            str(record.get("snapshot_at", ""))[:10]
+            or datetime.now(timezone.utc).date().isoformat()
+        )
         path = self.snapshots_dir / f"snapshot-{dt}.jsonl"
         with path.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(record, sort_keys=True) + "\n")
@@ -164,7 +177,9 @@ class _SimpleFileEventStore:
         by_type: Counter[str] = Counter()
         by_day: Counter[str] = Counter()
         files = 0
-        for _ in self.events_dir.glob("events-*.jsonl") if self.events_dir.exists() else []:
+        for _ in (
+            self.events_dir.glob("events-*.jsonl") if self.events_dir.exists() else []
+        ):
             files += 1
         for event in self.iter_events():
             by_type[str(event.get("event_type", "unknown"))] += 1
@@ -182,12 +197,15 @@ class _SimpleFileEventStore:
     @staticmethod
     def _file_date(path: Path):
         try:
-            return datetime.strptime("-".join(path.stem.split("-")[-3:]), "%Y-%m-%d").date()
+            return datetime.strptime(
+                "-".join(path.stem.split("-")[-3:]), "%Y-%m-%d"
+            ).date()
         except ValueError:
             return None
 
     def prune_old(self, *, now: datetime | None = None) -> dict[str, int]:
         from datetime import timedelta
+
         reference = (now or datetime.now(timezone.utc)).date()
         cutoff = reference - timedelta(days=self.retention_days)
         confirmed = self.confirmed_event_ids()
@@ -200,7 +218,9 @@ class _SimpleFileEventStore:
                 if fd is None or fd >= cutoff:
                     continue
                 events = self._read_jsonl(path)
-                pending = [e for e in events if str(e.get("event_id") or "") not in confirmed]
+                pending = [
+                    e for e in events if str(e.get("event_id") or "") not in confirmed
+                ]
                 removed_confirmed += len(events) - len(pending)
                 preserved_pending += len(pending)
                 if pending:
@@ -219,7 +239,7 @@ class _SimpleFileEventStore:
             "removed_failure_files": 0,
         }
 
-    def export_local(self, output_path: Path | None = None) -> Path:
+    def export_events(self, output_path: Path | None = None) -> Path:
         self._ensure_dirs()
         if output_path is None:
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -230,10 +250,15 @@ class _SimpleFileEventStore:
                 out.write(json.dumps(event, sort_keys=True) + "\n")
         return output_path
 
-    def purge_local(self) -> dict[str, int]:
+    def purge_events(self) -> dict[str, int]:
         self._ensure_dirs()
         removed = 0
-        for root in (self.events_dir, self.sent_dir, self.failures_dir, self.exports_dir):
+        for root in (
+            self.events_dir,
+            self.sent_dir,
+            self.failures_dir,
+            self.exports_dir,
+        ):
             _ensure_inside(self.metrics_dir, root)
             if root.exists():
                 for p in root.glob("*"):
@@ -322,14 +347,11 @@ def test_ts01_port_pure_import_and_separation():
             return None
 
     class _EventOnly:
-        def append_event(self, event):
-            ...
+        def append_event(self, event): ...
 
-        def append_sent(self, record, *, failed=False):
-            ...
+        def append_sent(self, record, *, failed=False): ...
 
-        def append_snapshot(self, record):
-            ...
+        def append_snapshot(self, record): ...
 
         def confirmed_event_ids(self):
             return set()
@@ -343,10 +365,9 @@ def test_ts01_port_pure_import_and_separation():
         def prune_old(self, *, now=None):
             return {}
 
-        def export_local(self, output_path=None):
-            ...
+        def export_events(self, output_path=None): ...
 
-        def purge_local(self):
+        def purge_events(self):
             return {}
 
     assert isinstance(_StateOnly(), TelemetryStateStore)
@@ -371,24 +392,31 @@ def test_ts02_conformance_isinstance_and_exercise(tmp_path):
     # Exercise EVERY method on the store (not just structural typing).
     now = datetime.now(timezone.utc)
     occurred = now.isoformat()
-    ev = {"schema_version": CURRENT_SCHEMA_VERSION, "event_type": "cli",
-          "occurred_at": occurred, "event_id": "ev-1", "payload": {"command": "serve"}}
+    ev = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "event_type": "cli",
+        "occurred_at": occurred,
+        "event_id": "ev-1",
+        "payload": {"command": "serve"},
+    }
     assert store.append_event(ev).suffix == ".jsonl"
     assert [e["event_id"] for e in store.iter_events()] == ["ev-1"]
     assert store.summarize()["event_count"] == 1
     sent = store.append_sent({"sent_at": occurred, "confirmed_event_ids": ["ev-1"]})
     assert sent.suffix == ".jsonl"
     assert store.confirmed_event_ids() == {"ev-1"}
-    assert store.append_snapshot({"snapshot_at": occurred, "metrics": {}}).suffix == ".jsonl"
-    exported = store.export_local()
+    assert (
+        store.append_snapshot({"snapshot_at": occurred, "metrics": {}}).suffix
+        == ".jsonl"
+    )
+    exported = store.export_events()
     assert exported.exists()
     assert isinstance(store.prune_old(now=now), dict)
-    assert isinstance(store.purge_local(), dict)
+    assert isinstance(store.purge_events(), dict)
 
     # A partial impl (missing methods) is NOT a TelemetryEventStore.
     class _Partial:
-        def append_event(self, event):
-            ...
+        def append_event(self, event): ...
 
     assert not isinstance(_Partial(), TelemetryEventStore)
 
@@ -406,14 +434,21 @@ def test_ts03_service_uses_registered_store_same_shape(tmp_path):
 
     # Public shape is byte-identical to the pre-rewire contract.
     assert set(result) == {
-        "written", "mode", "file", "event_id", "rejected_fields_count", "schema_version"
+        "written",
+        "mode",
+        "file",
+        "event_id",
+        "rejected_fields_count",
+        "schema_version",
     }
     assert result["written"] is True
     assert result["schema_version"] == CURRENT_SCHEMA_VERSION
     # The registered store actually served it.
     assert _RecordingEventStore.instances, "factory was never invoked"
     assert any("append_event" in s.calls for s in _RecordingEventStore.instances)
-    assert all(isinstance(s, TelemetryEventStore) for s in _RecordingEventStore.instances)
+    assert all(
+        isinstance(s, TelemetryEventStore) for s in _RecordingEventStore.instances
+    )
 
 
 # ===========================================================================
@@ -435,7 +470,9 @@ def test_ts04_service_store_via_factory(tmp_path):
 
     # Pending = events with an id NOT in confirmed_event_ids (computed via the port).
     confirmed = store.confirmed_event_ids()
-    pending = [e for e in store.iter_events() if str(e.get("event_id") or "") not in confirmed]
+    pending = [
+        e for e in store.iter_events() if str(e.get("event_id") or "") not in confirmed
+    ]
     assert len(pending) == 1
     assert "iter_events" in store.calls and "confirmed_event_ids" in store.calls
 
@@ -463,8 +500,15 @@ def test_ts06_confirmation_ledger_non_replay(tmp_path, _simple_store_factory):
     store = get_telemetry_event_store(tmp_path / "metrics", 30)
     occurred = datetime.now(timezone.utc).isoformat()
     for eid in ("e1", "e2"):
-        store.append_event({"schema_version": CURRENT_SCHEMA_VERSION, "event_type": "cli",
-                            "occurred_at": occurred, "event_id": eid, "payload": {"command": "x"}})
+        store.append_event(
+            {
+                "schema_version": CURRENT_SCHEMA_VERSION,
+                "event_type": "cli",
+                "occurred_at": occurred,
+                "event_id": eid,
+                "payload": {"command": "x"},
+            }
+        )
 
     # Confirm e1 (twice -> idempotent set).
     store.append_sent({"sent_at": occurred, "confirmed_event_ids": ["e1"]})
@@ -473,7 +517,9 @@ def test_ts06_confirmation_ledger_non_replay(tmp_path, _simple_store_factory):
 
     # Non-replay: a confirmed event is excluded from pending.
     confirmed = store.confirmed_event_ids()
-    pending = [e["event_id"] for e in store.iter_events() if e["event_id"] not in confirmed]
+    pending = [
+        e["event_id"] for e in store.iter_events() if e["event_id"] not in confirmed
+    ]
     assert pending == ["e2"]
 
 
@@ -482,6 +528,7 @@ def test_ts06_confirmation_ledger_non_replay(tmp_path, _simple_store_factory):
 # ===========================================================================
 def test_ts07_retention_export_purge_path_guard(tmp_path, _simple_store_factory):
     from datetime import timedelta
+
     metrics = tmp_path / "metrics"
     store = get_telemetry_event_store(metrics, 30)
     now = datetime(2026, 6, 26, tzinfo=timezone.utc)
@@ -489,11 +536,21 @@ def test_ts07_retention_export_purge_path_guard(tmp_path, _simple_store_factory)
 
     # Two old events: one confirmed (prunable), one pending (preserved).
     for eid in ("old-confirmed", "old-pending"):
-        store.append_event({"schema_version": CURRENT_SCHEMA_VERSION, "event_type": "cli",
-                            "occurred_at": f"{old_day}T00:00:00+00:00", "event_id": eid,
-                            "payload": {"command": "x"}})
-    store.append_sent({"sent_at": f"{old_day}T01:00:00+00:00",
-                       "confirmed_event_ids": ["old-confirmed"]})
+        store.append_event(
+            {
+                "schema_version": CURRENT_SCHEMA_VERSION,
+                "event_type": "cli",
+                "occurred_at": f"{old_day}T00:00:00+00:00",
+                "event_id": eid,
+                "payload": {"command": "x"},
+            }
+        )
+    store.append_sent(
+        {
+            "sent_at": f"{old_day}T01:00:00+00:00",
+            "confirmed_event_ids": ["old-confirmed"],
+        }
+    )
 
     stats = store.prune_old(now=now)
     assert stats["removed_confirmed_events"] == 1
@@ -502,15 +559,15 @@ def test_ts07_retention_export_purge_path_guard(tmp_path, _simple_store_factory)
     assert remaining == {"old-pending"}
 
     # export_local writes inside metrics_dir.
-    out = store.export_local()
+    out = store.export_events()
     assert out.exists() and metrics.resolve() in out.resolve().parents
 
     # Path-guard: export OUTSIDE metrics_dir raises PATH_OUTSIDE_METRICS_DIR.
     with pytest.raises(ValueError, match="PATH_OUTSIDE_METRICS_DIR"):
-        store.export_local(tmp_path / "escape.jsonl")
+        store.export_events(tmp_path / "escape.jsonl")
 
     # purge clears the local store.
-    store.purge_local()
+    store.purge_events()
     assert list(store.iter_events()) == []
 
 
@@ -523,9 +580,15 @@ def test_ts08_redaction_and_closed_schema_before_store(tmp_path, _simple_store_f
 
     result = service.record_event(
         "http",
-        {"method": "GET", "route_template": "/api/v1/cards/{card_id}", "status_code": 200,
-         "board_id": "9ec5f06f-2028-42a7-81fd-3ad36f98a89d", "title": "secret",
-         "email": "dev@example.com", "path": "D:\\Projects\\private"},
+        {
+            "method": "GET",
+            "route_template": "/api/v1/cards/{card_id}",
+            "status_code": 200,
+            "board_id": "9ec5f06f-2028-42a7-81fd-3ad36f98a89d",
+            "title": "secret",
+            "email": "dev@example.com",
+            "path": "D:\\Projects\\private",
+        },
     )
     assert result["written"] is True
     assert result["rejected_fields_count"] >= 4
@@ -534,7 +597,9 @@ def test_ts08_redaction_and_closed_schema_before_store(tmp_path, _simple_store_f
     ev_file = next((tmp_path / "metrics" / "events").glob("events-*.jsonl"))
     event = json.loads(ev_file.read_text(encoding="utf-8").splitlines()[0])
     assert event["payload"] == {
-        "method": "GET", "route_template": "/api/v1/cards/{card_id}", "status_code": 200
+        "method": "GET",
+        "route_template": "/api/v1/cards/{card_id}",
+        "status_code": 200,
     }
     blob = json.dumps(event)
     for secret in ("secret", "dev@example.com", "9ec5f06f", "D:\\Projects"):
@@ -558,7 +623,8 @@ def test_ts09_registry_is_fail_closed(tmp_path, caplog):
         get_telemetry_event_store(tmp_path / "metrics", 30)
 
     signals = [
-        r for r in caplog.records
+        r
+        for r in caplog.records
         if r.__dict__.get("metric_name") == "telemetry_event_store_no_provider_total"
     ]
     assert len(signals) == 1

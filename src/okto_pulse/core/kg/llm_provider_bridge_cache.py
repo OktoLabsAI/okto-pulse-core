@@ -13,6 +13,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Callable, Hashable, TypeVar, cast
 
+from okto_pulse.core.runtime_context import register_runtime_value, resolve_runtime_value
+
 T = TypeVar("T")
 
 DEFAULT_BRIDGE_CACHE_MAX_ENTRIES = 1024
@@ -124,7 +126,7 @@ def bridge_cache_get_or_create(
     realm: str = DEFAULT_BRIDGE_CACHE_REALM,
     max_entries: int | None = None,
 ) -> T:
-    return _bridge_cache_registry.get_or_create(
+    return _bridge_cache_registry().get_or_create(
         namespace,
         key,
         factory,
@@ -138,19 +140,20 @@ def reset_bridge_cache_namespace(
     *,
     realm: str | None = None,
 ) -> None:
-    _bridge_cache_registry.reset_namespace(namespace, realm=realm)
+    _bridge_cache_registry().reset_namespace(namespace, realm=realm)
 
 
 def reset_all_bridge_caches_for_tests(
     *,
     max_entries: int = DEFAULT_BRIDGE_CACHE_MAX_ENTRIES,
 ) -> None:
-    global _bridge_cache_registry
-    _bridge_cache_registry = BridgeCacheRegistry(max_entries=max_entries)
+    register_runtime_value(
+        _RUNTIME_KEY, BridgeCacheRegistry(max_entries=max_entries)
+    )
 
 
 def bridge_cache_stats() -> tuple[BridgeCacheStats, ...]:
-    return _bridge_cache_registry.stats()
+    return _bridge_cache_registry().stats()
 
 
 def _normalise_key(key: Hashable | tuple[Hashable, ...]) -> tuple[Hashable, ...]:
@@ -165,7 +168,15 @@ def _validate_max_entries(value: int) -> int:
     return value
 
 
-_bridge_cache_registry = BridgeCacheRegistry()
+_RUNTIME_KEY = "kg.llm_provider_bridge_cache"
+
+
+def _bridge_cache_registry() -> BridgeCacheRegistry:
+    registry = resolve_runtime_value(_RUNTIME_KEY)
+    if registry is None:
+        registry = BridgeCacheRegistry()
+        register_runtime_value(_RUNTIME_KEY, registry)
+    return registry
 
 
 __all__ = [

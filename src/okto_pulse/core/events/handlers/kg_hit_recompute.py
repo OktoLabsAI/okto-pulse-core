@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import KGHitFlushed
@@ -56,7 +55,7 @@ def _recompute_sync(
 class KGHitRecomputeHandler:
     """Trigger a single-node relevance recompute after each hit flush."""
 
-    async def handle(self, event: KGHitFlushed, session: AsyncSession) -> None:
+    async def handle(self, event: KGHitFlushed, session: object) -> None:
         new_score = await asyncio.to_thread(
             _recompute_sync,
             event.board_id,

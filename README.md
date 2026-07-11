@@ -84,10 +84,10 @@ Current boundary status is intentionally mixed. The adapter readiness inventory
 currently reports 21 seams: 12 `ready`, 6 `blocked` and 3 `deferred`. The moved
 Community-owned surfaces include sentence-transformers embeddings, cross-encoder
 rerank, Ladybug/Kuzu board graph adapters, global discovery runtime, board source
-reads, rebuild ingestion and APScheduler scheduler runtime. Remaining extraction
-debt includes broad SQLAlchemy/`AsyncSession` usage, local defaults in
-`CoreSettings` and a small set of ledgered direct dependencies
-(`requests`, `chardet`, `aiosqlite`, `numpy`).
+reads, rebuild ingestion and APScheduler scheduler runtime. F14 dependency ownership
+completed the distribution boundary: Core now publishes only its
+domain/application dependencies, while concrete local runtimes are owned by
+Community.
 
 AF-05/AF40 dependency owner matrix. The source of truth is
 `dependency_ledger.py`, `CANONICAL_AF40_DEPENDENCY_TOKENS`,
@@ -99,9 +99,12 @@ must follow those gates, not the other way around.
 | `aiofiles` | `removed` | AF-05 removed the orphaned core runtime dependency. It must stay absent from the core manifest, lock, wheel metadata and runtime imports; `dependency_conformance` fails closed if it reappears and `conformance_matrix` emits `removed_dependency_absent`. | Not Community-owned and not moved to Community without a direct adapter consumer. A stale Community lock can still show the published core dependency until the isolated artifact smoke resolves against the local core build. |
 | `requests` | `community_owned` | AF40-R1 moved the concrete telemetry HTTP transport ownership to Community. `dependency_conformance` now blocks core manifest, lock, wheel or runtime-import reintroduction. | Declared directly by Community and used by `community/adapters/telemetry_sender.py`; `community_packaging_audit` requires the declaration for `local_telemetry_store`. |
 | `chardet` | `community_owned` | AF40-R1 moves the requests/telemetry charset companion with the transport pair. It is no longer in `CANONICAL_TEMPORARY_EXCEPTION_TOKENS`; it is covered by `CANONICAL_AF40_DEPENDENCY_TOKENS`. | Declared directly by Community together with `requests`; moving only one token fails the ownership matrix/oracle expectations. |
-| `aiosqlite` | `temporary_exception` | AF40-R1 carry-forward: non-telemetry relational/local DB driver loaded by SQLAlchemy from `sqlite+aiosqlite` URLs. The AF40 carry-forward guard requires direct-dep/no-import plus a named relational consumer. | Not a telemetry dependency and not moved by AF40. A later relational/local DB owner spec must provide the oracle before this can leave core packaging. |
-| `numpy` | `temporary_exception` | AF40-R1 carry-forward: non-telemetry KG/vector dependency for embedding/rerank transitives. The AF40 carry-forward guard requires direct-dep/no-import plus a named KG/vector consumer. | Not a telemetry dependency and not moved by AF40. A later KG/vector or embedding owner spec must provide the oracle before this can leave core packaging. |
+| `aiosqlite` | `community_owned` | F14 removed the local SQLite driver from the Core source, manifest, lock and wheel. Core exposes relational ports only. | Declared directly by Community because its SQLAlchemy adapter selects `sqlite+aiosqlite` URLs at runtime. |
+| `numpy` | `community_owned` | F14 removed the numeric implementation dependency from the Core source, manifest, lock and wheel. Core exposes embedding/rerank ports and deterministic policy only. | Resolved transitively by the Community `sentence-transformers` implementation stack; Community wheel smoke proves the installed runtime. |
 | `apscheduler` | `community_owned` | AF31-S1R moved the concrete scheduler runtime out of core. Core keeps only `JobSpec`/`SchedulerControl` and the KG daily tick policy; `dependency_conformance` now blocks manifest, lock, wheel or runtime-import reintroduction. | Declared by Community and mapped in `community/adapters/scheduler.py` from core `JobSpec` to APScheduler/`IntervalTrigger`. |
+
+`CANONICAL_TEMPORARY_EXCEPTION_TOKENS` is empty. F16 treats any new accepted
+dependency exception as a blocking nonzero budget.
 
 AF41 MCP runtime ownership: `fastmcp`, `uvicorn[standard]` and `wsproto` are
 Community serving dependencies. Core exposes `build_mcp_asgi_app()` and `mount_mcp()`
@@ -204,69 +207,7 @@ artifact flush/probe behavior and pending-work enumeration through
 `GlobalDiscoveryRuntime.flush_after_write_batch` and
 `CognitivePendingWorkProvider`.
 
-`build_mcp_asgi_app(trace_sink=None)` and `mount_mcp(app, trace_sink=None)` are the two helpers exposed from `okto_pulse.core.mcp`. Pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app. The optional `trace_sink` is a core port; core never resolves environment variables or writes local JSONL traces by itself.
-
-## Docker
-
-This repo has **no Dockerfile**. The deployable artifact is a single image built from the sibling [`okto-pulse`](https://github.com/OktoLabsAI/okto-pulse) repo:
-
-- `okto-pulse/Dockerfile` target `local-runtime` builds wheels from this repo and `okto-pulse/` as siblings (used by `okto-pulse/docker-compose.yml` and the release pipeline's smoke build).
-- `okto-pulse/Dockerfile` target `pypi-runtime` installs `okto-pulse==<version>` from PyPI, which transitively pulls this package off PyPI per the floor in `okto-pulse/pyproject.toml` (used by `okto-pulse/docker-compose.prod.yml`).
-
-To run the published image:
-
-```bash
-docker run -d --name okto-pulse \
-  -e HOST=0.0.0.0 -e MCP_HOST=0.0.0.0 \
-  -p 8100:8100 -p 8101:8101 \
-  -v okto-pulse-data:/data \
-  ghcr.io/oktolabsai/okto-pulse:latest
-```
-
-See [`okto-pulse/README.md`](https://github.com/OktoLabsAI/okto-pulse#run-with-docker) for the full Docker quickstart, and [`okto-pulse/CLAUDE.md`](https://github.com/OktoLabsAI/okto-pulse/blob/main/CLAUDE.md) for the multi-stage build architecture.
-
-## Release Notes
-
-### 0.3.0 — current
-
-Changeset:
-
-- **Backend SaaS-refactor preparation** — the core tree now carries the first backend-only hexagonal refactor seams for application use cases, inbound adapters, repositories/unit-of-work and KG provider ports. The intent is to keep Community behavior stable while moving implementation specifics out of the core contract.
-- **Architecture Resource Gate multi-hop coverage fix** — `copy_architecture_to_card` now preserves the canonical root Architecture identity across copy-of-copy chains, and `design_ids` filters match the effective ref's root and intermediate identities. This unblocks specs whose mandatory Architecture resource is inherited through ideation -> refinement -> spec.
-- **0.3.0 local runtime package** — package metadata, runtime version discovery and lock metadata now resolve as `okto-pulse-core 0.3.0` for local rebuild/reinstall.
-
-### 0.2.6
-
-Changeset:
-
-- **Canonical Architecture Design evaluation became the propagation source of truth** — the backend critic now produces the same structured verdict used by authoring, Resource Gate, REST/MCP copy flows and SDLC propagation. Any active finding, unavailable verdict or revalidation blocker prevents downstream copy instead of being bypassed by acknowledgement or implicit snapshotting.
-- **Architecture propagation now fails closed everywhere it matters** — active Architecture Design critic findings, missing/unavailable verdicts and in-memory revalidation blockers prevent copy/propagation into downstream artifacts. Acknowledgement remains audit-only and never authorizes propagation.
-- **Completion gates consume the same canonical architecture decision** — `ResourceGateService.validate_entity_completion()` and the spec architecture-findings done path now treat `architecture_propagation_blocking=true` as a real blocker, including cases with no persisted active finding rows.
-- **REST/MCP error surfaces stay structured** — `ArchitecturePropagationBlocked` now maps to the canonical payload with stable `code`, design/source identifiers, finding keys, verdict status and remediation instead of being flattened into a generic validation string.
-- **Card resource snapshots are consistently read-only** — effective-resource read models mark direct card snapshots read-only, matching the write-side 409 behavior and preventing UI/API consumers from advertising edits that cannot succeed.
-- **Effective architecture copy avoids duplicate lineage snapshots** — inherited architecture refs now carry source identity (`source_design_id`/`source_ref`) and fallback copy plans de-duplicate by canonical source identity before copying to cards.
-- **Runtime and regression coverage** — focused tests cover propagation-block completion, structured REST error mapping, read-only card snapshots and deduped effective architecture fallback refs. The installed `0.2.6` API was also smoke-tested through `/api/v1/architecture/validate` to confirm live structured warnings are emitted by the packaged runtime.
-
-### 0.2.5
-
-Scope is taken from the finalized specs on the **Okto Pulse 0.2.5** board and the `feature/0.2.5` branch diff over `feature/0.2.3`: `311 files changed, +59,295 / -1,104`. This release turns the 0.2.3 KG durability base into a governed operating layer for canonical graph maturity, cognitive closeout, board defaults, Design System consumption, Path B amendment remediation and AWS metrics publication health.
-
-- **KG canonical/working partitioning and recovery** — maturity-aware source classification, layer-aware rebuild/preflight diagnostics, canonical-only query defaults with explicit working opt-in, canonical source manifests, global-discovery parity, natural-query layer audits, self-loop/connectivity safeguards, stale-canonical demotion/reconcile paths and `recovery_needed` rebuild safety.
-- **Canonical debt and operational visibility** — `CanonicalDebt` tracking for failed/deferred promotion, replay contracts, canonical-partition integrity checks, stale-canonical parity and digest-layer mismatch endpoints, active queue/DLQ separation, lineage/count diagnostics and KG health reporting that distinguishes canonical debt from cognitive closeout work.
-- **Cognitive readiness and closeout governance** — shared cognitive closeout store/readiness service, deterministic-only ownership for Criterion/Constraint closeout, human-only skip/no-action ledgers, skip/clear controls, technical-blocker metrics, read-only MCP/API exposure and the Cognitive Action Center read model.
-- **Board defaults, guidelines and Design System governance** — versioned `DefaultBoardConfiguration` templates, default global-guideline materialization for new boards, global/inline Design System catalog, board association/default selection, effective Design System surfacing in board context/preflight and `MockupDesignSystemGate` advisory/blocking enforcement with audit.
-- **Metrics publication health for AWS ingestion** — explicit telemetry event contracts, real emitters for CLI/MCP/KG/lifecycle/pipeline activity, semantic event eras, delta batching, watermark/retention, HTTP/token policy, local failure-state, redacted publish-health DTOs over API/MCP and a triage runbook that reports AWS/reporting gaps as actionable states instead of healthy.
-- **Path B amendment remediation for bug regression** — `AmendmentHotfixRevision` model, service, REST/MCP lifecycle, eligibility policy, artifact association, validator coverage confirmation and KG rebuild handling so post-bug semantic gaps are closed through formal amendment lineage rather than untracked spec edits.
-- **Gate and MCP contract hardening from E2E** — docs/schema now surface Design System evidence fields on mockups, direct `okto_pulse_link_task(target_type="fr")` traceability, strict scenario-type behavior, re-executable test evidence classes, 0-100 validation/evaluation scales, test-card scenario caps, direct test-card `not_started -> in_progress` support and the FR coverage dependency on `business_rules[].linked_requirements`.
-- **Regression coverage and docs** — new pytest coverage spans telemetry publish-health, default board config, Design System gates, Path B, amendment revisions, cognitive readiness/action-center flows, KG layer/canonical-debt behavior, MCP contract drift and E2E-discovered edge cases. The MCP workflow/reference docs were refreshed in lockstep.
-
-### 0.2.3
-
-The largest release since 0.2.0. Scope is taken from the **53 finalized specs on the Okto Pulse 0.2.3 board** (the platform dogfooded its own SDLC), landing **64 new core modules** across eight subsystems. `335 files changed, +103,183 / −4,532` over `0.2.2`; every subsystem ships with its pytest suite. The package grew to **52 models / 28 services / 33 API modules / 215 MCP tools / 17 named gates**.
-
-- **KG corruption prevention & durability (headline — KG-01, KGDL.01)** — new write-path primitives (`safe_write_lifecycle`, `write_barrier`, `single_writer_lock`, `backpressure`, `quarantine`, `contingency`). A non-destructive durability lifecycle (`STEP_CHECKPOINT` no longer closes the cached `Database`; a per-board `_BoardCloseGuard` drains live readers before any close) eliminates the use-after-close of the shared `Database` — the probable second corruption vector for `graph.lbug`. Spec `3d89c192`.
-- **KG recovery, reset & deterministic rebuild (KG-02 + R2a)** — rebuild a board's graph from canonical SQL sources, deterministically and audited: `rebuild_preflight`/`_confirm`/`_run` via REST + agent-actionable MCP twins (confirmation-token gated, quarantine-aware), plus auto-recovery of interrupted checkpoints.
-- **KG zero-orphan integrity (KG-ZO-01/02)** — a node-connectivity pre-commit guard that refuses to commit orphans, plus orphan backfill, health reporting and rebuild visibility.
+`build_mcp_asgi_app(trace_sink=None)` and `mount_mcp(app, trace_sink=None)` are the two helpers exposed from `okto_pulse.core.mcp`. Pick `build_mcp_asgi_app()` to drive a separate uvicorn `Server` (the community edition does this for the `--mcp-port` listener) or `mount_mcp(app)` to mount the MCP sub-app under an arbitrary path on an existing FastAPI app. The optional `trace_sink` is a core port; core never resolves envir…2219 tokens truncated…egrity (KG-ZO-01/02)** — a node-connectivity pre-commit guard that refuses to commit orphans, plus orphan backfill, health reporting and rebuild visibility.
 - **KG cognitive consolidation & source governance (KG-03/03A)** — cognitive item control + candidate-decision promotion (`candidate_decision_store`, `cognitive_badge_resolver`), per-concept `source_ref`, and dedup granularity with SUPERSEDE wiring + counted/audited merge.
 - **KG health honesty & degraded-mode resilience (F3/F4/F16/F17, R2c)** — signal clarity (scheduler/decay debt ≠ corruption; footprint = file-size proxy), a resilient/observable decay tick, a uniform `graph_unavailable` envelope, a health-aware closeout gate + tick admission, real memory-pressure instrumentation and opt-in DLQ auto-drain.
 - **Governance, lineage & gates (BG-01, RG-01, AFG)** — `critical_context_guard` (critical mutations resolve + fingerprint full entity context first), the `resource_lineage` provenance resolver with N/A inheritance, and the Architecture Finding Done Gate wired into `spec → done`. Two gates moved from defined to enforced (15 → 17): **Cognitive Closeout** and **Architecture Findings**.
@@ -414,6 +355,26 @@ First hardening pass on the card lifecycle, the analytics contract, and the MCP 
 26+1 SQLAlchemy models, 17+1 service classes, 11 API route modules, 119 MCP tools, embedded Kùzu Knowledge Graph with deterministic workers. (Spec Skills shipped here and was removed in 0.2.0.)
 
 (Version 0.1.2 was published to TestPyPI only as a release candidate for 0.1.3.)
+
+## SaaS Closure Audit
+
+The executable ownership matrix is generated by `okto-pulse-saas-closure`. Every transitional budget must remain zero; the command fails closed on import, dependency, adapter, wheel, or documentation drift.
+
+<!-- F16-SAAS-CLOSURE:BEGIN -->
+| F16 executable surface | Owner | Observed | Terminal target |
+| --- | --- | ---: | ---: |
+| Core import rows | Core | 4300 | classified |
+| Community-to-Core import rows | Community | 524 | classified |
+| Direct dependency rows | Distribution owner | 20 | classified |
+| `import_boundary_baseline` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
+| `singleton_baseline` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
+| `dependency_temporary_exceptions` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
+| `graph_runtime_compatibility` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
+| `rebuild_artifact_compatibility` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
+| `community_private_reach_ins` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
+| `community_adapter_bridges` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
+| `af35_relational_residue` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
+<!-- F16-SAAS-CLOSURE:END -->
 
 ## License
 

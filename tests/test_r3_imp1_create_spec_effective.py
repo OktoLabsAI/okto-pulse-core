@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import select
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
     Ideation,
@@ -243,12 +243,12 @@ async def test_propagation_failure_is_structured_and_rolls_back(db_factory, monk
     board_id = await _board(db_factory)
     seed = await _refinement_with_direct_resources(db_factory, board_id)
 
-    import okto_pulse.core.services.main as main_module
+    import okto_pulse.core.services.effective_resource_propagation as propagation_module
 
     async def _boom(*args, **kwargs):
         raise RuntimeError("simulated propagate_artifacts failure")
 
-    monkeypatch.setattr(main_module, "propagate_artifacts", _boom)
+    monkeypatch.setattr(propagation_module, "propagate_artifacts", _boom)
 
     result = await _call(
         "okto_pulse_create_spec", board_id=board_id, title="Spec that fails propagation",

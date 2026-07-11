@@ -131,8 +131,9 @@ async def _get_user_boards(get_agent=None, get_uow=None) -> tuple[Any, list[str]
                 self.id = id
 
         boards = list(await auth.get_accessible_boards() or [])
+        realm_scope = await auth.get_realm_scope()
         query_scope = ActorScope.from_context(
-            ActorContext(agent_id, "mcp")
+            ActorContext(agent_id, "mcp", realm_scope=realm_scope)
         ).query_scope(allowed_board_ids=boards, require_ownership=False)
         return _Stub(agent_id), sorted(query_scope.allowed_board_ids or ())
 

@@ -23,7 +23,7 @@ from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
 )
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
 from okto_pulse.core.kg.workers.cognitive_closeout import CognitiveCloseoutWorker
-from okto_pulse.core.models.db import Board, Spec
+from sqlalchemy_test_models import Board, Spec
 
 ANALYSIS = (
     "## Analysis\n"
@@ -41,7 +41,7 @@ def _require_real_community_graph(_kg_registry_test_fakes):
 def _seed_node(board_id: str, node_type: str, source_ref: str, *, node_id: str | None = None,
                graph_layer: str = "canonical") -> str:
     """Seed a canonical node (Entity provenance root / Decision / Bug) directly."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     nid = node_id or f"{node_type.lower()}_seed_{uuid.uuid4().hex[:12]}"
@@ -69,7 +69,7 @@ def _seed_entity_root(board_id: str, source_ref: str) -> str:
 
 
 def _count_relates_to_alternative(board_id: str, alt_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -204,7 +204,7 @@ async def test_worker_persist_failure_marks_ledger_failed(
 
 
 def _count_validates_bug(board_id: str, learning_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -302,7 +302,7 @@ async def test_persister_failure_at_each_step_no_partial_graph(
 
 
 def _count_alternatives_relates_to_for_spec(board_id: str, spec_id: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(

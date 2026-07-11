@@ -83,6 +83,7 @@ AF35_S3_CLEAN_REST_TARGET_FILES: tuple[str, ...] = (
     "api/comments.py",
     "api/dead_letter.py",
     "api/default_board_config.py",
+    "api/deps.py",
     "api/design_systems.py",
     "api/discovery.py",
     "api/guidelines.py",
@@ -164,14 +165,9 @@ _API_DEPS_RETIREMENT = (
 
 _DEFERRED_PATTERN_COUNTS: dict[str, dict[str, int]] = {}
 
-_ALLOWED_UOW_SEAM_COUNTS: dict[str, dict[str, int]] = {
-    "api/deps.py": {
-        PATTERN_ASYNC_SESSION_IMPORT: 1,
-        PATTERN_ASYNC_SESSION_ANNOTATION: 1,
-        PATTERN_GET_DB_IMPORT: 1,
-        PATTERN_DEPENDS_GET_DB: 1,
-    }
-}
+# F12 closed the final REST session seam. Any future occurrence is unclassified
+# and blocks the gate; there is no zero-value allowance to keep in the ledger.
+_ALLOWED_UOW_SEAM_COUNTS: dict[str, dict[str, int]] = {}
 
 
 def _owner_for_deferred_file(file: str) -> tuple[str, str, str]:

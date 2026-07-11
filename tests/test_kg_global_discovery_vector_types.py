@@ -34,8 +34,8 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gdvt_"))
 
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.global_discovery import metrics as gdm
-from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
-from okto_pulse.core.kg.global_discovery.schema import (
+from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
+from global_graph_testing import (
     bootstrap_global_discovery,
     open_global_connection,
     reset_global_discovery_runtime_for_tests,
@@ -46,7 +46,7 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     VECTOR_INDEX_TYPES,
     bootstrap_board_graph,
     open_board_connection,
@@ -57,15 +57,14 @@ from okto_pulse.core.kg.schemas import (
     CommitConsolidationRequest,
     ProposeReconciliationRequest,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
-    RealBoardGraphPathResolverForTests,
     RealBoardGraphTransactionForTests,
     configure_test_kg_registry,
 )
@@ -76,7 +75,6 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
         graph_transaction=RealBoardGraphTransactionForTests(),
-        graph_path_resolver=RealBoardGraphPathResolverForTests(),
     )
 
 
@@ -157,7 +155,7 @@ async def _run_outbox(db_factory, board_id, refs):
             payload={"session_id": session_id, "nodes_added": len(refs)},
         ))
         await db.commit()
-    worker = OutboxWorker(db_factory, interval_seconds=5)
+    worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
     return await worker.process_once()
 
 

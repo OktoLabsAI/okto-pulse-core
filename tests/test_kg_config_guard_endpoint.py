@@ -46,7 +46,7 @@ async def _reset_app_settings():
     kg_kuzu_max_db_size_gb=4 makes the next test's "value_not_changed"
     path fire spuriously."""
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.services.settings_service import AppSetting
+    from sqlalchemy_test_models import AppSetting
 
     factory = get_session_factory()
     async with factory() as session:
@@ -62,8 +62,8 @@ async def _reset_app_settings():
 async def settings_client():
     from fastapi import FastAPI
 
-    from okto_pulse.core.api.settings import router
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.settings import router
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     app = FastAPI()

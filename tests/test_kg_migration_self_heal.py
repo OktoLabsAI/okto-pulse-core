@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from okto_pulse.core.kg import primitives as primitives_mod
-from okto_pulse.core.kg.schema import NODE_TYPES
+from kg_schema_testing import NODE_TYPES
 
 schema_mod = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
 BoardConnection = schema_mod.BoardConnection
@@ -140,7 +140,7 @@ def test_ts3_cli_single_board_fails_closed_without_composition(fresh_board):
     deprecates CLEARLY (non-zero exit + an actionable hint) instead of silently
     migrating. The real migration runs via an edition-composed surface; the JSON
     payload SHAPE is covered in-process (composed) by the test below."""
-    from okto_pulse.core.kg.schema import close_board_db_cache
+    from kg_schema_testing import close_board_db_cache
     close_board_db_cache(board_id=fresh_board)
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -224,7 +224,7 @@ def test_ts5_mcp_rest_payload_parity(fresh_board):
     `migrate_schema_for_board(board_id)` and serialize the dict. The shape
     must match exactly.
     """
-    from okto_pulse.core.api.kg_routes import MigrateSchemaResponse
+    from okto_pulse.community.api.kg_routes import MigrateSchemaResponse
     rest_summary = migrate_schema_for_board(fresh_board)
     rest_payload = MigrateSchemaResponse(**rest_summary).model_dump()
 

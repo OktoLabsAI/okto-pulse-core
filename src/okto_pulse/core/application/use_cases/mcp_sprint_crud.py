@@ -17,13 +17,14 @@ subclass — adapters that branch on it must catch it FIRST.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
 
 
@@ -57,11 +58,10 @@ class McpCreateSprintUseCase:
     S-LANE-01 fail-closed ``SprintCreate`` DTO build (before this call)."""
 
     async def execute(
-        self, command: McpCreateSprintCommand, *, actor: ActorContext, uow: Any
+        self, command: McpCreateSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpCreateSprintResult:
-        from okto_pulse.core.services.main import SprintService
 
-        sprint = await SprintService(session_of(uow)).create_sprint(
+        sprint = await uow.services.sprints.create_sprint(
             command.board_id, actor.actor_id, command.data, skip_ownership_check=True
         )
         await commit(uow)
@@ -88,16 +88,15 @@ class McpGetSprintResult:
 
 class McpGetSprintUseCase:
     """Fetch a sprint + build the FULL presentation dict (cards/qa_items lazy) HERE in
-    the application layer (Clean Core: the MCP adapter must stay thin — no uow.session
+    the application layer (Clean Core: the MCP adapter must stay thin and expose no
     composed queries, no direct service). A ``None`` result -> ``not_found`` -> the
     adapter's "Sprint not found". No board-scope, auth-only (legacy parity)."""
 
     async def execute(
-        self, command: McpGetSprintCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetSprintResult:
-        from okto_pulse.core.services.main import SprintService
 
-        sprint = await SprintService(session_of(uow)).get_sprint(command.sprint_id)
+        sprint = await uow.services.sprints.get_sprint(command.sprint_id)
         if not sprint:
             return McpGetSprintResult(not_found=True)
         result = {
@@ -163,13 +162,10 @@ class McpGetSprintContextUseCase:
     dropped (read-no-commit)."""
 
     async def execute(
-        self, command: McpGetSprintContextCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetSprintContextCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetSprintContextResult:
-        from okto_pulse.core.services import SpecService
-        from okto_pulse.core.services.main import SprintService
 
-        session = session_of(uow)
-        sprint = await SprintService(session).get_sprint(command.sprint_id)
+        sprint = await uow.services.sprints.get_sprint(command.sprint_id)
         if not sprint or sprint.board_id != command.board_id:
             raise EntityNotFoundError("sprint", command.sprint_id)
 
@@ -217,7 +213,7 @@ class McpGetSprintContextUseCase:
         }
 
         if command.include_spec and sprint.spec_id:
-            spec = await SpecService(session).get_spec(sprint.spec_id)
+            spec = await uow.services.specs.get_spec(sprint.spec_id)
             if spec:
                 sprint_card_ids = {c.id for c in sprint.cards}
                 spec_ts = spec.test_scenarios or []
@@ -307,11 +303,10 @@ class McpListSprintEvaluationsUseCase:
     sprint -> ``not_found`` -> "Sprint not found". No board-scope, auth-only."""
 
     async def execute(
-        self, command: McpListSprintEvaluationsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListSprintEvaluationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListSprintEvaluationsResult:
-        from okto_pulse.core.services.main import SprintService
 
-        sprint = await SprintService(session_of(uow)).get_sprint(command.sprint_id)
+        sprint = await uow.services.sprints.get_sprint(command.sprint_id)
         if not sprint:
             return McpListSprintEvaluationsResult(not_found=True)
         evaluations = sprint.evaluations or []
@@ -363,11 +358,10 @@ class McpGetSprintEvaluationUseCase:
     returned UNWRAPPED. No board-scope, auth-only."""
 
     async def execute(
-        self, command: McpGetSprintEvaluationCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetSprintEvaluationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetSprintEvaluationResult:
-        from okto_pulse.core.services.main import SprintService
 
-        sprint = await SprintService(session_of(uow)).get_sprint(command.sprint_id)
+        sprint = await uow.services.sprints.get_sprint(command.sprint_id)
         if not sprint:
             return McpGetSprintEvaluationResult(sprint_not_found=True)
         for e in sprint.evaluations or []:
@@ -401,11 +395,10 @@ class McpDeleteSprintEvaluationUseCase:
     no board-scope (legacy parity)."""
 
     async def execute(
-        self, command: McpDeleteSprintEvaluationCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteSprintEvaluationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteSprintEvaluationResult:
-        from okto_pulse.core.services.main import SprintService
 
-        status = await SprintService(session_of(uow)).delete_evaluation(
+        status = await uow.services.sprints.delete_evaluation(
             command.sprint_id, actor.actor_id, command.evaluation_id
         )
         if status == "deleted":
@@ -444,12 +437,11 @@ class McpAnswerSprintQuestionUseCase:
     result -> ``qa_not_found`` -> "Q&A item not found" (NOT "...or invalid selection")."""
 
     async def execute(
-        self, command: McpAnswerSprintQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAnswerSprintQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAnswerSprintQuestionResult:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
-        from okto_pulse.core.services.main import SprintQAService
 
-        service = SprintQAService(session_of(uow))
+        service = uow.services.sprint_qa
         try:
             qa = await service.answer_question(
                 command.qa_id, actor.actor_id, command.answer,
@@ -488,16 +480,13 @@ class McpDeleteSprintQuestionUseCase:
     stays in the adapter (present here, unlike the answer tool)."""
 
     async def execute(
-        self, command: McpDeleteSprintQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteSprintQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteSprintQuestionResult:
-        from okto_pulse.core.services import BoardService
-        from okto_pulse.core.services.main import SprintQAService
 
-        session = session_of(uow)
-        deleted = await SprintQAService(session).delete_question(command.qa_id)
+        deleted = await uow.services.sprint_qa.delete_question(command.qa_id)
         if not deleted:
             return McpDeleteSprintQuestionResult(qa_not_found=True)
-        await BoardService(session)._log_activity(
+        await uow.services.boards._log_activity(
             board_id=command.board_id,
             action="sprint_question_deleted",
             actor_type="agent",

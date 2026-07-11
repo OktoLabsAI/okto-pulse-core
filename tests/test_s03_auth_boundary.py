@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from okto_pulse.core.api.auth_deps import get_current_user, get_realm_id, require_user
+from okto_pulse.community.api.auth_deps import get_current_user, get_realm_id, require_user
 from okto_pulse.core.application.use_cases.base import actor_context_from_principal
 from okto_pulse.core.infra.auth import (
     configure_auth,
@@ -129,10 +129,11 @@ def test_rest_adapter_preserves_local_and_saas_auth_http_contracts() -> None:
         _restore_auth_provider(previous)
 
 
-def test_legacy_dependency_import_resolves_to_inbound_adapter_symbol() -> None:
-    from okto_pulse.core.infra.auth import require_user as legacy_require_user
+def test_fastapi_dependencies_exist_only_on_the_community_inbound_adapter() -> None:
+    import okto_pulse.core.infra.auth as core_auth
 
-    assert legacy_require_user is require_user
+    assert not hasattr(core_auth, "require_user")
+    assert require_user.__module__ == "okto_pulse.community.api.auth_deps"
 
 
 def test_rest_and_mcp_principals_feed_the_same_actor_policy_contract() -> None:
@@ -171,7 +172,7 @@ def test_rest_and_mcp_principals_feed_the_same_actor_policy_contract() -> None:
 async def test_board_access_denial_is_forbidden_without_a_mutation(monkeypatch) -> None:
     from fastapi import HTTPException
 
-    from okto_pulse.core.api.kg_routes import _ensure_board_access
+    from okto_pulse.community.api.kg_routes import _ensure_board_access
     import okto_pulse.core.services.main as services_main
 
     class _ReadOnlyBoardService:

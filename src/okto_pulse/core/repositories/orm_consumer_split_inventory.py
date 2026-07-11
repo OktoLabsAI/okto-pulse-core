@@ -51,7 +51,7 @@ from okto_pulse.core.repositories.core_orm_import_gate import (
     resolve_attribute_module,
     resolve_debt_ref,
 )
-from okto_pulse.core.repositories.debt import ORM_RETURN_DEBT, SESSION_BRIDGE_DEBT
+from okto_pulse.core.repositories.debt import ORM_RETURN_DEBT
 from okto_pulse.core.repositories.relational_boundary_gate import default_core_path
 
 #: ORM types for which a repository PORT exists — derived from the live
@@ -629,18 +629,6 @@ def core_orm_governance_report(core_root: str | Path | None = None) -> dict:
                 f for f in ORM_DRAINED_BY_IMP3 if f in CORE_ORM_IMPORT_ALLOWLIST
             ],
             "mechanism": "resolve_unit_of_work_factory().wrap(session).boards.get(id)",
-        },
-        "session_bridge": {
-            "debt_ref": "session_bridge_debt",
-            "location": SESSION_BRIDGE_DEBT.location,
-            "withdrawal_criterion": SESSION_BRIDGE_DEBT.withdrawal_criterion,
-            "reduction_now": 0,
-            "justification": (
-                "Functional uow.session reads in the spec #09 use cases are "
-                "board-scoped / aggregated / joined queries the thin get(id)/add "
-                "ports do not express; draining them requires DTO-returning rich "
-                "ports — the domain/ORM separation axis, not IMP3."
-            ),
         },
         "remainder": {
             "total_orm_definition_couplings": orm_total,

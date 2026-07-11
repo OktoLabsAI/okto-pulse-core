@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
@@ -36,7 +35,7 @@ def _iso(value: Any) -> str | None:
 class DefaultBoardConfigApiService:
     """Validate + orchestrate admin operations on default board configuration."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: object) -> None:
         self._db = db
         self._svc = DefaultBoardConfigurationService(db)
 
@@ -91,7 +90,6 @@ class DefaultBoardConfigApiService:
             activate=activate,
             query_scope=query_scope,
         )
-        await self._db.refresh(template)  # load server_default created_at/updated_at (no MissingGreenlet)
         return self._serialize(template)
 
     async def activate_version(
@@ -106,12 +104,10 @@ class DefaultBoardConfigApiService:
             actor,
             query_scope=query_scope,
         )
-        await self._db.refresh(template)  # load onupdate updated_at (no MissingGreenlet)
         return self._serialize(template)
 
     async def deactivate_version(self, *, template_id: str, actor: str) -> dict[str, Any]:
         template = await self._svc.deactivate_version(template_id, actor)
-        await self._db.refresh(template)
         return self._serialize(template)
 
     # -- guideline defaults (spec 8a2fad91) --------------------------------
@@ -133,7 +129,6 @@ class DefaultBoardConfigApiService:
             actor,
             query_scope=query_scope,
         )
-        await self._db.refresh(template)
         return self._serialize(template)
 
     async def list_default_candidates(
@@ -174,7 +169,6 @@ class DefaultBoardConfigApiService:
             snapshot=snapshot,
             gate_mode=gate_mode,
         )
-        await self._db.refresh(template)
         return self._serialize(template)
 
     # -- internals ---------------------------------------------------------

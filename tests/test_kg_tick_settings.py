@@ -140,7 +140,7 @@ async def test_ts3_put_outside_range_rejected_by_pydantic():
     no service. Verificamos diretamente via Pydantic ValidationError.
     """
     from pydantic import ValidationError
-    from okto_pulse.core.api.settings import RuntimeSettingsPayload
+    from okto_pulse.community.api.settings import RuntimeSettingsPayload
 
     with pytest.raises(ValidationError) as exc_info:
         RuntimeSettingsPayload(kg_decay_tick_interval_minutes=4)
@@ -160,7 +160,7 @@ async def test_ts6_reset_last_recomputed_at_handles_empty_scope():
     Kuzu fixture com nodes pré-existentes — deferred para integration
     test em sessão futura.
     """
-    from okto_pulse.core.api.kg_tick import _reset_last_recomputed_at
+    from okto_pulse.community.api.kg_tick import _reset_last_recomputed_at
 
     # Per-board scope com board inexistente → tenta open_board_connection
     # que vai falhar gracefully (try/except interno).
@@ -174,7 +174,7 @@ async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior(monkeypatch)
     diretamente: ela deve aceitar tick_id + board_id + force_full_rebuild
     e completar sem exception (best-effort background).
     """
-    from okto_pulse.core.api import kg_tick
+    from okto_pulse.community.api import kg_tick
     from okto_pulse.core.events.handlers import kg_decay_tick
 
     published: list[dict] = []
@@ -204,7 +204,7 @@ async def test_ts5_mcp_dispatch_uses_injected_session_scope_when_omitted(monkeyp
     _dispatch_manual_tick must use the composition-provided session scope and
     must not fall back to core.infra.database.get_session_factory.
     """
-    from okto_pulse.core.api import kg_tick
+    from okto_pulse.community.api import kg_tick
     from okto_pulse.core.events.handlers import kg_decay_tick
     from okto_pulse.core.infra import database as database_module
 
@@ -265,7 +265,7 @@ async def test_ts5_dispatch_explicit_session_is_caller_owned(monkeypatch):
     The helper must publish with exactly that session and must not open an
     injected scope or assume commit/rollback.
     """
-    from okto_pulse.core.api import kg_tick
+    from okto_pulse.community.api import kg_tick
     from okto_pulse.core.events.handlers import kg_decay_tick
     from okto_pulse.core.infra import database as database_module
 
@@ -320,8 +320,8 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     Usa o módulo diretamente (sem TestClient) para evitar setup ASGI.
     Captura o lock manualmente para simular "já em execução".
     """
-    from okto_pulse.core.api import kg_tick
-    from okto_pulse.core.api.kg_tick import (
+    from okto_pulse.community.api import kg_tick
+    from okto_pulse.community.api.kg_tick import (
         TickRunNowRequest,
         TickRunNowResponse,
         run_tick_now,
@@ -337,6 +337,14 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
         def __init__(self) -> None:
             self.committed = False
             self.rolled_back = False
+            self.services = SimpleNamespace(
+                kg=SimpleNamespace(dispatch_manual_tick=self._dispatch_manual_tick)
+            )
+
+        async def _dispatch_manual_tick(self, **kwargs) -> None:
+            from okto_pulse.core.application.kg_tick import dispatch_manual_tick
+
+            await dispatch_manual_tick(session=self, **kwargs)
 
         async def commit(self) -> None:
             self.committed = True

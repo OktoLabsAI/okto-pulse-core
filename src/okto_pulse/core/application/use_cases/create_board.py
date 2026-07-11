@@ -9,15 +9,15 @@ command/actor and serializes the result via ``BoardResponse``.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
-    session_of,
 )
 from okto_pulse.core.models import BoardCreate
-from okto_pulse.core.services import BoardService
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 
 
@@ -44,18 +44,25 @@ class CreateBoardUseCase:
     """Create a board without any transport dependency."""
 
     async def execute(
-        self, command: CreateBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateBoardResult:
-        session = session_of(uow)
-        service = BoardService(session)
+        service = uow.services.boards
         board = await service.create_board(
             actor.actor_id, command.data, realm_id=actor.realm_id
         )
         await commit(uow)
         # Re-fetch with relationships loaded (mirrors api/boards.py:create_board).
         board = await service.get_board(board.id)
-        board.__dict__["agents"] = []
-        board.__dict__["settings"] = BoardGovernanceService.normalize_settings(
-            getattr(board, "settings", None)
-        )
+        values = {
+            "agents": [],
+            "settings": BoardGovernanceService.normalize_settings(
+                getattr(board, "settings", None)
+            ),
+        }
+        attach = getattr(board, "attach", None)
+        if callable(attach):
+            for name, value in values.items():
+                attach(name, value)
+        else:
+            board.__dict__.update(values)
         return CreateBoardResult(board=board)

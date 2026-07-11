@@ -7,7 +7,7 @@ import asyncio
 import pytest
 
 from coordination_fakes import FakeWriteLockPort
-from okto_pulse.core.kg.workers.advisory_lock import (
+from okto_pulse.core.ports.advisory_lock import (
     advisory_lock,
     advisory_lock_sync,
     get_async_lock,
@@ -110,7 +110,7 @@ def test_get_sync_lock_distinct_keys_do_not_share():
 async def test_emit_session_committed_writes_outbox_row():
     """Emitter inserts a properly-typed row into the global_update_outbox."""
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import GlobalUpdateOutbox
+    from sqlalchemy_test_models import GlobalUpdateOutbox
     from okto_pulse.core.kg.workers.commit_events import (
         EVENT_TYPE_SESSION_COMMITTED,
         emit_session_committed,

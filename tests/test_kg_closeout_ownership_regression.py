@@ -51,7 +51,7 @@ from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 def _seed_entity_root(board_id: str, source_ref: str) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
@@ -87,7 +87,7 @@ def _seed_entity_root(board_id: str, source_ref: str) -> str:
 
 
 def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(

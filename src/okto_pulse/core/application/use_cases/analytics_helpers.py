@@ -10,23 +10,20 @@ Date parsing and the velocity granularity 400 stay in the REST adapter.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from datetime import datetime
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
-    session_of,
 )
 
 
-async def _ensure_board_owner(uow: Any, board_id: str, user_id: str):
-    from okto_pulse.core.services.analytics_service import board_is_owned_by
-
-    session = session_of(uow)
-    if not await board_is_owned_by(session, board_id, user_id):
+async def _ensure_board_owner(uow: PulseUnitOfWork, board_id: str, user_id: str):
+    if not await uow.services.analytics.board_is_owned_by(board_id, user_id):
         raise EntityNotFoundError("board", board_id)
-    return session
 
 
 # --- blockers ---------------------------------------------------------------
@@ -52,15 +49,12 @@ class BoardBlockersResult:
 
 class BoardBlockersUseCase:
     async def execute(
-        self, command: BoardBlockersCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardBlockersCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardBlockersResult:
-        from okto_pulse.core.services.analytics_service import compute_blockers
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
         return BoardBlockersResult(
-            await compute_blockers(
-                session,
-                command.board_id,
+            await uow.services.analytics.blockers(command.board_id,
                 stale_hours=command.stale_hours,
                 filter_type=command.filter_type,
             )
@@ -90,14 +84,12 @@ class BoardFunnelResult:
 
 class BoardFunnelUseCase:
     async def execute(
-        self, command: BoardFunnelCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardFunnelCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardFunnelResult:
-        from okto_pulse.core.services.analytics_service import compute_funnel
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
         return BoardFunnelResult(
-            await compute_funnel(
-                session, command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
+            await uow.services.analytics.funnel(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
         )
 
@@ -135,15 +127,12 @@ class BoardVelocityResult:
 
 class BoardVelocityUseCase:
     async def execute(
-        self, command: BoardVelocityCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardVelocityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardVelocityResult:
-        from okto_pulse.core.services.analytics_service import compute_velocity
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
         return BoardVelocityResult(
-            await compute_velocity(
-                session,
-                command.board_id,
+            await uow.services.analytics.velocity(command.board_id,
                 granularity=command.granularity,
                 weeks=command.weeks,
                 days=command.days,
@@ -176,14 +165,12 @@ class BoardCoverageResult:
 
 class BoardCoverageUseCase:
     async def execute(
-        self, command: BoardCoverageCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardCoverageCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardCoverageResult:
-        from okto_pulse.core.services.analytics_service import compute_coverage
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
         return BoardCoverageResult(
-            await compute_coverage(
-                session, command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
+            await uow.services.analytics.coverage(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
         )
 
@@ -213,13 +200,11 @@ class AnalyticsOverviewUseCase:
     guard — ``compute_overview`` filters strictly by ``owner_id == actor``."""
 
     async def execute(
-        self, command: AnalyticsOverviewCommand, *, actor: ActorContext, uow: Any
+        self, command: AnalyticsOverviewCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AnalyticsOverviewResult:
-        from okto_pulse.core.services.analytics_service import compute_overview
 
         return AnalyticsOverviewResult(
-            await compute_overview(
-                session_of(uow), actor.actor_id,
+            await uow.services.analytics.overview(actor.actor_id,
                 dt_from=command.dt_from, dt_to=command.dt_to,
             )
         )
@@ -248,14 +233,12 @@ class BoardQualityResult:
 
 class BoardQualityUseCase:
     async def execute(
-        self, command: BoardQualityCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardQualityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardQualityResult:
-        from okto_pulse.core.services.analytics_service import compute_quality
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
         return BoardQualityResult(
-            await compute_quality(
-                session, command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
+            await uow.services.analytics.quality(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
         )
 
@@ -280,14 +263,12 @@ class BoardValidationsResult:
 
 class BoardValidationsUseCase:
     async def execute(
-        self, command: BoardValidationsCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardValidationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardValidationsResult:
-        from okto_pulse.core.services.analytics_service import compute_validations
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
         return BoardValidationsResult(
-            await compute_validations(
-                session, command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
+            await uow.services.analytics.validations(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
         )
 
@@ -311,12 +292,11 @@ class BoardSpecAnalyticsUseCase:
     """Per-spec analytics (read). 404 "Board not found" then "Spec not found"."""
 
     async def execute(
-        self, command: BoardSpecAnalyticsCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardSpecAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardSpecAnalyticsResult:
-        from okto_pulse.core.services.analytics_service import compute_spec_analytics
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
-        data = await compute_spec_analytics(session, command.board_id, command.spec_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        data = await uow.services.analytics.spec(command.board_id, command.spec_id)
         if data is None:
             raise EntityNotFoundError("spec", command.spec_id)
         return BoardSpecAnalyticsResult(data)
@@ -341,12 +321,11 @@ class BoardSprintAnalyticsUseCase:
     """Per-sprint analytics (read). 404 "Board not found" then "Sprint not found"."""
 
     async def execute(
-        self, command: BoardSprintAnalyticsCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardSprintAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardSprintAnalyticsResult:
-        from okto_pulse.core.services.analytics_service import compute_sprint_analytics
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
-        data = await compute_sprint_analytics(session, command.board_id, command.sprint_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        data = await uow.services.analytics.sprint(command.board_id, command.sprint_id)
         if data is None:
             raise EntityNotFoundError("sprint", command.sprint_id)
         return BoardSprintAnalyticsResult(data)
@@ -375,14 +354,12 @@ class BoardSprintsAnalyticsResult:
 
 class BoardSprintsAnalyticsUseCase:
     async def execute(
-        self, command: BoardSprintsAnalyticsCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardSprintsAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardSprintsAnalyticsResult:
-        from okto_pulse.core.services.analytics_service import compute_sprints_analytics
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
         return BoardSprintsAnalyticsResult(
-            await compute_sprints_analytics(
-                session, command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
+            await uow.services.analytics.sprints(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
         )
 
@@ -407,14 +384,12 @@ class BoardAgentsResult:
 
 class BoardAgentsUseCase:
     async def execute(
-        self, command: BoardAgentsCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardAgentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardAgentsResult:
-        from okto_pulse.core.services.analytics_service import compute_agents
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
         return BoardAgentsResult(
-            await compute_agents(
-                session, command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
+            await uow.services.analytics.agents(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
         )
 
@@ -457,27 +432,21 @@ class BoardEntitiesUseCase:
     first; an unknown type raises ``CommandValidationError`` (adapter → 400)."""
 
     async def execute(
-        self, command: BoardEntitiesCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardEntitiesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardEntitiesResult:
         from okto_pulse.core.application.use_cases.base import CommandValidationError
-        from okto_pulse.core.services.analytics_service import (
-            _list_card_entities,
-            _list_ideation_entities,
-            _list_spec_entities,
-        )
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
-        readers = {
-            "ideation": _list_ideation_entities,
-            "spec": _list_spec_entities,
-            "card": _list_card_entities,
-        }
-        reader = readers.get(command.type)
-        if reader is None:
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        if command.type not in {"ideation", "spec", "card"}:
             raise CommandValidationError("type must be one of: ideation, spec, card")
-        data = await reader(
-            session, command.board_id, command.offset, command.limit,
-            command.dt_from, command.dt_to, command.search,
+        data = await uow.services.analytics.entities(
+            command.type,
+            command.board_id,
+            offset=command.offset,
+            limit=command.limit,
+            dt_from=command.dt_from,
+            dt_to=command.dt_to,
+            search=command.search,
         )
         return BoardEntitiesResult(data)
 
@@ -507,31 +476,26 @@ class BoardEntityDetailUseCase:
     ``EntityNotFoundError(entity_type)`` (adapter → 404 "<Type> not found")."""
 
     async def execute(
-        self, command: BoardEntityDetailCommand, *, actor: ActorContext, uow: Any
+        self, command: BoardEntityDetailCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardEntityDetailResult:
         from okto_pulse.core.application.use_cases.base import CommandValidationError
-        from okto_pulse.core.services.analytics_service import (
-            _card_detail,
-            _ideation_detail,
-            _refinement_detail,
-            _spec_detail,
-            _sprint_detail,
-        )
 
-        session = await _ensure_board_owner(uow, command.board_id, actor.actor_id)
-        readers = {
-            "spec": _spec_detail,
-            "ideation": _ideation_detail,
-            "card": _card_detail,
-            "refinement": _refinement_detail,
-            "sprint": _sprint_detail,
-        }
-        reader = readers.get(command.entity_type)
-        if reader is None:
+        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        if command.entity_type not in {
+            "spec",
+            "ideation",
+            "card",
+            "refinement",
+            "sprint",
+        }:
             raise CommandValidationError(
                 "entity_type must be one of: spec, ideation, card, refinement, sprint"
             )
-        data = await reader(session, command.board_id, command.entity_id)
+        data = await uow.services.analytics.entity_detail(
+            command.entity_type,
+            command.board_id,
+            command.entity_id,
+        )
         if data is None:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
         return BoardEntityDetailResult(data)

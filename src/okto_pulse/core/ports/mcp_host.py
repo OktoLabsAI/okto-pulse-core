@@ -8,6 +8,8 @@ can supply its own authenticated gateway.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -48,29 +50,28 @@ class McpHostProvider(Protocol):
         ...
 
 
-_mcp_host_provider: McpHostProvider | None = None
+_RUNTIME_KEY = "ports.mcp_host.provider"
 
 
 def register_mcp_host_provider(provider: McpHostProvider) -> None:
     """Register the MCP host selected by the edition composition root."""
 
-    global _mcp_host_provider
-    _mcp_host_provider = provider
+    register_runtime_value(_RUNTIME_KEY, provider)
 
 
 def get_mcp_host_provider() -> McpHostProvider:
     """Resolve the composed host, failing closed outside an edition runtime."""
 
-    if _mcp_host_provider is None:
+    provider = resolve_runtime_value(_RUNTIME_KEY)
+    if provider is None:
         raise McpHostProviderMissing()
-    return _mcp_host_provider
+    return provider
 
 
 def reset_mcp_host_provider_for_tests() -> None:
     """Clear explicit test composition."""
 
-    global _mcp_host_provider
-    _mcp_host_provider = None
+    reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [

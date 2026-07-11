@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.kg.workers.dead_letter import list_dead_letter
-from okto_pulse.core.models.db import ConsolidationDeadLetter, ConsolidationQueue
+from okto_pulse.core.application.processors.dead_letter import list_dead_letter
+from okto_pulse.core.ports.kg_operational import get_kg_worker_queue_port
 
 
 def _normalise_errors(value: Any) -> list[dict[str, Any]]:
@@ -68,7 +64,7 @@ def _normalise_errors(value: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _row_to_dict(row: ConsolidationDeadLetter) -> dict[str, Any]:
+def _row_to_dict(row: Any) -> dict[str, Any]:
     errors = _normalise_errors(row.errors)
     # AC6 / ts_c604a02b: derive last_error/error_text from the most recent
     # attempt, keeping the full errors[] history intact.
@@ -100,39 +96,29 @@ def _row_to_dict(row: ConsolidationDeadLetter) -> dict[str, Any]:
 
 
 async def list_cognitive_dlq_rows(
-    db: AsyncSession,
+    db: object,
     board_id: str,
     *,
     limit: int,
     offset: int,
-) -> tuple[int, list[ConsolidationDeadLetter]]:
+) -> tuple[int, list[Any]]:
     """Read the board's technical-DLQ rows for the cognitive DLQ surface
     (spec R01A MCP-FU3B): the total count + a page of ``ConsolidationDeadLetter``
     rows ordered by id. Extracted verbatim from the inline query in the
     ``okto_pulse_kg_list_cognitive_dlq`` MCP tool so that tool no longer issues SQL
     directly; the row projection (normalized artifact id, technical_dlq framing)
     stays in the adapter."""
-    total = (
-        await db.execute(
-            select(func.count())
-            .select_from(ConsolidationDeadLetter)
-            .where(ConsolidationDeadLetter.board_id == board_id)
-        )
-    ).scalar_one()
-    rows = (
-        await db.execute(
-            select(ConsolidationDeadLetter)
-            .where(ConsolidationDeadLetter.board_id == board_id)
-            .order_by(ConsolidationDeadLetter.id)
-            .limit(limit)
-            .offset(offset)
-        )
-    ).scalars().all()
+    total, rows = await get_kg_worker_queue_port().list_dead_letter_page(
+        db,
+        board_id=board_id,
+        limit=limit,
+        offset=offset,
+    )
     return total, list(rows)
 
 
 async def list_dead_letter_rows(
-    db: AsyncSession,
+    db: object,
     board_id: str,
     *,
     limit: int = 50,
@@ -161,7 +147,7 @@ async def list_dead_letter_rows(
 
 
 async def reprocess_dead_letter_rows(
-    db: AsyncSession,
+    db: object,
     board_id: str,
     *,
     dead_letter_ids: Iterable[str] | None = None,
@@ -177,77 +163,11 @@ async def reprocess_dead_letter_rows(
     limit = max(1, min(int(limit or 50), 200))
     ids = [str(item) for item in (dead_letter_ids or []) if str(item).strip()]
 
-    query = (
-        select(ConsolidationDeadLetter)
-        .where(ConsolidationDeadLetter.board_id == board_id)
-    )
-    if ids:
-        query = query.where(ConsolidationDeadLetter.id.in_(ids))
-    query = query.order_by(ConsolidationDeadLetter.dead_lettered_at.asc()).limit(limit)
-
-    rows = list((await db.execute(query)).scalars().all())
-    requeued: list[dict[str, Any]] = []
-    already_queued: list[dict[str, Any]] = []
-    now = datetime.now(timezone.utc)
-
-    for row in rows:
-        existing_result = await db.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == row.board_id,
-                ConsolidationQueue.artifact_type == row.artifact_type,
-                ConsolidationQueue.artifact_id == row.artifact_id,
-            )
+    return dict(
+        await get_kg_worker_queue_port().reprocess_dead_letter_rows(
+            db,
+            board_id=board_id,
+            dead_letter_ids=ids,
+            limit=limit,
         )
-        existing = existing_result.scalar_one_or_none()
-        if existing is None:
-            queue_row = ConsolidationQueue(
-                board_id=row.board_id,
-                artifact_type=row.artifact_type,
-                artifact_id=row.artifact_id,
-                priority="high",
-                source="dead_letter_reprocess",
-                status="pending",
-                triggered_at=now,
-                triggered_by_event="dlq_reprocess",
-                attempts=0,
-                last_error=None,
-                next_retry_at=None,
-                claimed_at=None,
-                claim_timeout_at=None,
-                worker_id=None,
-                claimed_by_session_id=None,
-            )
-            db.add(queue_row)
-            await db.flush()
-            requeued.append({
-                "dead_letter_id": row.id,
-                "queue_id": queue_row.id,
-                "artifact_type": row.artifact_type,
-                "artifact_id": row.artifact_id,
-            })
-        else:
-            existing.status = "pending"
-            existing.attempts = 0
-            existing.last_error = None
-            existing.next_retry_at = None
-            existing.claimed_at = None
-            existing.claim_timeout_at = None
-            existing.worker_id = None
-            existing.claimed_by_session_id = None
-            already_queued.append({
-                "dead_letter_id": row.id,
-                "queue_id": existing.id,
-                "artifact_type": row.artifact_type,
-                "artifact_id": row.artifact_id,
-            })
-        await db.delete(row)
-
-    return {
-        "success": True,
-        "requested": len(ids) if ids else None,
-        "selected": len(rows),
-        "requeued": requeued,
-        "already_queued": already_queued,
-        "requeued_count": len(requeued),
-        "already_queued_count": len(already_queued),
-    }
+    )

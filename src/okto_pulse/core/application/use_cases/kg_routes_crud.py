@@ -20,6 +20,8 @@ commit. ``KGToolError`` raised by the KG service (``query_global`` /
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -27,18 +29,20 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     PermissionDeniedError,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.scope import ActorScope
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 
-async def _require_board_access(session: Any, actor: ActorContext, board_id: str) -> None:
+async def _require_board_access(
+    services: ApplicationServiceCatalog,
+    actor: ActorContext,
+    board_id: str,
+) -> None:
     """Fail closed unless the actor can see the target board through QueryScope."""
-    from okto_pulse.core.services.main import BoardService
-
     actor_scope = ActorScope.from_context(actor)
     query_scope = actor_scope.query_scope(target_board_id=board_id)
-    board = await BoardService(session).get_board(
+    board = await services.boards.get_board(
         board_id,
         actor_scope.actor_id,
         query_scope=query_scope,
@@ -47,12 +51,13 @@ async def _require_board_access(session: Any, actor: ActorContext, board_id: str
         raise PermissionDeniedError("Not authorized to access this board")
 
 
-async def _visible_board_ids(session: Any, actor: ActorContext) -> list[str]:
+async def _visible_board_ids(
+    services: ApplicationServiceCatalog,
+    actor: ActorContext,
+) -> list[str]:
     """Resolve the actor's global KG search scope using the board service."""
-    from okto_pulse.core.services.main import BoardService
-
     actor_scope = ActorScope.from_context(actor)
-    boards, _total = await BoardService(session).list_boards(
+    boards, _total = await services.boards.list_boards(
         actor_scope.actor_id,
         offset=0,
         limit=10_000_000,
@@ -92,13 +97,11 @@ class ListAuditUseCase:
     ``{"entries": ..., "next_cursor": None}`` envelope."""
 
     async def execute(
-        self, command: ListAuditCommand, *, actor: ActorContext, uow: Any
+        self, command: ListAuditCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListAuditResult:
-        from okto_pulse.core.services.application_kg import list_consolidation_audit
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        entries = await list_consolidation_audit(
-            session_of(uow), command.board_id, limit=command.limit
+        await _require_board_access(uow.services, actor, command.board_id)
+        entries = await uow.services.kg.list_consolidation_audit(command.board_id, limit=command.limit
         )
         return ListAuditResult(entries)
 
@@ -140,14 +143,14 @@ class GlobalSearchUseCase:
     """
 
     async def execute(
-        self, command: GlobalSearchCommand, *, actor: ActorContext, uow: Any
+        self, command: GlobalSearchCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GlobalSearchResult:
         from okto_pulse.core.services.application_kg import (
             normalize_graph_layer,
             query_global,
         )
 
-        user_board_ids = await _visible_board_ids(session_of(uow), actor)
+        user_board_ids = await _visible_board_ids(uow.services, actor)
         layer = normalize_graph_layer(command.graph_layer)
         results = query_global(
             command.q,
@@ -183,13 +186,11 @@ class StartHistoricalUseCase:
     verbatim."""
 
     async def execute(
-        self, command: StartHistoricalCommand, *, actor: ActorContext, uow: Any
+        self, command: StartHistoricalCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> StartHistoricalResult:
-        from okto_pulse.core.services.application_kg import start_historical_consolidation
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        payload = await start_historical_consolidation(
-            session_of(uow), command.board_id
+        await _require_board_access(uow.services, actor, command.board_id)
+        payload = await uow.services.kg.start_historical_consolidation(command.board_id
         )
         return StartHistoricalResult(payload)
 
@@ -217,12 +218,11 @@ class CancelHistoricalUseCase:
     payload verbatim."""
 
     async def execute(
-        self, command: CancelHistoricalCommand, *, actor: ActorContext, uow: Any
+        self, command: CancelHistoricalCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CancelHistoricalResult:
-        from okto_pulse.core.services.application_kg import cancel_historical
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        payload = await cancel_historical(session_of(uow), command.board_id)
+        await _require_board_access(uow.services, actor, command.board_id)
+        payload = await uow.services.kg.cancel_historical(command.board_id)
         return CancelHistoricalResult(payload)
 
 
@@ -250,12 +250,11 @@ class GetHistoricalProgressUseCase:
     Delegates to ``governance.get_historical_progress`` verbatim."""
 
     async def execute(
-        self, command: GetHistoricalProgressCommand, *, actor: ActorContext, uow: Any
+        self, command: GetHistoricalProgressCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetHistoricalProgressResult:
-        from okto_pulse.core.services.application_kg import get_historical_progress
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        progress = await get_historical_progress(session_of(uow), command.board_id)
+        await _require_board_access(uow.services, actor, command.board_id)
+        progress = await uow.services.kg.get_historical_progress(command.board_id)
         return GetHistoricalProgressResult(progress)
 
 
@@ -283,12 +282,11 @@ class DeleteBoardKgUseCase:
     regardless of the counts, exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: DeleteBoardKgCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteBoardKgCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteBoardKgResult:
-        from okto_pulse.core.services.application_kg import right_to_erasure
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        counts = await right_to_erasure(session_of(uow), command.board_id)
+        await _require_board_access(uow.services, actor, command.board_id)
+        counts = await uow.services.kg.right_to_erasure(command.board_id)
         return DeleteBoardKgResult(counts)
 
 
@@ -323,12 +321,11 @@ class ListPendingUseCase:
     derives the ``count`` from the returned entries."""
 
     async def execute(
-        self, command: ListPendingCommand, *, actor: ActorContext, uow: Any
+        self, command: ListPendingCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListPendingResult:
-        from okto_pulse.core.services.application_kg import list_pending_entries
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        entries = await list_pending_entries(session_of(uow), command.board_id)
+        await _require_board_access(uow.services, actor, command.board_id)
+        entries = await uow.services.kg.list_pending_entries(command.board_id)
         return ListPendingResult(entries)
 
 
@@ -357,13 +354,11 @@ class ListPendingTreeUseCase:
     (``{board_id, depth, total_pending, levels, tree}``) for the adapter."""
 
     async def execute(
-        self, command: ListPendingTreeCommand, *, actor: ActorContext, uow: Any
+        self, command: ListPendingTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListPendingTreeResult:
-        from okto_pulse.core.services.application_kg import build_pending_tree
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        payload = await build_pending_tree(
-            session_of(uow), command.board_id, depth=command.depth
+        await _require_board_access(uow.services, actor, command.board_id)
+        payload = await uow.services.kg.build_pending_tree(command.board_id, depth=command.depth
         )
         return ListPendingTreeResult(payload)
 
@@ -398,14 +393,11 @@ class RetryPendingEntryUseCase:
     not found"); the use case issues NO second commit."""
 
     async def execute(
-        self, command: RetryPendingEntryCommand, *, actor: ActorContext, uow: Any
+        self, command: RetryPendingEntryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RetryPendingEntryResult:
-        from okto_pulse.core.services.application_kg import retry_pending_entry
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        payload = await retry_pending_entry(
-            session_of(uow),
-            command.board_id,
+        await _require_board_access(uow.services, actor, command.board_id)
+        payload = await uow.services.kg.retry_pending_entry(command.board_id,
             command.queue_entry_id,
             recursive=command.recursive,
         )
@@ -452,13 +444,11 @@ class BoostNodeUseCase:
     adapter (→ 500 ``kuzu_error``)."""
 
     async def execute(
-        self, command: BoostNodeCommand, *, actor: ActorContext, uow: Any
+        self, command: BoostNodeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoostNodeResult:
-        from okto_pulse.core.services.application_kg import boost_node
 
-        await _require_board_access(session_of(uow), actor, command.board_id)
-        payload = await boost_node(
-            session_of(uow), command.board_id, command.node_id, actor_id=actor.actor_id
+        await _require_board_access(uow.services, actor, command.board_id)
+        payload = await uow.services.kg.boost_node(command.board_id, command.node_id, actor_id=actor.actor_id
         )
         if payload is None:
             raise EntityNotFoundError("node", command.node_id)

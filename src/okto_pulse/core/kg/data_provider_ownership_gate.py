@@ -55,7 +55,7 @@ LEDGERED_DATA_FALLBACK: dict[str, dict] = {}
 #: and is kept separate from the relational fallback ledger, which must remain
 #: empty after R-P2-02.
 TEST_ONLY_CONFIG_FAKE_ROUTES: frozenset[str] = frozenset(
-    {"kg/interfaces/registry.py"}
+    {"kg/providers/testing/registry.py"}
 )
 
 # Runtime Community modules must not depend on the concrete core config helper.

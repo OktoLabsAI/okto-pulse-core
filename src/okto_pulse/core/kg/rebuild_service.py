@@ -49,20 +49,19 @@ None on outcomes other than COMPLETED.
 
 from __future__ import annotations
 
-import json
 import logging
 import secrets
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable
 
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
 )
+from okto_pulse.core.kg.rebuild_audit import resolve_rebuild_audit_artifact_store
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_service")
 
@@ -156,7 +155,8 @@ def _materialized_layer_counts(board_id: str) -> dict[str, int]:
     except Exception as exc:
         logger.warning(
             "kg.rebuild.materialized_layer_probe_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         return {}
     return counts
@@ -270,6 +270,7 @@ def reset_rebuild_run_counter() -> None:
 
 # --- Adapter types -----------------------------------------------------------
 
+
 # Rebuild step adapter: receives the manifest + actor context and
 # performs the actual structural rebuild. KG-02.5 wires the real
 # deterministic rebuilder; KG-02.3 ships a stub that returns ok=True.
@@ -303,9 +304,7 @@ class RebuildStepResult:
     structural_hash: str | None = None
     source_hash: str | None = None
     counts: dict[str, int] = field(default_factory=dict)
-    reconciliation_decisions: tuple[dict[str, Any], ...] = field(
-        default_factory=tuple
-    )
+    reconciliation_decisions: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     drilldown: dict[str, Any] = field(default_factory=dict)
 
 
@@ -344,7 +343,7 @@ class KGRebuildService:
     real KG-01.1-5 primitives.
     """
 
-    base_dir: Path | None
+    base_dir: object | None
     single_writer_lock: Any  # KGSingleWriterLock
     safe_write_lifecycle: Any  # KGSafeWriteLifecycle
     quarantine_service: Any  # KGQuarantineService | None
@@ -366,6 +365,16 @@ class KGRebuildService:
     # 1000-iter stress at KG-01.6 plus headroom.
     lock_ttl_seconds: int = 3600
     artifact_store: RebuildAuditArtifactStore | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
 
     # --- public API --------------------------------------------------------
 
@@ -473,9 +482,7 @@ class KGRebuildService:
         # 3. Revalidate manifest against fresh enumeration if a source
         # enumerator is wired. Drift → abort.
         if self.source_enumerator is not None:
-            current_source_set = self.source_enumerator.enumerate(
-                board_id=board_id
-            )
+            current_source_set = self.source_enumerator.enumerate(board_id=board_id)
             revalidation = self.manifest_store.revalidate(
                 manifest=manifest, current_source_set=current_source_set
             )
@@ -497,6 +504,7 @@ class KGRebuildService:
                     detail="source_set_hash drift between preflight and run",
                 )
             from okto_pulse.core.kg.rebuild_sources import SourceSetRevalidation
+
             if revalidation.outcome is SourceSetRevalidation.REBASELINE:
                 # Spec source manifest v1->v2 rebaseline (card 5ec8c75c /
                 # dec_c8e418e7): the v1-compatible hash proved UNCHANGED, so
@@ -508,7 +516,9 @@ class KGRebuildService:
                     "kg.rebuild_service.spec_manifest_rebaseline board=%s "
                     "run=%s from_manifest_version=%d rebaselined_count=%d "
                     "rebaselined_source_refs=%s",
-                    board_id, run_id, manifest.manifest_schema_version,
+                    board_id,
+                    run_id,
+                    manifest.manifest_schema_version,
                     len(revalidation.rebaselined_source_refs),
                     list(revalidation.rebaselined_source_refs)[:50],
                 )
@@ -559,13 +569,12 @@ class KGRebuildService:
             )
 
             try:
-                previous_generation = self.generation_repository.get_current(
-                    board_id
-                )
+                previous_generation = self.generation_repository.get_current(board_id)
             except Exception as exc:
                 logger.error(
                     "kg.rebuild.previous_generation_read_failed board=%s err=%s",
-                    board_id, exc,
+                    board_id,
+                    exc,
                 )
                 return self._finalise_with_release(
                     run_id=run_id,
@@ -638,8 +647,7 @@ class KGRebuildService:
                 if step_result.previous_kg_generation_id is not None:
                     previous_generation = step_result.previous_kg_generation_id
                 current_generation = (
-                    step_result.current_kg_generation_id
-                    or candidate_generation_id
+                    step_result.current_kg_generation_id or candidate_generation_id
                 )
 
                 if not step_result.ok:
@@ -804,13 +812,12 @@ class KGRebuildService:
         # KG-01 single-writer; leaving it orphaned blocks every future
         # writer until TTL.
         try:
-            self.single_writer_lock.release(
-                board_id=board_id, owner_token=owner_token
-            )
+            self.single_writer_lock.release(board_id=board_id, owner_token=owner_token)
         except Exception as exc:
             logger.error(
                 "kg.rebuild.lock_release_failed board=%s err=%s",
-                board_id, exc,
+                board_id,
+                exc,
             )
 
         # KG-02.4 report-first terminal gate. Only runs when the four
@@ -849,9 +856,7 @@ class KGRebuildService:
             started_at=started_at,
             affected_files=affected_files,
             previous_kg_generation_id=previous_kg_generation_id,
-            current_kg_generation_id=report_first_decision[
-                "current_kg_generation_id"
-            ],
+            current_kg_generation_id=report_first_decision["current_kg_generation_id"],
             detail=report_first_decision["detail"] or detail,
             report_ref=report_first_decision["report_ref"],
             report_id=report_first_decision["report_id"],
@@ -927,8 +932,7 @@ class KGRebuildService:
                 generation_id=candidate_kg_generation_id,
             )
             if zero_orphan_validation.get("integrity_warning") or (
-                zero_orphan_validation.get("zero_orphan_validation")
-                == "unavailable"
+                zero_orphan_validation.get("zero_orphan_validation") == "unavailable"
             ):
                 candidate_terminal = RebuildOutcome.FAILED_ORPHAN_VALIDATION.value
 
@@ -1001,7 +1005,10 @@ class KGRebuildService:
         if persist_result.outcome != ReportPersistOutcome.STORED.value:
             # br_82deef11: store failure leaves previous safe generation
             # active and surfaces report_persist_failed.
-            if persist_result.outcome == ReportPersistOutcome.SENSITIVE_PAYLOAD_REJECTED.value:
+            if (
+                persist_result.outcome
+                == ReportPersistOutcome.SENSITIVE_PAYLOAD_REJECTED.value
+            ):
                 final_reason = RebuildBlockReason.REPORT_PERSIST_SENSITIVE_REJECTED
             else:
                 final_reason = RebuildBlockReason.REPORT_PERSIST_STORE_FAILED
@@ -1027,13 +1034,11 @@ class KGRebuildService:
                 guard_eligible = True
                 if self.promotion_guard is not None:
                     structural_hash = (
-                        (step_result.structural_hash if step_result else None)
-                        or ""
-                    )
+                        step_result.structural_hash if step_result else None
+                    ) or ""
                     source_hash = (
-                        (step_result.source_hash if step_result else None)
-                        or ""
-                    )
+                        step_result.source_hash if step_result else None
+                    ) or ""
                     evaluation = self.promotion_guard.evaluate(
                         board_id=board_id,
                         previous_kg_generation_id=previous_kg_generation_id,
@@ -1050,9 +1055,7 @@ class KGRebuildService:
                             or "promotion_blocked_by_guard"
                         )
                         final_outcome = RebuildOutcome.REPORT_PERSIST_FAILED
-                        final_reason = (
-                            RebuildBlockReason.GENERATION_PROMOTION_BLOCKED
-                        )
+                        final_reason = RebuildBlockReason.GENERATION_PROMOTION_BLOCKED
 
                 if guard_eligible:
                     promo = self.generation_repository.promote_current(
@@ -1077,9 +1080,7 @@ class KGRebuildService:
                         promoted_generation = promo.current_kg_generation_id
                     else:
                         final_outcome = RebuildOutcome.REPORT_PERSIST_FAILED
-                        final_reason = (
-                            RebuildBlockReason.GENERATION_PROMOTION_BLOCKED
-                        )
+                        final_reason = RebuildBlockReason.GENERATION_PROMOTION_BLOCKED
                         operator_action = (
                             operator_action or "promotion_repository_rejected"
                         )
@@ -1117,7 +1118,8 @@ class KGRebuildService:
             except Exception as exc:
                 logger.error(
                     "kg.rebuild.event_emit_failed run_id=%s err=%s",
-                    run_id, exc,
+                    run_id,
+                    exc,
                 )
 
         return {
@@ -1151,7 +1153,8 @@ class KGRebuildService:
         except Exception as exc:
             logger.warning(
                 "kg.rebuild.orphan_validation_failed board=%s err=%s",
-                board_id, exc,
+                board_id,
+                exc,
             )
             return build_orphan_integrity_projection(
                 None,
@@ -1222,37 +1225,32 @@ class KGRebuildService:
         }
         audit_ref = ""
         try:
-            if self.artifact_store is not None:
-                audit_key = RebuildAuditKey(
-                    namespace="run_audit",
-                    board_id=board_id,
-                    artifact_id=run_id,
-                )
-                self.artifact_store.write_json_atomic(audit_key, audit_payload)
-                audit_ref = audit_key.to_ref()
-            else:
-                if self.base_dir is None:
-                    raise RuntimeError(
-                        "base_dir is required when RebuildAuditArtifactStore is not supplied"
-                    )
-                audit_dir = self.base_dir / REBUILD_DIRNAME / AUDIT_DIRNAME
-                audit_dir.mkdir(parents=True, exist_ok=True)
-                audit_path = audit_dir / f"{run_id}.json"
-                with audit_path.open("w", encoding="utf-8") as fh:
-                    json.dump(audit_payload, fh, indent=2)
-                audit_ref = str(audit_path)
+            audit_key = RebuildAuditKey(
+                namespace="run_audit",
+                board_id=board_id,
+                artifact_id=run_id,
+            )
+            self.artifact_store.write_json_atomic(audit_key, audit_payload)
+            audit_ref = self.artifact_store.reference(audit_key)
         except Exception as exc:
             logger.error(
                 "kg.rebuild.audit_persist_failed run_id=%s err=%s",
-                run_id, exc,
+                run_id,
+                exc,
             )
 
         _bump_rebuild(board_id=board_id, status=outcome.value, reason=reason.value)
         logger.warning(
             "kg.rebuild.run_finalised run_id=%s board=%s actor=%s "
             "operation=%s outcome=%s reason=%s audit_ref=%s report_ref=%s",
-            run_id, board_id, actor_id, operation, outcome.value, reason.value,
-            audit_ref, report_ref,
+            run_id,
+            board_id,
+            actor_id,
+            operation,
+            outcome.value,
+            reason.value,
+            audit_ref,
+            report_ref,
         )
 
         return RebuildRunResult(

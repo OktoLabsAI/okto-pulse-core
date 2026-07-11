@@ -100,7 +100,6 @@ from okto_pulse.core.application.use_cases.base import (
     UseCase,
     UseCaseError,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.application.use_cases.cognitive_readiness import (
@@ -959,6 +958,8 @@ from okto_pulse.core.application.use_cases.update_board_overrides import (
 __all__ = [
     # base
     "ActorContext",
+    "ActorScope",
+    "QueryScope",
     "Source",
     "UseCase",
     "UseCaseError",
@@ -966,8 +967,19 @@ __all__ = [
     "ConflictError",
     "EntityNotFoundError",
     "PermissionDeniedError",
-    "session_of",
     "commit",
+    # allowed_transitions
+    "ALLOWED_TRANSITIONS_DRIFT_METRIC",
+    "ALLOWED_TRANSITIONS_SOURCE",
+    "AllowedTransition",
+    "AllowedTransitionDriftReport",
+    "AllowedTransitionsReadModel",
+    "ListAllowedTransitionsCommand",
+    "ListAllowedTransitionsResult",
+    "ListAllowedTransitionsUseCase",
+    "allowed_transition_edges",
+    "allowed_transitions_for_status",
+    "calculate_allowed_transition_drift",
     # agent_crud (REST-FU1)
     "CreateAgentCommand",
     "CreateAgentResult",

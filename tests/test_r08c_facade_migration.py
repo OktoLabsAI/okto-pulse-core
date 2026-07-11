@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-import okto_pulse.core.app as _core_app  # noqa: F401 (register ORM models)
+import okto_pulse.community.app as _core_app  # noqa: F401 (register ORM models)
 import okto_pulse.core.infra.database as _db_mod
 import okto_pulse.core.mcp.server as server
 from okto_pulse.core.services.main import AgentService
@@ -105,8 +105,8 @@ def _seeded():
 
 
 async def _seed(tmp: str) -> None:
-    from okto_pulse.core.models.db import Agent, AgentBoard, Board
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from sqlalchemy_test_models import Agent, AgentBoard, Board
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.runtime_registry import register_unit_of_work_factory
 
     _db_mod.create_database(f"sqlite+aiosqlite:///{Path(tmp) / 'r08c.db'}")

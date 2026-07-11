@@ -37,13 +37,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence, TypeAlias
 
 from okto_pulse.core.domain.amendment_eligibility import (
     COVERAGE_CONFIRMATION_KEY,
     amendment_status_is_blocking,
 )
-from okto_pulse.core.models.db import Card, Spec
+
+Card: TypeAlias = Any
+Spec: TypeAlias = Any
 
 
 class BugRegressionEligibilityReason(str, Enum):

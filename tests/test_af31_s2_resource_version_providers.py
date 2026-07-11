@@ -67,18 +67,14 @@ def test_af31_s2_core_instructions_do_not_require_app_prompt(monkeypatch):
 
 def test_af31_s2_registered_instruction_provider_wins(tmp_path):
     from okto_pulse.core.mcp import server
-    from okto_pulse.core.ports.mcp_instructions import StaticFileMcpInstructionProvider
-
-    prompt = tmp_path / "agent_system_prompt.md"
-    prompt.write_text("provider-owned instructions", encoding="utf-8")
+    from okto_pulse.core.ports.mcp_instructions import StaticMcpInstructionProvider
 
     server.reset_instruction_providers_for_tests()
     try:
         server.register_instruction_provider(
-            StaticFileMcpInstructionProvider(
+            StaticMcpInstructionProvider(
                 provider_id="test",
-                base_dir=tmp_path,
-                relative_path=prompt.name,
+                content="provider-owned instructions",
             )
         )
         assert server._load_instructions() == "provider-owned instructions"

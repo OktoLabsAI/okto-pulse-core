@@ -15,6 +15,8 @@ revoke / delete must stay WITHOUT ``invalidate_agent_cache`` — see
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -22,9 +24,7 @@ from okto_pulse.core.application.use_cases.base import (
     ConflictError,
     EntityNotFoundError,
     commit,
-    session_of,
 )
-from okto_pulse.core.services import AgentService, BoardService
 
 
 # --- create -----------------------------------------------------------------
@@ -49,9 +49,9 @@ class CreateAgentUseCase:
     """Create a global agent owned by the actor (write — commits, then refetches)."""
 
     async def execute(
-        self, command: CreateAgentCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateAgentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateAgentResult:
-        service = AgentService(session_of(uow))
+        service = uow.services.agents
         agent, reveal_once_secret = await service.create_agent(actor.actor_id, command.data)
         await commit(uow)
         refetched = await service.get_agent(agent.id)
@@ -76,9 +76,9 @@ class ListAgentsForUserUseCase:
     """List the actor's owned agents (read)."""
 
     async def execute(
-        self, command: ListAgentsForUserCommand, *, actor: ActorContext, uow: Any
+        self, command: ListAgentsForUserCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListAgentsForUserResult:
-        service = AgentService(session_of(uow))
+        service = uow.services.agents
         return ListAgentsForUserResult(await service.list_agents_for_user(actor.actor_id))
 
 
@@ -106,13 +106,12 @@ class ListAgentsForBoardUseCase:
     owned — the REST adapter maps that to the legacy 404."""
 
     async def execute(
-        self, command: ListAgentsForBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: ListAgentsForBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListAgentsForBoardResult:
-        session = session_of(uow)
-        board = await BoardService(session).get_board(command.board_id, actor.actor_id)
+        board = await uow.services.boards.get_board(command.board_id, actor.actor_id)
         if not board:
             raise EntityNotFoundError("board", command.board_id)
-        agents = await AgentService(session).list_agents_for_board(command.board_id)
+        agents = await uow.services.agents.list_agents_for_board(command.board_id)
         return ListAgentsForBoardResult(agents)
 
 
@@ -138,9 +137,9 @@ class GetAgentUseCase:
     not owned by the actor (REST → 404)."""
 
     async def execute(
-        self, command: GetAgentCommand, *, actor: ActorContext, uow: Any
+        self, command: GetAgentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetAgentResult:
-        service = AgentService(session_of(uow))
+        service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
@@ -169,9 +168,9 @@ class RegenerateAgentKeyUseCase:
     """Rotate an owned agent's API key (write — commits). 404 when not owned."""
 
     async def execute(
-        self, command: RegenerateAgentKeyCommand, *, actor: ActorContext, uow: Any
+        self, command: RegenerateAgentKeyCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RegenerateAgentKeyResult:
-        service = AgentService(session_of(uow))
+        service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
@@ -199,9 +198,9 @@ class DeleteAgentUseCase:
     invalidation (not a proven invalidation point)."""
 
     async def execute(
-        self, command: DeleteAgentCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteAgentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteAgentResult:
-        service = AgentService(session_of(uow))
+        service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
@@ -236,14 +235,13 @@ class GrantBoardAccessUseCase:
     invalidation."""
 
     async def execute(
-        self, command: GrantBoardAccessCommand, *, actor: ActorContext, uow: Any
+        self, command: GrantBoardAccessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GrantBoardAccessResult:
-        session = session_of(uow)
-        service = AgentService(session)
+        service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
-        board = await BoardService(session).get_board(command.board_id, actor.actor_id)
+        board = await uow.services.boards.get_board(command.board_id, actor.actor_id)
         if not board:
             raise EntityNotFoundError("board", command.board_id)
         if await service.agent_has_board_access(command.agent_id, command.board_id):
@@ -277,9 +275,9 @@ class RevokeBoardAccessUseCase:
     there was no grant to revoke. NO cache invalidation."""
 
     async def execute(
-        self, command: RevokeBoardAccessCommand, *, actor: ActorContext, uow: Any
+        self, command: RevokeBoardAccessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RevokeBoardAccessResult:
-        service = AgentService(session_of(uow))
+        service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)

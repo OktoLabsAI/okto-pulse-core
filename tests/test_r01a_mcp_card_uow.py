@@ -28,7 +28,7 @@ import pytest
 from sqlalchemy import select
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import ActivityLog, Board, Spec, SpecStatus
+from sqlalchemy_test_models import ActivityLog, Board, Spec, SpecStatus
 
 BOARD_A = "r01a-mcpcard-a"
 BOARD_B = "r01a-mcpcard-b"

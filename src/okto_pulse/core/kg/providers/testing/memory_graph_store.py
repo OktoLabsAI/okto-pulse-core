@@ -7,15 +7,14 @@ No Kuzu dependency.
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.graph_lifecycle import (
     GraphHandle,
+    GraphLifecycleStepResult,
     PurgeReport,
     RebuildReport,
 )
-from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphStorageState
 from okto_pulse.core.kg.interfaces.graph_runtime_store import (
     GraphPurgeResult,
     GraphRuntimeState,
@@ -23,9 +22,9 @@ from okto_pulse.core.kg.interfaces.graph_runtime_store import (
 )
 from okto_pulse.core.kg.interfaces.graph_schema_manager import SchemaValidationResult
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
-from okto_pulse.core.kg.safe_write_lifecycle import LifecycleStepResult
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 from okto_pulse.core.kg.schema_contract import (
-    BoardGraphHandle,
     NODE_TYPES,
     SCHEMA_VERSION,
     VECTOR_INDEX_TYPES,
@@ -338,9 +337,13 @@ class _InMemoryGraphTransactionScope:
         self.finished = False
         self.rolled_back = False
 
-    def execute(self, cypher: str, params: dict[str, Any] | None = None) -> list:
+    def execute(
+        self,
+        cypher: str,
+        params: dict[str, Any] | None = None,
+    ) -> GraphStatementResult:
         self.statements.append((cypher, params))
-        return []
+        return GraphStatementResult()
 
     async def commit(self) -> None:
         self.finished = True
@@ -364,47 +367,22 @@ class InMemoryGraphTransaction:
         return _InMemoryGraphTransactionScope(board_id)
 
 
-class InMemoryGraphPathResolver:
-    def __init__(self, base_path: Path | None = None) -> None:
-        self.base_path = base_path or Path(".okto-pulse-test-kg")
-
-    def board_graph_path(self, board_id: str) -> Path:
-        return self.base_path / "boards" / board_id / "graph.memory"
-
-    def exists(self, board_id: str) -> bool:
-        return self.board_graph_path(board_id).exists()
-
-    def storage_state(self, board_id: str) -> GraphStorageState:
-        path = self.board_graph_path(board_id)
-        return GraphStorageState(
-            board_id=board_id,
-            path=path,
-            exists=path.exists(),
-            size_bytes=path.stat().st_size if path.exists() else 0,
-            backend="memory",
-            locked=False,
-            quarantined=False,
-            sidecars=(),
-        )
-
-
 class InMemoryGraphRuntimeStore:
     """Logical graph runtime fake for core tests."""
 
     def __init__(
         self,
         store: InMemoryGraphStore | None = None,
-        resolver: InMemoryGraphPathResolver | None = None,
         schema_manager: "InMemoryGraphSchemaManager | None" = None,
     ) -> None:
         self.store = store or InMemoryGraphStore()
-        self.resolver = resolver or InMemoryGraphPathResolver()
         self.schema_manager = schema_manager or InMemoryGraphSchemaManager(self.store)
 
     def graph_state(self, board_id: str) -> GraphRuntimeState:
         bootstrapped = board_id in self.store._bootstrapped
         return GraphRuntimeState(
             board_id=board_id,
+            storage_ref=StorageRef(f"board:{board_id}", "memory_graph"),
             exists=bootstrapped,
             status="healthy" if bootstrapped else "absent",
             backend="logical_memory",
@@ -437,6 +415,7 @@ class InMemoryGraphRuntimeStore:
         exists = self.exists(board_id)
         return GraphStorageFootprint(
             board_id=board_id,
+            storage_ref=StorageRef(f"board:{board_id}", "memory_graph"),
             status="unavailable",
             source="runtime_capability",
             total_bytes=None,
@@ -500,20 +479,17 @@ class InMemoryGraphSchemaManager:
 class InMemoryGraphLifecycle:
     def __init__(
         self,
-        resolver: InMemoryGraphPathResolver | None = None,
         schema_manager: InMemoryGraphSchemaManager | None = None,
     ) -> None:
-        self.resolver = resolver or InMemoryGraphPathResolver()
         self.schema_manager = schema_manager or InMemoryGraphSchemaManager()
 
     async def open(self, board_id: str) -> GraphHandle:
         await self.schema_manager.ensure_bootstrapped(board_id)
-        state = self.resolver.storage_state(board_id)
         return GraphHandle(
             board_id=board_id,
-            path=state.path,
+            storage_ref=StorageRef(f"board:{board_id}", "memory_graph"),
             opened=True,
-            backend=state.backend,
+            status="opened",
             locked=False,
             quarantined=False,
         )
@@ -530,100 +506,18 @@ class InMemoryGraphLifecycle:
             board_id=board_id,
             status="noop",
             reason=reason,
-            affected_paths=(),
+            affected_storage_refs=(),
             quarantined=False,
         )
 
-
-class InMemoryBoardGraphRuntime:
-    """BoardGraphRuntime fake for core contract tests.
-
-    It supports path/bootstrap/lifecycle compatibility methods that can be
-    represented by the in-memory graph store. Real Ladybug/Kuzu connection APIs
-    fail closed so integration tests cannot pass against a fake backend by
-    accident.
-    """
-
-    _REAL_CONNECTION_ERROR = (
-        "InMemoryBoardGraphRuntime does not expose a Ladybug/Kuzu connection. "
-        "Configure the Community board_graph_runtime adapter for integration tests."
-    )
-
-    def __init__(
-        self,
-        store: InMemoryGraphStore | None = None,
-        resolver: InMemoryGraphPathResolver | None = None,
-        schema_manager: InMemoryGraphSchemaManager | None = None,
-    ) -> None:
-        self.store = store or InMemoryGraphStore()
-        self.resolver = resolver or InMemoryGraphPathResolver()
-        self.schema_manager = schema_manager or InMemoryGraphSchemaManager(self.store)
-
-    def board_kuzu_path(self, board_id: str) -> Path:
-        return self.resolver.board_graph_path(board_id)
-
-    def bootstrap_board_graph(self, board_id: str):
-        self.store.bootstrap(board_id)
-        return BoardGraphHandle(
-            board_id=board_id,
-            path=self.board_kuzu_path(board_id),
-            schema_version=SCHEMA_VERSION,
-        )
-
-    def ensure_board_graph_bootstrapped(self, board_id: str) -> None:
-        self.store.bootstrap(board_id)
-
-    def open_board_connection(self, board_id: str) -> Any:
-        raise RuntimeError(self._REAL_CONNECTION_ERROR)
-
-    def open_board_connection_raw(self, board_id: str) -> Any:
-        raise RuntimeError(self._REAL_CONNECTION_ERROR)
-
-    def close_all_connections(self, board_id: str | None = None) -> None:
-        return None
-
-    def close_board_db_cache(self, board_id: str | None = None) -> None:
-        return None
-
-    def purge_board_graph_storage(
+    def apply_step(
         self,
         board_id: str,
-        *,
-        reason: str = "manual",
-    ) -> list[str]:
-        self.store._nodes.pop(board_id, None)
-        self.store._edges.pop(board_id, None)
-        self.store._bootstrapped.discard(board_id)
-        return [str(self.board_kuzu_path(board_id))]
-
-    def migrate_schema_for_board(self, board_id: str) -> bool:
-        self.store.bootstrap(board_id)
-        return True
-
-    def reset_bootstrap_cache_for_tests(self) -> None:
-        self.store.clear()
-
-    def apply_ladybug_lifecycle_step(self, *args: Any, **kwargs: Any) -> Any:
-        board_id = str(args[0]) if args else str(kwargs.get("board_id", ""))
-        graph_type = (
-            str(args[1])
-            if len(args) > 1
-            else str(kwargs.get("graph_type", "board"))
-        )
-        step = str(args[2]) if len(args) > 2 else str(kwargs.get("step", "memory"))
-        return in_memory_safe_write_step_adapter(board_id, graph_type, step)
-
-    def load_vector_extension(self, conn: Any) -> None:
-        return None
-
-    def open_kuzu_db(self, path: Path) -> Any:
-        raise RuntimeError(self._REAL_CONNECTION_ERROR)
-
-    def new_connection(self, db: Any) -> Any:
-        raise RuntimeError(self._REAL_CONNECTION_ERROR)
-
-    def is_ladybug_corruption_error(self, exc: BaseException) -> bool:
-        return False
+        graph_type: str,
+        step: str,
+    ) -> GraphLifecycleStepResult:
+        del board_id, graph_type, step
+        return GraphLifecycleStepResult(ok=True, detail="memory")
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -639,5 +533,5 @@ def in_memory_safe_write_step_adapter(
     board_id: str,
     graph_type: str,
     step: str,
-) -> LifecycleStepResult:
-    return LifecycleStepResult(ok=True, detail="memory")
+) -> GraphLifecycleStepResult:
+    return GraphLifecycleStepResult(ok=True, detail="memory")

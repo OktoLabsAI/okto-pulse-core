@@ -14,13 +14,14 @@ legacy ``e.to_dict()`` envelope.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 
@@ -82,26 +83,16 @@ class McpGetBoardUseCase:
     the adapter."""
 
     async def execute(
-        self, command: McpGetBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetBoardResult:
-        from okto_pulse.core.services import (
-            AgentService,
-            BoardService,
-            IdeationService,
-            SpecService,
-        )
-        from okto_pulse.core.services.design_system import DesignSystemService
 
-        session = session_of(uow)
-        board = await BoardService(session).get_board(command.board_id)
+        board = await uow.services.boards.get_board(command.board_id)
         if not board:
             raise EntityNotFoundError("board", command.board_id)
-        agents = await AgentService(session).list_agents_for_board(command.board_id)
-        specs = await SpecService(session).list_specs(command.board_id)
-        ideations = await IdeationService(session).list_ideations(command.board_id)
-        ds_effective_raw = await DesignSystemService(
-            session
-        ).get_board_effective_design_system(command.board_id)
+        agents = await uow.services.agents.list_agents_for_board(command.board_id)
+        specs = await uow.services.specs.list_specs(command.board_id)
+        ideations = await uow.services.ideations.list_ideations(command.board_id)
+        ds_effective_raw = await uow.services.design_systems.get_board_effective_design_system(command.board_id)
         return McpGetBoardResult(board, agents, specs, ideations, ds_effective_raw)
 
 
@@ -127,24 +118,14 @@ class McpListBoardMembersUseCase:
     ``{"error": "Board not found"}``)."""
 
     async def execute(
-        self, command: McpListBoardMembersCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListBoardMembersCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListBoardMembersResult:
-        from okto_pulse.core.services import AgentService, BoardService
 
-        session = session_of(uow)
-        board = await BoardService(session).get_board(command.board_id)
+        board = await uow.services.boards.get_board(command.board_id)
         if not board:
             raise EntityNotFoundError("board", command.board_id)
-        agents = await AgentService(session).list_agents_for_board(command.board_id)
+        agents = await uow.services.agents.list_agents_for_board(command.board_id)
         return McpListBoardMembersResult(board, agents)
-
-
-def _config_service(session: Any) -> Any:
-    from okto_pulse.core.services.default_board_config_api import (
-        DefaultBoardConfigApiService,
-    )
-
-    return DefaultBoardConfigApiService(session)
 
 
 # --- default board config: reads --------------------------------------------
@@ -170,9 +151,9 @@ class McpGetActiveDefaultBoardConfigUseCase:
     """Active default board-config template for a scope (read, no commit)."""
 
     async def execute(
-        self, command: McpGetActiveDefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetActiveDefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        data = await _config_service(session_of(uow)).get_active(scope=command.scope)
+        data = await uow.services.default_board_config.get_active(scope=command.scope)
         return _DataResult(data)
 
 
@@ -191,9 +172,9 @@ class McpListDefaultBoardConfigVersionsUseCase:
         command: McpListDefaultBoardConfigVersionsCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
-        data = await _config_service(session_of(uow)).list_versions(scope=command.scope)
+        data = await uow.services.default_board_config.list_versions(scope=command.scope)
         return _DataResult(data)
 
 
@@ -213,9 +194,9 @@ class McpGetBoardDefaultConfigDiffUseCase:
         command: McpGetBoardDefaultConfigDiffCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
-        data = await _config_service(session_of(uow)).get_board_diff(
+        data = await uow.services.default_board_config.get_board_diff(
             board_id=command.board_id
         )
         return _DataResult(data)
@@ -255,9 +236,9 @@ class McpCreateDefaultBoardConfigVersionUseCase:
         command: McpCreateDefaultBoardConfigVersionCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
-        service = _config_service(session_of(uow))
+        service = uow.services.default_board_config
         query_scope = _query_scope_for_actor(actor)
         settings_payload = await _preserve_mcp_human_only_default_settings(
             service, command.settings_payload, command.scope
@@ -312,10 +293,10 @@ class McpActivateDefaultBoardConfigVersionUseCase:
         command: McpActivateDefaultBoardConfigVersionCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         query_scope = _query_scope_for_actor(actor)
-        data = await _config_service(session_of(uow)).activate_version(
+        data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
             query_scope=query_scope,
@@ -339,9 +320,9 @@ class McpDeactivateDefaultBoardConfigVersionUseCase:
         command: McpDeactivateDefaultBoardConfigVersionCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
-        data = await _config_service(session_of(uow)).deactivate_version(
+        data = await uow.services.default_board_config.deactivate_version(
             template_id=command.template_id, actor=actor.actor_id
         )
         await commit(uow)
@@ -362,12 +343,11 @@ class McpGetBoardGuidelinesUseCase:
     """Board guidelines merged + sorted for the MCP surface (read, no commit)."""
 
     async def execute(
-        self, command: McpGetBoardGuidelinesCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetBoardGuidelinesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        from okto_pulse.core.services import GuidelineService
 
         query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
-        items = await GuidelineService(session_of(uow)).get_board_guidelines(
+        items = await uow.services.guidelines.get_board_guidelines(
             command.board_id,
             surface="mcp",
             owner_id=actor.actor_id,
@@ -391,12 +371,10 @@ class McpLinkGuidelineToBoardUseCase:
     Returns the link (the adapter reads ``.priority``)."""
 
     async def execute(
-        self, command: McpLinkGuidelineToBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: McpLinkGuidelineToBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        from okto_pulse.core.services import GuidelineService
 
-        session = session_of(uow)
-        service = GuidelineService(session)
+        service = uow.services.guidelines
         query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
         guideline = await service.get_guideline(
             command.guideline_id,
@@ -431,12 +409,11 @@ class McpUnlinkGuidelineFromBoardUseCase:
     ``EntityNotFoundError("guideline_link", ...)`` → adapter ``"Link not found"``."""
 
     async def execute(
-        self, command: McpUnlinkGuidelineFromBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUnlinkGuidelineFromBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        from okto_pulse.core.services import GuidelineService
 
         query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
-        unlinked = await GuidelineService(session_of(uow)).unlink_guideline_from_board(
+        unlinked = await uow.services.guidelines.unlink_guideline_from_board(
             command.board_id,
             command.guideline_id,
             owner_id=actor.actor_id,
@@ -449,12 +426,6 @@ class McpUnlinkGuidelineFromBoardUseCase:
 
 
 # --- board ↔ design-system links (DesignSystemService) ----------------------
-
-
-def _design_system_service(session: Any) -> Any:
-    from okto_pulse.core.services.design_system import DesignSystemService
-
-    return DesignSystemService(session)
 
 
 class McpLinkBoardDesignSystemCommand:
@@ -471,9 +442,9 @@ class McpLinkBoardDesignSystemUseCase:
     adapter reads ``.board_id``/``.design_system_id``/``.design_system_version``)."""
 
     async def execute(
-        self, command: McpLinkBoardDesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: McpLinkBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        link = await _design_system_service(session_of(uow)).link_design_system_to_board(
+        link = await uow.services.design_systems.link_design_system_to_board(
             command.board_id, command.design_system_id
         )
         await commit(uow)
@@ -492,11 +463,11 @@ class McpUnlinkBoardDesignSystemUseCase:
     propagates UNCAUGHT for the adapter. Returns the ``unlinked`` flag."""
 
     async def execute(
-        self, command: McpUnlinkBoardDesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUnlinkBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        unlinked = await _design_system_service(
-            session_of(uow)
-        ).unlink_design_system_from_board(command.board_id)
+        unlinked = await uow.services.design_systems.unlink_design_system_from_board(
+            command.board_id
+        )
         await commit(uow)
         return _DataResult(unlinked)
 
@@ -513,11 +484,11 @@ class McpGetBoardDesignSystemUseCase:
     commit). ``DesignSystemError`` propagates UNCAUGHT for the adapter."""
 
     async def execute(
-        self, command: McpGetBoardDesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        effective = await _design_system_service(
-            session_of(uow)
-        ).get_board_effective_design_system(command.board_id)
+        effective = await uow.services.design_systems.get_board_effective_design_system(
+            command.board_id
+        )
         return _DataResult(effective)
 
 
@@ -609,27 +580,19 @@ class McpListByBoardUseCase:
     pre-computed kwargs so the server helpers stay out of the core."""
 
     async def execute(
-        self, command: McpListByBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListByBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        from okto_pulse.core.services import (
-            IdeationService,
-            RefinementService,
-            SpecService,
-            StoryService,
-        )
-        from okto_pulse.core.services.main import SprintService
 
-        session = session_of(uow)
         et = command.entity_type
         f = command.filters
 
         if et == "spec":
-            items = await SpecService(session).list_specs(command.board_id, f.get("status"))
+            items = await uow.services.specs.list_specs(command.board_id, f.get("status"))
             items = _apply_label_filter(items, f)
             if f.get("assignee_id"):
                 items = [s for s in items if s.assignee_id == f["assignee_id"]]
         elif et == "ideation":
-            items = await IdeationService(session).list_ideations(
+            items = await uow.services.ideations.list_ideations(
                 command.board_id, f.get("status")
             )
             items = _apply_label_filter(items, f)
@@ -639,7 +602,7 @@ class McpListByBoardUseCase:
                 is_derivation_pending_ideation,
             )
         elif et == "refinement":
-            items = await RefinementService(session).list_refinements(
+            items = await uow.services.refinements.list_refinements(
                 f.get("ideation_id", "")
             )
             if f.get("status"):
@@ -651,15 +614,15 @@ class McpListByBoardUseCase:
                 is_derivation_pending_refinement,
             )
         elif et == "sprint":
-            items = await SprintService(session).list_sprints(f.get("spec_id", ""))
+            items = await uow.services.sprints.list_sprints(f.get("spec_id", ""))
             if f.get("status"):
                 items = [s for s in items if s.status.value == f["status"]]
         elif et == "story":
-            items = await StoryService(session).list_stories(
+            items = await uow.services.stories.list_stories(
                 command.board_id, **command.story_args
             )
         else:  # topic
-            items = await StoryService(session).list_topics(
+            items = await uow.services.stories.list_topics(
                 command.board_id, **command.topic_args
             )
         return _DataResult(items)

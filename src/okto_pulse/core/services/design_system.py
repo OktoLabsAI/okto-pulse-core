@@ -16,17 +16,15 @@ the ``DefaultBoardConfiguration`` template ref.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
+import uuid
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import flag_modified
-
-from okto_pulse.core.models.db import (
-    Board,
-    BoardDesignSystem,
-    DesignSystem,
-    DesignSystemGateAudit,
+from okto_pulse.core.ports.design_system import (
+    BoardDesignSystemRecord,
+    DesignSystemGateAuditRecord,
+    DesignSystemRecord,
+    get_design_system_store,
 )
 
 _VALID_STATUSES = ("active", "draft", "archived")
@@ -89,7 +87,7 @@ def _iso(value: Any) -> str | None:
     return iso() if callable(iso) else str(value)
 
 
-def serialize_design_system(ds: DesignSystem) -> dict[str, Any]:
+def serialize_design_system(ds: DesignSystemRecord) -> dict[str, Any]:
     return {
         "id": ds.id,
         "scope": ds.scope,
@@ -107,7 +105,7 @@ def serialize_design_system(ds: DesignSystem) -> dict[str, Any]:
 class DesignSystemService:
     """Catalog + board-link service for Design Systems."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: Any) -> None:
         self.db = db
 
     # -- catalog lifecycle -------------------------------------------------
@@ -121,7 +119,7 @@ class DesignSystemService:
         board_id: str | None = None,
         payload: dict[str, Any] | None = None,
         status: str = "active",
-    ) -> DesignSystem:
+    ) -> DesignSystemRecord:
         """Create a global catalog entry or a board-inline Design System (FR1). Inline
         REQUIRES board_id (AC2); a global one is never board-scoped. version starts 1."""
         scope = scope or "global"
@@ -152,7 +150,9 @@ class DesignSystemService:
             raise DesignSystemError(
                 "design_system_invalid_title", "A Design System title is required.", 422
             )
-        ds = DesignSystem(
+        now = datetime.now(timezone.utc)
+        ds = DesignSystemRecord(
+            id=str(uuid.uuid4()),
             scope=scope,
             board_id=board_id,
             title=title,
@@ -160,33 +160,33 @@ class DesignSystemService:
             version=1,
             status=status,
             owner_id=owner_id,
+            created_at=now,
+            updated_at=now,
         )
-        self.db.add(ds)
-        await self.db.flush()
-        await self.db.refresh(ds)  # load server_default version/timestamps (no MissingGreenlet)
-        return ds
+        return await get_design_system_store().create(self.db, ds)
 
     async def list_catalog(
         self, *, scope: str = "global", board_id: str | None = None
-    ) -> list[DesignSystem]:
+    ) -> list[DesignSystemRecord]:
         """List the GLOBAL catalog (default) or the inline systems of a board."""
-        query = select(DesignSystem)
-        if scope == "inline":
-            query = query.where(
-                DesignSystem.scope == "inline", DesignSystem.board_id == board_id
+        return list(
+            await get_design_system_store().list_catalog(
+                self.db,
+                scope=scope,
+                board_id=board_id,
             )
-        else:
-            query = query.where(
-                DesignSystem.scope == "global", DesignSystem.board_id.is_(None)
-            )
-        query = query.order_by(DesignSystem.title)
-        return list((await self.db.execute(query)).scalars().all())
+        )
 
-    async def get_design_system(self, design_system_id: str) -> DesignSystem | None:
-        return await self.db.get(DesignSystem, design_system_id)
+    async def get_design_system(
+        self, design_system_id: str
+    ) -> DesignSystemRecord | None:
+        return await get_design_system_store().get(
+            self.db,
+            design_system_id=design_system_id,
+        )
 
-    async def require_design_system(self, design_system_id: str) -> DesignSystem:
-        ds = await self.db.get(DesignSystem, design_system_id)
+    async def require_design_system(self, design_system_id: str) -> DesignSystemRecord:
+        ds = await self.get_design_system(design_system_id)
         if ds is None:
             raise DesignSystemError(
                 "design_system_not_found",
@@ -204,7 +204,7 @@ class DesignSystemService:
         title: str | None = None,
         payload: dict[str, Any] | None = None,
         status: str | None = None,
-    ) -> DesignSystem:
+    ) -> DesignSystemRecord:
         """Update title/payload/status. A title or payload change bumps ``version``
         (including inline, so the mockup gate has a stable version to compare)."""
         ds = await self.require_design_system(design_system_id)
@@ -218,7 +218,6 @@ class DesignSystemService:
             bump = True
         if payload is not None and payload != ds.payload:
             ds.payload = payload
-            flag_modified(ds, "payload")
             bump = True
         if status is not None:
             if status not in _VALID_STATUSES:
@@ -231,23 +230,19 @@ class DesignSystemService:
             ds.status = status
         if bump:
             ds.version = (ds.version or 1) + 1
-        await self.db.flush()
-        await self.db.refresh(ds)
-        return ds
+        return await get_design_system_store().save(self.db, ds)
 
     async def delete_design_system(self, design_system_id: str, owner_id: str) -> bool:
-        ds = await self.db.get(DesignSystem, design_system_id)
-        if ds is None:
-            return False
-        await self.db.delete(ds)
-        await self.db.flush()
-        return True
+        return await get_design_system_store().delete(
+            self.db,
+            design_system_id=design_system_id,
+        )
 
     # -- board link (singular effective per board) -------------------------
 
     async def link_design_system_to_board(
         self, board_id: str, design_system_id: str
-    ) -> BoardDesignSystem:
+    ) -> BoardDesignSystemRecord:
         """Set the board's single effective Design System (FR2). Upserts the singular
         ``BoardDesignSystem`` row and captures the current design_system_version. An
         inline Design System can only be linked to its OWN board."""
@@ -259,50 +254,31 @@ class DesignSystemService:
                 422,
                 {"design_system_id": design_system_id, "board_id": board_id},
             )
-        existing = (
-            await self.db.execute(
-                select(BoardDesignSystem).where(BoardDesignSystem.board_id == board_id)
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            existing.design_system_id = design_system_id
-            existing.design_system_version = ds.version
-            link = existing
-        else:
-            link = BoardDesignSystem(
-                board_id=board_id,
-                design_system_id=design_system_id,
-                design_system_version=ds.version,
-            )
-            self.db.add(link)
-        await self.db.flush()
-        await self.db.refresh(link)
-        return link
+        return await get_design_system_store().upsert_board_link(
+            self.db,
+            board_id=board_id,
+            design_system_id=design_system_id,
+            design_system_version=ds.version,
+        )
 
     async def unlink_design_system_from_board(self, board_id: str) -> bool:
-        existing = (
-            await self.db.execute(
-                select(BoardDesignSystem).where(BoardDesignSystem.board_id == board_id)
-            )
-        ).scalar_one_or_none()
-        if existing is None:
-            return False
-        await self.db.delete(existing)
-        await self.db.flush()
-        return True
+        return await get_design_system_store().delete_board_link(
+            self.db,
+            board_id=board_id,
+        )
 
     async def get_board_effective_design_system(self, board_id: str) -> dict[str, Any] | None:
         """Resolve the board's EFFECTIVE Design System from real persisted state: an
         explicit ``BoardDesignSystem`` link takes precedence, else the umbrella default
         snapshot on ``Board.default_config_snapshot['design_system']``. Returns ``None``
         when the board has no effective Design System. Never fabricates a ref."""
-        link = (
-            await self.db.execute(
-                select(BoardDesignSystem).where(BoardDesignSystem.board_id == board_id)
-            )
-        ).scalar_one_or_none()
+        store = get_design_system_store()
+        link = await store.get_board_link(self.db, board_id=board_id)
         if link is not None:
-            ds = await self.db.get(DesignSystem, link.design_system_id)
+            ds = await store.get(
+                self.db,
+                design_system_id=link.design_system_id,
+            )
             return {
                 "source": "board_link",
                 "design_system_id": link.design_system_id,
@@ -312,8 +288,7 @@ class DesignSystemService:
                 "scope": ds.scope if ds else None,
                 "exists": ds is not None,
             }
-        board = await self.db.get(Board, board_id)
-        snapshot = (board.default_config_snapshot or {}).get("design_system") if board else None
+        snapshot = await store.get_board_snapshot(self.db, board_id=board_id)
         if snapshot:
             return {
                 "source": "default_snapshot",
@@ -379,15 +354,17 @@ class MockupDesignSystemGate:
     already gated in the same transaction (db.info marker) is skipped to avoid
     double-gating across the MCP tool + the service-layer guard."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: Any) -> None:
         self.db = db
         self._svc = DesignSystemService(db)
 
     # -- resolution --------------------------------------------------------
 
     async def _gate_mode(self, board_id: str) -> str:
-        board = await self.db.get(Board, board_id)
-        settings = (board.settings or {}) if board else {}
+        settings = await get_design_system_store().get_board_settings(
+            self.db,
+            board_id=board_id,
+        )
         return settings.get("design_system_gate_mode", "off") or "off"
 
     async def _effective(self, board_id: str) -> tuple[str, dict[str, Any] | None]:
@@ -402,13 +379,18 @@ class MockupDesignSystemGate:
         if effective.get("source") == "board_link":
             real = bool(effective.get("exists"))
         else:  # default_snapshot — confirm the snapshot id resolves to a real row.
-            real = (await self.db.get(DesignSystem, ds_id)) is not None
+            real = (
+                await get_design_system_store().get(
+                    self.db,
+                    design_system_id=str(ds_id),
+                )
+            ) is not None
         return ("real" if real else "dangling"), effective
 
     # -- marking (anti double-gate within a transaction) -------------------
 
     def _marked_ids(self) -> set:
-        return self.db.info.setdefault("_ds_gated_screen_ids", set())
+        return get_design_system_store().marked_screen_ids(self.db)
 
     def _mark(self, screen: dict[str, Any]) -> None:
         sid = screen.get("id")
@@ -469,8 +451,9 @@ class MockupDesignSystemGate:
             })
 
         # advisory: persist the mockup, record a queryable warning audit row.
-        self.db.add(
-            DesignSystemGateAudit(
+        get_design_system_store().add_gate_audit(
+            self.db,
+            DesignSystemGateAuditRecord(
                 board_id=board_id,
                 entity_type=entity_type,
                 entity_id=entity_id,
@@ -511,7 +494,10 @@ class MockupDesignSystemGate:
         provided_version = ref.get("version") if isinstance(ref, dict) else None
         if not ref or not provided_id:
             return GATE_REQUIRED
-        provided_ds = await self.db.get(DesignSystem, provided_id)
+        provided_ds = await get_design_system_store().get(
+            self.db,
+            design_system_id=str(provided_id),
+        )
         if provided_ds is None or provided_id != expected_id:
             # synthetic / non-existent / not the board's real effective identity.
             return GATE_NOT_FOUND
@@ -574,7 +560,7 @@ _GATE_MESSAGES = {
 
 
 async def gate_entity_screen_mockups(
-    db: AsyncSession,
+    db: Any,
     entity: Any,
     new_screens: list[Any] | None,
     *,

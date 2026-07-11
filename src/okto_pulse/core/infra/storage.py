@@ -19,6 +19,12 @@ dependency here (TR4): the defaults only slice the bytes ``load`` already return
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
+
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -89,20 +95,35 @@ class StorageProvider(ABC):
             yield view[offset : offset + chunk_size]
 
 
-_storage_provider: StorageProvider | None = None
+_RUNTIME_KEY = "infra.storage.provider"
 
 
 def configure_storage(provider: StorageProvider) -> None:
     """Register the active StorageProvider at startup."""
-    global _storage_provider
-    _storage_provider = provider
+    register_runtime_value(_RUNTIME_KEY, provider)
 
 
 def get_storage_provider() -> StorageProvider:
     """Return the registered StorageProvider or raise."""
-    if _storage_provider is None:
-        raise RuntimeError("StorageProvider not configured. Call configure_storage() first.")
-    return _storage_provider
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
+
+    composition = current_runtime_composition()
+    if composition is not None and composition.storage_provider is not None:
+        return composition.storage_provider
+    provider = resolve_runtime_value(_RUNTIME_KEY)
+    if provider is None:
+        raise RuntimeError(
+            "StorageProvider not configured. Call configure_storage() first."
+        )
+    return provider
+
+
+def reset_storage_provider_for_tests() -> None:
+    """Clear the active provider for fail-closed composition tests."""
+
+    reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [
@@ -111,4 +132,5 @@ __all__ = [
     "StorageProvider",
     "configure_storage",
     "get_storage_provider",
+    "reset_storage_provider_for_tests",
 ]

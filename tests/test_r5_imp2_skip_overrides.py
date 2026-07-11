@@ -27,7 +27,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_cognitive_item_id,
     require_rebuild_audit_artifact_store,
 )
-from okto_pulse.core.models.db import Board, Ideation
+from sqlalchemy_test_models import Board, Ideation
 from okto_pulse.core.services.main import IdeationService
 from okto_pulse.core.services.skip_overrides import (
     GATE_AMBIGUITY,

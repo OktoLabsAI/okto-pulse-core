@@ -32,10 +32,10 @@ from okto_pulse.core.kg.cognitive_source_ref_resolver import (
 from sqlalchemy import select
 
 from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
-from okto_pulse.core.kg.schema import open_board_connection
+from kg_schema_testing import open_board_connection
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
-from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
-from okto_pulse.core.models.db import (
+from okto_pulse.core.application.processors.consolidation import _process_queue_entry
+from sqlalchemy_test_models import (
     Board,
     ConsolidationDeadLetter,
     ConsolidationQueue,
@@ -125,7 +125,7 @@ def _count_edge(board_id, cypher, ref):
 # never pollutes / depends on another test's graph.
 @pytest.fixture
 def board_id():
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
 
     bid = f"rkg07-{uuid.uuid4().hex[:12]}"
     bootstrap_board_graph(bid)

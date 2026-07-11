@@ -163,7 +163,7 @@ class TestAuditRepositoryCRUD:
         refs = [
             NodeRefData(
                 session_id="ses1", board_id="b1",
-                kuzu_node_id="n1", kuzu_node_type="Decision", operation="add",
+                graph_node_id="n1", graph_node_type="Decision", operation="add",
             )
         ]
         event = OutboxEventData(
@@ -248,10 +248,10 @@ class TestAuditRepositoryCRUD:
         now = datetime.now(timezone.utc)
 
         refs = [
-            NodeRefData(session_id="s1", board_id="b1", kuzu_node_id="n1",
-                        kuzu_node_type="Decision", operation="add"),
-            NodeRefData(session_id="s1", board_id="b1", kuzu_node_id="n2",
-                        kuzu_node_type="Criterion", operation="add"),
+            NodeRefData(session_id="s1", board_id="b1", graph_node_id="n1",
+                        graph_node_type="Decision", operation="add"),
+            NodeRefData(session_id="s1", board_id="b1", graph_node_id="n2",
+                        graph_node_type="Criterion", operation="add"),
         ]
         await repo.commit_consolidation_records(
             ConsolidationAuditData(

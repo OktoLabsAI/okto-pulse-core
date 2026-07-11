@@ -30,10 +30,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import cards as cards_api
-from okto_pulse.core.api.cards import router as cards_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import cards as cards_api
+from okto_pulse.community.api.cards import router as cards_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu4-s3-user"
@@ -69,7 +69,7 @@ def _missing() -> str:
 
 
 async def _seed_board_spec(*, scenarios: list | None = None) -> tuple[str, str]:
-    from okto_pulse.core.models.db import Board, Spec
+    from sqlalchemy_test_models import Board, Spec
 
     bid = f"board-fu4s3-{uuid.uuid4().hex[:8]}"
     sid = f"spec-fu4s3-{uuid.uuid4().hex[:8]}"
@@ -98,7 +98,7 @@ async def _seed_card(
     origin_task_id: str | None = None,
     title: str = "fu4-s3-card",
 ) -> str:
-    from okto_pulse.core.models.db import Card, CardStatus, CardType
+    from sqlalchemy_test_models import Card, CardStatus, CardType
 
     cid = f"card-fu4s3-{uuid.uuid4().hex[:8]}"
     kwargs = dict(
@@ -131,7 +131,7 @@ async def _seed_bug_and_test(
     spec_scenarios: list | None = None,
 ) -> tuple[str, str]:
     """Seed a bug card + a candidate test-task card. Returns (bug_id, test_id)."""
-    from okto_pulse.core.models.db import CardType
+    from sqlalchemy_test_models import CardType
 
     board_id, spec_id = await _seed_board_spec(scenarios=spec_scenarios)
     bug_id = await _seed_card(
@@ -146,7 +146,7 @@ async def _seed_bug_and_test(
         _, test_spec_id = await _seed_board_spec()
         # Re-point the foreign spec onto the same board so only the spec differs.
         async with get_session_factory()() as db:
-            from okto_pulse.core.models.db import Spec
+            from sqlalchemy_test_models import Spec
 
             foreign = await db.get(Spec, test_spec_id)
             foreign.board_id = board_id
@@ -190,7 +190,7 @@ async def test_link_idempotent_relink_stays_unblocked(client) -> None:
     assert second.json()["is_unblocked"] is True
 
     async with get_session_factory()() as db:
-        from okto_pulse.core.models.db import Card
+        from sqlalchemy_test_models import Card
 
         bug = await db.get(Card, bug_id)
         assert bug.linked_test_task_ids == [test_id]
@@ -216,7 +216,7 @@ async def test_link_404_missing_bug_card(client) -> None:
 
 @pytest.mark.asyncio
 async def test_link_400_card_is_not_a_bug(client) -> None:
-    from okto_pulse.core.models.db import CardType
+    from sqlalchemy_test_models import CardType
 
     bug_id, test_id = await _seed_bug_and_test(bug_card_type=CardType.NORMAL)
     resp = client.post(f"{PREFIX}/{bug_id}/test-tasks", json={"test_task_id": test_id})
@@ -273,7 +273,7 @@ async def test_unlink_204_after_link_then_noop(client) -> None:
     removed = client.delete(f"{PREFIX}/{bug_id}/test-tasks/{test_id}")
     assert removed.status_code == 204, removed.text
     async with get_session_factory()() as db:
-        from okto_pulse.core.models.db import Card
+        from sqlalchemy_test_models import Card
 
         bug = await db.get(Card, bug_id)
         assert bug.linked_test_task_ids == []
@@ -295,7 +295,7 @@ async def test_unlink_404_missing_card(client) -> None:
 
 @pytest.mark.asyncio
 async def test_candidates_200_payload_passthrough(client) -> None:
-    from okto_pulse.core.models.db import CardType
+    from sqlalchemy_test_models import CardType
 
     board_id, spec_id = await _seed_board_spec(
         scenarios=[{"id": "ts-x", "title": "x", "linked_criteria": [0], "status": "passed"}]
@@ -323,7 +323,7 @@ async def test_candidates_200_payload_passthrough(client) -> None:
 
 @pytest.mark.asyncio
 async def test_candidates_400_not_a_bug_card(client) -> None:
-    from okto_pulse.core.models.db import CardType
+    from sqlalchemy_test_models import CardType
 
     board_id, spec_id = await _seed_board_spec()
     normal_id = await _seed_card(
@@ -358,8 +358,7 @@ async def test_link_use_case_raises_entity_not_found_for_missing_card() -> None:
         LinkTestTaskToBugCommand,
         LinkTestTaskToBugUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError) as excinfo:

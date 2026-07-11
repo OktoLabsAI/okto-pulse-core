@@ -11,7 +11,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     ArchitectureFindingRun,
     Board,
@@ -372,7 +372,7 @@ async def test_rest_and_mcp_save_acknowledgement_required_payloads_match_semanti
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.architecture import router as architecture_router
+    from okto_pulse.community.api.architecture import router as architecture_router
     from okto_pulse.core.infra import auth as _auth_mod
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
@@ -675,7 +675,7 @@ async def test_rest_and_mcp_validate_architecture_payload_return_identical_warni
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.architecture import router as architecture_router
+    from okto_pulse.community.api.architecture import router as architecture_router
     from okto_pulse.core.infra import auth as _auth_mod
     from okto_pulse.core.infra.database import get_db, get_session_factory
 

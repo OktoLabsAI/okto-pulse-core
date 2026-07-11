@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     ArchitectureDesign,
     Board,

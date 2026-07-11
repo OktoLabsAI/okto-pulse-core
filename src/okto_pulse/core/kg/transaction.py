@@ -32,7 +32,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.schema_contract import (
     MULTI_REL_TYPES,
@@ -439,7 +438,7 @@ class TransactionOrchestrator:
 
     async def commit_sqlite(
         self,
-        mutations: Callable[[AsyncSession], Any],
+        mutations: Callable[[object], Any],
     ) -> CommitCounters:
         """Apply the SQLite-side mutations inside a transaction and commit.
 

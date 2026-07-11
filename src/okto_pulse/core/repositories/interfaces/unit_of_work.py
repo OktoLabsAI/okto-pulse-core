@@ -11,9 +11,11 @@ parameters are accepted and carried only.
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Any, TYPE_CHECKING, Protocol, runtime_checkable
 
+from okto_pulse.core.domain.realm import RealmScope
 from okto_pulse.core.repositories.interfaces.repositories import RepositoryCatalog
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 if TYPE_CHECKING:
     # Type-only import to keep the persistence port free of a runtime dependency
@@ -26,34 +28,56 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
     """A transactional unit of work exposing the repository catalog.
 
     Usable as an async context manager; ``__aexit__`` rolls back on error. The
-    SQLAlchemy adapter additionally exposes a transitional ``session`` property
-    so the still-service-delegating spec #09 use cases keep working until they
-    migrate to the repositories.
+    Concrete adapters may keep implementation-private transaction handles, but
+    those handles are not part of this public contract.
     """
 
-    async def __aenter__(self) -> "PulseUnitOfWork":
-        ...
+    services: ApplicationServiceCatalog
+    realm_scope: RealmScope
 
-    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool | None:
-        ...
+    async def __aenter__(self) -> "PulseUnitOfWork": ...
 
-    async def commit(self) -> None:
-        ...
+    async def __aexit__(
+        self, exc_type: object, exc: object, tb: object
+    ) -> bool | None: ...
 
-    async def rollback(self) -> None:
-        ...
+    async def commit(self) -> None: ...
 
-    async def close(self) -> None:
-        ...
+    async def rollback(self) -> None: ...
+
+    async def synchronize(self) -> None: ...
+
+    async def reload(
+        self, entity: object, *, fields: tuple[str, ...] = ()
+    ) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 class UnitOfWorkFactory(Protocol):
     """Produces a :class:`PulseUnitOfWork` bound to a fresh session/transaction."""
 
+    def resolve_realm_scope(self) -> RealmScope:
+        """Resolve the request/task realm without exposing transport state.
+
+        Local First editions return their local realm. A SaaS adapter resolves
+        the tenant from its request context and must fail closed when that
+        context has not been established.
+        """
+
+        ...
+
     def __call__(
         self,
         *,
-        realm_id: str | None = None,
+        realm_scope: RealmScope,
         actor: "ActorContext | None" = None,
-    ) -> AbstractAsyncContextManager[PulseUnitOfWork]:
-        ...
+    ) -> AbstractAsyncContextManager[PulseUnitOfWork]: ...
+
+    def wrap(
+        self,
+        context: Any,
+        *,
+        realm_scope: RealmScope,
+        actor: "ActorContext | None" = None,
+    ) -> PulseUnitOfWork: ...

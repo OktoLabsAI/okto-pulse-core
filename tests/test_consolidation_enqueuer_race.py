@@ -34,8 +34,7 @@ from okto_pulse.core.events.handlers.consolidation_enqueuer import (
     ConsolidationEnqueuer,
 )
 from okto_pulse.core.events.types import CardMoved, StoryMoved
-from okto_pulse.core.infra.database import Base
-from okto_pulse.core.models.db import Board, ConsolidationQueue
+from sqlalchemy_test_models import Base, Board, ConsolidationQueue
 
 
 @pytest_asyncio.fixture
@@ -52,9 +51,7 @@ async def race_db_factory(tmp_path):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     # Seed a board so FK constraints don't fire on the queue inserts.
     board_id = str(uuid.uuid4())
@@ -92,6 +89,7 @@ def _card_moved_event(board_id: str, card_id: str) -> CardMoved:
 # ---------------------------------------------------------------------------
 # Behavioural — race condition reproducer + fix verification
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_concurrent_enqueues_for_same_artifact_atomically_merge(race_db_factory):
@@ -131,13 +129,20 @@ async def test_concurrent_enqueues_for_same_artifact_atomically_merge(race_db_fa
     # Exactly 1 row in the queue for this artifact.
     async with factory() as session:
         from sqlalchemy import select
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.artifact_type == "card",
-                ConsolidationQueue.artifact_id == card_id,
+
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.artifact_type == "card",
+                        ConsolidationQueue.artifact_id == card_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
     assert len(rows) == 1, f"expected 1 merged row; got {len(rows)}"
     assert rows[0].status == "pending"
     assert rows[0].attempts == 0
@@ -177,13 +182,16 @@ async def test_terminal_state_row_reset_to_pending_under_new_event(race_db_facto
 
     async with factory() as session:
         from sqlalchemy import select
-        row = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.artifact_type == "card",
-                ConsolidationQueue.artifact_id == card_id,
+
+        row = (
+            await session.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == "card",
+                    ConsolidationQueue.artifact_id == card_id,
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
     assert row.status == "pending"
     assert row.attempts == 0
     assert row.last_error is None
@@ -222,13 +230,16 @@ async def test_in_flight_pending_row_left_untouched(race_db_factory):
 
     async with factory() as session:
         from sqlalchemy import select
-        row = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.artifact_type == "card",
-                ConsolidationQueue.artifact_id == card_id,
+
+        row = (
+            await session.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == "card",
+                    ConsolidationQueue.artifact_id == card_id,
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
     # WHERE filter blocked the update — original triggered_by_event is preserved.
     assert row.triggered_by_event == "card.created", (
         "in-flight row was overwritten — WHERE filter regressed"
@@ -254,18 +265,26 @@ async def test_serial_events_on_same_artifact_produce_one_row(race_db_factory):
 
     async with factory() as session:
         from sqlalchemy import select
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.artifact_id == card_id,
+
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.artifact_id == card_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
     assert len(rows) == 1
 
 
 # ---------------------------------------------------------------------------
 # Structural — verify the legacy SELECT-then-INSERT idiom is gone
 # ---------------------------------------------------------------------------
+
 
 def test_legacy_select_then_insert_idiom_is_gone():
     """The previous v1 path used `session.add(ConsolidationQueue(...))`

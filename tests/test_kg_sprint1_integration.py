@@ -14,18 +14,18 @@ from __future__ import annotations
 
 import pytest
 
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _run_deterministic_worker,
     _spec_to_dict,
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import (
+from okto_pulse.core.application.processors.deterministic_kg import (
     LAYER,
     WORKER_ID,
     DeterministicWorker,
 )
-from okto_pulse.core.models.db import ConsolidationQueue, Spec
+from sqlalchemy_test_models import ConsolidationQueue, Spec
 
 
 # ---------------------------------------------------------------------------

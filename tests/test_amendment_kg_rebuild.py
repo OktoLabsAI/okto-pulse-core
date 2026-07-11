@@ -31,7 +31,7 @@ from okto_pulse.core.kg.source_maturity import (
     WORKING_ARTIFACT_TYPES,
     classify_source_for_kg,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
 
 AMD = "amendment_hotfix_revision"
 
@@ -187,7 +187,7 @@ def _temp_pulse_db(tmp_path):
     """A self-contained sync SQLite pulse.db with the full schema (create_all)."""
     from sqlalchemy import create_engine
     from okto_pulse.core.infra.database import Base
-    import okto_pulse.core.models.db  # noqa: F401 — register all tables
+    import sqlalchemy_test_models  # noqa: F401 - register all tables
 
     db_file = tmp_path / "pulse.db"
     engine = create_engine(f"sqlite:///{db_file}")
@@ -197,7 +197,7 @@ def _temp_pulse_db(tmp_path):
 
 def test_board_source_store_enumerates_amendment(tmp_path):
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         AmendmentHotfixRevision,
         Board,
         Spec,
@@ -241,7 +241,7 @@ def test_board_source_store_enumerates_amendment(tmp_path):
 
 def test_board_source_store_amendment_working_when_not_done(tmp_path):
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import AmendmentHotfixRevision, Board
+    from sqlalchemy_test_models import AmendmentHotfixRevision, Board
     from okto_pulse.core.domain.amendment_eligibility import (
         AmendmentLineageState,
         AmendmentRevisionStatus,
@@ -271,7 +271,7 @@ def test_board_without_amendment_table_is_silent_backward_compat(tmp_path):
     # the source store (existence-guarded, silent skip).
     from sqlalchemy import text
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.community.adapters.board_source_reader import BoardSourceStore
 
     db_path, engine = _temp_pulse_db(tmp_path)
@@ -298,7 +298,7 @@ def test_board_without_amendment_table_is_silent_backward_compat(tmp_path):
 def _hash_for_amendment(tmp_path, tag, **fields):
     """Enumerate ONE amendment (isolated db) and return its content_hash."""
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import AmendmentHotfixRevision, Board
+    from sqlalchemy_test_models import AmendmentHotfixRevision, Board
     from okto_pulse.core.domain.amendment_eligibility import (
         AmendmentLineageState,
         AmendmentRevisionStatus,
@@ -360,7 +360,7 @@ def test_amendment_source_is_really_enqueued_not_filtered(tmp_path):
     import sqlite3
 
     from sqlalchemy.orm import Session
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.community.adapters.board_rebuild_ingestion import (
         BoardRebuildIngestionAdapter,
     )

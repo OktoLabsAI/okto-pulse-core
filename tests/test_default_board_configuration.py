@@ -17,7 +17,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     BoardGuideline,
@@ -178,8 +178,9 @@ async def test_single_active_per_scope_enforced():
         a = await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID, activate=True)
         b = await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID, activate=True)
 
-        await db.refresh(a)
-        await db.refresh(b)
+        versions = {template.id: template for template in await svc.list_versions()}
+        a = versions[a.id]
+        b = versions[b.id]
         assert a.is_active is False and a.status == "inactive"
         assert b.is_active is True and b.status == "active"
 

@@ -19,9 +19,6 @@ from datetime import timedelta as _td
 from datetime import timezone as _tz
 from typing import Any
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.domain.enums import (
     CardStatus,
     CardType,
@@ -32,34 +29,100 @@ from okto_pulse.core.domain.enums import (
     SprintStatus,
     StoryStatus,
 )
-from okto_pulse.core.models.db import (
-    ActivityLog,
-    Board,
-    Card,
-    CardDependency,
-    Ideation,
-    IdeationQAItem,
-    Refinement,
-    Spec,
-    Sprint,
-    Story,
-    StoryIdeationLink,
-    Topic,
+from okto_pulse.core.ports.analytics_read import (
+    AnalyticsFilter,
+    AnalyticsQuery,
+    get_analytics_read_port,
 )
 from okto_pulse.core.services.coverage_calculator import (
     spec_saturation_envelope_from_coverage,
 )
 
 
-async def board_is_owned_by(db: AsyncSession, board_id: str, user_id: str) -> bool:
+def _af(field: str, operator: str, value: Any = None) -> AnalyticsFilter:
+    return AnalyticsFilter(field=field, operator=operator, value=value)  # type: ignore[arg-type]
+
+
+async def _analytics_list(
+    db: Any,
+    entity: str,
+    *,
+    filters: tuple[AnalyticsFilter, ...] = (),
+    search: str = "",
+    search_fields: tuple[str, ...] = (),
+    order_by: str | None = None,
+    descending: bool = False,
+    offset: int = 0,
+    limit: int | None = None,
+) -> list[Any]:
+    rows = await get_analytics_read_port().list(
+        db,
+        AnalyticsQuery(
+            entity=entity,
+            filters=filters,
+            search=search,
+            search_fields=search_fields,
+            order_by=order_by,
+            descending=descending,
+            offset=offset,
+            limit=limit,
+        ),
+    )
+    return list(rows)
+
+
+async def _analytics_count(
+    db: Any,
+    entity: str,
+    *,
+    filters: tuple[AnalyticsFilter, ...] = (),
+    search: str = "",
+    search_fields: tuple[str, ...] = (),
+) -> int:
+    return await get_analytics_read_port().count(
+        db,
+        AnalyticsQuery(
+            entity=entity,
+            filters=filters,
+            search=search,
+            search_fields=search_fields,
+        ),
+    )
+
+
+def _artifact_filters(
+    board_id: str,
+    *,
+    include_archived: bool,
+    dt_from: datetime | None,
+    dt_to: datetime | None,
+    extra: tuple[AnalyticsFilter, ...] = (),
+) -> tuple[AnalyticsFilter, ...]:
+    filters = [_af("board_id", "eq", board_id), *extra]
+    if not include_archived:
+        filters.append(_af("archived", "is_false"))
+    if dt_from:
+        filters.append(_af("created_at", "gte", dt_from))
+    if dt_to:
+        filters.append(_af("created_at", "lte", dt_to))
+    return tuple(filters)
+
+
+async def board_is_owned_by(db: Any, board_id: str, user_id: str) -> bool:
     """True when ``board_id`` exists and is owned by ``user_id``. Transport-free
     reader for the analytics board-access guard (spec R01A REST-FU2a) — the same
     strict owner-only query the inline ``_ensure_board`` in ``api/analytics.py``
     runs for the not-yet-migrated endpoints."""
-    result = await db.execute(
-        select(Board.id).where(Board.id == board_id, Board.owner_id == user_id)
+    return bool(
+        await _analytics_count(
+            db,
+            "board",
+            filters=(
+                _af("id", "eq", board_id),
+                _af("owner_id", "eq", user_id),
+            ),
+        )
     )
-    return result.scalars().first() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +336,7 @@ def resolve_linked_fr_indices(linked_refs: list, frs: list) -> set[int]:
 # ---------------------------------------------------------------------------
 
 
-def _coverage_row_for_spec(spec: Spec, cards: list | None = None) -> dict:
+def _coverage_row_for_spec(spec: Any, cards: list | None = None) -> dict:
     """Build a single coverage row for one Spec ORM row.
 
     Output shape matches REST /analytics/coverage exactly. MCP converges to
@@ -366,7 +429,7 @@ def _coverage_row_for_spec(spec: Spec, cards: list | None = None) -> dict:
 
 
 async def compute_coverage(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     *,
     dt_from: datetime | None = None,
@@ -392,21 +455,24 @@ async def compute_coverage(
     """
     from collections import defaultdict
 
-    spec_q = select(Spec).where(Spec.board_id == board_id)
-    if not include_archived:
-        spec_q = spec_q.where(Spec.archived.is_(False))
-    if dt_from:
-        spec_q = spec_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        spec_q = spec_q.where(Spec.created_at <= dt_to)
-    specs = list((await db.execute(spec_q)).scalars().all())
+    filters = _artifact_filters(
+        board_id,
+        include_archived=include_archived,
+        dt_from=dt_from,
+        dt_to=dt_to,
+    )
+    specs = await _analytics_list(db, "spec", filters=filters)
 
     # Spec 233eaad3: 1 query batch para cards do board, group by spec_id
     # — evita N+1 e permite que _coverage_row_for_spec aplique cancelled filter.
-    cards_q = select(Card).where(Card.board_id == board_id)
+    card_filters = [_af("board_id", "eq", board_id)]
     if not include_archived:
-        cards_q = cards_q.where(Card.archived.is_(False))
-    all_cards = list((await db.execute(cards_q)).scalars().all())
+        card_filters.append(_af("archived", "is_false"))
+    all_cards = await _analytics_list(
+        db,
+        "card",
+        filters=tuple(card_filters),
+    )
     cards_by_spec: dict[str, list] = defaultdict(list)
     for c in all_cards:
         if c.spec_id:
@@ -442,7 +508,7 @@ def _status_breakdown(items: list, enum_cls) -> dict[str, int]:
 
 
 async def compute_funnel(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     *,
     dt_from: datetime | None = None,
@@ -468,99 +534,64 @@ async def compute_funnel(
     """
     counts: dict = {}
 
-    for model, key in [
-        (Story, "stories"),
-        (Ideation, "ideations"),
-        (Refinement, "refinements"),
-        (Spec, "specs"),
-        (Sprint, "sprints"),
-        (Card, "cards"),
-    ]:
-        q = select(func.count(model.id)).where(model.board_id == board_id)
-        if not include_archived:
-            q = q.where(model.archived.is_(False))
-        if dt_from:
-            q = q.where(model.created_at >= dt_from)
-        if dt_to:
-            q = q.where(model.created_at <= dt_to)
-        counts[key] = (await db.execute(q)).scalar() or 0
-
-    stories_converted_q = select(func.count(Story.id)).where(
-        Story.board_id == board_id,
-        Story.status == StoryStatus.CONVERTED,
+    artifact_filters = _artifact_filters(
+        board_id,
+        include_archived=include_archived,
+        dt_from=dt_from,
+        dt_to=dt_to,
     )
-    if not include_archived:
-        stories_converted_q = stories_converted_q.where(Story.archived.is_(False))
-    if dt_from:
-        stories_converted_q = stories_converted_q.where(Story.created_at >= dt_from)
-    if dt_to:
-        stories_converted_q = stories_converted_q.where(Story.created_at <= dt_to)
-    counts["stories_converted"] = (await db.execute(stories_converted_q)).scalar() or 0
+    board_stories = await _analytics_list(db, "story", filters=artifact_filters)
+    board_ideations = await _analytics_list(db, "ideation", filters=artifact_filters)
+    board_refinements = await _analytics_list(
+        db,
+        "refinement",
+        filters=artifact_filters,
+    )
+    spec_objs = await _analytics_list(db, "spec", filters=artifact_filters)
+    sprint_objs = await _analytics_list(db, "sprint", filters=artifact_filters)
+    all_cards = await _analytics_list(db, "card", filters=artifact_filters)
+    counts.update(
+        {
+            "stories": len(board_stories),
+            "ideations": len(board_ideations),
+            "refinements": len(board_refinements),
+            "specs": len(spec_objs),
+            "sprints": len(sprint_objs),
+            "cards": len(all_cards),
+        }
+    )
+
+    counts["stories_converted"] = sum(
+        1 for story in board_stories if story.status == StoryStatus.CONVERTED
+    )
     counts["story_conversion_pct"] = (
         round((counts["stories_converted"] / counts["stories"]) * 100, 1)
         if counts.get("stories")
         else 0
     )
-    story_links_q = select(func.count(StoryIdeationLink.id)).where(StoryIdeationLink.board_id == board_id)
-    counts["story_ideation_links"] = (await db.execute(story_links_q)).scalar() or 0
+    counts["story_ideation_links"] = await _analytics_count(
+        db,
+        "story_ideation_link",
+        filters=(_af("board_id", "eq", board_id),),
+    )
 
     # Done cards
-    done_q = select(func.count(Card.id)).where(
-        Card.board_id == board_id,
-        Card.status == CardStatus.DONE,
-    )
-    if not include_archived:
-        done_q = done_q.where(Card.archived.is_(False))
-    if dt_from:
-        done_q = done_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        done_q = done_q.where(Card.created_at <= dt_to)
-    counts["done"] = (await db.execute(done_q)).scalar() or 0
+    counts["done"] = sum(1 for card in all_cards if card.status == CardStatus.DONE)
 
     # Lifecycle done counts
-    ideations_done_q = select(func.count(Ideation.id)).where(
-        Ideation.board_id == board_id,
-        Ideation.status == IdeationStatus.DONE,
+    counts["ideations_done"] = sum(
+        1 for item in board_ideations if item.status == IdeationStatus.DONE
     )
-    specs_done_q = select(func.count(Spec.id)).where(
-        Spec.board_id == board_id,
-        Spec.status == SpecStatus.DONE,
+    counts["specs_done"] = sum(
+        1 for item in spec_objs if item.status == SpecStatus.DONE
     )
-    if not include_archived:
-        ideations_done_q = ideations_done_q.where(Ideation.archived.is_(False))
-        specs_done_q = specs_done_q.where(Spec.archived.is_(False))
-    if dt_from:
-        ideations_done_q = ideations_done_q.where(Ideation.created_at >= dt_from)
-        specs_done_q = specs_done_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        ideations_done_q = ideations_done_q.where(Ideation.created_at <= dt_to)
-        specs_done_q = specs_done_q.where(Spec.created_at <= dt_to)
-    counts["ideations_done"] = (await db.execute(ideations_done_q)).scalar() or 0
-    counts["specs_done"] = (await db.execute(specs_done_q)).scalar() or 0
 
     # Card types (Python-side on JSON column)
-    all_cards_q = select(Card).where(Card.board_id == board_id)
-    if not include_archived:
-        all_cards_q = all_cards_q.where(Card.archived.is_(False))
-    if dt_from:
-        all_cards_q = all_cards_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        all_cards_q = all_cards_q.where(Card.created_at <= dt_to)
-    all_cards = list((await db.execute(all_cards_q)).scalars().all())
     counts["cards_impl"] = sum(1 for c in all_cards if _is_normal_card(c))
     counts["cards_test"] = sum(1 for c in all_cards if _is_test_card(c))
     counts["cards_bug"] = sum(1 for c in all_cards if _is_bug_card(c))
 
     # Specs (para BR/Contract + breakdown)
-    spec_objs_q = select(Spec).where(Spec.board_id == board_id)
-    if not include_archived:
-        spec_objs_q = spec_objs_q.where(Spec.archived.is_(False))
-    if dt_from:
-        spec_objs_q = spec_objs_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        spec_objs_q = spec_objs_q.where(Spec.created_at <= dt_to)
-    spec_objs = list((await db.execute(spec_objs_q)).scalars().all())
-
     counts["rules_count"] = sum(len(s.business_rules or []) for s in spec_objs)
     counts["contracts_count"] = sum(len(s.api_contracts or []) for s in spec_objs)
     counts["specs_with_rules"] = sum(
@@ -577,14 +608,6 @@ async def compute_funnel(
     counts["card_status_breakdown"] = _status_breakdown(all_cards, CardStatus)
 
     # Sprints
-    sprint_objs_q = select(Sprint).where(Sprint.board_id == board_id)
-    if not include_archived:
-        sprint_objs_q = sprint_objs_q.where(Sprint.archived.is_(False))
-    if dt_from:
-        sprint_objs_q = sprint_objs_q.where(Sprint.created_at >= dt_from)
-    if dt_to:
-        sprint_objs_q = sprint_objs_q.where(Sprint.created_at <= dt_to)
-    sprint_objs = list((await db.execute(sprint_objs_q)).scalars().all())
     counts["sprint_status_breakdown"] = _status_breakdown(sprint_objs, SprintStatus)
 
     # Bug metrics
@@ -612,26 +635,6 @@ async def compute_funnel(
         else None
     )
 
-    # Ideations/Refinements para cycle_time_by_phase
-    board_ideations_q = select(Ideation).where(Ideation.board_id == board_id)
-    board_refinements_q = select(Refinement).where(Refinement.board_id == board_id)
-    board_stories_q = select(Story).where(Story.board_id == board_id)
-    if not include_archived:
-        board_stories_q = board_stories_q.where(Story.archived.is_(False))
-        board_ideations_q = board_ideations_q.where(Ideation.archived.is_(False))
-        board_refinements_q = board_refinements_q.where(Refinement.archived.is_(False))
-    if dt_from:
-        board_stories_q = board_stories_q.where(Story.created_at >= dt_from)
-        board_ideations_q = board_ideations_q.where(Ideation.created_at >= dt_from)
-        board_refinements_q = board_refinements_q.where(Refinement.created_at >= dt_from)
-    if dt_to:
-        board_stories_q = board_stories_q.where(Story.created_at <= dt_to)
-        board_ideations_q = board_ideations_q.where(Ideation.created_at <= dt_to)
-        board_refinements_q = board_refinements_q.where(Refinement.created_at <= dt_to)
-    board_stories = list((await db.execute(board_stories_q)).scalars().all())
-    board_ideations = list((await db.execute(board_ideations_q)).scalars().all())
-    board_refinements = list((await db.execute(board_refinements_q)).scalars().all())
-
     def _phase_ct(items, done_status_str: str) -> float | None:
         times = []
         for it in items:
@@ -653,23 +656,23 @@ async def compute_funnel(
         1 for r in board_refinements if str(r.status) == str(RefinementStatus.DONE)
     )
     counts["story_status_breakdown"] = _status_breakdown(board_stories, StoryStatus)
-    topic_story_on = (Story.topic_id == Topic.id) & (Story.board_id == board_id)
-    if not include_archived:
-        topic_story_on = topic_story_on & Story.archived.is_(False)
-    if dt_from:
-        topic_story_on = topic_story_on & (Story.created_at >= dt_from)
-    if dt_to:
-        topic_story_on = topic_story_on & (Story.created_at <= dt_to)
-    topic_rows = (await db.execute(
-        select(Topic.id, Topic.name, func.count(Story.id))
-        .join(Story, topic_story_on, isouter=True)
-        .where(Topic.board_id == board_id)
-        .group_by(Topic.id, Topic.name)
-        .order_by(Topic.name.asc())
-    )).all()
+    topics = await _analytics_list(
+        db,
+        "topic",
+        filters=(_af("board_id", "eq", board_id),),
+        order_by="name",
+    )
+    stories_per_topic: dict[str, int] = {}
+    for story in board_stories:
+        if story.topic_id:
+            stories_per_topic[story.topic_id] = stories_per_topic.get(story.topic_id, 0) + 1
     counts["stories_by_topic"] = [
-        {"topic_id": row[0], "topic": row[1], "stories": int(row[2] or 0)}
-        for row in topic_rows
+        {
+            "topic_id": topic.id,
+            "topic": topic.name,
+            "stories": stories_per_topic.get(topic.id, 0),
+        }
+        for topic in topics
     ]
 
     return counts
@@ -681,7 +684,7 @@ async def compute_funnel(
 
 
 async def compute_velocity(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     *,
     granularity: str = "week",
@@ -705,14 +708,16 @@ async def compute_velocity(
     if granularity not in ("week", "day"):
         raise ValueError(f"granularity must be 'week' or 'day', got {granularity!r}")
 
-    all_q = select(Card).where(Card.board_id == board_id)
-    if not include_archived:
-        all_q = all_q.where(Card.archived.is_(False))
-    if dt_from:
-        all_q = all_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        all_q = all_q.where(Card.created_at <= dt_to)
-    all_cards = list((await db.execute(all_q)).scalars().all())
+    all_cards = await _analytics_list(
+        db,
+        "card",
+        filters=_artifact_filters(
+            board_id,
+            include_archived=include_archived,
+            dt_from=dt_from,
+            dt_to=dt_to,
+        ),
+    )
     done_cards = [c for c in all_cards if c.status == CardStatus.DONE]
 
     spec_moves = await _load_lifecycle_moves(db, board_id, "spec_moved")
@@ -988,7 +993,7 @@ def filter_decisions_by_status(
 
 
 async def compute_blockers(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     *,
     stale_hours: int = 72,
@@ -1018,18 +1023,21 @@ async def compute_blockers(
     now = _dt.now(_tz.utc)
     stale_cutoff = now - _td(hours=stale_hours)
 
-    cards = list(
-        (await db.execute(
-            select(Card).where(Card.board_id == board_id, Card.archived.is_(False))
-        )).scalars().all()
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=(
+            _af("board_id", "eq", board_id),
+            _af("archived", "is_false"),
+        ),
     )
     card_by_id = {c.id: c for c in cards}
 
-    deps: list = []
-    if cards:
-        deps = list((await db.execute(
-            select(CardDependency).where(CardDependency.card_id.in_([c.id for c in cards]))
-        )).scalars().all())
+    deps = await _analytics_list(
+        db,
+        "card_dependency",
+        filters=(_af("card_id", "in", [card.id for card in cards]),),
+    ) if cards else []
     deps_by_card: dict[str, list[str]] = {}
     for d in deps:
         deps_by_card.setdefault(d.card_id, []).append(d.depends_on_id)
@@ -1090,9 +1098,14 @@ async def compute_blockers(
                     "evidence": {"last_updated": upd.isoformat(), "age_hours": age_h},
                 })
 
-    specs = list((await db.execute(
-        select(Spec).where(Spec.board_id == board_id, Spec.archived.is_(False))
-    )).scalars().all())
+    specs = await _analytics_list(
+        db,
+        "spec",
+        filters=(
+            _af("board_id", "eq", board_id),
+            _af("archived", "is_false"),
+        ),
+    )
     spec_card_counts: dict[str, int] = {}
     for c in cards:
         if c.spec_id:
@@ -1161,7 +1174,7 @@ async def compute_blockers(
 
 
 async def compute_mcp_board_analytics(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     *,
     metric_type: str = "overview",
@@ -1173,7 +1186,13 @@ async def compute_mcp_board_analytics(
     Keeps the historical MCP envelopes while ORM querying remains in the
     analytics service layer.
     """
-    board = (await db.execute(select(Board).where(Board.id == board_id))).scalars().first()
+    boards = await _analytics_list(
+        db,
+        "board",
+        filters=(_af("id", "eq", board_id),),
+        limit=1,
+    )
+    board = boards[0] if boards else None
     if not board:
         return {"error": "Board not found"}
 
@@ -1189,29 +1208,17 @@ async def compute_mcp_board_analytics(
         return last if isinstance(last, dict) else None
 
     if metric_type == "overview":
-        ideation_q = select(Ideation).where(Ideation.board_id == board_id)
-        refinement_q = select(Refinement).where(Refinement.board_id == board_id)
-        spec_q = select(Spec).where(Spec.board_id == board_id)
-        sprint_q = select(Sprint).where(Sprint.board_id == board_id)
-        card_q = select(Card).where(Card.board_id == board_id)
-        if dt_from:
-            ideation_q = ideation_q.where(Ideation.created_at >= dt_from)
-            refinement_q = refinement_q.where(Refinement.created_at >= dt_from)
-            spec_q = spec_q.where(Spec.created_at >= dt_from)
-            sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
-            card_q = card_q.where(Card.created_at >= dt_from)
-        if dt_to:
-            ideation_q = ideation_q.where(Ideation.created_at <= dt_to)
-            refinement_q = refinement_q.where(Refinement.created_at <= dt_to)
-            spec_q = spec_q.where(Spec.created_at <= dt_to)
-            sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
-            card_q = card_q.where(Card.created_at <= dt_to)
-
-        ideations = list((await db.execute(ideation_q)).scalars().all())
-        refinements = list((await db.execute(refinement_q)).scalars().all())
-        specs = list((await db.execute(spec_q)).scalars().all())
-        sprints = list((await db.execute(sprint_q)).scalars().all())
-        cards = list((await db.execute(card_q)).scalars().all())
+        filters = _artifact_filters(
+            board_id,
+            include_archived=True,
+            dt_from=dt_from,
+            dt_to=dt_to,
+        )
+        ideations = await _analytics_list(db, "ideation", filters=filters)
+        refinements = await _analytics_list(db, "refinement", filters=filters)
+        specs = await _analytics_list(db, "spec", filters=filters)
+        sprints = await _analytics_list(db, "sprint", filters=filters)
+        cards = await _analytics_list(db, "card", filters=filters)
 
         impl_cards = [card for card in cards if not _legacy_is_test(card)]
         test_cards = [card for card in cards if _legacy_is_test(card)]
@@ -1335,12 +1342,17 @@ async def compute_mcp_board_analytics(
         )
 
     if metric_type == "quality":
-        q = select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
-        if dt_from:
-            q = q.where(Card.created_at >= dt_from)
-        if dt_to:
-            q = q.where(Card.created_at <= dt_to)
-        cards = list((await db.execute(q)).scalars().all())
+        cards = await _analytics_list(
+            db,
+            "card",
+            filters=_artifact_filters(
+                board_id,
+                include_archived=True,
+                dt_from=dt_from,
+                dt_to=dt_to,
+                extra=(_af("status", "eq", CardStatus.DONE),),
+            ),
+        )
 
         result = []
         for card in cards:
@@ -1373,12 +1385,16 @@ async def compute_mcp_board_analytics(
         )
 
     if metric_type == "agents":
-        q = select(Card).where(Card.board_id == board_id)
-        if dt_from:
-            q = q.where(Card.created_at >= dt_from)
-        if dt_to:
-            q = q.where(Card.created_at <= dt_to)
-        cards = list((await db.execute(q)).scalars().all())
+        cards = await _analytics_list(
+            db,
+            "card",
+            filters=_artifact_filters(
+                board_id,
+                include_archived=True,
+                dt_from=dt_from,
+                dt_to=dt_to,
+            ),
+        )
 
         groups: dict[str, list] = {}
         for card in cards:
@@ -1975,7 +1991,7 @@ def _build_velocity_buckets(
 
 
 async def compute_overview(
-    db: AsyncSession,
+    db: Any,
     user_id: str,
     *,
     dt_from: datetime | None = None,
@@ -1986,9 +2002,11 @@ async def compute_overview(
     envelope stay in the adapter; the validation-gate aggregators live in this
     module."""
     # Fetch boards owned by user
-    boards_q = select(Board).where(Board.owner_id == user_id)
-    boards_result = await db.execute(boards_q)
-    boards = list(boards_result.scalars().all())
+    boards = await _analytics_list(
+        db,
+        "board",
+        filters=(_af("owner_id", "eq", user_id),),
+    )
     board_ids = [b.id for b in boards]
 
     if not board_ids:
@@ -2013,64 +2031,26 @@ async def compute_overview(
             "avg_triage_hours": None,
         }
 
-    # --- Ideations ---
-    ideation_q = select(Ideation).where(
-        Ideation.board_id.in_(board_ids),
-        Ideation.archived.is_(False),
-    )
+    filters = [
+        _af("board_id", "in", board_ids),
+        _af("archived", "is_false"),
+    ]
     if dt_from:
-        ideation_q = ideation_q.where(Ideation.created_at >= dt_from)
+        filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        ideation_q = ideation_q.where(Ideation.created_at <= dt_to)
-    ideations = list((await db.execute(ideation_q)).scalars().all())
+        filters.append(_af("created_at", "lte", dt_to))
+    artifact_filters = tuple(filters)
 
-    # --- Refinements ---
-    refinement_q = select(Refinement).where(
-        Refinement.board_id.in_(board_ids),
-        Refinement.archived.is_(False),
-    )
-    if dt_from:
-        refinement_q = refinement_q.where(Refinement.created_at >= dt_from)
-    if dt_to:
-        refinement_q = refinement_q.where(Refinement.created_at <= dt_to)
-    refinements = list((await db.execute(refinement_q)).scalars().all())
-
-    # --- Specs ---
-    spec_q = select(Spec).where(
-        Spec.board_id.in_(board_ids),
-        Spec.archived.is_(False),
-    )
-    if dt_from:
-        spec_q = spec_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        spec_q = spec_q.where(Spec.created_at <= dt_to)
-    specs = list((await db.execute(spec_q)).scalars().all())
-
-    # --- Cards ---
-    card_q = select(Card).where(
-        Card.board_id.in_(board_ids),
-        Card.archived.is_(False),
-    )
-    if dt_from:
-        card_q = card_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        card_q = card_q.where(Card.created_at <= dt_to)
-    cards = list((await db.execute(card_q)).scalars().all())
+    ideations = await _analytics_list(db, "ideation", filters=artifact_filters)
+    refinements = await _analytics_list(db, "refinement", filters=artifact_filters)
+    specs = await _analytics_list(db, "spec", filters=artifact_filters)
+    cards = await _analytics_list(db, "card", filters=artifact_filters)
 
     impl_cards = [c for c in cards if _is_normal_card(c)]
     test_cards = [c for c in cards if _is_test_card(c)]
     bug_cards_all = [c for c in cards if _is_bug_card(c)]
 
-    # --- Sprints ---
-    sprint_q = select(Sprint).where(
-        Sprint.board_id.in_(board_ids),
-        Sprint.archived.is_(False),
-    )
-    if dt_from:
-        sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
-    if dt_to:
-        sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
-    sprints = list((await db.execute(sprint_q)).scalars().all())
+    sprints = await _analytics_list(db, "sprint", filters=artifact_filters)
 
     # Self-reported scores (from card.conclusions — the implementer's report)
     concl_completeness: list[float] = []
@@ -2271,15 +2251,18 @@ async def compute_overview(
 # R01A REST-FU2b rework: lifecycle-move reader moved here from api/analytics.py
 # to remove the service->api coupling (Clean Core).
 async def _load_lifecycle_moves(
-    db: AsyncSession, board_id: str, action: str,
+    db: Any, board_id: str, action: str,
 ) -> list[tuple[datetime, str]]:
     """Read ActivityLog rows for a lifecycle action (spec_moved / sprint_moved)
     and return (created_at, new_status) tuples for the aggregator."""
-    q = select(ActivityLog).where(
-        ActivityLog.board_id == board_id,
-        ActivityLog.action == action,
+    rows = await _analytics_list(
+        db,
+        "activity_log",
+        filters=(
+            _af("board_id", "eq", board_id),
+            _af("action", "eq", action),
+        ),
     )
-    rows = list((await db.execute(q)).scalars().all())
     out: list[tuple[datetime, str]] = []
     for row in rows:
         details = row.details or {}
@@ -2299,17 +2282,17 @@ async def compute_quality(db, board_id: str, *, dt_from=None, dt_to=None) -> dic
     """Quality scatters reader (spec R01A REST-FU2c) — conclusion-reported vs
     validation-reported completeness/drift for done cards. Transport-free body of
     the legacy board_quality endpoint."""
-    q = select(Card).where(
-        Card.board_id == board_id,
-        Card.status == CardStatus.DONE,
-        Card.archived.is_(False),
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=_artifact_filters(
+            board_id,
+            include_archived=False,
+            dt_from=dt_from,
+            dt_to=dt_to,
+            extra=(_af("status", "eq", CardStatus.DONE),),
+        ),
     )
-    if dt_from:
-        q = q.where(Card.created_at >= dt_from)
-    if dt_to:
-        q = q.where(Card.created_at <= dt_to)
-
-    cards = list((await db.execute(q)).scalars().all())
     conclusion_reported: list[dict] = []
     validation_reported: list[dict] = []
     for c in cards:
@@ -2352,35 +2335,15 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
     """Validation-gate panel reader (spec R01A REST-FU2c) — spec/task validation
     gates + spec/sprint evaluations with per-spec/per-card breakdown. Transport-free
     body of the legacy board_validations endpoint."""
-    spec_q = select(Spec).where(
-        Spec.board_id == board_id,
-        Spec.archived.is_(False),
+    filters = _artifact_filters(
+        board_id,
+        include_archived=False,
+        dt_from=dt_from,
+        dt_to=dt_to,
     )
-    if dt_from:
-        spec_q = spec_q.where(Spec.created_at >= dt_from)
-    if dt_to:
-        spec_q = spec_q.where(Spec.created_at <= dt_to)
-    specs = list((await db.execute(spec_q)).scalars().all())
-
-    card_q = select(Card).where(
-        Card.board_id == board_id,
-        Card.archived.is_(False),
-    )
-    if dt_from:
-        card_q = card_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        card_q = card_q.where(Card.created_at <= dt_to)
-    cards = list((await db.execute(card_q)).scalars().all())
-
-    sprint_q = select(Sprint).where(
-        Sprint.board_id == board_id,
-        Sprint.archived.is_(False),
-    )
-    if dt_from:
-        sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
-    if dt_to:
-        sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
-    sprints = list((await db.execute(sprint_q)).scalars().all())
+    specs = await _analytics_list(db, "spec", filters=filters)
+    cards = await _analytics_list(db, "card", filters=filters)
+    sprints = await _analytics_list(db, "sprint", filters=filters)
 
     # Per-spec breakdown for Spec Validation Gate — walks full history (D4)
     per_spec: list[dict] = []
@@ -2455,15 +2418,27 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
 async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None:
     """Per-spec analytics reader (spec R01A REST-FU2c) — transport-free
     body of the legacy board_spec_analytics endpoint; returns None when the spec is not found."""
-    spec = (await db.execute(
-        select(Spec).where(Spec.id == spec_id, Spec.board_id == board_id)
-    )).scalar_one_or_none()
+    specs = await _analytics_list(
+        db,
+        "spec",
+        filters=(
+            _af("id", "eq", spec_id),
+            _af("board_id", "eq", board_id),
+        ),
+        limit=1,
+    )
+    spec = specs[0] if specs else None
     if not spec:
         return None
 
-    cards = list((await db.execute(
-        select(Card).where(Card.spec_id == spec_id, Card.archived.is_(False))
-    )).scalars().all())
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=(
+            _af("spec_id", "eq", spec_id),
+            _af("archived", "is_false"),
+        ),
+    )
 
     # Spec 233eaad3: coverage_summary com cancelled-card filter — mesmo
     # cálculo do validation gate (SSOT), agora visível no 3º nível do
@@ -2535,15 +2510,27 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
 async def compute_sprint_analytics(db, board_id: str, sprint_id: str) -> dict | None:
     """Per-sprint analytics reader (spec R01A REST-FU2c) — transport-free
     body of the legacy board_sprint_analytics endpoint; returns None when the sprint is not found."""
-    sprint = (await db.execute(
-        select(Sprint).where(Sprint.id == sprint_id, Sprint.board_id == board_id)
-    )).scalar_one_or_none()
+    sprints = await _analytics_list(
+        db,
+        "sprint",
+        filters=(
+            _af("id", "eq", sprint_id),
+            _af("board_id", "eq", board_id),
+        ),
+        limit=1,
+    )
+    sprint = sprints[0] if sprints else None
     if not sprint:
         return None
 
-    cards = list((await db.execute(
-        select(Card).where(Card.sprint_id == sprint_id, Card.archived.is_(False))
-    )).scalars().all())
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=(
+            _af("sprint_id", "eq", sprint_id),
+            _af("archived", "is_false"),
+        ),
+    )
     done_cards = [c for c in cards if c.status == CardStatus.DONE]
 
     # Evaluation timeline (append-only) — oldest first
@@ -2590,25 +2577,14 @@ async def compute_sprint_analytics(db, board_id: str, sprint_id: str) -> dict | 
 async def compute_sprints_analytics(db, board_id: str, *, dt_from=None, dt_to=None) -> dict:
     """Board-level analytics reader (spec R01A REST-FU2d) — transport-free body of
     the legacy board_sprints_analytics endpoint."""
-    sprint_q = select(Sprint).where(
-        Sprint.board_id == board_id,
-        Sprint.archived.is_(False),
+    filters = _artifact_filters(
+        board_id,
+        include_archived=False,
+        dt_from=dt_from,
+        dt_to=dt_to,
     )
-    if dt_from:
-        sprint_q = sprint_q.where(Sprint.created_at >= dt_from)
-    if dt_to:
-        sprint_q = sprint_q.where(Sprint.created_at <= dt_to)
-    sprints = list((await db.execute(sprint_q)).scalars().all())
-
-    card_q = select(Card).where(
-        Card.board_id == board_id,
-        Card.archived.is_(False),
-    )
-    if dt_from:
-        card_q = card_q.where(Card.created_at >= dt_from)
-    if dt_to:
-        card_q = card_q.where(Card.created_at <= dt_to)
-    all_cards = list((await db.execute(card_q)).scalars().all())
+    sprints = await _analytics_list(db, "sprint", filters=filters)
+    all_cards = await _analytics_list(db, "card", filters=filters)
 
     per_sprint: list[dict] = []
     normal_sprints_total = 0
@@ -2708,16 +2684,25 @@ async def compute_sprints_analytics(db, board_id: str, *, dt_from=None, dt_to=No
 async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict:
     """Board-level analytics reader (spec R01A REST-FU2d) — transport-free body of
     the legacy board_agents endpoint."""
-    q = select(Card).where(Card.board_id == board_id, Card.archived.is_(False))
-    if dt_from:
-        q = q.where(Card.created_at >= dt_from)
-    if dt_to:
-        q = q.where(Card.created_at <= dt_to)
-    cards = list((await db.execute(q)).scalars().all())
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=_artifact_filters(
+            board_id,
+            include_archived=False,
+            dt_from=dt_from,
+            dt_to=dt_to,
+        ),
+    )
 
-    specs = list((await db.execute(
-        select(Spec).where(Spec.board_id == board_id, Spec.archived.is_(False))
-    )).scalars().all())
+    specs = await _analytics_list(
+        db,
+        "spec",
+        filters=(
+            _af("board_id", "eq", board_id),
+            _af("archived", "is_false"),
+        ),
+    )
 
     # Collect actors from both cards and validations
     actors: set[str] = set()
@@ -2814,7 +2799,7 @@ async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict
 
 
 async def _list_ideation_entities(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     offset: int,
     limit: int,
@@ -2822,40 +2807,53 @@ async def _list_ideation_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Ideation).where(
-        Ideation.board_id == board_id,
-        Ideation.archived.is_(False),
-    )
+    filters = [
+        _af("board_id", "eq", board_id),
+        _af("archived", "is_false"),
+    ]
     if dt_from:
-        q = q.where(Ideation.created_at >= dt_from)
+        filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        q = q.where(Ideation.created_at <= dt_to)
-    if search:
-        q = q.where(Ideation.title.ilike(f"%{search}%"))
+        filters.append(_af("created_at", "lte", dt_to))
 
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items_q = q.order_by(Ideation.created_at.desc()).offset(offset).limit(limit)
-    ideations = list((await db.execute(items_q)).scalars().all())
+    total = await _analytics_count(
+        db,
+        "ideation",
+        filters=tuple(filters),
+        search=search,
+        search_fields=("title",),
+    )
+    ideations = await _analytics_list(
+        db,
+        "ideation",
+        filters=tuple(filters),
+        search=search,
+        search_fields=("title",),
+        order_by="created_at",
+        descending=True,
+        offset=offset,
+        limit=limit,
+    )
 
     # For each ideation, count derived refinements and specs
     result_items = []
     for i in ideations:
-        ref_count = (
-            await db.execute(
-                select(func.count(Refinement.id)).where(
-                    Refinement.ideation_id == i.id,
-                    Refinement.archived.is_(False),
-                )
-            )
-        ).scalar() or 0
-        spec_count = (
-            await db.execute(
-                select(func.count(Spec.id)).where(
-                    Spec.ideation_id == i.id,
-                    Spec.archived.is_(False),
-                )
-            )
-        ).scalar() or 0
+        ref_count = await _analytics_count(
+            db,
+            "refinement",
+            filters=(
+                _af("ideation_id", "eq", i.id),
+                _af("archived", "is_false"),
+            ),
+        )
+        spec_count = await _analytics_count(
+            db,
+            "spec",
+            filters=(
+                _af("ideation_id", "eq", i.id),
+                _af("archived", "is_false"),
+            ),
+        )
         result_items.append({
             "id": i.id,
             "title": i.title,
@@ -2869,7 +2867,7 @@ async def _list_ideation_entities(
     return {"total": total, "offset": offset, "limit": limit, "items": result_items}
 
 async def _list_spec_entities(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     offset: int,
     limit: int,
@@ -2877,33 +2875,46 @@ async def _list_spec_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Spec).where(
-        Spec.board_id == board_id,
-        Spec.archived.is_(False),
-    )
+    filters = [
+        _af("board_id", "eq", board_id),
+        _af("archived", "is_false"),
+    ]
     if dt_from:
-        q = q.where(Spec.created_at >= dt_from)
+        filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        q = q.where(Spec.created_at <= dt_to)
-    if search:
-        q = q.where(Spec.title.ilike(f"%{search}%"))
+        filters.append(_af("created_at", "lte", dt_to))
 
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items_q = q.order_by(Spec.created_at.desc()).offset(offset).limit(limit)
-    specs = list((await db.execute(items_q)).scalars().all())
+    total = await _analytics_count(
+        db,
+        "spec",
+        filters=tuple(filters),
+        search=search,
+        search_fields=("title",),
+    )
+    specs = await _analytics_list(
+        db,
+        "spec",
+        filters=tuple(filters),
+        search=search,
+        search_fields=("title",),
+        order_by="created_at",
+        descending=True,
+        offset=offset,
+        limit=limit,
+    )
 
     result_items = []
     for s in specs:
         ac_list = s.acceptance_criteria or []
         scenarios = s.test_scenarios or []
-        card_count = (
-            await db.execute(
-                select(func.count(Card.id)).where(
-                    Card.spec_id == s.id,
-                    Card.archived.is_(False),
-                )
-            )
-        ).scalar() or 0
+        card_count = await _analytics_count(
+            db,
+            "card",
+            filters=(
+                _af("spec_id", "eq", s.id),
+                _af("archived", "is_false"),
+            ),
+        )
 
         result_items.append({
             "id": s.id,
@@ -2920,7 +2931,7 @@ async def _list_spec_entities(
     return {"total": total, "offset": offset, "limit": limit, "items": result_items}
 
 async def _list_card_entities(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     offset: int,
     limit: int,
@@ -2928,20 +2939,33 @@ async def _list_card_entities(
     dt_to: datetime | None,
     search: str = "",
 ) -> dict:
-    q = select(Card).where(
-        Card.board_id == board_id,
-        Card.archived.is_(False),
-    )
+    filters = [
+        _af("board_id", "eq", board_id),
+        _af("archived", "is_false"),
+    ]
     if dt_from:
-        q = q.where(Card.created_at >= dt_from)
+        filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        q = q.where(Card.created_at <= dt_to)
-    if search:
-        q = q.where(Card.title.ilike(f"%{search}%"))
+        filters.append(_af("created_at", "lte", dt_to))
 
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items_q = q.order_by(Card.created_at.desc()).offset(offset).limit(limit)
-    cards = list((await db.execute(items_q)).scalars().all())
+    total = await _analytics_count(
+        db,
+        "card",
+        filters=tuple(filters),
+        search=search,
+        search_fields=("title",),
+    )
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=tuple(filters),
+        search=search,
+        search_fields=("title",),
+        order_by="created_at",
+        descending=True,
+        offset=offset,
+        limit=limit,
+    )
 
     result_items = []
     for c in cards:
@@ -2987,10 +3011,18 @@ def _resolve_linked_fr_indices(linked_refs: list, frs: list) -> set[int]:
                 break
     return indices
 
-async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
+async def _spec_detail(db: Any, board_id: str, spec_id: str) -> dict:
     """Spec detail: AC coverage, scenario statuses, cards with conclusions, cycle time, derivation chain."""
-    q = select(Spec).where(Spec.id == spec_id, Spec.board_id == board_id)
-    spec = (await db.execute(q)).scalars().first()
+    specs = await _analytics_list(
+        db,
+        "spec",
+        filters=(
+            _af("id", "eq", spec_id),
+            _af("board_id", "eq", board_id),
+        ),
+        limit=1,
+    )
+    spec = specs[0] if specs else None
     if not spec:
         return None
 
@@ -3014,11 +3046,14 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
     covered_ac_count = min(len(covered_ac_indices), len(ac_list))
 
     # Cards linked to this spec
-    cards_q = select(Card).where(
-        Card.spec_id == spec_id,
-        Card.archived.is_(False),
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=(
+            _af("spec_id", "eq", spec_id),
+            _af("archived", "is_false"),
+        ),
     )
-    cards = list((await db.execute(cards_q)).scalars().all())
     from okto_pulse.core.services.analytics_service import spec_coverage_summary
     coverage_summary = spec_coverage_summary(spec, cards=cards)
     card_data = []
@@ -3092,8 +3127,14 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
     bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
 
     # Sprint breakdown
-    sprints_q = select(Sprint).where(Sprint.spec_id == spec_id, Sprint.archived.is_(False))
-    sprints = list((await db.execute(sprints_q)).scalars().all())
+    sprints = await _analytics_list(
+        db,
+        "sprint",
+        filters=(
+            _af("spec_id", "eq", spec_id),
+            _af("archived", "is_false"),
+        ),
+    )
     sprint_summaries = []
     for sp in sprints:
         sp_cards = [c for c in cards if getattr(c, "sprint_id", None) == sp.id]
@@ -3147,30 +3188,36 @@ async def _spec_detail(db: AsyncSession, board_id: str, spec_id: str) -> dict:
         "sprints": sprint_summaries,
     }
 
-async def _ideation_detail(db: AsyncSession, board_id: str, ideation_id: str) -> dict:
+async def _ideation_detail(db: Any, board_id: str, ideation_id: str) -> dict:
     """Ideation detail: scope assessment, derived refinements/specs, QA count."""
-    q = select(Ideation).where(Ideation.id == ideation_id, Ideation.board_id == board_id)
-    ideation = (await db.execute(q)).scalars().first()
+    ideations = await _analytics_list(
+        db,
+        "ideation",
+        filters=(
+            _af("id", "eq", ideation_id),
+            _af("board_id", "eq", board_id),
+        ),
+        limit=1,
+    )
+    ideation = ideations[0] if ideations else None
     if not ideation:
         return None
 
-    ref_count = (
-        await db.execute(
-            select(func.count(Refinement.id)).where(Refinement.ideation_id == ideation_id)
-        )
-    ).scalar() or 0
-
-    spec_count = (
-        await db.execute(
-            select(func.count(Spec.id)).where(Spec.ideation_id == ideation_id)
-        )
-    ).scalar() or 0
-
-    qa_count = (
-        await db.execute(
-            select(func.count(IdeationQAItem.id)).where(IdeationQAItem.ideation_id == ideation_id)
-        )
-    ).scalar() or 0
+    ref_count = await _analytics_count(
+        db,
+        "refinement",
+        filters=(_af("ideation_id", "eq", ideation_id),),
+    )
+    spec_count = await _analytics_count(
+        db,
+        "spec",
+        filters=(_af("ideation_id", "eq", ideation_id),),
+    )
+    qa_count = await _analytics_count(
+        db,
+        "ideation_qa_item",
+        filters=(_af("ideation_id", "eq", ideation_id),),
+    )
 
     return {
         "ideation_id": ideation.id,
@@ -3184,10 +3231,18 @@ async def _ideation_detail(db: AsyncSession, board_id: str, ideation_id: str) ->
         "created_at": ideation.created_at.isoformat() if ideation.created_at else None,
     }
 
-async def _card_detail(db: AsyncSession, board_id: str, card_id: str) -> dict:
+async def _card_detail(db: Any, board_id: str, card_id: str) -> dict:
     """Card detail: conclusions, validations history, cycle time, spec link."""
-    q = select(Card).where(Card.id == card_id, Card.board_id == board_id)
-    card = (await db.execute(q)).scalars().first()
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=(
+            _af("id", "eq", card_id),
+            _af("board_id", "eq", board_id),
+        ),
+        limit=1,
+    )
+    card = cards[0] if cards else None
     if not card:
         return None
 
@@ -3218,23 +3273,34 @@ async def _card_detail(db: AsyncSession, board_id: str, card_id: str) -> dict:
         "updated_at": card.updated_at.isoformat() if card.updated_at else None,
     }
 
-async def _refinement_detail(db: AsyncSession, board_id: str, refinement_id: str) -> dict:
+async def _refinement_detail(db: Any, board_id: str, refinement_id: str) -> dict:
     """Refinement detail: scope, KBs, derived specs."""
-    q = select(Refinement).where(Refinement.id == refinement_id, Refinement.board_id == board_id)
-    refinement = (await db.execute(q)).scalars().first()
+    refinements = await _analytics_list(
+        db,
+        "refinement",
+        filters=(
+            _af("id", "eq", refinement_id),
+            _af("board_id", "eq", board_id),
+        ),
+        limit=1,
+    )
+    refinement = refinements[0] if refinements else None
     if not refinement:
         return None
 
     # Derived specs
-    specs_q = select(Spec).where(Spec.refinement_id == refinement_id)
-    specs = (await db.execute(specs_q)).scalars().all()
+    specs = await _analytics_list(
+        db,
+        "spec",
+        filters=(_af("refinement_id", "eq", refinement_id),),
+    )
 
     # Knowledge bases count
-    from okto_pulse.core.models.db import RefinementKnowledgeBase
-    kb_q = select(func.count()).select_from(RefinementKnowledgeBase).where(
-        RefinementKnowledgeBase.refinement_id == refinement_id
+    kb_count = await _analytics_count(
+        db,
+        "refinement_knowledge_base",
+        filters=(_af("refinement_id", "eq", refinement_id),),
     )
-    kb_count = (await db.execute(kb_q)).scalar() or 0
 
     return {
         "refinement_id": refinement.id,
@@ -3256,19 +3322,30 @@ async def _refinement_detail(db: AsyncSession, board_id: str, refinement_id: str
         "updated_at": refinement.updated_at.isoformat() if refinement.updated_at else None,
     }
 
-async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dict:
+async def _sprint_detail(db: Any, board_id: str, sprint_id: str) -> dict:
     """Sprint detail: tasks done/total, completeness avg, drift avg, cycle time, evaluations, comparison."""
-    q = select(Sprint).where(Sprint.id == sprint_id, Sprint.board_id == board_id)
-    sprint = (await db.execute(q)).scalars().first()
+    sprints = await _analytics_list(
+        db,
+        "sprint",
+        filters=(
+            _af("id", "eq", sprint_id),
+            _af("board_id", "eq", board_id),
+        ),
+        limit=1,
+    )
+    sprint = sprints[0] if sprints else None
     if not sprint:
         return None
 
     # Cards in this sprint (skip archived to keep counts honest)
-    cards_q = select(Card).where(
-        Card.sprint_id == sprint_id,
-        Card.archived.is_(False),
+    cards = await _analytics_list(
+        db,
+        "card",
+        filters=(
+            _af("sprint_id", "eq", sprint_id),
+            _af("archived", "is_false"),
+        ),
     )
-    cards = list((await db.execute(cards_q)).scalars().all())
 
     done_cards = [c for c in cards if c.status == CardStatus.DONE]
     cancelled = [c for c in cards if c.status == CardStatus.CANCELLED]
@@ -3321,7 +3398,17 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
     approvals = [e for e in non_stale if e.get("recommendation") == "approve"]
 
     # Scoped test scenario coverage
-    spec = await db.get(Spec, sprint.spec_id) if sprint.spec_id else None
+    spec_rows = (
+        await _analytics_list(
+            db,
+            "spec",
+            filters=(_af("id", "eq", sprint.spec_id),),
+            limit=1,
+        )
+        if sprint.spec_id
+        else []
+    )
+    spec = spec_rows[0] if spec_rows else None
     scoped_scenarios = []
     if spec and sprint.test_scenario_ids:
         all_scenarios = {s.get("id"): s for s in (spec.test_scenarios or [])}
@@ -3337,16 +3424,23 @@ async def _sprint_detail(db: AsyncSession, board_id: str, sprint_id: str) -> dic
     # Sibling sprints for comparison
     comparison = []
     if sprint.spec_id:
-        siblings_q = select(Sprint).where(
-            Sprint.spec_id == sprint.spec_id, Sprint.archived.is_(False),
+        siblings = await _analytics_list(
+            db,
+            "sprint",
+            filters=(
+                _af("spec_id", "eq", sprint.spec_id),
+                _af("archived", "is_false"),
+            ),
         )
-        siblings = list((await db.execute(siblings_q)).scalars().all())
         for sib in siblings:
-            sib_cards_q = select(Card).where(
-                Card.sprint_id == sib.id,
-                Card.archived.is_(False),
+            sib_cards = await _analytics_list(
+                db,
+                "card",
+                filters=(
+                    _af("sprint_id", "eq", sib.id),
+                    _af("archived", "is_false"),
+                ),
             )
-            sib_cards = list((await db.execute(sib_cards_q)).scalars().all())
             sib_done = [c for c in sib_cards if c.status == CardStatus.DONE]
             sib_concls = [_extract_conclusion(c) for c in sib_done if _extract_conclusion(c)]
             sib_comp = [cn.get("completeness") for cn in sib_concls if cn.get("completeness") is not None]

@@ -47,7 +47,6 @@ async def sweep_board_schemas(
     board_ids: Iterable[str],
     *,
     graph_runtime_store: Any | None = None,
-    graph_path_resolver: Any | None = None,
     graph_schema_manager: Any,
     logger: logging.Logger,
     run_blocking: RunBlocking | None = None,
@@ -72,10 +71,9 @@ async def sweep_board_schemas(
         # the caller's outer try (-> kg.schema.migration_skipped), matching the
         # old behaviour where board_kuzu_path(bid).exists() raising aborted the
         # whole sweep rather than soft-failing one board.
-        runtime = graph_runtime_store or graph_path_resolver
-        if runtime is None:
+        if graph_runtime_store is None:
             raise RuntimeError("graph_runtime_store is required for schema sweep")
-        if not runtime.exists(board_id):
+        if not graph_runtime_store.exists(board_id):
             continue
         try:
             await run(

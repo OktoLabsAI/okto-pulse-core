@@ -15,15 +15,15 @@ case does NOT touch it, so the proven invalidation point is preserved exactly
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
-from okto_pulse.core.services import AgentService
 
 
 class UpdateBoardOverridesCommand:
@@ -58,10 +58,9 @@ class UpdateBoardOverridesUseCase:
     """
 
     async def execute(
-        self, command: UpdateBoardOverridesCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateBoardOverridesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardOverridesResult:
-        session = session_of(uow)
-        service = AgentService(session)
+        service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)

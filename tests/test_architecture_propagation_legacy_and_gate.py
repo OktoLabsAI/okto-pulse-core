@@ -18,7 +18,7 @@ import uuid
 import pytest
 from sqlalchemy import func, select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
     Card,
@@ -368,7 +368,7 @@ async def test_ts_c4_rest_legacy_report_twin(db_factory):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.architecture import router as architecture_router
+    from okto_pulse.community.api.architecture import router as architecture_router
     from okto_pulse.core.infra import auth as _auth_mod
     from okto_pulse.core.infra.database import get_db
 

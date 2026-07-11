@@ -46,17 +46,10 @@ def test_real_rest_manifest_classifies_current_productive_residue() -> None:
     payload = report.as_dict()
 
     assert report.ok, payload
-    assert report.scanned_files == 48
-    assert len(report.findings) == 4
-    assert payload["by_classification"] == {
-        CLASS_ALLOWED_UOW_SEAM_API_DEPS: 4,
-    }
-    assert payload["by_pattern"] == {
-        "async_session_annotation": 1,
-        "async_session_import": 1,
-        "depends_get_db": 1,
-        "get_db_import": 1,
-    }
+    assert report.scanned_files == 47
+    assert report.findings == ()
+    assert payload["by_classification"] == {}
+    assert payload["by_pattern"] == {}
     assert report.as_gate_report().status == "passed"
 
 
@@ -90,7 +83,7 @@ def test_manifest_has_closed_taxonomy_and_required_metadata() -> None:
         for entry in manifest
         if entry.classification == CLASS_ALLOWED_UOW_SEAM_API_DEPS
     }
-    assert seam_files == {"api/deps.py"}
+    assert seam_files == set()
 
 
 def test_s5_rows_are_machine_consumable_and_exact_for_non_clean_entries() -> None:
@@ -102,7 +95,7 @@ def test_s5_rows_are_machine_consumable_and_exact_for_non_clean_entries() -> Non
     non_clean = [
         row for row in rows if row["classification"] != CLASS_MIGRATED_CLEAN_TARGET
     ]
-    assert non_clean
+    assert non_clean == []
     for row in non_clean:
         assert row["owner"]
         assert row["rationale"]

@@ -29,7 +29,7 @@ from okto_pulse.core.kg.cypher_templates import (
     layer_label_projection,
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
-from okto_pulse.core.kg.global_discovery.schema import (
+from global_graph_testing import (
     bootstrap_global_discovery,
     ensure_global_discovery_layer_schema,
     open_global_connection,

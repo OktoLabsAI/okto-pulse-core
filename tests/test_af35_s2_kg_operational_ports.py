@@ -59,7 +59,7 @@ class _ReadModel:
         self.calls.append(("queue_counts", context))
         return {"pending": 1, "claimed": 0, "done": 2, "failed": 0}
 
-    async def kuzu_node_ref_operation_counts(
+    async def graph_node_ref_operation_counts(
         self, context: Any, *, board_id: str
     ) -> Mapping[str, int]:
         self.calls.append(("ref_counts", context))
@@ -281,7 +281,7 @@ async def test_cognitive_action_center_gathers_debt_and_dlq_via_port() -> None:
 async def test_dead_letter_helper_delegates_queue_transition_to_port() -> None:
     from types import SimpleNamespace
 
-    from okto_pulse.core.kg.workers.dead_letter import (
+    from okto_pulse.core.application.processors.dead_letter import (
         list_dead_letter,
         route_to_dead_letter,
     )

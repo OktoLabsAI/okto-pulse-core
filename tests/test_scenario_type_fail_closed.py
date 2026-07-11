@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecCreate, SpecUpdate
 from okto_pulse.core.models.schemas import TestScenario as _TestScenario
 from okto_pulse.core.services.main import SpecService

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -49,7 +49,7 @@ def _no_graph(monkeypatch):
     """Force the read-only graph projection to degrade to empty so the SQL/store
     classification logic is exercised deterministically without a bootstrapped
     board graph. (The persisted-node path is covered separately.)"""
-    import okto_pulse.core.kg.schema as schema_mod
+    import kg_schema_testing as schema_mod
 
     def _boom(*_a, **_k):
         raise RuntimeError("graph not bootstrapped in this unit test")

@@ -11,6 +11,8 @@ commit(uow) after the service mutation.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -18,11 +20,10 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     PermissionDeniedError,
     commit,
-    session_of,
 )
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.application_schemas import SpecUpdate
-from okto_pulse.core.services import BoardService, SpecService
 
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
@@ -52,9 +53,9 @@ class CreateSpecUseCase:
     missing/not owned — the adapter maps to the legacy 404."""
 
     async def execute(
-        self, command: CreateSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateSpecResult:
-        service = SpecService(session_of(uow))
+        service = uow.services.specs
         spec = await service.create_spec(
             command.board_id,
             actor.actor_id,
@@ -92,17 +93,16 @@ class ListSpecsUseCase:
     """List a board's specs (read). 404 when the board is missing/not owned."""
 
     async def execute(
-        self, command: ListSpecsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListSpecsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSpecsResult:
-        session = session_of(uow)
-        board = await BoardService(session).get_board(
+        board = await uow.services.boards.get_board(
             command.board_id,
             actor.actor_id,
             query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
         )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
-        specs = await SpecService(session).list_specs(
+        specs = await uow.services.specs.list_specs(
             command.board_id, command.status_filter, include_archived=command.include_archived
         )
         return ListSpecsResult(specs)
@@ -129,9 +129,9 @@ class GetSpecUseCase:
     """Fetch a spec with its derived cards (read). 404 when missing."""
 
     async def execute(
-        self, command: GetSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: GetSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetSpecResult:
-        spec = await SpecService(session_of(uow)).get_spec(command.spec_id)
+        spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
         return GetSpecResult(spec)
@@ -162,9 +162,9 @@ class MoveSpecUseCase:
     is ``EntityNotFoundError`` (404)."""
 
     async def execute(
-        self, command: MoveSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: MoveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveSpecResult:
-        service = SpecService(session_of(uow))
+        service = uow.services.specs
         spec = await service.move_spec(command.spec_id, actor.actor_id, command.data)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -190,9 +190,9 @@ class DeleteSpecUseCase:
     """Delete a spec, unlinking derived cards (write). 404 when missing."""
 
     async def execute(
-        self, command: DeleteSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteSpecResult:
-        service = SpecService(session_of(uow))
+        service = uow.services.specs
         deleted = await service.delete_spec(command.spec_id, actor.actor_id)
         if not deleted:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -222,9 +222,9 @@ class ListSpecHistoryUseCase:
     """Read a spec's change history (read, no commit)."""
 
     async def execute(
-        self, command: ListSpecHistoryCommand, *, actor: ActorContext, uow: Any
+        self, command: ListSpecHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSpecHistoryResult:
-        history = await SpecService(session_of(uow)).list_history(
+        history = await uow.services.specs.list_history(
             command.spec_id, command.limit
         )
         return ListSpecHistoryResult(history)
@@ -359,21 +359,19 @@ class UpdateSpecUseCase:
     adapter to map to 422. The deprecation header stays in the adapter."""
 
     async def execute(
-        self, command: UpdateSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateSpecResult:
         from okto_pulse.core.services.permission_policy import check_permission
-        from okto_pulse.core.services.main import resolve_user_permissions
-
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         existing = await service.get_spec(command.spec_id)
         if not existing:
             raise EntityNotFoundError("spec", command.spec_id)
 
         required = _spec_update_permission_requirements(existing, command.data)
         if required:
-            permission_set = await resolve_user_permissions(
-                session, actor.actor_id, existing.board_id
+            permission_set = await uow.services.resolve_user_permissions(
+                actor.actor_id,
+                existing.board_id,
             )
             for permission in sorted(required):
                 error = check_permission(permission_set, permission)
@@ -430,20 +428,20 @@ class RunStructuredSpecEntityUseCase:
     ``_run_structured_spec_entity_command`` semantics exactly."""
 
     async def execute(
-        self, command: RunStructuredSpecEntityCommand, *, actor: ActorContext, uow: Any
+        self, command: RunStructuredSpecEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RunStructuredSpecEntityResult:
-        from okto_pulse.core.services.main import resolve_user_permissions
         from okto_pulse.core.services.spec_structured_entities import (
             StructuredSpecEntityCommand,
-            StructuredSpecEntityService,
         )
 
-        session = session_of(uow)
-        spec = await SpecService(session).get_spec(command.spec_id)
+        spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
-        permission_set = await resolve_user_permissions(session, actor.actor_id, spec.board_id)
-        result = await StructuredSpecEntityService(session).apply(
+        permission_set = await uow.services.resolve_user_permissions(
+            actor.actor_id,
+            spec.board_id,
+        )
+        result = await uow.services.structured_specs.apply(
             StructuredSpecEntityCommand(
                 board_id=spec.board_id,
                 spec_id=command.spec_id,
@@ -460,7 +458,7 @@ class RunStructuredSpecEntityUseCase:
             )
         )
         if not result.success:
-            await session.rollback()
+            await uow.rollback()
         elif result.changed_fields:
             await commit(uow)
         return RunStructuredSpecEntityResult(result)
@@ -489,9 +487,9 @@ class ListSpecValidationsUseCase:
     as before."""
 
     async def execute(
-        self, command: ListSpecValidationsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListSpecValidationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSpecValidationsResult:
-        result = await SpecService(session_of(uow)).list_spec_validations(command.spec_id)
+        result = await uow.services.specs.list_spec_validations(command.spec_id)
         return ListSpecValidationsResult(result)
 
 
@@ -535,9 +533,9 @@ class LinkCardToSpecUseCase:
     not catch it)."""
 
     async def execute(
-        self, command: LinkCardToSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: LinkCardToSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> LinkCardToSpecResult:
-        service = SpecService(session_of(uow))
+        service = uow.services.specs
         linked = await service.link_card(
             command.spec_id, command.card_id, user_id=actor.actor_id
         )
@@ -571,9 +569,9 @@ class UnlinkCardFromSpecUseCase:
     the card is missing or not linked — the adapter maps it to the legacy 404."""
 
     async def execute(
-        self, command: UnlinkCardFromSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: UnlinkCardFromSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UnlinkCardFromSpecResult:
-        service = SpecService(session_of(uow))
+        service = uow.services.specs
         unlinked = await service.unlink_card(command.card_id, user_id=actor.actor_id)
         if not unlinked:
             raise EntityNotFoundError("card", command.card_id)
@@ -620,18 +618,16 @@ class LinkTaskToScenarioUseCase:
     failure leaves the request transaction uncommitted, exactly as before."""
 
     async def execute(
-        self, command: LinkTaskToScenarioCommand, *, actor: ActorContext, uow: Any
+        self, command: LinkTaskToScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> LinkTaskToScenarioResult:
         from okto_pulse.core.services.application_schemas import CardUpdate
-        from okto_pulse.core.services import CardService
 
-        session = session_of(uow)
-        spec_service = SpecService(session)
+        spec_service = uow.services.specs
         spec = await spec_service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
 
-        card_service = CardService(session)
+        card_service = uow.services.cards
         card = await card_service.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
@@ -705,13 +701,11 @@ class UnlinkTaskFromScenarioUseCase:
     error-wrapped, so any ``ValueError`` propagates unchanged."""
 
     async def execute(
-        self, command: UnlinkTaskFromScenarioCommand, *, actor: ActorContext, uow: Any
+        self, command: UnlinkTaskFromScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UnlinkTaskFromScenarioResult:
         from okto_pulse.core.services.application_schemas import CardUpdate
-        from okto_pulse.core.services import CardService
 
-        session = session_of(uow)
-        spec_service = SpecService(session)
+        spec_service = uow.services.specs
         spec = await spec_service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -733,7 +727,7 @@ class UnlinkTaskFromScenarioUseCase:
             command.spec_id, actor.actor_id, SpecUpdate(test_scenarios=scenarios)
         )
 
-        card_service = CardService(session)
+        card_service = uow.services.cards
         card = await card_service.get_card(command.card_id)
         if card:
             existing = list(card.test_scenario_ids or [])
@@ -784,9 +778,9 @@ class SetTestScenarioStatusUseCase:
     (``scenario_not_found`` → 404, otherwise → 422) propagate for the adapter."""
 
     async def execute(
-        self, command: SetTestScenarioStatusCommand, *, actor: ActorContext, uow: Any
+        self, command: SetTestScenarioStatusCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SetTestScenarioStatusResult:
-        result = await SpecService(session_of(uow)).set_test_scenario_status(
+        result = await uow.services.specs.set_test_scenario_status(
             command.spec_id,
             actor.actor_id,
             command.scenario_id,
@@ -814,15 +808,16 @@ class SetTestScenarioStatusUseCase:
 
 
 async def _check_requirement_link_permissions(
-    session: Any, actor_id: str, board_id: str, permissions: tuple[str, ...]
+    services: ApplicationServiceCatalog,
+    actor_id: str,
+    board_id: str,
+    permissions: tuple[str, ...],
 ) -> None:
     """Resolve the actor's permission set and enforce ``permissions`` in order,
     raising ``PermissionDeniedError`` on the first failure — the transport-free
     equivalent of the legacy ``_require_permissions`` guard."""
     from okto_pulse.core.services.permission_policy import check_permission
-    from okto_pulse.core.services.main import resolve_user_permissions
-
-    permission_set = await resolve_user_permissions(session, actor_id, board_id)
+    permission_set = await services.resolve_user_permissions(actor_id, board_id)
     for permission in permissions:
         error = check_permission(permission_set, permission)
         if error:
@@ -865,24 +860,22 @@ class LinkTaskToIntegrationRequirementUseCase:
         command: LinkTaskToIntegrationRequirementCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> LinkTaskToIntegrationRequirementResult:
-        from okto_pulse.core.services import CardService
 
-        session = session_of(uow)
-        spec_service = SpecService(session)
+        spec_service = uow.services.specs
         spec = await spec_service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
 
         await _check_requirement_link_permissions(
-            session,
+            uow.services,
             actor.actor_id,
             spec.board_id,
             ("spec.integration_requirements.link_task", "card.link_to.ir"),
         )
 
-        card = await CardService(session).get_card(command.card_id)
+        card = await uow.services.cards.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
 
@@ -946,24 +939,22 @@ class LinkTaskToObservabilityRequirementUseCase:
         command: LinkTaskToObservabilityRequirementCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> LinkTaskToObservabilityRequirementResult:
-        from okto_pulse.core.services import CardService
 
-        session = session_of(uow)
-        spec_service = SpecService(session)
+        spec_service = uow.services.specs
         spec = await spec_service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
 
         await _check_requirement_link_permissions(
-            session,
+            uow.services,
             actor.actor_id,
             spec.board_id,
             ("spec.observability_requirements.link_task", "card.link_to.or"),
         )
 
-        card = await CardService(session).get_card(command.card_id)
+        card = await uow.services.cards.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
 
@@ -1028,11 +1019,10 @@ class ListSpecKnowledgeUseCase:
     simply yields an empty list."""
 
     async def execute(
-        self, command: ListSpecKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: ListSpecKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSpecKnowledgeResult:
-        from okto_pulse.core.services import SpecKnowledgeService
 
-        items = await SpecKnowledgeService(session_of(uow)).list_knowledge(command.spec_id)
+        items = await uow.services.spec_knowledge.list_knowledge(command.spec_id)
         return ListSpecKnowledgeResult(items)
 
 
@@ -1060,11 +1050,10 @@ class GetSpecKnowledgeUseCase:
     to a different spec — the adapter maps it to the legacy 404 detail."""
 
     async def execute(
-        self, command: GetSpecKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: GetSpecKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetSpecKnowledgeResult:
-        from okto_pulse.core.services import SpecKnowledgeService
 
-        kb = await SpecKnowledgeService(session_of(uow)).get_knowledge(command.knowledge_id)
+        kb = await uow.services.spec_knowledge.get_knowledge(command.knowledge_id)
         if not kb or kb.spec_id != command.spec_id:
             raise EntityNotFoundError("spec_knowledge", command.knowledge_id)
         return GetSpecKnowledgeResult(kb)
@@ -1094,11 +1083,10 @@ class CreateSpecKnowledgeUseCase:
     404 "Spec not found"); commits after the service mutation."""
 
     async def execute(
-        self, command: CreateSpecKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateSpecKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateSpecKnowledgeResult:
-        from okto_pulse.core.services import SpecKnowledgeService
 
-        kb = await SpecKnowledgeService(session_of(uow)).create_knowledge(
+        kb = await uow.services.spec_knowledge.create_knowledge(
             command.spec_id, actor.actor_id, command.data
         )
         if not kb:
@@ -1128,11 +1116,10 @@ class DeleteSpecKnowledgeUseCase:
     the legacy endpoint); commits after the delete."""
 
     async def execute(
-        self, command: DeleteSpecKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteSpecKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteSpecKnowledgeResult:
-        from okto_pulse.core.services import SpecKnowledgeService
 
-        service = SpecKnowledgeService(session_of(uow))
+        service = uow.services.spec_knowledge
         kb = await service.get_knowledge(command.knowledge_id)
         if not kb or kb.spec_id != command.spec_id:
             raise EntityNotFoundError("spec_knowledge", command.knowledge_id)
@@ -1163,11 +1150,10 @@ class ListSpecQAUseCase:
     existence check — an unknown spec simply yields an empty list."""
 
     async def execute(
-        self, command: ListSpecQACommand, *, actor: ActorContext, uow: Any
+        self, command: ListSpecQACommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSpecQAResult:
-        from okto_pulse.core.services import SpecQAService
 
-        items = await SpecQAService(session_of(uow)).list_qa(command.spec_id)
+        items = await uow.services.spec_qa.list_qa(command.spec_id)
         return ListSpecQAResult(items)
 
 
@@ -1195,11 +1181,10 @@ class CreateSpecQuestionUseCase:
     found"); commits after the service mutation."""
 
     async def execute(
-        self, command: CreateSpecQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateSpecQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateSpecQuestionResult:
-        from okto_pulse.core.services import SpecQAService
 
-        qa = await SpecQAService(session_of(uow)).create_question(
+        qa = await uow.services.spec_qa.create_question(
             command.spec_id, actor.actor_id, command.data
         )
         if not qa:
@@ -1236,11 +1221,11 @@ class AnswerSpecQuestionUseCase:
     not found"); a successful answer commits."""
 
     async def execute(
-        self, command: AnswerSpecQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: AnswerSpecQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AnswerSpecQuestionResult:
-        from okto_pulse.core.services import QASelfAnsweringNotAllowedError, SpecQAService
+        from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
-        service = SpecQAService(session_of(uow))
+        service = uow.services.spec_qa
         try:
             qa = await service.answer_question(
                 command.qa_id, actor.actor_id, command.data,
@@ -1275,11 +1260,10 @@ class DeleteSpecQuestionUseCase:
     found"); commits after the delete."""
 
     async def execute(
-        self, command: DeleteSpecQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteSpecQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteSpecQuestionResult:
-        from okto_pulse.core.services import SpecQAService
 
-        deleted = await SpecQAService(session_of(uow)).delete_question(command.qa_id)
+        deleted = await uow.services.spec_qa.delete_question(command.qa_id)
         if not deleted:
             raise EntityNotFoundError("spec_qa", command.qa_id)
         await commit(uow)
@@ -1315,21 +1299,21 @@ class SubmitSpecEvaluationUseCase:
     as the MCP twin."""
 
     async def execute(
-        self, command: SubmitSpecEvaluationCommand, *, actor: ActorContext, uow: Any
+        self, command: SubmitSpecEvaluationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SubmitSpecEvaluationResult:
         from okto_pulse.core.services.gate_contracts import (
             spec_evaluation_success_envelope,
         )
-        from okto_pulse.core.services.main import resolve_actor_name
-
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
 
         try:
-            evaluator_name = await resolve_actor_name(session, actor.actor_id, spec.board_id)
+            evaluator_name = await uow.services.resolve_actor_name(
+                actor.actor_id,
+                spec.board_id,
+            )
         except Exception:
             evaluator_name = actor.actor_id
 
@@ -1378,7 +1362,7 @@ class ListSpecEvaluationsUseCase:
     same 404 as the legacy endpoint."""
 
     async def execute(
-        self, command: ListSpecEvaluationsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListSpecEvaluationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSpecEvaluationsResult:
-        result = await SpecService(session_of(uow)).list_spec_evaluations(command.spec_id)
+        result = await uow.services.specs.list_spec_evaluations(command.spec_id)
         return ListSpecEvaluationsResult(result)

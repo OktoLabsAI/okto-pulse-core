@@ -26,13 +26,15 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from sqlalchemy import select
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_r5i3_"))
 
-import okto_pulse.core.api.cognitive_action_center as ac_api
-from okto_pulse.core.api.cognitive_action_center import (
+import okto_pulse.community.api.cognitive_action_center as ac_api
+from okto_pulse.community.api.cognitive_action_center import (
     CognitiveClearRequest,
     CognitiveSkipRequest,
     clear_cognitive_skip_endpoint,
@@ -45,7 +47,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_cognitive_item_id,
 )
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import ActivityLog, Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import ActivityLog, Board, Ideation, IdeationStatus
 from okto_pulse.core.services.main import IdeationService
 
 USER_ID = "r5-imp3-human"
@@ -119,7 +121,7 @@ async def test_ambiguity_rest_endpoint_is_human_authorized(db_factory):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.ideations import router as ideations_router
+    from okto_pulse.community.api.ideations import router as ideations_router
     from okto_pulse.core.infra import auth as _auth_mod
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
@@ -192,7 +194,7 @@ async def test_cognitive_human_apply_and_remove_are_audited(db_factory, tmp_path
             CognitiveSkipRequest(source_ref=source_ref, reason_code="trivial_fix",
                                  justification="no reusable learning",
                                  evidence_refs=["card:other"]),
-            db, actor=USER_ID,
+            SQLAlchemyUnitOfWork(db), actor=USER_ID,
         )
     # Audit on the response + the durable ledger: user, reason, justification, ts.
     assert applied["status"] == CognitiveItemStatus.SKIPPED.value
@@ -209,7 +211,10 @@ async def test_cognitive_human_apply_and_remove_are_audited(db_factory, tmp_path
     # REMOVE (clear/reopen) via the HUMAN REST endpoint.
     async with db_factory() as db:
         cleared = await clear_cognitive_skip_endpoint(
-            board, CognitiveClearRequest(source_ref=source_ref), db, actor=USER_ID,
+            board,
+            CognitiveClearRequest(source_ref=source_ref),
+            SQLAlchemyUnitOfWork(db),
+            actor=USER_ID,
         )
     assert cleared["status"] == CognitiveItemStatus.PENDING.value
     assert cleared["actor"] == USER_ID

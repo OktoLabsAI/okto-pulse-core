@@ -113,7 +113,7 @@ def test_no_tick_change_is_a_noop():
 
 # --- app: composition preserved on app.state ---------------------------------
 def test_create_app_preserves_composition_on_app_state(monkeypatch):
-    from okto_pulse.core import app as app_mod
+    from okto_pulse.community import app as app_mod
     from okto_pulse.core.composition import RuntimeComposition
     from okto_pulse.core.infra.config import (
         CoreSettings,

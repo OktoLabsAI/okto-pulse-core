@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -507,17 +507,19 @@ class TestDelegationContract:
 
     def test_rest_analytics_imports_service_functions(self):
         # Post-strangler (spec R01A REST-FU2a/b/c): the REST adapter delegates to
-        # transport-free use cases, which call the analytics service functions.
+        # transport-free use cases, which call the typed analytics catalog.
         # The delegation contract moved from the HTTP adapter to the application
         # (use case) + service layers — assert it there, not in api/analytics.py.
         from okto_pulse.core.application.use_cases import analytics_helpers
         uc_src = inspect.getsource(analytics_helpers)
-        for fn in (
-            "compute_coverage", "compute_funnel", "compute_velocity",
-            "compute_blockers", "compute_quality", "compute_validations",
-            "compute_spec_analytics", "compute_sprint_analytics",
+        for capability in (
+            ".analytics.coverage", ".analytics.funnel", ".analytics.velocity",
+            ".analytics.blockers", ".analytics.quality", ".analytics.validations",
+            ".analytics.spec", ".analytics.sprint",
         ):
-            assert fn in uc_src, f"analytics use cases missing service delegation: {fn}"
+            assert capability in uc_src, (
+                f"analytics use cases missing catalog delegation: {capability}"
+            )
         from okto_pulse.core.services import analytics_service
         svc_src = inspect.getsource(analytics_service)
         for fn in ("aggregate_task_validation_gate", "aggregate_spec_validation_gate"):
@@ -537,8 +539,10 @@ class TestDelegationContract:
         from okto_pulse.core.application.use_cases import mcp_admin_validation_analytics
 
         uc_src = inspect.getsource(mcp_admin_validation_analytics)
-        for fn in ("compute_mcp_board_analytics", "compute_blockers"):
-            assert fn in uc_src, f"MCP analytics use cases missing service delegation: {fn}"
+        for capability in (".analytics.mcp_board_analytics", ".analytics.blockers"):
+            assert capability in uc_src, (
+                f"MCP analytics use cases missing catalog delegation: {capability}"
+            )
 
     def test_mcp_re_exports_decisions_helpers(self):
         """D-8 — MCP server re-exports filter_decisions_by_status + decisions_stats
@@ -558,18 +562,18 @@ class TestDelegationContract:
         # HTTP adapter to the application (use case) layer — assert it there, not in
         # api/architecture.py (mirrors the analytics delegation fix above). The MCP
         # architecture tools are not yet migrated, so they still reference the
-        # services directly in mcp/server.py.
+        # typed UoW service catalog in mcp/server.py.
         from okto_pulse.core.application.use_cases import architecture_crud
         from okto_pulse.core.mcp import server as mcp_mod
 
         uc_src = inspect.getsource(architecture_crud)
         mcp_src = inspect.getsource(mcp_mod)
-        for symbol in (
-            "ArchitectureDesignRepository",
-            "ArchitectureDiagramStore",
-            "ArchitecturePropagationService",
+        for capability in (
+            "uow.services.architecture_designs",
+            "uow.services.architecture_diagrams",
+            "uow.services.architecture_propagation",
         ):
-            assert symbol in uc_src, (
-                f"architecture use case missing service: {symbol}"
+            assert capability in uc_src, (
+                f"architecture use case missing catalog capability: {capability}"
             )
-            assert symbol in mcp_src, f"MCP architecture missing service: {symbol}"
+        assert "services.architecture_designs" in mcp_src

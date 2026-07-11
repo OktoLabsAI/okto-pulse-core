@@ -20,7 +20,7 @@ import pytest_asyncio
 
 import okto_pulse.core.services.kg_health_service as kgh
 from okto_pulse.core.kg import health_state as hs
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 from okto_pulse.core.services.kg_health_service import (
     _build_kg_root_cause,
     _probe_rebuild_source_diagnostics,

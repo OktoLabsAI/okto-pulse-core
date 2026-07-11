@@ -62,7 +62,7 @@ from okto_pulse.core.kg.interfaces.llm import (
     LLM_TIMEOUT,
     LLMResponse,
 )
-from okto_pulse.core.models.db import CardType
+from sqlalchemy_test_models import CardType
 
 ANALYSIS = (
     "## Analysis\n"

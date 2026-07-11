@@ -114,7 +114,7 @@ def test_af16_rebuild_audit_storage_gate_blocks_rebuild_root_symbols(
     bad = root / "kg" / "new_rebuild_root_consumer.py"
     bad.parent.mkdir(parents=True)
     bad.write_text(
-        "from okto_pulse.core.api.kg_rebuild import _REBUILD_BASE_DIR\n"
+        "from okto_pulse.community.api.kg_rebuild import _REBUILD_BASE_DIR\n"
         "def leak(adapter):\n"
         "    return (\n"
         "        _REBUILD_BASE_DIR,\n"

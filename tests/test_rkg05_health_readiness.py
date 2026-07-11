@@ -25,7 +25,7 @@ import pytest
 
 from okto_pulse.core.kg import rebuild_audit
 from okto_pulse.core.mcp.kg_query_safety import KGHealthMCPProjection
-from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.kg_health_readiness_service import (
     InvalidProfileError,
     build_health_readiness,

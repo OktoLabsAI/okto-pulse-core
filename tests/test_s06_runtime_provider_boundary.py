@@ -48,17 +48,15 @@ def _saas_registry(
         "graph_transaction": object(),
         "graph_schema_manager": object(),
         "graph_lifecycle": object(),
-        "graph_path_resolver": object(),
         "graph_runtime_store": object(),
-        "safe_write_step_adapter": object(),
         "global_discovery_runtime": object(),
         "board_source_reader": object(),
     }
     return KGProviderRegistry(**providers)
 
 
-def _restore_registry(saved: tuple[object | None, bool]) -> None:
-    registry_module._registry, registry_module._configured = saved
+def _restore_registry(saved: object | None) -> None:
+    registry_module.restore_registry_state_for_tests(saved)
 
 
 def test_productive_core_has_no_retired_embedded_provider_import_or_file() -> None:
@@ -92,8 +90,8 @@ def test_test_builder_uses_explicit_testing_fakes_without_community() -> None:
     env["PYTHONPATH"] = str(root / "src")
     script = """
 import sys
-from okto_pulse.core.kg.interfaces.registry import _build_defaults
-registry = _build_defaults()
+from okto_pulse.core.kg.providers.testing.registry import build_testing_kg_registry
+registry = build_testing_kg_registry()
 assert registry.cache_backend is not None
 assert registry.rate_limiter is not None
 assert registry.session_store is not None
@@ -113,7 +111,7 @@ assert not any(name.startswith('okto_pulse.core.kg.providers.embedded.memory') f
 
 
 def test_fake_saas_registry_satisfies_the_same_core_port_seam() -> None:
-    saved = (registry_module._registry, registry_module._configured)
+    saved = registry_module.capture_registry_state_for_tests()
     try:
         reset_registry_for_tests()
         runtime = FakeSaaSRuntime()
@@ -130,7 +128,7 @@ def test_fake_saas_registry_satisfies_the_same_core_port_seam() -> None:
 
 
 def test_missing_required_saas_provider_fails_during_composition() -> None:
-    saved = (registry_module._registry, registry_module._configured)
+    saved = registry_module.capture_registry_state_for_tests()
     try:
         reset_registry_for_tests()
         with pytest.raises(RuntimeError, match="config"):

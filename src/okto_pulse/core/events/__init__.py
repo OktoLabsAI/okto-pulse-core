@@ -13,13 +13,12 @@ Import order matters:
 
 from okto_pulse.core.events import bus  # noqa: F401
 from okto_pulse.core.events import types  # noqa: F401
-from okto_pulse.core.events import handlers  # noqa: F401 — triggers registration
 
-from okto_pulse.core.events.bus import EventBus, publish, register_handler
-from okto_pulse.core.events.dispatcher import (
-    EventDispatcher,
-    get_dispatcher,
-    set_dispatcher,
+from okto_pulse.core.events.bus import (
+    EventBus,
+    publish,
+    register_handler,
+    resolve_handler,
 )
 from okto_pulse.core.events.types import (
     CardCancelled,
@@ -44,9 +43,12 @@ from okto_pulse.core.events.types import (
     SprintMoved,
 )
 
+# Handler registration may import services that use this facade. Expose the bus
+# and event symbols first so those imports never observe a partial public module.
+from okto_pulse.core.events import handlers  # noqa: E402,F401
+
 __all__ = [
     "EventBus",
-    "EventDispatcher",
     "DomainEvent",
     "EVENT_TYPES",
     # Event classes
@@ -71,6 +73,5 @@ __all__ = [
     # Functions
     "publish",
     "register_handler",
-    "get_dispatcher",
-    "set_dispatcher",
+    "resolve_handler",
 ]

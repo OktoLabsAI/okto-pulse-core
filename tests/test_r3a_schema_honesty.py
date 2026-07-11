@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 
 CORE = Path(__file__).resolve().parent.parent / "src" / "okto_pulse" / "core"
 HELPERS_PY = CORE / "mcp" / "helpers.py"

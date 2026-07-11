@@ -37,10 +37,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import kg_routes as kg_routes_api
-from okto_pulse.core.api.kg_routes import router as kg_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import get_current_user, get_realm_id, require_user
+from okto_pulse.community.api import kg_routes as kg_routes_api
+from okto_pulse.community.api.kg_routes import router as kg_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import get_current_user, get_realm_id, require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 PREFIX = "/api/v1"
@@ -89,15 +89,15 @@ def _kg_teardown():
     """Release per-board Kùzu handles + the pool between tests so Windows file
     locks (single-writer embedded store) do not bleed across cases."""
     yield
-    from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
-    from okto_pulse.core.kg.schema import close_all_connections
+    from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
+    from kg_schema_testing import close_all_connections
 
     close_all_connections()
     reset_connection_pool_for_tests()
 
 
 async def _seed_board(name: str = "fu5s4") -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu5s4-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -109,7 +109,7 @@ async def _seed_board(name: str = "fu5s4") -> str:
 def _bootstrap_empty_graph(board_id: str) -> None:
     """Bootstrap an EMPTY per-board graph (node tables exist, no rows) so the
     boost read loop runs over real tables and finds nothing — the 404 path."""
-    from okto_pulse.core.kg.schema import bootstrap_board_graph, close_all_connections
+    from kg_schema_testing import bootstrap_board_graph, close_all_connections
 
     bootstrap_board_graph(board_id)
     close_all_connections(board_id)
@@ -119,7 +119,7 @@ def _seed_kg_node(board_id: str, node_id: str, *, relevance_score: float = 0.5) 
     """Bootstrap the board graph and CREATE one ``Entity`` node carrying a known
     ``relevance_score``, then close the seeding connection so the endpoint opens a
     fresh scope (single-writer embedded store)."""
-    from okto_pulse.core.kg.schema import (
+    from kg_schema_testing import (
         bootstrap_board_graph,
         close_all_connections,
         open_board_connection,
@@ -151,7 +151,7 @@ def _seed_kg_node(board_id: str, node_id: str, *, relevance_score: float = 0.5) 
 async def _audit_rows(board_id: str):
     from sqlalchemy import select
 
-    from okto_pulse.core.models.db import ConsolidationAudit
+    from sqlalchemy_test_models import ConsolidationAudit
 
     async with get_session_factory()() as db:
         return (
@@ -244,8 +244,7 @@ async def test_boost_use_case_runs_over_unit_of_work() -> None:
         BoostNodeCommand,
         BoostNodeUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     board_id = await _seed_board()
     node_id = f"e-uow-{uuid.uuid4().hex[:8]}"
     _seed_kg_node(board_id, node_id, relevance_score=0.4)
@@ -282,8 +281,7 @@ async def test_boost_use_case_raises_not_found_for_missing_node() -> None:
         BoostNodeCommand,
         BoostNodeUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     board_id = await _seed_board()
     _bootstrap_empty_graph(board_id)
 
@@ -395,7 +393,7 @@ async def test_boost_audit_commit_failure_preserves_kg_mutation(
 
     # The KG node score is DURABLY bumped: re-reading the graph shows 0.8, not 0.5,
     # proving the audit rollback did NOT undo the successful graph SET.
-    from okto_pulse.core.kg.schema import close_all_connections, open_board_connection
+    from kg_schema_testing import close_all_connections, open_board_connection
 
     close_all_connections(board_id)
     with open_board_connection(board_id) as (_db, conn):
@@ -412,7 +410,7 @@ async def test_boost_persist_error_maps_to_legacy_500(client, monkeypatch) -> No
     """A failed graph SET (``BoostPersistError``) still maps to the legacy 500
     ``kuzu_error`` RFC 7807 problem body — unchanged by the audit-persistence fix
     (Codex criterion: 500 legacy preserved)."""
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.core.kg.governance import BoostPersistError
 
     async with get_session_factory()() as db:

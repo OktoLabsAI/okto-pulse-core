@@ -7,6 +7,8 @@ time. This keeps application services from reaching into a concrete adapter.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
@@ -121,33 +123,32 @@ class RelationalApplicationAdapter(Protocol):
     def agent_authentication(self, session: Any) -> AgentAuthenticationGateway: ...
 
 
-_adapter: RelationalApplicationAdapter | None = None
+_RUNTIME_KEY = "ports.relational_application.adapter"
 
 
 def register_relational_application_adapter(adapter: RelationalApplicationAdapter) -> None:
     """Register the relational adapter bundle selected by the edition."""
 
-    global _adapter
-    _adapter = adapter
+    register_runtime_value(_RUNTIME_KEY, adapter)
 
 
 def reset_relational_application_adapter_for_tests() -> None:
     """Clear the registered bundle for isolated tests."""
 
-    global _adapter
-    _adapter = None
+    reset_runtime_values(_RUNTIME_KEY)
 
 
 def require_relational_application_adapter() -> RelationalApplicationAdapter:
     """Resolve the composed adapter bundle, failing before an operation starts."""
 
-    if _adapter is None:
+    adapter = resolve_runtime_value(_RUNTIME_KEY)
+    if adapter is None:
         raise RelationalApplicationAdapterMissing(
             "No relational application adapter is registered. The edition "
             "composition root must register one before relational application "
             "commands are executed."
         )
-    return _adapter
+    return adapter
 
 
 __all__ = [

@@ -38,7 +38,6 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable
 
 from okto_pulse.core.kg.source_maturity import (
@@ -88,9 +87,7 @@ def validate_preflight_hash(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("preflight_hash must be a string")
     if len(value) != 64:
-        raise ValueError(
-            f"preflight_hash must be 64 chars (got {len(value)})"
-        )
+        raise ValueError(f"preflight_hash must be 64 chars (got {len(value)})")
     if any(c not in _PREFLIGHT_HASH_PATTERN for c in value):
         raise ValueError("preflight_hash must be lowercase hex")
     return value
@@ -107,16 +104,12 @@ def validate_manifest_ref(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("manifest_ref must be a string")
     if not value.startswith(MANIFEST_REF_PREFIX):
-        raise ValueError(
-            f"manifest_ref must start with {MANIFEST_REF_PREFIX!r}"
-        )
-    suffix = value[len(MANIFEST_REF_PREFIX):]
+        raise ValueError(f"manifest_ref must start with {MANIFEST_REF_PREFIX!r}")
+    suffix = value[len(MANIFEST_REF_PREFIX) :]
     if not suffix:
         raise ValueError("manifest_ref suffix is empty")
     # token_urlsafe produces only [A-Za-z0-9_-]. Allow that alphabet.
-    allowed = set(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
-    )
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
     if any(c not in allowed for c in suffix):
         raise ValueError("manifest_ref contains forbidden characters")
     return value
@@ -392,9 +385,7 @@ def _row_from_raw(
     *,
     classification,
 ) -> RebuildSourceRow:
-    source_version = str(
-        row.get("source_version") or row.get("version") or ""
-    )
+    source_version = str(row.get("source_version") or row.get("version") or "")
     return RebuildSourceRow(
         artifact_type=classification.artifact_type,
         source_ref=str(row.get("source_ref") or row.get("id") or ""),
@@ -465,7 +456,8 @@ class RebuildSourceEnumerator:
             )
             logger.warning(
                 "kg.rebuild_sources.store_unavailable board=%s err=%s",
-                board_id, exc,
+                board_id,
+                exc,
             )
             raise
 
@@ -508,7 +500,8 @@ class RebuildSourceEnumerator:
                 non_deterministic = True
                 logger.warning(
                     "kg.rebuild_sources.legacy_unknown board=%s type=%s reason=%s",
-                    board_id, artifact_type,
+                    board_id,
+                    artifact_type,
                     classification.reason_code,
                 )
                 legacy_unknown_rows.append(row_model)
@@ -590,9 +583,7 @@ def _compose_source_set_hash_with(source_set: RebuildSourceSet, project) -> str:
     payload_dict = {
         "sources": [project(s) for s in source_set.sources],
         "working_sources": [project(s) for s in source_set.working_sources],
-        "skipped_by_maturity": [
-            project(s) for s in source_set.skipped_by_maturity
-        ],
+        "skipped_by_maturity": [project(s) for s in source_set.skipped_by_maturity],
         "skipped_expired_working": [
             project(s) for s in source_set.skipped_expired_working
         ],
@@ -678,13 +669,6 @@ REBASELINE_AUDIT_DIRNAME = "rebaseline_audit"
 REBASELINE_AUDIT_ARTIFACT_ID = "records"
 
 
-def _rebaseline_audit_path(base_dir: Path, board_id: str) -> Path:
-    safe = "".join(
-        c if (c.isalnum() or c in "_.-") else "_" for c in board_id
-    ) or "board"
-    return base_dir / REBUILD_DIRNAME / REBASELINE_AUDIT_DIRNAME / f"{safe}.jsonl"
-
-
 def _rebaseline_audit_key(board_id: str) -> RebuildAuditKey:
     return RebuildAuditKey(
         namespace="rebaseline_audit",
@@ -694,7 +678,7 @@ def _rebaseline_audit_key(board_id: str) -> RebuildAuditKey:
 
 
 def _append_spec_manifest_rebaseline_audit(
-    base_dir: Path | None,
+    base_dir: object | None,
     *,
     board_id: str,
     manifest_ref: str,
@@ -712,36 +696,25 @@ def _append_spec_manifest_rebaseline_audit(
         base_dir=base_dir,
         artifact_store=artifact_store,
     )
-    if resolved_store is not None:
-        key = _rebaseline_audit_key(board_id)
+    key = _rebaseline_audit_key(board_id)
 
-        def _append(current: dict[str, Any] | None) -> dict[str, Any]:
-            records = []
-            if current and isinstance(current.get("records"), list):
-                records = list(current["records"])
-            records.append(record)
-            return {
-                "board_id": board_id,
-                "artifact_id": REBASELINE_AUDIT_ARTIFACT_ID,
-                "updated_at": recorded_at,
-                "records": records,
-            }
+    def _append(current: dict[str, Any] | None) -> dict[str, Any]:
+        records = []
+        if current and isinstance(current.get("records"), list):
+            records = list(current["records"])
+        records.append(record)
+        return {
+            "board_id": board_id,
+            "artifact_id": REBASELINE_AUDIT_ARTIFACT_ID,
+            "updated_at": recorded_at,
+            "records": records,
+        }
 
-        resolved_store.replace_json(key, _append)
-        return
-
-    if base_dir is None:
-        raise RuntimeError(
-            "base_dir is required when RebuildAuditArtifactStore is not supplied"
-        )
-    path = _rebaseline_audit_path(base_dir, board_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, sort_keys=True) + "\n")
+    resolved_store.replace_json(key, _append)
 
 
 def read_spec_manifest_rebaseline_audit(
-    base_dir: Path | None,
+    base_dir: object | None,
     board_id: str,
     *,
     artifact_store: RebuildAuditArtifactStore | None = None,
@@ -752,33 +725,13 @@ def read_spec_manifest_rebaseline_audit(
         base_dir=base_dir,
         artifact_store=artifact_store,
     )
-    if resolved_store is not None:
-        payload = resolved_store.read_json(_rebaseline_audit_key(board_id))
-        if not payload:
-            return []
-        records = payload.get("records")
-        if not isinstance(records, list):
-            return []
-        return [dict(record) for record in records if isinstance(record, dict)]
-
-    if base_dir is None:
-        raise RuntimeError(
-            "base_dir is required when RebuildAuditArtifactStore is not supplied"
-        )
-    path = _rebaseline_audit_path(base_dir, board_id)
-    if not path.exists():
+    payload = resolved_store.read_json(_rebaseline_audit_key(board_id))
+    if not payload:
         return []
-    out: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except ValueError:
-                continue
-    return out
+    records = payload.get("records")
+    if not isinstance(records, list):
+        return []
+    return [dict(record) for record in records if isinstance(record, dict)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -793,7 +746,7 @@ class KGRebuildSourceManifest:
     rebuild artifacts live under ``<base>/rebuild/manifests/``.
     """
 
-    base_dir: Path | None = None
+    base_dir: object | None = None
     artifact_store: RebuildAuditArtifactStore | None = None
 
     def __post_init__(self) -> None:
@@ -813,13 +766,6 @@ class KGRebuildSourceManifest:
             board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
             artifact_id=manifest_ref,
         )
-
-    def _base_dir(self) -> Path:
-        if self.base_dir is None:
-            raise RuntimeError(
-                "base_dir is required when RebuildAuditArtifactStore is not supplied"
-            )
-        return self.base_dir
 
     def build(
         self,
@@ -854,22 +800,16 @@ class KGRebuildSourceManifest:
             legacy_unknown=source_set.legacy_unknown,
         )
 
-        if self.artifact_store is not None:
-            self.artifact_store.write_json_atomic(
-                self._manifest_key(manifest_ref), manifest.to_dict()
-            )
-        else:
-            base_dir = self._base_dir()
-            target_dir = base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME
-            target_dir.mkdir(parents=True, exist_ok=True)
-            path = target_dir / f"{manifest_ref}.json"
-            with path.open("w", encoding="utf-8") as fh:
-                json.dump(manifest.to_dict(), fh, indent=2)
+        self.artifact_store.write_json_atomic(
+            self._manifest_key(manifest_ref), manifest.to_dict()
+        )
         logger.info(
             "kg.rebuild_sources.manifest_built ref=%s board=%s "
             "source_set_hash=%s preflight_hash=%s eligible=%d",
-            manifest_ref, source_set.board_id,
-            source_set_hash[:12], preflight_hash[:12],
+            manifest_ref,
+            source_set.board_id,
+            source_set_hash[:12],
+            preflight_hash[:12],
             len(source_set.sources),
         )
         return manifest
@@ -880,28 +820,11 @@ class KGRebuildSourceManifest:
             validate_manifest_ref(manifest_ref)
         except ValueError:
             return None
-        if self.artifact_store is not None:
-            data = self.artifact_store.read_json(self._manifest_key(manifest_ref))
-            if data is None:
-                return None
-        else:
-            base_dir = self._base_dir()
-            path = base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME / f"{manifest_ref}.json"
-            # Defence in depth: even with a validated ref, ensure the
-            # resolved path stays under the manifests dir. Path.resolve()
-            # collapses any residual ``..`` symbolic-link tricks.
-            try:
-                resolved = path.resolve(strict=False)
-                allowed_root = (base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME).resolve(strict=False)
-                resolved.relative_to(allowed_root)
-            except (OSError, ValueError):
-                return None
-            try:
-                with path.open("r", encoding="utf-8") as fh:
-                    data = json.load(fh)
-            except (FileNotFoundError, OSError, ValueError):
-                return None
+        data = self.artifact_store.read_json(self._manifest_key(manifest_ref))
+        if data is None:
+            return None
         try:
+
             def _rows(key: str) -> tuple[RebuildSourceRow, ...]:
                 return tuple(
                     RebuildSourceRow(
@@ -911,18 +834,12 @@ class KGRebuildSourceManifest:
                         content_hash=str(s["content_hash"]),
                         created_at=str(s["created_at"]),
                         id=str(s["id"]),
-                        source_artifact_status=str(
-                            s.get("source_artifact_status", "")
-                        ),
-                        graph_layer=str(
-                            s.get("graph_layer", GRAPH_LAYER_CANONICAL)
-                        ),
+                        source_artifact_status=str(s.get("source_artifact_status", "")),
+                        graph_layer=str(s.get("graph_layer", GRAPH_LAYER_CANONICAL)),
                         maturity_status=str(
                             s.get("maturity_status", MATURITY_CANONICAL_ELIGIBLE)
                         ),
-                        disposition=str(
-                            s.get("disposition", DISPOSITION_CANONICAL)
-                        ),
+                        disposition=str(s.get("disposition", DISPOSITION_CANONICAL)),
                         reason_code=str(s.get("reason_code", "")),
                         expires_at=(
                             str(s["expires_at"])
@@ -941,9 +858,7 @@ class KGRebuildSourceManifest:
                     content_hash=str(s["content_hash"]),
                     created_at=str(s["created_at"]),
                     id=str(s["id"]),
-                    source_artifact_status=str(
-                        s.get("source_artifact_status", "")
-                    ),
+                    source_artifact_status=str(s.get("source_artifact_status", "")),
                     graph_layer=str(s.get("graph_layer", GRAPH_LAYER_CANONICAL)),
                     maturity_status=str(
                         s.get("maturity_status", MATURITY_CANONICAL_ELIGIBLE)
@@ -1018,8 +933,7 @@ class KGRebuildSourceManifest:
                         current_source_set.legacy_unknown,
                     )
                     for row in partition
-                    if row.content_hash_v1
-                    and row.content_hash != row.content_hash_v1
+                    if row.content_hash_v1 and row.content_hash != row.content_hash_v1
                 )
                 from okto_pulse.core.kg.board_source_store import (
                     SPEC_CONTENT_COLUMNS_V1,
@@ -1046,8 +960,10 @@ class KGRebuildSourceManifest:
                 logger.info(
                     "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
                     "from_version=%d to_version=%d rebaselined=%d",
-                    manifest.board_id, manifest.manifest_schema_version,
-                    SPEC_SOURCE_MANIFEST_VERSION, len(rebaselined),
+                    manifest.board_id,
+                    manifest.manifest_schema_version,
+                    SPEC_SOURCE_MANIFEST_VERSION,
+                    len(rebaselined),
                 )
                 return result
 

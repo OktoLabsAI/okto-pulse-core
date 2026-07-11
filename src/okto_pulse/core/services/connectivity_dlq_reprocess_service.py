@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Iterable
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.services.dead_letter_inspector_service import (
     list_dead_letter_rows,
@@ -55,7 +54,7 @@ def _is_connectivity_guard_row(row: dict[str, Any]) -> bool:
 
 
 async def diagnose_connectivity_guard_dlq(
-    db: AsyncSession, board_id: str, *, limit: int = 200
+    db: object, board_id: str, *, limit: int = 200
 ) -> dict[str, Any]:
     """FR1/BR1: diagnose the LIVE connectivity-guard DLQ class at execution time.
 
@@ -115,7 +114,7 @@ def rkg_fixes_applied() -> bool:
         return False
 
 
-async def _default_quarantine_probe(board_id: str, db: AsyncSession) -> bool:
+async def _default_quarantine_probe(board_id: str, db: object) -> bool:
     """True when the board's KG is quarantined (canonical overall_state)."""
     from okto_pulse.core.services.kg_health_service import get_kg_health
 
@@ -125,12 +124,12 @@ async def _default_quarantine_probe(board_id: str, db: AsyncSession) -> bool:
 
 
 async def check_reprocess_preconditions(
-    db: AsyncSession,
+    db: object,
     board_id: str,
     dead_letter_ids: Iterable[str],
     *,
     fixes_applied_probe: Callable[[], bool] = rkg_fixes_applied,
-    quarantine_probe: Callable[[str, AsyncSession], Awaitable[bool]] | None = None,
+    quarantine_probe: Callable[[str, object], Awaitable[bool]] | None = None,
 ) -> dict[str, Any]:
     """FR1/FR2/BR2/TR1/AC1: reprocessing is allowed ONLY when RKG-02/RKG-03 are
     applied, the KG is not quarantined, and EVERY selected DLQ both still exists
@@ -179,12 +178,12 @@ async def check_reprocess_preconditions(
 
 
 async def reprocess_connectivity_guard_dlq(
-    db: AsyncSession,
+    db: object,
     board_id: str,
     dead_letter_ids: Iterable[str],
     *,
     fixes_applied_probe: Callable[[], bool] = rkg_fixes_applied,
-    quarantine_probe: Callable[[str, AsyncSession], Awaitable[bool]] | None = None,
+    quarantine_probe: Callable[[str, object], Awaitable[bool]] | None = None,
 ) -> dict[str, Any]:
     """FR2/BR2/TR1: precondition-gated reprocess. Fails CLOSED — when any
     precondition fails, NO DLQ is removed and the block reason is returned."""
@@ -211,7 +210,7 @@ async def reprocess_connectivity_guard_dlq(
 
 
 async def verify_connectivity_class_cleared(
-    db: AsyncSession,
+    db: object,
     board_id: str,
     *,
     artifact_refs: Iterable[str] | None = None,

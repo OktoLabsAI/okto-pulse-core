@@ -26,7 +26,7 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
     BeginConsolidationRequest,
@@ -39,16 +39,15 @@ from okto_pulse.core.kg.stale_canonical_parity import (
     GD_NOT_EVALUATED,
     list_stale_canonical_parity,
 )
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
-from okto_pulse.core.models.db import Board, Spec
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from sqlalchemy_test_models import Board, Spec
 from okto_pulse.core.services.kg_health_service import get_kg_health
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
-    RealBoardGraphPathResolverForTests,
     RealBoardGraphTransactionForTests,
     configure_test_kg_registry,
 )
@@ -62,7 +61,6 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
         graph_transaction=RealBoardGraphTransactionForTests(),
-        graph_path_resolver=RealBoardGraphPathResolverForTests(),
     )
 
 

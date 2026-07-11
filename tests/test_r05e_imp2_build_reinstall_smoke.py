@@ -316,7 +316,7 @@ class TestArtifactDistributionContract:
             "import importlib.util as u\n"
             "from okto_pulse.core.application.boundary.dependency_conformance import audit_dependency_conformance\n"
             "from okto_pulse.core import composition  # noqa\n"
-            "from okto_pulse.core.app import create_app  # noqa\n"
+            "from okto_pulse.community.app import create_app  # noqa\n"
             "from okto_pulse.core.mcp.server import build_mcp_asgi_app  # noqa\n"
             "assert u.find_spec('asyncpg') is None, 'asyncpg installed into the clean venv'\n"
             "rep = audit_dependency_conformance(audit_wheel=True)\n"

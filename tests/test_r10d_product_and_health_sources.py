@@ -66,7 +66,10 @@ def _isolate_registries():
 
 
 def _settings(tmp_path: Path, **overrides) -> CoreSettings:
-    values = {"metrics_dir": str(tmp_path / "metrics"), "metrics_mode": "anonymous_beacon"}
+    values = {
+        "metrics_dir": str(tmp_path / "metrics"),
+        "metrics_mode": "anonymous_beacon",
+    }
     values.update(overrides)
     return CoreSettings(**values)
 
@@ -76,6 +79,7 @@ def _settings(tmp_path: Path, **overrides) -> CoreSettings:
 # (R10-E Pass 2: ProductTelemetryAggregator removed from core;
 # behavioral tests live in community/tests/test_r10d_product_adapter.py.)
 # ---------------------------------------------------------------------------
+
 
 class _StubProductAggregator:
     """Minimal conformant ProductAggregationPort for core test isolation."""
@@ -148,6 +152,7 @@ def test_ts_a246a317_registry_resolves_port_and_reexports_pure(tmp_path):
         PRODUCT_AGGREGATE_FAMILIES as FAM,
         PRODUCT_METRIC_KEYS as KEYS,
     )
+
     assert FAM == PRODUCT_AGGREGATE_FAMILIES
     assert KEYS == PRODUCT_METRIC_KEYS
 
@@ -157,11 +162,16 @@ def test_ts_a246a317_registry_resolves_port_and_reexports_pure(tmp_path):
 # ===========================================================================
 def test_ts_138260c8_aws_report_never_healthy_by_inference():
     now = datetime(2026, 6, 26, tzinfo=timezone.utc)
-    healthy_local = {"status": "ok", "publish_enabled": True, "last_success_at": now.isoformat()}
+    healthy_local = {
+        "status": "ok",
+        "publish_enabled": True,
+        "last_success_at": now.isoformat(),
+    }
 
     # LOCAL is healthy, but a gap AWS/report descriptor floors COMBINED at degraded.
     dto = ph.resolve_publish_health(
-        healthy_local, now=now,
+        healthy_local,
+        now=now,
         aws_ingest={"availability": ph.SRC_GAP},
         report_athena={"availability": ph.SRC_GAP},
     )
@@ -187,7 +197,11 @@ def test_ts_138260c8_aws_report_never_healthy_by_inference():
 # ===========================================================================
 def test_ts_49dec63e_descriptor_matrix():
     now = datetime(2026, 6, 26, tzinfo=timezone.utc)
-    healthy_local = {"status": "ok", "publish_enabled": True, "last_success_at": now.isoformat()}
+    healthy_local = {
+        "status": "ok",
+        "publish_enabled": True,
+        "last_success_at": now.isoformat(),
+    }
     matrix = {
         ph.SRC_AVAILABLE: ph.HEALTHY,
         ph.SRC_STALE: ph.STALE,
@@ -249,12 +263,21 @@ def test_ts_b23dcb42_surfaces_preserved_and_secret_free(tmp_path):
         def append_event(self, e): ...
         def append_sent(self, r, *, failed=False): ...
         def append_snapshot(self, r): ...
-        def confirmed_event_ids(self): return set()
-        def iter_events(self, *, since=None): return ()
-        def summarize(self, *, window_days=30): return {}
-        def prune_old(self, *, now=None): return {}
-        def export_local(self, output_path=None): ...
-        def purge_local(self): return {}
+        def confirmed_event_ids(self):
+            return set()
+
+        def iter_events(self, *, since=None):
+            return ()
+
+        def summarize(self, *, window_days=30):
+            return {}
+
+        def prune_old(self, *, now=None):
+            return {}
+
+        def export_events(self, output_path=None): ...
+        def purge_events(self):
+            return {}
 
     reset_telemetry_event_store_factory_for_tests()
     register_telemetry_event_store_factory(lambda base, retention: _NullStore())
@@ -311,6 +334,7 @@ def test_ts_210e694d_ownership_gate_is_clean_fulfilled(tmp_path, caplog):
 
     # R10-D introduced no NEW unbaselined singleton.
     from okto_pulse.core.application.boundary.singleton_gate import AntiSingletonGate
+
     sg = AntiSingletonGate().run()
     new_names = {n["name"] for n in sg.evidence["new_singletons"]}
     assert "_product_aggregator_factory" not in new_names
@@ -319,12 +343,15 @@ def test_ts_210e694d_ownership_gate_is_clean_fulfilled(tmp_path, caplog):
     # R10-E Pass 2 fail-closed: no factory → RuntimeError + structured error signal.
     reset_product_aggregator_factory_for_tests()
     caplog.set_level("ERROR", logger="okto_pulse.telemetry.product_aggregator")
-    with pytest.raises(RuntimeError, match="No ProductAggregationPort factory registered"):
+    with pytest.raises(
+        RuntimeError, match="No ProductAggregationPort factory registered"
+    ):
         get_product_aggregator(
             CoreSettings(metrics_dir=str(tmp_path / "m")), tmp_path / "m"
         )
     signals = [
-        r for r in caplog.records
+        r
+        for r in caplog.records
         if r.__dict__.get("metric_name") == "product_aggregator_no_provider_total"
     ]
     assert len(signals) >= 1
@@ -384,5 +411,6 @@ def test_guard_no_false_move_claims_in_core_product_files():
 
     # Teeth: guard catches synthetic full-move claim.
     import re as _re
+
     synthetic = "the concrete aggregator moves to the Community adapter"
     assert any(_re.search(p, synthetic, _re.IGNORECASE) for p in _FALSE_MOVE_PATTERNS)

@@ -32,7 +32,7 @@ def test_rest_and_mcp_consumers_resolve_ingestion_through_registry() -> None:
 
 
 def test_build_rebuild_step_adapter_fails_closed_without_provider() -> None:
-    from okto_pulse.core.api.kg_rebuild import _build_rebuild_step_adapter
+    from okto_pulse.community.api.kg_rebuild import _build_rebuild_step_adapter
 
     configure_test_kg_registry(rebuild_ingestion_port=None)
 
@@ -70,7 +70,7 @@ class _RecordingRebuildIngestionPort:
 
 
 def test_build_rebuild_step_adapter_uses_registered_provider() -> None:
-    from okto_pulse.core.api.kg_rebuild import _build_rebuild_step_adapter
+    from okto_pulse.community.api.kg_rebuild import _build_rebuild_step_adapter
 
     provider = _RecordingRebuildIngestionPort()
     configure_test_kg_registry(rebuild_ingestion_port=provider)

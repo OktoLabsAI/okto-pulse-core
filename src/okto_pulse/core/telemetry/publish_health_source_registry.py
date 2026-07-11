@@ -19,8 +19,9 @@ mask the missing AWS/report visibility as healthy.
 from __future__ import annotations
 
 import logging
-import threading
 from typing import Any, Callable
+
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
 logger = logging.getLogger("okto_pulse.telemetry.publish_health_source")
 
@@ -29,16 +30,13 @@ logger = logging.getLogger("okto_pulse.telemetry.publish_health_source")
 #: or an availability string — exactly what the pure classifier consumes.
 ExternalSourceProvider = Callable[[Any], "tuple[Any, Any]"]
 
-_publish_health_source_provider: ExternalSourceProvider | None = None
-_lock = threading.Lock()
+_RUNTIME_KEY = "telemetry.publish_health_source.provider"
 
 
 def register_external_source_provider(provider: ExternalSourceProvider) -> None:
     """Register the edition's external publish-health source provider (composition
     root). Idempotent overwrite; thread-safe."""
-    global _publish_health_source_provider
-    with _lock:
-        _publish_health_source_provider = provider
+    register_runtime_value(_RUNTIME_KEY, provider)
 
 
 def get_external_source_descriptors(settings: Any) -> tuple[Any, Any]:
@@ -50,27 +48,27 @@ def get_external_source_descriptors(settings: Any) -> tuple[Any, Any]:
     the fallback (non-composed / retro-compat) is NOT silent — it emits a
     structured signal — and still yields a GAP, so the invariant holds either way.
     """
-    if _publish_health_source_provider is not None:
-        return _publish_health_source_provider(settings)
-    logger.info(
-        "publish-health external sources resolved via register-before-remove fallback",
+    provider = resolve_runtime_value(_RUNTIME_KEY)
+    if provider is not None:
+        return provider(settings)
+    logger.error(
+        "publish-health external source provider is not configured",
         extra={
             "metric_name": "telemetry_publish_health_source_fallback_total",
             "component": "publish_health_source_registry",
-            "outcome": "fallback_uncomposed",
+            "outcome": "fail_closed",
             "reason": "no_provider_registered",
         },
     )
-    from okto_pulse.core.telemetry.publish_health import discover_external_sources
-
-    return discover_external_sources(settings)
+    raise RuntimeError(
+        "No publish-health ExternalSourceProvider is registered. The edition "
+        "composition root must provide the external observability adapter."
+    )
 
 
 def reset_external_source_provider_for_tests() -> None:
     """Drop the registered provider (tests only)."""
-    global _publish_health_source_provider
-    with _lock:
-        _publish_health_source_provider = None
+    reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [

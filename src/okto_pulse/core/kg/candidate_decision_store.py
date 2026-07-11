@@ -22,7 +22,6 @@ bounded sample per lifecycle event with labels
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import threading
 import uuid
@@ -30,7 +29,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
@@ -127,8 +125,10 @@ _VALID_ACTION_VALUES: frozenset[str] = frozenset(
 # is excluded because it is a sentinel emitted by the store itself, not a
 # value a caller can supply.
 _TRANSITION_INPUT_ACTIONS: frozenset[str] = frozenset(
-    a.value for a in CandidateDecisionAction
-    if a not in (
+    a.value
+    for a in CandidateDecisionAction
+    if a
+    not in (
         CandidateDecisionAction.RECORD,
         CandidateDecisionAction.INVALID,
     )
@@ -184,12 +184,14 @@ def _emit_candidate_sample(
     reason_code: str,
 ) -> None:
     with _candidate_samples_lock:
-        _candidate_samples.append({
-            "board_id_hash": _board_id_hash(board_id),
-            "action": action,
-            "outcome": outcome,
-            "reason_code": reason_code,
-        })
+        _candidate_samples.append(
+            {
+                "board_id_hash": _board_id_hash(board_id),
+                "action": action,
+                "outcome": outcome,
+                "reason_code": reason_code,
+            }
+        )
 
 
 def get_candidate_counter_labels() -> tuple[str, ...]:
@@ -279,15 +281,11 @@ class CandidateDecisionRecord:
             board_id=str(payload.get("board_id", "")),
             source_ref=str(payload.get("source_ref", "")),
             source_generation_id=str(payload.get("source_generation_id", "")),
-            consolidation_session_id=str(
-                payload.get("consolidation_session_id", "")
-            ),
+            consolidation_session_id=str(payload.get("consolidation_session_id", "")),
             title=str(payload.get("title", "")),
             rationale=str(payload.get("rationale", "")),
             evidence_refs=_tuple(payload.get("evidence_refs")),
-            status=str(
-                payload.get("status", CandidateDecisionStatus.PROPOSED.value)
-            ),
+            status=str(payload.get("status", CandidateDecisionStatus.PROPOSED.value)),
             created_by_agent_id=str(payload.get("created_by_agent_id", "")),
             created_at=str(payload.get("created_at", "")),
             updated_at=str(payload.get("updated_at", "")),
@@ -343,7 +341,10 @@ def _validate_provenance(
             CandidateDecisionReasonCode.MISSING_GENERATION_ID.value,
             "source_generation_id is required",
         )
-    if not isinstance(consolidation_session_id, str) or not consolidation_session_id.strip():
+    if (
+        not isinstance(consolidation_session_id, str)
+        or not consolidation_session_id.strip()
+    ):
         return (
             CandidateDecisionReasonCode.MISSING_SESSION_ID.value,
             "consolidation_session_id is required",
@@ -429,7 +430,7 @@ class CandidateDecisionStore:
     Writes are atomic via temp+replace.
     """
 
-    base_dir: Path | None = None
+    base_dir: object | None = None
     artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
@@ -445,16 +446,6 @@ class CandidateDecisionStore:
             ),
         )
 
-    def _board_dir(self, board_id: str) -> Path:
-        if self.base_dir is None:
-            raise RuntimeError(
-                "base_dir is required when RebuildAuditArtifactStore is not supplied"
-            )
-        return self.base_dir / CANDIDATE_DECISIONS_DIRNAME / board_id
-
-    def _record_path(self, board_id: str, candidate_id: str) -> Path:
-        return self._board_dir(board_id) / f"{candidate_id}.json"
-
     @staticmethod
     def _record_key(board_id: str, candidate_id: str) -> RebuildAuditKey:
         return RebuildAuditKey(
@@ -465,18 +456,10 @@ class CandidateDecisionStore:
 
     def _write_record(self, record: CandidateDecisionRecord) -> None:
         payload = record.to_dict()
-        if self.artifact_store is not None:
-            self.artifact_store.write_json_atomic(
-                self._record_key(record.board_id, record.candidate_id),
-                payload,
-            )
-            return
-        self._board_dir(record.board_id).mkdir(parents=True, exist_ok=True)
-        path = self._record_path(record.board_id, record.candidate_id)
-        tmp = path.with_suffix(".json.tmp")
-        with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
-        tmp.replace(path)
+        self.artifact_store.write_json_atomic(
+            self._record_key(record.board_id, record.candidate_id),
+            payload,
+        )
 
     def record(
         self,
@@ -524,7 +507,9 @@ class CandidateDecisionStore:
             )
 
         unsafe, unsafe_field = _detect_unsafe_candidate_payload(
-            title=title, rationale=rationale, evidence_refs=evidence_refs,
+            title=title,
+            rationale=rationale,
+            evidence_refs=evidence_refs,
         )
         if unsafe:
             _emit_candidate_sample(
@@ -564,7 +549,8 @@ class CandidateDecisionStore:
             except Exception as exc:
                 logger.error(
                     "kg.candidate_decision_store.write_failed board=%s err=%s",
-                    board_id, exc,
+                    board_id,
+                    exc,
                 )
                 _emit_candidate_sample(
                     board_id=board_id,
@@ -586,26 +572,19 @@ class CandidateDecisionStore:
         )
         return record
 
-    def get(
-        self, board_id: str, candidate_id: str
-    ) -> CandidateDecisionRecord | None:
+    def get(self, board_id: str, candidate_id: str) -> CandidateDecisionRecord | None:
         try:
-            if self.artifact_store is not None:
-                payload = self.artifact_store.read_json(
-                    self._record_key(board_id, candidate_id)
-                )
-                if payload is None:
-                    return None
-            else:
-                path = self._record_path(board_id, candidate_id)
-                if not path.exists():
-                    return None
-                with path.open("r", encoding="utf-8") as fh:
-                    payload = json.load(fh)
+            payload = self.artifact_store.read_json(
+                self._record_key(board_id, candidate_id)
+            )
+            if payload is None:
+                return None
         except Exception as exc:
             logger.error(
                 "kg.candidate_decision_store.read_failed board=%s cand=%s err=%s",
-                board_id, candidate_id, exc,
+                board_id,
+                candidate_id,
+                exc,
             )
             return None
         return CandidateDecisionRecord.from_dict(payload)
@@ -623,29 +602,14 @@ class CandidateDecisionStore:
         then candidate_id."""
 
         records: list[CandidateDecisionRecord] = []
-        if self.artifact_store is not None:
-            payloads = self.artifact_store.list_json(
-                RebuildAuditKey(namespace="candidate_decision", board_id=board_id)
-            )
-        else:
-            board_dir = self._board_dir(board_id)
-            if not board_dir.exists():
-                return []
-            payloads = []
-            for path in sorted(board_dir.glob("*.json")):
-                try:
-                    with path.open("r", encoding="utf-8") as fh:
-                        payloads.append(json.load(fh))
-                except Exception:
-                    continue
+        payloads = self.artifact_store.list_json(
+            RebuildAuditKey(namespace="candidate_decision", board_id=board_id)
+        )
         for payload in payloads:
             record = CandidateDecisionRecord.from_dict(payload)
             if status_filter is not None and record.status != status_filter:
                 continue
-            if (
-                source_ref_filter is not None
-                and record.source_ref != source_ref_filter
-            ):
+            if source_ref_filter is not None and record.source_ref != source_ref_filter:
                 continue
             records.append(record)
         records.sort(key=lambda r: (r.created_at, r.candidate_id))
@@ -683,10 +647,7 @@ class CandidateDecisionStore:
             raise CandidateDecisionError(
                 outcome=CandidateDecisionOutcome.VALIDATION_ERROR.value,
                 reason_code=CandidateDecisionReasonCode.INVALID_STATUS.value,
-                message=(
-                    f"action must be one of "
-                    f"{sorted(_TRANSITION_INPUT_ACTIONS)}"
-                ),
+                message=(f"action must be one of {sorted(_TRANSITION_INPUT_ACTIONS)}"),
             )
 
         new_status = _STATUS_BY_ACTION[action]
@@ -704,8 +665,7 @@ class CandidateDecisionStore:
                     outcome=CandidateDecisionOutcome.NOT_FOUND.value,
                     reason_code=CandidateDecisionReasonCode.NOT_FOUND.value,
                     message=(
-                        f"candidate {candidate_id!r} not found on board "
-                        f"{board_id!r}"
+                        f"candidate {candidate_id!r} not found on board {board_id!r}"
                     ),
                 )
 
@@ -726,7 +686,10 @@ class CandidateDecisionStore:
                 logger.error(
                     "kg.candidate_decision_store.transition_failed "
                     "board=%s cand=%s action=%s err=%s",
-                    board_id, candidate_id, action, exc,
+                    board_id,
+                    candidate_id,
+                    action,
+                    exc,
                 )
                 _emit_candidate_sample(
                     board_id=board_id,

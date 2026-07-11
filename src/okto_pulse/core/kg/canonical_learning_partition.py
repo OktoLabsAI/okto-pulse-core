@@ -24,7 +24,6 @@ from __future__ import annotations
 import hashlib
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.services.canonical_debt_service import (
     reconcile_canonical_debt_with_evidence,
@@ -165,7 +164,7 @@ def _canonical_evidence_for(node_id: str, source_ref: str) -> dict[str, str]:
 
 
 async def detect_historical_canonical_learning_debt(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     actor_id: str,
@@ -211,7 +210,7 @@ async def detect_historical_canonical_learning_debt(
 
 
 async def reconcile_canonical_learning_partition_debt(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     actor_id: str,
@@ -253,7 +252,7 @@ async def reconcile_canonical_learning_partition_debt(
 
 
 async def run_canonical_learning_partition_maintenance(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     actor_id: str,

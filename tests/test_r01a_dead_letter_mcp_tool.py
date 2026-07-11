@@ -33,7 +33,7 @@ def _stub_ctx():
 
 
 async def _insert_dlq_row(db, board_id: str, idx: int) -> str:
-    from okto_pulse.core.models.db import ConsolidationDeadLetter
+    from sqlalchemy_test_models import ConsolidationDeadLetter
 
     row_id = f"dlq_r01a_{uuid.uuid4().hex[:8]}_{idx}"
     db.add(
@@ -142,9 +142,8 @@ def test_tool_body_has_no_direct_relational_coupling() -> None:
     assert "ListDeadLetterRowsUseCase" in names
 
 
-def test_migration_is_limited_to_this_tool() -> None:
-    """TR4: the migration is scoped to one tool — mcp/server.py was NOT swept;
-    get_db_for_mcp still appears in other handlers."""
+def test_mcp_handlers_have_no_direct_database_session_access() -> None:
+    """Final ratchet: every MCP handler resolves work through a UnitOfWork."""
     src = Path(mcp_server.__file__).read_text(encoding="utf-8")
     tree = ast.parse(src)
     other_uses = 0
@@ -158,7 +157,7 @@ def test_migration_is_limited_to_this_tool() -> None:
                 for n in ast.walk(node)
                 if isinstance(n, ast.Name) and n.id == "get_db_for_mcp"
             )
-    assert other_uses > 0
+    assert other_uses == 0
 
 
 def test_permission_cache_invalidation_baseline_intact() -> None:
@@ -169,7 +168,7 @@ def test_permission_cache_invalidation_baseline_intact() -> None:
     assert callable(getattr(mcp_server, "invalidate_agent_cache", None))
     assert callable(getattr(mcp_server, "_get_agent_ctx", None))
 
-    from okto_pulse.core.api import agents as agents_api
+    from okto_pulse.community.api import agents as agents_api
 
     tree = ast.parse(Path(agents_api.__file__).read_text(encoding="utf-8"))
     invalidating: set[str] = set()

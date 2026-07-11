@@ -9,9 +9,9 @@ import pytest
 from okto_pulse.core.application.use_cases.spec_crud import (
     _spec_update_permission_requirements,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecUpdate
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.main import CardService, SpecService

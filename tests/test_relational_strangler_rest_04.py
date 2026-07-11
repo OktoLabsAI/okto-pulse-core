@@ -27,9 +27,9 @@ from okto_pulse.core.application.use_cases import (
 )
 from okto_pulse.core.models import BoardCreate
 from okto_pulse.core.repositories import (
-    SQLAlchemyUnitOfWorkFactory,
     run_relational_boundary_gate,
 )
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 from okto_pulse.core.services import BoardService
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 

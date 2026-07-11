@@ -16,9 +16,11 @@ The public signatures are transport-neutral — they never expose ``AsyncSession
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+from okto_pulse.core.application.use_cases.base import ActorContext
 
 
 class BeginConsolidationCommand:
@@ -39,12 +41,11 @@ class BeginConsolidationUseCase:
     """Open a transactional consolidation session, transport-free."""
 
     async def execute(
-        self, command: BeginConsolidationCommand, *, actor: ActorContext, uow: Any
+        self, command: BeginConsolidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BeginConsolidationResult:
-        from okto_pulse.core.services.application_kg import begin_consolidation
-
-        resp = await begin_consolidation(
-            command.req, agent_id=actor.actor_id, db=session_of(uow)
+        resp = await uow.services.kg.begin_consolidation(
+            command.req,
+            agent_id=actor.actor_id,
         )
         return BeginConsolidationResult(resp)
 
@@ -67,12 +68,11 @@ class ProposeReconciliationUseCase:
     """Compute deterministic reconciliation hints, transport-free."""
 
     async def execute(
-        self, command: ProposeReconciliationCommand, *, actor: ActorContext, uow: Any
+        self, command: ProposeReconciliationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ProposeReconciliationResult:
-        from okto_pulse.core.services.application_kg import propose_reconciliation
-
-        resp = await propose_reconciliation(
-            command.req, agent_id=actor.actor_id, db=session_of(uow)
+        resp = await uow.services.kg.propose_reconciliation(
+            command.req,
+            agent_id=actor.actor_id,
         )
         return ProposeReconciliationResult(resp)
 
@@ -100,18 +100,11 @@ class CommitConsolidationUseCase:
     drive the R7 cognitive-hold side effect)."""
 
     async def execute(
-        self, command: CommitConsolidationCommand, *, actor: ActorContext, uow: Any
+        self, command: CommitConsolidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CommitConsolidationResult:
-        from okto_pulse.core.services.application_kg import (
-            commit_consolidation,
-            run_with_commit_lock_and_retry,
-        )
-
-        session = session_of(uow)
-        resp = await run_with_commit_lock_and_retry(
-            command.board_id,
-            lambda: commit_consolidation(
-                command.req, agent_id=actor.actor_id, db=session
-            ),
+        resp = await uow.services.kg.commit_consolidation(
+            command.req,
+            board_id=command.board_id,
+            agent_id=actor.actor_id,
         )
         return CommitConsolidationResult(resp)

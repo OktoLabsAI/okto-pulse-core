@@ -23,13 +23,6 @@ async def get_authenticated_agent_for_mcp() -> Any:
     return await _get_authenticated_agent()
 
 
-def get_db_for_current_mcp_request() -> Any:
-    """Return the current MCP request DB/session provider through a public hook."""
-    from okto_pulse.core.mcp.server import get_db_for_mcp
-
-    return get_db_for_mcp()
-
-
 def effective_resource_catalog() -> Any:
     """Return the effective MCP resource catalog through the public facade."""
     from okto_pulse.core.mcp.server import effective_resource_catalog as _catalog
@@ -51,14 +44,22 @@ def freeze_resource_catalog() -> None:
     _freeze()
 
 
+def invalidate_agent_cache(agent_id: str) -> None:
+    """Invalidate one agent through the public MCP composition facade."""
+
+    from okto_pulse.core.mcp.server import invalidate_agent_cache as _invalidate
+
+    _invalidate(agent_id)
+
+
 __all__ = [
     "build_mcp_asgi_app",
     "effective_resource_catalog",
     "freeze_resource_catalog",
     "freeze_instruction_providers",
     "get_authenticated_agent_for_mcp",
-    "get_db_for_current_mcp_request",
     "has_instruction_provider",
+    "invalidate_agent_cache",
     "mcp",
     "mount_mcp",
     "register_instruction_provider",

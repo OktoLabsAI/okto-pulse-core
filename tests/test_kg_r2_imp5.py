@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r2i5_"))
 
 from okto_pulse.core.kg.canonical_stale_reconciler import reconcile_stale_canonical
-from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
-from okto_pulse.core.kg.global_discovery.schema import (
+from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
+from global_graph_testing import (
     bootstrap_global_discovery,
     open_global_connection,
     reset_global_discovery_runtime_for_tests,
@@ -34,7 +34,7 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
     BeginConsolidationRequest,
@@ -42,12 +42,12 @@ from okto_pulse.core.kg.schemas import (
     ProposeReconciliationRequest,
 )
 from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_CANONICAL
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
-from okto_pulse.core.models.db import (
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from sqlalchemy_test_models import (
     Board,
     GlobalUpdateOutbox,
     KuzuNodeRef,
@@ -55,7 +55,6 @@ from okto_pulse.core.models.db import (
 )
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
-    RealBoardGraphPathResolverForTests,
     RealBoardGraphTransactionForTests,
     configure_test_kg_registry,
 )
@@ -69,7 +68,6 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
         graph_transaction=RealBoardGraphTransactionForTests(),
-        graph_path_resolver=RealBoardGraphPathResolverForTests(),
     )
 
 
@@ -185,11 +183,11 @@ async def _digest_node_via_gd_worker(db_factory, board_id, node_id, node_type):
             payload={"session_id": session_id, "nodes_added": 1},
         ))
         await db.commit()
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 async def _drain_gd_worker(db_factory) -> int:
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 def _digest_layer(board_id, node_id) -> str | None:

@@ -1,34 +1,38 @@
-"""Port for the edition-owned Global Discovery runtime.
-
-Core keeps the query semantics and schema definitions. Concrete storage,
-handle lifecycle and quarantine behavior are owned by the edition adapter.
-"""
+"""Semantic port for the edition-owned Global Discovery graph."""
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
+
+from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphHandle
+from okto_pulse.core.kg.interfaces.graph_runtime_store import (
+    GraphPurgeResult,
+    GraphRuntimeState,
+)
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 
 
+@runtime_checkable
 class GlobalDiscoveryRuntime(Protocol):
     """Edition-owned runtime for the cross-board discovery graph."""
 
-    def global_graph_path(self) -> Any: ...
+    def state(self) -> GraphRuntimeState: ...
 
-    def bootstrap(self) -> Any: ...
+    def bootstrap(self) -> GraphHandle: ...
 
-    def ensure_layer_schema(self) -> list[str]: ...
+    def ensure_layer_schema(self) -> tuple[str, ...]: ...
 
-    def open_connection(self) -> tuple[Any, Any]: ...
+    def execute(
+        self,
+        statement: str,
+        params: dict[str, Any] | None = None,
+    ) -> GraphStatementResult: ...
 
     def flush_after_write_batch(self) -> None: ...
 
     def close(self) -> None: ...
 
-    def purge(self, *, reason: str = "manual") -> list[str]: ...
-
-    def require_write_token(self, *, operation: str = "") -> Any: ...
-
-    def reset_for_tests(self) -> None: ...
+    def purge(self, *, reason: str = "manual") -> GraphPurgeResult: ...
 
 
 __all__ = ["GlobalDiscoveryRuntime"]

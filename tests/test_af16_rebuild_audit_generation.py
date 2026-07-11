@@ -16,7 +16,7 @@ from okto_pulse.core.kg.rebuild_generation import (
     RebuildAuditKGGenerationRepository,
     generate_kg_generation_id,
 )
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 
@@ -179,11 +179,19 @@ def test_af16_kg_health_current_generation_does_not_recreate_tempdir() -> None:
 
 
 def test_af16_rest_mcp_health_wire_generation_through_artifact_store() -> None:
-    root = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
+    repo_root = Path(__file__).resolve().parents[1]
+    core_root = repo_root / "src" / "okto_pulse" / "core"
+    community_root = (
+        repo_root.parent
+        / "okto_labs_pulse_community"
+        / "src"
+        / "okto_pulse"
+        / "community"
+    )
     migrated_sources = [
-        root / "api" / "kg_rebuild.py",
-        root / "mcp" / "server.py",
-        root / "services" / "kg_health_service.py",
+        community_root / "api" / "kg_rebuild.py",
+        core_root / "mcp" / "server.py",
+        core_root / "services" / "kg_health_service.py",
     ]
 
     for path in migrated_sources:

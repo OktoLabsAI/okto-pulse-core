@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Spec, SpecStatus, Card, CardStatus, CardType
+from sqlalchemy_test_models import Board, Spec, SpecStatus, Card, CardStatus, CardType
 
 
 BOARD_ID = "card-kb-board-001"

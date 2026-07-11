@@ -9,7 +9,7 @@ import pytest
 from okto_pulse.core.services.analytics_service import _spec_detail
 from okto_pulse.core.services.analytics_service import compute_spec_analytics
 from okto_pulse.core.mcp.server import _mcp_spec_coverage_summary
-from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.services.analytics_service import (
     _coverage_row_for_spec,
     compute_coverage,

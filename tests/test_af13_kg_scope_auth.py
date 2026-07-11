@@ -71,7 +71,7 @@ def test_actor_scope_preserves_non_mapping_permission_objects() -> None:
 def test_rest_kg_board_routes_require_board_actor_dependency() -> None:
     from fastapi.params import Depends as DependsParam
 
-    from okto_pulse.core.api import kg_routes
+    from okto_pulse.community.api import kg_routes
 
     route_dependencies = {
         route.endpoint.__name__: {
@@ -104,8 +104,8 @@ async def test_global_search_passes_only_actor_visible_boards(monkeypatch) -> No
         GlobalSearchUseCase,
     )
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Board
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
+    from sqlalchemy_test_models import Board
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     from okto_pulse.core.services import application_kg
 
     owner_id = f"user-af13-{uuid.uuid4().hex[:8]}"
@@ -158,8 +158,8 @@ async def test_global_search_with_zero_visible_boards_never_falls_back_to_all(
         GlobalSearchUseCase,
     )
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Board
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
+    from sqlalchemy_test_models import Board
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     from okto_pulse.core.services import application_kg
 
     actor_id = f"user-af13-empty-{uuid.uuid4().hex[:8]}"
@@ -208,8 +208,8 @@ async def test_kg_boost_audit_uses_non_default_actor(monkeypatch) -> None:
         BoostNodeUseCase,
     )
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Board, ConsolidationAudit
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from sqlalchemy_test_models import Board, ConsolidationAudit
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.services import application_kg
 
     actor_id = f"agent-af13-real-{uuid.uuid4().hex[:8]}"

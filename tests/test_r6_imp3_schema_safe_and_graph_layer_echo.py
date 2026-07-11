@@ -19,11 +19,11 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.kg.global_discovery.schema import (
+from global_graph_testing import (
     bootstrap_global_discovery,
     reset_global_discovery_runtime_for_tests,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     NODE_TYPES,
     STABLE_NODE_PROPERTIES,
     VECTOR_INDEX_TYPES,
@@ -210,7 +210,7 @@ def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
     from okto_pulse.core.kg import global_discovery as _gd  # noqa: F401
     from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.kg_service import get_kg_service
-    from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+    from kg_schema_testing import bootstrap_board_graph, open_board_connection
 
     qtext = "teeth fallback query"
     board_id = f"teeth-{uuid.uuid4().hex[:10]}"

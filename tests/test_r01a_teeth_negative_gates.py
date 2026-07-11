@@ -37,7 +37,7 @@ _CACHE_REQUIRED = ("update_agent", "update_board_overrides")
 
 
 def _agents_source() -> str:
-    from okto_pulse.core.api import agents
+    from okto_pulse.community.api import agents
 
     return Path(agents.__file__).read_text(encoding="utf-8")
 

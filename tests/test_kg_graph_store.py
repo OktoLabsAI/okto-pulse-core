@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from okto_pulse.core.kg.schema import SCHEMA_VERSION
+from kg_schema_testing import SCHEMA_VERSION
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
 from okto_pulse.core.kg.interfaces.event_bus import EventBus, KGEvent
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters, SemanticGraphStore

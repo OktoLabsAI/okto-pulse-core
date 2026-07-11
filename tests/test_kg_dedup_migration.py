@@ -44,7 +44,7 @@ def dedup_migration_tempdir(monkeypatch):
     yield base
 
     try:
-        from okto_pulse.core.kg.schema import close_all_connections
+        from kg_schema_testing import close_all_connections
         close_all_connections()
     except Exception:
         pass
@@ -54,7 +54,7 @@ def dedup_migration_tempdir(monkeypatch):
 
 def _bootstrap_board() -> str:
     """Create an empty per-board Kuzu graph and return its id."""
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
     board_id = str(uuid.uuid4())
     bootstrap_board_graph(board_id)
     gc.collect()
@@ -67,7 +67,7 @@ def _inject_entity(
     """Insert one Entity node directly via Cypher with a controlled
     created_at — used to fabricate duplicates with known ordering.
     """
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     node_id = f"entity_{uuid.uuid4().hex[:12]}"
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
@@ -91,7 +91,7 @@ def _inject_belongs_to_edge(
     board_id: str, from_id: str, to_id: str
 ) -> None:
     """Create a `belongs_to` rel between two existing Entity nodes."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         kconn.execute(
@@ -103,7 +103,7 @@ def _inject_belongs_to_edge(
 
 
 def _count_entities(board_id: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
@@ -120,7 +120,7 @@ def _count_entities(board_id: str, source_ref: str) -> int:
 
 
 def _count_belongs_to_into(board_id: str, target_id: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(

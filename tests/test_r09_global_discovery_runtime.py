@@ -8,6 +8,12 @@ import pytest
 
 from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.kg_service import KGService
+from okto_pulse.core.kg.interfaces.graph_runtime_store import (
+    GraphPurgeResult,
+    GraphRuntimeState,
+)
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 from okto_pulse.core.kg.write_barrier import (
     BarrierMode,
     WriteLifecycleViolation,
@@ -98,32 +104,47 @@ class _HealthGlobalConnection:
 class _FakeGlobalDiscoveryRuntime:
     def __init__(self) -> None:
         self.ensure_calls = 0
-        self.open_calls = 0
+        self.execute_calls = 0
 
-    def ensure_layer_schema(self) -> list[str]:
+    def ensure_layer_schema(self) -> tuple[str, ...]:
         self.ensure_calls += 1
-        return []
+        return ()
 
-    def open_connection(self) -> tuple[object, _FakeGlobalConnection]:
-        self.open_calls += 1
-        return object(), _FakeGlobalConnection()
+    def execute(self, statement: str, params=None) -> GraphStatementResult:
+        self.execute_calls += 1
+        assert "QUERY_VECTOR_INDEX" in statement
+        assert params["boards"] == ["board-a"]
+        return GraphStatementResult.from_rows([[
+            "board-a", "digest-a", "node-a", "Decision A", "Summary A",
+            "Decision", "canonical", 0.1,
+        ]])
 
 
 class _HealthGlobalDiscoveryRuntime:
     def __init__(self, path: Path, *, digest_count: int = 3) -> None:
         self.path = path
         self.digest_count = digest_count
-        self.open_calls = 0
-        self.connections: list[_HealthGlobalConnection] = []
+        self.execute_calls = 0
+        self.executed: list[str] = []
 
-    def global_graph_path(self) -> Path:
-        return self.path
+    def state(self) -> GraphRuntimeState:
+        return GraphRuntimeState(
+            board_id="_global",
+            storage_ref=StorageRef("global-discovery", "test"),
+            exists=self.path.exists(),
+            status="healthy" if self.path.exists() else "absent",
+            backend="test",
+        )
 
-    def open_connection(self) -> tuple[object, _HealthGlobalConnection]:
-        self.open_calls += 1
-        conn = _HealthGlobalConnection(digest_count=self.digest_count)
-        self.connections.append(conn)
-        return object(), conn
+    def execute(self, statement: str, params=None) -> GraphStatementResult:
+        self.execute_calls += 1
+        self.executed.append(statement)
+        if "CALL SHOW_TABLES()" in statement:
+            return GraphStatementResult.from_rows([["DecisionDigest"]])
+        if "MATCH (d:DecisionDigest" in statement:
+            assert params == {"bid": "board-a"}
+            return GraphStatementResult.from_rows([[self.digest_count]])
+        return GraphStatementResult()
 
 
 class _TokenCheckingGlobalDiscoveryRuntime(_FakeGlobalDiscoveryRuntime):
@@ -218,7 +239,7 @@ def test_query_global_uses_global_discovery_runtime_provider() -> None:
     )
 
     assert runtime.ensure_calls == 1
-    assert runtime.open_calls == 1
+    assert runtime.execute_calls >= 1
     assert rows == [
         {
             "board_id": "board-a",
@@ -239,9 +260,9 @@ def test_outbox_worker_uses_global_discovery_runtime_provider() -> None:
         / "src"
         / "okto_pulse"
         / "core"
-        / "kg"
-        / "global_discovery"
-        / "outbox_worker.py"
+        / "application"
+        / "processors"
+        / "global_outbox.py"
     )
     text = worker_path.read_text(encoding="utf-8")
     tree = ast.parse(text)
@@ -273,7 +294,7 @@ def test_outbox_worker_uses_global_discovery_runtime_provider() -> None:
     assert forbidden_calls == []
     assert "require_global_discovery_runtime" in text
     assert "global_runtime.ensure_layer_schema()" in text
-    assert "global_runtime.open_connection()" in text
+    assert "gconn.execute(" in text
     assert "_global_discovery_runtime().flush_after_write_batch()" in text
 
 
@@ -291,9 +312,8 @@ def test_kg_health_global_probe_uses_global_discovery_runtime_provider(
 
     assert telemetry.graph_type == "discovery"
     assert telemetry.recent_wal_errors == 0
-    assert runtime.open_calls == 1
-    assert runtime.connections[0].closed is True
-    assert runtime.connections[0].executed == ["CALL SHOW_TABLES() RETURN name"]
+    assert runtime.execute_calls == 1
+    assert runtime.executed == ["CALL SHOW_TABLES() RETURN name"]
 
 
 def test_check_global_uses_global_discovery_runtime_provider(tmp_path: Path) -> None:
@@ -306,11 +326,10 @@ def test_check_global_uses_global_discovery_runtime_provider(tmp_path: Path) -> 
 
     health = check_global("board-a")
 
-    assert runtime.open_calls == 1
-    assert runtime.connections[0].closed is True
+    assert runtime.execute_calls == 1
     assert any(
         "MATCH (d:DecisionDigest {board_id: $bid}) RETURN count(d) AS c" in query
-        for query in runtime.connections[0].executed
+        for query in runtime.executed
     )
     assert health.healthy is True
     assert health.counts["digests"] == 3
@@ -348,7 +367,7 @@ def test_kg_health_consumers_do_not_import_global_discovery_schema_open_or_path(
 def test_global_discovery_consumers_do_not_import_schema_lifecycle_facade() -> None:
     core_root = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
     consumer_files = [
-        core_root / "kg" / "global_discovery" / "outbox_worker.py",
+        core_root / "application" / "processors" / "global_outbox.py",
         core_root / "kg" / "global_discovery" / "clustering.py",
         core_root / "kg" / "global_discovery" / "layer_parity.py",
         core_root / "kg" / "health.py",
@@ -399,7 +418,7 @@ def test_query_global_schema_hardening_runs_inside_global_write_barrier() -> Non
         set_barrier_mode(BarrierMode.SOFT)
 
     assert runtime.ensure_calls == 1
-    assert runtime.open_calls == 1
+    assert runtime.execute_calls >= 1
     assert rows[0]["id"] == "node-a"
 
 
@@ -414,17 +433,18 @@ def test_community_global_discovery_bootstrap_with_token_runs_schema_ddl(
     graph_runtime = _FakeBoardGraphRuntime()
     runtime = CommunityGlobalDiscoveryRuntime(graph_runtime=graph_runtime)
     primary = tmp_path / "global" / "discovery.lbug"
-    monkeypatch.setattr(runtime, "global_graph_path", lambda: primary)
+    monkeypatch.setattr(runtime, "_global_graph_path", lambda: primary)
     monkeypatch.setattr(runtime, "_runtime", lambda: graph_runtime)
 
     set_barrier_mode(BarrierMode.STRICT)
     try:
         with under_global_safe_write("r09-bootstrap", "bootstrap"):
-            assert runtime.bootstrap() == primary
+            handle = runtime.bootstrap()
     finally:
         set_barrier_mode(BarrierMode.SOFT)
 
     assert primary.parent.exists()
+    assert handle.storage_ref.token == "global-discovery"
     assert any("CREATE NODE TABLE IF NOT EXISTS Board" in q for q in graph_runtime.executed)
     assert any("ALTER TABLE DecisionDigest ADD graph_layer" in q for q in graph_runtime.executed)
     assert graph_runtime.opened_dbs[0].closed is True
@@ -445,16 +465,17 @@ def test_community_global_discovery_purge_with_token_quarantines_targets(
     primary.write_text("old-graph", encoding="utf-8")
     sidecar = storage_root / "discovery.lbug.wal"
     sidecar.write_text("old-wal", encoding="utf-8")
-    monkeypatch.setattr(runtime, "global_graph_path", lambda: primary)
+    monkeypatch.setattr(runtime, "_global_graph_path", lambda: primary)
 
     set_barrier_mode(BarrierMode.STRICT)
     try:
         with under_global_safe_write("r09-purge", "purge"):
-            removed = runtime.purge(reason="r09-positive")
+            result = runtime.purge(reason="r09-positive")
     finally:
         set_barrier_mode(BarrierMode.SOFT)
 
-    assert sorted(Path(p).name for p in removed) == ["discovery.lbug", "discovery.lbug.wal"]
+    assert isinstance(result, GraphPurgeResult)
+    assert result.removed is True
     assert not primary.exists()
     assert not sidecar.exists()
     quarantine_root = tmp_path / "quarantine"
@@ -474,11 +495,10 @@ def test_community_global_discovery_close_reopen_preserves_query_results(
     primary = tmp_path / "global" / "discovery.lbug"
     primary.parent.mkdir()
     primary.write_text("existing-graph", encoding="utf-8")
-    monkeypatch.setattr(runtime, "global_graph_path", lambda: primary)
+    monkeypatch.setattr(runtime, "_global_graph_path", lambda: primary)
     configure_test_kg_registry(
         embedding_provider=_FakeEmbeddingProvider(),
         cypher_executor=_FakeCypherExecutor(),
-        board_graph_runtime=graph_runtime,
         global_discovery_runtime=runtime,
     )
 
@@ -583,7 +603,7 @@ def test_community_global_discovery_purge_without_token_does_not_mutate(
     primary.write_text("preserve-me", encoding="utf-8")
     sidecar = storage_root / "discovery.lbug.wal"
     sidecar.write_text("preserve-sidecar", encoding="utf-8")
-    monkeypatch.setattr(runtime, "global_graph_path", lambda: primary)
+    monkeypatch.setattr(runtime, "_global_graph_path", lambda: primary)
 
     set_barrier_mode(BarrierMode.STRICT)
     try:

@@ -43,9 +43,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.kg.agent.extractors import LEARNING_MIN_ACTION_PLAN_CHARS
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
@@ -54,11 +51,9 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
     normalize_cognitive_artifact_id,
 )
-from okto_pulse.core.domain.enums import CardStatus, SpecStatus
-from okto_pulse.core.models.db import (
-    Card,
-    ConsolidationDeadLetter,
-    Spec,
+from okto_pulse.core.ports.cognitive_effectiveness import (
+    CognitiveDoneCardFact,
+    get_cognitive_effectiveness_read_port,
 )
 
 logger = logging.getLogger("okto_pulse.core.services.cognitive_effectiveness")
@@ -175,7 +170,7 @@ def _artifact_type_of(ref: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _card_eligibility(card: Card) -> tuple[str | None, str]:
+def _card_eligibility(card: CognitiveDoneCardFact) -> tuple[str | None, str]:
     """A done card is a cognitive artifact ONLY when it is a bug with a
     substantial action_plan (→ Learning). A non-bug card (even with spec_id) is
     NOT itself the cognitive artifact — its Alternative/Assumption closeout is
@@ -407,7 +402,7 @@ def _valid_ref_shape(ref: str) -> bool:
 
 
 async def build_cognitive_effectiveness_inventory(
-    db: AsyncSession,
+    db: object,
     board_id: str,
     *,
     artifact_id: str | None = None,
@@ -441,9 +436,11 @@ async def build_cognitive_effectiveness_inventory(
     norm_filter = normalize_cognitive_artifact_id(artifact_id) if artifact_id else None
 
     # ---- gather sources (all read-only) ----
-    dlq_rows = (await db.execute(
-        select(ConsolidationDeadLetter).where(ConsolidationDeadLetter.board_id == board_id)
-    )).scalars().all()
+    sources = await get_cognitive_effectiveness_read_port().load_sources(
+        db,
+        board_id=board_id,
+    )
+    dlq_rows = sources.dead_letters
     dlq_by_ref: dict[str, list[Any]] = {}
     original_by_ref: dict[str, str] = {}
     type_by_ref: dict[str, str] = {}
@@ -456,11 +453,9 @@ async def build_cognitive_effectiveness_inventory(
 
     elig_by_ref: dict[str, tuple[str | None, str]] = {}
 
-    done_cards = (await db.execute(
-        select(Card).where(Card.board_id == board_id, Card.status == CardStatus.DONE)
-    )).scalars().all()
+    done_cards = sources.done_cards
     for card in done_cards:
-        raw = f"card:{card.id}"
+        raw = f"card:{card.card_id}"
         ref = normalize_cognitive_artifact_id(raw)
         kind, reason = _card_eligibility(card)
         elig_by_ref[ref] = (kind, reason)
@@ -468,11 +463,9 @@ async def build_cognitive_effectiveness_inventory(
         type_by_ref.setdefault(ref, "bug" if _card_type_value(card.card_type) == "bug" else "card")
 
     # Done specs are cognitive artifacts in their own right (Alternative/Assumption).
-    done_specs = (await db.execute(
-        select(Spec).where(Spec.board_id == board_id, Spec.status == SpecStatus.DONE)
-    )).scalars().all()
+    done_specs = sources.done_specs
     for spec in done_specs:
-        raw = f"spec:{spec.id}"
+        raw = f"spec:{spec.spec_id}"
         ref = normalize_cognitive_artifact_id(raw)
         elig_by_ref[ref] = ("alternative_assumption", "spec_done_cognitive_context")
         original_by_ref.setdefault(ref, raw)

@@ -293,7 +293,7 @@ def test_af05_aiofiles_reintroduction_fails_closed_on_all_runtime_surfaces(tmp_p
 
 
 # ===========================================================================
-# ts_681ca6d4 — ledger covers the remaining temporary exceptions.
+# ts_681ca6d4 — terminal ledger has no temporary exceptions.
 # ===========================================================================
 def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
     ledger = build_dependency_ledger()
@@ -319,16 +319,16 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
             value = getattr(entry, fld)
             assert isinstance(value, str) and value.strip(), f"{token}.{fld} empty"
 
-    # numpy + aiosqlite are the carry-forward: direct-dep + no-import, kept by a
-    # transitive consumer (NOT auto-removed like asyncpg).
+    assert CANONICAL_TEMPORARY_EXCEPTION_TOKENS == ()
+    assert CANONICAL_AF40_CARRY_FORWARD_TOKENS == ()
+
+    # F14 transferred both former carry-forward rows out of Core.
     for token in ("numpy", "aiosqlite"):
         entry = index[normalize_token(token)]
-        assert entry.direct_dep_no_import is True
-        assert entry.transitive_consumer, f"{token} must name its transitive consumer"
+        assert entry.classification == "community_owned"
+        assert entry.direct_dep_no_import is False
+        assert entry.transitive_consumer is None
         assert entry.expected_source_import_roots == ()
-        assert "Non-telemetry carry-forward" in entry.reason
-        assert "Do not remove or classify as telemetry-owned in AF40" in entry.removal_criterion
-        assert "AF40 carry-forward guard" in entry.validation_oracle
 
     # asyncpg is the SAME shape (direct-dep + no-import) but classified `removed`.
     asyncpg = index[normalize_token("asyncpg")]
@@ -360,52 +360,22 @@ def test_ts_681ca6d4_ledger_covers_temporary_exceptions():
     assert chardet.classification == "community_owned"
     assert chardet.expected_source_import_roots == ("chardet",)
 
-    # On the real repo every temporary exception is reported as accepted.
+    # The real repo reports no accepted exception and all transferred tokens as
+    # externally owned.
     report = audit_dependency_conformance(audit_wheel=False)
-    accepted_tokens = {normalize_token(e["token"]) for e in report.accepted_exceptions}
-    for token in CANONICAL_TEMPORARY_EXCEPTION_TOKENS:
-        assert normalize_token(token) in accepted_tokens, f"{token} not reported as accepted"
+    assert report.accepted_exceptions == ()
     assert "ladybug" in report.community_owned
     assert "sentence-transformers" in report.community_owned
     assert "requests" in report.community_owned
     assert "chardet" in report.community_owned
+    assert "aiosqlite" in report.community_owned
+    assert "numpy" in report.community_owned
 
 
-def test_af40_carry_forward_guard_rejects_removal_or_telemetry_reclassification():
-    mutated = []
-    for entry in build_dependency_ledger():
-        if entry.token == "aiosqlite":
-            mutated.append(
-                replace(
-                    entry,
-                    classification="community_owned",
-                    direct_dep_no_import=False,
-                    transitive_consumer=None,
-                    expected_source_import_roots=("aiosqlite",),
-                )
-            )
-        elif entry.token == "numpy":
-            mutated.append(
-                replace(
-                    entry,
-                    classification="removed",
-                    transitive_consumer=None,
-                )
-            )
-        else:
-            mutated.append(entry)
-
-    report = audit_dependency_conformance(audit_wheel=False, ledger=tuple(mutated))
-
-    assert report.ledger_integrity_ok is False
-    hits = [
-        finding
-        for finding in report.findings
-        if finding.diagnostic_code == DIAG_INVALID_AF40_CARRY_FORWARD_TOKEN
-    ]
-    assert {normalize_token(f.token) for f in hits} == {"aiosqlite", "numpy"}
-    assert all(f.severity == "blocking" for f in hits)
-    assert report.ok is False
+def test_af40_carry_forward_budget_is_terminal_zero():
+    assert CANONICAL_AF40_CARRY_FORWARD_TOKENS == ()
+    assert CANONICAL_TEMPORARY_EXCEPTION_TOKENS == ()
+    assert audit_dependency_conformance(audit_wheel=False).accepted_exceptions == ()
 
 
 def test_community_owned_ladybug_reintroduction_fails_closed(tmp_path):
@@ -465,7 +435,7 @@ def test_ts_7068fa1e_transitive_only_lock_entry_does_not_reprove(tmp_path):
         'version = "0.3.0"\n'
         'source = { editable = "." }\n'
         "dependencies = [\n"
-        '    { name = "aiosqlite" },\n'
+        '    { name = "pydantic" },\n'
         "]\n\n"
         "[[package]]\n"
         'name = "some-postgres-tool"\n'
@@ -476,7 +446,7 @@ def test_ts_7068fa1e_transitive_only_lock_entry_does_not_reprove(tmp_path):
     )
     report = _synthetic_audit(
         tmp_path,
-        pyproject_text='[project]\nname="x"\nversion="0"\ndependencies=["aiosqlite>=0.19"]\n',
+        pyproject_text='[project]\nname="x"\nversion="0"\ndependencies=["pydantic>=2"]\n',
         lock_text=lock_text,
     )
     assert "lock" in report.surfaces_audited
@@ -530,16 +500,13 @@ def test_report_is_actionable_and_serialisable():
     assert "asyncpg" in text
     assert "aiofiles" in text
     assert "temporary_exceptions" in text
-    # every accepted exception surfaces its owner_wave + removal_criterion + oracle.
-    for token in ("aiosqlite", "numpy"):
-        assert token in text
+    assert "temporary_exceptions (0)" in text
     assert "community_owned :" in text
     assert "apscheduler" in text
     assert "requests" in text
     assert "chardet" in text
     assert "ladybug" in text
-    assert "removal_criterion" in text
-    assert "validation_oracle" in text
+    assert report.accepted_exceptions == ()
 
     # JSON-serialisable projection (no dataclasses / sets leak).
     import json
@@ -566,13 +533,13 @@ def test_af05_readmes_document_dependency_owner_matrix():
             ("aiofiles", "removed"),
             ("requests", "community_owned"),
             ("chardet", "community_owned"),
-            ("aiosqlite", "temporary_exception"),
-            ("numpy", "temporary_exception"),
+            ("aiosqlite", "community_owned"),
+            ("numpy", "community_owned"),
             ("apscheduler", "community_owned"),
         ):
             assert f"| `{token}` | `{status}` |" in text
 
-        assert "Non-telemetry carry-forward" in text or "non-telemetry" in text
+        assert "F14 dependency ownership" in text
 
     assert "published core dependency" in core_readme
     assert "published `okto-pulse-core`" in community_readme

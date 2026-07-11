@@ -14,9 +14,11 @@ legacy ``exc.to_dict()`` envelope.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.ports.scheduler import SchedulerControl
 
 
@@ -54,15 +56,9 @@ class ListCanonicalDebtUseCase:
     """List canonical-debt ledger rows without any transport dependency."""
 
     async def execute(
-        self, command: ListCanonicalDebtCommand, *, actor: ActorContext, uow: Any
+        self, command: ListCanonicalDebtCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCanonicalDebtResult:
-        from okto_pulse.core.services.canonical_debt_service import (
-            list_canonical_debt,
-        )
-
-        session = session_of(uow)
-        data = await list_canonical_debt(
-            session,
+        data = await uow.services.kg.list_canonical_debt(
             board_id=command.board_id,
             artifact_type=command.artifact_type,
             state=command.state,
@@ -123,15 +119,9 @@ class ListCanonicalPartitionIntegrityUseCase:
         command: ListCanonicalPartitionIntegrityCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListCanonicalPartitionIntegrityResult:
-        from okto_pulse.core.services.application_kg import (
-            list_canonical_partition_integrity,
-        )
-
-        session = session_of(uow)
-        data = await list_canonical_partition_integrity(
-            session,
+        data = await uow.services.kg.list_canonical_partition_integrity(
             board_id=command.board_id,
             reason_code=command.reason_code,
             graph_layer=command.graph_layer,
@@ -172,15 +162,9 @@ class ListDigestLayerMismatchUseCase:
         command: ListDigestLayerMismatchCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListDigestLayerMismatchResult:
-        from okto_pulse.core.services.application_kg import (
-            list_digest_layer_mismatches,
-        )
-
-        session = session_of(uow)
-        data = await list_digest_layer_mismatches(
-            session,
+        data = await uow.services.kg.list_digest_layer_mismatches(
             board_id=command.board_id,
             limit=command.limit,
             offset=command.offset,
@@ -224,13 +208,13 @@ class AuditOriginatesFromContractUseCase:
         command: AuditOriginatesFromContractCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> AuditOriginatesFromContractResult:
         from okto_pulse.core.services.application_kg import (
             audit_originates_from_contract,
         )
 
-        _ = (actor, session_of(uow))
+        _ = actor
         data = audit_originates_from_contract(
             command.board_id,
             limit=command.limit,
@@ -245,7 +229,7 @@ class RebuildAdmissionGateCommand:
 
     ``refuse_fn`` is the admission-gate probe injected by the MCP tool
     (``api.kg_rebuild._refuse_rebuild_if_quarantined``); it is passed as a
-    callable so this use case never imports ``okto_pulse.core.api`` (Clean
+    callable so this use case never imports ``okto_pulse.community.api`` (Clean
     Core). ``include_health`` adds the FR9 health probe in the SAME session,
     exactly as the legacy preflight tool did (no extra round-trip).
     """
@@ -291,26 +275,19 @@ class RebuildAdmissionGateUseCase:
         command: RebuildAdmissionGateCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> RebuildAdmissionGateResult:
-        session = session_of(uow)
-        if command.scheduler_control is None:
-            refusal = await command.refuse_fn(command.board_id, session)
-        else:
-            refusal = await command.refuse_fn(
-                command.board_id,
-                session,
-                scheduler_control=command.scheduler_control,
-            )
+        refusal = await uow.services.kg.invoke_rebuild_admission(
+            command.refuse_fn,
+            command.board_id,
+            scheduler_control=command.scheduler_control,
+        )
         if refusal is not None:
             return RebuildAdmissionGateResult(refusal=refusal)
         raw_health: Any | None = None
         if command.include_health:
-            from okto_pulse.core.services.kg_health_service import get_kg_health
-
-            raw_health = await get_kg_health(
+            raw_health = await uow.services.kg.health(
                 command.board_id,
-                session,
                 scheduler_control=command.scheduler_control,
             )
         return RebuildAdmissionGateResult(raw_health=raw_health)

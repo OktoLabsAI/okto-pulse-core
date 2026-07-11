@@ -1,4 +1,4 @@
-"""Spec #06 card ef04de4a — direct path/lifecycle blocking + KG port replay.
+"""Graph runtime migration gate and backend-neutral replay.
 
 ts_4acec5cd (negative): the conformance gate requires GraphPathResolver/GraphLifecycle
 (and flags premature direct Kùzu use) for non-adapter consumers of board_kuzu_path /
@@ -18,7 +18,8 @@ import pytest
 
 from okto_pulse.core.kg.interfaces import (
     GraphLifecycle,
-    GraphPathResolver,
+    GraphRuntimeStore,
+    GraphStatementResult,
     get_kg_registry,
     reset_registry_for_tests,
 )
@@ -37,7 +38,7 @@ def _bid(tag: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def test_gate_requires_path_lifecycle_ports_outside_adapter(tmp_path):
+def test_gate_requires_runtime_lifecycle_ports_outside_adapter(tmp_path):
     (tmp_path / "p.py").write_text(
         "from okto_pulse.core.kg.schema import board_kuzu_path\n", encoding="utf-8"
     )
@@ -47,7 +48,7 @@ def test_gate_requires_path_lifecycle_ports_outside_adapter(tmp_path):
     report = run_gate(tmp_path)
     p = next(i for i in report.importers if i.file == "p.py")
     lc = next(i for i in report.importers if i.file == "l.py")
-    assert p.blocking is True and p.target_port == "GraphPathResolver"
+    assert p.blocking is True and p.target_port == "GraphRuntimeStore/StorageRef"
     assert lc.blocking is True and lc.target_port == "GraphLifecycle"
 
 
@@ -69,7 +70,7 @@ def test_minimal_ports_exist_so_promotion_block_is_satisfied():
     configure_test_kg_registry(graph_provider="inmemory")
     try:
         reg = get_kg_registry()
-        assert isinstance(reg.graph_path_resolver, GraphPathResolver)
+        assert isinstance(reg.graph_runtime_store, GraphRuntimeStore)
         assert isinstance(reg.graph_lifecycle, GraphLifecycle)
     finally:
         reset_registry_for_tests()
@@ -93,20 +94,24 @@ async def test_replay_port_path_observably_equivalent_to_direct_baseline(boards)
     configure_test_kg_registry(graph_provider="inmemory")
     try:
         reg = get_kg_registry()
-        resolver = reg.graph_path_resolver
+        runtime_store = reg.graph_runtime_store
         schema_mgr = reg.graph_schema_manager
         for bid in boards:
             await reg.graph_lifecycle.open(bid)
-            assert resolver.board_graph_path(bid).name == "graph.memory"
+            state = runtime_store.graph_state(bid)
+            assert state.storage_ref.namespace == "memory_graph"
+            assert state.exists is True
             assert await schema_mgr.current_version(bid)
             scope = await reg.graph_transaction.begin(bid)
             async with scope:
-                assert scope.execute("MATCH (m:BoardMeta) RETURN count(m)") == []
+                result = scope.execute("MATCH (m:BoardMeta) RETURN count(m)")
+                assert isinstance(result, GraphStatementResult)
+                assert result.rows == ()
     finally:
         reset_registry_for_tests()
 
 
-def test_migrated_consumer_existence_check_is_pure_indirection(boards):
+def test_migrated_consumer_existence_check_is_semantic(boards):
     # The migrated recompute consumers (card_boost_recompute / kg_hit_recompute)
     # swapped board_kuzu_path(bid).exists() for graph_path_resolver.exists(bid);
     # this proves that swap is a behavior-identical indirection (replay-equivalent).
@@ -114,10 +119,10 @@ def test_migrated_consumer_existence_check_is_pure_indirection(boards):
     reset_registry_for_tests()
     configure_test_kg_registry(graph_provider="inmemory")
     try:
-        resolver = get_kg_registry().graph_path_resolver
+        runtime_store = get_kg_registry().graph_runtime_store
         for bid in boards:
-            assert resolver.exists(bid) is False
-        assert resolver.exists(_bid("never-bootstrapped")) is False
+            assert runtime_store.exists(bid) is False
+        assert runtime_store.exists(_bid("never-bootstrapped")) is False
     finally:
         reset_registry_for_tests()
 

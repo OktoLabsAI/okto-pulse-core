@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from okto_pulse.core.models.db import Board, BugSeverity, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, BugSeverity, CardType, Spec, SpecStatus
 from okto_pulse.core.mcp import server as mcp_server
 
 

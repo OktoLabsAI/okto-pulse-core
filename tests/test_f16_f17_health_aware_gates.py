@@ -28,12 +28,13 @@ from types import SimpleNamespace
 import pytest
 
 from coordination_fakes import FakeLeaseProvider, FakeWriteLockPort
-import okto_pulse.core.api.kg_tick as kg_tick
+import okto_pulse.community.api.kg_tick as kg_tick
+import okto_pulse.core.application.kg_tick as kg_tick_policy
 import okto_pulse.core.kg.cognitive_closeout_gate as gate_mod
 import okto_pulse.core.mcp.server as server
 import okto_pulse.core.services.kg_health_service as kg_health_service
 import okto_pulse.core.services.main as services_main
-from okto_pulse.core.api.kg_tick import (
+from okto_pulse.community.api.kg_tick import (
     TickRunNowRequest,
     TickRunNowResponse,
     run_tick_now,
@@ -51,8 +52,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
     CognitiveItemStatus,
 )
-from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
-from okto_pulse.core.models.db import (
+from okto_pulse.core.ports.advisory_lock import get_async_lock
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -283,9 +284,9 @@ def test_ts_80500309_gate_stays_sync_no_io():
 def test_ts_dedefaf9_single_shared_predicate_identity():
     # both the gate and the tick reuse the SAME backpressure frozenset object
     assert gate_mod._RISK_STATE_HARD_REJECT is _RISK_STATE_HARD_REJECT
-    assert kg_tick._RISK_STATE_HARD_REJECT is _RISK_STATE_HARD_REJECT
+    assert kg_tick_policy._RISK_STATE_HARD_REJECT is _RISK_STATE_HARD_REJECT
     # neither module redefines a local/parallel predicate set
-    for mod in (gate_mod, kg_tick):
+    for mod in (gate_mod, kg_tick_policy):
         src = inspect.getsource(mod)
         assert "_RISK_STATE_HARD_REJECT = " not in src, (
             "the degraded predicate must be IMPORTED, never redefined locally"
@@ -386,6 +387,12 @@ class _FakeSession:
     def __init__(self) -> None:
         self.committed = False
         self.rolled_back = False
+        self.services = SimpleNamespace(
+            kg=SimpleNamespace(dispatch_manual_tick=self._dispatch_manual_tick)
+        )
+
+    async def _dispatch_manual_tick(self, **kwargs) -> None:
+        await kg_tick_policy.dispatch_manual_tick(session=self, **kwargs)
 
     async def commit(self) -> None:
         self.committed = True
@@ -403,6 +410,7 @@ def _install_tick_health(monkeypatch, graph_state):
         return {"graph_state": graph_state}
 
     monkeypatch.setattr(kg_tick, "get_kg_health", _stub)
+    monkeypatch.setattr(kg_tick_policy, "get_kg_health", _stub)
     return calls
 
 
@@ -561,7 +569,11 @@ async def test_ts_67fe9fd2_mcp_twin_inherits_refusal(monkeypatch):
             return None
 
     monkeypatch.setattr(server, "_get_agent_ctx", _fake_ctx)
-    monkeypatch.setattr(server, "get_db_for_mcp", lambda: _SessionContext())
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: lambda **_kwargs: _SessionContext(),
+    )
 
     # ensure the global advisory lock is free
     assert not get_async_lock("kg_daily_tick", "global").locked()

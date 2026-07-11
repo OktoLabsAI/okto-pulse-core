@@ -35,16 +35,16 @@ from pathlib import Path
 
 import pytest
 
-import okto_pulse.core.app as _app_mod
+import okto_pulse.community.app as _app_mod
 import okto_pulse.core.kg.startup_schema_sweep as _sweep_mod
-from okto_pulse.core.app import shutdown_kg_then_db
+from okto_pulse.community.app import shutdown_kg_then_db
 from okto_pulse.core.kg.interfaces import (
     get_kg_registry,
     reset_registry_for_tests,
 )
 from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycle
-from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphPathResolver
+from okto_pulse.core.kg.interfaces.graph_runtime_store import GraphRuntimeStore
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
 from okto_pulse.core.kg.startup_schema_sweep import sweep_board_schemas
 
@@ -63,7 +63,7 @@ _FORBIDDEN_KG_SCHEMA_SYMBOLS = {
 # ---------------------------------------------------------------------------
 # Fakes + helpers
 # ---------------------------------------------------------------------------
-class _FakePathResolver:
+class _FakeRuntimeStore:
     def __init__(self, existing, *, raise_on=None):
         self.existing = set(existing)
         self.raise_on = raise_on
@@ -166,7 +166,7 @@ def test_ts_8077c637_app_py_wires_the_06_ports():
     )
     assert "sweep_board_schemas" in sweep_wiring_src
     assert "graph_runtime_store" in sweep_wiring_src
-    assert "graph_path_resolver=kg_registry.graph_path_resolver" not in sweep_wiring_src
+    assert "graph_runtime_store=kg_registry.graph_runtime_store" in sweep_wiring_src
     assert "graph_schema_manager" in sweep_wiring_src
     assert "get_kg_registry" in sweep_wiring_src
 
@@ -175,14 +175,14 @@ def test_ts_8077c637_app_py_wires_the_06_ports():
 # ts_6ce72610 — Sweep NC-10 via ports.
 # ===========================================================================
 def test_ts_6ce72610_sweep_ensures_existing_skips_missing_and_counts():
-    resolver = _FakePathResolver(existing={"b1", "b3"})
+    resolver = _FakeRuntimeStore(existing={"b1", "b3"})
     manager = _FakeSchemaManager()
     logger = _RecLogger()
 
     migrated = asyncio.run(
         sweep_board_schemas(
             ["b1", "b2", "b3"],
-            graph_path_resolver=resolver,
+            graph_runtime_store=resolver,
             graph_schema_manager=manager,
             logger=logger,
             run_blocking=_direct,
@@ -198,13 +198,13 @@ def test_ts_6ce72610_sweep_ensures_existing_skips_missing_and_counts():
 
 
 def test_ts_6ce72610_empty_or_all_missing_logs_zero():
-    resolver = _FakePathResolver(existing=set())
+    resolver = _FakeRuntimeStore(existing=set())
     manager = _FakeSchemaManager()
     logger = _RecLogger()
     migrated = asyncio.run(
         sweep_board_schemas(
             ["b1", "b2"],
-            graph_path_resolver=resolver,
+            graph_runtime_store=resolver,
             graph_schema_manager=manager,
             logger=logger,
             run_blocking=_direct,
@@ -217,14 +217,14 @@ def test_ts_6ce72610_empty_or_all_missing_logs_zero():
 
 
 def test_ts_6ce72610_one_board_fails_logs_and_continues():
-    resolver = _FakePathResolver(existing={"b1", "b2", "b3"})
+    resolver = _FakeRuntimeStore(existing={"b1", "b2", "b3"})
     manager = _FakeSchemaManager(fail_on={"b2"})
     logger = _RecLogger()
 
     migrated = asyncio.run(
         sweep_board_schemas(
             ["b1", "b2", "b3"],
-            graph_path_resolver=resolver,
+            graph_runtime_store=resolver,
             graph_schema_manager=manager,
             logger=logger,
             run_blocking=_direct,
@@ -245,14 +245,14 @@ def test_ts_6ce72610_one_board_fails_logs_and_continues():
 def test_ts_6ce72610_resolver_error_propagates_to_caller_skipped():
     # A resolver exception is NOT soft-caught -> it propagates so the app.py
     # outer guard degrades to kg.schema.migration_skipped (old semantics).
-    resolver = _FakePathResolver(existing={"b1"}, raise_on="b2")
+    resolver = _FakeRuntimeStore(existing={"b1"}, raise_on="b2")
     manager = _FakeSchemaManager()
     logger = _RecLogger()
     with pytest.raises(RuntimeError, match="resolver_boom:b2"):
         asyncio.run(
             sweep_board_schemas(
                 ["b1", "b2", "b3"],
-                graph_path_resolver=resolver,
+                graph_runtime_store=resolver,
                 graph_schema_manager=manager,
                 logger=logger,
                 run_blocking=_direct,
@@ -264,7 +264,7 @@ def test_ts_6ce72610_resolver_error_propagates_to_caller_skipped():
 
 
 def test_ts_6ce72610_default_runner_offloads_off_the_event_loop():
-    resolver = _FakePathResolver(existing={"b1"})
+    resolver = _FakeRuntimeStore(existing={"b1"})
     manager = _FakeSchemaManager()
     logger = _RecLogger()
 
@@ -272,7 +272,7 @@ def test_ts_6ce72610_default_runner_offloads_off_the_event_loop():
     migrated = asyncio.run(
         sweep_board_schemas(
             ["b1"],
-            graph_path_resolver=resolver,
+            graph_runtime_store=resolver,
             graph_schema_manager=manager,
             logger=logger,
         )
@@ -356,15 +356,15 @@ def test_ts_a627315d_registry_providers_conform_and_are_memory_fakes():
         reg = get_kg_registry()
         assert isinstance(reg.graph_schema_manager, GraphSchemaManager)
         assert isinstance(reg.graph_lifecycle, GraphLifecycle)
-        assert isinstance(reg.graph_path_resolver, GraphPathResolver)
+        assert isinstance(reg.graph_runtime_store, GraphRuntimeStore)
 
         assert reg.graph_schema_manager.__class__.__name__ == "InMemoryGraphSchemaManager"
         assert reg.graph_lifecycle.__class__.__name__ == "InMemoryGraphLifecycle"
-        assert reg.graph_path_resolver.__class__.__name__ == "InMemoryGraphPathResolver"
+        assert reg.graph_runtime_store.__class__.__name__ == "InMemoryGraphRuntimeStore"
         for provider in (
             reg.graph_schema_manager,
             reg.graph_lifecycle,
-            reg.graph_path_resolver,
+            reg.graph_runtime_store,
         ):
             assert provider.__class__.__module__.startswith(
                 "okto_pulse.core.kg.providers.testing"
@@ -449,7 +449,7 @@ def test_ts_f83ad3db_scope_limited_register_before_remove():
     # 3) The sanctioned core graph implementations are test-only fakes.
     from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryGraphLifecycle,
-        InMemoryGraphPathResolver,
+        InMemoryGraphRuntimeStore,
         InMemoryGraphSchemaManager,
         InMemoryGraphTransaction,
         InMemoryGraphStore,
@@ -460,5 +460,5 @@ def test_ts_f83ad3db_scope_limited_register_before_remove():
         InMemoryGraphTransaction,
         InMemoryGraphSchemaManager,
         InMemoryGraphLifecycle,
-        InMemoryGraphPathResolver,
+        InMemoryGraphRuntimeStore,
     ))

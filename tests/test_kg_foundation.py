@@ -31,7 +31,7 @@ from okto_pulse.core.kg.reconciliation import (
     reconcile_candidate,
     reconcile_session,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     NODE_TYPES,
     REL_TYPES,
     SCHEMA_VERSION,
@@ -55,7 +55,7 @@ from okto_pulse.core.kg.schemas import (
     ReconciliationOperation,
 )
 from okto_pulse.core.kg.session_manager import get_session_manager
-from okto_pulse.core.kg.workers import get_cleanup_worker
+from okto_pulse.core.application.processors import SessionCleanupProcessor
 from sqlalchemy import text
 
 
@@ -161,7 +161,7 @@ class TestBootstrapSchema:
         assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
 
     def test_implements_accepts_requirement_and_constraint_pairs(self):
-        from okto_pulse.core.kg.schema import MULTI_REL_TYPES
+        from kg_schema_testing import MULTI_REL_TYPES
 
         rel_pairs = [
             (rel_name, from_type, to_type)
@@ -176,7 +176,7 @@ class TestBootstrapSchema:
         assert ("implements", "APIContract", "Constraint") in rel_pairs
 
     def test_belongs_to_accepts_assumption_to_entity(self):
-        from okto_pulse.core.kg.schema import MULTI_REL_TYPES
+        from kg_schema_testing import MULTI_REL_TYPES
 
         belongs_to = dict(MULTI_REL_TYPES)["belongs_to"]
         assert ("Assumption", "Entity") in belongs_to
@@ -931,7 +931,7 @@ class TestCleanupWorker:
         # Expire 2
         (await mgr.get("sweep_0")).expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
         (await mgr.get("sweep_1")).expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
-        worker = get_cleanup_worker()
+        worker = SessionCleanupProcessor()
         expired = await worker.sweep_once()
         assert expired == 2
         assert await mgr.active_count() == 1

@@ -27,11 +27,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import kg_routes as kg_routes_api
-from okto_pulse.core.api.kg_routes import router as kg_router
-from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.community.api import kg_routes as kg_routes_api
+from okto_pulse.community.api.kg_routes import router as kg_router
+from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.infra.auth import get_current_user, get_realm_id, require_user
+from okto_pulse.community.api.auth_deps import get_current_user, get_realm_id, require_user
 
 PREFIX = "/api/v1"
 ACTOR = "local-user"
@@ -77,7 +77,7 @@ def client():
 
 
 async def _seed_board(name: str = "fu5s2") -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu5s2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -87,7 +87,7 @@ async def _seed_board(name: str = "fu5s2") -> str:
 
 
 async def _seed_board_with_done_spec() -> str:
-    from okto_pulse.core.models.db import Board, Spec, SpecStatus
+    from sqlalchemy_test_models import Board, Spec, SpecStatus
 
     bid = f"board-fu5s2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -105,7 +105,7 @@ async def _seed_board_with_done_spec() -> str:
 
 
 async def _seed_audit_row(board_id: str) -> str:
-    from okto_pulse.core.models.db import ConsolidationAudit
+    from sqlalchemy_test_models import ConsolidationAudit
 
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     now = datetime.now(timezone.utc)
@@ -271,8 +271,7 @@ async def test_list_audit_use_case_runs_over_unit_of_work() -> None:
         ListAuditCommand,
         ListAuditUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     board_id = await _seed_board()
     session_id = await _seed_audit_row(board_id)
 

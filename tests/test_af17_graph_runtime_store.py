@@ -63,6 +63,7 @@ def _runtime_store():
         GraphRuntimeState,
         GraphStorageFootprint,
     )
+    from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 
     class RuntimeStore:
         def __init__(self) -> None:
@@ -73,6 +74,7 @@ def _runtime_store():
         def graph_state(self, board_id: str) -> GraphRuntimeState:
             return GraphRuntimeState(
                 board_id=board_id,
+                storage_ref=StorageRef(f"board:{board_id}", "logical_fake"),
                 exists=True,
                 status="healthy",
                 backend="logical_fake",
@@ -103,6 +105,7 @@ def _runtime_store():
             self.footprint_calls.append(board_id)
             return GraphStorageFootprint(
                 board_id=board_id,
+                storage_ref=StorageRef(f"board:{board_id}", "logical_fake"),
                 status="unavailable",
                 source="runtime_capability",
                 total_bytes=None,
@@ -145,7 +148,6 @@ async def test_ts2_right_to_erasure_uses_logical_purge_not_path(monkeypatch) -> 
     configure_test_kg_registry(
         graph_provider="inmemory",
         graph_runtime_store=runtime,
-        graph_path_resolver=_PathAccessForbidden(),
     )
     monkeypatch.setattr(
         "okto_pulse.core.kg.global_discovery.clustering.board_delete_cascade",
@@ -175,7 +177,6 @@ def test_ts3_check_kuzu_uses_graph_state_without_physical_path() -> None:
     configure_test_kg_registry(
         graph_provider="inmemory",
         graph_runtime_store=runtime,
-        graph_path_resolver=_PathAccessForbidden(),
         cypher_executor=_CountingCypher(),
     )
 
@@ -198,7 +199,6 @@ def test_ts1_ts3_footprint_uses_runtime_capability_without_path() -> None:
     configure_test_kg_registry(
         graph_provider="inmemory",
         graph_runtime_store=runtime,
-        graph_path_resolver=_PathAccessForbidden(),
     )
 
     from okto_pulse.core.services.kg_health_service import (
@@ -268,10 +268,7 @@ def test_ts4_current_core_common_contracts_are_backend_agnostic() -> None:
 
     assert report.status == "passed"
     assert report.evidence["violations"] == []
-    assert report.evidence["compatibility_allowlist"] == [
-        "okto_pulse/core/kg/interfaces/board_graph_runtime.py",
-        "okto_pulse/core/kg/schema.py",
-    ]
+    assert report.evidence["compatibility_allowlist"] == []
     assert report.evidence["compatibility_ledger_findings"] == []
 
     by_token = {
@@ -279,9 +276,6 @@ def test_ts4_current_core_common_contracts_are_backend_agnostic() -> None:
         for entry in LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER
     }
     assert {
-        "board_kuzu_path",
-        "open_kuzu_db",
-        "apply_ladybug_lifecycle_step",
         "KuzuNodeRef",
         "kuzu_node_id",
         "kg_kuzu_",
@@ -290,6 +284,11 @@ def test_ts4_current_core_common_contracts_are_backend_agnostic() -> None:
         "kuzu_error",
         "kuzu_lock_retries_5m",
     } <= set(by_token)
+    assert {
+        "board_kuzu_path",
+        "open_kuzu_db",
+        "apply_ladybug_lifecycle_step",
+    }.isdisjoint(by_token)
     for entry in LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER:
         for field in REQUIRED_COMPATIBILITY_FIELDS:
             value = getattr(entry, field)

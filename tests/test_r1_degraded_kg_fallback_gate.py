@@ -261,7 +261,7 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
     import okto_pulse.core.services.kg_health_service as kg_health_service
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.kg.cognitive_closeout_gate import reset_closeout_gate_samples, get_closeout_gate_samples
-    from okto_pulse.core.models.db import Board, Spec, SpecStatus
+    from sqlalchemy_test_models import Board, Spec, SpecStatus
 
     async def _stub_degraded(board_id, db, scheduler_control=None):
         return {"graph_state": "recovery_needed"}

@@ -21,22 +21,16 @@ do NOT commit; writes ``commit(uow)`` after the service mutation.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
-from okto_pulse.core.services import (
-    BoardService,
-    IdeationKnowledgeService,
-    IdeationQAService,
-    IdeationService,
-    SpecService,
-)
 
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
@@ -68,9 +62,9 @@ class CreateIdeationUseCase:
     as the legacy endpoint."""
 
     async def execute(
-        self, command: CreateIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateIdeationResult:
-        service = IdeationService(session_of(uow))
+        service = uow.services.ideations
         ideation = await service.create_ideation(
             command.board_id,
             actor.actor_id,
@@ -109,17 +103,16 @@ class ListIdeationsUseCase:
     the legacy endpoint resolves ``BoardService.get_board`` first, then lists."""
 
     async def execute(
-        self, command: ListIdeationsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListIdeationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationsResult:
-        session = session_of(uow)
-        board = await BoardService(session).get_board(
+        board = await uow.services.boards.get_board(
             command.board_id,
             actor.actor_id,
             query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
         )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
-        ideations = await IdeationService(session).list_ideations(
+        ideations = await uow.services.ideations.list_ideations(
             command.board_id, command.status_filter, include_archived=command.include_archived
         )
         return ListIdeationsResult(ideations)
@@ -146,9 +139,9 @@ class GetIdeationUseCase:
     """Fetch an ideation with nested data (read). 404 when missing."""
 
     async def execute(
-        self, command: GetIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: GetIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetIdeationResult:
-        ideation = await IdeationService(session_of(uow)).get_ideation(command.ideation_id)
+        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
         if not ideation:
             raise EntityNotFoundError("ideation", command.ideation_id)
         return GetIdeationResult(ideation)
@@ -179,9 +172,9 @@ class UpdateIdeationUseCase:
     endpoint did NOT catch it, so it surfaces exactly as before."""
 
     async def execute(
-        self, command: UpdateIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateIdeationResult:
-        service = IdeationService(session_of(uow))
+        service = uow.services.ideations
         ideation = await service.update_ideation(
             command.ideation_id, actor.actor_id, command.data
         )
@@ -218,9 +211,9 @@ class SetIdeationAmbiguityGateSkipUseCase:
     ``EntityNotFoundError("ideation")`` (404); commits on success."""
 
     async def execute(
-        self, command: SetIdeationAmbiguityGateSkipCommand, *, actor: ActorContext, uow: Any
+        self, command: SetIdeationAmbiguityGateSkipCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SetIdeationAmbiguityGateSkipResult:
-        service = IdeationService(session_of(uow))
+        service = uow.services.ideations
         ideation = await service.set_ambiguity_gate_skip(
             command.ideation_id, actor.actor_id, command.skip, source="rest"
         )
@@ -250,9 +243,9 @@ class DeleteIdeationUseCase:
     the delete."""
 
     async def execute(
-        self, command: DeleteIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteIdeationResult:
-        deleted = await IdeationService(session_of(uow)).delete_ideation(
+        deleted = await uow.services.ideations.delete_ideation(
             command.ideation_id, actor.actor_id
         )
         if not deleted:
@@ -290,13 +283,13 @@ class EvaluateComplexityUseCase:
     Commits and re-fetches."""
 
     async def execute(
-        self, command: EvaluateComplexityCommand, *, actor: ActorContext, uow: Any
+        self, command: EvaluateComplexityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> EvaluateComplexityResult:
         from okto_pulse.core.services.persistence_mutation import (
             mark_mutable_field_modified,
         )
 
-        service = IdeationService(session_of(uow))
+        service = uow.services.ideations
         ideation = await service.get_ideation(command.ideation_id)
         if not ideation:
             raise EntityNotFoundError("ideation", command.ideation_id)
@@ -344,10 +337,9 @@ class DeriveSpecUseCase:
     ``SpecService.get_spec`` exactly as the legacy endpoint."""
 
     async def execute(
-        self, command: DeriveSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: DeriveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeriveSpecResult:
-        session = session_of(uow)
-        spec = await IdeationService(session).derive_spec(
+        spec = await uow.services.ideations.derive_spec(
             command.ideation_id,
             actor.actor_id,
             query_scope=_query_scope_for_actor(actor),
@@ -355,7 +347,7 @@ class DeriveSpecUseCase:
         if not spec:
             raise EntityNotFoundError("ideation", command.ideation_id)
         await commit(uow)
-        return DeriveSpecResult(await SpecService(session).get_spec(spec.id))
+        return DeriveSpecResult(await uow.services.specs.get_spec(spec.id))
 
 
 # --- snapshots --------------------------------------------------------------
@@ -380,9 +372,9 @@ class ListIdeationSnapshotsUseCase:
     endpoint: no existence check — an unknown ideation simply yields an empty list."""
 
     async def execute(
-        self, command: ListIdeationSnapshotsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListIdeationSnapshotsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationSnapshotsResult:
-        snapshots = await IdeationService(session_of(uow)).list_snapshots(command.ideation_id)
+        snapshots = await uow.services.ideations.list_snapshots(command.ideation_id)
         return ListIdeationSnapshotsResult(snapshots)
 
 
@@ -407,9 +399,9 @@ class GetIdeationSnapshotUseCase:
     the legacy ``Snapshot v{version} not found`` 404."""
 
     async def execute(
-        self, command: GetIdeationSnapshotCommand, *, actor: ActorContext, uow: Any
+        self, command: GetIdeationSnapshotCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetIdeationSnapshotResult:
-        snapshot = await IdeationService(session_of(uow)).get_snapshot(
+        snapshot = await uow.services.ideations.get_snapshot(
             command.ideation_id, command.version
         )
         if not snapshot:
@@ -439,9 +431,9 @@ class ListIdeationHistoryUseCase:
     """Read an ideation's change history (read, no commit)."""
 
     async def execute(
-        self, command: ListIdeationHistoryCommand, *, actor: ActorContext, uow: Any
+        self, command: ListIdeationHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationHistoryResult:
-        history = await IdeationService(session_of(uow)).list_history(
+        history = await uow.services.ideations.list_history(
             command.ideation_id, command.limit
         )
         return ListIdeationHistoryResult(history)
@@ -475,9 +467,9 @@ class ListIdeationKnowledgeUseCase:
     empty list."""
 
     async def execute(
-        self, command: ListIdeationKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: ListIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationKnowledgeResult:
-        items = await IdeationKnowledgeService(session_of(uow)).list_knowledge(
+        items = await uow.services.ideation_knowledge.list_knowledge(
             command.ideation_id
         )
         return ListIdeationKnowledgeResult(items)
@@ -504,9 +496,9 @@ class GetIdeationKnowledgeUseCase:
     belongs to a different ideation — the adapter maps it to the legacy 404."""
 
     async def execute(
-        self, command: GetIdeationKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: GetIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetIdeationKnowledgeResult:
-        kb = await IdeationKnowledgeService(session_of(uow)).get_knowledge(
+        kb = await uow.services.ideation_knowledge.get_knowledge(
             command.knowledge_id
         )
         if not kb or kb.ideation_id != command.ideation_id:
@@ -535,9 +527,9 @@ class CreateIdeationKnowledgeUseCase:
     (404 "Ideation not found"); commits after the service mutation."""
 
     async def execute(
-        self, command: CreateIdeationKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateIdeationKnowledgeResult:
-        kb = await IdeationKnowledgeService(session_of(uow)).create_knowledge(
+        kb = await uow.services.ideation_knowledge.create_knowledge(
             command.ideation_id, actor.actor_id, command.data
         )
         if not kb:
@@ -566,9 +558,9 @@ class DeleteIdeationKnowledgeUseCase:
     same 404; commits after the delete."""
 
     async def execute(
-        self, command: DeleteIdeationKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteIdeationKnowledgeResult:
-        service = IdeationKnowledgeService(session_of(uow))
+        service = uow.services.ideation_knowledge
         kb = await service.get_knowledge(command.knowledge_id)
         if not kb or kb.ideation_id != command.ideation_id:
             raise EntityNotFoundError("ideation_knowledge", command.knowledge_id)
@@ -606,9 +598,9 @@ class ListIdeationQAUseCase:
     no existence check — an unknown ideation yields an empty list."""
 
     async def execute(
-        self, command: ListIdeationQACommand, *, actor: ActorContext, uow: Any
+        self, command: ListIdeationQACommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationQAResult:
-        items = await IdeationQAService(session_of(uow)).list_qa(command.ideation_id)
+        items = await uow.services.ideation_qa.list_qa(command.ideation_id)
         return ListIdeationQAResult(items)
 
 
@@ -633,9 +625,9 @@ class CreateIdeationQuestionUseCase:
     "Ideation not found"); commits after the service mutation."""
 
     async def execute(
-        self, command: CreateIdeationQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateIdeationQuestionResult:
-        qa = await IdeationQAService(session_of(uow)).create_question(
+        qa = await uow.services.ideation_qa.create_question(
             command.ideation_id, actor.actor_id, command.data
         )
         if not qa:
@@ -669,11 +661,11 @@ class AnswerIdeationQuestionUseCase:
     item not found"); a successful answer commits."""
 
     async def execute(
-        self, command: AnswerIdeationQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: AnswerIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AnswerIdeationQuestionResult:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
-        service = IdeationQAService(session_of(uow))
+        service = uow.services.ideation_qa
         try:
             qa = await service.answer_question(
                 command.qa_id, actor.actor_id, command.data,
@@ -705,9 +697,9 @@ class DeleteIdeationQuestionUseCase:
     not found"); commits after the delete."""
 
     async def execute(
-        self, command: DeleteIdeationQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteIdeationQuestionResult:
-        deleted = await IdeationQAService(session_of(uow)).delete_question(command.qa_id)
+        deleted = await uow.services.ideation_qa.delete_question(command.qa_id)
         if not deleted:
             raise EntityNotFoundError("ideation_qa", command.qa_id)
         await commit(uow)

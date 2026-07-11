@@ -37,14 +37,12 @@ ready_for_hot_swap_decision). All bounded.
 
 from __future__ import annotations
 
-import json
 import logging
 import secrets
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
@@ -199,7 +197,7 @@ class KGStorageBackendContingency:
     """
 
     boot_software_version: str
-    base_dir: Path | None = None
+    base_dir: object | None = None
     quarantine_resolver: Any = None
     allow_unverified_quarantine_ids: bool = False
     artifact_store: RebuildAuditArtifactStore | None = None
@@ -213,7 +211,10 @@ class KGStorageBackendContingency:
                 artifact_store=self.artifact_store,
             ),
         )
-        if self.quarantine_resolver is None and not self.allow_unverified_quarantine_ids:
+        if (
+            self.quarantine_resolver is None
+            and not self.allow_unverified_quarantine_ids
+        ):
             raise ValueError(
                 "KGStorageBackendContingency requires either quarantine_resolver "
                 "(production) or allow_unverified_quarantine_ids=True (tests only)"
@@ -272,9 +273,7 @@ class KGStorageBackendContingency:
                 raise ContingencyError(
                     ContingencyErrorCode.MISSING_QUARANTINE_EVIDENCE,
                     retryable=False,
-                    reason=(
-                        f"quarantine_ids missing manifests: {sorted(missing)}"
-                    ),
+                    reason=(f"quarantine_ids missing manifests: {sorted(missing)}"),
                 )
         else:
             resolved = list(quarantine_ids)
@@ -282,8 +281,7 @@ class KGStorageBackendContingency:
         contingency_id = f"contingency_{secrets.token_urlsafe(12)}"
         ready_for_upstream_issue = bool(corruption_timeline_ref and resolved)
         ready_for_hot_swap_decision = (
-            ready_for_upstream_issue
-            and software_version == self.boot_software_version
+            ready_for_upstream_issue and software_version == self.boot_software_version
         )
 
         payload = {
@@ -298,50 +296,20 @@ class KGStorageBackendContingency:
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        artifact_store = self.artifact_store
-        if artifact_store is not None:
-            key = RebuildAuditKey(
-                namespace="contingency",
-                board_id=board_id,
-                artifact_id=contingency_id,
-            )
-            try:
-                artifact_store.write_json_atomic(key, payload)
-            except Exception as exc:
-                raise ContingencyError(
-                    ContingencyErrorCode.TIMELINE_UNAVAILABLE,
-                    retryable=True,
-                    reason=f"contingency manifest write failed: {exc}",
-                ) from exc
-            contingency_ref = key.to_ref()
-        else:
-            if self.base_dir is None:
-                raise ContingencyError(
-                    ContingencyErrorCode.TIMELINE_UNAVAILABLE,
-                    retryable=True,
-                    reason="base_dir is required when artifact_store is not supplied",
-                )
-            contingency_dir = self.base_dir / CONTINGENCY_DIRNAME / contingency_id
-            try:
-                contingency_dir.mkdir(parents=True, exist_ok=False)
-            except OSError as exc:
-                raise ContingencyError(
-                    ContingencyErrorCode.TIMELINE_UNAVAILABLE,
-                    retryable=True,
-                    reason=f"contingency mkdir failed: {exc}",
-                ) from exc
-
-            manifest_path = contingency_dir / CONTINGENCY_MANIFEST_FILENAME
-            try:
-                with manifest_path.open("w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, indent=2)
-            except Exception as exc:
-                raise ContingencyError(
-                    ContingencyErrorCode.TIMELINE_UNAVAILABLE,
-                    retryable=True,
-                    reason=f"contingency manifest write failed: {exc}",
-                ) from exc
-            contingency_ref = str(manifest_path)
+        key = RebuildAuditKey(
+            namespace="contingency",
+            board_id=board_id,
+            artifact_id=contingency_id,
+        )
+        try:
+            self.artifact_store.write_json_atomic(key, payload)
+        except Exception as exc:
+            raise ContingencyError(
+                ContingencyErrorCode.TIMELINE_UNAVAILABLE,
+                retryable=True,
+                reason=f"contingency manifest write failed: {exc}",
+            ) from exc
+        contingency_ref = self.artifact_store.reference(key)
 
         _bump_contingency(
             board_id=board_id,
@@ -352,8 +320,10 @@ class KGStorageBackendContingency:
         logger.warning(
             "kg.contingency.prepared board=%s contingency_id=%s "
             "upstream=%s hot_swap=%s",
-            board_id, contingency_id,
-            ready_for_upstream_issue, ready_for_hot_swap_decision,
+            board_id,
+            contingency_id,
+            ready_for_upstream_issue,
+            ready_for_hot_swap_decision,
             extra={
                 "event": "kg.contingency.prepared",
                 "board_id": board_id,

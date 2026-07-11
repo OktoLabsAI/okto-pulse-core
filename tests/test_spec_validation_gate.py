@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,

@@ -22,7 +22,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
 
@@ -113,37 +112,10 @@ def _validate_local_edge_pair(
         },
     )
 
-# ---------------------------------------------------------------------------
-# Thread pool for offloading synchronous graph adapter IO from the event loop
-# Lazy-initialized to avoid thread leaks in test suites.
-# ---------------------------------------------------------------------------
-
-_graph_io_executor: ThreadPoolExecutor | None = None
-
-
-def _get_graph_io_executor() -> ThreadPoolExecutor:
-    global _graph_io_executor
-    if _graph_io_executor is None:
-        _graph_io_executor = ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="graph-io",
-        )
-    return _graph_io_executor
-
-
-def _get_kuzu_executor() -> ThreadPoolExecutor:
-    """Compatibility alias for legacy tests/tools; prefer _get_graph_io_executor."""
-
-    return _get_graph_io_executor()
-
-
 async def _run_graph_io(func, *args, **kwargs):
-    """Run synchronous graph adapter IO in a dedicated thread pool."""
-    loop = asyncio.get_running_loop()
-    executor = _get_graph_io_executor()
-    if kwargs:
-        pfunc = partial(func, *args, **kwargs)
-        return await loop.run_in_executor(executor, pfunc)
-    return await loop.run_in_executor(executor, func, *args)
+    """Run synchronous adapter IO through the caller's event-loop executor."""
+
+    return await asyncio.to_thread(partial(func, *args, **kwargs))
 
 
 _run_kuzu = _run_graph_io
@@ -2519,8 +2491,8 @@ async def _commit_audit_records(registry, db, records, counters, req, session, a
         NodeRefData(
             session_id=req.session_id,
             board_id=session.board_id,
-            kuzu_node_id=r.entity_id,
-            kuzu_node_type=r.entity_type,
+            graph_node_id=r.entity_id,
+            graph_node_type=r.entity_type,
             operation="add" if r.kind == "node" else "edge",
         )
         for r in records

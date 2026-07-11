@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import base64
 import json
 import shutil
 import threading
@@ -18,15 +19,19 @@ from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
 )
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
+    RebuildAuditArtifactStoreResolver,
     RebuildAuditKey,
 )
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 
 
 class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
     """Thread-safe fake implementing the rebuild audit storage port."""
 
     def __init__(self) -> None:
-        self._records: dict[tuple[str, str, str | None, str | None], dict[str, Any]] = {}
+        self._records: dict[
+            tuple[str, str, str | None, str | None], dict[str, Any]
+        ] = {}
         self._lock = threading.Lock()
 
     @staticmethod
@@ -42,10 +47,7 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
                 prefix.kg_generation_id is None
                 or key.kg_generation_id == prefix.kg_generation_id
             )
-            and (
-                prefix.artifact_id is None
-                or key.artifact_id == prefix.artifact_id
-            )
+            and (prefix.artifact_id is None or key.artifact_id == prefix.artifact_id)
         )
 
     def write_json_atomic(
@@ -100,19 +102,19 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             self._records[identity] = copy.deepcopy(dict(next_payload))
             return copy.deepcopy(next_payload)
 
-    def quarantine_paths(
+    def quarantine_storage(
         self,
         *,
         board_id: str,
         graph_type: str,
-        affected_paths: Sequence[str],
+        affected_storage_refs: Sequence[StorageRef],
         reason: str,
         reason_bucket: str,
         correlation_ids: Sequence[str],
         kg_generation_id: str | None,
         retention_days: int,
-        scope_roots: Sequence[str],
-        base_dir_hint: str | None = None,
+        scope_storage_refs: Sequence[StorageRef],
+        base_storage_ref_hint: StorageRef | None = None,
     ) -> Mapping[str, Any]:
         from okto_pulse.core.kg.quarantine import (
             MANIFEST_FILENAME,
@@ -121,19 +123,35 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             QuarantineErrorCode,
         )
 
-        roots = [Path(root).resolve() for root in scope_roots]
-        resolved_paths = [Path(raw).resolve() for raw in affected_paths]
+    def reference(self, key: RebuildAuditKey) -> str:
+        return key.to_ref()
+
+    def read_json_reference(self, reference: str) -> dict[str, Any] | None:
+        with self._lock:
+            for raw_key, payload in self._records.items():
+                key = RebuildAuditKey(
+                    namespace=raw_key[0],
+                    board_id=raw_key[1],
+                    kg_generation_id=raw_key[2],
+                    artifact_id=raw_key[3],
+                )
+                if key.to_ref() == reference:
+                    return copy.deepcopy(payload)
+        return None
+
+        roots = [_testing_path_from_ref(ref) for ref in scope_storage_refs]
+        resolved_paths = [_testing_path_from_ref(ref) for ref in affected_storage_refs]
         for path in resolved_paths:
             if not any(_is_relative_to(path, root) for root in roots):
                 raise QuarantineError(
-                    QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE,
+                    QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE,
                     retryable=False,
                     reason=f"path {path} is not under any KG storage root",
                 )
 
         quarantine_id = f"q_{uuid.uuid4().hex}"
         quarantine_dir = (
-            self._quarantine_base(base_dir_hint, roots)
+            self._quarantine_base(base_storage_ref_hint, roots)
             / QUARANTINE_DIRNAME
             / quarantine_id
         )
@@ -167,9 +185,7 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
                 "kg_generation_id": kg_generation_id,
                 "software_version": "test",
                 "quarantined_at": now.isoformat(),
-                "retention_until": (
-                    now + timedelta(days=retention_days)
-                ).isoformat(),
+                "retention_until": (now + timedelta(days=retention_days)).isoformat(),
                 "files_moved": files_moved,
             }
             manifest_path = quarantine_dir / MANIFEST_FILENAME
@@ -193,17 +209,24 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
                 reason=f"manifest write failed: {exc} (preserved at {partial_dir})",
             ) from exc
 
-        return {**manifest, "manifest_ref": str(manifest_path)}
+        return {
+            **manifest,
+            "affected_storage_refs": [
+                {"token": ref.token, "namespace": ref.namespace}
+                for ref in affected_storage_refs
+            ],
+            "manifest_ref": str(manifest_path),
+        }
 
     def list_quarantine_manifests(
         self,
         *,
         active_after_iso: str | None = None,
-        base_dir_hint: str | None = None,
+        base_storage_ref_hint: StorageRef | None = None,
     ) -> Sequence[Mapping[str, Any]]:
         from okto_pulse.core.kg.quarantine import MANIFEST_FILENAME, QUARANTINE_DIRNAME
 
-        root = self._quarantine_base(base_dir_hint, ()) / QUARANTINE_DIRNAME
+        root = self._quarantine_base(base_storage_ref_hint, ()) / QUARANTINE_DIRNAME
         if not root.exists():
             return []
 
@@ -231,12 +254,12 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
         self,
         *,
         quarantine_id: str,
-        base_dir_hint: str | None = None,
+        base_storage_ref_hint: StorageRef | None = None,
     ) -> Mapping[str, Any] | None:
         from okto_pulse.core.kg.quarantine import MANIFEST_FILENAME, QUARANTINE_DIRNAME
 
         path = (
-            self._quarantine_base(base_dir_hint, ())
+            self._quarantine_base(base_storage_ref_hint, ())
             / QUARANTINE_DIRNAME
             / quarantine_id
             / MANIFEST_FILENAME
@@ -246,9 +269,12 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
         return json.loads(path.read_text(encoding="utf-8"))
 
     @staticmethod
-    def _quarantine_base(base_dir_hint: str | None, roots: Sequence[Path]) -> Path:
-        if base_dir_hint:
-            return Path(base_dir_hint)
+    def _quarantine_base(
+        base_storage_ref_hint: StorageRef | None,
+        roots: Sequence[Path],
+    ) -> Path:
+        if base_storage_ref_hint is not None:
+            return _testing_path_from_ref(base_storage_ref_hint)
         if roots:
             return Path(roots[0]).parent
         return Path.cwd()
@@ -268,9 +294,25 @@ class InMemoryCognitivePendingWorkProvider(CognitivePendingWorkProvider):
         return self._records
 
 
+class InMemoryRebuildAuditArtifactStoreResolver(RebuildAuditArtifactStoreResolver):
+    """Resolve opaque scopes to isolated in-memory stores for pure-core tests."""
+
+    def __init__(self) -> None:
+        self._stores: dict[str, InMemoryRebuildAuditArtifactStore] = {}
+        self._lock = threading.Lock()
+
+    def resolve(self, scope: object) -> RebuildAuditArtifactStore:
+        identity = f"{type(scope).__module__}.{type(scope).__qualname__}:{scope!s}"
+        with self._lock:
+            return self._stores.setdefault(
+                identity, InMemoryRebuildAuditArtifactStore()
+            )
+
+
 __all__ = [
     "InMemoryCognitivePendingWorkProvider",
     "InMemoryRebuildAuditArtifactStore",
+    "InMemoryRebuildAuditArtifactStoreResolver",
 ]
 
 
@@ -280,3 +322,11 @@ def _is_relative_to(path: Path, root: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _testing_path_from_ref(ref: StorageRef) -> Path:
+    if ref.namespace == "community_local_graph_v1":
+        padding = "=" * (-len(ref.token) % 4)
+        raw = base64.urlsafe_b64decode(ref.token + padding).decode("utf-8")
+        return Path(raw).resolve()
+    return Path(ref.token).resolve()

@@ -15,7 +15,7 @@ from sqlalchemy import text as sa_text
 
 from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
 from okto_pulse.core.infra.database import get_session_factory
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ConsolidationDeadLetter,
     ConsolidationQueue,
 )
@@ -41,7 +41,7 @@ async def _reset_settings_state():
     """Reset module-level boot snapshot + clean app_settings table to avoid
     cross-test bleed (each test computes restart_required against its own
     fresh boot baseline)."""
-    from okto_pulse.core.services import settings_service as _ss
+    import sqlalchemy_test_runtime_settings_service as _ss
 
     _ss._boot_snapshot.clear()
     try:
@@ -72,8 +72,8 @@ async def _reset_settings_state():
 async def settings_client():
     """Minimal ASGI client wrapping just the settings router."""
     from fastapi import FastAPI
-    from okto_pulse.core.api.settings import router
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.settings import router
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db
 
     app = FastAPI()

@@ -14,8 +14,9 @@ from okto_pulse.core.application.boundary.query_scope_gate import (
     run_query_scope_policy_gate,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.domain.realm import RealmScope
 from okto_pulse.core.infra.database import get_session_factory
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 from okto_pulse.core.services import BoardService
 from okto_pulse.core.services.main import _board_scope_clauses
 
@@ -102,7 +103,7 @@ def test_scope_contract_is_transport_and_persistence_free() -> None:
         "fastapi",
         "sqlalchemy",
         "okto_pulse.community",
-        "okto_pulse.core.api",
+        "okto_pulse.community.api",
         "okto_pulse.core.infra",
         "okto_pulse.core.models",
         "okto_pulse.core.repositories",
@@ -170,6 +171,7 @@ def test_query_scope_explicit_global_requires_capability() -> None:
     admin_actor = ActorContext(
         "admin-hnd4",
         "rest",
+        realm_scope=RealmScope.local(),
         permissions={"board.read.all": True},
     )
     scope = ActorScope.from_context(admin_actor).query_scope(

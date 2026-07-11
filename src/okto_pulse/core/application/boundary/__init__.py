@@ -64,6 +64,11 @@ from .runtime_worker_gate import (
     RuntimeWorkerBoundaryFinding,
     RuntimeWorkerBoundaryGate,
 )
+from .persistence_edition_gate import (
+    FORBIDDEN_PERSISTENCE_EDITION_TOKENS,
+    PersistenceEditionFinding,
+    PersistenceEditionNeutralityGate,
+)
 from .global_discovery_consumer_gate import (
     FORBIDDEN_GLOBAL_DISCOVERY_SYMBOLS,
     GlobalDiscoveryConsumerFinding,
@@ -454,6 +459,7 @@ __all__ = [
     "FORBIDDEN_CORE_APP_PRIVATE_TICK_HELPERS",
     "FORBIDDEN_DIRECT_WORKER_SYMBOLS",
     "FORBIDDEN_GLOBAL_DISCOVERY_SYMBOLS",
+    "FORBIDDEN_PERSISTENCE_EDITION_TOKENS",
     "FocusedSuitesResult",
     "run_final_clean_core_quick",
     "run_focused_suites",
@@ -503,6 +509,8 @@ __all__ = [
     "LifecycleFallbackGate",
     "RuntimeWorkerBoundaryFinding",
     "RuntimeWorkerBoundaryGate",
+    "PersistenceEditionFinding",
+    "PersistenceEditionNeutralityGate",
     "GlobalDiscoveryConsumerFinding",
     "GlobalDiscoveryConsumerGate",
     "GraphRuntimeCompatibilityEntry",

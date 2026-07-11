@@ -158,38 +158,15 @@ def board_delete_cascade(board_id: str) -> dict:
     # and `propose_reconciliation` short-circuits every candidate to NOOP —
     # the queue worker reports "done" but Kùzu stays empty.
     try:
-        import asyncio
-        from sqlalchemy import delete
-        from okto_pulse.core.infra.database import get_session_factory
-        from okto_pulse.core.models.db import (
-            ConsolidationAudit,
-            ConsolidationQueue,
-            GlobalUpdateOutbox,
+        from okto_pulse.core.ports.board_relational_cleanup import (
+            get_board_relational_cleanup_port,
         )
 
-        async def _wipe_sqlite() -> dict[str, int]:
-            sf = get_session_factory()
-            removed: dict[str, int] = {}
-            async with sf() as db:
-                for model, label in (
-                    (GlobalUpdateOutbox, "outbox"),
-                    (ConsolidationAudit, "audit"),
-                    (ConsolidationQueue, "queue"),
-                ):
-                    res = await db.execute(
-                        delete(model).where(model.board_id == board_id)
-                    )
-                    removed[label] = res.rowcount or 0
-                await db.commit()
-            return removed
-
-        try:
-            loop = asyncio.get_running_loop()
-            sqlite_counts = asyncio.run_coroutine_threadsafe(
-                _wipe_sqlite(), loop
-            ).result()
-        except RuntimeError:
-            sqlite_counts = asyncio.run(_wipe_sqlite())
+        sqlite_counts = _run_async_blocking(
+            get_board_relational_cleanup_port().wipe_runtime_rows(
+                board_id=board_id
+            )
+        )
         for k, v in sqlite_counts.items():
             counts[f"sqlite_{k}_removed"] = v
     except Exception as exc:
@@ -223,10 +200,9 @@ def board_delete_cascade(board_id: str) -> dict:
         )
 
     global_runtime = get_kg_registry().require_global_discovery_runtime()
-    gdb, gconn = global_runtime.open_connection()
     try:
         # Delete DecisionDigests for this board
-        result = gconn.execute(
+        result = global_runtime.execute(
             "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
             "DETACH DELETE d RETURN count(d)",
             {"bid": board_id},
@@ -235,7 +211,7 @@ def board_delete_cascade(board_id: str) -> dict:
             counts["digests_removed"] = result.get_next()[0]
 
         # Delete Board node + edges
-        gconn.execute(
+        global_runtime.execute(
             "MATCH (b:Board {board_id: $bid}) DETACH DELETE b",
             {"bid": board_id},
         )
@@ -243,7 +219,7 @@ def board_delete_cascade(board_id: str) -> dict:
 
         # GC orphan Topics (member_count = 0 or no edges)
         try:
-            gconn.execute(
+            global_runtime.execute(
                 "MATCH (t:Topic) WHERE NOT EXISTS { MATCH ()-[:HAS_TOPIC]->(t) } "
                 "DETACH DELETE t"
             )
@@ -252,7 +228,7 @@ def board_delete_cascade(board_id: str) -> dict:
 
         # GC orphan Entities (no edges)
         try:
-            gconn.execute(
+            global_runtime.execute(
                 "MATCH (e:Entity) WHERE NOT EXISTS { MATCH ()-[:MENTIONS_ENTITY]->(e) } "
                 "AND NOT EXISTS { MATCH ()-[:DECISION_MENTIONS_ENTITY]->(e) } "
                 "DETACH DELETE e"
@@ -261,7 +237,7 @@ def board_delete_cascade(board_id: str) -> dict:
             pass
 
     finally:
-        del gconn, gdb
+        pass
 
     logger.info(
         "global.cascade board=%s digests=%d",
@@ -289,17 +265,16 @@ def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
     counts = {"topics_removed": 0, "entities_removed": 0, "dry_run": dry_run}
 
     global_runtime = get_kg_registry().require_global_discovery_runtime()
-    gdb, gconn = global_runtime.open_connection()
     try:
         # Count orphan topics
-        r = gconn.execute(
+        r = global_runtime.execute(
             "MATCH (t:Topic) WHERE NOT EXISTS { MATCH ()-[:HAS_TOPIC]->(t) } "
             "RETURN count(t)"
         )
         orphan_topics = r.get_next()[0] if r.has_next() else 0
         counts["topics_removed"] = orphan_topics
 
-        r = gconn.execute(
+        r = global_runtime.execute(
             "MATCH (e:Entity) WHERE NOT EXISTS { MATCH ()-[:MENTIONS_ENTITY]->(e) } "
             "AND NOT EXISTS { MATCH ()-[:DECISION_MENTIONS_ENTITY]->(e) } "
             "RETURN count(e)"
@@ -308,19 +283,17 @@ def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
         counts["entities_removed"] = orphan_entities
 
         if not dry_run:
-            gconn.execute(
+            global_runtime.execute(
                 "MATCH (t:Topic) WHERE NOT EXISTS { MATCH ()-[:HAS_TOPIC]->(t) } "
                 "DETACH DELETE t"
             )
-            gconn.execute(
+            global_runtime.execute(
                 "MATCH (e:Entity) WHERE NOT EXISTS { MATCH ()-[:MENTIONS_ENTITY]->(e) } "
                 "AND NOT EXISTS { MATCH ()-[:DECISION_MENTIONS_ENTITY]->(e) } "
                 "DETACH DELETE e"
             )
     except Exception as exc:
         logger.error("gc_orphans.error err=%s", exc)
-    finally:
-        del gconn, gdb
 
     logger.info(
         "global.gc dry_run=%s topics=%d entities=%d",
@@ -353,19 +326,19 @@ def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
     from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
     global_runtime = get_kg_registry().require_global_discovery_runtime()
-    path = global_runtime.global_graph_path()
-
-    purge_response: list[str] = []
+    purge_response = None
     rebuild_token = f"rebuild-{uuid.uuid4().hex[:12]}"
 
     with under_global_safe_write(rebuild_token, "rebuild_from_scratch"):
-        if path.exists() or any(
-            path.parent.glob(path.name + ".*")
-        ):
+        if global_runtime.state().exists:
             purge_response = global_runtime.purge(reason="rebuild_from_scratch")
         global_runtime.bootstrap()
 
     return {
         "status": "rebuilt",
-        "quarantined_paths": purge_response,
+        "quarantined_storage_refs": (
+            ["global-discovery"]
+            if purge_response is not None and purge_response.removed
+            else []
+        ),
     }

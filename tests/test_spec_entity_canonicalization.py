@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecCreate, SpecUpdate
 from okto_pulse.core.services.main import SpecService
 from okto_pulse.core.services.spec_entity_canonicalization import (
@@ -27,7 +27,7 @@ from okto_pulse.core.services.analytics_service import (
     resolve_linked_requirements_to_ids,
     resolve_linked_fr_indices,
 )
-from okto_pulse.core.commands.materialize_legacy_fr_ac import (
+from sqlalchemy_spec_materialization_store import (
     materialize_legacy_fr_ac_board,
 )
 

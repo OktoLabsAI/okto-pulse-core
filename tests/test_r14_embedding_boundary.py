@@ -11,11 +11,11 @@ import okto_pulse.core.kg.embedding as runtime_embedding
 from okto_pulse.core.composition import RuntimeProviderMissing
 from okto_pulse.core.kg.interfaces.registry import (
     KGProviderRegistry,
-    _build_defaults,
     configure_kg_registry,
     get_kg_registry,
     reset_registry_for_tests,
 )
+from okto_pulse.core.kg.providers.testing.registry import build_testing_kg_registry
 from okto_pulse.core.kg.providers.testing.embedding import (
     TestingStubEmbeddingProvider,
 )
@@ -54,8 +54,7 @@ def _required_composed_registry_without_read_time_slots() -> KGProviderRegistry:
         graph_transaction=sentinel,
         graph_schema_manager=sentinel,
         graph_lifecycle=sentinel,
-        graph_path_resolver=sentinel,
-        safe_write_step_adapter=sentinel,
+        graph_runtime_store=sentinel,
         global_discovery_runtime=sentinel,
         board_source_reader=sentinel,
     )
@@ -78,7 +77,7 @@ def test_core_runtime_embedding_module_exports_port_only() -> None:
 
 
 def test_build_defaults_uses_sanctioned_testing_provider_namespace() -> None:
-    reg = _build_defaults()
+    reg = build_testing_kg_registry()
     provider = reg.embedding_provider
 
     assert isinstance(provider, TestingStubEmbeddingProvider)

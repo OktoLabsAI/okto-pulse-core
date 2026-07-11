@@ -1,5 +1,7 @@
 """Service layer for business logic."""
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import secrets
@@ -8,13 +10,24 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from sqlalchemy import and_, delete, func, or_, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-from sqlalchemy.orm.attributes import flag_modified
-
 from okto_pulse.core.application.scope import QueryScope
+from okto_pulse.core.application.artifact_propagation import (
+    _propagated_kb_description,
+    propagate_artifacts,
+)
 from okto_pulse.core.domain.amendment_eligibility import evaluate_amendment_eligibility
+from okto_pulse.core.domain.card_transition import (
+    CARD_STATUS_ORDER,
+    CardTransitionFacts,
+    PendingScenario,
+    archived_card_block,
+    bug_regression_evidence_block,
+    bug_regression_gate_applies,
+    spec_maturity_block,
+    sprint_assignment_block,
+    test_completion_block,
+    validation_gate_block,
+)
 from okto_pulse.core.domain.enums import (
     CardStatus,
     CardType,
@@ -28,42 +41,14 @@ from okto_pulse.core.domain.enums import (
 )
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.storage import get_storage_provider
-from okto_pulse.core.models.db import (
-    ActivityLog,
-    Agent,
-    AgentBoard,
-    AgentSeenItem,
-    AmendmentHotfixRevision,
-    Attachment,
-    Board,
-    BoardGuideline,
-    BoardShare,
-    Card,
-    CardDependency,
-    Comment,
-    Guideline,
-    Ideation,
-    IdeationHistory,
-    IdeationKnowledgeBase,
-    IdeationQAItem,
-    PermissionPreset,
-    QAItem,
-    Refinement,
-    RefinementHistory,
-    RefinementKnowledgeBase,
-    RefinementQAItem,
-    RefinementSnapshot,
-    Spec,
-    SpecHistory,
-    SpecKnowledgeBase,
-    SpecQAItem,
-    Sprint,
-    SprintHistory,
-    SprintQAItem,
-    Story,
-    StoryIdeationLink,
-    Topic,
+from okto_pulse.core.ports.application_persistence import (
+    ApplicationFilter,
+    ApplicationOperator,
+    ApplicationQuery,
+    ApplicationRecord,
+    get_application_persistence_port,
 )
+
 from okto_pulse.core.models.schemas import (
     AgentCreate,
     AgentUpdate,
@@ -170,7 +155,110 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
     validate_test_scenario_evidence,
 )
 
+# Preserve the service API's aggregate names without coupling annotations to
+# Community persistence models.
+AmendmentHotfixRevision = ApplicationRecord
+Board = ApplicationRecord
+BoardGuideline = ApplicationRecord
+Card = ApplicationRecord
+Guideline = ApplicationRecord
+Ideation = ApplicationRecord
+IdeationHistory = ApplicationRecord
+IdeationQAItem = ApplicationRecord
+Refinement = ApplicationRecord
+RefinementHistory = ApplicationRecord
+RefinementKnowledgeBase = ApplicationRecord
+RefinementQAItem = ApplicationRecord
+RefinementSnapshot = ApplicationRecord
+Spec = ApplicationRecord
+Sprint = ApplicationRecord
+SprintHistory = ApplicationRecord
+SprintQAItem = ApplicationRecord
+
 settings = get_settings()
+
+
+def _apf(
+    field: str,
+    operator: ApplicationOperator,
+    value: Any = None,
+) -> ApplicationFilter:
+    return ApplicationFilter(field, operator, value)
+
+
+def _new_application_record(entity: str, **values: Any) -> ApplicationRecord:
+    return ApplicationRecord(entity=entity, values=values)
+
+
+async def _application_list(
+    context: Any,
+    entity: str,
+    *,
+    filters: tuple[ApplicationFilter, ...] = (),
+    any_filters: tuple[ApplicationFilter, ...] = (),
+    any_groups: tuple[tuple[ApplicationFilter, ...], ...] = (),
+    order_by: tuple[tuple[str, bool], ...] = (),
+    offset: int = 0,
+    limit: int | None = None,
+    includes: tuple[str, ...] = (),
+) -> list[ApplicationRecord]:
+    rows = await get_application_persistence_port().list(
+        context,
+        ApplicationQuery(
+            entity=entity,
+            filters=filters,
+            any_filters=any_filters,
+            any_groups=any_groups,
+            order_by=order_by,
+            offset=offset,
+            limit=limit,
+            includes=includes,
+        ),
+    )
+    return list(rows)
+
+
+async def _application_run(
+    context: Any, query: ApplicationQuery
+) -> list[ApplicationRecord]:
+    return list(await get_application_persistence_port().list(context, query))
+
+
+async def _application_get(
+    context: Any,
+    entity: str,
+    record_id: str,
+    *,
+    includes: tuple[str, ...] = (),
+) -> ApplicationRecord | None:
+    return await get_application_persistence_port().get(
+        context,
+        entity=entity,
+        record_id=record_id,
+        includes=includes,
+    )
+
+
+async def _application_add(context: Any, record: ApplicationRecord) -> ApplicationRecord:
+    return await get_application_persistence_port().add(context, record)
+
+
+async def _application_delete(context: Any, record: ApplicationRecord) -> None:
+    await get_application_persistence_port().delete(context, record)
+
+
+async def _application_flush(context: Any) -> None:
+    await get_application_persistence_port().flush(context)
+
+
+async def _application_refresh(
+    context: Any, record: ApplicationRecord
+) -> ApplicationRecord:
+    return await get_application_persistence_port().refresh(context, record)
+
+
+async def _application_commit(context: Any) -> None:
+    await get_application_persistence_port().commit(context)
 
 
 def _scope_actor_id(user_id: str | None, query_scope: QueryScope | None = None) -> str | None:
@@ -187,7 +275,7 @@ def _scope_realm_id(
 
 
 def _board_owner_matches(
-    board: Board | None,
+    board: ApplicationRecord | None,
     user_id: str | None,
     query_scope: QueryScope | None = None,
 ) -> bool:
@@ -202,7 +290,7 @@ def _board_scope_clauses(
     realm_id: str | None = None,
     query_scope: QueryScope | None = None,
     require_ownership: bool = True,
-) -> list[Any] | None:
+) -> list[ApplicationFilter] | None:
     if query_scope is not None:
         if query_scope.target_board_id and board_id and query_scope.target_board_id != board_id:
             return None
@@ -214,23 +302,23 @@ def _board_scope_clauses(
         elif not require_ownership and not query_scope.allow_all_boards:
             return None
 
-    clauses: list[Any] = []
+    clauses: list[ApplicationFilter] = []
     if board_id:
-        clauses.append(Board.id == board_id)
+        clauses.append(_apf("id", "eq", board_id))
 
     scoped_realm_id = _scope_realm_id(realm_id, query_scope)
     if scoped_realm_id:
-        clauses.append(Board.realm_id == scoped_realm_id)
+        clauses.append(_apf("realm_id", "eq", scoped_realm_id))
 
     if query_scope is not None and query_scope.allowed_board_ids is not None:
         allowed_board_ids = tuple(query_scope.allowed_board_ids)
         if not allowed_board_ids:
             return None
-        clauses.append(Board.id.in_(allowed_board_ids))
+        clauses.append(_apf("id", "in", allowed_board_ids))
 
     scoped_actor_id = _scope_actor_id(user_id, query_scope)
     if require_ownership and scoped_actor_id:
-        clauses.append(Board.owner_id == scoped_actor_id)
+        clauses.append(_apf("owner_id", "eq", scoped_actor_id))
 
     return clauses
 
@@ -252,7 +340,7 @@ def _board_scope_select(
     )
     if clauses is None:
         return None
-    return select(Board).where(*clauses)
+    return ApplicationQuery(entity="board", filters=tuple(clauses), limit=1)
 
 CARD_RESOURCE_READ_ONLY_MESSAGE = (
     "Card resources are read-only governed snapshots. Copy Knowledge Base, "
@@ -294,7 +382,7 @@ def _build_default_cognitive_closeout_gate() -> Any:
     return build_default_cognitive_closeout_gate()
 
 
-def _board_skip_cognitive_consolidation(board: Board | None) -> bool:
+def _board_skip_cognitive_consolidation(board: ApplicationRecord | None) -> bool:
     settings = (board.settings or {}) if board else {}
     return bool(settings.get("skip_cognitive_consolidation", False))
 
@@ -304,7 +392,7 @@ COGNITIVE_READINESS_POLICY_ADVISORY = "advisory"
 COGNITIVE_READINESS_POLICY_BLOCKING = "blocking"
 
 
-def _board_cognitive_readiness_policy(board: Board | None) -> str:
+def _board_cognitive_readiness_policy(board: ApplicationRecord | None) -> str:
     """Per-board cognitive readiness policy (fr_9d42c5e2). Default ``advisory``
     so existing boards never begin blocking on rollout."""
     settings = (board.settings or {}) if board else {}
@@ -319,7 +407,7 @@ def _board_cognitive_readiness_policy(board: Board | None) -> str:
     return value
 
 
-def _cognitive_readiness_blocking_active(board: Board | None) -> bool:
+def _cognitive_readiness_blocking_active(board: ApplicationRecord | None) -> bool:
     """True only when BOTH the global feature flag is enabled AND the board
     policy is ``blocking`` — the two-key safe rollout (dec_41db6a36, formalised as
     the auditable RKG-06 policy decision dec_98c9a850: advisory default, blocking
@@ -343,7 +431,7 @@ async def cognitive_enforcement_active(db, board_id: str) -> bool:
     spec R01A MCP-FU3 so the cognitive use cases can resolve enforcement without a
     relational session in their public surface. Never recomputed — delegates to
     :func:`_cognitive_readiness_blocking_active`."""
-    board = await db.get(Board, board_id)
+    board = await _application_get(db, "board", board_id)
     return _cognitive_readiness_blocking_active(board)
 
 
@@ -359,10 +447,13 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
         map_legacy_permissions,
         resolve_permissions,
     )
-    from okto_pulse.core.models.db import AgentBoard
-
-    result = await db.execute(select(Agent).where(Agent.created_by == user_id).limit(1))
-    agent = result.scalar_one_or_none()
+    agents = await _application_list(
+        db,
+        "agent",
+        filters=(_apf("created_by", "eq", user_id),),
+        limit=1,
+    )
+    agent = agents[0] if agents else None
 
     agent_flags: dict | None = None
     preset_flags: dict | None = None
@@ -375,26 +466,32 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
             agent_flags = map_legacy_permissions(agent.permissions)
 
         if agent.preset_id:
-            preset = await db.get(PermissionPreset, agent.preset_id)
+            preset = await _application_get(
+                db,
+                "permission_preset",
+                agent.preset_id,
+            )
             if preset and preset.flags:
                 preset_flags = preset.flags
 
         if board_id:
-            agent_board = (
-                await db.execute(
-                    select(AgentBoard).where(
-                        AgentBoard.agent_id == agent.id,
-                        AgentBoard.board_id == board_id,
-                    )
-                )
-            ).scalar_one_or_none()
+            agent_boards = await _application_list(
+                db,
+                "agent_board",
+                filters=(
+                    _apf("agent_id", "eq", agent.id),
+                    _apf("board_id", "eq", board_id),
+                ),
+                limit=1,
+            )
+            agent_board = agent_boards[0] if agent_boards else None
             if agent_board and isinstance(agent_board.permission_overrides, dict):
                 board_overrides = agent_board.permission_overrides
 
     return resolve_permissions(agent_flags, preset_flags, board_overrides)
 
 
-def _board_qa_require_role_separation(board: Board | None) -> bool:
+def _board_qa_require_role_separation(board: ApplicationRecord | None) -> bool:
     """Return True if the board requires that Q&A answers come from a different
     principal than the one who asked the question (qa_require_role_separation)."""
     settings = (board.settings or {}) if board else {}
@@ -402,9 +499,9 @@ def _board_qa_require_role_separation(board: Board | None) -> bool:
 
 
 async def _attach_open_qa_counts(
-    db: AsyncSession,
+    db: Any,
     rows: list[Any],
-    qa_model: Any,
+    qa_entity: str,
     fk_name: str,
 ) -> None:
     """Attach an ``open_qa_count`` attribute to each ORM row for summary projection.
@@ -418,76 +515,93 @@ async def _attach_open_qa_counts(
     if not rows:
         return
     ids = [r.id for r in rows]
-    fk_col = getattr(qa_model, fk_name)
-    result = await db.execute(
-        select(fk_col, func.count())
-        .where(fk_col.in_(ids), qa_model.answered_at.is_(None))
-        .group_by(fk_col)
+    qa_rows = await _application_list(
+        db,
+        qa_entity,
+        filters=(
+            _apf(fk_name, "in", ids),
+            _apf("answered_at", "is_none"),
+        ),
     )
-    counts = dict(result.all())
+    counts: dict[str, int] = {}
+    for qa in qa_rows:
+        parent_id = getattr(qa, fk_name)
+        counts[parent_id] = counts.get(parent_id, 0) + 1
     for r in rows:
-        r.open_qa_count = counts.get(r.id, 0)
+        r.attach("open_qa_count", counts.get(r.id, 0))
 
 
-async def _attach_active_refinement_counts(db: AsyncSession, rows: list[Ideation]) -> None:
+async def _attach_active_refinement_counts(
+    db: Any, rows: list[ApplicationRecord]
+) -> None:
     """Attach active child-refinement counts for ideation summary projection."""
     if not rows:
         return
     ids = [r.id for r in rows]
-    result = await db.execute(
-        select(Refinement.ideation_id, func.count())
-        .where(
-            Refinement.ideation_id.in_(ids),
-            Refinement.archived.is_(False),
-            Refinement.status != RefinementStatus.CANCELLED,
-        )
-        .group_by(Refinement.ideation_id)
+    children = await _application_list(
+        db,
+        "refinement",
+        filters=(
+            _apf("ideation_id", "in", ids),
+            _apf("archived", "is_false"),
+            _apf("status", "ne", RefinementStatus.CANCELLED),
+        ),
     )
-    counts = dict(result.all())
+    counts: dict[str, int] = {}
+    for child in children:
+        counts[child.ideation_id] = counts.get(child.ideation_id, 0) + 1
     for r in rows:
-        r.active_refinement_count = counts.get(r.id, 0)
+        r.attach("active_refinement_count", counts.get(r.id, 0))
 
 
-async def _attach_active_spec_counts(db: AsyncSession, rows: list[Refinement]) -> None:
+async def _attach_active_spec_counts(
+    db: Any, rows: list[ApplicationRecord]
+) -> None:
     """Attach active child-spec counts for refinement summary projection."""
     if not rows:
         return
     ids = [r.id for r in rows]
-    result = await db.execute(
-        select(Spec.refinement_id, func.count())
-        .where(
-            Spec.refinement_id.in_(ids),
-            Spec.archived.is_(False),
-            Spec.status != SpecStatus.CANCELLED,
-        )
-        .group_by(Spec.refinement_id)
+    children = await _application_list(
+        db,
+        "spec",
+        filters=(
+            _apf("refinement_id", "in", ids),
+            _apf("archived", "is_false"),
+            _apf("status", "ne", SpecStatus.CANCELLED),
+        ),
     )
-    counts = dict(result.all())
+    counts: dict[str, int] = {}
+    for child in children:
+        counts[child.refinement_id] = counts.get(child.refinement_id, 0) + 1
     for r in rows:
-        r.active_spec_count = counts.get(r.id, 0)
+        r.attach("active_spec_count", counts.get(r.id, 0))
 
 
-async def _attach_active_direct_spec_counts(db: AsyncSession, rows: list[Ideation]) -> None:
+async def _attach_active_direct_spec_counts(
+    db: Any, rows: list[ApplicationRecord]
+) -> None:
     """Attach active direct-spec counts for small ideation derivation badges."""
     if not rows:
         return
     ids = [r.id for r in rows]
-    result = await db.execute(
-        select(Spec.ideation_id, func.count())
-        .where(
-            Spec.ideation_id.in_(ids),
-            Spec.refinement_id.is_(None),
-            Spec.archived.is_(False),
-            Spec.status != SpecStatus.CANCELLED,
-        )
-        .group_by(Spec.ideation_id)
+    children = await _application_list(
+        db,
+        "spec",
+        filters=(
+            _apf("ideation_id", "in", ids),
+            _apf("refinement_id", "is_none"),
+            _apf("archived", "is_false"),
+            _apf("status", "ne", SpecStatus.CANCELLED),
+        ),
     )
-    counts = dict(result.all())
+    counts: dict[str, int] = {}
+    for child in children:
+        counts[child.ideation_id] = counts.get(child.ideation_id, 0) + 1
     for r in rows:
-        r.active_spec_count = counts.get(r.id, 0)
+        r.attach("active_spec_count", counts.get(r.id, 0))
 
 
-async def backfill_qa_answered_at(db: AsyncSession) -> dict[str, int]:
+async def backfill_qa_answered_at(db: Any) -> dict[str, int]:
     """One-shot self-heal: carimba ``answered_at`` em Q&A respondidas órfãs.
 
     A herança de Q&A (``propagate_artifacts``) copiava resposta/seleção sem
@@ -499,41 +613,13 @@ async def backfill_qa_answered_at(db: AsyncSession) -> dict[str, int]:
     ``created_at`` da própria linha como melhor aproximação histórica.
     Retorna {tabela: linhas_corrigidas} para o log estruturado do boot.
     """
-    from sqlalchemy import text as sa_text
-
-    tables = (
-        ("ideation_qa_items", True),
-        ("refinement_qa_items", True),
-        ("spec_qa_items", True),
-        ("sprint_qa_items", True),
-        ("qa_items", False),  # card Q&A: text-only, sem coluna selected
-    )
-    fixed: dict[str, int] = {}
-    for table, has_selected in tables:
-        answered_predicate = "(answer IS NOT NULL AND answer != '')"
-        if has_selected:
-            answered_predicate = (
-                f"({answered_predicate} OR (selected IS NOT NULL "
-                "AND CAST(selected AS TEXT) NOT IN ('', '[]', 'null')))"
-            )
-        result = await db.execute(
-            sa_text(
-                f"UPDATE {table} "
-                "SET answered_at = COALESCE(created_at, CURRENT_TIMESTAMP) "
-                f"WHERE answered_at IS NULL AND {answered_predicate}"
-            )
-        )
-        count = result.rowcount if result.rowcount and result.rowcount > 0 else 0
-        if count:
-            fixed[table] = count
-    await db.commit()
-    return fixed
+    return await get_application_persistence_port().backfill_qa_answered_at(db)
 
 
 async def _authorize_qa_answer_or_raise(
-    db: AsyncSession,
+    db: Any,
     *,
-    board: Board | None,
+    board: ApplicationRecord | None,
     qa: Any,
     user_id: str,
     entity_type: str,
@@ -559,8 +645,10 @@ async def _authorize_qa_answer_or_raise(
                 question_id=question_id,
                 surface=surface,
             )
-            db.add(
-                ActivityLog(
+            await _application_add(
+                db,
+                _new_application_record(
+                    "activity_log",
                     board_id=board.id,
                     card_id=card_id,
                     action=QA_SELF_ANSWER_DENIED_ACTION,
@@ -571,12 +659,12 @@ async def _authorize_qa_answer_or_raise(
                 )
             )
             emit_governance_metric(details, raise_on_violation=False)
-            await db.flush()
+            await _application_flush(db)
         raise
 
 
 async def _record_critical_context_decision(
-    db: AsyncSession,
+    db: Any,
     *,
     decision: CriticalContextDecision,
     actor_name: str | None = None,
@@ -586,8 +674,10 @@ async def _record_critical_context_decision(
     resolved_name = actor_name or await resolve_actor_name(
         db, decision.actor_id, decision.board_id
     )
-    db.add(
-        ActivityLog(
+    await _application_add(
+        db,
+        _new_application_record(
+            "activity_log",
             board_id=decision.board_id,
             card_id=card_id if decision.entity_type != "card" else decision.entity_id,
             action=CRITICAL_CONTEXT_DECISION_ACTION,
@@ -611,11 +701,11 @@ async def _record_critical_context_decision(
             decision.resolution_failure_metric_labels(),
             raise_on_violation=False,
         )
-    await db.flush()
+    await _application_flush(db)
 
 
 async def _authorize_critical_context_or_raise(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     actor_id: str,
@@ -806,7 +896,7 @@ def _build_default_cognitive_readiness_service() -> Any:
 async def _evaluate_cognitive_readiness_or_raise(
     *,
     service_factory: Callable[[], Any],
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     entity_type: str,
     entity_id: str,
@@ -901,10 +991,10 @@ async def _evaluate_cognitive_readiness_or_raise(
 
 
 async def _resolve_closeout_graph_state(
-    board_id: str, db: AsyncSession
+    board_id: str, db: Any
 ) -> str | None:
     """Resolve the board's current ``graph_state`` for the cognitive closeout
-    gate (F16). Runs in the ASYNC caller where an ``AsyncSession`` is in scope
+    gate (F16). Runs in the ASYNC caller where an ``Any`` is in scope
     and threads the result into the SYNC ``gate.evaluate(...)`` so the gate stays
     pure (no I/O).
 
@@ -970,14 +1060,14 @@ def spec_is_content_locked(spec: "Spec | None") -> bool:
     return bool(current and current.get("outcome") == "success")
 
 
-async def _require_spec_unlocked(db: AsyncSession, spec_id: str) -> None:
+async def _require_spec_unlocked(db: Any, spec_id: str) -> None:
     """Raise SpecLockedError if spec has an active passed validation.
 
     Called at the top of every content-edit method on SpecService to enforce
     the Spec Validation Gate content lock. Skips silently when spec doesn't
     exist (caller handles that) or when no validation is active.
     """
-    spec = await db.get(Spec, spec_id)
+    spec = await _application_get(db, "spec", spec_id)
     if spec_is_content_locked(spec):
         raise SpecLockedError(
             spec_id=spec_id,
@@ -1017,7 +1107,7 @@ def _amendment_regression_test_task_ids(amendment_rows: list) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _filter_mockups(
+def _legacy_filter_mockups(
     mockups: list[dict] | None,
     mockup_ids: list[str] | None,
 ) -> list[dict]:
@@ -1077,7 +1167,7 @@ def _compile_qa_context(qa_items: list) -> str | None:
 _PROPAGATED_KB_PREFIX = "[propagated from parent]"
 
 
-def _propagated_kb_description(description: str | None) -> str:
+def _legacy_propagated_kb_description(description: str | None) -> str:
     """R6-IMP1 (FR1/AC1) — apply the propagation marker AT MOST ONCE.
 
     In a multi-hop chain (ideation -> refinement -> spec -> card) the source KB
@@ -1093,13 +1183,13 @@ def _propagated_kb_description(description: str | None) -> str:
     return f"{_PROPAGATED_KB_PREFIX} {body}".strip()
 
 
-async def propagate_artifacts(
-    db: AsyncSession,
+async def _legacy_propagate_artifacts(
+    db: Any,
     source_mockups: list[dict] | None,
     source_qa_items: list | None,
     source_knowledge_bases: list | None,
     target_entity: Any,
-    target_kb_class: type | None,
+    target_kb_entity: str | None,
     user_id: str,
     mockup_ids: list[str] | None = None,
     kb_ids: list[str] | None = None,
@@ -1116,7 +1206,7 @@ async def propagate_artifacts(
     - Existing artifacts on target are preserved (additive, not replacement).
     """
     # Propagate mockups
-    copied_mockups = _filter_mockups(source_mockups, mockup_ids)
+    copied_mockups = _legacy_filter_mockups(source_mockups, mockup_ids)
     if copied_mockups:
         existing = list(target_entity.screen_mockups or [])
         new_set = existing + copied_mockups
@@ -1127,22 +1217,28 @@ async def propagate_artifacts(
         from okto_pulse.core.services.design_system import gate_entity_screen_mockups
         target_entity.screen_mockups = existing  # keep baseline for the gate's delta
         await gate_entity_screen_mockups(
-            db, target_entity, new_set, entity_type=type(target_entity).__name__.lower()
+            db,
+            target_entity,
+            new_set,
+            entity_type=getattr(
+                target_entity,
+                "entity",
+                type(target_entity).__name__.lower(),
+            ),
         )
         target_entity.screen_mockups = new_set
 
     # Propagate knowledge bases (DB rows) — accepts ORM objects or dicts
-    if target_kb_class and source_knowledge_bases:
+    if target_kb_entity and source_knowledge_bases:
         kbs = source_knowledge_bases if kb_ids is None else [
             kb for kb in source_knowledge_bases
             if (kb.get("id") if isinstance(kb, dict) else getattr(kb, "id", None)) in kb_ids
         ]
-        # Determine FK field name from target_kb_class table
-        target_id_field = None
-        for col in ["spec_id", "refinement_id", "ideation_id"]:
-            if hasattr(target_kb_class, col):
-                target_id_field = col
-                break
+        target_id_field = {
+            "spec_knowledge_base": "spec_id",
+            "refinement_knowledge_base": "refinement_id",
+            "ideation_knowledge_base": "ideation_id",
+        }.get(target_kb_entity)
         if target_id_field:
             for kb in kbs:
                 _get = (lambda k: kb.get(k)) if isinstance(kb, dict) else (lambda k: getattr(kb, k, None))
@@ -1150,7 +1246,7 @@ async def propagate_artifacts(
                     target_id_field: target_entity.id,
                     "title": _get("title"),
                     # R6-IMP1: idempotent prefix — never stack across multi-hop chains.
-                    "description": _propagated_kb_description(_get("description")),
+                    "description": _legacy_propagated_kb_description(_get("description")),
                     "content": _get("content"),
                     "mime_type": _get("mime_type") or "text/markdown",
                     "created_by": user_id,
@@ -1171,28 +1267,30 @@ async def propagate_artifacts(
                     "root_source_kb_id": parent_root or parent_kb_id,
                 }
                 for attr, value in source_values.items():
-                    if value is not None and hasattr(target_kb_class, attr):
+                    if value is not None:
                         kb_payload[attr] = value
-                new_kb = target_kb_class(
-                    **kb_payload,
+                await _application_add(
+                    db,
+                    _new_application_record(
+                        target_kb_entity,
+                        **kb_payload,
+                    ),
                 )
-                db.add(new_kb)
-            await db.flush()
+            await _application_flush(db)
 
     # Propagate Q&A items as proper QA rows on the target entity
     if source_qa_items:
-        from okto_pulse.core.models.db import SpecQAItem, RefinementQAItem
-        # Determine target QA class based on entity type
-        target_qa_class = None
+        # Determine target QA entity based on the target aggregate.
+        target_qa_entity = None
         target_fk_field = None
-        if hasattr(target_entity, "spec_id") or target_entity.__tablename__ == "specs":
-            target_qa_class = SpecQAItem
+        if target_entity.entity == "spec":
+            target_qa_entity = "spec_qa_item"
             target_fk_field = "spec_id"
-        elif hasattr(target_entity, "refinement_id") or (hasattr(target_entity, "__tablename__") and target_entity.__tablename__ == "refinements"):
-            target_qa_class = RefinementQAItem
+        elif target_entity.entity == "refinement":
+            target_qa_entity = "refinement_qa_item"
             target_fk_field = "refinement_id"
 
-        if target_qa_class and target_fk_field:
+        if target_qa_entity and target_fk_field:
             for qa in source_qa_items:
                 _get = (lambda k: qa.get(k)) if isinstance(qa, dict) else (lambda k: getattr(qa, k, None))
                 # Only copy ANSWERED Q&A items. Choice questions (choice/
@@ -1234,23 +1332,25 @@ async def propagate_artifacts(
                 # (ordenacão/histórico); ausente, o default do modelo cobre.
                 if _get("created_at") is not None:
                     qa_payload["created_at"] = _get("created_at")
-                new_qa = target_qa_class(**qa_payload)
-                db.add(new_qa)
-            await db.flush()
+                await _application_add(
+                    db,
+                    _new_application_record(target_qa_entity, **qa_payload),
+                )
+            await _application_flush(db)
 
 
 async def resolve_actor_name(
-    db: AsyncSession,
+    db: Any,
     user_id: str,
     board_id: str,
     *,
     query_scope: QueryScope | None = None,
 ) -> str:
     """Resolve a user/agent ID to a friendly display name."""
-    agent = await db.get(Agent, user_id)
+    agent = await _application_get(db, "agent", user_id)
     if agent:
         return agent.name
-    board = await db.get(Board, board_id)
+    board = await _application_get(db, "board", board_id)
     if _board_owner_matches(board, user_id, query_scope):
         return "Owner"
     if user_id == "dev-user":
@@ -1269,7 +1369,7 @@ async def log_card_collaboration_activity(
     details: dict[str, Any] | None = None,
 ) -> None:
     """Log card collaboration activity from a transport-neutral caller."""
-    card = await db.get(Card, card_id)
+    card = await _application_get(db, "card", card_id)
     if not card:
         return
     resolved_name = actor_name or await resolve_actor_name(db, actor_id, card.board_id)
@@ -1286,7 +1386,7 @@ async def log_card_collaboration_activity(
 
 async def card_belongs_to_board(db: Any, board_id: str, card_id: str) -> bool:
     """Return whether a card exists on the given board."""
-    card = await db.get(Card, card_id)
+    card = await _application_get(db, "card", card_id)
     return bool(card and card.board_id == board_id)
 
 
@@ -1311,13 +1411,13 @@ async def update_resource_gate_board_settings(
         require_spec_resource_task_coverage
     )
     board.settings = settings
-    flag_modified(board, "settings")
+    board.mark_dirty("settings")
     return settings
 
 
 async def comment_card_id(db: Any, comment_id: str) -> str | None:
     """Return a comment's card id, if the comment exists."""
-    comment = await db.get(Comment, comment_id)
+    comment = await _application_get(db, "comment", comment_id)
     return comment.card_id if comment else None
 
 
@@ -1325,21 +1425,22 @@ async def resolve_choice_comment_actor_name(
     db: Any, comment_id: str, actor_id: str
 ) -> str | None:
     """Resolve the display name for a choice-comment response actor."""
-    comment = await db.get(Comment, comment_id)
+    comment = await _application_get(db, "comment", comment_id)
     if not comment:
         return None
-    board_id = comment.card.board_id if comment.card else ""
+    card = await _application_get(db, "card", comment.card_id)
+    board_id = card.board_id if card else ""
     return await resolve_actor_name(db, actor_id, board_id)
 
 
 async def qa_card_id(db: Any, qa_id: str) -> str | None:
     """Return a card Q&A item's card id, if the item exists."""
-    qa = await db.get(QAItem, qa_id)
+    qa = await _application_get(db, "qa_item", qa_id)
     return qa.card_id if qa else None
 
 
 async def compute_card_activity(
-    db: AsyncSession, card_id: str, *, limit: int = 50
+    db: Any, card_id: str, *, limit: int = 50
 ) -> list[Any]:
     """Activity log for a single card, newest first (transport-free reader).
 
@@ -1358,13 +1459,13 @@ async def compute_card_activity(
         sanitize_activity_details,
     )
 
-    query = (
-        select(ActivityLog)
-        .where(ActivityLog.card_id == card_id)
-        .order_by(ActivityLog.created_at.desc())
-        .limit(limit)
+    logs = await _application_list(
+        db,
+        "activity_log",
+        filters=(_apf("card_id", "eq", card_id),),
+        order_by=(("created_at", True),),
+        limit=limit,
     )
-    result = await db.execute(query)
     return [
         ActivityLogResponse(
             id=log.id,
@@ -1379,11 +1480,11 @@ async def compute_card_activity(
             details=sanitize_activity_details(log.details),
             created_at=log.created_at,
         )
-        for log in result.scalars().all()
+        for log in logs
     ]
 
 
-async def compute_card_seen_status(db: AsyncSession, card_id: str) -> dict:
+async def compute_card_seen_status(db: Any, card_id: str) -> dict:
     """Per-item seen status (comments + QA) for a card, grouped by item id
     (transport-free reader).
 
@@ -1393,36 +1494,46 @@ async def compute_card_seen_status(db: AsyncSession, card_id: str) -> dict:
     ``seen_at`` and groups into ``{item_id: [{agent_id, agent_name, seen_at}]}``.
     Returns ``{"items": {}}`` when the card has no comment/QA items.
     """
-    from okto_pulse.core.models.db import AgentSeenItem
-
-    # Collect item IDs from this card
-    comment_ids_q = select(Comment.id).where(Comment.card_id == card_id)
-    qa_ids_q = select(QAItem.id).where(QAItem.card_id == card_id)
-
-    comment_ids = [r[0] for r in (await db.execute(comment_ids_q)).all()]
-    qa_ids = [r[0] for r in (await db.execute(qa_ids_q)).all()]
+    comments = await _application_list(
+        db,
+        "comment",
+        filters=(_apf("card_id", "eq", card_id),),
+    )
+    qa_items = await _application_list(
+        db,
+        "qa_item",
+        filters=(_apf("card_id", "eq", card_id),),
+    )
+    comment_ids = [item.id for item in comments]
+    qa_ids = [item.id for item in qa_items]
     all_ids = set(comment_ids + qa_ids)
 
     if not all_ids:
         return {"items": {}}
 
     # Get seen records for these items
-    seen_query = (
-        select(AgentSeenItem, Agent.name)
-        .join(Agent, Agent.id == AgentSeenItem.agent_id)
-        .where(AgentSeenItem.item_id.in_(all_ids))
-        .order_by(AgentSeenItem.seen_at)
+    seen_results = await _application_list(
+        db,
+        "agent_seen_item",
+        filters=(_apf("item_id", "in", all_ids),),
+        order_by=(("seen_at", False),),
     )
-    seen_results = (await db.execute(seen_query)).all()
+    agent_ids = {seen.agent_id for seen in seen_results}
+    agents = await _application_list(
+        db,
+        "agent",
+        filters=(_apf("id", "in", agent_ids),),
+    )
+    agent_names = {agent.id: agent.name for agent in agents}
 
     # Group by item_id: {item_id: [{agent_name, seen_at}]}
     items: dict[str, list] = {}
-    for seen, agent_name in seen_results:
+    for seen in seen_results:
         if seen.item_id not in items:
             items[seen.item_id] = []
         items[seen.item_id].append({
             "agent_id": seen.agent_id,
-            "agent_name": agent_name,
+            "agent_name": agent_names.get(seen.agent_id),
             "seen_at": seen.seen_at.isoformat(),
         })
 
@@ -1430,7 +1541,7 @@ async def compute_card_seen_status(db: AsyncSession, card_id: str) -> dict:
 
 
 async def propagate_architecture_designs(
-    db: AsyncSession,
+    db: Any,
     *,
     source_parent_type: str,
     source_parent_id: str,
@@ -1484,10 +1595,12 @@ async def propagate_architecture_designs(
 class BoardService:
     """Service for board operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
-    async def create_board(self, user_id: str, data: BoardCreate, realm_id: str | None = None) -> Board:
+    async def create_board(
+        self, user_id: str, data: BoardCreate, realm_id: str | None = None
+    ) -> ApplicationRecord:
         """Create a new board."""
         from okto_pulse.core.services.default_board_configuration import (
             BOARD_EVENT_APPLIED,
@@ -1504,7 +1617,8 @@ class BoardService:
         effective_settings, snapshot_meta = await _config_service.build_snapshot_for_create(
             settings_override=getattr(data, "settings", None), applied_by=user_id
         )
-        board = Board(
+        board = _new_application_record(
+            "board",
             name=data.name,
             description=data.description,
             owner_id=user_id,
@@ -1512,8 +1626,7 @@ class BoardService:
             settings=effective_settings,
             default_config_snapshot=snapshot_meta,
         )
-        self.db.add(board)
-        await self.db.flush()
+        await _application_add(self.db, board)
         actor_name = await resolve_actor_name(self.db, user_id, board.id)
         await self._log_activity(
             board_id=board.id,
@@ -1578,7 +1691,7 @@ class BoardService:
         user_id: str | None = None,
         *,
         query_scope: QueryScope | None = None,
-    ) -> Board | None:
+    ) -> ApplicationRecord | None:
         """Get a board by ID with all relationships."""
         clauses = _board_scope_clauses(
             board_id=board_id,
@@ -1588,33 +1701,34 @@ class BoardService:
         )
         if clauses is None:
             return None
-        query = (
-            select(Board)
-            .options(selectinload(Board.cards).selectinload(Card.attachments))
-            .options(selectinload(Board.cards).selectinload(Card.qa_items))
-            .options(selectinload(Board.cards).selectinload(Card.comments))
-            .options(selectinload(Board.cards).selectinload(Card.architecture_designs))
-            .where(*clauses)
+        rows = await _application_list(
+            self.db,
+            "board",
+            filters=tuple(clauses),
+            includes=(
+                "cards.attachments",
+                "cards.qa_items",
+                "cards.comments",
+                "cards.architecture_designs",
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        return rows[0] if rows else None
 
     async def list_boards(
         self, user_id: str, offset: int = 0, limit: int = 20, realm_id: str | None = None,
         view: str = "my",
         query_scope: QueryScope | None = None,
-    ) -> tuple[list[Board], int]:
+    ) -> tuple[list[ApplicationRecord], int]:
         """List boards for a user.
 
         view: "my" (owned), "shared" (shared with user), "all" (union)
         """
-        from okto_pulse.core.models.db import BoardShare
-
         scoped_user_id = _scope_actor_id(user_id, query_scope) or user_id
         scoped_realm_id = _scope_realm_id(realm_id, query_scope)
-        filters = []
+        filters: list[ApplicationFilter] = []
         if scoped_realm_id:
-            filters.append(Board.realm_id == scoped_realm_id)
+            filters.append(_apf("realm_id", "eq", scoped_realm_id))
         if query_scope is not None:
             if query_scope.target_board_id is not None:
                 if not query_scope.allows_board_id(query_scope.target_board_id):
@@ -1622,46 +1736,40 @@ class BoardService:
             elif not query_scope.require_ownership and not query_scope.allow_all_boards:
                 return [], 0
             if query_scope.target_board_id:
-                filters.append(Board.id == query_scope.target_board_id)
+                filters.append(_apf("id", "eq", query_scope.target_board_id))
             if query_scope.allowed_board_ids is not None:
                 allowed_board_ids = tuple(query_scope.allowed_board_ids)
                 if not allowed_board_ids:
                     return [], 0
-                filters.append(Board.id.in_(allowed_board_ids))
+                filters.append(_apf("id", "in", allowed_board_ids))
 
+        shared_rows = await _application_list(
+            self.db,
+            "board_share",
+            filters=(_apf("user_id", "eq", scoped_user_id),),
+        )
+        shared_ids = {row.board_id for row in shared_rows}
         if view == "shared":
-            # Boards shared with the user (not owned)
-            base = (
-                select(Board)
-                .join(BoardShare, BoardShare.board_id == Board.id)
-                .where(BoardShare.user_id == scoped_user_id, *filters)
-            )
-            count_base = (
-                select(func.count())
-                .select_from(Board)
-                .join(BoardShare, BoardShare.board_id == Board.id)
-                .where(BoardShare.user_id == scoped_user_id, *filters)
-            )
+            filters.append(_apf("id", "in", shared_ids))
         elif view == "all":
-            # Owned OR shared
-            owned = select(Board.id).where(Board.owner_id == scoped_user_id, *filters)
-            shared = (
-                select(Board.id)
-                .join(BoardShare, BoardShare.board_id == Board.id)
-                .where(BoardShare.user_id == scoped_user_id, *filters)
+            owned_rows = await _application_list(
+                self.db,
+                "board",
+                filters=tuple([*filters, _apf("owner_id", "eq", scoped_user_id)]),
             )
-            combined_ids = owned.union(shared).subquery()
-            base = select(Board).where(Board.id.in_(select(combined_ids.c.id)))
-            count_base = select(func.count()).select_from(Board).where(Board.id.in_(select(combined_ids.c.id)))
+            combined_ids = shared_ids | {row.id for row in owned_rows}
+            filters.append(_apf("id", "in", combined_ids))
         else:
-            # "my" - owned boards only
-            base = select(Board).where(Board.owner_id == scoped_user_id, *filters)
-            count_base = select(func.count()).select_from(Board).where(Board.owner_id == scoped_user_id, *filters)
+            filters.append(_apf("owner_id", "eq", scoped_user_id))
 
-        total = (await self.db.execute(count_base)).scalar() or 0
-        query = base.order_by(Board.updated_at.desc()).offset(offset).limit(limit)
-        result = await self.db.execute(query)
-        boards = list(result.scalars().all())
+        all_boards = await _application_list(
+            self.db,
+            "board",
+            filters=tuple(filters),
+            order_by=(("updated_at", True),),
+        )
+        total = len(all_boards)
+        boards = all_boards[offset : offset + limit]
         return boards, total
 
     async def update_board(
@@ -1671,7 +1779,7 @@ class BoardService:
         data: BoardUpdate,
         *,
         query_scope: QueryScope | None = None,
-    ) -> Board | None:
+    ) -> ApplicationRecord | None:
         """Update a board."""
         board = await self.get_board(board_id, user_id, query_scope=query_scope)
         if not board:
@@ -1688,7 +1796,7 @@ class BoardService:
         for key, value in update_data.items():
             setattr(board, key, value)
             if key == "settings":
-                flag_modified(board, "settings")
+                board.mark_dirty("settings")
 
         settings_changed = "settings" in update_data and update_data.get("settings") is not None
         if settings_changed:
@@ -1702,7 +1810,7 @@ class BoardService:
                 or previous_types != next_types
             )
             if next_auto and resource_automation_changed:
-                await self.db.flush()
+                await _application_flush(self.db)
                 await SpecResourcePropagationService(self.db).propagate_for_board(
                     board_id=board_id,
                     actor_id=user_id,
@@ -1757,7 +1865,7 @@ class BoardService:
         if not board:
             return False
 
-        await self.db.delete(board)
+        await _application_delete(self.db, board)
         return True
 
     async def _log_activity(
@@ -1771,7 +1879,8 @@ class BoardService:
         details: dict[str, Any] | None = None,
     ) -> None:
         """Log an activity."""
-        log = ActivityLog(
+        log = _new_application_record(
+            "activity_log",
             board_id=board_id,
             card_id=card_id,
             action=action,
@@ -1780,7 +1889,7 @@ class BoardService:
             actor_name=actor_name,
             details=details,
         )
-        self.db.add(log)
+        await _application_add(self.db, log)
 
 
 class CardOperationError(ValueError):
@@ -1831,7 +1940,7 @@ class CardOperationError(ValueError):
 class CardService:
     """Service for card operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
         self._cognitive_closeout_gate_factory: Callable[
             [], Any
@@ -1841,7 +1950,7 @@ class CardService:
         ] = _build_default_cognitive_readiness_service
 
     @staticmethod
-    def _max_scenarios_per_card(board: Board | None) -> int:
+    def _max_scenarios_per_card(board: ApplicationRecord | None) -> int:
         board_settings = (getattr(board, "settings", None) or {}) if board else {}
         try:
             value = int(board_settings.get("max_scenarios_per_card", 3))
@@ -1874,8 +1983,8 @@ class CardService:
     async def _validate_test_card_scenario_ids(
         self,
         *,
-        board: Board | None,
-        spec: Spec,
+        board: ApplicationRecord | None,
+        spec: ApplicationRecord,
         scenario_ids: list[str] | None,
     ) -> None:
         """Validate test-card scenario references against spec and board limits."""
@@ -1905,7 +2014,7 @@ class CardService:
         skip_ownership_check: bool = False,
         *,
         query_scope: QueryScope | None = None,
-    ) -> Card | None:
+    ) -> ApplicationRecord | None:
         """Create a new card in a board."""
         board_query = _board_scope_select(
             board_id=board_id,
@@ -1915,8 +2024,8 @@ class CardService:
         )
         if board_query is None:
             return None
-        result = await self.db.execute(board_query)
-        board = result.scalar_one_or_none()
+        board_rows = await _application_run(self.db, board_query)
+        board = board_rows[0] if board_rows else None
         if not board:
             return None
 
@@ -1927,7 +2036,7 @@ class CardService:
                 raise ValueError("origin_task_id is required for bug cards")
 
             # Validate origin task exists
-            origin_task = await self.db.get(Card, data.origin_task_id)
+            origin_task = await _application_get(self.db, "card", data.origin_task_id)
             if not origin_task:
                 raise ValueError("Origin task not found")
 
@@ -1975,7 +2084,7 @@ class CardService:
         # - Normal tasks: spec must be 'approved' or 'in_progress'
         # - Bug cards: also allowed when spec is 'done'
         # - Test cards: also allowed when spec is 'validated'
-        spec = await self.db.get(Spec, data.spec_id)
+        spec = await _application_get(self.db, "spec", data.spec_id)
         if not spec:
             raise ValueError(f"Spec '{data.spec_id}' not found")
 
@@ -2015,13 +2124,18 @@ class CardService:
         )
 
         # Get max position for the status column
-        pos_query = (
-            select(func.max(Card.position))
-            .where(Card.board_id == board_id, Card.status == data.status)
+        status_cards = await _application_list(
+            self.db,
+            "card",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("status", "eq", data.status),
+            ),
         )
-        max_pos = (await self.db.execute(pos_query)).scalar() or -1
+        max_pos = max((item.position for item in status_cards), default=-1)
 
-        card = Card(
+        card = _new_application_record(
+            "card",
             board_id=board_id,
             spec_id=data.spec_id,
             title=data.title,
@@ -2043,8 +2157,7 @@ class CardService:
             steps_to_reproduce=getattr(data, "steps_to_reproduce", None),
             action_plan=getattr(data, "action_plan", None),
         )
-        self.db.add(card)
-        await self.db.flush()
+        await _application_add(self.db, card)
 
         if card_type_val == "bug":
             await self._inherit_bug_origin_traceability(
@@ -2092,16 +2205,16 @@ class CardService:
     async def _inherit_bug_origin_traceability(
         self,
         *,
-        bug_card: Card,
+        bug_card: ApplicationRecord,
         origin_task_id: str | None,
-        spec: Spec | None = None,
+        spec: ApplicationRecord | None = None,
     ) -> None:
         """Attach a new bug to the same spec traceability items as its origin task."""
         if not origin_task_id or not bug_card.spec_id:
             return
 
         if spec is None:
-            spec = await self.db.get(Spec, bug_card.spec_id)
+            spec = await _application_get(self.db, "spec", bug_card.spec_id)
         if spec is None:
             return
 
@@ -2124,7 +2237,7 @@ class CardService:
                     if scenario_id and scenario_id not in inherited_scenario_ids:
                         inherited_scenario_ids.append(scenario_id)
             if changed:
-                flag_modified(spec, field_name)
+                spec.mark_dirty(field_name)
 
         inherit_linked_task_ids("test_scenarios", collect_scenarios=True)
         inherit_linked_task_ids("business_rules")
@@ -2143,20 +2256,21 @@ class CardService:
             ]
             if merged != current_scenarios:
                 bug_card.test_scenario_ids = merged
-                flag_modified(bug_card, "test_scenario_ids")
+                bug_card.mark_dirty("test_scenario_ids")
 
-    async def get_card(self, card_id: str) -> Card | None:
+    async def get_card(self, card_id: str) -> ApplicationRecord | None:
         """Get a card by ID with all relationships."""
-        query = (
-            select(Card)
-            .options(selectinload(Card.attachments))
-            .options(selectinload(Card.qa_items))
-            .options(selectinload(Card.comments))
-            .options(selectinload(Card.architecture_designs))
-            .where(Card.id == card_id)
+        return await _application_get(
+            self.db,
+            "card",
+            card_id,
+            includes=(
+                "attachments",
+                "qa_items",
+                "comments",
+                "architecture_designs",
+            ),
         )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
 
     async def update_card(
         self,
@@ -2165,16 +2279,22 @@ class CardService:
         data: CardUpdate,
         *,
         allow_card_resource_write: bool = False,
-    ) -> Card | None:
+    ) -> ApplicationRecord | None:
         """Update a card."""
         card = await self.get_card(card_id)
         if not card:
             return None
 
-        if getattr(card, "archived", False):
-            raise ValueError(
-                "This card is archived. Restore it first using restore_tree before making changes."
+        archived_block = archived_card_block(
+            CardTransitionFacts(
+                card_id=card.id,
+                old_status=card.status,
+                new_status=getattr(data, "status", None),
+                archived=bool(getattr(card, "archived", False)),
             )
+        )
+        if archived_block is not None:
+            raise ValueError(archived_block.detail)
 
         update_data = data.model_dump(exclude_unset=True)
         _ensure_card_resource_write_allowed(
@@ -2210,9 +2330,9 @@ class CardService:
         if "test_scenario_ids" in update_data:
             next_type = update_data.get("card_type", card.card_type)
             if getattr(next_type, "value", next_type) == CardType.TEST.value:
-                board = await self.db.get(Board, card.board_id)
+                board = await _application_get(self.db, "board", card.board_id)
                 spec_id = update_data.get("spec_id") or card.spec_id
-                spec = await self.db.get(Spec, spec_id) if spec_id else None
+                spec = await _application_get(self.db, "spec", spec_id) if spec_id else None
                 if not spec:
                     raise ValueError("Test cards require a linked spec before updating test_scenario_ids")
                 scenario_ids = list(update_data.get("test_scenario_ids") or [])
@@ -2242,7 +2362,7 @@ class CardService:
         for key, value in update_data.items():
             setattr(card, key, value)
             if key in card_json_fields:
-                flag_modified(card, key)
+                card.mark_dirty(key)
 
         if "spec_id" in update_data and card.spec_id and card.spec_id != old_spec_id:
             await SpecResourcePropagationService(self.db).propagate_for_card(
@@ -2316,45 +2436,59 @@ class CardService:
 
     async def add_dependency(
         self, card_id: str, depends_on_id: str
-    ) -> CardDependency | None:
+    ) -> ApplicationRecord | None:
         """Add a dependency. Returns None if circular."""
         if card_id == depends_on_id:
             return None
         # Check circular
         if await self._would_create_cycle(card_id, depends_on_id):
             return None
-        dep = CardDependency(card_id=card_id, depends_on_id=depends_on_id)
-        self.db.add(dep)
-        await self.db.flush()
+        dep = _new_application_record(
+            "card_dependency",
+            card_id=card_id,
+            depends_on_id=depends_on_id,
+        )
+        await _application_add(self.db, dep)
         return dep
 
     async def remove_dependency(self, card_id: str, depends_on_id: str) -> bool:
-        stmt = delete(CardDependency).where(
-            CardDependency.card_id == card_id,
-            CardDependency.depends_on_id == depends_on_id,
+        rows = await _application_list(
+            self.db,
+            "card_dependency",
+            filters=(
+                _apf("card_id", "eq", card_id),
+                _apf("depends_on_id", "eq", depends_on_id),
+            ),
         )
-        result = await self.db.execute(stmt)
-        return result.rowcount > 0
+        for row in rows:
+            await _application_delete(self.db, row)
+        return bool(rows)
 
-    async def get_dependencies(self, card_id: str) -> list[Card]:
+    async def get_dependencies(self, card_id: str) -> list[ApplicationRecord]:
         """Get cards that this card depends on."""
-        query = (
-            select(Card)
-            .join(CardDependency, CardDependency.depends_on_id == Card.id)
-            .where(CardDependency.card_id == card_id)
+        dependencies = await _application_list(
+            self.db,
+            "card_dependency",
+            filters=(_apf("card_id", "eq", card_id),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
+        return await _application_list(
+            self.db,
+            "card",
+            filters=(_apf("id", "in", [item.depends_on_id for item in dependencies]),),
+        ) if dependencies else []
 
-    async def get_dependents(self, card_id: str) -> list[Card]:
+    async def get_dependents(self, card_id: str) -> list[ApplicationRecord]:
         """Get cards that depend on this card."""
-        query = (
-            select(Card)
-            .join(CardDependency, CardDependency.card_id == Card.id)
-            .where(CardDependency.depends_on_id == card_id)
+        dependencies = await _application_list(
+            self.db,
+            "card_dependency",
+            filters=(_apf("depends_on_id", "eq", card_id),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
+        return await _application_list(
+            self.db,
+            "card",
+            filters=(_apf("id", "in", [item.card_id for item in dependencies]),),
+        ) if dependencies else []
 
     async def check_dependencies_met(self, card_id: str) -> tuple[bool, list[str]]:
         """Check if all dependencies are met (done or cancelled).
@@ -2381,29 +2515,26 @@ class CardService:
                 continue
             visited.add(current)
             # Get what 'current' depends on
-            query = select(CardDependency.depends_on_id).where(
-                CardDependency.card_id == current
+            rows = await _application_list(
+                self.db,
+                "card_dependency",
+                filters=(_apf("card_id", "eq", current),),
             )
-            result = await self.db.execute(query)
-            for (dep_id,) in result.all():
-                stack.append(dep_id)
+            for row in rows:
+                stack.append(row.depends_on_id)
         return False
 
     # ---- Status progression order ----
-    _STATUS_ORDER = {
-        CardStatus.NOT_STARTED: 0,
-        CardStatus.STARTED: 1,
-        CardStatus.IN_PROGRESS: 2,
-        CardStatus.VALIDATION: 2,  # same level as in_progress — lateral move into gate
-        CardStatus.ON_HOLD: 2,  # same level — lateral move
-        CardStatus.DONE: 3,
-        CardStatus.CANCELLED: 3,
-    }
+    _STATUS_ORDER = CARD_STATUS_ORDER
 
     # ---- Task Validation Gate ----
 
     def _resolve_validation_config(
-        self, card: Card, spec: "Spec | None", sprint: "Sprint | None", board_settings: dict
+        self,
+        card: ApplicationRecord,
+        spec: "ApplicationRecord | None",
+        sprint: "ApplicationRecord | None",
+        board_settings: dict,
     ) -> dict:
         """Resolve validation gate config from hierarchy: sprint → spec → board.
 
@@ -2485,10 +2616,10 @@ class CardService:
             )
 
         # Resolve thresholds from hierarchy
-        board = await self.db.get(Board, card.board_id)
+        board = await _application_get(self.db, "board", card.board_id)
         board_settings = board.settings or {} if board else {}
-        spec = await self.db.get(Spec, card.spec_id) if card.spec_id else None
-        sprint = await self.db.get(Sprint, card.sprint_id) if card.sprint_id else None
+        spec = await _application_get(self.db, "spec", card.spec_id) if card.spec_id else None
+        sprint = await _application_get(self.db, "sprint", card.sprint_id) if card.sprint_id else None
         config = self._resolve_validation_config(card, spec, sprint, board_settings)
 
         await _authorize_critical_context_or_raise(
@@ -2590,7 +2721,7 @@ class CardService:
         validations = list(card.validations or [])
         validations.append(validation)
         card.validations = validations
-        flag_modified(card, "validations")
+        card.mark_dirty("validations")
 
         # Auto-populate conclusion only for legacy cards that reached validation
         # before execution reports were required on the validation handoff.
@@ -2612,7 +2743,7 @@ class CardService:
                 "validation_id": validation_id,
             })
             card.conclusions = conclusions_list
-            flag_modified(card, "conclusions")
+            card.mark_dirty("conclusions")
 
             # Spec 4007e4a3 (Ideação #3): re-enqueue parent spec via
             # CardConclusionAdded so the KG reflects the card's narrative
@@ -2652,11 +2783,15 @@ class CardService:
             card.status = CardStatus.VALIDATION
 
         # Auto-position at end of target column
-        pos_query = (
-            select(func.max(Card.position))
-            .where(Card.board_id == card.board_id, Card.status == card.status)
+        status_cards = await _application_list(
+            self.db,
+            "card",
+            filters=(
+                _apf("board_id", "eq", card.board_id),
+                _apf("status", "eq", card.status),
+            ),
         )
-        max_pos = (await self.db.execute(pos_query)).scalar() or -1
+        max_pos = max((item.position for item in status_cards), default=-1)
         card.position = max_pos + 1
 
         if old_status != card.status:
@@ -2731,7 +2866,7 @@ class CardService:
         if len(new_validations) == len(validations):
             return False
         card.validations = new_validations
-        flag_modified(card, "validations")
+        card.mark_dirty("validations")
         return True
 
     async def confirm_amendment_coverage(
@@ -2782,7 +2917,7 @@ class CardService:
                 facts={"amendment_id": amendment_id},
             )
 
-        test_task = await self.db.get(Card, regression_test_task_id)
+        test_task = await _application_get(self.db, "card", regression_test_task_id)
         if not test_task or test_task.board_id != amendment.board_id:
             raise ValueError(
                 f"Regression test task '{regression_test_task_id}' not found on this board"
@@ -2855,7 +2990,7 @@ class CardService:
         return confirmation
 
     async def _reexecutable_evidence_ref(
-        self, test_task: Card, scenario_id: str
+        self, test_task: ApplicationRecord, scenario_id: str
     ) -> tuple[str, str | None]:
         """Reexecutable evidence ref + the spec id the scenario lives on.
 
@@ -2869,16 +3004,18 @@ class CardService:
         spec_ids: list[str] = []
         if test_task.spec_id:
             spec_ids.append(str(test_task.spec_id))
-        rows = await self.db.execute(
-            select(Spec.id).where(Spec.board_id == test_task.board_id)
+        board_specs = await _application_list(
+            self.db,
+            "spec",
+            filters=(_apf("board_id", "eq", test_task.board_id),),
         )
-        spec_ids.extend(str(sid) for (sid,) in rows.all())
+        spec_ids.extend(str(spec.id) for spec in board_specs)
         seen: set[str] = set()
         for spec_id in spec_ids:
             if spec_id in seen:
                 continue
             seen.add(spec_id)
-            spec = await self.db.get(Spec, spec_id)
+            spec = await _application_get(self.db, "spec", spec_id)
             if not spec:
                 continue
             for sc in (spec.test_scenarios or []):
@@ -2921,12 +3058,12 @@ class CardService:
         the authoritative set), never relaxes ``unrelated_scenario`` and never
         mutates the DB."""
         bug_card = (
-            await self.db.get(Card, amendment.origin_bug_id)
+            await _application_get(self.db, "card", amendment.origin_bug_id)
             if amendment.origin_bug_id
             else None
         )
         original_spec = (
-            await self.db.get(Spec, bug_card.spec_id)
+            await _application_get(self.db, "spec", bug_card.spec_id)
             if bug_card and bug_card.spec_id
             else None
         )
@@ -2945,7 +3082,7 @@ class CardService:
             )
 
         origin_task = (
-            await self.db.get(Card, bug_card.origin_task_id)
+            await _application_get(self.db, "card", bug_card.origin_task_id)
             if bug_card.origin_task_id
             else None
         )
@@ -3054,12 +3191,14 @@ class CardService:
         # Batch query to get card_type for all linked cards
         test_card_ids: set[str] = set()
         if all_card_ids:
-            result = await self.db.execute(
-                select(Card.id, Card.card_type).where(Card.id.in_(all_card_ids))
+            linked_cards = await _application_list(
+                self.db,
+                "card",
+                filters=(_apf("id", "in", all_card_ids),),
             )
-            for cid, ctype in result.all():
-                if ctype == CardType.TEST:
-                    test_card_ids.add(cid)
+            for linked_card in linked_cards:
+                if linked_card.card_type == CardType.TEST:
+                    test_card_ids.add(linked_card.id)
         # Check each scenario has at least one TEST card
         unlinked = []
         for s in scenarios:
@@ -3330,16 +3469,18 @@ class CardService:
         if self._board_skips_task_requirement_link_gate(board):
             return
 
-        result = await self.db.execute(
-            select(Card).where(
-                Card.spec_id == spec.id,
-                Card.archived.is_(False),
-                Card.card_type == CardType.NORMAL,
-                Card.status != CardStatus.CANCELLED,
-            )
+        cards = await _application_list(
+            self.db,
+            "card",
+            filters=(
+                _apf("spec_id", "eq", spec.id),
+                _apf("archived", "is_false"),
+                _apf("card_type", "eq", CardType.NORMAL),
+                _apf("status", "ne", CardStatus.CANCELLED),
+            ),
         )
-        orphaned: list[Card] = []
-        for card in result.scalars().all():
+        orphaned: list[ApplicationRecord] = []
+        for card in cards:
             if getattr(card, "skip_task_requirement_link_gate", False):
                 continue
             if not self._card_has_direct_requirement_link(spec, card.id):
@@ -3408,7 +3549,7 @@ class CardService:
 
     async def move_card(
         self, card_id: str, user_id: str, data: CardMove, actor_name: str | None = None
-    ) -> Card | None:
+    ) -> ApplicationRecord | None:
         """Move a card to a different column/position. Blocks if dependencies not met.
 
         Moving execution work to 'validation' or 'done' requires an execution
@@ -3419,16 +3560,22 @@ class CardService:
         if not card:
             return None
 
-        if getattr(card, "archived", False):
-            raise ValueError(
-                "This card is archived. Restore it first using restore_tree before making changes."
+        archived_block = archived_card_block(
+            CardTransitionFacts(
+                card_id=card.id,
+                old_status=card.status,
+                new_status=data.status,
+                archived=bool(getattr(card, "archived", False)),
             )
+        )
+        if archived_block is not None:
+            raise ValueError(archived_block.detail)
 
         old_status = card.status
         old_position = card.position
 
         # Load board settings for governance
-        board = await self.db.get(Board, card.board_id)
+        board = await _application_get(self.db, "board", card.board_id)
         board_settings = board.settings or {} if board else {}
         skip_global = board_settings.get("skip_test_coverage_global", False)
 
@@ -3438,128 +3585,106 @@ class CardService:
         old_level = self._STATUS_ORDER.get(old_status, 0)
         new_level = self._STATUS_ORDER.get(data.status, 0)
         if new_level > old_level and card.spec_id:
-            spec_for_status = await self.db.get(Spec, card.spec_id)
+            spec_for_status = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_status:
-                from okto_pulse.core.services.main import SpecService
-                spec_level = SpecService._STATUS_ORDER.get(spec_for_status.status, 0)
                 card_type = getattr(card, "card_type", CardType.NORMAL)
-                if card_type == CardType.TEST:
-                    # Test cards can start when spec >= validated (level 3)
-                    min_spec_level = SpecService._STATUS_ORDER.get(SpecStatus.VALIDATED, 3)
-                else:
-                    # Normal and bug cards can start when spec >= in_progress (level 4)
-                    min_spec_level = SpecService._STATUS_ORDER.get(SpecStatus.IN_PROGRESS, 4)
-                if spec_level < min_spec_level:
-                    raise ValueError(
-                        f"Cannot move card forward: spec '{spec_for_status.title}' must be at least "
-                        f"'{SpecStatus.VALIDATED.value if card_type == CardType.TEST else SpecStatus.IN_PROGRESS.value}' "
-                        f"(currently '{spec_for_status.status.value}'). "
-                        f"Move the spec forward before starting work on its cards."
+                maturity_block = spec_maturity_block(
+                    CardTransitionFacts(
+                        card_id=card.id,
+                        old_status=old_status,
+                        new_status=data.status,
+                        card_type=card_type,
+                        spec_id=card.spec_id,
+                        spec_title=spec_for_status.title,
+                        spec_status=spec_for_status.status,
                     )
+                )
+                if maturity_block is not None:
+                    raise ValueError(maturity_block.detail)
 
         # Sprint gate: if spec has sprints, card must have sprint_id and sprint must be active
         if new_level > old_level and card.spec_id:
-            spec_for_sprint = await self.db.get(Spec, card.spec_id)
+            spec_for_sprint = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_sprint:
-                sprint_count_q = select(func.count()).select_from(Sprint).where(
-                    Sprint.spec_id == card.spec_id, Sprint.archived.is_(False),
+                spec_sprints = await _application_list(
+                    self.db,
+                    "sprint",
+                    filters=(
+                        _apf("spec_id", "eq", card.spec_id),
+                        _apf("archived", "is_false"),
+                    ),
                 )
-                sprint_count = (await self.db.execute(sprint_count_q)).scalar() or 0
+                sprint_count = len(spec_sprints)
                 if sprint_count > 0:
-                    hotfix_count_q = select(func.count()).select_from(Sprint).where(
-                        Sprint.spec_id == card.spec_id,
-                        Sprint.lane_type == SprintLaneType.HOTFIX,
-                        Sprint.archived.is_(False),
+                    hotfix_count = sum(
+                        1
+                        for sprint in spec_sprints
+                        if sprint.lane_type == SprintLaneType.HOTFIX
                     )
-                    hotfix_count = (await self.db.execute(hotfix_count_q)).scalar() or 0
-                    post_closure_bug = (
-                        getattr(card, "card_type", CardType.NORMAL) == CardType.BUG
-                        and (
-                            spec_for_sprint.status == SpecStatus.DONE
-                            or hotfix_count > 0
+                    sprint_obj = (
+                        await _application_get(self.db, "sprint", card.sprint_id)
+                        if card.sprint_id
+                        else None
+                    )
+                    transition_facts = CardTransitionFacts(
+                        card_id=card.id,
+                        old_status=old_status,
+                        new_status=data.status,
+                        card_type=getattr(card, "card_type", CardType.NORMAL),
+                        spec_id=card.spec_id,
+                        spec_status=spec_for_sprint.status,
+                        sprint_count=sprint_count,
+                        sprint_id=card.sprint_id,
+                        sprint_exists=sprint_obj is not None if card.sprint_id else True,
+                        sprint_status=sprint_obj.status if sprint_obj else None,
+                        sprint_title=sprint_obj.title if sprint_obj else None,
+                        sprint_is_hotfix=(
+                            sprint_obj.lane_type == SprintLaneType.HOTFIX
+                            if sprint_obj
+                            else False
+                        ),
+                        hotfix_count=hotfix_count,
+                    )
+                    sprint_block = sprint_assignment_block(transition_facts)
+                    if sprint_block is not None:
+                        lane_type = (
+                            sprint_obj.lane_type.value
+                            if sprint_obj
+                            else (
+                                "hotfix"
+                                if sprint_block.remediation == "assign_hotfix_lane"
+                                else None
+                            )
                         )
-                    )
-                    if not card.sprint_id:
-                        remediation = "assign_hotfix_lane" if post_closure_bug else "assign_sprint"
-                        facts = {
+                        error_facts = {
                             "card_id": card.id,
                             "spec_id": card.spec_id,
                             "spec_status": spec_for_sprint.status.value,
-                            "lane_type": "hotfix" if post_closure_bug else None,
-                            "next_action": remediation,
+                            "lane_type": lane_type,
+                            "next_action": sprint_block.remediation,
                         }
-                        raise CardOperationError(
-                            "sprint_required",
-                            "This spec uses sprints. Card must be assigned to a sprint before advancing. "
-                            "Use okto_pulse_update_card or assign_tasks_to_sprint to assign it.",
-                            remediation=remediation,
-                            facts=facts,
-                            workflow_remediation=(
-                                BugWorkflowRemediationMessageBuilder()
-                                .build_from_sprint_lane_block(
-                                    code="sprint_required",
-                                    remediation=remediation,
-                                    facts=facts,
-                                )
-                            ),
-                        )
-                    sprint_obj = await self.db.get(Sprint, card.sprint_id)
-                    if not sprint_obj:
-                        remediation = "assign_hotfix_lane" if post_closure_bug else "assign_sprint"
-                        facts = {
-                            "card_id": card.id,
-                            "spec_id": card.spec_id,
-                            "sprint_id": card.sprint_id,
-                            "spec_status": spec_for_sprint.status.value,
-                            "lane_type": "hotfix" if post_closure_bug else None,
-                            "next_action": remediation,
-                        }
-                        raise CardOperationError(
-                            "sprint_not_found",
-                            "Card's assigned sprint no longer exists. Assign it to an active sprint before advancing.",
-                            remediation=remediation,
-                            facts=facts,
-                            workflow_remediation=(
-                                BugWorkflowRemediationMessageBuilder()
-                                .build_from_sprint_lane_block(
-                                    code="sprint_not_found",
-                                    remediation=remediation,
-                                    facts=facts,
-                                )
-                            ),
-                        )
-                    if sprint_obj.status != SprintStatus.ACTIVE:
-                        inactive_hotfix = sprint_obj.lane_type == SprintLaneType.HOTFIX
-                        remediation = (
-                            "activate_hotfix_lane"
-                            if inactive_hotfix
-                            else ("assign_hotfix_lane" if post_closure_bug else "activate_sprint")
-                        )
-                        facts = {
-                            "card_id": card.id,
-                            "spec_id": card.spec_id,
-                            "sprint_id": sprint_obj.id,
-                            "sprint_status": sprint_obj.status.value,
-                            "lane_type": sprint_obj.lane_type.value,
-                            "next_action": remediation,
-                        }
-                        raise CardOperationError(
-                            "sprint_not_active",
+                        if card.sprint_id:
+                            error_facts["sprint_id"] = card.sprint_id
+                        if sprint_obj:
+                            error_facts["sprint_status"] = sprint_obj.status.value
+                        workflow_message = (
                             f"Card's sprint '{sprint_obj.title}' is not active "
-                            f"(status: '{sprint_obj.status.value}'). "
-                            f"Only cards in active sprints can advance.",
-                            remediation=remediation,
-                            facts=facts,
+                            f"(status: '{sprint_obj.status.value}')."
+                            if sprint_block.code == "sprint_not_active" and sprint_obj
+                            else None
+                        )
+                        raise CardOperationError(
+                            sprint_block.code,
+                            sprint_block.detail,
+                            remediation=sprint_block.remediation,
+                            facts=error_facts,
                             workflow_remediation=(
                                 BugWorkflowRemediationMessageBuilder()
                                 .build_from_sprint_lane_block(
-                                    code="sprint_not_active",
-                                    remediation=remediation,
-                                    facts=facts,
-                                    message=(
-                                        f"Card's sprint '{sprint_obj.title}' is not active "
-                                        f"(status: '{sprint_obj.status.value}')."
-                                    ),
+                                    code=sprint_block.code,
+                                    remediation=sprint_block.remediation or "assign_sprint",
+                                    facts=error_facts,
+                                    message=workflow_message,
                                 )
                             ),
                         )
@@ -3580,7 +3705,7 @@ class CardService:
             and starts_execution
         ):
             spec_for_requirement_gate = (
-                await self.db.get(Spec, card.spec_id) if card.spec_id else None
+                await _application_get(self.db, "spec", card.spec_id) if card.spec_id else None
             )
             await self.check_card_requirement_link_gate(
                 card, spec_for_requirement_gate, board
@@ -3592,23 +3717,26 @@ class CardService:
             and old_status in (CardStatus.IN_PROGRESS, CardStatus.STARTED, CardStatus.NOT_STARTED)
             and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
         ):
-            spec_for_gate = await self.db.get(Spec, card.spec_id) if card.spec_id else None
-            sprint_for_gate = await self.db.get(Sprint, card.sprint_id) if card.sprint_id else None
+            spec_for_gate = await _application_get(self.db, "spec", card.spec_id) if card.spec_id else None
+            sprint_for_gate = await _application_get(self.db, "sprint", card.sprint_id) if card.sprint_id else None
             gate_config = self._resolve_validation_config(
                 card, spec_for_gate, sprint_for_gate, board_settings
             )
-            if gate_config["required"]:
-                raise ValueError(
-                    "Validation gate is active. Move card to 'validation' status first. "
-                    "A reviewer must submit a task validation before the card can move to 'done'. "
-                    "Use move_card(status='validation', conclusion=..., completeness=..., "
-                    "completeness_justification=..., drift=..., drift_justification=...) "
-                    "then submit_task_validation."
+            validation_block = validation_gate_block(
+                CardTransitionFacts(
+                    card_id=card.id,
+                    old_status=old_status,
+                    new_status=data.status,
+                    card_type=getattr(card, "card_type", CardType.NORMAL),
+                    validation_required=bool(gate_config["required"]),
                 )
+            )
+            if validation_block is not None:
+                raise ValueError(validation_block.detail)
 
         # Block Done on test cards if linked scenarios not updated
         if data.status == CardStatus.DONE and card.spec_id and card.test_scenario_ids:
-            spec_for_test_scenarios = await self.db.get(Spec, card.spec_id)
+            spec_for_test_scenarios = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_test_scenarios and not skip_global:
                 all_scenarios = {s["id"]: s for s in (spec_for_test_scenarios.test_scenarios or [])}
                 stale = []
@@ -3620,7 +3748,25 @@ class CardService:
                             "title": sc.get("title", sid),
                             "status": sc.get("status"),
                         })
-                if stale:
+                pending_scenarios = tuple(
+                    PendingScenario(
+                        scenario_id=scenario["id"],
+                        title=scenario["title"],
+                        status=scenario["status"],
+                    )
+                    for scenario in stale
+                )
+                completion_block = test_completion_block(
+                    CardTransitionFacts(
+                        card_id=card.id,
+                        old_status=old_status,
+                        new_status=data.status,
+                        card_type=getattr(card, "card_type", CardType.NORMAL),
+                        spec_id=card.spec_id,
+                        pending_scenarios=pending_scenarios,
+                    )
+                )
+                if completion_block is not None:
                     # R4-IMP1: normalized test_card_completion contract with the
                     # actionable pending scenarios. Same block (draft/ready scenarios
                     # prevent done); no auto-promotion.
@@ -3644,7 +3790,6 @@ class CardService:
         #   - bug_test_gate_min_severity controla qual severity entra no gate
         #     ("minor"=default, sempre exige; "major"=pula minor; "critical"=só critical)
         # Severity ordering (lower → higher): minor < major < critical
-        _SEVERITY_ORDER = {"minor": 1, "major": 2, "critical": 3}
         _board_settings = (board.settings or {}) if board else {}
         _bug_gate_enabled = _board_settings.get(
             "require_test_task_for_bug", True
@@ -3653,19 +3798,18 @@ class CardService:
             "bug_test_gate_min_severity", "minor"
         )
         _card_severity = getattr(card, "severity", None) or "minor"
-        _gate_applies = (
-            _bug_gate_enabled
-            and _SEVERITY_ORDER.get(_card_severity, 1)
-            >= _SEVERITY_ORDER.get(_bug_gate_min_sev, 1)
+        bug_transition_facts = CardTransitionFacts(
+            card_id=card.id,
+            old_status=old_status,
+            new_status=data.status,
+            card_type=getattr(card, "card_type", CardType.NORMAL),
+            spec_id=card.spec_id,
+            require_test_task_for_bug=bool(_bug_gate_enabled),
+            bug_test_gate_min_severity=str(_bug_gate_min_sev),
+            severity=str(_card_severity),
         )
 
-        if (
-            _gate_applies
-            and data.status != CardStatus.CANCELLED
-            and new_level >= self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
-            and old_level < self._STATUS_ORDER.get(CardStatus.IN_PROGRESS, 2)
-            and getattr(card, "card_type", CardType.NORMAL) == CardType.BUG
-        ):
+        if bug_regression_gate_applies(bug_transition_facts):
             bug_gate_started = time.perf_counter()
             linked_tests = list(card.linked_test_task_ids or [])
             # Path B (spec 62cf2d36, fr_646e69d2): when the bug's original spec is
@@ -3691,13 +3835,26 @@ class CardService:
             effective_linked_tests = (
                 linked_tests or _amendment_regression_test_task_ids(amendment_rows)
             )
-            if not effective_linked_tests:
+            regression_block = bug_regression_evidence_block(
+                CardTransitionFacts(
+                    card_id=card.id,
+                    old_status=old_status,
+                    new_status=data.status,
+                    card_type=getattr(card, "card_type", CardType.NORMAL),
+                    spec_id=card.spec_id,
+                    require_test_task_for_bug=bool(_bug_gate_enabled),
+                    bug_test_gate_min_severity=str(_bug_gate_min_sev),
+                    severity=str(_card_severity),
+                    has_regression_test_evidence=bool(effective_linked_tests),
+                )
+            )
+            if regression_block is not None:
                 workflow_remediation = (
                     BugWorkflowRemediationMessageBuilder()
                     .build_missing_regression_test_task()
                 )
                 raise CardOperationError(
-                    "missing_regression_test_task",
+                    regression_block.code,
                     "Bug card requires at least 1 new test task linked before moving to in_progress. "
                     "REQUIRED STEPS: "
                     "(1) Create a regression test card with card_type='test', spec_id, and test_scenario_ids "
@@ -3707,7 +3864,7 @@ class CardService:
                     "(3) Then retry moving this bug card to in_progress. "
                     "TO BYPASS: set require_test_task_for_bug=false on the board, or raise "
                     "bug_test_gate_min_severity above this bug's severity.",
-                    remediation="create_regression_test_card",
+                    remediation=regression_block.remediation,
                     facts={
                         "card_id": card.id,
                         "spec_id": card.spec_id,
@@ -3723,17 +3880,17 @@ class CardService:
             # coverage stays validator-only/fail-closed — no production path confirms
             # coverage before card c9cf9781 (ADJ-B/ADJ-C).
             bug_created = card.created_at
-            spec_for_bug = await self.db.get(Spec, card.spec_id) if card.spec_id else None
+            spec_for_bug = await _application_get(self.db, "spec", card.spec_id) if card.spec_id else None
             all_scenarios = {
                 str(s["id"]): s
                 for s in (spec_for_bug.test_scenarios or [])
                 if isinstance(s, dict) and s.get("id") is not None
             } if spec_for_bug else {}
-            validated_test_tasks: list[Card] = []
+            validated_test_tasks: list[ApplicationRecord] = []
             candidate_scenario_ids: list[str] = []
 
             for test_task_id in effective_linked_tests:
-                test_task = await self.db.get(Card, test_task_id)
+                test_task = await _application_get(self.db, "card", test_task_id)
                 if not test_task:
                     raise ValueError(
                         f"Linked test task '{test_task_id}' not found. "
@@ -3789,13 +3946,15 @@ class CardService:
             }
             candidate_spec_ids_by_scenario_id: dict[str, str] = {}
             if missing_scenario_ids:
-                other_specs_result = await self.db.execute(
-                    select(Spec).where(
-                        Spec.board_id == card.board_id,
-                        Spec.id != card.spec_id,
-                    )
+                other_specs = await _application_list(
+                    self.db,
+                    "spec",
+                    filters=(
+                        _apf("board_id", "eq", card.board_id),
+                        _apf("id", "ne", card.spec_id),
+                    ),
                 )
-                for other_spec in other_specs_result.scalars():
+                for other_spec in other_specs:
                     for scenario in other_spec.test_scenarios or []:
                         if not isinstance(scenario, dict) or scenario.get("id") is None:
                             continue
@@ -3862,7 +4021,7 @@ class CardService:
                             workflow_remediation=workflow_remediation,
                         )
 
-            origin_task = await self.db.get(Card, card.origin_task_id) if card.origin_task_id else None
+            origin_task = await _application_get(self.db, "card", card.origin_task_id) if card.origin_task_id else None
             if not origin_task:
                 observe_bug_regression_resolution(
                     board_id=card.board_id,
@@ -4096,7 +4255,7 @@ class CardService:
                 "source": report_source,
             })
             card.conclusions = conclusions
-            flag_modified(card, "conclusions")
+            card.mark_dirty("conclusions")
 
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import CardConclusionAdded
@@ -4145,22 +4304,26 @@ class CardService:
             card.position = data.position
         else:
             # Move to end of new column
-            pos_query = (
-                select(func.max(Card.position))
-                .where(Card.board_id == card.board_id, Card.status == data.status)
+            status_cards = await _application_list(
+                self.db,
+                "card",
+                filters=(
+                    _apf("board_id", "eq", card.board_id),
+                    _apf("status", "eq", data.status),
+                ),
             )
-            max_pos = (await self.db.execute(pos_query)).scalar() or -1
+            max_pos = max((item.position for item in status_cards), default=-1)
             card.position = max_pos + 1
 
         # Auto-rollback: if card cancelled and spec is validated → revert to approved
         if data.status == CardStatus.CANCELLED and card.spec_id:
-            spec_for_rollback = await self.db.get(Spec, card.spec_id)
+            spec_for_rollback = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_rollback and spec_for_rollback.status == SpecStatus.VALIDATED:
                 spec_for_rollback.status = SpecStatus.APPROVED
                 if spec_for_rollback.evaluations:
                     for ev in spec_for_rollback.evaluations:
                         ev["stale"] = True
-                    flag_modified(spec_for_rollback, "evaluations")
+                    spec_for_rollback.mark_dirty("evaluations")
                 rollback_name = actor_name or await resolve_actor_name(self.db, user_id, card.board_id)
                 spec_service = SpecService(self.db)
                 await spec_service._record_history(
@@ -4251,7 +4414,7 @@ class CardService:
         # parent spec. Must run BEFORE db.delete(card) so any validator
         # running on the same session sees a consistent state.
         if card.spec_id:
-            spec = await self.db.get(Spec, card.spec_id)
+            spec = await _application_get(self.db, "spec", card.spec_id)
             if spec is not None:
                 _SPEC_LINK_CONTAINERS = (
                     "test_scenarios",
@@ -4273,27 +4436,30 @@ class CardService:
                             ]
                             changed = True
                     if changed:
-                        flag_modified(spec, container_name)
+                        spec.mark_dirty(container_name)
 
         # Cascade cleanup: bug cards on the same board may reference this
         # card via their columnar linked_test_task_ids. Non-bug cards only —
         # deleting a bug card doesn't leave references elsewhere.
         if getattr(card, "card_type", CardType.NORMAL) != CardType.BUG:
-            bugs_q = select(Card).where(
-                Card.board_id == board_id,
-                Card.card_type == CardType.BUG,
+            bugs = await _application_list(
+                self.db,
+                "card",
+                filters=(
+                    _apf("board_id", "eq", board_id),
+                    _apf("card_type", "eq", CardType.BUG),
+                ),
             )
-            bugs_res = await self.db.execute(bugs_q)
-            for bug in bugs_res.scalars().all():
+            for bug in bugs:
                 linked = bug.linked_test_task_ids or []
                 if card_id in linked:
                     bug.linked_test_task_ids = [
                         tid for tid in linked if tid != card_id
                     ]
-                    flag_modified(bug, "linked_test_task_ids")
+                    bug.mark_dirty("linked_test_task_ids")
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await self.db.delete(card)
+        await _application_delete(self.db, card)
 
         await self._log_activity(
             board_id=board_id,
@@ -4307,14 +4473,16 @@ class CardService:
 
     async def _log_activity(self, **kwargs: Any) -> None:
         """Log an activity."""
-        log = ActivityLog(**kwargs)
-        self.db.add(log)
+        await _application_add(
+            self.db,
+            _new_application_record("activity_log", **kwargs),
+        )
 
 
 class AgentService:
     """Service for agent operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     @staticmethod
@@ -4334,7 +4502,7 @@ class AgentService:
 
     async def create_agent(
         self, user_id: str, data: AgentCreate
-    ) -> tuple[Agent, str]:
+    ) -> tuple[ApplicationRecord, str]:
         """Create a new global agent (no board_id).
 
         If preset_id is provided, agent.permission_flags is initialised from
@@ -4352,13 +4520,14 @@ class AgentService:
         flags: dict | None = data.permission_flags
         preset_id = data.preset_id
         if preset_id and flags is None:
-            preset = await self.db.get(PermissionPreset, preset_id)
+            preset = await _application_get(self.db, "permission_preset", preset_id)
             if preset and preset.flags:
                 flags = copy.deepcopy(preset.flags)
         if flags is None:
             flags = copy.deepcopy(PERMISSION_REGISTRY)
 
-        agent = Agent(
+        agent = _new_application_record(
+            "agent",
             name=data.name,
             description=data.description,
             objective=data.objective,
@@ -4369,27 +4538,31 @@ class AgentService:
             permission_flags=flags,
             created_by=user_id,
         )
-        self.db.add(agent)
-        await self.db.flush()
+        await _application_add(self.db, agent)
         return agent, reveal_once_secret
 
-    async def get_agent(self, agent_id: str) -> Agent | None:
+    async def get_agent(self, agent_id: str) -> ApplicationRecord | None:
         """Get an agent by ID."""
-        query = select(Agent).where(Agent.id == agent_id)
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        return await _application_get(self.db, "agent", agent_id)
 
     async def get_agent_by_key(
         self,
         api_key: str,
         *,
         touch_last_used_at: bool = True,
-    ) -> Agent | None:
+    ) -> ApplicationRecord | None:
         """Get an agent by API key, optionally recording credential usage."""
         key_hash = self.hash_api_key(api_key)
-        query = select(Agent).where(Agent.api_key_hash == key_hash, Agent.is_active.is_(True))
-        result = await self.db.execute(query)
-        agent = result.scalar_one_or_none()
+        agents = await _application_list(
+            self.db,
+            "agent",
+            filters=(
+                _apf("api_key_hash", "eq", key_hash),
+                _apf("is_active", "is_true"),
+            ),
+            limit=1,
+        )
+        agent = agents[0] if agents else None
         if agent and touch_last_used_at:
             agent.last_used_at = datetime.now(timezone.utc)
         return agent
@@ -4400,85 +4573,109 @@ class AgentService:
         if agent:
             agent.last_used_at = datetime.now(timezone.utc)
 
-    async def list_agents_for_user(self, user_id: str) -> list[Agent]:
+    async def list_agents_for_user(self, user_id: str) -> list[ApplicationRecord]:
         """List all agents owned by a user."""
-        query = select(Agent).where(Agent.created_by == user_id).order_by(Agent.created_at)
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
-    async def list_agents_for_board(self, board_id: str) -> list[Agent]:
-        """List all agents that have access to a board (via junction)."""
-        query = (
-            select(Agent)
-            .join(AgentBoard, AgentBoard.agent_id == Agent.id)
-            .where(AgentBoard.board_id == board_id)
-            .order_by(Agent.created_at)
+        return await _application_list(
+            self.db,
+            "agent",
+            filters=(_apf("created_by", "eq", user_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
-    async def list_agents(self, board_id: str) -> list[Agent]:
+    async def list_agents_for_board(self, board_id: str) -> list[ApplicationRecord]:
+        """List all agents that have access to a board (via junction)."""
+        grants = await _application_list(
+            self.db,
+            "agent_board",
+            filters=(_apf("board_id", "eq", board_id),),
+        )
+        return await _application_list(
+            self.db,
+            "agent",
+            filters=(_apf("id", "in", [grant.agent_id for grant in grants]),),
+            order_by=(("created_at", False),),
+        ) if grants else []
+
+    async def list_agents(self, board_id: str) -> list[ApplicationRecord]:
         """Backward-compat alias for list_agents_for_board."""
         return await self.list_agents_for_board(board_id)
 
     async def agent_has_board_access(self, agent_id: str, board_id: str) -> bool:
         """Check if an agent has access to a board."""
-        query = select(AgentBoard).where(
-            AgentBoard.agent_id == agent_id,
-            AgentBoard.board_id == board_id,
+        rows = await _application_list(
+            self.db,
+            "agent_board",
+            filters=(
+                _apf("agent_id", "eq", agent_id),
+                _apf("board_id", "eq", board_id),
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none() is not None
+        return bool(rows)
 
     async def grant_board_access(
         self, agent_id: str, board_id: str, granted_by: str
-    ) -> AgentBoard:
+    ) -> ApplicationRecord:
         """Grant an agent access to a board."""
-        grant = AgentBoard(
+        grant = _new_application_record(
+            "agent_board",
             agent_id=agent_id,
             board_id=board_id,
             granted_by=granted_by,
         )
-        self.db.add(grant)
-        await self.db.flush()
+        await _application_add(self.db, grant)
         return grant
 
     async def revoke_board_access(self, agent_id: str, board_id: str) -> bool:
         """Revoke an agent's access to a board."""
-        query = delete(AgentBoard).where(
-            AgentBoard.agent_id == agent_id,
-            AgentBoard.board_id == board_id,
+        rows = await _application_list(
+            self.db,
+            "agent_board",
+            filters=(
+                _apf("agent_id", "eq", agent_id),
+                _apf("board_id", "eq", board_id),
+            ),
         )
-        result = await self.db.execute(query)
-        return result.rowcount > 0
+        for row in rows:
+            await _application_delete(self.db, row)
+        return bool(rows)
 
     async def update_board_overrides(
         self, agent_id: str, board_id: str, permission_overrides: dict | None
-    ) -> AgentBoard | None:
+    ) -> ApplicationRecord | None:
         """Update permission overrides for an agent on a specific board."""
-        query = select(AgentBoard).where(
-            AgentBoard.agent_id == agent_id,
-            AgentBoard.board_id == board_id,
+        rows = await _application_list(
+            self.db,
+            "agent_board",
+            filters=(
+                _apf("agent_id", "eq", agent_id),
+                _apf("board_id", "eq", board_id),
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        ab = result.scalar_one_or_none()
+        ab = rows[0] if rows else None
         if not ab:
             return None
         ab.permission_overrides = permission_overrides
         return ab
 
-    async def list_boards_for_agent(self, agent_id: str) -> list[Board]:
+    async def list_boards_for_agent(self, agent_id: str) -> list[ApplicationRecord]:
         """List all boards an agent has access to."""
-        query = (
-            select(Board)
-            .join(AgentBoard, AgentBoard.board_id == Board.id)
-            .where(AgentBoard.agent_id == agent_id)
-            .order_by(Board.name)
+        grants = await _application_list(
+            self.db,
+            "agent_board",
+            filters=(_apf("agent_id", "eq", agent_id),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
+        return await _application_list(
+            self.db,
+            "board",
+            filters=(_apf("id", "in", [grant.board_id for grant in grants]),),
+            order_by=(("name", False),),
+        ) if grants else []
 
-    async def update_agent(self, agent_id: str, data: AgentUpdate) -> Agent | None:
+    async def update_agent(
+        self, agent_id: str, data: AgentUpdate
+    ) -> ApplicationRecord | None:
         """Update an agent.
 
         Special handling:
@@ -4490,8 +4687,6 @@ class AgentService:
           reset to the full registry (all True) — i.e. "Full Control".
         """
         import copy
-
-        from sqlalchemy.orm.attributes import flag_modified
 
         from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
 
@@ -4510,19 +4705,21 @@ class AgentService:
         if preset_id_in_payload and not flags_in_payload:
             new_preset_id = update_data.get("preset_id")
             if new_preset_id:
-                preset = await self.db.get(PermissionPreset, new_preset_id)
+                preset = await _application_get(self.db, "permission_preset", new_preset_id)
                 if preset and preset.flags:
                     agent.permission_flags = copy.deepcopy(preset.flags)
-                    flag_modified(agent, "permission_flags")
+                    agent.mark_dirty("permission_flags")
             else:
                 agent.permission_flags = copy.deepcopy(PERMISSION_REGISTRY)
-                flag_modified(agent, "permission_flags")
+                agent.mark_dirty("permission_flags")
         elif flags_in_payload:
-            flag_modified(agent, "permission_flags")
+            agent.mark_dirty("permission_flags")
 
         return agent
 
-    async def regenerate_key(self, agent_id: str) -> tuple[Agent | None, str | None]:
+    async def regenerate_key(
+        self, agent_id: str
+    ) -> tuple[ApplicationRecord | None, str | None]:
         """Regenerate an agent's API key."""
         agent = await self.get_agent(agent_id)
         if not agent:
@@ -4539,14 +4736,14 @@ class AgentService:
         agent = await self.get_agent(agent_id)
         if not agent:
             return False
-        await self.db.delete(agent)
+        await _application_delete(self.db, agent)
         return True
 
 
 class AttachmentService:
     """Service for attachment operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def upload_attachment(
@@ -4556,10 +4753,10 @@ class AttachmentService:
         filename: str,
         content: bytes,
         mime_type: str,
-    ) -> Attachment | None:
+    ) -> ApplicationRecord | None:
         """Upload a file attachment."""
         # Verify card exists
-        card = await self.db.get(Card, card_id)
+        card = await _application_get(self.db, "card", card_id)
         if not card:
             return None
 
@@ -4568,7 +4765,8 @@ class AttachmentService:
         file_path = await storage.save(card.board_id, filename, content)
         unique_name = Path(file_path).name
 
-        attachment = Attachment(
+        attachment = _new_application_record(
+            "attachment",
             card_id=card_id,
             filename=unique_name,
             original_filename=filename,
@@ -4577,13 +4775,12 @@ class AttachmentService:
             path=file_path,
             uploaded_by=user_id,
         )
-        self.db.add(attachment)
-        await self.db.flush()
+        await _application_add(self.db, attachment)
         return attachment
 
-    async def get_attachment(self, attachment_id: str) -> Attachment | None:
+    async def get_attachment(self, attachment_id: str) -> ApplicationRecord | None:
         """Get an attachment by ID."""
-        return await self.db.get(Attachment, attachment_id)
+        return await _application_get(self.db, "attachment", attachment_id)
 
     async def delete_attachment(self, attachment_id: str) -> bool:
         """Delete an attachment."""
@@ -4595,31 +4792,31 @@ class AttachmentService:
         storage = get_storage_provider()
         await storage.delete(attachment.path)
 
-        await self.db.delete(attachment)
+        await _application_delete(self.db, attachment)
         return True
 
 
 class QAService:
     """Service for Q&A operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def create_question(
         self, card_id: str, user_id: str, data: QACreate
-    ) -> QAItem | None:
+    ) -> ApplicationRecord | None:
         """Create a Q&A question."""
-        card = await self.db.get(Card, card_id)
+        card = await _application_get(self.db, "card", card_id)
         if not card:
             return None
 
-        qa = QAItem(
+        qa = _new_application_record(
+            "qa_item",
             card_id=card_id,
             question=data.question,
             asked_by=user_id,
         )
-        self.db.add(qa)
-        await self.db.flush()
+        await _application_add(self.db, qa)
         return qa
 
     async def answer_question(
@@ -4630,14 +4827,14 @@ class QAService:
         *,
         actor_type: str = "user",
         surface: str = "service",
-    ) -> QAItem | None:
+    ) -> ApplicationRecord | None:
         """Answer a Q&A question."""
-        qa = await self.db.get(QAItem, qa_id)
+        qa = await _application_get(self.db, "qa_item", qa_id)
         if not qa:
             return None
 
-        card = await self.db.get(Card, qa.card_id)
-        board = await self.db.get(Board, card.board_id) if card else None
+        card = await _application_get(self.db, "card", qa.card_id)
+        board = await _application_get(self.db, "board", card.board_id) if card else None
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -4657,31 +4854,32 @@ class QAService:
 
     async def delete_question(self, qa_id: str) -> bool:
         """Delete a Q&A item."""
-        qa = await self.db.get(QAItem, qa_id)
+        qa = await _application_get(self.db, "qa_item", qa_id)
         if not qa:
             return False
-        await self.db.delete(qa)
+        await _application_delete(self.db, qa)
         return True
 
 
 class CommentService:
     """Service for comment operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
-    async def get_comment(self, comment_id: str) -> Comment | None:
-        return await self.db.get(Comment, comment_id)
+    async def get_comment(self, comment_id: str) -> ApplicationRecord | None:
+        return await _application_get(self.db, "comment", comment_id)
 
     async def create_comment(
         self, card_id: str, user_id: str, data: CommentCreate
-    ) -> Comment | None:
+    ) -> ApplicationRecord | None:
         """Create a comment (text or choice board)."""
-        card = await self.db.get(Card, card_id)
+        card = await _application_get(self.db, "card", card_id)
         if not card:
             return None
 
-        comment = Comment(
+        comment = _new_application_record(
+            "comment",
             card_id=card_id,
             content=data.content,
             author_id=user_id,
@@ -4690,16 +4888,15 @@ class CommentService:
             responses=[],
             allow_free_text=data.allow_free_text,
         )
-        self.db.add(comment)
-        await self.db.flush()
+        await _application_add(self.db, comment)
         return comment
 
     async def respond_to_choice(
         self, comment_id: str, responder_id: str, responder_name: str,
         selected: list[str], free_text: str | None = None,
-    ) -> Comment | None:
+    ) -> ApplicationRecord | None:
         """Add a response to a choice board comment."""
-        comment = await self.db.get(Comment, comment_id)
+        comment = await _application_get(self.db, "comment", comment_id)
         if not comment or comment.comment_type == "text":
             return None
 
@@ -4723,14 +4920,14 @@ class CommentService:
             "free_text": free_text,
         })
         comment.responses = responses
-        await self.db.flush()
+        await _application_flush(self.db)
         return comment
 
     async def update_comment(
         self, comment_id: str, user_id: str, data: CommentUpdate
-    ) -> Comment | None:
+    ) -> ApplicationRecord | None:
         """Update a comment."""
-        comment = await self.db.get(Comment, comment_id)
+        comment = await _application_get(self.db, "comment", comment_id)
         if not comment or comment.author_id != user_id:
             return None
 
@@ -4739,15 +4936,15 @@ class CommentService:
 
     async def delete_comment(self, comment_id: str, user_id: str) -> bool:
         """Delete a comment."""
-        comment = await self.db.get(Comment, comment_id)
+        comment = await _application_get(self.db, "comment", comment_id)
         if not comment or comment.author_id != user_id:
             return False
-        await self.db.delete(comment)
+        await _application_delete(self.db, comment)
         return True
 
 
 async def _validate_spec_linked_refs(
-    db: AsyncSession,
+    db: Any,
     current_spec: Any,
     update_data: dict[str, Any],
 ) -> None:
@@ -5023,9 +5220,12 @@ async def _validate_spec_linked_refs(
 
     if all_task_ids:
         existing_ids: set[str] = set()
-        result = await db.execute(select(Card.id).where(Card.id.in_(all_task_ids)))
-        for (cid,) in result.all():
-            existing_ids.add(cid)
+        cards = await _application_list(
+            db,
+            "card",
+            filters=(_apf("id", "in", all_task_ids),),
+        )
+        existing_ids.update(card.id for card in cards)
         for missing in all_task_ids - existing_ids:
             owners = ", ".join(task_owners.get(missing, []))
             errors.append(
@@ -5048,7 +5248,7 @@ async def _validate_spec_linked_refs(
 class SpecService:
     """Service for spec operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
         self._cognitive_closeout_gate_factory: Callable[
             [], Any
@@ -5080,7 +5280,8 @@ class SpecService:
         version: int | None = None,
     ) -> None:
         """Record a history entry for a spec."""
-        entry = SpecHistory(
+        entry = _new_application_record(
+            "spec_history",
             spec_id=spec_id,
             action=action,
             actor_type=actor_type,
@@ -5090,18 +5291,19 @@ class SpecService:
             summary=summary,
             version=version,
         )
-        self.db.add(entry)
+        await _application_add(self.db, entry)
 
-    async def list_history(self, spec_id: str, limit: int = 50) -> list[SpecHistory]:
+    async def list_history(
+        self, spec_id: str, limit: int = 50
+    ) -> list[ApplicationRecord]:
         """List history entries for a spec, newest first."""
-        query = (
-            select(SpecHistory)
-            .where(SpecHistory.spec_id == spec_id)
-            .order_by(SpecHistory.created_at.desc())
-            .limit(limit)
+        return await _application_list(
+            self.db,
+            "spec_history",
+            filters=(_apf("spec_id", "eq", spec_id),),
+            order_by=(("created_at", True),),
+            limit=limit,
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     @staticmethod
     def _compute_diff(old_data: dict, new_data: dict, fields: list[str]) -> list[dict]:
@@ -5127,7 +5329,7 @@ class SpecService:
         skip_ownership_check: bool = False,
         *,
         query_scope: QueryScope | None = None,
-    ) -> Spec | None:
+    ) -> ApplicationRecord | None:
         """Create a new spec in a board."""
         board_query = _board_scope_select(
             board_id=board_id,
@@ -5137,8 +5339,7 @@ class SpecService:
         )
         if board_query is None:
             return None
-        result = await self.db.execute(board_query)
-        if not result.scalar_one_or_none():
+        if not await _application_run(self.db, board_query):
             return None
 
         # Fail-closed scenario_type (spec ac16b3c9): every scenario in a NEW spec
@@ -5149,7 +5350,8 @@ class SpecService:
                 [s.model_dump() for s in data.test_scenarios], None
             )
 
-        spec = Spec(
+        spec = _new_application_record(
+            "spec",
             board_id=board_id,
             title=data.title,
             description=data.description,
@@ -5188,8 +5390,7 @@ class SpecService:
                 self.db, spec, _submitted_mockups, entity_type="spec"
             )
             spec.screen_mockups = _submitted_mockups
-        self.db.add(spec)
-        await self.db.flush()
+        await _application_add(self.db, spec)
 
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import SpecCreated
@@ -5238,34 +5439,35 @@ class SpecService:
         )
         return spec
 
-    async def get_spec(self, spec_id: str) -> Spec | None:
+    async def get_spec(self, spec_id: str) -> ApplicationRecord | None:
         """Get a spec by ID with its cards and knowledge bases."""
-        query = (
-            select(Spec)
-            .options(selectinload(Spec.cards))
-            .options(selectinload(Spec.knowledge_bases))
-            .options(selectinload(Spec.qa_items))
-            .options(selectinload(Spec.architecture_designs))
-            .where(Spec.id == spec_id)
+        return await _application_get(
+            self.db,
+            "spec",
+            spec_id,
+            includes=("cards", "knowledge_bases", "qa_items", "architecture_designs"),
         )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
 
-    async def list_specs(self, board_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Spec]:
+    async def list_specs(
+        self,
+        board_id: str,
+        status_filter: str | None = None,
+        include_archived: bool = False,
+    ) -> list[ApplicationRecord]:
         """List specs for a board, optionally filtered by status."""
-        query = (
-            select(Spec)
-            .options(selectinload(Spec.architecture_designs))
-            .where(Spec.board_id == board_id)
-        )
+        filters = [_apf("board_id", "eq", board_id)]
         if status_filter:
-            query = query.where(Spec.status == SpecStatus(status_filter))
+            filters.append(_apf("status", "eq", SpecStatus(status_filter)))
         if not include_archived:
-            query = query.where(Spec.archived.is_(False))
-        query = query.order_by(Spec.updated_at.desc())
-        result = await self.db.execute(query)
-        rows = list(result.scalars().all())
-        await _attach_open_qa_counts(self.db, rows, SpecQAItem, "spec_id")
+            filters.append(_apf("archived", "is_false"))
+        rows = await _application_list(
+            self.db,
+            "spec",
+            filters=tuple(filters),
+            order_by=(("updated_at", True),),
+            includes=("architecture_designs",),
+        )
+        await _attach_open_qa_counts(self.db, rows, "spec_qa_item", "spec_id")
         return rows
 
     async def update_test_scenario(
@@ -5385,8 +5587,10 @@ class SpecService:
             ),
             target,
         )
-        self.db.add(
-            ActivityLog(
+        await _application_add(
+            self.db,
+            _new_application_record(
+                "activity_log",
                 board_id=spec.board_id,
                 action="test_scenario_body_changed",
                 actor_type="agent",
@@ -5400,7 +5604,7 @@ class SpecService:
                 },
             )
         )
-        await self.db.commit()
+        await _application_commit(self.db)
         logging.getLogger("okto_pulse.spec.test_scenario").info(
             "test_scenario.body_changed scenario=%s spec=%s fields=%s invalidated=%s",
             scenario_id,
@@ -5435,7 +5639,7 @@ class SpecService:
         existing links — the cascade removes them. Respects the content-lock.
         """
         await _require_spec_unlocked(self.db, spec_id)
-        spec = await self.db.get(Spec, spec_id)
+        spec = await _application_get(self.db, "spec", spec_id)
         if not spec:
             raise ValueError("scenario_not_found: spec not found")
 
@@ -5445,21 +5649,27 @@ class SpecService:
             raise ValueError(f"scenario_not_found: {scenario_id}")
 
         spec.test_scenarios = remaining
-        flag_modified(spec, "test_scenarios")
+        spec.mark_dirty("test_scenarios")
 
         # Cascade: drop the scenario id from every card that references it, in
         # the SAME transaction → all-or-nothing, no orphan in Card.test_scenario_ids.
-        result = await self.db.execute(select(Card).where(Card.spec_id == spec_id))
+        cards = await _application_list(
+            self.db,
+            "card",
+            filters=(_apf("spec_id", "eq", spec_id),),
+        )
         cards_unlinked: list[str] = []
-        for card in result.scalars().all():
+        for card in cards:
             ids = list(card.test_scenario_ids or [])
             if scenario_id in ids:
                 card.test_scenario_ids = [i for i in ids if i != scenario_id]
-                flag_modified(card, "test_scenario_ids")
+                card.mark_dirty("test_scenario_ids")
                 cards_unlinked.append(card.id)
 
-        self.db.add(
-            ActivityLog(
+        await _application_add(
+            self.db,
+            _new_application_record(
+                "activity_log",
                 board_id=spec.board_id,
                 action="test_scenario_deleted",
                 actor_type="agent",
@@ -5472,7 +5682,7 @@ class SpecService:
                 },
             )
         )
-        await self.db.commit()
+        await _application_commit(self.db)
 
         logging.getLogger("okto_pulse.spec.test_scenario").info(
             "test_scenario.deleted scenario=%s spec=%s cards_unlinked=%s",
@@ -5519,8 +5729,6 @@ class SpecService:
         ``ValueError`` (``status_not_valid`` / ``evidence_required`` /
         ``scenario_not_found``).
         """
-        from sqlalchemy import update as sql_update
-
         if status not in VALID_SCENARIO_STATUSES:
             raise ValueError(
                 f"status_not_valid: must be one of {list(VALID_SCENARIO_STATUSES)}"
@@ -5543,7 +5751,7 @@ class SpecService:
             if not await self._has_executable_test_card_for_scenario(spec, scenario_id):
                 raise
 
-        board = await self.db.get(Board, spec.board_id)
+        board = await _application_get(self.db, "board", spec.board_id)
         skip = (
             bool((board.settings or {}).get("skip_test_evidence_global", False))
             if board
@@ -5578,11 +5786,12 @@ class SpecService:
 
         # Narrow persist: write only the test_scenarios column, no version bump,
         # no content-lock. The other scenarios in the list are untouched.
-        await self.db.execute(
-            sql_update(Spec).where(Spec.id == spec_id).values(test_scenarios=scenarios)
-        )
-        self.db.add(
-            ActivityLog(
+        spec.test_scenarios = scenarios
+        spec.mark_dirty("test_scenarios")
+        await _application_add(
+            self.db,
+            _new_application_record(
+                "activity_log",
                 board_id=spec.board_id,
                 action="test_scenario_status_changed",
                 actor_type="agent",
@@ -5598,7 +5807,7 @@ class SpecService:
                 },
             )
         )
-        await self.db.commit()
+        await _application_commit(self.db)
 
         logger = logging.getLogger("okto_pulse.spec.test_scenario")
         logger.info(
@@ -5648,7 +5857,7 @@ class SpecService:
         }
 
     async def _has_executable_test_card_for_scenario(
-        self, spec: Spec, scenario_id: str
+        self, spec: ApplicationRecord, scenario_id: str
     ) -> bool:
         """Return True when a locked/done spec scenario has a concrete test card
         that can legitimately carry post-lock evidence.
@@ -5659,21 +5868,25 @@ class SpecService:
         entered the execution/review lifecycle.
         """
 
-        rows = await self.db.execute(
-            select(Card).where(
-                Card.spec_id == spec.id,
-                Card.card_type == CardType.TEST,
-                Card.status.in_(
+        rows = await _application_list(
+            self.db,
+            "card",
+            filters=(
+                _apf("spec_id", "eq", spec.id),
+                _apf("card_type", "eq", CardType.TEST),
+                _apf(
+                    "status",
+                    "in",
                     [
                         CardStatus.STARTED,
                         CardStatus.IN_PROGRESS,
                         CardStatus.VALIDATION,
                         CardStatus.DONE,
-                    ]
+                    ],
                 ),
-            )
+            ),
         )
-        for card in rows.scalars().all():
+        for card in rows:
             if scenario_id in (card.test_scenario_ids or []):
                 return True
         return False
@@ -5690,7 +5903,7 @@ class SpecService:
         ``skip_test_evidence_global`` (allows but emits a forensic audit log so
         reactivation analytics can flag boards that bypass the gate).
         """
-        board = await self.db.get(Board, spec.board_id)
+        board = await _application_get(self.db, "board", spec.board_id)
         skip = (
             bool((board.settings or {}).get("skip_test_evidence_global", False))
             if board
@@ -5941,11 +6154,15 @@ class SpecService:
         for key, value in update_data.items():
             setattr(spec, key, value)
             if key in json_fields:
-                flag_modified(spec, key)
+                spec.mark_dirty(key)
 
         old_version = spec.version
         if bumps_version:
             spec.version += 1
+
+        # Application records are detached from adapter-specific identity maps.
+        # Synchronize before downstream event/activity handlers inspect the row.
+        await _application_flush(self.db)
 
         # Compute diffs
         changes = self._compute_diff(old_data, update_data, list(update_data.keys()))
@@ -6043,7 +6260,7 @@ class SpecService:
         if getattr(spec, "archived", False):
             raise ValueError("This spec is archived. Restore it first before linking tasks.")
 
-        card = await self.db.get(Card, card_id)
+        card = await _application_get(self.db, "card", card_id)
         if card is None:
             raise ValueError("Card not found")
         card_status = getattr(getattr(card, "status", None), "value", getattr(card, "status", None))
@@ -6069,7 +6286,7 @@ class SpecService:
             task_ids.append(card_id)
             target["linked_task_ids"] = task_ids
             setattr(spec, target_field, collection)
-            flag_modified(spec, target_field)
+            spec.mark_dirty(target_field)
 
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import SpecSemanticChanged
@@ -6172,7 +6389,7 @@ class SpecService:
             )
 
         # Load board for settings
-        board = await self.db.get(Board, spec.board_id)
+        board = await _application_get(self.db, "board", spec.board_id)
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -6301,11 +6518,14 @@ class SpecService:
 
         # Sprint done gate: all sprints must be closed|cancelled (min 1 closed)
         if data.status == SpecStatus.DONE:
-            sprints_q = select(Sprint).where(
-                Sprint.spec_id == spec_id, Sprint.archived.is_(False),
+            spec_sprints = await _application_list(
+                self.db,
+                "sprint",
+                filters=(
+                    _apf("spec_id", "eq", spec_id),
+                    _apf("archived", "is_false"),
+                ),
             )
-            sprints_result = await self.db.execute(sprints_q)
-            spec_sprints = list(sprints_result.scalars().all())
             if spec_sprints:
                 pending = [
                     s for s in spec_sprints
@@ -6328,14 +6548,20 @@ class SpecService:
 
         # Enforce all linked tasks (non-bug) must be done/cancelled before spec can be done
         if data.status == SpecStatus.DONE:
-            linked_tasks_q = select(Card).where(
-                Card.spec_id == spec_id,
-                Card.card_type == CardType.NORMAL,
-                Card.archived.is_(False),
-                Card.status.notin_([CardStatus.DONE, CardStatus.CANCELLED]),
+            pending_tasks = await _application_list(
+                self.db,
+                "card",
+                filters=(
+                    _apf("spec_id", "eq", spec_id),
+                    _apf("card_type", "eq", CardType.NORMAL),
+                    _apf("archived", "is_false"),
+                    _apf(
+                        "status",
+                        "not_in",
+                        [CardStatus.DONE, CardStatus.CANCELLED],
+                    ),
+                ),
             )
-            result = await self.db.execute(linked_tasks_q)
-            pending_tasks = result.scalars().all()
             if pending_tasks:
                 task_list = "; ".join(
                     f"'{t.title}' ({t.status.value})" for t in pending_tasks[:5]
@@ -6460,13 +6686,18 @@ class SpecService:
             return False
 
         # Unlink cards
-        await self.db.execute(
-            update(Card).where(Card.spec_id == spec_id).values(spec_id=None)
+        linked_cards = await _application_list(
+            self.db,
+            "card",
+            filters=(_apf("spec_id", "eq", spec_id),),
         )
+        for linked_card in linked_cards:
+            linked_card.spec_id = None
+        await _application_flush(self.db)
 
         board_id = spec.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await self.db.delete(spec)
+        await _application_delete(self.db, spec)
 
         await self._log_activity(
             board_id=board_id,
@@ -6488,12 +6719,12 @@ class SpecService:
         extractor reflects the updated cards list while the card extractor
         does not reference spec_id.
         """
-        spec = await self.db.get(Spec, spec_id)
+        spec = await _application_get(self.db, "spec", spec_id)
         if not spec:
             return False
         if spec.status not in (SpecStatus.APPROVED, SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS, SpecStatus.DONE):
             raise ValueError(f"Cards can only be linked to a spec in 'approved', 'validated', 'in_progress', or 'done' status (current: '{spec.status.value}')")
-        card = await self.db.get(Card, card_id)
+        card = await _application_get(self.db, "card", card_id)
         if not card or card.board_id != spec.board_id:
             return False
         card.spec_id = spec_id
@@ -6529,7 +6760,7 @@ class SpecService:
         ConsolidationEnqueuer re-enqueues the (now-orphaned) spec for
         re-extraction.
         """
-        card = await self.db.get(Card, card_id)
+        card = await _application_get(self.db, "card", card_id)
         if not card or not card.spec_id:
             return False
         old_spec_id = card.spec_id
@@ -6595,7 +6826,7 @@ class SpecService:
                 f"(current: '{spec.status.value}')."
             )
 
-        board = await self.db.get(Board, spec.board_id)
+        board = await _application_get(self.db, "board", spec.board_id)
         config = self._resolve_spec_validation_config(board)
         if not config["require_spec_validation"]:
             raise ValueError(
@@ -6711,7 +6942,7 @@ class SpecService:
         validations = list(spec.validations or [])
         validations.append(validation)
         spec.validations = validations
-        flag_modified(spec, "validations")
+        spec.mark_dirty("validations")
         spec.current_validation_id = validation_id
 
         # Atomic state transition on success — same transaction as the persist.
@@ -6883,7 +7114,7 @@ class SpecService:
         evaluations = list(spec.evaluations or [])
         evaluations.append(evaluation)
         spec.evaluations = evaluations
-        flag_modified(spec, "evaluations")
+        spec.mark_dirty("evaluations")
 
         await self._log_activity(
             board_id=spec.board_id,
@@ -6915,22 +7146,27 @@ class SpecService:
 
     async def _log_activity(self, **kwargs: Any) -> None:
         """Log an activity."""
-        log = ActivityLog(**kwargs)
-        self.db.add(log)
+        await _application_add(
+            self.db,
+            _new_application_record("activity_log", **kwargs),
+        )
 
 
 class SpecQAService:
     """Service for spec Q&A operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
-    async def create_question(self, spec_id: str, user_id: str, data: SpecQACreate) -> SpecQAItem | None:
+    async def create_question(
+        self, spec_id: str, user_id: str, data: SpecQACreate
+    ) -> ApplicationRecord | None:
         """Create a question on a spec (text or choice)."""
-        spec = await self.db.get(Spec, spec_id)
+        spec = await _application_get(self.db, "spec", spec_id)
         if not spec:
             return None
-        qa = SpecQAItem(
+        qa = _new_application_record(
+            "spec_qa_item",
             spec_id=spec_id,
             question=data.question,
             question_type=data.question_type or "text",
@@ -6938,8 +7174,7 @@ class SpecQAService:
             allow_free_text=data.allow_free_text,
             asked_by=user_id,
         )
-        self.db.add(qa)
-        await self.db.flush()
+        await _application_add(self.db, qa)
         return qa
 
     async def answer_question(
@@ -6950,17 +7185,17 @@ class SpecQAService:
         *,
         actor_type: str = "user",
         surface: str = "service",
-    ) -> SpecQAItem | None:
+    ) -> ApplicationRecord | None:
         """Answer a spec Q&A question (text or choice selection).
         Mirrors IdeationQAService.answer_question — accepts `single_choice`
         as alias of `choice`, and only commits when something was persisted.
         """
-        qa = await self.db.get(SpecQAItem, qa_id)
+        qa = await _application_get(self.db, "spec_qa_item", qa_id)
         if not qa:
             return None
 
-        spec = await self.db.get(Spec, qa.spec_id)
-        board = await self.db.get(Board, spec.board_id) if spec else None
+        spec = await _application_get(self.db, "spec", qa.spec_id)
+        board = await _application_get(self.db, "board", spec.board_id) if spec else None
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -6995,37 +7230,39 @@ class SpecQAService:
         qa.answered_at = datetime.now(timezone.utc)
         return qa
 
-    async def list_qa(self, spec_id: str) -> list[SpecQAItem]:
+    async def list_qa(self, spec_id: str) -> list[ApplicationRecord]:
         """List all Q&A items for a spec."""
-        query = (
-            select(SpecQAItem)
-            .where(SpecQAItem.spec_id == spec_id)
-            .order_by(SpecQAItem.created_at)
+        return await _application_list(
+            self.db,
+            "spec_qa_item",
+            filters=(_apf("spec_id", "eq", spec_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def delete_question(self, qa_id: str) -> bool:
         """Delete a Q&A item."""
-        qa = await self.db.get(SpecQAItem, qa_id)
+        qa = await _application_get(self.db, "spec_qa_item", qa_id)
         if not qa:
             return False
-        await self.db.delete(qa)
+        await _application_delete(self.db, qa)
         return True
 
 
 class SpecKnowledgeService:
     """Service for spec knowledge base operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
-    async def create_knowledge(self, spec_id: str, user_id: str, data: SpecKnowledgeCreate) -> SpecKnowledgeBase | None:
+    async def create_knowledge(
+        self, spec_id: str, user_id: str, data: SpecKnowledgeCreate
+    ) -> ApplicationRecord | None:
         """Create a knowledge base item on a spec."""
-        spec = await self.db.get(Spec, spec_id)
+        spec = await _application_get(self.db, "spec", spec_id)
         if not spec:
             return None
-        kb = SpecKnowledgeBase(
+        kb = _new_application_record(
+            "spec_knowledge_base",
             spec_id=spec_id,
             title=data.title,
             description=data.description,
@@ -7033,8 +7270,7 @@ class SpecKnowledgeService:
             mime_type=data.mime_type,
             created_by=user_id,
         )
-        self.db.add(kb)
-        await self.db.flush()
+        await _application_add(self.db, kb)
         await SpecResourcePropagationService(self.db).propagate_for_spec(
             board_id=spec.board_id,
             spec_id=spec_id,
@@ -7043,21 +7279,22 @@ class SpecKnowledgeService:
         )
         return kb
 
-    async def get_knowledge(self, knowledge_id: str) -> SpecKnowledgeBase | None:
+    async def get_knowledge(self, knowledge_id: str) -> ApplicationRecord | None:
         """Get a knowledge base item by ID."""
-        return await self.db.get(SpecKnowledgeBase, knowledge_id)
+        return await _application_get(self.db, "spec_knowledge_base", knowledge_id)
 
-    async def list_knowledge(self, spec_id: str) -> list[SpecKnowledgeBase]:
+    async def list_knowledge(self, spec_id: str) -> list[ApplicationRecord]:
         """List all knowledge base items for a spec."""
-        query = (
-            select(SpecKnowledgeBase)
-            .where(SpecKnowledgeBase.spec_id == spec_id)
-            .order_by(SpecKnowledgeBase.created_at)
+        return await _application_list(
+            self.db,
+            "spec_knowledge_base",
+            filters=(_apf("spec_id", "eq", spec_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
-    async def update_knowledge(self, knowledge_id: str, data: SpecKnowledgeUpdate) -> SpecKnowledgeBase | None:
+    async def update_knowledge(
+        self, knowledge_id: str, data: SpecKnowledgeUpdate
+    ) -> ApplicationRecord | None:
         """Update a knowledge base item."""
         kb = await self.get_knowledge(knowledge_id)
         if not kb:
@@ -7065,8 +7302,8 @@ class SpecKnowledgeService:
         update_data = data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(kb, key, value)
-        await self.db.flush()
-        spec = await self.db.get(Spec, kb.spec_id)
+        await _application_flush(self.db)
+        spec = await _application_get(self.db, "spec", kb.spec_id)
         if spec is not None:
             await SpecResourcePropagationService(self.db).propagate_for_spec(
                 board_id=spec.board_id,
@@ -7084,9 +7321,9 @@ class SpecKnowledgeService:
         spec_id = kb.spec_id
         kb_id = kb.id
         actor_id = kb.created_by or "system"
-        spec = await self.db.get(Spec, spec_id)
-        await self.db.delete(kb)
-        await self.db.flush()
+        spec = await _application_get(self.db, "spec", spec_id)
+        await _application_delete(self.db, kb)
+        await _application_flush(self.db)
         if spec is not None:
             await SpecResourcePropagationService(self.db).propagate_for_spec(
                 board_id=spec.board_id,
@@ -7101,7 +7338,7 @@ class SpecKnowledgeService:
 class IdeationKnowledgeService:
     """Service for ideation knowledge base operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def create_knowledge(
@@ -7109,12 +7346,13 @@ class IdeationKnowledgeService:
         ideation_id: str,
         user_id: str,
         data: IdeationKnowledgeCreate,
-    ) -> IdeationKnowledgeBase | None:
+    ) -> ApplicationRecord | None:
         """Create a knowledge base item on an ideation."""
-        ideation = await self.db.get(Ideation, ideation_id)
+        ideation = await _application_get(self.db, "ideation", ideation_id)
         if not ideation:
             return None
-        kb = IdeationKnowledgeBase(
+        kb = _new_application_record(
+            "ideation_knowledge_base",
             ideation_id=ideation_id,
             title=data.title,
             description=data.description,
@@ -7122,29 +7360,27 @@ class IdeationKnowledgeService:
             mime_type=data.mime_type,
             created_by=user_id,
         )
-        self.db.add(kb)
-        await self.db.flush()
+        await _application_add(self.db, kb)
         return kb
 
-    async def get_knowledge(self, knowledge_id: str) -> IdeationKnowledgeBase | None:
+    async def get_knowledge(self, knowledge_id: str) -> ApplicationRecord | None:
         """Get a knowledge base item by ID."""
-        return await self.db.get(IdeationKnowledgeBase, knowledge_id)
+        return await _application_get(self.db, "ideation_knowledge_base", knowledge_id)
 
-    async def list_knowledge(self, ideation_id: str) -> list[IdeationKnowledgeBase]:
+    async def list_knowledge(self, ideation_id: str) -> list[ApplicationRecord]:
         """List all knowledge base items for an ideation."""
-        query = (
-            select(IdeationKnowledgeBase)
-            .where(IdeationKnowledgeBase.ideation_id == ideation_id)
-            .order_by(IdeationKnowledgeBase.created_at)
+        return await _application_list(
+            self.db,
+            "ideation_knowledge_base",
+            filters=(_apf("ideation_id", "eq", ideation_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def update_knowledge(
         self,
         knowledge_id: str,
         data: IdeationKnowledgeUpdate,
-    ) -> IdeationKnowledgeBase | None:
+    ) -> ApplicationRecord | None:
         """Update a knowledge base item."""
         kb = await self.get_knowledge(knowledge_id)
         if not kb:
@@ -7159,7 +7395,7 @@ class IdeationKnowledgeService:
         kb = await self.get_knowledge(knowledge_id)
         if not kb:
             return False
-        await self.db.delete(kb)
+        await _application_delete(self.db, kb)
         return True
 
 
@@ -7168,7 +7404,7 @@ class ShareService:
 
     VALID_PERMISSIONS = ("viewer", "editor", "admin")
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def share_board(
@@ -7179,7 +7415,7 @@ class ShareService:
         data: BoardShareCreate,
         *,
         query_scope: QueryScope | None = None,
-    ) -> BoardShare | None:
+    ) -> ApplicationRecord | None:
         """Share a board with another user. Only owner/admin can share."""
         # Check board exists and caller is owner or admin
         if not await self._can_manage_shares(board_id, owner_id, query_scope=query_scope):
@@ -7189,26 +7425,25 @@ class ShareService:
         if data.user_id == scoped_owner_id:
             return None  # Can't share with yourself
 
-        share = BoardShare(
+        share = _new_application_record(
+            "board_share",
             board_id=board_id,
             user_id=data.user_id,
             realm_id=realm_id,
             permission=data.permission,
             shared_by=scoped_owner_id,
         )
-        self.db.add(share)
-        await self.db.flush()
+        await _application_add(self.db, share)
         return share
 
-    async def list_shares(self, board_id: str) -> list[BoardShare]:
+    async def list_shares(self, board_id: str) -> list[ApplicationRecord]:
         """List all shares for a board."""
-        query = (
-            select(BoardShare)
-            .where(BoardShare.board_id == board_id)
-            .order_by(BoardShare.created_at)
+        return await _application_list(
+            self.db,
+            "board_share",
+            filters=(_apf("board_id", "eq", board_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def update_share(
         self,
@@ -7217,9 +7452,9 @@ class ShareService:
         data: BoardShareUpdate,
         *,
         query_scope: QueryScope | None = None,
-    ) -> BoardShare | None:
+    ) -> ApplicationRecord | None:
         """Update a share permission. Only owner/admin can update."""
-        share = await self.db.get(BoardShare, share_id)
+        share = await _application_get(self.db, "board_share", share_id)
         if not share:
             return None
 
@@ -7237,7 +7472,7 @@ class ShareService:
         query_scope: QueryScope | None = None,
     ) -> bool:
         """Revoke a share. Owner/admin can revoke, or user can leave."""
-        share = await self.db.get(BoardShare, share_id)
+        share = await _application_get(self.db, "board_share", share_id)
         if not share:
             return False
 
@@ -7250,7 +7485,7 @@ class ShareService:
         ):
             return False
 
-        await self.db.delete(share)
+        await _application_delete(self.db, share)
         return True
 
     async def get_user_permission(
@@ -7262,7 +7497,7 @@ class ShareService:
     ) -> str | None:
         """Get a user's permission level for a board. Returns None if no access."""
         # Check if owner
-        board = await self.db.get(Board, board_id)
+        board = await _application_get(self.db, "board", board_id)
         if not board:
             return None
         if _board_owner_matches(board, user_id, query_scope):
@@ -7270,12 +7505,16 @@ class ShareService:
 
         # Check shares
         scoped_user_id = _scope_actor_id(user_id, query_scope) or user_id
-        query = select(BoardShare).where(
-            BoardShare.board_id == board_id,
-            BoardShare.user_id == scoped_user_id,
+        shares = await _application_list(
+            self.db,
+            "board_share",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("user_id", "eq", scoped_user_id),
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        share = result.scalar_one_or_none()
+        share = shares[0] if shares else None
         return share.permission if share else None
 
     async def _can_manage_shares(
@@ -7286,7 +7525,7 @@ class ShareService:
         query_scope: QueryScope | None = None,
     ) -> bool:
         """Check if user is owner or admin of the board."""
-        board = await self.db.get(Board, board_id)
+        board = await _application_get(self.db, "board", board_id)
         if not board:
             return False
         if _board_owner_matches(board, user_id, query_scope):
@@ -7294,13 +7533,17 @@ class ShareService:
 
         # Check if admin via share
         scoped_user_id = _scope_actor_id(user_id, query_scope) or user_id
-        query = select(BoardShare).where(
-            BoardShare.board_id == board_id,
-            BoardShare.user_id == scoped_user_id,
-            BoardShare.permission == "admin",
+        shares = await _application_list(
+            self.db,
+            "board_share",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("user_id", "eq", scoped_user_id),
+                _apf("permission", "eq", "admin"),
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none() is not None
+        return bool(shares)
 
 
 class TopicOperationError(ValueError):
@@ -7340,7 +7583,7 @@ class InvalidTopicMergeError(TopicOperationError):
 class StoryService:
     """Service for Topic and Story operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     _STORY_TRANSITIONS: dict[StoryStatus, list[StoryStatus]] = {
@@ -7363,7 +7606,7 @@ class StoryService:
         skip_ownership_check: bool = False,
         *,
         query_scope: QueryScope | None = None,
-    ) -> Board | None:
+    ) -> ApplicationRecord | None:
         query = _board_scope_select(
             board_id=board_id,
             user_id=user_id,
@@ -7372,22 +7615,35 @@ class StoryService:
         )
         if query is None:
             return None
-        return (await self.db.execute(query)).scalar_one_or_none()
+        rows = await _application_run(self.db, query)
+        return rows[0] if rows else None
 
-    async def _topic_for_board(self, topic_id: str, board_id: str) -> Topic | None:
-        return (await self.db.execute(
-            select(Topic).where(Topic.id == topic_id, Topic.board_id == board_id)
-        )).scalar_one_or_none()
+    async def _topic_for_board(
+        self, topic_id: str, board_id: str
+    ) -> ApplicationRecord | None:
+        rows = await _application_list(
+            self.db,
+            "topic",
+            filters=(
+                _apf("id", "eq", topic_id),
+                _apf("board_id", "eq", board_id),
+            ),
+            limit=1,
+        )
+        return rows[0] if rows else None
 
-    async def get_topic(self, topic_id: str) -> Topic | None:
+    async def get_topic(self, topic_id: str) -> ApplicationRecord | None:
         """Transport-free PK load of a Topic (spec R01A REST-FU6-S2 rework): the
         update/delete/merge use cases resolve the topic's ``board_id`` for the
         ownership + permission gate here instead of the adapter issuing a
         ``db.get(Topic, …)`` (keeps the REST adapter free of direct ORM)."""
-        return await self.db.get(Topic, topic_id)
+        return await _application_get(self.db, "topic", topic_id)
 
     async def _log_activity(self, **kwargs: Any) -> None:
-        self.db.add(ActivityLog(**kwargs))
+        await _application_add(
+            self.db,
+            _new_application_record("activity_log", **kwargs),
+        )
 
     @staticmethod
     def _archived_topic_name(name: str, topic_id: str) -> str:
@@ -7395,24 +7651,26 @@ class StoryService:
         return f"{name[: max(1, 255 - len(suffix))]}{suffix}"
 
     async def _topic_story_counts(self, topic_id: str) -> dict[str, int]:
-        rows = (await self.db.execute(
-            select(Story.archived, func.count(Story.id))
-            .where(Story.topic_id == topic_id)
-            .group_by(Story.archived)
-        )).all()
+        rows = await _application_list(
+            self.db,
+            "story",
+            filters=(_apf("topic_id", "eq", topic_id),),
+        )
         counts = {"active_count": 0, "archived_count": 0}
-        for archived, count in rows:
-            key = "archived_count" if archived else "active_count"
-            counts[key] = int(count or 0)
+        for story in rows:
+            key = "archived_count" if story.archived else "active_count"
+            counts[key] += 1
         counts["total_associated_count"] = counts["active_count"] + counts["archived_count"]
         return counts
 
-    async def _attach_topic_counts(self, topic: Topic) -> Topic:
+    async def _attach_topic_counts(
+        self, topic: ApplicationRecord
+    ) -> ApplicationRecord:
         counts = await self._topic_story_counts(topic.id)
-        setattr(topic, "story_count", counts["active_count"])
-        setattr(topic, "active_count", counts["active_count"])
-        setattr(topic, "archived_count", counts["archived_count"])
-        setattr(topic, "total_associated_count", counts["total_associated_count"])
+        topic.attach("story_count", counts["active_count"])
+        topic.attach("active_count", counts["active_count"])
+        topic.attach("archived_count", counts["archived_count"])
+        topic.attach("total_associated_count", counts["total_associated_count"])
         return topic
 
     async def _ensure_active_topic_name_available(
@@ -7422,15 +7680,20 @@ class StoryService:
         *,
         exclude_topic_id: str | None = None,
     ) -> None:
-        conditions = [
-            Topic.board_id == board_id,
-            Topic.archived.is_(False),
-            func.lower(Topic.name) == name.lower(),
+        filters = [
+            _apf("board_id", "eq", board_id),
+            _apf("archived", "is_false"),
+            _apf("name", "ilike", name),
         ]
         if exclude_topic_id:
-            conditions.append(Topic.id != exclude_topic_id)
-        existing = await self.db.execute(select(Topic.id).where(*conditions).limit(1))
-        if existing.scalar_one_or_none():
+            filters.append(_apf("id", "ne", exclude_topic_id))
+        existing = await _application_list(
+            self.db,
+            "topic",
+            filters=tuple(filters),
+            limit=1,
+        )
+        if existing:
             raise TopicNameConflictError()
 
     async def _free_archived_exact_name(
@@ -7440,14 +7703,18 @@ class StoryService:
         *,
         exclude_topic_id: str | None = None,
     ) -> list[str]:
-        conditions = [
-            Topic.board_id == board_id,
-            Topic.archived.is_(True),
-            Topic.name == name,
+        filters = [
+            _apf("board_id", "eq", board_id),
+            _apf("archived", "is_true"),
+            _apf("name", "eq", name),
         ]
         if exclude_topic_id:
-            conditions.append(Topic.id != exclude_topic_id)
-        archived_topics = list((await self.db.execute(select(Topic).where(*conditions))).scalars().all())
+            filters.append(_apf("id", "ne", exclude_topic_id))
+        archived_topics = await _application_list(
+            self.db,
+            "topic",
+            filters=tuple(filters),
+        )
         renamed: list[str] = []
         for archived_topic in archived_topics:
             archived_topic.name = self._archived_topic_name(archived_topic.name, archived_topic.id)
@@ -7456,16 +7723,20 @@ class StoryService:
 
     async def create_topic(
         self, board_id: str, user_id: str, data: TopicCreate, skip_ownership_check: bool = False
-    ) -> Topic | None:
+    ) -> ApplicationRecord | None:
         if not await self._ensure_board(board_id, user_id, skip_ownership_check):
             return None
         name = data.name.strip()
         await self._ensure_active_topic_name_available(board_id, name)
         renamed_archived_topics = await self._free_archived_exact_name(board_id, name)
-        topic = Topic(board_id=board_id, name=name, description=data.description, created_by=user_id)
-        self.db.add(topic)
-        await self.db.flush()
-        await self.db.refresh(topic)
+        topic = _new_application_record(
+            "topic",
+            board_id=board_id,
+            name=name,
+            description=data.description,
+            created_by=user_id,
+        )
+        await _application_add(self.db, topic)
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
             board_id=board_id,
@@ -7481,34 +7752,44 @@ class StoryService:
         )
         return await self._attach_topic_counts(topic)
 
-    async def list_topics(self, board_id: str, include_archived: bool = False) -> list[Topic]:
-        query = select(Topic).where(Topic.board_id == board_id)
+    async def list_topics(
+        self, board_id: str, include_archived: bool = False
+    ) -> list[ApplicationRecord]:
+        filters = [_apf("board_id", "eq", board_id)]
         if not include_archived:
-            query = query.where(Topic.archived.is_(False))
-        topics = list((await self.db.execute(query.order_by(Topic.name.asc()))).scalars().all())
-        count_rows = (await self.db.execute(
-            select(Story.topic_id, Story.archived, func.count(Story.id))
-            .where(Story.board_id == board_id)
-            .group_by(Story.topic_id, Story.archived)
-        )).all()
+            filters.append(_apf("archived", "is_false"))
+        topics = await _application_list(
+            self.db,
+            "topic",
+            filters=tuple(filters),
+            order_by=(("name", False),),
+        )
+        count_rows = await _application_list(
+            self.db,
+            "story",
+            filters=(_apf("board_id", "eq", board_id),),
+        )
         counts: dict[str, dict[str, int]] = {}
-        for topic_id, archived, count in count_rows:
+        for story in count_rows:
+            topic_id = story.topic_id
             if not topic_id:
                 continue
             bucket = counts.setdefault(topic_id, {"active_count": 0, "archived_count": 0})
-            key = "archived_count" if archived else "active_count"
-            bucket[key] = int(count or 0)
+            key = "archived_count" if story.archived else "active_count"
+            bucket[key] += 1
         for topic in topics:
             topic_counts = counts.get(topic.id, {"active_count": 0, "archived_count": 0})
             total_count = topic_counts["active_count"] + topic_counts["archived_count"]
-            setattr(topic, "story_count", topic_counts["active_count"])
-            setattr(topic, "active_count", topic_counts["active_count"])
-            setattr(topic, "archived_count", topic_counts["archived_count"])
-            setattr(topic, "total_associated_count", total_count)
+            topic.attach("story_count", topic_counts["active_count"])
+            topic.attach("active_count", topic_counts["active_count"])
+            topic.attach("archived_count", topic_counts["archived_count"])
+            topic.attach("total_associated_count", total_count)
         return topics
 
-    async def update_topic(self, topic_id: str, user_id: str, data: TopicUpdate) -> Topic | None:
-        topic = await self.db.get(Topic, topic_id)
+    async def update_topic(
+        self, topic_id: str, user_id: str, data: TopicUpdate
+    ) -> ApplicationRecord | None:
+        topic = await _application_get(self.db, "topic", topic_id)
         if not topic:
             return None
         original_archived = bool(topic.archived)
@@ -7548,12 +7829,14 @@ class StoryService:
                 **counts,
             },
         )
-        await self.db.flush()
-        await self.db.refresh(topic)
+        await _application_flush(self.db)
+        await _application_refresh(self.db, topic)
         return await self._attach_topic_counts(topic)
 
-    async def delete_topic(self, topic_id: str, user_id: str) -> Topic | None:
-        topic = await self.db.get(Topic, topic_id)
+    async def delete_topic(
+        self, topic_id: str, user_id: str
+    ) -> ApplicationRecord | None:
+        topic = await _application_get(self.db, "topic", topic_id)
         if not topic:
             return None
         counts = await self._topic_story_counts(topic.id)
@@ -7571,15 +7854,15 @@ class StoryService:
             actor_name=actor_name,
             details={"topic_id": topic.id, "name": topic.name, **counts},
         )
-        await self.db.delete(topic)
-        await self.db.flush()
+        await _application_delete(self.db, topic)
+        await _application_flush(self.db)
         return topic
 
     async def merge_topics(self, source_topic_id: str, target_topic_id: str, user_id: str) -> dict[str, Any] | None:
         if source_topic_id == target_topic_id:
             raise InvalidTopicMergeError("Source and target Topics must be different")
-        source_topic = await self.db.get(Topic, source_topic_id)
-        target_topic = await self.db.get(Topic, target_topic_id)
+        source_topic = await _application_get(self.db, "topic", source_topic_id)
+        target_topic = await _application_get(self.db, "topic", target_topic_id)
         if not source_topic or not target_topic:
             return None
         if source_topic.board_id != target_topic.board_id:
@@ -7589,13 +7872,15 @@ class StoryService:
 
         source_counts = await self._topic_story_counts(source_topic.id)
         target_counts_before = await self._topic_story_counts(target_topic.id)
-        await self.db.execute(
-            update(Story)
-            .where(Story.topic_id == source_topic.id)
-            .values(topic_id=target_topic.id)
+        stories = await _application_list(
+            self.db,
+            "story",
+            filters=(_apf("topic_id", "eq", source_topic.id),),
         )
+        for story in stories:
+            story.topic_id = target_topic.id
         source_topic.archived = True
-        await self.db.flush()
+        await _application_flush(self.db)
         target_counts_after = await self._topic_story_counts(target_topic.id)
         actor_name = await resolve_actor_name(self.db, user_id, source_topic.board_id)
         await self._log_activity(
@@ -7616,9 +7901,9 @@ class StoryService:
                 "target_total_after": target_counts_after["total_associated_count"],
             },
         )
-        await self.db.flush()
-        await self.db.refresh(source_topic)
-        await self.db.refresh(target_topic)
+        await _application_flush(self.db)
+        await _application_refresh(self.db, source_topic)
+        await _application_refresh(self.db, target_topic)
         await self._attach_topic_counts(source_topic)
         await self._attach_topic_counts(target_topic)
         return {
@@ -7634,13 +7919,14 @@ class StoryService:
 
     async def create_story(
         self, board_id: str, user_id: str, data: StoryCreate, skip_ownership_check: bool = False
-    ) -> Story | None:
+    ) -> ApplicationRecord | None:
         if not await self._ensure_board(board_id, user_id, skip_ownership_check):
             return None
         topic = await self._topic_for_board(data.topic_id, board_id)
         if not topic or topic.archived:
             raise ValueError("Topic not found in this board")
-        story = Story(
+        story = _new_application_record(
+            "story",
             board_id=board_id,
             topic_id=data.topic_id,
             title=data.title.strip(),
@@ -7666,8 +7952,7 @@ class StoryService:
                 self.db, story, _submitted_mockups, entity_type="story"
             )
             story.screen_mockups = _submitted_mockups
-        self.db.add(story)
-        await self.db.flush()
+        await _application_add(self.db, story)
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
             board_id=board_id,
@@ -7692,14 +7977,13 @@ class StoryService:
         )
         return await self.get_story(story.id)
 
-    async def get_story(self, story_id: str) -> Story | None:
-        query = (
-            select(Story)
-            .options(selectinload(Story.topic))
-            .options(selectinload(Story.ideation_links))
-            .where(Story.id == story_id)
+    async def get_story(self, story_id: str) -> ApplicationRecord | None:
+        return await _application_get(
+            self.db,
+            "story",
+            story_id,
+            includes=("topic", "ideation_links"),
         )
-        return (await self.db.execute(query)).scalar_one_or_none()
 
     async def list_stories(
         self,
@@ -7711,36 +7995,44 @@ class StoryService:
         linked: bool | None = None,
         converted: bool | None = None,
         include_archived: bool = False,
-    ) -> list[Story]:
-        query = (
-            select(Story)
-            .options(selectinload(Story.topic))
-            .options(selectinload(Story.ideation_links))
-            .where(Story.board_id == board_id)
-        )
+    ) -> list[ApplicationRecord]:
+        filters = [_apf("board_id", "eq", board_id)]
+        any_filters: tuple[ApplicationFilter, ...] = ()
         if status_filter:
-            query = query.where(Story.status == StoryStatus(status_filter))
+            filters.append(_apf("status", "eq", StoryStatus(status_filter)))
         if topic_id:
-            query = query.where(Story.topic_id == topic_id)
+            filters.append(_apf("topic_id", "eq", topic_id))
         if search:
             pattern = f"%{search}%"
-            query = query.where(
-                Story.title.ilike(pattern)
-                | Story.description.ilike(pattern)
-                | Story.actor.ilike(pattern)
-                | Story.goal.ilike(pattern)
-                | Story.benefit.ilike(pattern)
+            any_filters = tuple(
+                _apf(field, "ilike", pattern)
+                for field in ("title", "description", "actor", "goal", "benefit")
             )
         if converted is not None:
-            query = query.where(Story.status == StoryStatus.CONVERTED if converted else Story.status != StoryStatus.CONVERTED)
+            filters.append(
+                _apf(
+                    "status",
+                    "eq" if converted else "ne",
+                    StoryStatus.CONVERTED,
+                )
+            )
         if not include_archived:
-            query = query.where(Story.archived.is_(False))
-        stories = list((await self.db.execute(query.order_by(Story.updated_at.desc()))).scalars().all())
+            filters.append(_apf("archived", "is_false"))
+        stories = await _application_list(
+            self.db,
+            "story",
+            filters=tuple(filters),
+            any_filters=any_filters,
+            order_by=(("updated_at", True),),
+            includes=("topic", "ideation_links"),
+        )
         if linked is None:
             return stories
         return [story for story in stories if (len(story.ideation_links or []) > 0) is linked]
 
-    async def update_story(self, story_id: str, user_id: str, data: StoryUpdate) -> Story | None:
+    async def update_story(
+        self, story_id: str, user_id: str, data: StoryUpdate
+    ) -> ApplicationRecord | None:
         story = await self.get_story(story_id)
         if not story:
             return None
@@ -7764,7 +8056,7 @@ class StoryService:
         for key, value in update_data.items():
             setattr(story, key, value)
             if key in {"labels", "screen_mockups"}:
-                flag_modified(story, key)
+                story.mark_dirty(key)
         actor_name = await resolve_actor_name(self.db, user_id, story.board_id)
         await self._log_activity(
             board_id=story.board_id,
@@ -7787,10 +8079,12 @@ class StoryService:
                 ),
                 session=self.db,
             )
-        await self.db.flush()
+        await _application_flush(self.db)
         return await self.get_story(story_id)
 
-    async def move_story(self, story_id: str, user_id: str, data: StoryMove) -> Story | None:
+    async def move_story(
+        self, story_id: str, user_id: str, data: StoryMove
+    ) -> ApplicationRecord | None:
         story = await self.get_story(story_id)
         if not story:
             return None
@@ -7828,10 +8122,12 @@ class StoryService:
                 ),
                 session=self.db,
             )
-        await self.db.flush()
+        await _application_flush(self.db)
         return await self.get_story(story_id)
 
-    async def archive_story(self, story_id: str, user_id: str, archived: bool = True) -> Story | None:
+    async def archive_story(
+        self, story_id: str, user_id: str, archived: bool = True
+    ) -> ApplicationRecord | None:
         story = await self.get_story(story_id)
         if not story:
             return None
@@ -7846,14 +8142,14 @@ class StoryService:
             actor_name=actor_name,
             details={"story_id": story.id},
         )
-        await self.db.flush()
+        await _application_flush(self.db)
         return await self.get_story(story_id)
 
     async def link_story_to_ideation(
         self, story_id: str, ideation_id: str, user_id: str, *, mark_converted: bool = True
-    ) -> StoryIdeationLink | None:
+    ) -> ApplicationRecord | None:
         story = await self.get_story(story_id)
-        ideation = await self.db.get(Ideation, ideation_id)
+        ideation = await _application_get(self.db, "ideation", ideation_id)
         if not story or not ideation or story.board_id != ideation.board_id:
             return None
         if ideation.status not in self._EDITABLE_IDEATION_STATUSES:
@@ -7862,27 +8158,29 @@ class StoryService:
                 f"Story can only be linked to editable Ideations. "
                 f"Current ideation status is '{ideation.status.value}'. Allowed statuses: {allowed}."
             )
-        link = (await self.db.execute(
-            select(StoryIdeationLink).where(
-                StoryIdeationLink.story_id == story_id,
-            )
-        )).scalar_one_or_none()
+        links = await _application_list(
+            self.db,
+            "story_ideation_link",
+            filters=(_apf("story_id", "eq", story_id),),
+            limit=1,
+        )
+        link = links[0] if links else None
         if link:
             if link.ideation_id == ideation_id:
                 raise ValueError("Story is already linked to this Ideation.")
             raise ValueError("Story is already linked to another Ideation. A Story can only link to one Ideation.")
-        link = StoryIdeationLink(
+        link = _new_application_record(
+            "story_ideation_link",
             board_id=story.board_id,
             story_id=story_id,
             ideation_id=ideation_id,
             created_by=user_id,
         )
-        self.db.add(link)
-        await self.db.flush()
+        await _application_add(self.db, link)
         # mark_converted remains accepted for API compatibility; successful links now always convert.
         if story.status != StoryStatus.CONVERTED:
             story.status = StoryStatus.CONVERTED
-            await self.db.flush()
+            await _application_flush(self.db)
         actor_name = await resolve_actor_name(self.db, user_id, story.board_id)
         await self._log_activity(
             board_id=story.board_id,
@@ -7914,7 +8212,7 @@ class StoryService:
         *,
         skip_ownership_check: bool = False,
         query_scope: QueryScope | None = None,
-    ) -> tuple[Ideation, list[StoryIdeationLink], int] | None:
+    ) -> tuple[ApplicationRecord, list[ApplicationRecord], int] | None:
         if not await self._ensure_board(
             board_id,
             user_id,
@@ -7922,12 +8220,16 @@ class StoryService:
             query_scope=query_scope,
         ):
             return None
-        stories = list((await self.db.execute(
-            select(Story)
-            .options(selectinload(Story.topic))
-            .options(selectinload(Story.ideation_links))
-            .where(Story.board_id == board_id, Story.id.in_(data.story_ids), Story.archived.is_(False))
-        )).scalars().all())
+        stories = await _application_list(
+            self.db,
+            "story",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("id", "in", data.story_ids),
+                _apf("archived", "is_false"),
+            ),
+            includes=("topic", "ideation_links"),
+        )
         if len(stories) != len(set(data.story_ids)):
             raise ValueError("One or more Stories were not found in this board")
         not_ready = [
@@ -7939,7 +8241,7 @@ class StoryService:
             raise ValueError("Only ready Stories can be converted to Ideation")
 
         if data.ideation_id:
-            ideation = await self.db.get(Ideation, data.ideation_id)
+            ideation = await _application_get(self.db, "ideation", data.ideation_id)
             if not ideation or ideation.board_id != board_id:
                 raise ValueError("Ideation not found in this board")
         else:
@@ -7968,7 +8270,7 @@ class StoryService:
             if not ideation:
                 return None
 
-        links: list[StoryIdeationLink] = []
+        links: list[ApplicationRecord] = []
         for story in stories:
             link = await self.link_story_to_ideation(
                 story.id, ideation.id, user_id, mark_converted=data.mark_converted
@@ -7979,7 +8281,7 @@ class StoryService:
         _old_ideation_mockups = list(ideation.screen_mockups or [])
         propagated = self._propagate_story_mockups(stories, ideation, data.mockup_ids)
         if propagated:
-            flag_modified(ideation, "screen_mockups")
+            ideation.mark_dirty("screen_mockups")
             # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): convert_stories
             # rewrites story mockups with FRESH ids onto the ideation — gate the new
             # entries (delta vs the pre-propagation set) BEFORE flush so a non-compliant
@@ -7989,16 +8291,16 @@ class StoryService:
                 ideation.board_id, _old_ideation_mockups, list(ideation.screen_mockups or []),
                 entity_type="ideation", entity_id=ideation.id,
             )
-        await self.db.flush()
-        await self.db.refresh(ideation)
+        await _application_flush(self.db)
+        await _application_refresh(self.db, ideation)
         for link in links:
-            await self.db.refresh(link)
+            await _application_refresh(self.db, link)
         return ideation, links, propagated
 
     def _propagate_story_mockups(
         self,
-        stories: list[Story],
-        ideation: Ideation,
+        stories: list[ApplicationRecord],
+        ideation: ApplicationRecord,
         mockup_ids: list[str] | None,
     ) -> int:
         selected = set(mockup_ids) if mockup_ids is not None else None
@@ -8037,7 +8339,7 @@ class AmbiguityGateError(ValueError):
 class IdeationService:
     """Service for ideation operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     _STATUS_ORDER = {
@@ -8061,7 +8363,8 @@ class IdeationService:
         version: int | None = None,
     ) -> None:
         """Record a history entry for an ideation."""
-        entry = IdeationHistory(
+        entry = _new_application_record(
+            "ideation_history",
             ideation_id=ideation_id,
             action=action,
             actor_type=actor_type,
@@ -8071,18 +8374,17 @@ class IdeationService:
             summary=summary,
             version=version,
         )
-        self.db.add(entry)
+        await _application_add(self.db, entry)
 
     async def list_history(self, ideation_id: str, limit: int = 50) -> list[IdeationHistory]:
         """List history entries for an ideation, newest first."""
-        query = (
-            select(IdeationHistory)
-            .where(IdeationHistory.ideation_id == ideation_id)
-            .order_by(IdeationHistory.created_at.desc())
-            .limit(limit)
+        return await _application_list(
+            self.db,
+            "ideation_history",
+            filters=(_apf("ideation_id", "eq", ideation_id),),
+            order_by=(("created_at", True),),
+            limit=limit,
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     @staticmethod
     def _compute_diff(old_data: dict, new_data: dict, fields: list[str]) -> list[dict]:
@@ -8117,11 +8419,11 @@ class IdeationService:
         )
         if board_query is None:
             return None
-        result = await self.db.execute(board_query)
-        if not result.scalar_one_or_none():
+        if not await _application_run(self.db, board_query):
             return None
 
-        ideation = Ideation(
+        ideation = _new_application_record(
+            "ideation",
             board_id=board_id,
             title=data.title,
             description=data.description,
@@ -8133,8 +8435,7 @@ class IdeationService:
             created_by=user_id,
             labels=data.labels,
         )
-        self.db.add(ideation)
-        await self.db.flush()
+        await _application_add(self.db, ideation)
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
@@ -8159,23 +8460,38 @@ class IdeationService:
 
     async def get_ideation(self, ideation_id: str) -> Ideation | None:
         """Get an ideation by ID with refinements, specs, and qa_items."""
-        query = (
-            select(Ideation)
-            .options(selectinload(Ideation.refinements).selectinload(Refinement.architecture_designs))
-            .options(selectinload(Ideation.specs).selectinload(Spec.architecture_designs))
-            .options(
-                selectinload(Ideation.story_links)
-                .selectinload(StoryIdeationLink.story)
-                .selectinload(Story.ideation_links)
-            )
-            .options(selectinload(Ideation.knowledge_bases))
-            .options(selectinload(Ideation.qa_items))
-            .options(selectinload(Ideation.architecture_designs))
-            .where(Ideation.id == ideation_id)
+        ideation = await _application_get(
+            self.db,
+            "ideation",
+            ideation_id,
+            includes=(
+                "refinements.architecture_designs",
+                "specs.architecture_designs",
+                "story_links.story",
+                "knowledge_bases",
+                "qa_items",
+                "architecture_designs",
+            ),
         )
-        result = await self.db.execute(query)
-        ideation = result.scalar_one_or_none()
         if ideation:
+            stories: list[ApplicationRecord] = []
+            for link in ideation.story_links or []:
+                story = getattr(link, "story", None)
+                if story is None:
+                    continue
+                story.attach(
+                    "ideation_links",
+                    [
+                        candidate
+                        for candidate in ideation.story_links
+                        if candidate.story_id == story.id
+                    ],
+                )
+                stories.append(story)
+            ideation.attach(
+                "stories",
+                stories,
+            )
             await _attach_active_refinement_counts(self.db, [ideation])
             await _attach_active_direct_spec_counts(self.db, [ideation])
             await _attach_active_spec_counts(self.db, list(ideation.refinements or []))
@@ -8183,19 +8499,19 @@ class IdeationService:
 
     async def list_ideations(self, board_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Ideation]:
         """List ideations for a board, optionally filtered by status."""
-        query = (
-            select(Ideation)
-            .options(selectinload(Ideation.architecture_designs))
-            .where(Ideation.board_id == board_id)
-        )
+        filters = [_apf("board_id", "eq", board_id)]
         if status_filter:
-            query = query.where(Ideation.status == IdeationStatus(status_filter))
+            filters.append(_apf("status", "eq", IdeationStatus(status_filter)))
         if not include_archived:
-            query = query.where(Ideation.archived.is_(False))
-        query = query.order_by(Ideation.updated_at.desc())
-        result = await self.db.execute(query)
-        rows = list(result.scalars().all())
-        await _attach_open_qa_counts(self.db, rows, IdeationQAItem, "ideation_id")
+            filters.append(_apf("archived", "is_false"))
+        rows = await _application_list(
+            self.db,
+            "ideation",
+            filters=tuple(filters),
+            order_by=(("updated_at", True),),
+            includes=("architecture_designs",),
+        )
+        await _attach_open_qa_counts(self.db, rows, "ideation_qa_item", "ideation_id")
         await _attach_active_refinement_counts(self.db, rows)
         await _attach_active_direct_spec_counts(self.db, rows)
         return rows
@@ -8246,7 +8562,7 @@ class IdeationService:
             else:
                 setattr(ideation, key, value)
             if key in ideation_json_fields:
-                flag_modified(ideation, key)
+                ideation.mark_dirty(key)
 
         if bumps_version:
             ideation.version += 1
@@ -8388,7 +8704,7 @@ class IdeationService:
         subsystems. The caller invokes this BEFORE ResourceGate so ambiguity
         errors take precedence.
         """
-        board = await self.db.get(Board, ideation.board_id)
+        board = await _application_get(self.db, "board", ideation.board_id)
         config = self._resolve_ideation_ambiguity_config(board)
         if not config["require_ideation_ambiguity_gate"]:
             return
@@ -8518,8 +8834,6 @@ class IdeationService:
 
     async def _create_snapshot(self, ideation: "Ideation", user_id: str) -> Any:
         """Create an immutable snapshot of the ideation's current state."""
-        from okto_pulse.core.models.db import IdeationSnapshot
-
         qa_snapshot = []
         for qa in (ideation.qa_items or []):
             qa_snapshot.append({
@@ -8532,7 +8846,8 @@ class IdeationService:
                 "answered_by": qa.answered_by,
             })
 
-        snapshot = IdeationSnapshot(
+        snapshot = _new_application_record(
+            "ideation_snapshot",
             ideation_id=ideation.id,
             version=ideation.version,
             title=ideation.title,
@@ -8545,30 +8860,30 @@ class IdeationService:
             qa_snapshot=qa_snapshot if qa_snapshot else None,
             created_by=user_id,
         )
-        self.db.add(snapshot)
-        await self.db.flush()
+        await _application_add(self.db, snapshot)
         return snapshot
 
     async def list_snapshots(self, ideation_id: str) -> list:
         """List all snapshots for an ideation."""
-        from okto_pulse.core.models.db import IdeationSnapshot
-        query = (
-            select(IdeationSnapshot)
-            .where(IdeationSnapshot.ideation_id == ideation_id)
-            .order_by(IdeationSnapshot.version.desc())
+        return await _application_list(
+            self.db,
+            "ideation_snapshot",
+            filters=(_apf("ideation_id", "eq", ideation_id),),
+            order_by=(("version", True),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def get_snapshot(self, ideation_id: str, version: int):
         """Get a specific version snapshot."""
-        from okto_pulse.core.models.db import IdeationSnapshot
-        query = select(IdeationSnapshot).where(
-            IdeationSnapshot.ideation_id == ideation_id,
-            IdeationSnapshot.version == version,
+        rows = await _application_list(
+            self.db,
+            "ideation_snapshot",
+            filters=(
+                _apf("ideation_id", "eq", ideation_id),
+                _apf("version", "eq", version),
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        return rows[0] if rows else None
 
     async def delete_ideation(self, ideation_id: str, user_id: str) -> bool:
         """Delete an ideation."""
@@ -8578,7 +8893,7 @@ class IdeationService:
 
         board_id = ideation.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await self.db.delete(ideation)
+        await _application_delete(self.db, ideation)
 
         await self._log_activity(
             board_id=board_id,
@@ -8715,7 +9030,7 @@ class IdeationService:
                 source_qa_items=snapshot_qa,
                 source_knowledge_bases=snapshot_kbs,
                 target_entity=spec,
-                target_kb_class=SpecKnowledgeBase,
+                target_kb_entity="spec_knowledge_base",
                 user_id=user_id,
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
@@ -8759,22 +9074,25 @@ class IdeationService:
 
     async def _log_activity(self, **kwargs: Any) -> None:
         """Log an activity."""
-        log = ActivityLog(**kwargs)
-        self.db.add(log)
+        await _application_add(
+            self.db,
+            _new_application_record("activity_log", **kwargs),
+        )
 
 
 class IdeationQAService:
     """Service for ideation Q&A operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def create_question(self, ideation_id: str, user_id: str, data: IdeationQACreate) -> IdeationQAItem | None:
         """Create a question on an ideation (text or choice)."""
-        ideation = await self.db.get(Ideation, ideation_id)
+        ideation = await _application_get(self.db, "ideation", ideation_id)
         if not ideation:
             return None
-        qa = IdeationQAItem(
+        qa = _new_application_record(
+            "ideation_qa_item",
             ideation_id=ideation_id,
             question=data.question,
             question_type=data.question_type or "text",
@@ -8782,8 +9100,7 @@ class IdeationQAService:
             allow_free_text=data.allow_free_text,
             asked_by=user_id,
         )
-        self.db.add(qa)
-        await self.db.flush()
+        await _application_add(self.db, qa)
         return qa
 
     async def answer_question(
@@ -8804,12 +9121,12 @@ class IdeationQAService:
         false-positive 200 (which caused the "toast says saved but the
         question flips back to unanswered" UX bug).
         """
-        qa = await self.db.get(IdeationQAItem, qa_id)
+        qa = await _application_get(self.db, "ideation_qa_item", qa_id)
         if not qa:
             return None
 
-        ideation = await self.db.get(Ideation, qa.ideation_id)
-        board = await self.db.get(Board, ideation.board_id) if ideation else None
+        ideation = await _application_get(self.db, "ideation", qa.ideation_id)
+        board = await _application_get(self.db, "board", ideation.board_id) if ideation else None
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -8849,20 +9166,19 @@ class IdeationQAService:
 
     async def list_qa(self, ideation_id: str) -> list[IdeationQAItem]:
         """List all Q&A items for an ideation."""
-        query = (
-            select(IdeationQAItem)
-            .where(IdeationQAItem.ideation_id == ideation_id)
-            .order_by(IdeationQAItem.created_at)
+        return await _application_list(
+            self.db,
+            "ideation_qa_item",
+            filters=(_apf("ideation_id", "eq", ideation_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def delete_question(self, qa_id: str) -> bool:
         """Delete a Q&A item."""
-        qa = await self.db.get(IdeationQAItem, qa_id)
+        qa = await _application_get(self.db, "ideation_qa_item", qa_id)
         if not qa:
             return False
-        await self.db.delete(qa)
+        await _application_delete(self.db, qa)
         return True
 
 
@@ -8875,7 +9191,7 @@ def _build_default_refinement_cognitive_done_guard() -> Any:
 class RefinementService:
     """Service for refinement operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
         # Cognitive closeout must run BEFORE snapshot/status mutation.
         # Keep the historical attribute name so existing tests and callers
@@ -8907,7 +9223,8 @@ class RefinementService:
         version: int | None = None,
     ) -> None:
         """Record a history entry for a refinement."""
-        entry = RefinementHistory(
+        entry = _new_application_record(
+            "refinement_history",
             refinement_id=refinement_id,
             action=action,
             actor_type=actor_type,
@@ -8917,18 +9234,17 @@ class RefinementService:
             summary=summary,
             version=version,
         )
-        self.db.add(entry)
+        await _application_add(self.db, entry)
 
     async def list_history(self, refinement_id: str, limit: int = 50) -> list[RefinementHistory]:
         """List history entries for a refinement, newest first."""
-        query = (
-            select(RefinementHistory)
-            .where(RefinementHistory.refinement_id == refinement_id)
-            .order_by(RefinementHistory.created_at.desc())
-            .limit(limit)
+        return await _application_list(
+            self.db,
+            "refinement_history",
+            filters=(_apf("refinement_id", "eq", refinement_id),),
+            order_by=(("created_at", True),),
+            limit=limit,
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     @staticmethod
     def _compute_diff(old_data: dict, new_data: dict, fields: list[str]) -> list[dict]:
@@ -8981,8 +9297,7 @@ class RefinementService:
             )
             if board_query is None:
                 return None
-            result = await self.db.execute(board_query)
-            if not result.scalar_one_or_none():
+            if not await _application_run(self.db, board_query):
                 return None
 
         description = data.description.strip() if data.description else None
@@ -9000,7 +9315,8 @@ class RefinementService:
         prop_architecture_ids = getattr(data, "architecture_design_ids", None)
         architecture_mode = getattr(data, "architecture_propagation_mode", "copy")
 
-        refinement = Refinement(
+        refinement = _new_application_record(
+            "refinement",
             ideation_id=ideation_id,
             board_id=board_id,
             title=data.title,
@@ -9027,8 +9343,7 @@ class RefinementService:
                 self.db, refinement, _submitted_mockups, entity_type="refinement"
             )
             refinement.screen_mockups = _submitted_mockups
-        self.db.add(refinement)
-        await self.db.flush()
+        await _application_add(self.db, refinement)
 
         # Propagate artifacts from ideation (mockups, KBs, Q&A)
         await propagate_artifacts(
@@ -9037,7 +9352,7 @@ class RefinementService:
             source_qa_items=ideation.qa_items,
             source_knowledge_bases=ideation.knowledge_bases,
             target_entity=refinement,
-            target_kb_class=RefinementKnowledgeBase,
+            target_kb_entity="refinement_knowledge_base",
             user_id=user_id,
             mockup_ids=prop_mockup_ids,
             kb_ids=prop_kb_ids,
@@ -9082,38 +9397,44 @@ class RefinementService:
 
     async def get_refinement(self, refinement_id: str) -> Refinement | None:
         """Get a refinement by ID with specs, knowledge_bases, and qa_items."""
-        query = (
-            select(Refinement)
-            .options(selectinload(Refinement.ideation).selectinload(Ideation.qa_items))
-            .options(selectinload(Refinement.ideation).selectinload(Ideation.knowledge_bases))
-            .options(selectinload(Refinement.ideation).selectinload(Ideation.architecture_designs))
-            .options(selectinload(Refinement.specs).selectinload(Spec.architecture_designs))
-            .options(selectinload(Refinement.knowledge_bases))
-            .options(selectinload(Refinement.qa_items))
-            .options(selectinload(Refinement.architecture_designs))
-            .where(Refinement.id == refinement_id)
+        refinement = await _application_get(
+            self.db,
+            "refinement",
+            refinement_id,
+            includes=(
+                "ideation.qa_items",
+                "ideation.knowledge_bases",
+                "ideation.architecture_designs",
+                "specs.architecture_designs",
+                "knowledge_bases",
+                "qa_items",
+                "architecture_designs",
+            ),
         )
-        result = await self.db.execute(query)
-        refinement = result.scalar_one_or_none()
         if refinement:
             await _attach_active_spec_counts(self.db, [refinement])
         return refinement
 
     async def list_refinements(self, ideation_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Refinement]:
         """List refinements for an ideation, optionally filtered by status."""
-        query = (
-            select(Refinement)
-            .options(selectinload(Refinement.architecture_designs))
-            .where(Refinement.ideation_id == ideation_id)
-        )
+        filters = [_apf("ideation_id", "eq", ideation_id)]
         if status_filter:
-            query = query.where(Refinement.status == RefinementStatus(status_filter))
+            filters.append(_apf("status", "eq", RefinementStatus(status_filter)))
         if not include_archived:
-            query = query.where(Refinement.archived.is_(False))
-        query = query.order_by(Refinement.updated_at.desc())
-        result = await self.db.execute(query)
-        rows = list(result.scalars().all())
-        await _attach_open_qa_counts(self.db, rows, RefinementQAItem, "refinement_id")
+            filters.append(_apf("archived", "is_false"))
+        rows = await _application_list(
+            self.db,
+            "refinement",
+            filters=tuple(filters),
+            order_by=(("updated_at", True),),
+            includes=("architecture_designs",),
+        )
+        await _attach_open_qa_counts(
+            self.db,
+            rows,
+            "refinement_qa_item",
+            "refinement_id",
+        )
         await _attach_active_spec_counts(self.db, rows)
         return rows
 
@@ -9157,11 +9478,16 @@ class RefinementService:
                 self.db, refinement, update_data["screen_mockups"], entity_type="refinement"
             )
 
-        refinement_json_fields = {"in_scope", "out_scope", "labels", "screen_mockups"}
+        refinement_json_fields = {
+            "in_scope",
+            "out_of_scope",
+            "labels",
+            "screen_mockups",
+        }
         for key, value in update_data.items():
             setattr(refinement, key, value)
             if key in refinement_json_fields:
-                flag_modified(refinement, key)
+                refinement.mark_dirty(key)
 
         if bumps_version:
             refinement.version += 1
@@ -9274,7 +9600,7 @@ class RefinementService:
         # mutation. A blocked response preserves the refinement in its current
         # status with no snapshot/history/activity changes.
         if data.status == RefinementStatus.DONE:
-            board = await self.db.get(Board, refinement.board_id)
+            board = await _application_get(self.db, "board", refinement.board_id)
             graph_state = await _resolve_closeout_graph_state(
                 refinement.board_id, self.db
             )
@@ -9379,7 +9705,8 @@ class RefinementService:
                 "answered_by": qa.answered_by,
             })
 
-        snapshot = RefinementSnapshot(
+        snapshot = _new_application_record(
+            "refinement_snapshot",
             refinement_id=refinement.id,
             version=refinement.version,
             title=refinement.title,
@@ -9392,28 +9719,30 @@ class RefinementService:
             qa_snapshot=qa_snapshot if qa_snapshot else None,
             created_by=user_id,
         )
-        self.db.add(snapshot)
-        await self.db.flush()
+        await _application_add(self.db, snapshot)
         return snapshot
 
     async def list_snapshots(self, refinement_id: str) -> list:
         """List all snapshots for a refinement."""
-        query = (
-            select(RefinementSnapshot)
-            .where(RefinementSnapshot.refinement_id == refinement_id)
-            .order_by(RefinementSnapshot.version.desc())
+        return await _application_list(
+            self.db,
+            "refinement_snapshot",
+            filters=(_apf("refinement_id", "eq", refinement_id),),
+            order_by=(("version", True),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def get_snapshot(self, refinement_id: str, version: int):
         """Get a specific version snapshot."""
-        query = select(RefinementSnapshot).where(
-            RefinementSnapshot.refinement_id == refinement_id,
-            RefinementSnapshot.version == version,
+        rows = await _application_list(
+            self.db,
+            "refinement_snapshot",
+            filters=(
+                _apf("refinement_id", "eq", refinement_id),
+                _apf("version", "eq", version),
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        return rows[0] if rows else None
 
     async def delete_refinement(self, refinement_id: str, user_id: str) -> bool:
         """Delete a refinement."""
@@ -9423,7 +9752,7 @@ class RefinementService:
 
         board_id = refinement.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await self.db.delete(refinement)
+        await _application_delete(self.db, refinement)
 
         await self._log_activity(
             board_id=board_id,
@@ -9521,7 +9850,7 @@ class RefinementService:
                 source_qa_items=snapshot_qa,
                 source_knowledge_bases=snapshot_kbs,
                 target_entity=spec,
-                target_kb_class=SpecKnowledgeBase,
+                target_kb_entity="spec_knowledge_base",
                 user_id=user_id,
                 mockup_ids=mockup_ids,
                 kb_ids=kb_ids,
@@ -9565,22 +9894,25 @@ class RefinementService:
 
     async def _log_activity(self, **kwargs: Any) -> None:
         """Log an activity."""
-        log = ActivityLog(**kwargs)
-        self.db.add(log)
+        await _application_add(
+            self.db,
+            _new_application_record("activity_log", **kwargs),
+        )
 
 
 class RefinementQAService:
     """Service for refinement Q&A operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def create_question(self, refinement_id: str, user_id: str, data: RefinementQACreate) -> RefinementQAItem | None:
         """Create a question on a refinement (text or choice)."""
-        refinement = await self.db.get(Refinement, refinement_id)
+        refinement = await _application_get(self.db, "refinement", refinement_id)
         if not refinement:
             return None
-        qa = RefinementQAItem(
+        qa = _new_application_record(
+            "refinement_qa_item",
             refinement_id=refinement_id,
             question=data.question,
             question_type=data.question_type or "text",
@@ -9588,8 +9920,7 @@ class RefinementQAService:
             allow_free_text=data.allow_free_text,
             asked_by=user_id,
         )
-        self.db.add(qa)
-        await self.db.flush()
+        await _application_add(self.db, qa)
         return qa
 
     async def answer_question(
@@ -9605,12 +9936,12 @@ class RefinementQAService:
         Mirrors IdeationQAService.answer_question — accepts `single_choice`
         as alias of `choice`, and only commits when something was persisted.
         """
-        qa = await self.db.get(RefinementQAItem, qa_id)
+        qa = await _application_get(self.db, "refinement_qa_item", qa_id)
         if not qa:
             return None
 
-        refinement = await self.db.get(Refinement, qa.refinement_id)
-        board = await self.db.get(Board, refinement.board_id) if refinement else None
+        refinement = await _application_get(self.db, "refinement", qa.refinement_id)
+        board = await _application_get(self.db, "board", refinement.board_id) if refinement else None
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -9647,35 +9978,35 @@ class RefinementQAService:
 
     async def list_qa(self, refinement_id: str) -> list[RefinementQAItem]:
         """List all Q&A items for a refinement."""
-        query = (
-            select(RefinementQAItem)
-            .where(RefinementQAItem.refinement_id == refinement_id)
-            .order_by(RefinementQAItem.created_at)
+        return await _application_list(
+            self.db,
+            "refinement_qa_item",
+            filters=(_apf("refinement_id", "eq", refinement_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def delete_question(self, qa_id: str) -> bool:
         """Delete a Q&A item."""
-        qa = await self.db.get(RefinementQAItem, qa_id)
+        qa = await _application_get(self.db, "refinement_qa_item", qa_id)
         if not qa:
             return False
-        await self.db.delete(qa)
+        await _application_delete(self.db, qa)
         return True
 
 
 class RefinementKnowledgeService:
     """Service for refinement knowledge base operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def create_knowledge(self, refinement_id: str, user_id: str, data: RefinementKnowledgeCreate) -> RefinementKnowledgeBase | None:
         """Create a knowledge base item on a refinement."""
-        refinement = await self.db.get(Refinement, refinement_id)
+        refinement = await _application_get(self.db, "refinement", refinement_id)
         if not refinement:
             return None
-        kb = RefinementKnowledgeBase(
+        kb = _new_application_record(
+            "refinement_knowledge_base",
             refinement_id=refinement_id,
             title=data.title,
             description=data.description,
@@ -9683,37 +10014,35 @@ class RefinementKnowledgeService:
             mime_type=data.mime_type,
             created_by=user_id,
         )
-        self.db.add(kb)
-        await self.db.flush()
+        await _application_add(self.db, kb)
         return kb
 
     async def get_knowledge(self, knowledge_id: str) -> RefinementKnowledgeBase | None:
         """Get a knowledge base item by ID."""
-        return await self.db.get(RefinementKnowledgeBase, knowledge_id)
+        return await _application_get(self.db, "refinement_knowledge_base", knowledge_id)
 
     async def list_knowledge(self, refinement_id: str) -> list[RefinementKnowledgeBase]:
         """List all knowledge base items for a refinement."""
-        query = (
-            select(RefinementKnowledgeBase)
-            .where(RefinementKnowledgeBase.refinement_id == refinement_id)
-            .order_by(RefinementKnowledgeBase.created_at)
+        return await _application_list(
+            self.db,
+            "refinement_knowledge_base",
+            filters=(_apf("refinement_id", "eq", refinement_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def delete_knowledge(self, knowledge_id: str) -> bool:
         """Delete a knowledge base item."""
         kb = await self.get_knowledge(knowledge_id)
         if not kb:
             return False
-        await self.db.delete(kb)
+        await _application_delete(self.db, kb)
         return True
 
 
 class GuidelineService:
     """Service for guideline operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def _board_visible(
@@ -9731,8 +10060,7 @@ class GuidelineService:
         )
         if query is None:
             return False
-        result = await self.db.execute(query.with_only_columns(Board.id))
-        return result.scalar_one_or_none() is not None
+        return bool(await _application_run(self.db, query))
 
     async def create_guideline(
         self,
@@ -9743,7 +10071,8 @@ class GuidelineService:
     ) -> Guideline:
         """Create a new guideline."""
         scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        guideline = Guideline(
+        guideline = _new_application_record(
+            "guideline",
             title=data.title,
             content=data.content,
             tags=data.tags,
@@ -9751,8 +10080,7 @@ class GuidelineService:
             board_id=data.board_id,
             owner_id=scoped_owner_id,
         )
-        self.db.add(guideline)
-        await self.db.flush()
+        await _application_add(self.db, guideline)
         return guideline
 
     async def get_guideline(
@@ -9769,14 +10097,17 @@ class GuidelineService:
         """
         scoped_owner_id = _scope_actor_id(owner_id, query_scope)
         if scoped_owner_id is None:
-            return await self.db.get(Guideline, guideline_id)
-        result = await self.db.execute(
-            select(Guideline).where(
-                Guideline.id == guideline_id,
-                Guideline.owner_id == scoped_owner_id,
-            )
+            return await _application_get(self.db, "guideline", guideline_id)
+        rows = await _application_list(
+            self.db,
+            "guideline",
+            filters=(
+                _apf("id", "eq", guideline_id),
+                _apf("owner_id", "eq", scoped_owner_id),
+            ),
+            limit=1,
         )
-        return result.scalar_one_or_none()
+        return rows[0] if rows else None
 
     async def list_guidelines(
         self,
@@ -9789,16 +10120,20 @@ class GuidelineService:
     ) -> list[Guideline]:
         """List global guidelines for an owner, optionally filtered by tag."""
         scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        query = (
-            select(Guideline)
-            .where(Guideline.owner_id == scoped_owner_id, Guideline.scope == "global")
-            .order_by(Guideline.created_at.desc())
-        )
+        filters = [
+            _apf("owner_id", "eq", scoped_owner_id),
+            _apf("scope", "eq", "global"),
+        ]
         if tag:
-            query = query.where(Guideline.tags.contains([tag]))
-        query = query.offset(offset).limit(limit)
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
+            filters.append(_apf("tags", "contains", [tag]))
+        return await _application_list(
+            self.db,
+            "guideline",
+            filters=tuple(filters),
+            order_by=(("created_at", True),),
+            offset=offset,
+            limit=limit,
+        )
 
     async def update_guideline(
         self,
@@ -9826,11 +10161,11 @@ class GuidelineService:
             changed = True
         if data.tags is not None:
             guideline.tags = data.tags
-            flag_modified(guideline, "tags")
+            guideline.mark_dirty("tags")
             changed = True
         if changed and guideline.scope == "global":
             guideline.version = (guideline.version or 1) + 1
-        await self.db.flush()
+        await _application_flush(self.db)
         return guideline
 
     async def delete_guideline(
@@ -9849,7 +10184,7 @@ class GuidelineService:
         )
         if not guideline:
             return False
-        await self.db.delete(guideline)
+        await _application_delete(self.db, guideline)
         return True
 
     async def get_board_guidelines(
@@ -9867,26 +10202,35 @@ class GuidelineService:
             query_scope,
         ):
             return []
-        # Linked global guidelines
-        linked_query = (
-            select(Guideline, BoardGuideline.priority)
-            .join(BoardGuideline, BoardGuideline.guideline_id == Guideline.id)
-            .where(BoardGuideline.board_id == board_id)
+        links = await _application_list(
+            self.db,
+            "board_guideline",
+            filters=(_apf("board_id", "eq", board_id),),
         )
-        linked_result = await self.db.execute(linked_query)
-        linked_rows = linked_result.all()
+        linked_ids = [link.guideline_id for link in links]
+        linked_guidelines = await _application_list(
+            self.db,
+            "guideline",
+            filters=(_apf("id", "in", linked_ids),),
+        ) if linked_ids else []
+        guidelines_by_id = {item.id: item for item in linked_guidelines}
 
         # Inline (board-scoped) guidelines
-        inline_query = (
-            select(Guideline)
-            .where(Guideline.board_id == board_id, Guideline.scope == "inline")
-            .order_by(Guideline.created_at)
+        inline_rows = await _application_list(
+            self.db,
+            "guideline",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("scope", "eq", "inline"),
+            ),
+            order_by=(("created_at", False),),
         )
-        inline_result = await self.db.execute(inline_query)
-        inline_rows = inline_result.scalars().all()
 
         items: list[dict] = []
-        for guideline, priority in linked_rows:
+        for link in links:
+            guideline = guidelines_by_id.get(link.guideline_id)
+            if guideline is None:
+                continue
             items.append({
                 "id": guideline.id,
                 "guideline": {
@@ -9901,7 +10245,7 @@ class GuidelineService:
                     "version": guideline.version or 1,
                     "updated_at": guideline.updated_at.isoformat() if guideline.updated_at else None,
                 },
-                "priority": priority,
+                "priority": link.priority,
                 "scope": guideline.scope,
             })
         for guideline in inline_rows:
@@ -9948,13 +10292,13 @@ class GuidelineService:
             query_scope,
         ):
             return None
-        link = BoardGuideline(
+        link = _new_application_record(
+            "board_guideline",
             board_id=board_id,
             guideline_id=guideline_id,
             priority=priority,
         )
-        self.db.add(link)
-        await self.db.flush()
+        await _application_add(self.db, link)
         return link
 
     async def unlink_guideline_from_board(
@@ -9972,15 +10316,19 @@ class GuidelineService:
             query_scope,
         ):
             return False
-        query = select(BoardGuideline).where(
-            BoardGuideline.board_id == board_id,
-            BoardGuideline.guideline_id == guideline_id,
+        rows = await _application_list(
+            self.db,
+            "board_guideline",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("guideline_id", "eq", guideline_id),
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        link = result.scalar_one_or_none()
+        link = rows[0] if rows else None
         if not link:
             return False
-        await self.db.delete(link)
+        await _application_delete(self.db, link)
         return True
 
     async def update_priority(
@@ -9999,16 +10347,20 @@ class GuidelineService:
             query_scope,
         ):
             return False
-        query = select(BoardGuideline).where(
-            BoardGuideline.board_id == board_id,
-            BoardGuideline.guideline_id == guideline_id,
+        rows = await _application_list(
+            self.db,
+            "board_guideline",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("guideline_id", "eq", guideline_id),
+            ),
+            limit=1,
         )
-        result = await self.db.execute(query)
-        link = result.scalar_one_or_none()
+        link = rows[0] if rows else None
         if not link:
             return False
         link.priority = priority
-        await self.db.flush()
+        await _application_flush(self.db)
         return True
 
     async def apply_default_guidelines(
@@ -10039,10 +10391,12 @@ class GuidelineService:
             query_scope,
         ):
             return []
-        existing = await self.db.execute(
-            select(BoardGuideline.guideline_id).where(BoardGuideline.board_id == board_id)
+        existing = await _application_list(
+            self.db,
+            "board_guideline",
+            filters=(_apf("board_id", "eq", board_id),),
         )
-        already_linked = set(existing.scalars())
+        already_linked = {link.guideline_id for link in existing}
         created: list[BoardGuideline] = []
         seen: set[str] = set()
         for ref in refs or []:
@@ -10050,7 +10404,8 @@ class GuidelineService:
             if guideline_id in seen or guideline_id in already_linked:
                 continue  # uq_board_guideline + intra-template de-dup (first wins)
             seen.add(guideline_id)
-            link = BoardGuideline(
+            link = _new_application_record(
+                "board_guideline",
                 board_id=board_id,
                 guideline_id=guideline_id,
                 priority=int(ref.get("priority", 0) or 0),
@@ -10058,10 +10413,8 @@ class GuidelineService:
                 template_version=template_version,
                 guideline_version=ref.get("guideline_version"),
             )
-            self.db.add(link)
+            await _application_add(self.db, link)
             created.append(link)
-        if created:
-            await self.db.flush()
         return created
 
 
@@ -10073,7 +10426,7 @@ class GuidelineService:
 class ArchiveService:
     """Service for archiving and restoring entity trees."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def _resolve_tree(
@@ -10082,41 +10435,49 @@ class ArchiveService:
         """Resolve the full descendant tree from a given entity.
         Returns {ideations: [...], refinements: [...], specs: [...], cards: [...]}.
         """
-        from okto_pulse.core.models.db import Ideation, Refinement, Spec, Card
-
         tree: dict[str, list] = {"ideations": [], "refinements": [], "specs": [], "cards": []}
 
         if entity_type == "ideation":
-            ideation = await self.db.get(Ideation, entity_id)
+            ideation = await _application_get(self.db, "ideation", entity_id)
             if not ideation:
                 raise ValueError("Ideation not found")
             tree["ideations"].append(ideation)
 
             # Refinements from this ideation
-            q = select(Refinement).where(Refinement.ideation_id == entity_id)
-            refinements = list((await self.db.execute(q)).scalars().all())
+            refinements = await _application_list(
+                self.db,
+                "refinement",
+                filters=(_apf("ideation_id", "eq", entity_id),),
+            )
             tree["refinements"].extend(refinements)
 
             # Specs from refinements + direct from ideation
             ref_ids = [r.id for r in refinements]
-            spec_q = select(Spec).where(
-                (Spec.ideation_id == entity_id) | (Spec.refinement_id.in_(ref_ids) if ref_ids else False)
+            spec_filters = [_apf("ideation_id", "eq", entity_id)]
+            if ref_ids:
+                spec_filters.append(_apf("refinement_id", "in", ref_ids))
+            specs = await _application_list(
+                self.db,
+                "spec",
+                any_filters=tuple(spec_filters),
             )
-            specs = list((await self.db.execute(spec_q)).scalars().all())
             tree["specs"].extend(specs)
 
         elif entity_type == "refinement":
-            refinement = await self.db.get(Refinement, entity_id)
+            refinement = await _application_get(self.db, "refinement", entity_id)
             if not refinement:
                 raise ValueError("Refinement not found")
             tree["refinements"].append(refinement)
 
-            spec_q = select(Spec).where(Spec.refinement_id == entity_id)
-            specs = list((await self.db.execute(spec_q)).scalars().all())
+            specs = await _application_list(
+                self.db,
+                "spec",
+                filters=(_apf("refinement_id", "eq", entity_id),),
+            )
             tree["specs"].extend(specs)
 
         elif entity_type == "spec":
-            spec = await self.db.get(Spec, entity_id)
+            spec = await _application_get(self.db, "spec", entity_id)
             if not spec:
                 raise ValueError("Spec not found")
             tree["specs"].append(spec)
@@ -10127,18 +10488,24 @@ class ArchiveService:
         # Cards from all specs in tree
         spec_ids = [s.id for s in tree["specs"]]
         if spec_ids:
-            card_q = select(Card).where(Card.spec_id.in_(spec_ids))
-            cards = list((await self.db.execute(card_q)).scalars().all())
+            cards = await _application_list(
+                self.db,
+                "card",
+                filters=(_apf("spec_id", "in", spec_ids),),
+            )
             tree["cards"].extend(cards)
 
             # Bug cards linked to these cards via origin_task_id
             card_ids = [c.id for c in cards]
             if card_ids:
-                bug_q = select(Card).where(
-                    Card.origin_task_id.in_(card_ids),
-                    Card.id.notin_(card_ids),  # avoid duplicates
+                bugs = await _application_list(
+                    self.db,
+                    "card",
+                    filters=(
+                        _apf("origin_task_id", "in", card_ids),
+                        _apf("id", "not_in", card_ids),
+                    ),
                 )
-                bugs = list((await self.db.execute(bug_q)).scalars().all())
                 tree["cards"].extend(bugs)
 
         return tree
@@ -10173,7 +10540,7 @@ class ArchiveService:
                 card.archived = True
                 counts["cards"] += 1
 
-        await self.db.flush()
+        await _application_flush(self.db)
         return counts
 
     async def restore_tree(self, entity_type: str, entity_id: str) -> dict[str, int]:
@@ -10233,7 +10600,7 @@ class ArchiveService:
                 card.pre_archive_status = None
                 counts["cards"] += 1
 
-        await self.db.flush()
+        await _application_flush(self.db)
         return counts
 
 
@@ -10274,7 +10641,7 @@ class SprintOperationError(ValueError):
 class SprintService:
     """Service for sprint operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     _SPRINT_TRANSITIONS = {
@@ -10290,16 +10657,27 @@ class SprintService:
         actor_type: str = "user", changes: list[dict] | None = None,
         summary: str | None = None, version: int | None = None,
     ) -> None:
-        entry = SprintHistory(
+        entry = _new_application_record(
+            "sprint_history",
             sprint_id=sprint_id, action=action, actor_type=actor_type,
             actor_id=actor_id, actor_name=actor_name,
             changes=changes, summary=summary, version=version,
         )
-        self.db.add(entry)
+        await _application_add(self.db, entry)
 
     async def _log_activity(self, **kwargs: Any) -> None:
-        log = ActivityLog(**kwargs)
-        self.db.add(log)
+        await _application_add(
+            self.db,
+            _new_application_record("activity_log", **kwargs),
+        )
+
+    @staticmethod
+    def _attach_derived_fields(sprint: ApplicationRecord) -> ApplicationRecord:
+        sprint.attach(
+            "normal_sprint_created",
+            sprint.lane_type == SprintLaneType.NORMAL,
+        )
+        return sprint
 
     @staticmethod
     def _lane_activity_details(sprint: Sprint) -> dict[str, Any]:
@@ -10312,7 +10690,7 @@ class SprintService:
             "lane_type": lane_type,
             "origin_sprint_id": sprint.origin_sprint_id,
             "origin_bug_id": sprint.origin_bug_id,
-            "normal_sprint_created": sprint.normal_sprint_created,
+            "normal_sprint_created": lane_type == SprintLaneType.NORMAL.value,
         }
 
     async def _validate_hotfix_lane_create(
@@ -10327,7 +10705,7 @@ class SprintService:
 
         origin_sprint: Sprint | None = None
         if data.origin_sprint_id:
-            origin_sprint = await self.db.get(Sprint, data.origin_sprint_id)
+            origin_sprint = await _application_get(self.db, "sprint", data.origin_sprint_id)
             if (
                 not origin_sprint
                 or origin_sprint.board_id != board_id
@@ -10346,7 +10724,7 @@ class SprintService:
 
         origin_bug: Card | None = None
         if data.origin_bug_id:
-            origin_bug = await self.db.get(Card, data.origin_bug_id)
+            origin_bug = await _application_get(self.db, "card", data.origin_bug_id)
             if (
                 not origin_bug
                 or origin_bug.board_id != board_id
@@ -10390,7 +10768,7 @@ class SprintService:
         query_scope: QueryScope | None = None,
     ) -> Sprint | None:
         """Create a new sprint for a spec."""
-        spec = await self.db.get(Spec, data.spec_id)
+        spec = await _application_get(self.db, "spec", data.spec_id)
         if not spec or spec.board_id != board_id:
             return None
         if not skip_ownership_check:
@@ -10402,8 +10780,7 @@ class SprintService:
             )
             if board_query is None:
                 return None
-            result = await self.db.execute(board_query)
-            if not result.scalar_one_or_none():
+            if not await _application_run(self.db, board_query):
                 return None
 
         await self._validate_hotfix_lane_create(board_id, spec, data)
@@ -10420,7 +10797,8 @@ class SprintService:
             if invalid:
                 raise ValueError(f"Business rule IDs not found in spec: {invalid}")
 
-        sprint = Sprint(
+        sprint = _new_application_record(
+            "sprint",
             board_id=board_id, spec_id=data.spec_id,
             title=data.title, description=data.description,
             objective=data.objective,
@@ -10434,8 +10812,8 @@ class SprintService:
             start_date=data.start_date, end_date=data.end_date,
             labels=data.labels, created_by=user_id,
         )
-        self.db.add(sprint)
-        await self.db.flush()
+        await _application_add(self.db, sprint)
+        self._attach_derived_fields(sprint)
 
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import SprintCreated as SprintCreatedEvent
@@ -10481,27 +10859,30 @@ class SprintService:
 
     async def get_sprint(self, sprint_id: str) -> Sprint | None:
         """Get a sprint by ID with cards, Q&A, and history."""
-        query = (
-            select(Sprint)
-            .options(selectinload(Sprint.cards))
-            .options(selectinload(Sprint.qa_items))
-            .options(selectinload(Sprint.history))
-            .where(Sprint.id == sprint_id)
+        sprint = await _application_get(
+            self.db,
+            "sprint",
+            sprint_id,
+            includes=("cards", "qa_items", "history"),
         )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        return self._attach_derived_fields(sprint) if sprint else None
 
     async def list_sprints(
         self, spec_id: str, include_archived: bool = False,
     ) -> list[Sprint]:
         """List sprints for a spec."""
-        query = select(Sprint).where(Sprint.spec_id == spec_id)
+        filters = [_apf("spec_id", "eq", spec_id)]
         if not include_archived:
-            query = query.where(Sprint.archived.is_(False))
-        query = query.order_by(Sprint.created_at.asc())
-        result = await self.db.execute(query)
-        rows = list(result.scalars().all())
-        await _attach_open_qa_counts(self.db, rows, SprintQAItem, "sprint_id")
+            filters.append(_apf("archived", "is_false"))
+        rows = await _application_list(
+            self.db,
+            "sprint",
+            filters=tuple(filters),
+            order_by=(("created_at", False),),
+        )
+        for sprint in rows:
+            self._attach_derived_fields(sprint)
+        await _attach_open_qa_counts(self.db, rows, "sprint_qa_item", "sprint_id")
         return rows
 
     async def list_board_sprints(
@@ -10510,19 +10891,23 @@ class SprintService:
         include_archived: bool = False,
     ) -> list[Sprint]:
         """List all sprints for a board, optionally filtered by status and/or spec."""
-        from sqlalchemy.orm import selectinload
-        query = select(Sprint).where(Sprint.board_id == board_id)
+        filters = [_apf("board_id", "eq", board_id)]
         if status_filter:
-            query = query.where(Sprint.status == SprintStatus(status_filter))
+            filters.append(_apf("status", "eq", SprintStatus(status_filter)))
         if spec_id:
-            query = query.where(Sprint.spec_id == spec_id)
+            filters.append(_apf("spec_id", "eq", spec_id))
         if not include_archived:
-            query = query.where(Sprint.archived.is_(False))
-        query = query.options(selectinload(Sprint.spec))
-        query = query.order_by(Sprint.updated_at.desc())
-        result = await self.db.execute(query)
-        rows = list(result.scalars().all())
-        await _attach_open_qa_counts(self.db, rows, SprintQAItem, "sprint_id")
+            filters.append(_apf("archived", "is_false"))
+        rows = await _application_list(
+            self.db,
+            "sprint",
+            filters=tuple(filters),
+            order_by=(("updated_at", True),),
+            includes=("spec",),
+        )
+        for sprint in rows:
+            self._attach_derived_fields(sprint)
+        await _attach_open_qa_counts(self.db, rows, "sprint_qa_item", "sprint_id")
         return rows
 
     async def update_sprint(
@@ -10544,14 +10929,14 @@ class SprintService:
 
         # Validate scoped IDs if changed
         if "test_scenario_ids" in update_data and update_data["test_scenario_ids"] is not None:
-            spec = await self.db.get(Spec, sprint.spec_id)
+            spec = await _application_get(self.db, "spec", sprint.spec_id)
             if spec:
                 spec_ts_ids = {s.get("id") for s in (spec.test_scenarios or [])}
                 invalid = set(update_data["test_scenario_ids"]) - spec_ts_ids
                 if invalid:
                     raise ValueError(f"Test scenario IDs not found in spec: {invalid}")
         if "business_rule_ids" in update_data and update_data["business_rule_ids"] is not None:
-            spec = spec if "test_scenario_ids" in update_data else await self.db.get(Spec, sprint.spec_id)
+            spec = spec if "test_scenario_ids" in update_data else await _application_get(self.db, "spec", sprint.spec_id)
             if spec:
                 spec_br_ids = {r.get("id") for r in (spec.business_rules or [])}
                 invalid = set(update_data["business_rule_ids"]) - spec_br_ids
@@ -10573,7 +10958,7 @@ class SprintService:
         for key, value in update_data.items():
             setattr(sprint, key, value)
             if key in json_fields:
-                flag_modified(sprint, key)
+                sprint.mark_dirty(key)
 
         if bumps_version:
             sprint.version += 1
@@ -10591,7 +10976,7 @@ class SprintService:
                 changes=changes, version=sprint.version,
                 summary=f"Updated: {', '.join(c['field'] for c in changes)}",
             )
-        await self.db.commit()
+        await _application_commit(self.db)
         return sprint
 
     async def move_sprint(
@@ -10613,8 +10998,8 @@ class SprintService:
                 f"Allowed: {allowed_values}"
             )
 
-        spec = await self.db.get(Spec, sprint.spec_id)
-        board = await self.db.get(Board, sprint.board_id) if spec else None
+        spec = await _application_get(self.db, "spec", sprint.spec_id)
+        board = await _application_get(self.db, "board", sprint.board_id) if spec else None
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -10630,11 +11015,16 @@ class SprintService:
 
         # Gate: draft → active requires at least 1 card assigned
         if data.status == SprintStatus.ACTIVE:
-            cards_q = select(func.count()).select_from(Card).where(
-                Card.sprint_id == sprint_id, Card.archived.is_(False),
+            assigned_cards = await _application_list(
+                self.db,
+                "card",
+                filters=(
+                    _apf("sprint_id", "eq", sprint_id),
+                    _apf("archived", "is_false"),
+                ),
+                limit=1,
             )
-            card_count = (await self.db.execute(cards_q)).scalar() or 0
-            if card_count == 0:
+            if not assigned_cards:
                 raise ValueError(
                     "Cannot activate sprint: no cards assigned. "
                     "Assign at least one card to this sprint before activating."
@@ -10662,16 +11052,20 @@ class SprintService:
         # checa se scenarios linked com status passed/automated têm evidence
         # persisted. Honra board.settings.skip_test_evidence_global.
         if data.status == SprintStatus.CLOSED and spec is not None:
-            open_cards_q = (
-                select(Card)
-                .where(
-                    Card.sprint_id == sprint_id,
-                    Card.archived.is_(False),
-                    Card.status.notin_([CardStatus.DONE, CardStatus.CANCELLED]),
-                )
-                .order_by(Card.created_at.asc(), Card.title.asc())
+            open_cards = await _application_list(
+                self.db,
+                "card",
+                filters=(
+                    _apf("sprint_id", "eq", sprint_id),
+                    _apf("archived", "is_false"),
+                    _apf(
+                        "status",
+                        "not_in",
+                        [CardStatus.DONE, CardStatus.CANCELLED],
+                    ),
+                ),
+                order_by=(("created_at", False), ("title", False)),
             )
-            open_cards = (await self.db.execute(open_cards_q)).scalars().all()
             if open_cards:
                 preview = ", ".join(
                     f"{card.title} ({card.status.value})" for card in open_cards[:5]
@@ -10714,12 +11108,15 @@ class SprintService:
             if not skip_evidence:
                 evidenceless: list[str] = []
                 # Sprint -> Test cards -> linked scenarios -> evidence check
-                test_cards_q = select(Card).where(
-                    Card.sprint_id == sprint_id,
-                    Card.archived.is_(False),
-                    Card.card_type == "test",
+                test_cards = await _application_list(
+                    self.db,
+                    "card",
+                    filters=(
+                        _apf("sprint_id", "eq", sprint_id),
+                        _apf("archived", "is_false"),
+                        _apf("card_type", "eq", CardType.TEST),
+                    ),
                 )
-                test_cards = (await self.db.execute(test_cards_q)).scalars().all()
                 spec_scenarios_by_id: dict[str, dict] = {
                     s.get("id"): s for s in (spec.test_scenarios or [])
                 }
@@ -10851,7 +11248,7 @@ class SprintService:
             summary=f"Status: {old_status.value} → {data.status.value}",
             version=sprint.version,
         )
-        await self.db.commit()
+        await _application_commit(self.db)
         return sprint
 
     async def delete_sprint(self, sprint_id: str, user_id: str) -> bool:
@@ -10859,25 +11256,30 @@ class SprintService:
         sprint = await self.get_sprint(sprint_id)
         if not sprint:
             return False
-        await self.db.execute(
-            update(Card).where(Card.sprint_id == sprint_id).values(sprint_id=None)
+        assigned_cards = await _application_list(
+            self.db,
+            "card",
+            filters=(_apf("sprint_id", "eq", sprint_id),),
         )
+        for card in assigned_cards:
+            card.sprint_id = None
+        await _application_flush(self.db)
         board_id = sprint.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await self.db.delete(sprint)
+        await _application_delete(self.db, sprint)
         await self._log_activity(
             board_id=board_id, action="sprint_deleted",
             actor_type="user", actor_id=user_id, actor_name=actor_name,
             details={"sprint_id": sprint_id},
         )
-        await self.db.commit()
+        await _application_commit(self.db)
         return True
 
     async def assign_tasks(
         self, sprint_id: str, card_ids: list[str], user_id: str,
     ) -> int:
         """Assign cards to a sprint. Cards must belong to the same spec."""
-        sprint = await self.db.get(Sprint, sprint_id)
+        sprint = await _application_get(self.db, "sprint", sprint_id)
         if not sprint:
             raise SprintOperationError(
                 "sprint_not_found",
@@ -10887,7 +11289,7 @@ class SprintService:
             )
         cards_to_assign: list[Card] = []
         for card_id in card_ids:
-            card = await self.db.get(Card, card_id)
+            card = await _application_get(self.db, "card", card_id)
             if not card:
                 continue
             if card.spec_id != sprint.spec_id:
@@ -10953,14 +11355,14 @@ class SprintService:
                 ),
                 version=sprint.version,
             )
-        await self.db.commit()
+        await _application_commit(self.db)
         return assigned
 
     async def submit_evaluation(
         self, sprint_id: str, user_id: str, evaluation: dict,
     ) -> Sprint | None:
         """Submit a qualitative evaluation for a sprint."""
-        sprint = await self.db.get(Sprint, sprint_id)
+        sprint = await _application_get(self.db, "sprint", sprint_id)
         if not sprint:
             return None
         if sprint.status != SprintStatus.REVIEW:
@@ -10993,7 +11395,7 @@ class SprintService:
         evals = list(sprint.evaluations or [])
         evals.append(eval_entry)
         sprint.evaluations = evals
-        flag_modified(sprint, "evaluations")
+        sprint.mark_dirty("evaluations")
 
         await self._log_activity(
             board_id=sprint.board_id, action="sprint_evaluation_submitted",
@@ -11018,7 +11420,7 @@ class SprintService:
             summary=f"Evaluation submitted: {evaluation.get('recommendation')} (score: {evaluation.get('overall_score')})",
             version=sprint.version,
         )
-        await self.db.commit()
+        await _application_commit(self.db)
         return sprint
 
     async def delete_evaluation(
@@ -11027,15 +11429,13 @@ class SprintService:
         """Delete a caller-owned evaluation from the ``Sprint.evaluations`` JSON column.
 
         MCP-FU6 (sprint, delete_sprint_evaluation, option A): the load, the ownership
-        gate (``evaluator_id``) and the JSON mutation + ``flag_modified`` live HERE in
-        the service (relational ratchet — ORM mutation must not leak into the use-case
+        gate (``evaluator_id``) and the JSON mutation live HERE in the service
+        (persistence mutation must not leak into the use-case
         layer). This does NOT commit; the caller (the MCP use case) owns the UoW commit
         so an unauthorized/not-found attempt persists nothing. Returns a status:
         ``"sprint_not_found"`` | ``"eval_not_found"`` | ``"not_owner"`` | ``"deleted"``.
         """
-        from sqlalchemy.orm.attributes import flag_modified
-
-        sprint = await self.db.get(Sprint, sprint_id)
+        sprint = await _application_get(self.db, "sprint", sprint_id)
         if not sprint:
             return "sprint_not_found"
         evaluations = list(sprint.evaluations or [])
@@ -11050,18 +11450,17 @@ class SprintService:
             return "not_owner"
         evaluations.remove(target)
         sprint.evaluations = evaluations
-        flag_modified(sprint, "evaluations")
+        sprint.mark_dirty("evaluations")
         return "deleted"
 
     async def list_history(self, sprint_id: str, limit: int = 50) -> list[SprintHistory]:
-        query = (
-            select(SprintHistory)
-            .where(SprintHistory.sprint_id == sprint_id)
-            .order_by(SprintHistory.created_at.desc())
-            .limit(limit)
+        return await _application_list(
+            self.db,
+            "sprint_history",
+            filters=(_apf("sprint_id", "eq", sprint_id),),
+            order_by=(("created_at", True),),
+            limit=limit,
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def suggest_sprints(
         self, spec_id: str, threshold: int = 8,
@@ -11077,16 +11476,23 @@ class SprintService:
         """
         import math
 
-        spec = await self.db.get(Spec, spec_id)
+        spec = await _application_get(self.db, "spec", spec_id)
         if not spec:
             raise ValueError("Spec not found")
 
-        cards_q = select(Card).where(
-            Card.spec_id == spec_id, Card.archived.is_(False),
-            Card.status.notin_([CardStatus.DONE, CardStatus.CANCELLED]),
+        cards = await _application_list(
+            self.db,
+            "card",
+            filters=(
+                _apf("spec_id", "eq", spec_id),
+                _apf("archived", "is_false"),
+                _apf(
+                    "status",
+                    "not_in",
+                    [CardStatus.DONE, CardStatus.CANCELLED],
+                ),
+            ),
         )
-        result = await self.db.execute(cards_q)
-        cards = list(result.scalars().all())
 
         if not cards:
             return []
@@ -11110,11 +11516,11 @@ class SprintService:
                 ungrouped.append(card)
 
         # Build dependency graph
-        deps_q = select(CardDependency).where(
-            CardDependency.card_id.in_([c.id for c in cards])
+        dependencies = await _application_list(
+            self.db,
+            "card_dependency",
+            filters=(_apf("card_id", "in", [c.id for c in cards]),),
         )
-        deps_result = await self.db.execute(deps_q)
-        dependencies = list(deps_result.scalars().all())
         dep_map: dict[str, set[str]] = {}
         for d in dependencies:
             dep_map.setdefault(d.card_id, set()).add(d.depends_on_id)
@@ -11199,7 +11605,7 @@ class SprintService:
 class SprintQAService:
     """Service for sprint Q&A operations."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def create_question(
@@ -11207,17 +11613,17 @@ class SprintQAService:
         question_type: str = "text", choices: list | None = None,
         allow_free_text: bool = False,
     ) -> SprintQAItem | None:
-        sprint = await self.db.get(Sprint, sprint_id)
+        sprint = await _application_get(self.db, "sprint", sprint_id)
         if not sprint:
             return None
-        qa = SprintQAItem(
+        qa = _new_application_record(
+            "sprint_qa_item",
             sprint_id=sprint_id, question=question,
             question_type=question_type or "text",
             choices=choices, allow_free_text=allow_free_text,
             asked_by=user_id,
         )
-        self.db.add(qa)
-        await self.db.flush()
+        await _application_add(self.db, qa)
         return qa
 
     async def answer_question(
@@ -11227,12 +11633,12 @@ class SprintQAService:
         actor_type: str = "user",
         surface: str = "service",
     ) -> SprintQAItem | None:
-        qa = await self.db.get(SprintQAItem, qa_id)
+        qa = await _application_get(self.db, "sprint_qa_item", qa_id)
         if not qa:
             return None
 
-        sprint = await self.db.get(Sprint, qa.sprint_id)
-        board = await self.db.get(Board, sprint.board_id) if sprint else None
+        sprint = await _application_get(self.db, "sprint", qa.sprint_id)
+        board = await _application_get(self.db, "board", sprint.board_id) if sprint else None
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -11249,29 +11655,28 @@ class SprintQAService:
         qa.answered_by = user_id
         qa.answered_at = datetime.now(timezone.utc)
         if selected is not None:
-            flag_modified(qa, "selected")
+            qa.mark_dirty("selected")
         return qa
 
     async def list_qa(self, sprint_id: str) -> list[SprintQAItem]:
-        query = (
-            select(SprintQAItem)
-            .where(SprintQAItem.sprint_id == sprint_id)
-            .order_by(SprintQAItem.created_at.asc())
+        return await _application_list(
+            self.db,
+            "sprint_qa_item",
+            filters=(_apf("sprint_id", "eq", sprint_id),),
+            order_by=(("created_at", False),),
         )
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
 
     async def delete_question(self, qa_id: str) -> bool:
         """Delete a Q&A item."""
-        qa = await self.db.get(SprintQAItem, qa_id)
+        qa = await _application_get(self.db, "sprint_qa_item", qa_id)
         if not qa:
             return False
-        await self.db.delete(qa)
+        await _application_delete(self.db, qa)
         return True
 
 
 async def mcp_list_my_mentions(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     agent_id: str,
@@ -11283,69 +11688,102 @@ async def mcp_list_my_mentions(
 
     seen_ids: set[str] = set()
     if not show_all:
-        seen_query = select(AgentSeenItem.item_id).where(AgentSeenItem.agent_id == agent_id)
-        seen_ids = {r[0] for r in (await db.execute(seen_query)).all()}
+        seen = await _application_list(
+            db,
+            "agent_seen_item",
+            filters=(_apf("agent_id", "eq", agent_id),),
+        )
+        seen_ids = {item.item_id for item in seen}
 
-    comment_results = (
-        await db.execute(
-            select(Comment, Card.title)
-            .join(Card, Card.id == Comment.card_id)
-            .where(Card.board_id == board_id)
-            .where(Comment.content.ilike(mention_pattern))
-            .order_by(Comment.created_at.desc())
-        )
-    ).all()
-    qa_results = (
-        await db.execute(
-            select(QAItem, Card.title)
-            .join(Card, Card.id == QAItem.card_id)
-            .where(Card.board_id == board_id)
-            .where(or_(QAItem.question.ilike(mention_pattern), QAItem.answer.ilike(mention_pattern)))
-            .order_by(QAItem.created_at.desc())
-        )
-    ).all()
-    spec_qa_results = (
-        await db.execute(
-            select(SpecQAItem, Spec.title)
-            .join(Spec, Spec.id == SpecQAItem.spec_id)
-            .where(Spec.board_id == board_id)
-            .where(
-                or_(
-                    SpecQAItem.question.ilike(mention_pattern),
-                    SpecQAItem.answer.ilike(mention_pattern),
-                )
-            )
-            .order_by(SpecQAItem.created_at.desc())
-        )
-    ).all()
-    ideation_qa_results = (
-        await db.execute(
-            select(IdeationQAItem, Ideation.title)
-            .join(Ideation, Ideation.id == IdeationQAItem.ideation_id)
-            .where(Ideation.board_id == board_id)
-            .where(
-                or_(
-                    IdeationQAItem.question.ilike(mention_pattern),
-                    IdeationQAItem.answer.ilike(mention_pattern),
-                )
-            )
-            .order_by(IdeationQAItem.created_at.desc())
-        )
-    ).all()
-    refinement_qa_results = (
-        await db.execute(
-            select(RefinementQAItem, Refinement.title)
-            .join(Refinement, Refinement.id == RefinementQAItem.refinement_id)
-            .where(Refinement.board_id == board_id)
-            .where(
-                or_(
-                    RefinementQAItem.question.ilike(mention_pattern),
-                    RefinementQAItem.answer.ilike(mention_pattern),
-                )
-            )
-            .order_by(RefinementQAItem.created_at.desc())
-        )
-    ).all()
+    cards = await _application_list(
+        db,
+        "card",
+        filters=(_apf("board_id", "eq", board_id),),
+    )
+    specs = await _application_list(
+        db,
+        "spec",
+        filters=(_apf("board_id", "eq", board_id),),
+    )
+    ideations = await _application_list(
+        db,
+        "ideation",
+        filters=(_apf("board_id", "eq", board_id),),
+    )
+    refinements = await _application_list(
+        db,
+        "refinement",
+        filters=(_apf("board_id", "eq", board_id),),
+    )
+
+    card_titles = {item.id: item.title for item in cards}
+    spec_titles = {item.id: item.title for item in specs}
+    ideation_titles = {item.id: item.title for item in ideations}
+    refinement_titles = {item.id: item.title for item in refinements}
+
+    comments = await _application_list(
+        db,
+        "comment",
+        filters=(
+            _apf("card_id", "in", list(card_titles)),
+            _apf("content", "ilike", mention_pattern),
+        ),
+        order_by=(("created_at", True),),
+    ) if card_titles else []
+    comment_results = [(item, card_titles[item.card_id]) for item in comments]
+
+    qa_items = await _application_list(
+        db,
+        "qa_item",
+        filters=(_apf("card_id", "in", list(card_titles)),),
+        any_filters=(
+            _apf("question", "ilike", mention_pattern),
+            _apf("answer", "ilike", mention_pattern),
+        ),
+        order_by=(("created_at", True),),
+    ) if card_titles else []
+    qa_results = [(item, card_titles[item.card_id]) for item in qa_items]
+
+    spec_qa_items = await _application_list(
+        db,
+        "spec_qa_item",
+        filters=(_apf("spec_id", "in", list(spec_titles)),),
+        any_filters=(
+            _apf("question", "ilike", mention_pattern),
+            _apf("answer", "ilike", mention_pattern),
+        ),
+        order_by=(("created_at", True),),
+    ) if spec_titles else []
+    spec_qa_results = [(item, spec_titles[item.spec_id]) for item in spec_qa_items]
+
+    ideation_qa_items = await _application_list(
+        db,
+        "ideation_qa_item",
+        filters=(_apf("ideation_id", "in", list(ideation_titles)),),
+        any_filters=(
+            _apf("question", "ilike", mention_pattern),
+            _apf("answer", "ilike", mention_pattern),
+        ),
+        order_by=(("created_at", True),),
+    ) if ideation_titles else []
+    ideation_qa_results = [
+        (item, ideation_titles[item.ideation_id]) for item in ideation_qa_items
+    ]
+
+    refinement_qa_items = await _application_list(
+        db,
+        "refinement_qa_item",
+        filters=(_apf("refinement_id", "in", list(refinement_titles)),),
+        any_filters=(
+            _apf("question", "ilike", mention_pattern),
+            _apf("answer", "ilike", mention_pattern),
+        ),
+        order_by=(("created_at", True),),
+    ) if refinement_titles else []
+    refinement_qa_results = [
+        (item, refinement_titles[item.refinement_id])
+        for item in refinement_qa_items
+    ]
 
     mentions: list[dict[str, Any]] = []
     for comment, card_title in comment_results:
@@ -11436,36 +11874,51 @@ async def mcp_list_my_mentions(
 
 
 async def mcp_mark_mentions_seen(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     agent_id: str,
     agent_name: str | None,
     item_ids: list[str],
 ) -> tuple[int, int]:
+    existing_rows = await _application_list(
+        db,
+        "agent_seen_item",
+        filters=(
+            _apf("agent_id", "eq", agent_id),
+            _apf("item_id", "in", item_ids),
+        ),
+    ) if item_ids else []
+    existing_ids = {item.item_id for item in existing_rows}
     marked = 0
     for item_id in item_ids:
-        existing = await db.execute(
-            select(AgentSeenItem).where(
-                AgentSeenItem.agent_id == agent_id,
-                AgentSeenItem.item_id == item_id,
-            )
-        )
-        if existing.scalar_one_or_none():
+        if item_id in existing_ids:
             continue
-        db.add(AgentSeenItem(agent_id=agent_id, item_type="mention", item_id=item_id))
+        await _application_add(
+            db,
+            _new_application_record(
+                "agent_seen_item",
+                agent_id=agent_id,
+                item_type="mention",
+                item_id=item_id,
+            ),
+        )
+        existing_ids.add(item_id)
         marked += 1
-    await db.flush()
 
     if marked > 0:
-        comment_result = await db.execute(
-            select(Comment.card_id).where(Comment.id.in_(item_ids)).distinct()
+        comments = await _application_list(
+            db,
+            "comment",
+            filters=(_apf("id", "in", item_ids),),
         )
-        qa_result = await db.execute(
-            select(QAItem.card_id).where(QAItem.id.in_(item_ids)).distinct()
+        qa_items = await _application_list(
+            db,
+            "qa_item",
+            filters=(_apf("id", "in", item_ids),),
         )
-        card_ids = {row[0] for row in comment_result.fetchall()} | {
-            row[0] for row in qa_result.fetchall()
+        card_ids = {item.card_id for item in comments} | {
+            item.card_id for item in qa_items
         }
         board_service = BoardService(db)
         for card_id in card_ids:
@@ -11479,10 +11932,12 @@ async def mcp_mark_mentions_seen(
                 details={"item_count": marked},
             )
 
-        spec_qa_result = await db.execute(
-            select(SpecQAItem.spec_id).where(SpecQAItem.id.in_(item_ids)).distinct()
+        spec_qa_items = await _application_list(
+            db,
+            "spec_qa_item",
+            filters=(_apf("id", "in", item_ids),),
         )
-        for spec_id in {row[0] for row in spec_qa_result.fetchall()}:
+        for spec_id in {item.spec_id for item in spec_qa_items}:
             await board_service._log_activity(
                 board_id=board_id,
                 action="spec_qa_seen",
@@ -11492,12 +11947,12 @@ async def mcp_mark_mentions_seen(
                 details={"spec_id": spec_id, "item_count": marked},
             )
 
-        ideation_qa_result = await db.execute(
-            select(IdeationQAItem.ideation_id)
-            .where(IdeationQAItem.id.in_(item_ids))
-            .distinct()
+        ideation_qa_items = await _application_list(
+            db,
+            "ideation_qa_item",
+            filters=(_apf("id", "in", item_ids),),
         )
-        for ideation_id in {row[0] for row in ideation_qa_result.fetchall()}:
+        for ideation_id in {item.ideation_id for item in ideation_qa_items}:
             await board_service._log_activity(
                 board_id=board_id,
                 action="ideation_qa_seen",
@@ -11507,12 +11962,12 @@ async def mcp_mark_mentions_seen(
                 details={"ideation_id": ideation_id, "item_count": marked},
             )
 
-        refinement_qa_result = await db.execute(
-            select(RefinementQAItem.refinement_id)
-            .where(RefinementQAItem.id.in_(item_ids))
-            .distinct()
+        refinement_qa_items = await _application_list(
+            db,
+            "refinement_qa_item",
+            filters=(_apf("id", "in", item_ids),),
         )
-        for refinement_id in {row[0] for row in refinement_qa_result.fetchall()}:
+        for refinement_id in {item.refinement_id for item in refinement_qa_items}:
             await board_service._log_activity(
                 board_id=board_id,
                 action="refinement_qa_seen",
@@ -11525,105 +11980,52 @@ async def mcp_mark_mentions_seen(
 
 
 async def mcp_get_unseen_summary(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     agent_id: str,
     agent_name: str | None,
 ) -> dict[str, Any]:
-    mention_pattern = f"%@{agent_name or ''}%"
-    seen_query = select(AgentSeenItem.item_id).where(AgentSeenItem.agent_id == agent_id)
-    seen_ids = {r[0] for r in (await db.execute(seen_query)).all()}
-
-    total_comment_mentions = (
-        await db.execute(
-            select(func.count())
-            .select_from(Comment)
-            .join(Card, Card.id == Comment.card_id)
-            .where(Card.board_id == board_id)
-            .where(Comment.content.ilike(mention_pattern))
-        )
-    ).scalar() or 0
-    total_qa_mentions = (
-        await db.execute(
-            select(func.count())
-            .select_from(QAItem)
-            .join(Card, Card.id == QAItem.card_id)
-            .where(Card.board_id == board_id)
-            .where(or_(QAItem.question.ilike(mention_pattern), QAItem.answer.ilike(mention_pattern)))
-        )
-    ).scalar() or 0
-    total_spec_qa_mentions = (
-        await db.execute(
-            select(func.count())
-            .select_from(SpecQAItem)
-            .join(Spec, Spec.id == SpecQAItem.spec_id)
-            .where(Spec.board_id == board_id)
-            .where(
-                or_(
-                    SpecQAItem.question.ilike(mention_pattern),
-                    SpecQAItem.answer.ilike(mention_pattern),
-                )
-            )
-        )
-    ).scalar() or 0
-    total_ideation_qa_mentions = (
-        await db.execute(
-            select(func.count())
-            .select_from(IdeationQAItem)
-            .join(Ideation, Ideation.id == IdeationQAItem.ideation_id)
-            .where(Ideation.board_id == board_id)
-            .where(
-                or_(
-                    IdeationQAItem.question.ilike(mention_pattern),
-                    IdeationQAItem.answer.ilike(mention_pattern),
-                )
-            )
-        )
-    ).scalar() or 0
-    total_refinement_qa_mentions = (
-        await db.execute(
-            select(func.count())
-            .select_from(RefinementQAItem)
-            .join(Refinement, Refinement.id == RefinementQAItem.refinement_id)
-            .where(Refinement.board_id == board_id)
-            .where(
-                or_(
-                    RefinementQAItem.question.ilike(mention_pattern),
-                    RefinementQAItem.answer.ilike(mention_pattern),
-                )
-            )
-        )
-    ).scalar() or 0
+    mentions, _ = await mcp_list_my_mentions(
+        db,
+        board_id=board_id,
+        agent_id=agent_id,
+        agent_name=agent_name,
+        include_seen=True,
+    )
+    mention_ids = {item["item_id"] for item in mentions}
+    seen_rows = await _application_list(
+        db,
+        "agent_seen_item",
+        filters=(
+            _apf("agent_id", "eq", agent_id),
+            _apf("item_id", "in", list(mention_ids)),
+        ),
+    ) if mention_ids else []
+    seen_ids = {item.item_id for item in seen_rows}
 
     recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    recent_activity = (
-        await db.execute(
-            select(func.count())
-            .select_from(ActivityLog)
-            .where(ActivityLog.board_id == board_id, ActivityLog.created_at >= recent_cutoff)
-        )
-    ).scalar() or 0
-
-    total_mentions = (
-        total_comment_mentions
-        + total_qa_mentions
-        + total_spec_qa_mentions
-        + total_ideation_qa_mentions
-        + total_refinement_qa_mentions
+    recent_activity = await _application_list(
+        db,
+        "activity_log",
+        filters=(
+            _apf("board_id", "eq", board_id),
+            _apf("created_at", "gte", recent_cutoff),
+        ),
     )
-    unseen_mentions = max(total_mentions - len(seen_ids), 0)
+    total_mentions = len(mentions)
+    unseen_mentions = total_mentions - len(seen_ids)
     return {
         "board_id": board_id,
         "unseen_mentions": unseen_mentions,
         "total_mentions": total_mentions,
         "seen_count": len(seen_ids),
-        "recent_activity_24h": recent_activity,
+        "recent_activity_24h": len(recent_activity),
     }
 
 
 async def mcp_get_activity_log_rows(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     limit: int,
@@ -11638,29 +12040,30 @@ async def mcp_get_activity_log_rows(
         sanitize_activity_details,
     )
 
-    query = select(ActivityLog).where(ActivityLog.board_id == board_id)
+    filters = [_apf("board_id", "eq", board_id)]
     if action:
-        query = query.where(ActivityLog.action == action)
+        filters.append(_apf("action", "eq", action))
     if card_id:
-        query = query.where(ActivityLog.card_id == card_id)
+        filters.append(_apf("card_id", "eq", card_id))
+    cursor_groups: tuple[tuple[ApplicationFilter, ...], ...] = ()
     if cursor_pair is not None:
         ts, rid = cursor_pair
-        ts_normalized = ts.replace(microsecond=0)
-        query = query.where(
-            or_(
-                func.datetime(ActivityLog.created_at) < func.datetime(ts_normalized),
-                and_(
-                    func.datetime(ActivityLog.created_at) == func.datetime(ts_normalized),
-                    ActivityLog.id < rid,
-                ),
-            )
+        cursor_groups = (
+            (_apf("created_at", "lt", ts),),
+            (
+                _apf("created_at", "eq", ts),
+                _apf("id", "lt", rid),
+            ),
         )
-    query = (
-        query.order_by(ActivityLog.created_at.desc(), ActivityLog.id.desc())
-        .offset(effective_offset)
-        .limit(limit + 1)
+    logs = await _application_list(
+        db,
+        "activity_log",
+        filters=tuple(filters),
+        any_groups=cursor_groups,
+        order_by=(("created_at", True), ("id", True)),
+        offset=effective_offset,
+        limit=limit + 1,
     )
-    logs = list((await db.execute(query)).scalars().all())
 
     has_more = len(logs) > limit
     if has_more:

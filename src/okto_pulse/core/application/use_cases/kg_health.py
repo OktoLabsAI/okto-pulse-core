@@ -14,9 +14,11 @@ adapter.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.ports.scheduler import SchedulerControl
 
 
@@ -48,13 +50,10 @@ class GetKgHealthUseCase:
     """Board KG health snapshot, transport-free. ``BoardNotFoundError`` propagates."""
 
     async def execute(
-        self, command: GetKgHealthCommand, *, actor: ActorContext, uow: Any
+        self, command: GetKgHealthCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetKgHealthResult:
-        from okto_pulse.core.services.kg_health_service import get_kg_health
-
-        data = await get_kg_health(
+        data = await uow.services.kg.health(
             command.board_id,
-            session_of(uow),
             scheduler_control=command.scheduler_control,
         )
         return GetKgHealthResult(data=data)
@@ -101,15 +100,10 @@ class GetKgHealthReadinessUseCase:
     """
 
     async def execute(
-        self, command: GetKgHealthReadinessCommand, *, actor: ActorContext, uow: Any
+        self, command: GetKgHealthReadinessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetKgHealthReadinessResult:
-        from okto_pulse.core.services.kg_health_readiness_service import (
-            build_health_readiness,
-        )
-
-        data = await build_health_readiness(
+        data = await uow.services.kg.health_readiness(
             command.board_id,
-            session_of(uow),
             profile=command.profile,
             surface=command.surface,
             artifact_ref=command.artifact_ref,

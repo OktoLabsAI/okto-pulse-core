@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -9,16 +11,14 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     PermissionDeniedError,
     commit,
-    session_of,
 )
 from okto_pulse.core.ports.relational_application import (
     EffectivePermissions,
-    require_relational_application_adapter,
 )
 
 
-def _gateway(uow: Any):
-    return require_relational_application_adapter().permission_presets(session_of(uow))
+def _gateway(uow: PulseUnitOfWork):
+    return uow.services.permission_presets
 
 
 class GetMyPermissionsCommand:
@@ -41,7 +41,7 @@ class GetMyPermissionsUseCase:
         command: GetMyPermissionsCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> GetMyPermissionsResult:
         permissions = await _gateway(uow).get_effective_permissions(
             user_id=actor.actor_id,
@@ -67,7 +67,7 @@ class ListPermissionPresetsUseCase:
         command: ListPermissionPresetsCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListPermissionPresetsResult:
         return ListPermissionPresetsResult(
             await _gateway(uow).list_presets(user_id=actor.actor_id)
@@ -102,7 +102,7 @@ class CreatePermissionPresetUseCase:
         command: CreatePermissionPresetCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> PermissionPresetResult:
         preset = await _gateway(uow).create_preset(
             user_id=actor.actor_id,
@@ -137,7 +137,7 @@ class ClonePermissionPresetUseCase:
         command: ClonePermissionPresetCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> PermissionPresetResult:
         preset = await _gateway(uow).clone_preset(
             source_preset_id=command.preset_id,
@@ -175,7 +175,7 @@ class UpdatePermissionPresetUseCase:
         command: UpdatePermissionPresetCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> PermissionPresetResult:
         try:
             preset = await _gateway(uow).update_preset(
@@ -206,7 +206,7 @@ class DeletePermissionPresetUseCase:
         command: DeletePermissionPresetCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> None:
         try:
             deleted = await _gateway(uow).delete_preset(

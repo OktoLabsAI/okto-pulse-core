@@ -237,7 +237,7 @@ def test_ts3_resolve_priority_boost_str_mapping(priority, expected):
 
 def test_ts3_resolve_priority_boost_enum_matches_str():
     """TS3: CardPriority enum values produce same result as their str."""
-    from okto_pulse.core.models.db import CardPriority
+    from sqlalchemy_test_models import CardPriority
 
     for level in CardPriority:
         expected = PRIORITY_BOOST_BY_LEVEL.get(level.value, 0.0)

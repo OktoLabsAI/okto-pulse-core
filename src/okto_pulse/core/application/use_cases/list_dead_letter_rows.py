@@ -9,18 +9,17 @@ inbound adapter builds the command/actor and serializes via
 
 Read-only: no commit. The public signature is transport-neutral — it never
 exposes ``AsyncSession``/``get_db`` (the relational session is reached through
-``session_of(uow)``), so this use case stays inside the purity-/boundary-gated
+the typed KG capability), so this use case stays inside the purity-/boundary-gated
 ``application/use_cases`` package.
 """
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, session_of
-from okto_pulse.core.services.dead_letter_inspector_service import (
-    list_dead_letter_rows,
-)
+from okto_pulse.core.application.use_cases.base import ActorContext
 
 
 class ListDeadLetterRowsCommand:
@@ -52,11 +51,9 @@ class ListDeadLetterRowsUseCase:
         command: ListDeadLetterRowsCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListDeadLetterRowsResult:
-        session = session_of(uow)
-        data = await list_dead_letter_rows(
-            session,
+        data = await uow.services.kg.list_dead_letter_rows(
             command.board_id,
             limit=command.limit,
             offset=command.offset,

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 
 @runtime_checkable
 class RelationalSchemaLifecycleOrchestrator(Protocol):
@@ -33,7 +35,7 @@ class RelationalSchemaLifecycleOrchestrator(Protocol):
 
 
 #: Process-wide registered orchestrator. ``None`` => init_db fails closed.
-_orchestrator: RelationalSchemaLifecycleOrchestrator | None = None
+_RUNTIME_KEY = "infra.schema_lifecycle.orchestrator"
 
 
 def register_relational_schema_lifecycle_orchestrator(
@@ -43,18 +45,16 @@ def register_relational_schema_lifecycle_orchestrator(
 
     Called by the edition composition root before ``init_db``.
     """
-    global _orchestrator
-    _orchestrator = orchestrator
+    register_runtime_value(_RUNTIME_KEY, orchestrator)
 
 
 def resolve_relational_schema_lifecycle_orchestrator() -> (
     RelationalSchemaLifecycleOrchestrator | None
 ):
     """Return the registered orchestrator, or ``None`` when unregistered."""
-    return _orchestrator
+    return resolve_runtime_value(_RUNTIME_KEY)
 
 
 def reset_relational_schema_lifecycle_orchestrator() -> None:
     """Clear any registered orchestrator."""
-    global _orchestrator
-    _orchestrator = None
+    reset_runtime_values(_RUNTIME_KEY)

@@ -64,7 +64,7 @@ from okto_pulse.core.kg.source_maturity import (
 def board_id():
     """Per-test isolated board graph (overrides the shared conftest board) so
     accumulated nodes from one R7 test never leak the layer verdict of another."""
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
 
     bid = f"r7board-{uuid.uuid4().hex[:12]}"
     bootstrap_board_graph(bid)
@@ -110,7 +110,7 @@ def _seed_node(
 
 
 def _seed_bug(board_id: str, *, graph_layer: str) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     bug_id = f"r7bug_{uuid.uuid4().hex[:12]}"
@@ -146,7 +146,7 @@ def _seed_connected_learning(board_id: str, source_ref: str) -> None:
     it via add_edge_candidate (Layer Ownership Isolation). The realistic shape
     for a provenance-only Learning is therefore an existing connected node that
     a later consolidation dedups onto."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     learning_id = f"r7learn_{uuid.uuid4().hex[:12]}"
@@ -187,7 +187,7 @@ def _seed_connected_learning(board_id: str, source_ref: str) -> None:
 
 
 def _count_nodes(board_id: str, node_type: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -207,7 +207,7 @@ def _count_nodes(board_id: str, node_type: str, source_ref: str) -> int:
 
 
 def _count_canonical_bugs(board_id: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -228,7 +228,7 @@ def _count_canonical_bugs(board_id: str) -> int:
 def _count_validates(
     board_id: str, learning_source_ref: str, *, bug_id: str | None = None
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     cypher = (
         "MATCH (n:Learning)-[r:validates]->(b:Bug) "

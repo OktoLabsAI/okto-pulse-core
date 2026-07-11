@@ -56,7 +56,7 @@ def _runtime_core_files() -> list[Path]:
 
 @pytest.mark.asyncio
 async def test_core_registers_kg_daily_tick_through_jobspec(monkeypatch) -> None:
-    from okto_pulse.core import app as app_mod
+    from okto_pulse.community import app as app_mod
     from okto_pulse.core.infra.config import (
         CoreSettings,
         configure_settings,

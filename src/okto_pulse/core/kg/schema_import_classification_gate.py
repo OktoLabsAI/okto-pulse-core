@@ -1,19 +1,4 @@
-"""KgSchemaImportClassificationGate (SaaS Refactor spec #06, tr_6d1efe1a).
-
-Reads the source tree and produces the canonical inventory of every importer of
-``okto_pulse.core.kg.schema``, classifying each by ``category`` / ``verdict`` /
-``target_port`` / ``owner`` / ``rationale`` (ac_70d3e4da). It blocks a
-non-adapter, non-allowlisted consumer that imports a forbidden direct-storage
-symbol — ``open_board_connection`` (transaction/DDL/lifecycle, ac_4c332301),
-``board_kuzu_path`` / ``close_all_connections`` / ``purge_board_graph_storage``
-(path/lifecycle, ac_eacf2ac1) — pointing at the target port that should replace
-it. The report also reconciles the count divergence (validator 45 vs local
-42 files / 77 import statements vs the live recount, ac_1c413377) and recounts
-the direct-storage reference baselines.
-
-This card does NOT move Kuzu/Ladybug, touch real storage or change KG behavior —
-it is read-only static analysis (``ast`` + ``pathlib``).
-"""
+"""Fail-closed inventory for the retired concrete graph schema facade."""
 
 from __future__ import annotations
 
@@ -29,7 +14,7 @@ TARGET_PARENT = "okto_pulse.core.kg"  # for `from okto_pulse.core.kg import sche
 ALLOWLIST_EMBEDDED_PREFIX = ""
 ALLOWLIST_MIGRATION_FILES = frozenset()
 #: The `kg migrate-schema` CLI (lives outside core/, documented for completeness).
-ALLOWLIST_MIGRATION_CLI = "tools/kg_migrate_schema.py"
+ALLOWLIST_MIGRATION_CLI = ""
 
 VERDICT_ADAPTER = "adapter_internal_legitimate"
 VERDICT_ALLOWLISTED = "migration_allowlisted"
@@ -165,7 +150,7 @@ _SYMBOL_CLASS: dict[str, tuple[str, str, bool]] = {
     "ensure_board_graph_bootstrapped": ("lifecycle", "GraphLifecycle", True),
     "reset_bootstrap_cache_for_tests": ("lifecycle", "GraphLifecycle", True),
     "apply_ladybug_lifecycle_step": ("lifecycle", "GraphLifecycle", True),
-    "board_kuzu_path": ("path_purge", "GraphPathResolver", True),
+    "board_kuzu_path": ("path_purge", "GraphRuntimeStore/StorageRef", True),
     "purge_board_graph_storage": ("path_purge", "GraphLifecycle", True),
     "migrate_schema_for_board": ("ddl_schema", "GraphSchemaManager", True),
     "migrate_edge_metadata": ("ddl_schema", "GraphSchemaManager", True),
@@ -201,6 +186,10 @@ REF_BASELINE = {
     "open_board_connection": 118,
     "board_kuzu_path": 54,
     "close_all_connections": 15,
+    "open_kuzu_db": 0,
+    "apply_ladybug_lifecycle_step": 0,
+    "affected_paths": 0,
+    "purge_board_graph_storage": 0,
 }
 
 # Category precedence when a file imports several symbols — the most coupled wins.
@@ -390,18 +379,22 @@ def _classify_file(rel_path: str, symbols: set[str]) -> KgSchemaImporter:
 
 def _count_refs(core_root: Path) -> dict:
     refs = {k: 0 for k in REF_BASELINE}
-    # Exclude this gate module itself: it carries the symbol names as
-    # classification keys, which would otherwise inflate the usage recount.
     self_file = Path(__file__).resolve()
     for path in core_root.rglob("*.py"):
         if path.resolve() == self_file:
             continue
         try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError):
             continue
-        for sym in refs:
-            refs[sym] += text.count(sym)
+        for node in ast.walk(tree):
+            symbol = None
+            if isinstance(node, ast.Name):
+                symbol = node.id
+            elif isinstance(node, ast.Attribute):
+                symbol = node.attr
+            if symbol in refs:
+                refs[symbol] += 1
     return refs
 
 
@@ -464,19 +457,15 @@ def run_kg_schema_import_classification_gate(
             f"finds {current_files} importer files / {import_statements} "
             f"import statements vs the validator baseline of {VALIDATOR_BASELINE_IMPORTER_FILES} and "
             f"the spec-local {SPEC_LOCAL_IMPORTER_FILES} files / {SPEC_LOCAL_IMPORT_STATEMENTS} "
-            f"statements. The file-vs-statement gap is a counting criterion (one file may carry "
-            f"several `from kg.schema import ...`). The drift from the spec-local baseline is code "
-            f"evolution tracked by this gate: P2-05 moved embedded Kuzu adapters out of core, "
-            f"while consumers migrated to ports drop direct symbols. Counts are a controlled "
-            f"debt baseline, not a blind target. (An earlier core/-only scan under-counted by "
-            f"omitting tools/ importers; a tools/ file that no longer imports kg.schema is "
-            f"correctly absent from the importer table.)"
+            f"statements. The historical numbers explain the migration baseline; the closure "
+            f"oracle requires both current values and every direct primitive reference to be zero."
         ),
     }
 
+    current_refs = _count_refs(base)
     recounted_refs = {
         "baseline": dict(REF_BASELINE),
-        "current": _count_refs(base),
+        "current": current_refs,
     }
 
     ledgered_present = sorted(
@@ -491,7 +480,7 @@ def run_kg_schema_import_classification_gate(
     ]
 
     return KgSchemaClassificationReport(
-        ok=not violations,
+        ok=not violations and not any(current_refs.values()),
         importers=importers,
         violations=violations,
         reconciliation=reconciliation,

@@ -41,22 +41,16 @@ Behavioral fidelity to the legacy endpoints:
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
-from okto_pulse.core.services import (
-    IdeationService,
-    RefinementKnowledgeService,
-    RefinementQAService,
-    RefinementService,
-    SpecService,
-)
 
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
@@ -95,9 +89,9 @@ class CreateRefinementUseCase:
     ``get_refinement`` after commit so the relationships are loaded."""
 
     async def execute(
-        self, command: CreateRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateRefinementResult:
-        service = RefinementService(session_of(uow))
+        service = uow.services.refinements
         refinement = await service.create_refinement(
             command.ideation_id,
             actor.actor_id,
@@ -140,13 +134,12 @@ class ListRefinementsUseCase:
     is ``EntityNotFoundError("ideation")`` (adapter → 404 "Ideation not found")."""
 
     async def execute(
-        self, command: ListRefinementsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListRefinementsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListRefinementsResult:
-        session = session_of(uow)
-        ideation = await IdeationService(session).get_ideation(command.ideation_id)
+        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
         if not ideation:
             raise EntityNotFoundError("ideation", command.ideation_id)
-        refinements = await RefinementService(session).list_refinements(
+        refinements = await uow.services.refinements.list_refinements(
             command.ideation_id,
             command.status_filter,
             include_archived=command.include_archived,
@@ -175,9 +168,9 @@ class GetRefinementUseCase:
     """Fetch a refinement with nested data (read, no commit). 404 when missing."""
 
     async def execute(
-        self, command: GetRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: GetRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetRefinementResult:
-        refinement = await RefinementService(session_of(uow)).get_refinement(
+        refinement = await uow.services.refinements.get_refinement(
             command.refinement_id
         )
         if not refinement:
@@ -211,9 +204,9 @@ class UpdateRefinementUseCase:
     via ``get_refinement`` after commit."""
 
     async def execute(
-        self, command: UpdateRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateRefinementResult:
-        service = RefinementService(session_of(uow))
+        service = uow.services.refinements
         refinement = await service.update_refinement(
             command.refinement_id, actor.actor_id, command.data
         )
@@ -249,9 +242,9 @@ class MoveRefinementUseCase:
     ``EntityNotFoundError("refinement")`` (→ 404). Re-fetches after commit."""
 
     async def execute(
-        self, command: MoveRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: MoveRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveRefinementResult:
-        service = RefinementService(session_of(uow))
+        service = uow.services.refinements
         refinement = await service.move_refinement(
             command.refinement_id, actor.actor_id, command.data
         )
@@ -281,9 +274,9 @@ class DeleteRefinementUseCase:
     after the delete."""
 
     async def execute(
-        self, command: DeleteRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteRefinementResult:
-        deleted = await RefinementService(session_of(uow)).delete_refinement(
+        deleted = await uow.services.refinements.delete_refinement(
             command.refinement_id, actor.actor_id
         )
         if not deleted:
@@ -317,10 +310,9 @@ class DeriveSpecFromRefinementUseCase:
     the legacy endpoint did."""
 
     async def execute(
-        self, command: DeriveSpecFromRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: DeriveSpecFromRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeriveSpecFromRefinementResult:
-        session = session_of(uow)
-        spec = await RefinementService(session).derive_spec(
+        spec = await uow.services.refinements.derive_spec(
             command.refinement_id,
             actor.actor_id,
             query_scope=_query_scope_for_actor(actor),
@@ -328,7 +320,7 @@ class DeriveSpecFromRefinementUseCase:
         if not spec:
             raise EntityNotFoundError("refinement", command.refinement_id)
         await commit(uow)
-        return DeriveSpecFromRefinementResult(await SpecService(session).get_spec(spec.id))
+        return DeriveSpecFromRefinementResult(await uow.services.specs.get_spec(spec.id))
 
 
 # --- history ----------------------------------------------------------------
@@ -353,9 +345,9 @@ class ListRefinementHistoryUseCase:
     """Read a refinement's change history (read, no commit)."""
 
     async def execute(
-        self, command: ListRefinementHistoryCommand, *, actor: ActorContext, uow: Any
+        self, command: ListRefinementHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListRefinementHistoryResult:
-        history = await RefinementService(session_of(uow)).list_history(
+        history = await uow.services.refinements.list_history(
             command.refinement_id, command.limit
         )
         return ListRefinementHistoryResult(history)
@@ -388,9 +380,9 @@ class ListRefinementQAUseCase:
     no existence check — an unknown refinement simply yields an empty list."""
 
     async def execute(
-        self, command: ListRefinementQACommand, *, actor: ActorContext, uow: Any
+        self, command: ListRefinementQACommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListRefinementQAResult:
-        items = await RefinementQAService(session_of(uow)).list_qa(command.refinement_id)
+        items = await uow.services.refinement_qa.list_qa(command.refinement_id)
         return ListRefinementQAResult(items)
 
 
@@ -418,9 +410,9 @@ class CreateRefinementQuestionUseCase:
     "Refinement not found"); commits after the service mutation."""
 
     async def execute(
-        self, command: CreateRefinementQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateRefinementQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateRefinementQuestionResult:
-        qa = await RefinementQAService(session_of(uow)).create_question(
+        qa = await uow.services.refinement_qa.create_question(
             command.refinement_id, actor.actor_id, command.data
         )
         if not qa:
@@ -457,11 +449,11 @@ class AnswerRefinementQuestionUseCase:
     item not found"); a successful answer commits."""
 
     async def execute(
-        self, command: AnswerRefinementQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: AnswerRefinementQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AnswerRefinementQuestionResult:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
-        service = RefinementQAService(session_of(uow))
+        service = uow.services.refinement_qa
         try:
             qa = await service.answer_question(
                 command.qa_id, actor.actor_id, command.data,
@@ -496,9 +488,9 @@ class DeleteRefinementQuestionUseCase:
     item not found"); commits after the delete."""
 
     async def execute(
-        self, command: DeleteRefinementQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteRefinementQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteRefinementQuestionResult:
-        deleted = await RefinementQAService(session_of(uow)).delete_question(command.qa_id)
+        deleted = await uow.services.refinement_qa.delete_question(command.qa_id)
         if not deleted:
             raise EntityNotFoundError("refinement_qa", command.qa_id)
         await commit(uow)
@@ -531,9 +523,9 @@ class ListRefinementSnapshotsUseCase:
     """List a refinement's version snapshots (read, no commit)."""
 
     async def execute(
-        self, command: ListRefinementSnapshotsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListRefinementSnapshotsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListRefinementSnapshotsResult:
-        snapshots = await RefinementService(session_of(uow)).list_snapshots(
+        snapshots = await uow.services.refinements.list_snapshots(
             command.refinement_id
         )
         return ListRefinementSnapshotsResult(snapshots)
@@ -563,9 +555,9 @@ class GetRefinementSnapshotUseCase:
     adapter maps it to the legacy ``f"Snapshot v{version} not found"`` 404."""
 
     async def execute(
-        self, command: GetRefinementSnapshotCommand, *, actor: ActorContext, uow: Any
+        self, command: GetRefinementSnapshotCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetRefinementSnapshotResult:
-        snapshot = await RefinementService(session_of(uow)).get_snapshot(
+        snapshot = await uow.services.refinements.get_snapshot(
             command.refinement_id, command.version
         )
         if not snapshot:
@@ -601,9 +593,9 @@ class ListRefinementKnowledgeUseCase:
     yields an empty list."""
 
     async def execute(
-        self, command: ListRefinementKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: ListRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListRefinementKnowledgeResult:
-        items = await RefinementKnowledgeService(session_of(uow)).list_knowledge(
+        items = await uow.services.refinement_knowledge.list_knowledge(
             command.refinement_id
         )
         return ListRefinementKnowledgeResult(items)
@@ -634,9 +626,9 @@ class GetRefinementKnowledgeUseCase:
     "Knowledge base item not found"."""
 
     async def execute(
-        self, command: GetRefinementKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: GetRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetRefinementKnowledgeResult:
-        kb = await RefinementKnowledgeService(session_of(uow)).get_knowledge(
+        kb = await uow.services.refinement_knowledge.get_knowledge(
             command.knowledge_id
         )
         if not kb or kb.refinement_id != command.refinement_id:
@@ -669,9 +661,9 @@ class CreateRefinementKnowledgeUseCase:
     commits after the service mutation."""
 
     async def execute(
-        self, command: CreateRefinementKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateRefinementKnowledgeResult:
-        kb = await RefinementKnowledgeService(session_of(uow)).create_knowledge(
+        kb = await uow.services.refinement_knowledge.create_knowledge(
             command.refinement_id, actor.actor_id, command.data
         )
         if not kb:
@@ -703,9 +695,9 @@ class DeleteRefinementKnowledgeUseCase:
     delete on the ``knowledge_id`` alone (no refinement cross-check)."""
 
     async def execute(
-        self, command: DeleteRefinementKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteRefinementKnowledgeResult:
-        deleted = await RefinementKnowledgeService(session_of(uow)).delete_knowledge(
+        deleted = await uow.services.refinement_knowledge.delete_knowledge(
             command.knowledge_id
         )
         if not deleted:

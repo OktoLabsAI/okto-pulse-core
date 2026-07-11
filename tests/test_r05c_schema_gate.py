@@ -141,8 +141,8 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     transaction port directly in the route module; ``boost_node`` now goes
     through ``BoostNodeUseCase`` and its graph read/SET lives in
     ``kg.governance.boost_node``, which consumes the same port."""
-    import okto_pulse.core.api.kg_routes as kg_routes
-    import okto_pulse.core.api.kg_tick as kg_tick
+    import okto_pulse.community.api.kg_routes as kg_routes
+    import okto_pulse.community.api.kg_tick as kg_tick
     import okto_pulse.core.kg.canonical_learning_partition as clp
     import okto_pulse.core.kg.governance as kg_governance
 

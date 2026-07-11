@@ -5,7 +5,7 @@ PURITY GUARDRAIL (Codex-mandated, enforced by test_r01a_mcp_refinement_uow.py): 
 module is transport-free. It MUST NOT import the MCP server/transport package nor any
 server-side transport helper. The MCP adapter (server.py) keeps JSON parsing /
 coercion, the board-scoping envelopes, and the MCP aggregation projections
-(get_refinement/get_refinement_context refinements/specs/qa_items over uow.session —
+(get_refinement/get_refinement_context refinements/specs/qa_items in the adapter —
 the get_spec_context precedent).
 
 Refinement mirrors the ideation family (CRUD + reads + knowledge + Q&A) WITHOUT the
@@ -15,15 +15,15 @@ evaluate/stories tools. Board-scope is ASYMMETRIC: present on get/get_context/mo
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
-from okto_pulse.core.services import RefinementService
 
 
 # --- create (skip_ownership; ValueError propagates) --------------------------
@@ -52,9 +52,9 @@ class McpCreateRefinementUseCase:
     build (coercions) and the envelope."""
 
     async def execute(
-        self, command: McpCreateRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: McpCreateRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpCreateRefinementResult:
-        refinement = await RefinementService(session_of(uow)).create_refinement(
+        refinement = await uow.services.refinements.create_refinement(
             command.ideation_id,
             actor.actor_id,
             command.refinement_data,
@@ -64,7 +64,7 @@ class McpCreateRefinementUseCase:
         return McpCreateRefinementResult(refinement)
 
 
-# --- get (board-scoped; adapter aggregates lazy over uow.session) ------------
+# --- get (board-scoped; adapter owns presentation aggregation) ---------------
 
 
 class McpGetRefinementCommand:
@@ -85,13 +85,13 @@ class McpGetRefinementResult:
 class McpGetRefinementUseCase:
     """Board-scoped refinement fetch (read, no commit). A missing OR cross-board
     refinement is ``EntityNotFoundError`` -> the adapter's "Refinement not found".
-    The specs/qa_items aggregation is built by the adapter over ``uow.session`` (lazy
+    The specs/qa_items aggregation is built by the adapter through its presentation
     relationships) — reused by get_refinement_context."""
 
     async def execute(
-        self, command: McpGetRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetRefinementResult:
-        refinement = await RefinementService(session_of(uow)).get_refinement(
+        refinement = await uow.services.refinements.get_refinement(
             command.refinement_id
         )
         if not refinement or refinement.board_id != command.board_id:
@@ -124,9 +124,9 @@ class McpUpdateRefinementUseCase:
     fields + "No fields to update") and the envelope."""
 
     async def execute(
-        self, command: McpUpdateRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateRefinementResult:
-        refinement = await RefinementService(session_of(uow)).update_refinement(
+        refinement = await uow.services.refinements.update_refinement(
             command.refinement_id, actor.actor_id, command.payload
         )
         if not refinement:
@@ -163,9 +163,9 @@ class McpMoveRefinementUseCase:
     adapter's ``{"error": str}``."""
 
     async def execute(
-        self, command: McpMoveRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: McpMoveRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMoveRefinementResult:
-        service = RefinementService(session_of(uow))
+        service = uow.services.refinements
         existing = await service.get_refinement(command.refinement_id)
         if not existing or existing.board_id != command.board_id:
             raise EntityNotFoundError("refinement", command.refinement_id)
@@ -205,9 +205,9 @@ class McpDeleteRefinementUseCase:
     "Refinement not found"."""
 
     async def execute(
-        self, command: McpDeleteRefinementCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteRefinementResult:
-        deleted = await RefinementService(session_of(uow)).delete_refinement(
+        deleted = await uow.services.refinements.delete_refinement(
             command.refinement_id, actor.actor_id
         )
         await commit(uow)
@@ -239,9 +239,9 @@ class McpGetRefinementSnapshotUseCase:
     envelope."""
 
     async def execute(
-        self, command: McpGetRefinementSnapshotCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetRefinementSnapshotCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetRefinementSnapshotResult:
-        snapshot = await RefinementService(session_of(uow)).get_snapshot(
+        snapshot = await uow.services.refinements.get_snapshot(
             command.refinement_id, command.version
         )
         return McpGetRefinementSnapshotResult(snapshot)
@@ -267,9 +267,9 @@ class McpGetRefinementHistoryUseCase:
     parity). The adapter coerces ``limit`` to int + builds the history envelope."""
 
     async def execute(
-        self, command: McpGetRefinementHistoryCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetRefinementHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetRefinementHistoryResult:
-        entries = await RefinementService(session_of(uow)).list_history(
+        entries = await uow.services.refinements.list_history(
             command.refinement_id, command.limit
         )
         return McpGetRefinementHistoryResult(entries)
@@ -302,11 +302,10 @@ class McpGetRefinementKnowledgeUseCase:
     the id/title/description/content/mime_type/created_at envelope."""
 
     async def execute(
-        self, command: McpGetRefinementKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetRefinementKnowledgeResult:
-        from okto_pulse.core.services import RefinementKnowledgeService
 
-        kb = await RefinementKnowledgeService(session_of(uow)).get_knowledge(
+        kb = await uow.services.refinement_knowledge.get_knowledge(
             command.knowledge_id
         )
         if not kb or kb.refinement_id != command.refinement_id:
@@ -336,11 +335,10 @@ class McpAddRefinementKnowledgeUseCase:
     the envelope."""
 
     async def execute(
-        self, command: McpAddRefinementKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddRefinementKnowledgeResult:
-        from okto_pulse.core.services import RefinementKnowledgeService
 
-        kb = await RefinementKnowledgeService(session_of(uow)).create_knowledge(
+        kb = await uow.services.refinement_knowledge.create_knowledge(
             command.refinement_id, actor.actor_id, command.kb_data
         )
         await commit(uow)
@@ -367,11 +365,10 @@ class McpDeleteRefinementKnowledgeUseCase:
     ``kb_not_found`` (no delete). Commit only after a real delete."""
 
     async def execute(
-        self, command: McpDeleteRefinementKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteRefinementKnowledgeResult:
-        from okto_pulse.core.services import RefinementKnowledgeService
 
-        service = RefinementKnowledgeService(session_of(uow))
+        service = uow.services.refinement_knowledge
         kb = await service.get_knowledge(command.knowledge_id)
         if not kb or kb.refinement_id != command.refinement_id:
             return McpDeleteRefinementKnowledgeResult(kb_not_found=True)
@@ -406,18 +403,15 @@ class McpAskRefinementChoiceQuestionUseCase:
     adapter parses options_json / coerces options into the ``RefinementQACreate``."""
 
     async def execute(
-        self, command: McpAskRefinementChoiceQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAskRefinementChoiceQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAskRefinementChoiceQuestionResult:
-        from okto_pulse.core.services import BoardService
-        from okto_pulse.core.services.main import RefinementQAService
 
-        session = session_of(uow)
-        qa = await RefinementQAService(session).create_question(
+        qa = await uow.services.refinement_qa.create_question(
             command.refinement_id, actor.actor_id, command.data
         )
         if not qa:
             return McpAskRefinementChoiceQuestionResult(None, refinement_not_found=True)
-        await BoardService(session)._log_activity(
+        await uow.services.boards._log_activity(
             board_id=command.board_id,
             action="refinement_choice_question_added",
             actor_type="agent",
@@ -479,13 +473,11 @@ class McpAnswerRefinementQuestionUseCase:
     ``qa_not_found`` -> "Q&A item not found or invalid selection"."""
 
     async def execute(
-        self, command: McpAnswerRefinementQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAnswerRefinementQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAnswerRefinementQuestionResult:
-        from okto_pulse.core.services import BoardService, QASelfAnsweringNotAllowedError
-        from okto_pulse.core.services.main import RefinementQAService
+        from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
-        session = session_of(uow)
-        service = RefinementQAService(session)
+        service = uow.services.refinement_qa
         try:
             qa = await service.answer_question(
                 command.qa_id,
@@ -499,7 +491,7 @@ class McpAnswerRefinementQuestionUseCase:
             return McpAnswerRefinementQuestionResult(None, self_answer_error=exc)
         if not qa:
             return McpAnswerRefinementQuestionResult(None, qa_not_found=True)
-        await BoardService(session)._log_activity(
+        await uow.services.boards._log_activity(
             board_id=command.board_id,
             action="refinement_question_answered",
             actor_type="agent",
@@ -537,16 +529,13 @@ class McpDeleteRefinementQuestionUseCase:
     delete -> ``qa_not_found`` -> "Q&A item not found" (no log, no commit)."""
 
     async def execute(
-        self, command: McpDeleteRefinementQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteRefinementQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteRefinementQuestionResult:
-        from okto_pulse.core.services import BoardService
-        from okto_pulse.core.services.main import RefinementQAService
 
-        session = session_of(uow)
-        deleted = await RefinementQAService(session).delete_question(command.qa_id)
+        deleted = await uow.services.refinement_qa.delete_question(command.qa_id)
         if not deleted:
             return McpDeleteRefinementQuestionResult(qa_not_found=True)
-        await BoardService(session)._log_activity(
+        await uow.services.boards._log_activity(
             board_id=command.board_id,
             action="refinement_question_deleted",
             actor_type="agent",

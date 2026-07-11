@@ -28,7 +28,7 @@ from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentRevisionStatus,
     COVERAGE_CONFIRMATION_KEY,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     BugSeverity,
     Card,

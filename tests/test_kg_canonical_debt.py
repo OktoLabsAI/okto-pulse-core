@@ -7,10 +7,10 @@ import json
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, CanonicalDebt
-from okto_pulse.core.models.db import ConsolidationQueue
-from okto_pulse.core.models.db import Card, CardStatus, CardType, Spec, SpecStatus
-from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
+from sqlalchemy_test_models import Board, CanonicalDebt
+from sqlalchemy_test_models import ConsolidationQueue
+from sqlalchemy_test_models import Card, CardStatus, CardType, Spec, SpecStatus
+from okto_pulse.core.application.processors.consolidation import ConsolidationProcessor
 from okto_pulse.core.services.canonical_debt_service import (
     list_canonical_debt,
     mark_canonical_debt_committed_for_artifact,
@@ -483,7 +483,7 @@ async def test_consolidation_failure_marks_canonical_debt(db_factory):
         session.add(entry)
         await session.flush()
 
-        worker = ConsolidationWorker(lambda: None)
+        worker = ConsolidationProcessor(lambda: None)
         await worker._mark_failed(
             session,
             entry,
@@ -548,7 +548,7 @@ async def test_missing_artifact_queue_entry_stays_visible_without_canonical_debt
         await session.commit()
         entry_id = entry.id
 
-    worker = ConsolidationWorker(db_factory, batch_size=1)
+    worker = ConsolidationProcessor(db_factory, batch_size=1)
     processed = await worker.process_batch()
 
     async with db_factory() as session:
@@ -622,13 +622,13 @@ async def test_canonical_debt_persist_failure_rolls_back_before_queue_update(
         await db.flush()
 
     monkeypatch.setattr(
-        "okto_pulse.core.kg.workers.consolidation.upsert_canonical_debt",
+        "okto_pulse.core.application.processors.consolidation.upsert_canonical_debt",
         broken_upsert,
     )
 
     async with db_factory() as session:
         entry = await session.get(ConsolidationQueue, entry_id)
-        worker = ConsolidationWorker(lambda: None)
+        worker = ConsolidationProcessor(lambda: None)
         await worker._mark_failed(
             session,
             entry,
@@ -708,7 +708,7 @@ async def test_spec_consolidation_failure_creates_canonical_debt_only_when_done(
         session.add_all(entries)
         await session.flush()
 
-        worker = ConsolidationWorker(lambda: None)
+        worker = ConsolidationProcessor(lambda: None)
         for entry in entries:
             await worker._mark_failed(
                 session,
@@ -766,7 +766,7 @@ async def test_working_bug_consolidation_failure_does_not_create_canonical_debt(
         session.add_all([bug, entry])
         await session.flush()
 
-        worker = ConsolidationWorker(lambda: None)
+        worker = ConsolidationProcessor(lambda: None)
         await worker._mark_failed(
             session,
             entry,

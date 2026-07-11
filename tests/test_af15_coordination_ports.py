@@ -9,8 +9,8 @@ from coordination_fakes import (
     FakeRuntimeSettingsProvider,
     FakeWriteLockPort,
 )
-from okto_pulse.core.kg.workers import advisory_lock as advisory_lock_module
-from okto_pulse.core.kg.workers.advisory_lock import advisory_lock
+from okto_pulse.core.ports import advisory_lock as advisory_lock_module
+from okto_pulse.core.ports.advisory_lock import advisory_lock
 from okto_pulse.core.ports.coordination import (
     CoordinationProviderMissing,
     get_write_lock_port,

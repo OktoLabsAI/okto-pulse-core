@@ -30,7 +30,6 @@ class OrmReturnDebt:
     deadline: str
     withdrawal_criterion: str
 
-
 #: Repositories permitted to return the existing ORM models during the
 #: transition (the first-cut aggregates). New ORM returns NOT listed here are
 #: blocked by the RelationalBoundaryGate.
@@ -40,24 +39,24 @@ ORM_RETURN_DEBT: tuple[OrmReturnDebt, ...] = (
         repository="okto_pulse.core.repositories.interfaces.repositories.BoardRepository",
         orm_type="okto_pulse.core.models.db.Board",
         owner="core-refactor",
-        deadline="domain/ORM separation axis (after spec #04)",
-        withdrawal_criterion="BoardRepository returns a domain entity instead of the ORM Base",
+        deadline="F01 Community mapping extraction",
+        withdrawal_criterion="Core ORM mappings and all mapped consumers are removed",
     ),
     OrmReturnDebt(
         aggregate="ideation",
         repository="okto_pulse.core.repositories.interfaces.repositories.IdeationRepository",
         orm_type="okto_pulse.core.models.db.Ideation",
         owner="core-refactor",
-        deadline="domain/ORM separation axis (after spec #04)",
-        withdrawal_criterion="IdeationRepository returns a domain entity instead of the ORM Base",
+        deadline="F01 Community mapping extraction",
+        withdrawal_criterion="Core ORM mappings and all mapped consumers are removed",
     ),
     OrmReturnDebt(
         aggregate="spec",
         repository="okto_pulse.core.repositories.interfaces.repositories.SpecRepository",
         orm_type="okto_pulse.core.models.db.Spec",
         owner="core-refactor",
-        deadline="domain/ORM separation axis (after spec #04)",
-        withdrawal_criterion="SpecRepository returns a domain entity instead of the ORM Base",
+        deadline="F01 Community mapping extraction",
+        withdrawal_criterion="Core ORM mappings and all mapped consumers are removed",
     ),
 )
 
@@ -91,16 +90,3 @@ class TransitionalDebt:
     owner: str
     deadline: str
     withdrawal_criterion: str
-
-
-#: The SQLAlchemyUnitOfWork.session property exposes the AsyncSession so the
-#: still-service-delegating spec #09 use cases keep working (the strangler seam).
-#: Registered here as structured debt — consumable by the RelationalBoundaryGate
-#: (card b37786d9) — not just documented in prose (fr_802078e4).
-SESSION_BRIDGE_DEBT = TransitionalDebt(
-    kind="session_bridge",
-    location="okto_pulse.core.repositories.sqlalchemy.unit_of_work.SQLAlchemyUnitOfWork.session",
-    owner="core-refactor",
-    deadline="when the spec #09 flows consume the repositories instead of .session",
-    withdrawal_criterion="no migrated use case reads uow.session; all persistence flows through the repositories",
-)

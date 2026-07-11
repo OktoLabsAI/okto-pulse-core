@@ -33,7 +33,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_cognitive_item_id,
     require_rebuild_audit_artifact_store,
 )
-from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 NOW = datetime(2026, 6, 17, 12, 0, 0, tzinfo=timezone.utc)

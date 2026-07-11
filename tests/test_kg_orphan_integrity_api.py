@@ -5,8 +5,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.router import api_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api.router import api_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db
 from okto_pulse.core.kg.orphan_integrity import (
     OrphanBackfillResult,
@@ -62,7 +62,7 @@ def test_orphan_integrity_routes_are_registered() -> None:
 
 
 def test_get_orphan_integrity_report_returns_bounded_safe_payload(monkeypatch) -> None:
-    import okto_pulse.core.api.kg_orphan_integrity as orphan_api
+    import okto_pulse.community.api.kg_orphan_integrity as orphan_api
 
     class _FakeScanner:
         def scan(self, *, board_id, generation_id, limit):
@@ -112,7 +112,7 @@ def test_get_orphan_integrity_report_returns_bounded_safe_payload(monkeypatch) -
 
 
 def test_post_orphan_backfill_refuses_recovery_needed_health(monkeypatch) -> None:
-    import okto_pulse.core.api.kg_orphan_integrity as orphan_api
+    import okto_pulse.community.api.kg_orphan_integrity as orphan_api
 
     async def _recovery_needed(board_id, db, scheduler_control=None):
         return {
@@ -139,7 +139,7 @@ def test_post_orphan_backfill_refuses_recovery_needed_health(monkeypatch) -> Non
 
 
 def test_post_orphan_backfill_returns_explicit_dry_run_summary(monkeypatch) -> None:
-    import okto_pulse.core.api.kg_orphan_integrity as orphan_api
+    import okto_pulse.community.api.kg_orphan_integrity as orphan_api
 
     async def _healthy(board_id, db, scheduler_control=None):
         return {"overall_state": "at_risk", "graph_state": "at_risk"}

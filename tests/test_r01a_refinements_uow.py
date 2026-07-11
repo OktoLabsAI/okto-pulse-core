@@ -21,7 +21,7 @@ a raw ``AsyncSession``. The legacy behavior preserved here, end-to-end through
   ``EntityNotFoundError``), an AST signature guard proving every endpoint — and
   every registered route — takes ``uow`` (``get_unit_of_work``), not a raw
   ``AsyncSession``, and a Clean Core guard proving the use case module imports no
-  ``okto_pulse.core.api`` and exposes no ``AsyncSession``/``select``/``get_db``.
+  ``okto_pulse.community.api`` and exposes no ``AsyncSession``/``select``/``get_db``.
 
 No agent row is seeded for the test user, and the board is owned by the user, so
 the refinement transition + critical-context gates resolve permissively; the
@@ -38,10 +38,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import refinements as refinements_api
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.api.refinements import router as refinements_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import refinements as refinements_api
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.refinements import router as refinements_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu6-s3-user"
@@ -92,7 +92,7 @@ def _missing() -> str:
 async def _seed_ideation(*, status: str = "done", owner: str = USER) -> tuple[str, str]:
     """Seed a Board (owned by ``owner``) + an Ideation in ``status``. Returns
     ``(board_id, ideation_id)``."""
-    from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+    from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 
     board_id = f"board-fu6s3-{uuid.uuid4().hex[:8]}"
     ideation_id = f"ideation-fu6s3-{uuid.uuid4().hex[:8]}"
@@ -448,8 +448,7 @@ async def test_get_refinement_use_case_raises_for_missing_refinement() -> None:
         GetRefinementCommand,
         GetRefinementUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):
@@ -487,7 +486,7 @@ def test_refinements_router_has_no_endpoint_on_get_db() -> None:
 
 
 def test_refinements_use_case_module_has_no_api_or_session_in_public_surface() -> None:
-    """Clean Core: the use case module imports no okto_pulse.core.api and exposes
+    """Clean Core: the use case module imports no okto_pulse.community.api and exposes
     no AsyncSession/select/get_db in its source."""
     import ast
     from pathlib import Path
@@ -498,7 +497,7 @@ def test_refinements_use_case_module_has_no_api_or_session_in_public_surface() -
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            assert not (node.module or "").startswith("okto_pulse.core.api"), node.module
+            assert not (node.module or "").startswith("okto_pulse.community.api"), node.module
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     assert "AsyncSession" not in names
     assert "get_db" not in names

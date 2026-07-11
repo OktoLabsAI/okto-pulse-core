@@ -32,7 +32,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Spec, SpecStatus, Sprint, SprintStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus, Sprint, SprintStatus
 
 BOARD_ID = "r01a-mcpsprint"
 OTHER_BOARD_ID = "r01a-mcpsprint-other"

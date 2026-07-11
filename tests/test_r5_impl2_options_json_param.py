@@ -217,7 +217,7 @@ async def test_ac3_handler_options_json_wins_over_options_behavioral():
 
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.mcp import server as mcp_server
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Board,
         Card,
         CardStatus,

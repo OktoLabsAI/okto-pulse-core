@@ -23,7 +23,7 @@ from okto_pulse.core.kg.scoring import (
     get_contradict_warn_count,
     reset_contradict_warn_counters,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     CanonicalDebt,
     ConsolidationAudit,
@@ -690,7 +690,7 @@ async def test_service_layer_response_matches_pydantic_model(
     we prove parity by feeding the service output into the Pydantic model
     that the REST endpoint serializes — any drift would fail validation.
     """
-    from okto_pulse.core.api.kg_health import KGHealthResponse
+    from okto_pulse.community.api.kg_health import KGHealthResponse
 
     async with db_factory() as session:
         data = await get_kg_health(kg_health_board, session)

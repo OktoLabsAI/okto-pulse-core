@@ -8,6 +8,8 @@ work through the MCP UnitOfWork path so the tool bodies do not open
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 import base64
 import json
 from datetime import datetime
@@ -17,7 +19,6 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
 
 
@@ -38,11 +39,10 @@ class McpUpdateMyProfileResult:
 
 class McpUpdateMyProfileUseCase:
     async def execute(
-        self, command: McpUpdateMyProfileCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateMyProfileCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateMyProfileResult:
-        from okto_pulse.core.services import AgentService
 
-        service = AgentService(session_of(uow))
+        service = uow.services.agents
         agent = await service.get_agent(actor.actor_id)
         if not agent:
             raise EntityNotFoundError("agent", actor.actor_id)
@@ -69,11 +69,10 @@ class McpListMyBoardsResult:
 
 class McpListMyBoardsUseCase:
     async def execute(
-        self, command: McpListMyBoardsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListMyBoardsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListMyBoardsResult:
-        from okto_pulse.core.services import AgentService
 
-        boards = await AgentService(session_of(uow)).list_boards_for_agent(actor.actor_id)
+        boards = await uow.services.agents.list_boards_for_agent(actor.actor_id)
         await commit(uow)
         return McpListMyBoardsResult(boards)
 
@@ -96,12 +95,9 @@ class McpListMyMentionsResult:
 
 class McpListMyMentionsUseCase:
     async def execute(
-        self, command: McpListMyMentionsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListMyMentionsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListMyMentionsResult:
-        from okto_pulse.core.services.main import mcp_list_my_mentions
-
-        mentions, show_all = await mcp_list_my_mentions(
-            session_of(uow),
+        mentions, show_all = await uow.services.list_my_mentions(
             board_id=command.board_id,
             agent_id=actor.actor_id,
             agent_name=actor.actor_name,
@@ -129,12 +125,9 @@ class McpMarkMentionsSeenResult:
 
 class McpMarkMentionsSeenUseCase:
     async def execute(
-        self, command: McpMarkMentionsSeenCommand, *, actor: ActorContext, uow: Any
+        self, command: McpMarkMentionsSeenCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMarkMentionsSeenResult:
-        from okto_pulse.core.services.main import mcp_mark_mentions_seen
-
-        marked, total = await mcp_mark_mentions_seen(
-            session_of(uow),
+        marked, total = await uow.services.mark_mentions_seen(
             board_id=command.board_id,
             agent_id=actor.actor_id,
             agent_name=actor.actor_name,
@@ -161,12 +154,9 @@ class McpGetUnseenSummaryResult:
 
 class McpGetUnseenSummaryUseCase:
     async def execute(
-        self, command: McpGetUnseenSummaryCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetUnseenSummaryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetUnseenSummaryResult:
-        from okto_pulse.core.services.main import mcp_get_unseen_summary
-
-        payload = await mcp_get_unseen_summary(
-            session_of(uow),
+        payload = await uow.services.get_unseen_summary(
             board_id=command.board_id,
             agent_id=actor.actor_id,
             agent_name=actor.actor_name,
@@ -191,11 +181,10 @@ class McpListAgentsResult:
 
 class McpListAgentsUseCase:
     async def execute(
-        self, command: McpListAgentsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListAgentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListAgentsResult:
-        from okto_pulse.core.services import AgentService
 
-        agents = await AgentService(session_of(uow)).list_agents(command.board_id)
+        agents = await uow.services.agents.list_agents(command.board_id)
         await commit(uow)
         return McpListAgentsResult(agents)
 
@@ -246,12 +235,9 @@ def _encode_activity_cursor(created_at: datetime, row_id: str) -> str:
 
 class McpGetActivityLogUseCase:
     async def execute(
-        self, command: McpGetActivityLogCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetActivityLogCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetActivityLogResult:
-        from okto_pulse.core.services.main import mcp_get_activity_log_rows
-
-        rows, next_cursor_pair = await mcp_get_activity_log_rows(
-            session_of(uow),
+        rows, next_cursor_pair = await uow.services.get_activity_log_rows(
             board_id=command.board_id,
             limit=command.limit,
             cursor_pair=command.cursor_pair,

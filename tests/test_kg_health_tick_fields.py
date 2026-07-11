@@ -18,10 +18,10 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.kg_health import router as kg_health_router
+from okto_pulse.community.api.kg_health import router as kg_health_router
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import Board, KGTickRun
+from sqlalchemy_test_models import Board, KGTickRun
 from okto_pulse.core.services.kg_health_service import get_kg_health
 
 

@@ -29,9 +29,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.kg.health_state import (
     GraphTelemetry,
     HealthState,
@@ -52,14 +49,7 @@ from okto_pulse.core.kg.memory_pressure_collector import (
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.kg.scoring import get_contradict_warn_count
 from okto_pulse.core.infra.config import get_settings
-from okto_pulse.core.models.db import (
-    Board,
-    ConsolidationAudit,
-    ConsolidationDeadLetter,
-    ConsolidationQueue,
-    KGTickRun,
-    KuzuNodeRef,
-)
+from okto_pulse.core.ports.kg_health import get_kg_health_read_port
 from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
 
 # KG-01 contract api_3ed9037f: REST surface restricts metric_status to
@@ -187,7 +177,7 @@ def _is_after(left: datetime | None, right: datetime | None) -> bool:
     return left > right
 
 
-async def _load_tick_evidence(db: AsyncSession) -> dict[str, Any]:
+async def _load_tick_evidence(db: Any) -> dict[str, Any]:
     """Load independent tick facts from KGTickRun.
 
     This keeps success, failure, terminal legacy state, and in-progress rows as
@@ -196,30 +186,24 @@ async def _load_tick_evidence(db: AsyncSession) -> dict[str, Any]:
     """
 
     try:
-        latest_success = await db.scalar(
-            select(KGTickRun)
-            .where(KGTickRun.completed_at.is_not(None), KGTickRun.error.is_(None))
-            .order_by(KGTickRun.completed_at.desc())
-            .limit(1)
-        )
-        latest_failure = await db.scalar(
-            select(KGTickRun)
-            .where(KGTickRun.error.is_not(None))
-            .order_by(KGTickRun.completed_at.desc(), KGTickRun.started_at.desc())
-            .limit(1)
-        )
-        latest_terminal = await db.scalar(
-            select(KGTickRun)
-            .where(KGTickRun.completed_at.is_not(None))
-            .order_by(KGTickRun.completed_at.desc())
-            .limit(1)
-        )
-        running_row = await db.scalar(
-            select(KGTickRun)
-            .where(KGTickRun.completed_at.is_(None))
-            .order_by(KGTickRun.started_at.desc())
-            .limit(1)
-        )
+        rows = list(await get_kg_health_read_port().list_tick_runs(db))
+        terminal = [row for row in rows if row.completed_at is not None]
+        successes = [row for row in terminal if row.error is None]
+        failures = [row for row in rows if row.error is not None]
+        running = [row for row in rows if row.completed_at is None]
+        latest_success = max(successes, key=lambda row: _as_utc(row.completed_at)) if successes else None
+        latest_failure = max(
+            failures,
+            key=lambda row: _as_utc(row.completed_at) or _as_utc(row.started_at),
+        ) if failures else None
+        latest_terminal = max(
+            terminal,
+            key=lambda row: _as_utc(row.completed_at),
+        ) if terminal else None
+        running_row = max(
+            running,
+            key=lambda row: _as_utc(row.started_at),
+        ) if running else None
     except Exception as exc:
         return {
             "query_failed": True,
@@ -767,29 +751,16 @@ def _probe_global_discovery_telemetry() -> GraphTelemetry:
         return _telemetry_unavailable("discovery")
 
     try:
-        path = runtime.global_graph_path()
+        state = runtime.state()
     except Exception:
         return _telemetry_unavailable("discovery")
-    if not path.exists():
+    if not state.exists:
         return _telemetry_unavailable("discovery")
 
     try:
-        _db, conn = runtime.open_connection()
-        try:
-            res = conn.execute("CALL SHOW_TABLES() RETURN name")
-            try:
-                # Consuming one row is enough to prove the graph opens and the
-                # catalog is readable. Empty catalog still means the storage
-                # itself was readable.
-                if res.has_next():
-                    res.get_next()
-            finally:
-                res.close()
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        res = runtime.execute("CALL SHOW_TABLES() RETURN name")
+        if res.has_next():
+            res.get_next()
         return _telemetry_ok("discovery")
     except Exception as exc:
         logger.warning(
@@ -805,7 +776,7 @@ def _probe_global_discovery_telemetry() -> GraphTelemetry:
 
 async def get_kg_health(
     board_id: str,
-    db: AsyncSession,
+    db: Any,
     *,
     scheduler_control: SchedulerControl | None = None,
 ) -> dict[str, Any]:
@@ -815,25 +786,17 @@ async def get_kg_health(
     SQLite app DB. All Kùzu-derived metrics degrade to zero on lookup
     errors — the endpoint never 500s for a transient Kùzu issue.
     """
-    board = await db.get(Board, board_id)
-    if board is None:
+    relational = await get_kg_health_read_port().queue_snapshot(
+        db,
+        board_id=board_id,
+    )
+    if not relational.board_exists:
         raise BoardNotFoundError(f"board not found: {board_id}")
 
     now = datetime.now(timezone.utc)
 
-    queue_depth = await db.scalar(
-        select(func.count()).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.status.in_(["pending", "claimed"]),
-        )
-    ) or 0
-
-    oldest_triggered = await db.scalar(
-        select(func.min(ConsolidationQueue.triggered_at)).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.status.in_(["pending", "claimed"]),
-        )
-    )
+    queue_depth = relational.queue_depth
+    oldest_triggered = relational.oldest_triggered_at
     if oldest_triggered is not None:
         if oldest_triggered.tzinfo is None:
             oldest_triggered = oldest_triggered.replace(tzinfo=timezone.utc)
@@ -841,11 +804,7 @@ async def get_kg_health(
     else:
         oldest_pending_age_s = 0.0
 
-    dead_letter_count = await db.scalar(
-        select(func.count()).where(
-            ConsolidationDeadLetter.board_id == board_id,
-        )
-    ) or 0
+    dead_letter_count = relational.dead_letter_count
 
     # R6-IMP2: active operational-queue drill-down (ConsolidationQueue pending/
     # claimed + global_update_outbox retry-window rows). DLQ / canonical debt are
@@ -1116,9 +1075,13 @@ async def get_kg_health(
     dlq_auto_drain_last_run_at: str | None = None
     dlq_auto_drain_requeued_count: int = 0
     try:
-        from okto_pulse.core.kg.workers.consolidation import get_consolidation_worker
-        worker = get_consolidation_worker()
-        drain_stats = worker.get_dlq_drain_stats(board_id)
+        from okto_pulse.core.application.runtime_workers import (
+            runtime_worker_snapshot,
+        )
+        drain_stats = runtime_worker_snapshot(
+            "consolidation_worker",
+            board_id=board_id,
+        )
         dlq_auto_drain_last_run_at = drain_stats["last_run_at"]
         dlq_auto_drain_requeued_count = drain_stats["requeued_count"]
     except Exception:
@@ -1260,28 +1223,18 @@ async def get_kg_health(
 
     partition_debt_open = 0
     try:
-        from sqlalchemy import func as _func
-        from sqlalchemy import select as _select
-
         from okto_pulse.core.kg.canonical_learning_partition import (
             PARTITION_TARGET_STATUS,
         )
-        from okto_pulse.core.models.db import CanonicalDebt as _CanonicalDebt
         from okto_pulse.core.services.canonical_debt_service import (
             OPEN_STATES as _OPEN_STATES,
         )
 
-        partition_debt_open = int(
-            await db.scalar(
-                _select(_func.count())
-                .select_from(_CanonicalDebt)
-                .where(
-                    _CanonicalDebt.board_id == board_id,
-                    _CanonicalDebt.target_status == PARTITION_TARGET_STATUS,
-                    _CanonicalDebt.canonical_state.in_(tuple(_OPEN_STATES)),
-                )
-            )
-            or 0
+        partition_debt_open = await get_kg_health_read_port().count_partition_debt(
+            db,
+            board_id=board_id,
+            target_status=PARTITION_TARGET_STATUS,
+            open_states=tuple(_OPEN_STATES),
         )
     except Exception as exc:  # pragma: no cover - defensive health path
         logger.warning(
@@ -1667,7 +1620,7 @@ def _get_graph_schema_version(board_id: str) -> str | None:
         return None
 
 
-async def _has_materialized_kg_history(db: AsyncSession, board_id: str) -> bool:
+async def _has_materialized_kg_history(db: Any, board_id: str) -> bool:
     """Return True when SQLite says the board had materialized KG content.
 
     If LadybugDB reports zero nodes while KuzuNodeRef/audit rows still show
@@ -1676,23 +1629,10 @@ async def _has_materialized_kg_history(db: AsyncSession, board_id: str) -> bool:
     needed.
     """
     try:
-        ref_count = await db.scalar(
-            select(func.count()).where(KuzuNodeRef.board_id == board_id)
-        ) or 0
-        if int(ref_count) > 0:
-            return True
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug(
-            "kg.health.materialized_ref_probe_failed board=%s err=%s",
-            board_id, exc,
+        return await get_kg_health_read_port().has_materialized_history(
+            db,
+            board_id=board_id,
         )
-
-    try:
-        nodes_added = await db.scalar(
-            select(func.coalesce(func.sum(ConsolidationAudit.nodes_added), 0))
-            .where(ConsolidationAudit.board_id == board_id)
-        ) or 0
-        return int(nodes_added) > 0
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug(
             "kg.health.materialized_audit_probe_failed board=%s err=%s",

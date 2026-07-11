@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.api import kg_routes
+from okto_pulse.community.api import kg_routes
 from okto_pulse.core.kg.cursor_codec import (
     InvalidCursorError,
     decode_cursor,
@@ -46,7 +46,7 @@ def test_kg_service_never_imports_api_adapter_for_cursor() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(
-                "okto_pulse.core.api"
+                "okto_pulse.community.api"
             ):
                 violations.append(f"{path.name}: {node.module}")
 

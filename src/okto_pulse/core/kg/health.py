@@ -13,7 +13,7 @@ The pipeline runs in five stages, mirrored by five checks:
 5. ``global_discovery`` — global Kùzu meta-graph. Healthy when
    ``DecisionDigest`` count for the given board matches the per-board
    digestable-nodes count (the types listed in
-   :data:`okto_pulse.core.kg.global_discovery.outbox_worker.DIGESTED_NODE_TYPES`).
+   :data:`okto_pulse.core.application.processors.global_outbox.DIGESTED_NODE_TYPES`).
 
 Each check returns a :class:`LayerHealth` dataclass with the same shape so
 the CLI table renderer and the JSON emitter both consume the same payload.
@@ -30,7 +30,7 @@ from typing import Any
 from okto_pulse.core.kg.global_discovery.metrics import (
     get_missing_embedding_skipped_count,
 )
-from okto_pulse.core.kg.global_discovery.outbox_worker import DIGESTED_NODE_TYPES
+from okto_pulse.core.application.processors.global_outbox import DIGESTED_NODE_TYPES
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.ports.kg_operational import (
@@ -187,7 +187,7 @@ async def check_kuzu_node_refs(
     scan when :func:`check_kuzu` already ran.
     """
     by_op: dict[str, int] = {"add": 0, "update": 0, "supersede": 0}
-    rows = await get_kg_operational_read_model_port().kuzu_node_ref_operation_counts(
+    rows = await get_kg_operational_read_model_port().graph_node_ref_operation_counts(
         context,
         board_id=board_id,
     )
@@ -281,30 +281,12 @@ def check_global(board_id: str) -> LayerHealth:
         )
 
     try:
-        _db, conn = global_runtime.open_connection()
-        qr = None
-        try:
-            qr = conn.execute(
-                "MATCH (d:DecisionDigest {board_id: $bid}) RETURN count(d) AS c",
-                {"bid": board_id},
-            )
-            row = None
-            if hasattr(qr, "has_next") and hasattr(qr, "get_next"):
-                if qr.has_next():
-                    row = qr.get_next()
-            else:
-                row = next(iter(qr), None)
-            digests = int(row[0]) if row is not None else 0
-        finally:
-            if qr is not None:
-                try:
-                    qr.close()
-                except Exception:
-                    pass
-            try:
-                conn.close()
-            except Exception:
-                pass
+        qr = global_runtime.execute(
+            "MATCH (d:DecisionDigest {board_id: $bid}) RETURN count(d) AS c",
+            {"bid": board_id},
+        )
+        row = qr.get_next() if qr.has_next() else None
+        digests = int(row[0]) if row is not None else 0
     except Exception as exc:
         return LayerHealth(
             layer="global",

@@ -33,10 +33,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import stories as stories_api
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.api.stories import router as stories_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import stories as stories_api
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.stories import router as stories_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu6-s2-user"
@@ -81,7 +81,7 @@ def _missing() -> str:
 
 
 async def _seed_board() -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu6s2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -103,7 +103,7 @@ async def _seed_topic(board_id: str, name: str | None = None) -> str:
 
 
 async def _seed_story(board_id: str, topic_id: str, *, status: str = "draft") -> str:
-    from okto_pulse.core.models.db import StoryStatus
+    from sqlalchemy_test_models import StoryStatus
     from okto_pulse.core.models.schemas import StoryCreate
     from okto_pulse.core.services import StoryService
 
@@ -364,8 +364,7 @@ async def test_get_story_use_case_raises_for_missing_story() -> None:
         GetStoryCommand,
         GetStoryUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):
@@ -409,7 +408,7 @@ async def _seed_agent_with_board_override(board_id: str, overrides: dict) -> Non
     override AND-restricts it (ceiling model), so this proves the migrated stories
     use cases honor board-scoped overrides via services.main.resolve_user_permissions.
     """
-    from okto_pulse.core.models.db import Agent, AgentBoard
+    from sqlalchemy_test_models import Agent, AgentBoard
 
     aid = f"agent-fu6s2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:

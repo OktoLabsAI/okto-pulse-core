@@ -31,7 +31,7 @@ def test_kg_query_tools_missing_auth_context_fails_closed_without_fallback() -> 
     from okto_pulse.core.kg.interfaces import registry as reg
     from okto_pulse.core.mcp.kg_query_tools import _get_user_boards
 
-    saved = (reg._registry, reg._configured)
+    saved = reg.capture_registry_state_for_tests()
     try:
         reg.reset_registry_for_tests()
         configure_test_kg_registry()
@@ -48,7 +48,7 @@ def test_kg_query_tools_missing_auth_context_fails_closed_without_fallback() -> 
         assert agent is None
         assert boards == []
     finally:
-        reg._registry, reg._configured = saved
+        reg.restore_registry_state_for_tests(saved)
 
 
 def test_auth_gate_blocks_core_concrete_bridge_and_acl_fallback(tmp_path) -> None:

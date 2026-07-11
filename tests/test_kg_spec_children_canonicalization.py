@@ -21,7 +21,7 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
-from okto_pulse.core.kg.schema import open_board_connection
+from kg_schema_testing import open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
     BeginConsolidationRequest,
@@ -30,11 +30,11 @@ from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ProposeReconciliationRequest,
 )
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
 
 
 def _full_spec(status: str) -> dict:
@@ -222,7 +222,7 @@ def _seed_decision(board_id, *, title, human_curated):
     ``belongs_to`` it, so the source_artifact_ref merge has a CONNECTED node to
     reuse (the connectivity guard otherwise rejects an isolated node). Returns
     the Decision's source_artifact_ref."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     spec_ref = f"spec:{uuid.uuid4().hex[:10]}"
@@ -279,7 +279,7 @@ def _seed_decision(board_id, *, title, human_curated):
 
 
 def _read_decision(board_id, source_ref):
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(

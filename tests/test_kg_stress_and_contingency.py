@@ -478,7 +478,7 @@ def test_ci_destructive_with_clean_fake_without_release_marker_is_rejected(
 
 def test_kg_chaos_executor_has_release_marker():
     """KGChaosExecutor must carry the marker so CI accepts it."""
-    from okto_pulse.core.kg.stress_chaos_executor import KGChaosExecutor
+    from okto_pulse.community.adapters.kg_chaos_executor import KGChaosExecutor
 
     assert getattr(KGChaosExecutor, "release_evidence_executor", False) is True
 
@@ -536,7 +536,7 @@ def test_real_chaos_executor_runs_clean_against_primitives(tmp_path: Path):
     """val_209622e9 #2 production-style proof: the real KGChaosExecutor
     runs against the KG-01.1-5 primitives and reports zero corruption
     across all 5 canonical modes."""
-    from okto_pulse.core.kg.stress_chaos_executor import KGChaosExecutor
+    from okto_pulse.community.adapters.kg_chaos_executor import KGChaosExecutor
 
     executor = KGChaosExecutor(
         base_dir=tmp_path / "chaos-scratch",

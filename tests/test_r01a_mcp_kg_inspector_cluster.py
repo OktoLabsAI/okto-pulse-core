@@ -53,7 +53,7 @@ async def _call(tool_name: str, **kwargs) -> str:
 
 async def _seed_board(board_id: str) -> None:
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     factory = get_session_factory()
     async with factory() as db:

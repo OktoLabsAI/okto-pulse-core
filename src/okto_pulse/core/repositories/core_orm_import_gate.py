@@ -36,7 +36,6 @@ from pathlib import Path
 
 from okto_pulse.core.repositories.debt import (
     ORM_RETURN_DEBT,
-    SESSION_BRIDGE_DEBT,
 )
 from okto_pulse.core.repositories.relational_boundary_gate import default_core_path
 
@@ -69,7 +68,6 @@ BLOCKED_BY_AXES = frozenset({AXIS_DOMAIN_ORM_SEPARATION, AXIS_IMP4_COMMUNITY_ADA
 #: card-tracked physical re-home (IMP4), not a port/session debt.
 _RESOLVABLE_DEBT_REFS: dict[str, object] = {
     "orm_return_debt": ORM_RETURN_DEBT,
-    "session_bridge_debt": SESSION_BRIDGE_DEBT,
 }
 
 #: Required register-before-remove metadata fields on every allowlist cluster.
@@ -140,8 +138,7 @@ _ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {
         "withdrawal_criterion": (
             "REST consumers read/write exclusively via DTO-returning repository "
             "ports — the router never imports or holds a core.models.db ORM type. "
-            "Requires ORM_RETURN_DEBT withdrawn (ports return domain entities) and "
-            "SESSION_BRIDGE_DEBT drained (persistence flows through the repositories)."
+            "Requires ORM_RETURN_DEBT withdrawn (ports return domain entities)."
         ),
         "blocked_by": AXIS_DOMAIN_ORM_SEPARATION,
         "debt_ref": "orm_return_debt",
@@ -157,7 +154,7 @@ _ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {
             "MCP tool implementations read/write exclusively via DTO-returning "
             "repository ports (and the uow factory, not raw sessions) — never "
             "importing/holding a core.models.db ORM type. Requires ORM_RETURN_DEBT "
-            "withdrawn and SESSION_BRIDGE_DEBT drained."
+            "withdrawn."
         ),
         "blocked_by": AXIS_DOMAIN_ORM_SEPARATION,
         "debt_ref": "orm_return_debt",
@@ -172,7 +169,7 @@ _ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {
         "withdrawal_criterion": (
             "Service flows read/write exclusively via DTO-returning repository "
             "ports — never importing/holding a core.models.db ORM type. Requires "
-            "ORM_RETURN_DEBT withdrawn and SESSION_BRIDGE_DEBT drained."
+            "ORM_RETURN_DEBT withdrawn."
         ),
         "blocked_by": AXIS_DOMAIN_ORM_SEPARATION,
         "debt_ref": "orm_return_debt",
@@ -188,7 +185,7 @@ _ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {
             "Workers/event handlers/commands read/write exclusively via "
             "DTO-returning repository ports — never importing/holding a "
             "core.models.db ORM type. Requires ORM_RETURN_DEBT withdrawn and "
-            "SESSION_BRIDGE_DEBT drained."
+            "the ORM return debt withdrawn."
         ),
         "blocked_by": AXIS_DOMAIN_ORM_SEPARATION,
         "debt_ref": "orm_return_debt",
@@ -213,7 +210,7 @@ _ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {
 #: FROZEN file -> cluster ratchet set (the delta-aware teeth). This is a STATIC
 #: literal captured at R01C IMP2 time — NOT a live scan — so a NEW core file with
 #: an ORM-definition coupling is absent here and therefore blocking. Shrinks only.
-CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
+RETIRED_CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
     # -- definition (5) --
     "src/okto_pulse/core/__init__.py": "definition",
     "src/okto_pulse/core/infra/__init__.py": "definition",
@@ -270,7 +267,7 @@ CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
     # -- worker (18) --
     "src/okto_pulse/core/commands/materialize_legacy_fr_ac.py": "worker",
     "src/okto_pulse/core/events/bus.py": "worker",
-    "src/okto_pulse/core/events/dispatcher.py": "worker",
+    "src/okto_pulse/core/application/processors/event_delivery.py": "worker",
     "src/okto_pulse/core/events/handlers/card_boost_recompute.py": "worker",
     "src/okto_pulse/core/events/handlers/cognitive_extraction.py": "worker",
     "src/okto_pulse/core/events/handlers/consolidation_enqueuer.py": "worker",
@@ -280,15 +277,53 @@ CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
     "src/okto_pulse/core/kg/cognitive_readiness.py": "worker",
     "src/okto_pulse/core/kg/dashboard_readers.py": "worker",
     "src/okto_pulse/core/kg/global_discovery/clustering.py": "worker",
-    "src/okto_pulse/core/kg/global_discovery/outbox_worker.py": "worker",
+    "src/okto_pulse/core/application/processors/global_outbox.py": "worker",
     "src/okto_pulse/core/kg/governance.py": "worker",
     "src/okto_pulse/core/kg/health.py": "worker",
     "src/okto_pulse/core/kg/parent_doc/parent_doc.py": "worker",
     "src/okto_pulse/core/kg/workers/cognitive_closeout.py": "worker",
-    "src/okto_pulse/core/kg/workers/consolidation.py": "worker",
+    "src/okto_pulse/core/application/processors/consolidation.py": "worker",
     # -- bootstrap (1) --
     "src/okto_pulse/core/app.py": "bootstrap",
 }
+
+# Final F01 state: no Core production file may consume an ORM definition.
+CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {}
+
+_RETIRED_ORM_DEFINITION_NAMES = frozenset(
+    {
+        "Base",
+        "ActivityLog",
+        "Agent",
+        "AgentBoard",
+        "AgentSeenItem",
+        "ArchitectureDesign",
+        "Attachment",
+        "Board",
+        "BoardShare",
+        "Card",
+        "CardDependency",
+        "Comment",
+        "DefaultBoardConfiguration",
+        "Guideline",
+        "Ideation",
+        "IdeationKnowledgeBase",
+        "IdeationQAItem",
+        "PermissionPreset",
+        "QAItem",
+        "Refinement",
+        "RefinementKnowledgeBase",
+        "RefinementQAItem",
+        "ResourceNotApplicable",
+        "Spec",
+        "SpecKnowledgeBase",
+        "SpecQAItem",
+        "Sprint",
+        "SprintQAItem",
+        "Story",
+        "Topic",
+    }
+)
 
 
 def allowlist_entry(file_label: str) -> dict[str, object] | None:
@@ -378,6 +413,8 @@ def orm_definition_names(models_db_path: str | Path | None = None) -> frozenset[
         path = Path(models_db_path)
     else:
         path = default_core_path() / "models" / "db.py"
+    if not path.exists():
+        return _RETIRED_ORM_DEFINITION_NAMES
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     names = {"Base"}
     for node in tree.body:

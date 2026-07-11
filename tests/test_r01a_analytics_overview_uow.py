@@ -18,10 +18,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import analytics as analytics_api
-from okto_pulse.core.api.analytics import router as analytics_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import analytics as analytics_api
+from okto_pulse.community.api.analytics import router as analytics_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu2b-user"
@@ -46,7 +46,7 @@ def _client(user: str = USER) -> TestClient:
 
 
 async def _seed_board(owner: str, name: str) -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu2b-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -101,7 +101,7 @@ async def test_overview_use_case_matches_compute_overview() -> None:
         AnalyticsOverviewUseCase,
     )
     from okto_pulse.core.application.use_cases.base import ActorContext
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.services.analytics_service import compute_overview
 
     await _seed_board(USER, "fu2b-golden")
@@ -167,7 +167,7 @@ def test_moved_helpers_reexported_for_remaining_endpoints() -> None:
 
 def test_analytics_service_has_no_api_dependency() -> None:
     """Clean Core structural guard (FU2b rework, val_5b1fe35f): the analytics
-    service layer must NOT import the HTTP adapter — no ``okto_pulse.core.api``
+    service layer must NOT import the HTTP adapter — no ``okto_pulse.community.api``
     import (top-level OR lazy) anywhere in analytics_service.py. The velocity
     family + ``_load_lifecycle_moves`` now live in the service, so the previous
     service→api coupling is gone and must not reappear."""
@@ -180,11 +180,11 @@ def test_analytics_service_has_no_api_dependency() -> None:
     offenders: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
-            "okto_pulse.core.api"
+            "okto_pulse.community.api"
         ):
             offenders.append((node.lineno, node.module))
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.startswith("okto_pulse.core.api"):
+                if alias.name.startswith("okto_pulse.community.api"):
                     offenders.append((node.lineno, alias.name))
     assert offenders == [], offenders

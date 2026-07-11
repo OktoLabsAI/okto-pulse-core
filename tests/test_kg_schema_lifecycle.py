@@ -17,12 +17,12 @@ import threading
 
 import pytest
 
-from okto_pulse.core.kg.connection_pool import (
+from okto_pulse.community.adapters.graph_connection_pool import (
     ConnectionPool,
     _read_cap_from_env,
     reset_connection_pool_for_tests,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     BoardConnection,
     bootstrap_board_graph,
     close_all_connections,

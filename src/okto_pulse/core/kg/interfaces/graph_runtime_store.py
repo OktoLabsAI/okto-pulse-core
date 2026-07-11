@@ -10,10 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
+
 
 @dataclass(frozen=True)
 class GraphRuntimeState:
     board_id: str
+    storage_ref: StorageRef
     exists: bool
     status: str
     backend: str | None = None
@@ -27,6 +30,7 @@ class GraphRuntimeState:
 @dataclass(frozen=True)
 class GraphStorageFootprint:
     board_id: str
+    storage_ref: StorageRef
     status: str
     source: str
     total_bytes: int | None = None

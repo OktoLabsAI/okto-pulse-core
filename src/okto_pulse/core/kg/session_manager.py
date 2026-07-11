@@ -13,6 +13,8 @@ multi-process setups this would need to move to Redis — out of scope for MVP.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 import asyncio
 import hashlib
 from dataclasses import dataclass, field
@@ -131,23 +133,23 @@ class SessionManager:
             store.clear_for_tests()
 
 
-_singleton: SessionManager | None = None
+_RUNTIME_KEY = "kg.session_manager"
 
 
 def get_session_manager() -> SessionManager:
     """Return the process-wide SessionManager (backward compat wrapper)."""
-    global _singleton
-    if _singleton is None:
+    manager = resolve_runtime_value(_RUNTIME_KEY)
+    if manager is None:
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
         config = get_kg_registry().config
-        _singleton = SessionManager(
+        manager = SessionManager(
             default_ttl_seconds=config.kg_session_ttl_seconds if config else 3600
         )
-    return _singleton
+        register_runtime_value(_RUNTIME_KEY, manager)
+    return manager
 
 
 def reset_session_manager_for_tests() -> None:
     """Drop the cached SessionManager — tests only."""
-    global _singleton
-    _singleton = None
+    reset_runtime_values(_RUNTIME_KEY)

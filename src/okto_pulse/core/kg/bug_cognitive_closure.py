@@ -26,7 +26,6 @@ from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.cognitive_readiness import (
     CognitiveReadinessError,
@@ -109,7 +108,7 @@ def bug_cognitive_source_ref(bug_id: str) -> str:
 
 async def record_bug_cognitive_skip(
     service: CognitiveReadinessService,
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     bug_id: str,
@@ -234,7 +233,7 @@ def _evaluate_response(
 
 async def evaluate_bug_cognitive_closure(
     service: CognitiveReadinessService,
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     bug_id: str,

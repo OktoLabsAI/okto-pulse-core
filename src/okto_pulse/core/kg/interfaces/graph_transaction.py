@@ -1,29 +1,66 @@
-"""GraphTransaction port (spec #06, tr_73e982bb).
-
-Abstracts staged graph writes for a board WITHOUT exposing
-``open_board_connection`` / ``BoardConnection`` to consumers. ``begin(board_id)``
-yields a :class:`GraphTransactionScope` — the staged-write context — with
-``execute`` / ``commit`` / ``rollback``.
-
-Adapter note: an edition may wrap a graph driver that auto-commits each
-statement. In that case ``commit()`` finalizes by closing the scope and
-``rollback()`` is best-effort. A transactional backend can implement true
-rollback behind this same port.
-"""
+"""Graph transaction port with materialized, backend-neutral results."""
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Protocol, runtime_checkable
+
+
+@dataclass
+class GraphStatementResult:
+    """Materialized rows returned by a semantic graph statement."""
+
+    rows: tuple[tuple[Any, ...], ...] = ()
+    columns: tuple[str, ...] = ()
+    affected_count: int | None = None
+    _position: int = field(default=0, init=False, repr=False)
+
+    @classmethod
+    def from_rows(
+        cls,
+        rows: Iterable[Iterable[Any]],
+        *,
+        columns: Iterable[str] = (),
+        affected_count: int | None = None,
+    ) -> "GraphStatementResult":
+        return cls(
+            rows=tuple(tuple(row) for row in rows),
+            columns=tuple(str(column) for column in columns),
+            affected_count=affected_count,
+        )
+
+    def has_next(self) -> bool:
+        return self._position < len(self.rows)
+
+    def get_next(self) -> list[Any]:
+        if not self.has_next():
+            raise StopIteration
+        row = list(self.rows[self._position])
+        self._position += 1
+        return row
+
+    def get_column_names(self) -> list[str]:
+        return list(self.columns)
+
+    def close(self) -> None:
+        self._position = len(self.rows)
+
+    def __iter__(self):
+        return (list(row) for row in self.rows)
 
 
 @runtime_checkable
 class GraphTransactionScope(Protocol):
-    def execute(self, cypher: str, params: dict[str, Any] | None = None) -> Any:
-        """Run a staged statement within the open scope."""
+    def execute(
+        self,
+        statement: str,
+        params: dict[str, Any] | None = None,
+    ) -> GraphStatementResult:
+        """Run a statement and return materialized rows."""
         ...
 
     async def commit(self) -> None:
-        """Finalize the scope (close the connection)."""
+        """Finalize the scope."""
         ...
 
     async def rollback(self) -> None:
@@ -38,5 +75,8 @@ class GraphTransactionScope(Protocol):
 @runtime_checkable
 class GraphTransaction(Protocol):
     async def begin(self, board_id: str) -> GraphTransactionScope:
-        """Open a staged-write scope for ``board_id`` (no open_board_connection leak)."""
+        """Open a staged-write scope for ``board_id``."""
         ...
+
+
+__all__ = ["GraphStatementResult", "GraphTransaction", "GraphTransactionScope"]

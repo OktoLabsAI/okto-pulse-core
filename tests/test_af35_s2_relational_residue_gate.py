@@ -23,20 +23,8 @@ def test_af35_s2_real_core_tree_green_with_explicit_ledger() -> None:
 
     assert validate_af35_s2_residue_ledger() == ()
     assert report.ok, report.as_dict()
+    assert report.findings == ()
     assert report.unledgered_findings == ()
-
-    files_with_residue = {finding.file for finding in report.findings}
-    assert "kg/governance.py" in files_with_residue
-    assert "kg/workers/consolidation.py" in files_with_residue
-    for migrated_file in {
-        "kg/dashboard_readers.py",
-        "kg/health.py",
-        "kg/cognitive_readiness.py",
-        "kg/cognitive_action_center.py",
-        "kg/workers/commit_events.py",
-        "kg/workers/dead_letter.py",
-    }:
-        assert migrated_file not in files_with_residue
 
     gate_report = report.as_gate_report()
     assert gate_report.status == "passed"
@@ -76,13 +64,13 @@ def test_af35_s2_new_residue_in_clean_reader_fails_closed(tmp_path: Path) -> Non
     assert gate_report.observed_value == len(report.unledgered_findings)
 
 
-def test_af35_s2_extra_residue_in_ledgered_file_exceeds_allowed_count(
+def test_af35_s2_terminal_budget_blocks_first_residue_in_formerly_ledgered_file(
     tmp_path: Path,
 ) -> None:
     _write(
         tmp_path,
         "kg/governance.py",
-        "def drift():\n" + "".join("    select(object)\n" for _ in range(19)),
+        "def drift():\n    select(object)\n",
     )
 
     report = run_af35_s2_relational_residue_gate(core_root=tmp_path)
@@ -93,8 +81,8 @@ def test_af35_s2_extra_residue_in_ledgered_file_exceeds_allowed_count(
         if finding.file == "kg/governance.py" and finding.pattern == "select_call"
     ]
     assert len(select_overflow) == 1
-    assert select_overflow[0].occurrence_index == 19
-    assert select_overflow[0].allowed_count == 18
+    assert select_overflow[0].occurrence_index == 1
+    assert select_overflow[0].allowed_count == 0
     assert select_overflow[0].ledger_status == LEDGER_STATUS_UNLEDGERED
 
 

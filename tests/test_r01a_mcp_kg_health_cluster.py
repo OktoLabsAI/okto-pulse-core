@@ -68,7 +68,7 @@ async def _call(tool_name: str, *, scheduler_control=None, **kwargs) -> str:
 
 async def _seed_board(board_id: str) -> None:
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     factory = get_session_factory()
     async with factory() as db:
@@ -133,7 +133,7 @@ def _key_shape(obj):
 async def test_kg_health_uses_mcp_registered_scheduler_control() -> None:
     """Request-less MCP health uses the edition-owned scheduler adapter."""
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import KGTickRun
+    from sqlalchemy_test_models import KGTickRun
 
     board_id = f"fu4-scheduler-{uuid.uuid4().hex[:8]}"
     await _seed_board(board_id)
@@ -262,9 +262,8 @@ def test_migrated_tool_bodies_have_no_relational_coupling() -> None:
         assert "get_unit_of_work_factory_for_mcp" in names, name
 
 
-def test_migration_is_limited_to_the_cluster() -> None:
-    """TR4: only the two health tools were migrated — get_db_for_mcp still appears
-    in other handlers; mcp/server.py was not swept."""
+def test_all_mcp_handlers_use_the_unit_of_work_boundary() -> None:
+    """The completed migration leaves no handler on the legacy DB helper."""
     tree = ast.parse(Path(mcp_server.__file__).read_text(encoding="utf-8"))
     other_uses = 0
     for node in ast.walk(tree):
@@ -277,4 +276,4 @@ def test_migration_is_limited_to_the_cluster() -> None:
                 for n in ast.walk(node)
                 if isinstance(n, ast.Name) and n.id == "get_db_for_mcp"
             )
-    assert other_uses > 0
+    assert other_uses == 0

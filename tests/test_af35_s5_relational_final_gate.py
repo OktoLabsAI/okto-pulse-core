@@ -36,10 +36,11 @@ def test_af35_s5_final_report_passes_current_core_tree() -> None:
     assert payload["metadata_errors"] == []
     assert payload["upstream_errors"] == []
 
-    assert report.counts_by_classification[CLASS_TEMPORARY_EXCEPTION] == 109
-    assert report.counts_by_classification[CLASS_UOW_SEAM] == 4
+    assert report.rows
+    assert all(row.observed_count == 0 for row in report.rows)
+    assert report.counts_by_classification == {CLASS_MIGRATED_CLEAN: 0}
     assert report.counts_by_pattern.get(PATTERN_MCP_DIRECT_GET_DB_FOR_MCP, 0) == 0
-    assert report.counts_by_pattern[PATTERN_USE_CASE_DIRECT_RELATIONAL] == 0
+    assert report.counts_by_pattern.get(PATTERN_USE_CASE_DIRECT_RELATIONAL, 0) == 0
 
     gate_report = report.as_gate_report()
     assert gate_report.status == "passed"

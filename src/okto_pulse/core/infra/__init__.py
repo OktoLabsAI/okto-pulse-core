@@ -21,7 +21,6 @@ _LAZY_EXPORTS: dict[str, str] = {
     "configure_settings": "okto_pulse.core.infra.config",
     "get_mcp_settings": "okto_pulse.core.infra.config",
     "get_settings": "okto_pulse.core.infra.config",
-    "Base": "okto_pulse.core.infra.database",
     "close_db": "okto_pulse.core.infra.database",
     "configure_database_runtime": "okto_pulse.core.infra.database",
     "create_database": "okto_pulse.core.infra.database",
@@ -40,17 +39,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "get_storage_provider": "okto_pulse.core.infra.storage",
 }
 
-_AUTH_DEPENDENCY_EXPORTS = {
-    "get_current_principal",
-    "get_current_user",
-    "get_current_user_id",
-    "get_realm_id",
-    "require_principal",
-    "require_user",
-    "security",
-}
-
-__all__ = [*_LAZY_EXPORTS, *_AUTH_DEPENDENCY_EXPORTS]
+__all__ = [*_LAZY_EXPORTS]
 
 
 def __getattr__(name: str):
@@ -61,12 +50,8 @@ def __getattr__(name: str):
         value = getattr(importlib.import_module(module), name)
         globals()[name] = value
         return value
-    if name in _AUTH_DEPENDENCY_EXPORTS:
-        from okto_pulse.core.api import auth_deps
-
-        return getattr(auth_deps, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return sorted({*globals(), *_LAZY_EXPORTS, *_AUTH_DEPENDENCY_EXPORTS})
+    return sorted({*globals(), *_LAZY_EXPORTS})

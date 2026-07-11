@@ -14,28 +14,19 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import flag_modified
-
-from okto_pulse.core.domain.enums import SpecStatus, SprintStatus
 from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
-from okto_pulse.core.models.db import (
-    Board,
-    ConsolidationAudit,
-    ConsolidationQueue,
-    GlobalUpdateOutbox,
-    Ideation,
-    KuzuNodeRef,
-    Refinement,
-    Spec,
-    Sprint,
-    Story,
+from okto_pulse.core.ports.kg_governance import (
+    BoostAuditRecord,
+    HistoricalBoardRecord,
+    HistoricalQueueInsert,
+    get_kg_governance_store,
 )
 
 logger = logging.getLogger("okto_pulse.kg.governance")
 
-def _historical_progress_state(board: Board | None) -> dict[str, Any]:
+def _historical_progress_state(
+    board: HistoricalBoardRecord | None,
+) -> dict[str, Any]:
     if board is None or not isinstance(board.settings, dict):
         return {}
     value = board.settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
@@ -43,7 +34,7 @@ def _historical_progress_state(board: Board | None) -> dict[str, Any]:
 
 
 def _set_historical_progress_state(
-    board: Board | None,
+    board: HistoricalBoardRecord | None,
     *,
     total: int,
     status: str,
@@ -62,27 +53,14 @@ def _set_historical_progress_state(
         or datetime.now(timezone.utc).isoformat(),
     }
     board.settings = settings
-    flag_modified(board, "settings")
 
 
 async def _historical_queue_counts(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
 ) -> dict[str, int]:
-    rows = (
-        await db.execute(
-            select(ConsolidationQueue.status, func.count())
-            .where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.source == "historical_backfill",
-            )
-            .group_by(ConsolidationQueue.status)
-        )
-    ).all()
     counts = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-    for status, count in rows:
-        if status in counts:
-            counts[status] = int(count)
+    counts.update(await get_kg_governance_store().queue_counts(db, board_id=board_id))
     return counts
 
 
@@ -115,7 +93,7 @@ async def _has_materialized_kg_nodes(board_id: str) -> bool:
 
 
 async def _purge_stale_metadata_if_graph_empty(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
 ) -> bool:
     """Drop SQLite KG mirrors when the physical board graph has no user nodes."""
@@ -123,14 +101,9 @@ async def _purge_stale_metadata_if_graph_empty(
     if has_nodes:
         return False
 
-    await db.execute(
-        delete(KuzuNodeRef).where(KuzuNodeRef.board_id == board_id)
-    )
-    await db.execute(
-        delete(ConsolidationAudit).where(ConsolidationAudit.board_id == board_id)
-    )
-    await db.execute(
-        delete(GlobalUpdateOutbox).where(GlobalUpdateOutbox.board_id == board_id)
+    await get_kg_governance_store().purge_stale_metadata(
+        db,
+        board_id=board_id,
     )
     logger.info(
         "governance.historical_start.purged_stale_metadata board=%s",
@@ -149,24 +122,23 @@ async def _purge_stale_metadata_if_graph_empty(
 
 
 async def start_historical_consolidation(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
 ) -> dict:
     """Populate consolidation_queue with low-priority entries for all done
     specs/sprints in the board. Returns counts."""
     import uuid
 
-    board = await db.get(Board, board_id)
+    store = get_kg_governance_store()
+    board = await store.get_board(db, board_id=board_id)
 
     # Check if already in progress
-    existing = await db.execute(
-        select(ConsolidationQueue).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.source == "historical_backfill",
-            ConsolidationQueue.status.in_(["pending", "claimed"]),
-        ).limit(1)
-    )
-    if existing.scalars().first():
+    live_queue = await store.list_live_queue(db, board_id=board_id)
+    if any(
+        row.source == "historical_backfill"
+        and row.status in {"pending", "claimed"}
+        for row in live_queue
+    ):
         counts = await _historical_queue_counts(db, board_id)
         live_total = sum(counts.values())
         current_total = int(_historical_progress_state(board).get("total") or 0)
@@ -176,62 +148,18 @@ async def start_historical_consolidation(
                 total=live_total,
                 status="in_progress",
             )
-            await db.commit()
+            if board is not None:
+                await store.save_board(db, board)
+            await store.commit(db)
         return {"status": "already_in_progress", "board_id": board_id}
 
     await _purge_stale_metadata_if_graph_empty(db, board_id)
 
-    story_result = await db.execute(
-        select(Story).where(
-            Story.board_id == board_id,
-            Story.archived.is_(False),
-        )
-    )
-    stories = list(story_result.scalars().all())
-
-    ideation_result = await db.execute(
-        select(Ideation).where(
-            Ideation.board_id == board_id,
-            Ideation.archived.is_(False),
-        )
-    )
-    ideations = list(ideation_result.scalars().all())
-
-    refinement_result = await db.execute(
-        select(Refinement).where(
-            Refinement.board_id == board_id,
-            Refinement.archived.is_(False),
-        )
-    )
-    refinements = list(refinement_result.scalars().all())
-
-    # Query done/approved specs for this board
-    spec_result = await db.execute(
-        select(Spec).where(
-            Spec.board_id == board_id,
-            Spec.status.in_([SpecStatus.DONE, SpecStatus.APPROVED, SpecStatus.VALIDATED]),
-            Spec.archived.is_(False),
-        )
-    )
-    specs = list(spec_result.scalars().all())
-
-    # Query closed sprints for this board
-    sprint_result = await db.execute(
-        select(Sprint).where(
-            Sprint.board_id == board_id,
-            Sprint.status == SprintStatus.CLOSED,
-            Sprint.archived.is_(False),
-        )
-    )
-    sprints = list(sprint_result.scalars().all())
-
-    # Query cards (any status — Layer 1 worker materialises every card so
-    # the hierarchy backbone Spec→Sprint→Card stays consistent in the KG).
-    from okto_pulse.core.models.db import Card
-    card_result = await db.execute(
-        select(Card).where(Card.board_id == board_id)
-    )
-    cards = list(card_result.scalars().all())
+    artifacts = await store.list_historical_artifacts(db, board_id=board_id)
+    by_type = {
+        artifact_type: [row for row in artifacts if row.artifact_type == artifact_type]
+        for artifact_type in ("story", "ideation", "refinement", "spec", "sprint", "card")
+    }
 
     # Remove completed/failed entries so they can be re-queued.
     # NOTE: we purposely do NOT filter by source — terminal rows from
@@ -240,128 +168,34 @@ async def start_historical_consolidation(
     # The UNIQUE constraint (board_id, artifact_type, artifact_id) means
     # only one row per artifact can exist, so deleting all terminal rows
     # is equivalent to clearing the slot for re-queueing.
-    await db.execute(
-        delete(ConsolidationQueue).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.status.in_(["done", "failed"]),
-        )
-    )
+    await store.delete_terminal_queue(db, board_id=board_id)
 
     # Collect live entries only — pending, claimed, or paused. Terminal
     # rows (done/failed) have just been deleted above, so dedup against
     # them would be incorrect. Including `paused` covers the case where
     # a prior historical run was paused and is still reachable via
     # resume_historical.
-    existing_result = await db.execute(
-        select(
-            ConsolidationQueue.artifact_type,
-            ConsolidationQueue.artifact_id,
-            ConsolidationQueue.source,
-        ).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.status.in_(["pending", "claimed", "paused"]),
-        )
-    )
-    existing_rows = list(existing_result.all())
-    already_queued = {(row[0], row[1]) for row in existing_rows}
+    existing_rows = await store.list_live_queue(db, board_id=board_id)
+    already_queued = {(row.artifact_type, row.artifact_id) for row in existing_rows}
     existing_historical = {
-        (row[0], row[1])
+        (row.artifact_type, row.artifact_id)
         for row in existing_rows
-        if row[2] == "historical_backfill"
+        if row.source == "historical_backfill"
     }
 
-    total = 0
-
-    # Insert pre-spec entries first so lineage targets exist before specs.
-    for story in stories:
-        if ("story", story.id) in already_queued:
-            continue
-        db.add(ConsolidationQueue(
+    entries = [
+        HistoricalQueueInsert(
             id=str(uuid.uuid4()),
             board_id=board_id,
-            artifact_type="story",
-            artifact_id=story.id,
-            priority="low",
-            source="historical_backfill",
-            status="pending",
-        ))
-        total += 1
-
-    for ideation in ideations:
-        if ("ideation", ideation.id) in already_queued:
-            continue
-        db.add(ConsolidationQueue(
-            id=str(uuid.uuid4()),
-            board_id=board_id,
-            artifact_type="ideation",
-            artifact_id=ideation.id,
-            priority="low",
-            source="historical_backfill",
-            status="pending",
-        ))
-        total += 1
-
-    for refinement in refinements:
-        if ("refinement", refinement.id) in already_queued:
-            continue
-        db.add(ConsolidationQueue(
-            id=str(uuid.uuid4()),
-            board_id=board_id,
-            artifact_type="refinement",
-            artifact_id=refinement.id,
-            priority="low",
-            source="historical_backfill",
-            status="pending",
-        ))
-        total += 1
-
-    # Insert queue entries for each spec
-    for spec in specs:
-        if ("spec", spec.id) in already_queued:
-            continue
-        db.add(ConsolidationQueue(
-            id=str(uuid.uuid4()),
-            board_id=board_id,
-            artifact_type="spec",
-            artifact_id=spec.id,
-            priority="low",
-            source="historical_backfill",
-            status="pending",
-        ))
-        total += 1
-
-    # Insert queue entries for each sprint
-    for sprint in sprints:
-        if ("sprint", sprint.id) in already_queued:
-            continue
-        db.add(ConsolidationQueue(
-            id=str(uuid.uuid4()),
-            board_id=board_id,
-            artifact_type="sprint",
-            artifact_id=sprint.id,
-            priority="low",
-            source="historical_backfill",
-            status="pending",
-        ))
-        total += 1
-
-    # Insert queue entries for each card. We deliberately enqueue cards AFTER
-    # specs+sprints so the deterministic worker can resolve Card→Sprint /
-    # Card→Spec hierarchy edges via the cross-session lookup (the parent
-    # Entity is already committed when the card session opens).
-    for card in cards:
-        if ("card", card.id) in already_queued:
-            continue
-        db.add(ConsolidationQueue(
-            id=str(uuid.uuid4()),
-            board_id=board_id,
-            artifact_type="card",
-            artifact_id=card.id,
-            priority="low",
-            source="historical_backfill",
-            status="pending",
-        ))
-        total += 1
+            artifact_type=artifact_type,
+            artifact_id=artifact.artifact_id,
+        )
+        for artifact_type in ("story", "ideation", "refinement", "spec", "sprint", "card")
+        for artifact in by_type[artifact_type]
+        if (artifact_type, artifact.artifact_id) not in already_queued
+    ]
+    total = len(entries)
+    await store.add_queue_entries(db, entries)
 
     run_total = total + len(existing_historical)
     _set_historical_progress_state(
@@ -369,78 +203,73 @@ async def start_historical_consolidation(
         total=run_total,
         status="in_progress" if run_total > 0 else "inactive",
     )
-
-    await db.commit()
+    if board is not None:
+        await store.save_board(db, board)
+    await store.commit(db)
 
     logger.info(
         "governance.historical_start board=%s stories=%d ideations=%d "
         "refinements=%d specs=%d sprints=%d cards=%d total=%d",
-        board_id, len(stories), len(ideations), len(refinements),
-        len(specs), len(sprints), len(cards), total,
+        board_id, len(by_type["story"]), len(by_type["ideation"]),
+        len(by_type["refinement"]), len(by_type["spec"]),
+        len(by_type["sprint"]), len(by_type["card"]), total,
     )
 
     if total > 0:
         # Fase 4 — wake the background worker immediately so the freshly
         # enqueued rows start processing without waiting for a heartbeat.
         try:
-            from okto_pulse.core.kg.workers.consolidation import (
-                signal_consolidation_worker,
+            from okto_pulse.core.application.runtime_workers import (
+                signal_runtime_worker,
             )
-            signal_consolidation_worker()
+            signal_runtime_worker("consolidation_worker")
         except Exception:  # pragma: no cover — signal is best-effort
             pass
 
     return {"status": "queueing", "board_id": board_id, "total_artifacts": run_total}
 
 
-async def pause_historical(db: AsyncSession, board_id: str) -> dict:
+async def pause_historical(db: Any, board_id: str) -> dict:
     """Mark low-priority backfill entries as paused."""
-    await db.execute(
-        update(ConsolidationQueue)
-        .where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.source == "historical_backfill",
-            ConsolidationQueue.status == "pending",
-        )
-        .values(status="paused")
+    store = get_kg_governance_store()
+    await store.update_historical_status(
+        db,
+        board_id=board_id,
+        old_status="pending",
+        new_status="paused",
     )
-    await db.commit()
+    await store.commit(db)
     return {"status": "paused", "board_id": board_id}
 
 
-async def resume_historical(db: AsyncSession, board_id: str) -> dict:
+async def resume_historical(db: Any, board_id: str) -> dict:
     """Resume paused backfill entries."""
-    await db.execute(
-        update(ConsolidationQueue)
-        .where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.source == "historical_backfill",
-            ConsolidationQueue.status == "paused",
-        )
-        .values(status="pending")
+    store = get_kg_governance_store()
+    await store.update_historical_status(
+        db,
+        board_id=board_id,
+        old_status="paused",
+        new_status="pending",
     )
-    await db.commit()
+    await store.commit(db)
     return {"status": "resumed", "board_id": board_id}
 
 
-async def cancel_historical(db: AsyncSession, board_id: str) -> dict:
+async def cancel_historical(db: Any, board_id: str) -> dict:
     """Delete pending low-priority entries. Already-consolidated preserved."""
-    board = await db.get(Board, board_id)
-    result = await db.execute(
-        delete(ConsolidationQueue).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.source == "historical_backfill",
-            ConsolidationQueue.status.in_(["pending", "paused"]),
-        )
-    )
+    store = get_kg_governance_store()
+    board = await store.get_board(db, board_id=board_id)
+    removed = await store.delete_historical_pending(db, board_id=board_id)
     current_total = int(_historical_progress_state(board).get("total") or 0)
     _set_historical_progress_state(board, total=current_total, status="cancelled")
-    await db.commit()
-    return {"status": "cancelled", "board_id": board_id, "removed": result.rowcount}
+    if board is not None:
+        await store.save_board(db, board)
+    await store.commit(db)
+    return {"status": "cancelled", "board_id": board_id, "removed": removed}
 
 
 async def retry_pending_entry(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     queue_entry_id: str,
     *,
@@ -462,100 +291,31 @@ async def retry_pending_entry(
     behaviour downstream, so retrying an unchanged artifact is a cheap round-trip
     that touches the outbox once.
     """
-    from sqlalchemy import and_
-    from sqlalchemy import select as _select
+    from okto_pulse.core.ports.kg_operational import get_kg_worker_queue_port
 
-    from okto_pulse.core.models.db import (
-        Card,
-        ConsolidationQueue,
-        Refinement,
-        Spec,
-        Sprint,
+    result = await get_kg_worker_queue_port().retry_pending_entry(
+        db,
+        board_id=board_id,
+        queue_entry_id=queue_entry_id,
+        recursive=recursive,
     )
-
-    entry = (await db.execute(
-        _select(ConsolidationQueue).where(and_(
-            ConsolidationQueue.id == queue_entry_id,
-            ConsolidationQueue.board_id == board_id,
-        ))
-    )).scalars().first()
-    if entry is None:
+    if result is None:
         return None
-
-    entry.status = "pending"
-    entry.claimed_at = None
-    entry.claimed_by_session_id = None
-    entry.source = "retry_from_ui"
-    reopened = [queue_entry_id]
-
-    if recursive:
-        descendants: list[tuple[str, str]] = []
-        if entry.artifact_type == "ideation":
-            rows = (await db.execute(
-                _select(Refinement.id).where(Refinement.ideation_id == entry.artifact_id)
-            )).scalars().all()
-            descendants.extend(("refinement", r) for r in rows)
-        if entry.artifact_type in ("ideation", "refinement"):
-            refinement_ids: list[str]
-            if entry.artifact_type == "ideation":
-                refinement_ids = [r for _, r in descendants]
-            else:
-                refinement_ids = [entry.artifact_id]
-            specs = (await db.execute(
-                _select(Spec.id).where(Spec.refinement_id.in_(refinement_ids))
-            )).scalars().all()
-            descendants.extend(("spec", s) for s in specs)
-        if entry.artifact_type in ("ideation", "refinement", "spec"):
-            spec_ids = [s for t, s in descendants if t == "spec"] or [entry.artifact_id]
-            sprints = (await db.execute(
-                _select(Sprint.id).where(Sprint.spec_id.in_(spec_ids))
-            )).scalars().all()
-            descendants.extend(("sprint", sp) for sp in sprints)
-            cards = (await db.execute(
-                _select(Card.id).where(Card.spec_id.in_(spec_ids))
-            )).scalars().all()
-            descendants.extend(("card", c) for c in cards)
-
-        for artifact_type, artifact_id in descendants:
-            row = (await db.execute(
-                _select(ConsolidationQueue).where(and_(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_type == artifact_type,
-                    ConsolidationQueue.artifact_id == artifact_id,
-                ))
-            )).scalars().first()
-            if row is None:
-                continue
-            row.status = "pending"
-            row.claimed_at = None
-            row.claimed_by_session_id = None
-            row.source = "retry_from_ui_recursive"
-            reopened.append(row.id)
-
-    await db.commit()
 
     # Fase 4 — wake the background worker so retried rows are picked up
     # immediately instead of waiting for the heartbeat tick.
     try:
-        from okto_pulse.core.kg.workers.consolidation import (
-            signal_consolidation_worker,
-        )
-        signal_consolidation_worker()
+        from okto_pulse.core.application.runtime_workers import signal_runtime_worker
+        signal_runtime_worker("consolidation_worker")
     except Exception:  # pragma: no cover — signal is best-effort
         pass
 
-    return {
-        "board_id": board_id,
-        "queue_entry_id": queue_entry_id,
-        "recursive": recursive,
-        "reopened_count": len(reopened),
-        "reopened_ids": reopened,
-    }
+    return dict(result)
 
 
-async def get_historical_progress(db: AsyncSession, board_id: str) -> dict:
+async def get_historical_progress(db: Any, board_id: str) -> dict:
     """Return progress of historical consolidation."""
-    board = await db.get(Board, board_id)
+    board = await get_kg_governance_store().get_board(db, board_id=board_id)
     state = _historical_progress_state(board)
     counts = await _historical_queue_counts(db, board_id)
     live_total = sum(counts.values())
@@ -603,7 +363,7 @@ async def get_historical_progress(db: AsyncSession, board_id: str) -> dict:
 
 
 async def undo_session(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     session_id: str,
     *,
@@ -614,52 +374,37 @@ async def undo_session(
     Returns 409 cascade_blocked if other sessions reference nodes from this
     session, unless force=True (admin).
     """
-    audit = await db.execute(
-        select(ConsolidationAudit).where(
-            ConsolidationAudit.session_id == session_id,
-            ConsolidationAudit.board_id == board_id,
-        )
+    store = get_kg_governance_store()
+    fact = await store.get_undo_fact(
+        db,
+        board_id=board_id,
+        session_id=session_id,
     )
-    row = audit.scalars().first()
-    if not row:
+    if fact is None:
         return {"error": "not_found", "session_id": session_id}
-    if row.undo_status == "undone":
+    if fact.undo_status == "undone":
         return {"error": "already_undone", "session_id": session_id}
-
-    # Check cascade: are any nodes from this session referenced by other sessions?
-    refs = await db.execute(
-        select(KuzuNodeRef).where(KuzuNodeRef.session_id == session_id)
-    )
-    node_refs = list(refs.scalars().all())
-
-    if not force and node_refs:
-        # Check if any OTHER session references these node IDs
-        node_ids = [r.kuzu_node_id for r in node_refs]
-        other_refs = await db.execute(
-            select(KuzuNodeRef).where(
-                KuzuNodeRef.kuzu_node_id.in_(node_ids),
-                KuzuNodeRef.session_id != session_id,
-            )
-        )
-        blockers = list(set(r.session_id for r in other_refs.scalars().all()))
-        if blockers:
-            return {
-                "error": "cascade_blocked",
-                "session_id": session_id,
-                "blocking_sessions": blockers,
-            }
+    if not force and fact.blocking_sessions:
+        return {
+            "error": "cascade_blocked",
+            "session_id": session_id,
+            "blocking_sessions": list(fact.blocking_sessions),
+        }
 
     # Mark as undone
-    row.undo_status = "undone"
-    row.undone_at = datetime.now(timezone.utc)
-    await db.commit()
+    await store.mark_session_undone(
+        db,
+        session_id=session_id,
+        undone_at=datetime.now(timezone.utc),
+    )
+    await store.commit(db)
 
     # Kuzu soft-delete would happen here via TransactionOrchestrator.compensate
     # pattern. For MVP: mark in SQLite only.
     return {
         "session_id": session_id,
         "status": "undone",
-        "nodes_removed": len(node_refs),
+        "nodes_removed": len(fact.node_ids),
         "force_used": force,
     }
 
@@ -670,7 +415,7 @@ async def undo_session(
 
 
 async def purge_expired_audit(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
     retention_days: int | None = None,
 ) -> dict:
@@ -679,16 +424,16 @@ async def purge_expired_audit(
         return {"board_id": board_id, "purged": 0, "retention": "unlimited"}
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
-    result = await db.execute(
-        delete(ConsolidationAudit).where(
-            ConsolidationAudit.board_id == board_id,
-            ConsolidationAudit.committed_at < cutoff,
-        )
+    store = get_kg_governance_store()
+    purged = await store.purge_expired_audit(
+        db,
+        board_id=board_id,
+        cutoff=cutoff,
     )
-    await db.commit()
+    await store.commit(db)
     return {
         "board_id": board_id,
-        "purged": result.rowcount,
+        "purged": purged,
         "retention_days": retention_days,
         "cutoff": cutoff.isoformat(),
     }
@@ -749,7 +494,7 @@ def clear_acl_violations_for_tests() -> None:
 
 
 async def right_to_erasure(
-    db: AsyncSession,
+    db: Any,
     board_id: str,
 ) -> dict:
     """Wipe all KG data for a board via logical runtime and audit purges.
@@ -781,26 +526,9 @@ async def right_to_erasure(
 
     # 3. SQLite audit/refs/outbox purge
     try:
-        await db.execute(
-            delete(KuzuNodeRef).where(KuzuNodeRef.board_id == board_id)
-        )
-        await db.execute(
-            delete(ConsolidationAudit).where(ConsolidationAudit.board_id == board_id)
-        )
-        await db.execute(
-            delete(ConsolidationQueue).where(ConsolidationQueue.board_id == board_id)
-        )
-        await db.execute(
-            delete(GlobalUpdateOutbox).where(GlobalUpdateOutbox.board_id == board_id)
-        )
-        board = await db.get(Board, board_id)
-        if board is not None and isinstance(board.settings, dict):
-            settings = dict(board.settings or {})
-            if HISTORICAL_PROGRESS_SETTINGS_KEY in settings:
-                settings.pop(HISTORICAL_PROGRESS_SETTINGS_KEY, None)
-                board.settings = settings
-                flag_modified(board, "settings")
-        await db.commit()
+        store = get_kg_governance_store()
+        await store.purge_board_metadata(db, board_id=board_id)
+        await store.commit(db)
         counts["sqlite_purged"] = True
     except Exception as exc:
         counts["sqlite_purge_error"] = str(exc)
@@ -831,7 +559,7 @@ BOOST_CLAMP_MAX = 1.5
 
 
 async def boost_node(
-    db: AsyncSession, board_id: str, node_id: str, *, actor_id: str
+    db: Any, board_id: str, node_id: str, *, actor_id: str
 ) -> dict[str, Any] | None:
     """Boost a node's ``relevance_score`` by +0.3 (clamp [0, 1.5]) and STAGE the
     ``ConsolidationAudit`` row on ``db`` (write; the caller owns the commit via the
@@ -912,26 +640,20 @@ async def boost_node(
     # keep it out of every count). The caller (BoostNodeUseCase) commits this row;
     # that commit stays best-effort only for the already-mutated-graph split-brain
     # case, NOT to mask a deterministic schema violation.
-    db.add(ConsolidationAudit(
-        # session_id is the audit PK. Now that the row PERSISTS (bug 547a2aa8 fix),
-        # the legacy ``boost-{node[:8]}-{epoch_s}`` template would collide on a second
-        # boost of the same node within the same second and the duplicate would be
-        # silently swallowed by the best-effort commit guard — re-dropping the audit
-        # row. A uuid suffix makes every boost's audit row unique (stays ≤ String(36):
-        # 6 + 8 + 1 + 10 + 1 + 8 = 34). The ``boost-`` prefix is preserved.
-        session_id=(
-            f"boost-{node_id[:8]}-{int(boosted_at.timestamp())}"
-            f"-{uuid.uuid4().hex[:8]}"
+    get_kg_governance_store().add_boost_audit(
+        db,
+        BoostAuditRecord(
+            session_id=(
+                f"boost-{node_id[:8]}-{int(boosted_at.timestamp())}"
+                f"-{uuid.uuid4().hex[:8]}"
+            ),
+            board_id=board_id,
+            artifact_id=node_id,
+            agent_id=boosted_by,
+            started_at=started_at,
+            committed_at=boosted_at,
         ),
-        board_id=board_id,
-        artifact_id=node_id,
-        artifact_type="boost",
-        agent_id=boosted_by,
-        started_at=started_at,
-        committed_at=boosted_at,
-        nodes_added=0,
-        edges_added=0,
-    ))
+    )
 
     return {
         "node_id": node_id,

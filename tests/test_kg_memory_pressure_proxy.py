@@ -36,7 +36,7 @@ from okto_pulse.core.kg.memory_pressure_collector import (
     record_failure,
 )
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -280,7 +280,7 @@ async def test_mark_failed_dlq_records_commit_fail(monkeypatch):
     Uses a lightweight fake session and monkeypatches route_to_dead_letter
     to avoid a full DB round-trip.
     """
-    from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
+    from okto_pulse.core.application.processors.consolidation import ConsolidationProcessor
 
     board_id = f"board-ac6-{uuid.uuid4().hex[:8]}"
     clear_board(board_id)
@@ -320,10 +320,10 @@ async def test_mark_failed_dlq_records_commit_fail(monkeypatch):
     async def _fake_dlq(db, entry, *, error_text):
         pass  # DLQ routing side-effect not needed for this test
 
-    worker = ConsolidationWorker(session_factory=lambda: None)
+    worker = ConsolidationProcessor(session_factory=lambda: None)
 
     monkeypatch.setattr(
-        "okto_pulse.core.kg.workers.consolidation.route_to_dead_letter",
+        "okto_pulse.core.application.processors.consolidation.route_to_dead_letter",
         _fake_dlq,
     )
 
@@ -357,7 +357,7 @@ def test_lifecycle_error_records_wal_fail():
     Confirms that the FailureEvent reaches the collector even though the
     caller sees the exception.
     """
-    from okto_pulse.core.kg.workers.consolidation import (
+    from okto_pulse.core.application.processors.consolidation import (
         _apply_board_graph_lifecycle_after_commit,
     )
     from okto_pulse.core.kg.safe_write_lifecycle import SafeWriteLifecycleStatus
@@ -378,7 +378,7 @@ def test_lifecycle_error_records_wal_fail():
             return _fake_response
 
     with patch(
-        "okto_pulse.core.kg.workers.consolidation.KGSafeWriteLifecycle",
+        "okto_pulse.core.application.processors.consolidation.KGSafeWriteLifecycle",
         return_value=_FakeLifecycle(),
     ):
         with pytest.raises(RuntimeError, match="board_graph_safe_lifecycle_failed"):

@@ -8,11 +8,11 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.refinements import router as refinements_router
-from okto_pulse.core.api.stories import router as stories_router
+from okto_pulse.community.api.refinements import router as refinements_router
+from okto_pulse.community.api.stories import router as stories_router
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus, Story, StoryStatus, Topic
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus, Story, StoryStatus, Topic
 
 
 USER_ID = "rest-regression-user"

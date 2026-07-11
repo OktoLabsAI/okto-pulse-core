@@ -11,6 +11,8 @@ card with its relationships loaded — exactly as the legacy endpoint did.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -19,9 +21,7 @@ from okto_pulse.core.application.use_cases.base import (
     ConflictError,
     EntityNotFoundError,
     commit,
-    session_of,
 )
-from okto_pulse.core.services import CardService
 
 
 # --- get --------------------------------------------------------------------
@@ -45,9 +45,9 @@ class GetCardUseCase:
     """Fetch a card with all its relationships (read). 404 when missing."""
 
     async def execute(
-        self, command: GetCardCommand, *, actor: ActorContext, uow: Any
+        self, command: GetCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardResult:
-        card = await CardService(session_of(uow)).get_card(command.card_id)
+        card = await uow.services.cards.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
         return GetCardResult(card)
@@ -79,9 +79,9 @@ class UpdateCardUseCase:
     card with its relationships loaded."""
 
     async def execute(
-        self, command: UpdateCardCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateCardResult:
-        service = CardService(session_of(uow))
+        service = uow.services.cards
         card = await service.update_card(command.card_id, actor.actor_id, command.data)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
@@ -108,9 +108,9 @@ class DeleteCardUseCase:
     missing."""
 
     async def execute(
-        self, command: DeleteCardCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteCardResult:
-        service = CardService(session_of(uow))
+        service = uow.services.cards
         deleted = await service.delete_card(command.card_id, actor.actor_id)
         if not deleted:
             raise EntityNotFoundError("card", command.card_id)
@@ -158,9 +158,9 @@ class MoveCardUseCase:
     card with its relationships loaded — exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: MoveCardCommand, *, actor: ActorContext, uow: Any
+        self, command: MoveCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveCardResult:
-        service = CardService(session_of(uow))
+        service = uow.services.cards
         card = await service.move_card(command.card_id, actor.actor_id, command.data)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
@@ -190,9 +190,9 @@ class GetCardDependenciesUseCase:
     each ``Card`` into the legacy ``{id, title, status}`` projection."""
 
     async def execute(
-        self, command: GetCardDependenciesCommand, *, actor: ActorContext, uow: Any
+        self, command: GetCardDependenciesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardDependenciesResult:
-        deps = await CardService(session_of(uow)).get_dependencies(command.card_id)
+        deps = await uow.services.cards.get_dependencies(command.card_id)
         return GetCardDependenciesResult(deps)
 
 
@@ -215,9 +215,9 @@ class GetCardDependentsUseCase:
     shapes each ``Card`` into the legacy ``{id, title, status}`` projection."""
 
     async def execute(
-        self, command: GetCardDependentsCommand, *, actor: ActorContext, uow: Any
+        self, command: GetCardDependentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardDependentsResult:
-        deps = await CardService(session_of(uow)).get_dependents(command.card_id)
+        deps = await uow.services.cards.get_dependents(command.card_id)
         return GetCardDependentsResult(deps)
 
 
@@ -247,9 +247,9 @@ class AddCardDependencyUseCase:
     construction) and returns it for the adapter envelope."""
 
     async def execute(
-        self, command: AddCardDependencyCommand, *, actor: ActorContext, uow: Any
+        self, command: AddCardDependencyCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AddCardDependencyResult:
-        service = CardService(session_of(uow))
+        service = uow.services.cards
         dep = await service.add_dependency(command.card_id, command.depends_on_id)
         if not dep:
             raise ConflictError("card_dependency", command.card_id)
@@ -277,9 +277,9 @@ class RemoveCardDependencyUseCase:
     found")."""
 
     async def execute(
-        self, command: RemoveCardDependencyCommand, *, actor: ActorContext, uow: Any
+        self, command: RemoveCardDependencyCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RemoveCardDependencyResult:
-        service = CardService(session_of(uow))
+        service = uow.services.cards
         removed = await service.remove_dependency(command.card_id, command.depends_on_id)
         if not removed:
             raise EntityNotFoundError("dependency", command.card_id)
@@ -330,10 +330,8 @@ class SubmitTaskValidationUseCase:
     )
 
     async def execute(
-        self, command: SubmitTaskValidationCommand, *, actor: ActorContext, uow: Any
+        self, command: SubmitTaskValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SubmitTaskValidationResult:
-        from okto_pulse.core.services.main import resolve_actor_name
-
         data = command.data
         missing = [f for f in self._REQUIRED if f not in data or data[f] is None]
         if missing:
@@ -345,8 +343,7 @@ class SubmitTaskValidationUseCase:
                 "recommendation must be 'approve' or 'reject'"
             )
 
-        session = session_of(uow)
-        service = CardService(session)
+        service = uow.services.cards
         card = await service.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
@@ -354,7 +351,10 @@ class SubmitTaskValidationUseCase:
             reviewer_name = actor.actor_name
         else:
             try:
-                reviewer_name = await resolve_actor_name(session, actor.actor_id, card.board_id)
+                reviewer_name = await uow.services.resolve_actor_name(
+                    actor.actor_id,
+                    card.board_id,
+                )
             except Exception:
                 reviewer_name = actor.actor_id
 
@@ -389,9 +389,9 @@ class ListTaskValidationsUseCase:
     the legacy ``{card_id, total, validations}`` envelope."""
 
     async def execute(
-        self, command: ListTaskValidationsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListTaskValidationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListTaskValidationsResult:
-        validations = await CardService(session_of(uow)).list_task_validations(
+        validations = await uow.services.cards.list_task_validations(
             command.card_id
         )
         return ListTaskValidationsResult(validations)
@@ -420,9 +420,9 @@ class GetTaskValidationUseCase:
     found")."""
 
     async def execute(
-        self, command: GetTaskValidationCommand, *, actor: ActorContext, uow: Any
+        self, command: GetTaskValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetTaskValidationResult:
-        validation = await CardService(session_of(uow)).get_task_validation(
+        validation = await uow.services.cards.get_task_validation(
             command.card_id, command.validation_id
         )
         if not validation:
@@ -451,9 +451,9 @@ class DeleteTaskValidationUseCase:
     endpoint did."""
 
     async def execute(
-        self, command: DeleteTaskValidationCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteTaskValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteTaskValidationResult:
-        service = CardService(session_of(uow))
+        service = uow.services.cards
         deleted = await service.delete_task_validation(
             command.card_id, command.validation_id, actor.actor_id
         )
@@ -471,7 +471,7 @@ class DeleteTaskValidationUseCase:
 # JSONB (writes). The preview delegates to the existing
 # ``BugRegressionScenarioPreviewService``; the link/unlink keep the EXACT
 # legacy validation gates + status codes + ``flag_modified`` + conditional
-# commit, only the persistence handle moves from ``db`` to ``session_of(uow)``.
+# commit; persistence remains behind the typed UnitOfWork capabilities.
 # ===========================================================================
 
 
@@ -515,13 +515,10 @@ class GetBugRegressionScenarioCandidatesUseCase:
         command: GetBugRegressionScenarioCandidatesCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> GetBugRegressionScenarioCandidatesResult:
-        from okto_pulse.core.services.bug_regression_preview import (
-            BugRegressionScenarioPreviewService,
-        )
 
-        payload = await BugRegressionScenarioPreviewService(session_of(uow)).resolve(
+        payload = await uow.services.bug_regression_preview.resolve(
             board_id=command.board_id,
             bug_id=command.card_id,
             affected_task_ids=command.affected_task_ids,
@@ -567,15 +564,14 @@ class LinkTestTaskToBugUseCase:
       (→ 422) with the exact legacy detail strings.
 
     The two ``get_card`` lookups stay on ``CardService``; the spec re-fetch uses
-    ``session_of(uow)`` (the legacy ``db.get(Spec, …)`` inline). The JSONB
+    the typed UnitOfWork catalog (replacing the legacy inline lookup). The JSONB
     mutation uses ``flag_modified`` and commits ONLY when the id was actually
     appended — exactly as the legacy endpoint did. ``is_unblocked`` mirrors the
     legacy ``len(linked) >= 1``."""
 
     async def execute(
-        self, command: LinkTestTaskToBugCommand, *, actor: ActorContext, uow: Any
+        self, command: LinkTestTaskToBugCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> LinkTestTaskToBugResult:
-        from okto_pulse.core.services import SpecService
         from okto_pulse.core.services.persistence_mutation import (
             mark_mutable_field_modified,
         )
@@ -583,8 +579,7 @@ class LinkTestTaskToBugUseCase:
         if not command.test_task_id:
             raise CommandValidationError("test_task_id is required")
 
-        session = session_of(uow)
-        service = CardService(session)
+        service = uow.services.cards
         bug_card = await service.get_card(command.card_id)
         if not bug_card:
             raise EntityNotFoundError("card", command.card_id)
@@ -611,7 +606,7 @@ class LinkTestTaskToBugUseCase:
 
         # Validate test task references scenarios that still exist on the spec.
         if bug_card.spec_id and test_task.test_scenario_ids:
-            spec = await SpecService(session).get_spec(bug_card.spec_id)
+            spec = await uow.services.specs.get_spec(bug_card.spec_id)
             if spec:
                 all_scenarios = {s["id"]: s for s in (spec.test_scenarios or [])}
                 for sid in test_task.test_scenario_ids:
@@ -655,13 +650,13 @@ class UnlinkTestTaskFromBugUseCase:
     did (an absent id is a no-op 204)."""
 
     async def execute(
-        self, command: UnlinkTestTaskFromBugCommand, *, actor: ActorContext, uow: Any
+        self, command: UnlinkTestTaskFromBugCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UnlinkTestTaskFromBugResult:
         from okto_pulse.core.services.persistence_mutation import (
             mark_mutable_field_modified,
         )
 
-        service = CardService(session_of(uow))
+        service = uow.services.cards
         bug_card = await service.get_card(command.card_id)
         if not bug_card:
             raise EntityNotFoundError("card", command.card_id)
@@ -715,12 +710,11 @@ class GetCardActivityUseCase:
     yields an empty list, exactly as the legacy endpoint did (no 404)."""
 
     async def execute(
-        self, command: GetCardActivityCommand, *, actor: ActorContext, uow: Any
+        self, command: GetCardActivityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardActivityResult:
-        from okto_pulse.core.services.main import compute_card_activity
-
-        activity = await compute_card_activity(
-            session_of(uow), command.card_id, limit=command.limit
+        activity = await uow.services.compute_card_activity(
+            command.card_id,
+            limit=command.limit,
         )
         return GetCardActivityResult(activity)
 
@@ -750,11 +744,9 @@ class GetCardSeenStatusUseCase:
     no comment/QA items), exactly as the legacy endpoint did (no 404)."""
 
     async def execute(
-        self, command: GetCardSeenStatusCommand, *, actor: ActorContext, uow: Any
+        self, command: GetCardSeenStatusCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardSeenStatusResult:
-        from okto_pulse.core.services.main import compute_card_seen_status
-
-        data = await compute_card_seen_status(session_of(uow), command.card_id)
+        data = await uow.services.compute_card_seen_status(command.card_id)
         return GetCardSeenStatusResult(data)
 
 
@@ -783,9 +775,9 @@ class ListCardKnowledgeUseCase:
     envelope."""
 
     async def execute(
-        self, command: ListCardKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: ListCardKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCardKnowledgeResult:
-        card = await CardService(session_of(uow)).get_card(command.card_id)
+        card = await uow.services.cards.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
         return ListCardKnowledgeResult(list(card.knowledge_bases or []))
@@ -816,9 +808,9 @@ class GetCardKnowledgeUseCase:
     the legacy endpoint did."""
 
     async def execute(
-        self, command: GetCardKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: GetCardKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardKnowledgeResult:
-        card = await CardService(session_of(uow)).get_card(command.card_id)
+        card = await uow.services.cards.get_card(command.card_id)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
         for kb in card.knowledge_bases or []:

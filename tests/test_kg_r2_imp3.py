@@ -23,8 +23,8 @@ from okto_pulse.core.kg.canonical_debt_replay import (
     replay_canonical_debt_by_maturity,
 )
 from okto_pulse.core.kg.interfaces import get_kg_registry
-from okto_pulse.core.kg.schema import bootstrap_board_graph
-from okto_pulse.core.models.db import Board, Spec
+from kg_schema_testing import bootstrap_board_graph
+from sqlalchemy_test_models import Board, Spec
 from okto_pulse.core.services.canonical_debt_service import (
     list_canonical_debt,
     upsert_canonical_debt,
@@ -205,8 +205,8 @@ async def test_worker_post_commit_chain_triggers_replay(db_factory):
     """ts_110b573e: a real consolidation through the worker's _process_queue_entry
     fires the post-commit replay, closing a now-canonical debt — the same chain a
     rebuild drain uses (no theoretical-only coverage)."""
-    from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
-    from okto_pulse.core.models.db import ConsolidationQueue
+    from okto_pulse.core.application.processors.consolidation import _process_queue_entry
+    from sqlalchemy_test_models import ConsolidationQueue
 
     board_id = await _new_board(db_factory)
     spec_id = f"spec-{uuid.uuid4().hex[:10]}"

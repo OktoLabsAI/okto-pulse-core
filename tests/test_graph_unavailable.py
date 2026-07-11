@@ -38,7 +38,7 @@ from okto_pulse.core.kg.kg_service import (
     _get_graph_store,
     reset_kg_service_for_tests,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     board_kuzu_path,
     bootstrap_board_graph,
     close_all_connections,

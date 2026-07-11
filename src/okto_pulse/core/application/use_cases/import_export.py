@@ -43,6 +43,8 @@ maps it to a 400 WITHOUT committing, so the request mutates nothing.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -54,10 +56,6 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
-)
-from okto_pulse.core.ports.relational_application import (
-    require_relational_application_adapter,
 )
 
 ENVELOPE_SCHEMA_VERSION = "1"
@@ -161,11 +159,11 @@ def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) 
     return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
 
 
-async def _finalize(uow: Any, *, dry_run: bool) -> None:
+async def _finalize(uow: PulseUnitOfWork, *, dry_run: bool) -> None:
     """Commit a real import; roll a dry-run back explicitly (the request-scoped
     ``get_db`` session commits at request end, so staged writes must not survive)."""
     if dry_run:
-        await session_of(uow).rollback()
+        await uow.rollback()
     else:
         await commit(uow)
 
@@ -202,12 +200,10 @@ class ExportGuidelinesUseCase:
     inline guidelines, scope preserved (read, no commit)."""
 
     async def execute(
-        self, command: ExportGuidelinesCommand, *, actor: ActorContext, uow: Any
+        self, command: ExportGuidelinesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> dict[str, Any]:
-        from okto_pulse.core.services import BoardService, GuidelineService
 
-        session = session_of(uow)
-        service = GuidelineService(session)
+        service = uow.services.guidelines
         global_scope = _query_scope_for_actor(actor)
         globals_ = await service.list_guidelines(
             actor.actor_id,
@@ -227,7 +223,7 @@ class ExportGuidelinesUseCase:
         ]
         if command.board_id:
             board_scope = _query_scope_for_actor(actor, board_id=command.board_id)
-            board = await BoardService(session).get_board(
+            board = await uow.services.boards.get_board(
                 command.board_id, actor.actor_id, query_scope=board_scope
             )
             if not board:
@@ -269,13 +265,11 @@ class ImportGuidelinesUseCase:
     """
 
     async def execute(
-        self, command: ImportGuidelinesCommand, *, actor: ActorContext, uow: Any
+        self, command: ImportGuidelinesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ImportResult:
-        from okto_pulse.core.services import BoardService, GuidelineService
         from okto_pulse.core.services.application_schemas import GuidelineCreate
 
-        session = session_of(uow)
-        service = GuidelineService(session)
+        service = uow.services.guidelines
         result = ImportResult()
 
         global_scope = _query_scope_for_actor(actor)
@@ -293,7 +287,7 @@ class ImportGuidelinesUseCase:
         async def _inline_titles_for(board_id: str) -> set[str]:
             if board_id not in inline_titles:
                 board_scope = _query_scope_for_actor(actor, board_id=board_id)
-                board = await BoardService(session).get_board(
+                board = await uow.services.boards.get_board(
                     board_id, actor.actor_id, query_scope=board_scope
                 )
                 if not board:
@@ -402,14 +396,13 @@ class ExportDesignSystemsUseCase:
     maps it exactly like the existing GET detail endpoint."""
 
     async def execute(
-        self, command: ExportDesignSystemsCommand, *, actor: ActorContext, uow: Any
+        self, command: ExportDesignSystemsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> dict[str, Any]:
         from okto_pulse.core.services.design_system import (
-            DesignSystemService,
             serialize_design_system,
         )
 
-        service = DesignSystemService(session_of(uow))
+        service = uow.services.design_systems
         if command.design_system_id:
             serialized = [
                 serialize_design_system(
@@ -444,14 +437,13 @@ class ImportDesignSystemsUseCase:
     """
 
     async def execute(
-        self, command: ImportDesignSystemsCommand, *, actor: ActorContext, uow: Any
+        self, command: ImportDesignSystemsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ImportResult:
         from okto_pulse.core.services.design_system import (
             DesignSystemError,
-            DesignSystemService,
         )
 
-        service = DesignSystemService(session_of(uow))
+        service = uow.services.design_systems
         result = ImportResult()
         existing: dict[tuple[str, str | None], set[str]] = {}
 
@@ -507,11 +499,9 @@ class ExportPresetsUseCase:
     presets (built-in-ness is not re-creatable via the creation path)."""
 
     async def execute(
-        self, command: ExportPresetsCommand, *, actor: ActorContext, uow: Any
+        self, command: ExportPresetsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> dict[str, Any]:
-        gateway = require_relational_application_adapter().permission_presets(
-            session_of(uow)
-        )
+        gateway = uow.services.permission_presets
         presets = await gateway.list_presets(user_id=actor.actor_id)
         items = [
             {
@@ -541,11 +531,9 @@ class ImportPresetsUseCase:
     """
 
     async def execute(
-        self, command: ImportPresetsCommand, *, actor: ActorContext, uow: Any
+        self, command: ImportPresetsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ImportResult:
-        gateway = require_relational_application_adapter().permission_presets(
-            session_of(uow)
-        )
+        gateway = uow.services.permission_presets
         result = ImportResult()
         existing = {
             _norm_key(preset.name)
@@ -588,13 +576,10 @@ class ExportBoardConfigUseCase:
     timestamps (all server-managed)."""
 
     async def execute(
-        self, command: ExportBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: ExportBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> dict[str, Any]:
-        from okto_pulse.core.services.default_board_config_api import (
-            DefaultBoardConfigApiService,
-        )
 
-        data = await DefaultBoardConfigApiService(session_of(uow)).list_versions(
+        data = await uow.services.default_board_config.list_versions(
             scope=command.scope
         )
         versions = sorted(
@@ -633,16 +618,13 @@ class ImportBoardConfigUseCase:
     """
 
     async def execute(
-        self, command: ImportBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: ImportBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ImportResult:
-        from okto_pulse.core.services.default_board_config_api import (
-            DefaultBoardConfigApiService,
-        )
         from okto_pulse.core.services.default_board_configuration import (
             DefaultBoardConfigurationError,
         )
 
-        service = DefaultBoardConfigApiService(session_of(uow))
+        service = uow.services.default_board_config
         result = ImportResult()
         query_scope = _query_scope_for_actor(actor)
         for index, item in enumerate(command.items):

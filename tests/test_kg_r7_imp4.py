@@ -51,7 +51,7 @@ from okto_pulse.core.kg.source_maturity import (
     MATURITY_CANONICAL_ELIGIBLE,
     MATURITY_WORKING_IMMATURE,
 )
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 USER_ID = "user-r7-imp4"
@@ -76,7 +76,7 @@ def _service(tmp_path) -> CognitiveReadinessService:
 
 
 async def _setup_board(db_factory) -> str:
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
 
     board_id = f"r7imp4-{uuid.uuid4().hex[:12]}"
     bootstrap_board_graph(board_id)
@@ -133,7 +133,7 @@ def _node_attrs(source_ref, graph_layer, maturity):
 
 
 def _seed_learning_with_bugs(board_id, *, source_ref, canonical=0, working=0) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     learning_id = f"r7i4l_{uuid.uuid4().hex[:12]}"

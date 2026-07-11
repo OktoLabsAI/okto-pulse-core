@@ -26,7 +26,7 @@ from okto_pulse.core.events.handlers.cognitive_extraction import (
 )
 from okto_pulse.core.events.types import CardMoved
 from okto_pulse.core.kg.interfaces import get_kg_registry
-from okto_pulse.core.models.db import CardType
+from sqlalchemy_test_models import CardType
 
 
 class _StubCypherExecutor:

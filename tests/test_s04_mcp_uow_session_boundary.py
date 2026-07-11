@@ -1,12 +1,9 @@
-"""S04 boundary: legacy MCP service calls use an edition UoW scope."""
+"""S04 boundary: the MCP catalog uses only edition UoW scopes."""
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
-
-import pytest
-
 
 def _server_tree() -> ast.Module:
     source = (
@@ -41,34 +38,14 @@ def test_mcp_catalog_has_no_direct_database_scope_openers() -> None:
     ]
 
     assert calls == []
-    assert len(uow_scopes) >= 36
+    assert uow_scopes == []
 
 
-@pytest.mark.asyncio
-async def test_mcp_uow_scope_yields_only_the_context_from_registered_factory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_mcp_legacy_database_scope_is_physically_removed() -> None:
     from okto_pulse.core.mcp import server
 
-    session = object()
-
-    class _Uow:
-        def __init__(self) -> None:
-            self.session = session
-
-    class _Scope:
-        async def __aenter__(self):
-            return _Uow()
-
-        async def __aexit__(self, *_args):
-            return None
-
-    monkeypatch.setattr(server, "get_unit_of_work_factory_for_mcp", lambda: lambda: _Scope())
-
-    async with server.get_uow_session_for_mcp() as resolved:
-        assert resolved is session
-    async with server.get_db_for_mcp() as legacy_resolved:
-        assert legacy_resolved is session
+    assert not hasattr(server, "get_uow_session_for_mcp")
+    assert not hasattr(server, "get_db_for_mcp")
 
 
 def test_mcp_host_calls_are_absent_from_the_core_catalog() -> None:

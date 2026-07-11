@@ -39,6 +39,8 @@ gate).
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -46,10 +48,9 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     PermissionDeniedError,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
-from okto_pulse.core.services import BoardService, StoryService
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 
 # --- shared transport-free guards (legacy _ensure_board / _require_permissions)
@@ -60,7 +61,7 @@ def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) 
 
 
 async def _ensure_board(
-    session: Any,
+    services: ApplicationServiceCatalog,
     board_id: str,
     user_id: str,
     *,
@@ -68,13 +69,17 @@ async def _ensure_board(
 ) -> None:
     """Reproduce the legacy ``_ensure_board``: raise ``EntityNotFoundError("board")``
     (adapter → 404 "Board not found") when the board is missing / not owned."""
-    board = await BoardService(session).get_board(board_id, user_id, query_scope=query_scope)
+    board = await services.boards.get_board(
+        board_id,
+        user_id,
+        query_scope=query_scope,
+    )
     if not board:
         raise EntityNotFoundError("board", board_id)
 
 
 async def _require_permissions(
-    session: Any,
+    services: ApplicationServiceCatalog,
     user_id: str,
     board_id: str,
     permissions: "str | list[str | None] | None",
@@ -89,11 +94,10 @@ async def _require_permissions(
     + status is supplied (the story state gate) and ``check_permission``
     otherwise; raises ``PermissionDeniedError`` on the first failure."""
     from okto_pulse.core.services.permission_policy import PermissionSet, check_permission
-    from okto_pulse.core.services.main import resolve_user_permissions
 
     if permissions is None:
         return
-    permission_set = await resolve_user_permissions(session, user_id, board_id)
+    permission_set = await services.resolve_user_permissions(user_id, board_id)
     permission_names = [permissions] if isinstance(permissions, str) else list(permissions)
     for permission in permission_names:
         if not permission:
@@ -136,14 +140,13 @@ class CreateTopicUseCase:
     ``EntityNotFoundError("board")`` (→ 404 "Board not found")."""
 
     async def execute(
-        self, command: CreateTopicCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateTopicResult:
-        session = session_of(uow)
-        await _ensure_board(session, command.board_id, actor.actor_id)
+        await _ensure_board(uow.services, command.board_id, actor.actor_id)
         await _require_permissions(
-            session, actor.actor_id, command.board_id, "topic.entity.create"
+            uow.services, actor.actor_id, command.board_id, "topic.entity.create"
         )
-        topic = await StoryService(session).create_topic(
+        topic = await uow.services.stories.create_topic(
             command.board_id, actor.actor_id, command.data
         )
         if not topic:
@@ -175,14 +178,13 @@ class ListTopicsUseCase:
     ``topic.entity.read`` gate before the service read."""
 
     async def execute(
-        self, command: ListTopicsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListTopicsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListTopicsResult:
-        session = session_of(uow)
-        await _ensure_board(session, command.board_id, actor.actor_id)
+        await _ensure_board(uow.services, command.board_id, actor.actor_id)
         await _require_permissions(
-            session, actor.actor_id, command.board_id, "topic.entity.read"
+            uow.services, actor.actor_id, command.board_id, "topic.entity.read"
         )
-        topics = await StoryService(session).list_topics(
+        topics = await uow.services.stories.list_topics(
             command.board_id, include_archived=command.include_archived
         )
         return ListTopicsResult(topics)
@@ -217,19 +219,18 @@ class UpdateTopicUseCase:
     (→ 404 "Topic not found")."""
 
     async def execute(
-        self, command: UpdateTopicCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateTopicResult:
         from okto_pulse.core.services.story_permissions import topic_update_permissions
 
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         topic = await service.get_topic(command.topic_id)
         if not topic:
             raise EntityNotFoundError("topic", command.topic_id)
-        await _ensure_board(session, topic.board_id, actor.actor_id)
+        await _ensure_board(uow.services, topic.board_id, actor.actor_id)
         update_data = command.data.model_dump(exclude_unset=True)
         await _require_permissions(
-            session,
+            uow.services,
             actor.actor_id,
             topic.board_id,
             topic_update_permissions(update_data, current_archived=bool(topic.archived)),
@@ -264,16 +265,15 @@ class DeleteTopicUseCase:
     ``EntityNotFoundError("topic")`` (→ 404 "Topic not found")."""
 
     async def execute(
-        self, command: DeleteTopicCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteTopicResult:
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         topic = await service.get_topic(command.topic_id)
         if not topic:
             raise EntityNotFoundError("topic", command.topic_id)
-        await _ensure_board(session, topic.board_id, actor.actor_id)
+        await _ensure_board(uow.services, topic.board_id, actor.actor_id)
         await _require_permissions(
-            session, actor.actor_id, topic.board_id, "topic.entity.delete"
+            uow.services, actor.actor_id, topic.board_id, "topic.entity.delete"
         )
         deleted = await service.delete_topic(command.topic_id, actor.actor_id)
         if not deleted:
@@ -311,16 +311,15 @@ class MergeTopicsUseCase:
     for the adapter to shape into ``TopicMergeResponse``."""
 
     async def execute(
-        self, command: MergeTopicsCommand, *, actor: ActorContext, uow: Any
+        self, command: MergeTopicsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MergeTopicsResult:
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         source = await service.get_topic(command.source_topic_id)
         if not source:
             raise EntityNotFoundError("topic", command.source_topic_id)
-        await _ensure_board(session, source.board_id, actor.actor_id)
+        await _ensure_board(uow.services, source.board_id, actor.actor_id)
         await _require_permissions(
-            session, actor.actor_id, source.board_id, "topic.entity.merge"
+            uow.services, actor.actor_id, source.board_id, "topic.entity.merge"
         )
         result = await service.merge_topics(
             command.source_topic_id, command.target_topic_id, actor.actor_id
@@ -362,14 +361,13 @@ class CreateStoryUseCase:
     ``get_story`` after commit so the relationships are loaded."""
 
     async def execute(
-        self, command: CreateStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateStoryResult:
-        session = session_of(uow)
-        await _ensure_board(session, command.board_id, actor.actor_id)
+        await _ensure_board(uow.services, command.board_id, actor.actor_id)
         await _require_permissions(
-            session, actor.actor_id, command.board_id, "story.entity.create"
+            uow.services, actor.actor_id, command.board_id, "story.entity.create"
         )
-        service = StoryService(session)
+        service = uow.services.stories
         story = await service.create_story(command.board_id, actor.actor_id, command.data)
         if not story:
             raise EntityNotFoundError("board", command.board_id)
@@ -424,14 +422,13 @@ class ListStoriesUseCase:
     propagates."""
 
     async def execute(
-        self, command: ListStoriesCommand, *, actor: ActorContext, uow: Any
+        self, command: ListStoriesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListStoriesResult:
-        session = session_of(uow)
-        await _ensure_board(session, command.board_id, actor.actor_id)
+        await _ensure_board(uow.services, command.board_id, actor.actor_id)
         await _require_permissions(
-            session, actor.actor_id, command.board_id, "story.entity.read"
+            uow.services, actor.actor_id, command.board_id, "story.entity.read"
         )
-        stories = await StoryService(session).list_stories(
+        stories = await uow.services.stories.list_stories(
             command.board_id,
             status_filter=command.status_filter,
             topic_id=command.topic_id,
@@ -466,15 +463,14 @@ class GetStoryUseCase:
     + ``story.entity.read`` gate follow, exactly as the legacy endpoint."""
 
     async def execute(
-        self, command: GetStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: GetStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetStoryResult:
-        session = session_of(uow)
-        story = await StoryService(session).get_story(command.story_id)
+        story = await uow.services.stories.get_story(command.story_id)
         if not story:
             raise EntityNotFoundError("story", command.story_id)
-        await _ensure_board(session, story.board_id, actor.actor_id)
+        await _ensure_board(uow.services, story.board_id, actor.actor_id)
         await _require_permissions(
-            session, actor.actor_id, story.board_id, "story.entity.read"
+            uow.services, actor.actor_id, story.board_id, "story.entity.read"
         )
         return GetStoryResult(story)
 
@@ -504,22 +500,21 @@ class UpdateStoryUseCase:
     propagates. Re-fetches via ``get_story`` after commit."""
 
     async def execute(
-        self, command: UpdateStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateStoryResult:
         from okto_pulse.core.services.story_permissions import (
             story_state,
             story_update_permissions,
         )
 
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         existing = await service.get_story(command.story_id)
         if not existing:
             raise EntityNotFoundError("story", command.story_id)
-        await _ensure_board(session, existing.board_id, actor.actor_id)
+        await _ensure_board(uow.services, existing.board_id, actor.actor_id)
         update_data = command.data.model_dump(exclude_unset=True)
         await _require_permissions(
-            session,
+            uow.services,
             actor.actor_id,
             existing.board_id,
             story_update_permissions(update_data),
@@ -559,21 +554,20 @@ class MoveStoryUseCase:
     ``get_story`` after commit."""
 
     async def execute(
-        self, command: MoveStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: MoveStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveStoryResult:
         from okto_pulse.core.services.story_permissions import (
             story_move_permission,
             story_state,
         )
 
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         existing = await service.get_story(command.story_id)
         if not existing:
             raise EntityNotFoundError("story", command.story_id)
-        await _ensure_board(session, existing.board_id, actor.actor_id)
+        await _ensure_board(uow.services, existing.board_id, actor.actor_id)
         await _require_permissions(
-            session,
+            uow.services,
             actor.actor_id,
             existing.board_id,
             story_move_permission(existing.status, command.data.status),
@@ -613,19 +607,18 @@ class ArchiveStoryUseCase:
     after commit — drives both the DELETE (archive) and the /restore endpoints."""
 
     async def execute(
-        self, command: ArchiveStoryCommand, *, actor: ActorContext, uow: Any
+        self, command: ArchiveStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ArchiveStoryResult:
         from okto_pulse.core.services.story_permissions import story_state
 
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         existing = await service.get_story(command.story_id)
         if not existing:
             raise EntityNotFoundError("story", command.story_id)
-        await _ensure_board(session, existing.board_id, actor.actor_id)
+        await _ensure_board(uow.services, existing.board_id, actor.actor_id)
         permission = "story.entity.archive" if command.archived else "story.entity.restore"
         await _require_permissions(
-            session,
+            uow.services,
             actor.actor_id,
             existing.board_id,
             permission,
@@ -667,18 +660,17 @@ class LinkStoryToIdeationUseCase:
     already linked → 400) propagates. Re-fetches via ``get_story`` after commit."""
 
     async def execute(
-        self, command: LinkStoryToIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: LinkStoryToIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> LinkStoryToIdeationResult:
         from okto_pulse.core.services.story_permissions import story_state
 
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         story = await service.get_story(command.story_id)
         if not story:
             raise EntityNotFoundError("story_or_ideation", command.story_id)
-        await _ensure_board(session, story.board_id, actor.actor_id)
+        await _ensure_board(uow.services, story.board_id, actor.actor_id)
         await _require_permissions(
-            session,
+            uow.services,
             actor.actor_id,
             story.board_id,
             "story.links.ideation",
@@ -722,20 +714,19 @@ class LinkStoriesToIdeationUseCase:
     single commit at the end, exactly as the legacy endpoint."""
 
     async def execute(
-        self, command: LinkStoriesToIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: LinkStoriesToIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> LinkStoriesToIdeationResult:
         from okto_pulse.core.services.story_permissions import story_state
 
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         linked_story_ids: list[str] = []
         for story_id in command.story_ids:
             story = await service.get_story(story_id)
             if not story:
                 raise EntityNotFoundError("story_or_ideation", story_id)
-            await _ensure_board(session, story.board_id, actor.actor_id)
+            await _ensure_board(uow.services, story.board_id, actor.actor_id)
             await _require_permissions(
-                session,
+                uow.services,
                 actor.actor_id,
                 story.board_id,
                 "story.links.ideation",
@@ -783,27 +774,26 @@ class ConvertStoriesUseCase:
     ``(ideation, links, propagated)`` for the adapter envelope."""
 
     async def execute(
-        self, command: ConvertStoriesCommand, *, actor: ActorContext, uow: Any
+        self, command: ConvertStoriesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ConvertStoriesResult:
         from okto_pulse.core.services.story_permissions import story_state
 
-        session = session_of(uow)
         query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
         await _ensure_board(
-            session,
+            uow.services,
             command.board_id,
             actor.actor_id,
             query_scope=query_scope,
         )
         await _require_permissions(
-            session, actor.actor_id, command.board_id, "story.conversion.to_ideation"
+            uow.services, actor.actor_id, command.board_id, "story.conversion.to_ideation"
         )
-        service = StoryService(session)
+        service = uow.services.stories
         for story_id in command.data.story_ids:
             story = await service.get_story(story_id)
             if story and story.board_id == command.board_id:
                 await _require_permissions(
-                    session,
+                    uow.services,
                     actor.actor_id,
                     command.board_id,
                     "story.conversion.to_ideation",

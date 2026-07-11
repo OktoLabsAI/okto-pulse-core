@@ -11,6 +11,12 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from okto_pulse.core.domain.realm import (
+    LOCAL_REALM_ID,
+    RealmScope,
+    require_realm_scope,
+)
+
 
 def _freeze_permissions(value: Any) -> Any:
     if value is None:
@@ -41,6 +47,7 @@ class QueryScope:
     source: str
     actor_name: str | None = None
     realm_id: str | None = None
+    realm_scope: RealmScope | None = None
     target_board_id: str | None = None
     allowed_board_ids: frozenset[str] | None = None
     require_ownership: bool = True
@@ -50,6 +57,11 @@ class QueryScope:
         object.__setattr__(self, "actor_id", str(self.actor_id))
         object.__setattr__(self, "source", str(self.source))
         object.__setattr__(self, "allowed_board_ids", _freeze_board_ids(self.allowed_board_ids))
+        scope = self.realm_scope
+        if scope is None and self.realm_id:
+            scope = RealmScope.local() if self.realm_id == LOCAL_REALM_ID else RealmScope.tenant(self.realm_id)
+        object.__setattr__(self, "realm_scope", scope)
+        object.__setattr__(self, "realm_id", scope.realm_id if scope else self.realm_id)
 
     def with_target_board(self, board_id: str | None) -> "QueryScope":
         return QueryScope(
@@ -57,6 +69,7 @@ class QueryScope:
             source=self.source,
             actor_name=self.actor_name,
             realm_id=self.realm_id,
+            realm_scope=self.realm_scope,
             target_board_id=board_id,
             allowed_board_ids=self.allowed_board_ids,
             require_ownership=self.require_ownership,
@@ -82,6 +95,7 @@ class ActorScope:
     actor_name: str | None = None
     board_id: str | None = None
     realm_id: str | None = None
+    realm_scope: RealmScope | None = None
     permissions: Any = None
     roles: tuple[str, ...] = ()
 
@@ -90,6 +104,11 @@ class ActorScope:
         object.__setattr__(self, "source", str(self.source))
         object.__setattr__(self, "permissions", _freeze_permissions(self.permissions))
         object.__setattr__(self, "roles", tuple(self.roles or ()))
+        scope = self.realm_scope
+        if scope is None and self.realm_id:
+            scope = RealmScope.local() if self.realm_id == LOCAL_REALM_ID else RealmScope.tenant(self.realm_id)
+        object.__setattr__(self, "realm_scope", scope)
+        object.__setattr__(self, "realm_id", scope.realm_id if scope else self.realm_id)
 
     @classmethod
     def from_context(cls, actor: Any) -> "ActorScope":
@@ -99,6 +118,7 @@ class ActorScope:
             actor_name=getattr(actor, "actor_name", None),
             board_id=getattr(actor, "board_id", None),
             realm_id=getattr(actor, "realm_id", None),
+            realm_scope=getattr(actor, "realm_scope", None),
             permissions=getattr(actor, "permissions", None),
             roles=getattr(actor, "roles", ()),
         )
@@ -113,11 +133,13 @@ class ActorScope:
     ) -> QueryScope:
         if allow_all_boards and not self.has_global_board_scope_capability():
             raise PermissionError("Global board scope requires an admin/operator capability")
+        realm_scope = require_realm_scope(self.realm_scope)
         return QueryScope(
             actor_id=self.actor_id,
             source=self.source,
             actor_name=self.actor_name,
-            realm_id=self.realm_id,
+            realm_id=realm_scope.realm_id,
+            realm_scope=realm_scope,
             target_board_id=target_board_id if target_board_id is not None else self.board_id,
             allowed_board_ids=_freeze_board_ids(allowed_board_ids),
             require_ownership=require_ownership,

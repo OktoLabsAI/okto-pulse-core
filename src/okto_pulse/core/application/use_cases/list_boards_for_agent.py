@@ -10,9 +10,10 @@ the trailing commit) is preserved; the public signature is transport-neutral.
 
 from __future__ import annotations
 
-from typing import Any
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
-from okto_pulse.core.application.use_cases.base import ActorContext, commit, session_of
+
+from okto_pulse.core.application.use_cases.base import ActorContext, commit
 
 
 class ListBoardsForAgentCommand:
@@ -37,11 +38,9 @@ class ListBoardsForAgentUseCase:
     """Resolve an agent's accessible board ids, transport-free."""
 
     async def execute(
-        self, command: ListBoardsForAgentCommand, *, actor: ActorContext, uow: Any
+        self, command: ListBoardsForAgentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListBoardsForAgentResult:
-        from okto_pulse.core.services.main import AgentService
 
-        session = session_of(uow)
-        boards = await AgentService(session).list_boards_for_agent(command.agent_id)
+        boards = await uow.services.agents.list_boards_for_agent(command.agent_id)
         await commit(uow)
         return ListBoardsForAgentResult(board_ids=[b.id for b in boards])

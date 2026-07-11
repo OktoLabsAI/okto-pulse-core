@@ -7,6 +7,8 @@ configuration, design systems and screen mockups.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 import hashlib
 import re
 import uuid
@@ -14,8 +16,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.application.scope import ActorScope
-from okto_pulse.core.application.use_cases.base import ActorContext, commit, session_of
+from okto_pulse.core.application.use_cases.base import ActorContext, commit
 from okto_pulse.core.application.use_cases._service_payload import ServicePayload
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 
 class DataResult:
@@ -34,14 +37,6 @@ class ScreenMockupUseCaseError(Exception):
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> Any:
     return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
-
-
-def _config_service(session: Any) -> Any:
-    from okto_pulse.core.services.default_board_config_api import (
-        DefaultBoardConfigApiService,
-    )
-
-    return DefaultBoardConfigApiService(session)
 
 
 # --- amendment revisions ----------------------------------------------------
@@ -85,13 +80,10 @@ class TransitionAmendmentRevisionCommand:
 
 class CreateAmendmentRevisionUseCase:
     async def execute(
-        self, command: CreateAmendmentRevisionCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateAmendmentRevisionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.amendment_revision_api import (
-            AmendmentRevisionApiService,
-        )
 
-        data = await AmendmentRevisionApiService(session_of(uow)).create(
+        data = await uow.services.amendments.create(
             board_id=command.board_id,
             bug_id=command.bug_id,
             author=actor.actor_id,
@@ -103,14 +95,11 @@ class CreateAmendmentRevisionUseCase:
 
 class ListAmendmentRevisionsUseCase:
     async def execute(
-        self, command: ListAmendmentRevisionsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListAmendmentRevisionsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.amendment_revision_api import (
-            AmendmentRevisionApiService,
-        )
 
         return DataResult(
-            await AmendmentRevisionApiService(session_of(uow)).list_for_bug(
+            await uow.services.amendments.list_for_bug(
                 board_id=command.board_id, bug_id=command.bug_id
             )
         )
@@ -118,14 +107,11 @@ class ListAmendmentRevisionsUseCase:
 
 class GetAmendmentRevisionUseCase:
     async def execute(
-        self, command: GetAmendmentRevisionCommand, *, actor: ActorContext, uow: Any
+        self, command: GetAmendmentRevisionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.amendment_revision_api import (
-            AmendmentRevisionApiService,
-        )
 
         return DataResult(
-            await AmendmentRevisionApiService(session_of(uow)).get(
+            await uow.services.amendments.get(
                 board_id=command.board_id,
                 bug_id=command.bug_id,
                 amendment_id=command.amendment_id,
@@ -139,13 +125,10 @@ class AssociateAmendmentRevisionUseCase:
         command: AssociateAmendmentRevisionCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
-        from okto_pulse.core.services.amendment_revision_api import (
-            AmendmentRevisionApiService,
-        )
 
-        data = await AmendmentRevisionApiService(session_of(uow)).associate(
+        data = await uow.services.amendments.associate(
             board_id=command.board_id,
             bug_id=command.bug_id,
             amendment_id=command.amendment_id,
@@ -162,13 +145,10 @@ class TransitionAmendmentRevisionUseCase:
         command: TransitionAmendmentRevisionCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
-        from okto_pulse.core.services.amendment_revision_api import (
-            AmendmentRevisionApiService,
-        )
 
-        data = await AmendmentRevisionApiService(session_of(uow)).transition_lifecycle(
+        data = await uow.services.amendments.transition_lifecycle(
             board_id=command.board_id,
             bug_id=command.bug_id,
             amendment_id=command.amendment_id,
@@ -192,23 +172,23 @@ class DefaultBoardConfigCommand:
 
 class GetActiveDefaultBoardConfigUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        return DataResult(await _config_service(session_of(uow)).get_active(scope=command.scope))
+        return DataResult(await uow.services.default_board_config.get_active(scope=command.scope))
 
 
 class ListDefaultBoardConfigVersionsUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        return DataResult(await _config_service(session_of(uow)).list_versions(scope=command.scope))
+        return DataResult(await uow.services.default_board_config.list_versions(scope=command.scope))
 
 
 class CreateDefaultBoardConfigVersionUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        data = await _config_service(session_of(uow)).create_version(
+        data = await uow.services.default_board_config.create_version(
             actor=actor.actor_id,
             query_scope=_query_scope_for_actor(actor),
             **(command.payload or {}),
@@ -219,9 +199,9 @@ class CreateDefaultBoardConfigVersionUseCase:
 
 class ActivateDefaultBoardConfigVersionUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        data = await _config_service(session_of(uow)).activate_version(
+        data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
             query_scope=_query_scope_for_actor(actor),
@@ -232,9 +212,9 @@ class ActivateDefaultBoardConfigVersionUseCase:
 
 class DeactivateDefaultBoardConfigVersionUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        data = await _config_service(session_of(uow)).deactivate_version(
+        data = await uow.services.default_board_config.deactivate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
         )
@@ -244,18 +224,18 @@ class DeactivateDefaultBoardConfigVersionUseCase:
 
 class GetBoardDefaultConfigDiffUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         return DataResult(
-            await _config_service(session_of(uow)).get_board_diff(board_id=command.board_id)
+            await uow.services.default_board_config.get_board_diff(board_id=command.board_id)
         )
 
 
 class ListDefaultGuidelineCandidatesUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        data = await _config_service(session_of(uow)).list_default_candidates(
+        data = await uow.services.default_board_config.list_default_candidates(
             scope=command.scope,
             template_id=command.template_id or None,
             actor=actor.actor_id,
@@ -266,9 +246,9 @@ class ListDefaultGuidelineCandidatesUseCase:
 
 class UpdateDefaultGuidelineRefsUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        data = await _config_service(session_of(uow)).update_template_guidelines(
+        data = await uow.services.default_board_config.update_template_guidelines(
             template_id=command.template_id,
             guideline_default_refs=(command.payload or {}).get("guideline_default_refs"),
             actor=actor.actor_id,
@@ -280,9 +260,9 @@ class UpdateDefaultGuidelineRefsUseCase:
 
 class SetDefaultDesignSystemUseCase:
     async def execute(
-        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: Any
+        self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        data = await _config_service(session_of(uow)).set_template_design_system(
+        data = await uow.services.default_board_config.set_template_design_system(
             template_id=command.template_id,
             actor=actor.actor_id,
             **(command.payload or {}),
@@ -304,14 +284,13 @@ class DesignSystemCommand:
 
 class CreateDesignSystemUseCase:
     async def execute(
-        self, command: DesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.design_system import (
-            DesignSystemService,
             serialize_design_system,
         )
 
-        item = await DesignSystemService(session_of(uow)).create_design_system(
+        item = await uow.services.design_systems.create_design_system(
             actor.actor_id,
             **(command.payload or {}),
         )
@@ -321,14 +300,13 @@ class CreateDesignSystemUseCase:
 
 class ListDesignSystemsUseCase:
     async def execute(
-        self, command: DesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.design_system import (
-            DesignSystemService,
             serialize_design_system,
         )
 
-        items = await DesignSystemService(session_of(uow)).list_catalog(
+        items = await uow.services.design_systems.list_catalog(
             scope=command.scope,
             board_id=command.board_id or None,
         )
@@ -337,14 +315,13 @@ class ListDesignSystemsUseCase:
 
 class GetDesignSystemUseCase:
     async def execute(
-        self, command: DesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.design_system import (
-            DesignSystemService,
             serialize_design_system,
         )
 
-        item = await DesignSystemService(session_of(uow)).require_design_system(
+        item = await uow.services.design_systems.require_design_system(
             command.design_system_id
         )
         return DataResult(serialize_design_system(item))
@@ -352,14 +329,13 @@ class GetDesignSystemUseCase:
 
 class UpdateDesignSystemUseCase:
     async def execute(
-        self, command: DesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.design_system import (
-            DesignSystemService,
             serialize_design_system,
         )
 
-        item = await DesignSystemService(session_of(uow)).update_design_system(
+        item = await uow.services.design_systems.update_design_system(
             command.design_system_id,
             actor.actor_id,
             **(command.payload or {}),
@@ -370,11 +346,10 @@ class UpdateDesignSystemUseCase:
 
 class DeleteDesignSystemUseCase:
     async def execute(
-        self, command: DesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.design_system import DesignSystemService
 
-        deleted = await DesignSystemService(session_of(uow)).delete_design_system(
+        deleted = await uow.services.design_systems.delete_design_system(
             command.design_system_id,
             actor.actor_id,
         )
@@ -385,11 +360,10 @@ class DeleteDesignSystemUseCase:
 
 class LinkBoardDesignSystemUseCase:
     async def execute(
-        self, command: DesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.design_system import DesignSystemService
 
-        link = await DesignSystemService(session_of(uow)).link_design_system_to_board(
+        link = await uow.services.design_systems.link_design_system_to_board(
             command.board_id,
             (command.payload or {})["design_system_id"],
         )
@@ -399,11 +373,10 @@ class LinkBoardDesignSystemUseCase:
 
 class UnlinkBoardDesignSystemUseCase:
     async def execute(
-        self, command: DesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.design_system import DesignSystemService
 
-        unlinked = await DesignSystemService(session_of(uow)).unlink_design_system_from_board(
+        unlinked = await uow.services.design_systems.unlink_design_system_from_board(
             command.board_id
         )
         if unlinked:
@@ -413,13 +386,12 @@ class UnlinkBoardDesignSystemUseCase:
 
 class GetBoardDesignSystemUseCase:
     async def execute(
-        self, command: DesignSystemCommand, *, actor: ActorContext, uow: Any
+        self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        from okto_pulse.core.services.design_system import DesignSystemService
 
-        effective = await DesignSystemService(
-            session_of(uow)
-        ).get_board_effective_design_system(command.board_id)
+        effective = await uow.services.design_systems.get_board_effective_design_system(
+            command.board_id
+        )
         return DataResult({"board_id": command.board_id, "effective": effective})
 
 
@@ -441,29 +413,29 @@ def _sanitize_html(html: str) -> str:
     return sanitized
 
 
-async def _load_mockup_entity(session: Any, entity_type: str, entity_id: str):
-    from okto_pulse.core.services import (
-        CardService,
-        IdeationService,
-        RefinementService,
-        SpecService,
-        StoryService,
-    )
-
+async def _load_mockup_entity(
+    services: ApplicationServiceCatalog,
+    entity_type: str,
+    entity_id: str,
+):
     dispatch = {
-        "spec": (SpecService, "get_spec", "update_spec", ServicePayload),
-        "ideation": (IdeationService, "get_ideation", "update_ideation", ServicePayload),
+        "spec": (services.specs, "get_spec", "update_spec", ServicePayload),
+        "ideation": (
+            services.ideations,
+            "get_ideation",
+            "update_ideation",
+            ServicePayload,
+        ),
         "refinement": (
-            RefinementService,
+            services.refinements,
             "get_refinement",
             "update_refinement",
             ServicePayload,
         ),
-        "card": (CardService, "get_card", "update_card", ServicePayload),
-        "story": (StoryService, "get_story", "update_story", ServicePayload),
+        "card": (services.cards, "get_card", "update_card", ServicePayload),
+        "story": (services.stories, "get_story", "update_story", ServicePayload),
     }
-    service_cls, get_name, update_name, update_class = dispatch[entity_type]
-    service = service_cls(session)
+    service, get_name, update_name, update_class = dispatch[entity_type]
     entity = await getattr(service, get_name)(entity_id)
     return entity, service, update_name, update_class
 
@@ -501,17 +473,15 @@ class UpdateScreenMockupCommand:
 
 class CreateScreenMockupUseCase:
     async def execute(
-        self, command: CreateScreenMockupCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.design_system import (
-            MockupDesignSystemGate,
             normalize_design_system_ref,
         )
 
         _validate_mockup_target(command.entity_type)
-        session = session_of(uow)
         entity, service, update_name, update_class = await _load_mockup_entity(
-            session, command.entity_type, command.entity_id
+            uow.services, command.entity_type, command.entity_id
         )
         if not entity:
             raise ScreenMockupUseCaseError(
@@ -539,7 +509,7 @@ class CreateScreenMockupUseCase:
             ),
             "design_system_evidence": command.data.design_system_evidence,
         }
-        outcome = await MockupDesignSystemGate(session).evaluate_screen(
+        outcome = await uow.services.mockup_design_gate.evaluate_screen(
             entity.board_id,
             screen,
             entity_type=command.entity_type,
@@ -557,17 +527,15 @@ class CreateScreenMockupUseCase:
 
 class UpdateScreenMockupUseCase:
     async def execute(
-        self, command: UpdateScreenMockupCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.design_system import (
-            MockupDesignSystemGate,
             normalize_design_system_ref,
         )
 
         _validate_mockup_target(command.entity_type)
-        session = session_of(uow)
         entity, service, update_name, update_class = await _load_mockup_entity(
-            session, command.entity_type, command.entity_id
+            uow.services, command.entity_type, command.entity_id
         )
         if not entity:
             raise ScreenMockupUseCaseError(
@@ -603,7 +571,7 @@ class UpdateScreenMockupUseCase:
         if command.data.design_system_evidence is not None:
             screen["design_system_evidence"] = command.data.design_system_evidence
 
-        outcomes = await MockupDesignSystemGate(session).gate_delta(
+        outcomes = await uow.services.mockup_design_gate.gate_delta(
             entity.board_id,
             [original],
             [screen],

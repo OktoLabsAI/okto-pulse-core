@@ -15,7 +15,7 @@ USER_ID = "bg-01-user"
 
 
 async def _create_board(db, *, settings: dict | None = None):
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     board = Board(
         id=f"bg-board-{uuid.uuid4().hex[:8]}",
@@ -29,7 +29,7 @@ async def _create_board(db, *, settings: dict | None = None):
 
 
 async def test_defaults_resolve_without_mutating_stored_settings(db_factory):
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.core.models.schemas import BoardSettings
     from okto_pulse.core.services.board_governance import BoardGovernanceService
 
@@ -86,7 +86,7 @@ async def test_legacy_role_separation_does_not_grant_self_answering(db_factory):
 
 
 async def test_board_update_merges_partial_governance_settings_and_logs_safe_event(db_factory):
-    from okto_pulse.core.models.db import ActivityLog, Board
+    from sqlalchemy_test_models import ActivityLog, Board
     from okto_pulse.core.models.schemas import BoardUpdate
     from okto_pulse.core.services.main import BoardService
 

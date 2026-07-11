@@ -18,7 +18,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Spec,
     SpecKnowledgeBase,

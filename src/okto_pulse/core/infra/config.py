@@ -10,26 +10,29 @@ from okto_pulse.core.ports.package_version import (
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
-_version_provider: PackageVersionProvider = ImportlibMetadataVersionProvider()
+
+_VERSION_PROVIDER_KEY = "infra.config.version_provider"
+_SETTINGS_KEY = "infra.config.settings"
+_DEFAULT_VERSION_PROVIDER = ImportlibMetadataVersionProvider()
 
 
 def register_package_version_provider(provider: PackageVersionProvider) -> None:
     """Register the runtime package version provider."""
-    global _version_provider
-    _version_provider = provider
+    register_runtime_value(_VERSION_PROVIDER_KEY, provider)
 
 
 def reset_package_version_provider_for_tests() -> None:
     """Restore the default metadata-backed version provider."""
-    global _version_provider
-    _version_provider = ImportlibMetadataVersionProvider()
+    reset_runtime_values(_VERSION_PROVIDER_KEY)
 
 
 def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
     """Resolve version through provider/package metadata, never source files."""
     try:
-        resolved = _version_provider.version(package_name)
+        provider = resolve_runtime_value(_VERSION_PROVIDER_KEY) or _DEFAULT_VERSION_PROVIDER
+        resolved = provider.version(package_name)
     except Exception:
         resolved = None
     return resolved or fallback
@@ -209,21 +212,25 @@ class MCPSettings(BaseSettings):
     agent_keys_env: str = ""  # Comma-separated agent keys for validation
 
 
-_settings_instance: "CoreSettings | None" = None
-
-
 def configure_settings(s: "CoreSettings") -> None:
     """Register a pre-built CoreSettings instance."""
-    global _settings_instance
-    _settings_instance = s
+    register_runtime_value(_SETTINGS_KEY, s)
 
 
 def get_settings() -> "CoreSettings":
     """Get the active CoreSettings (lazy-creates a default if none registered)."""
-    global _settings_instance
-    if _settings_instance is None:
-        _settings_instance = CoreSettings()
-    return _settings_instance
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
+
+    composition = current_runtime_composition()
+    if composition is not None and composition.settings_provider is not None:
+        return composition.settings_provider
+    settings = resolve_runtime_value(_SETTINGS_KEY)
+    if settings is None:
+        settings = CoreSettings()
+        register_runtime_value(_SETTINGS_KEY, settings)
+    return settings
 
 
 @lru_cache

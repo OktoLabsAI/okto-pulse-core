@@ -9,10 +9,10 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from okto_pulse.core.api import stories as stories_api
+from okto_pulse.community.api import stories as stories_api
 from okto_pulse.core.application.use_cases import stories_crud
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     ConsolidationQueue,
@@ -838,7 +838,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
         assert funnel["stories"] == 0
         assert funnel["story_conversion_pct"] == 0.0
 
-    from okto_pulse.core.api.router import api_router
+    from okto_pulse.community.api.router import api_router
 
     paths = {getattr(route, "path", "") for route in api_router.routes}
     assert any(path.endswith("/boards/{board_id}/stories/convert") for path in paths)

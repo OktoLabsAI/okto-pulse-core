@@ -17,8 +17,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.ideations import router as ideations_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api.ideations import router as ideations_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu6-s1-user"
@@ -45,7 +45,7 @@ def _missing() -> str:
 
 
 async def _seed_board() -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu6s1-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:

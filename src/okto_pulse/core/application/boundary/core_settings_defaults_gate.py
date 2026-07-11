@@ -687,7 +687,7 @@ def build_core_settings_inventory(
                         "consumer regression tests pass."
                     ),
                     core_consumers=(
-                        "okto_pulse.core.kg.connection_pool",
+                        "okto_pulse.community.adapters.graph_connection_pool",
                         "okto_pulse.core.kg.primitives",
                         "okto_pulse.core.services.settings_service",
                     ),

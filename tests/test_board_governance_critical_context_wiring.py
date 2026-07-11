@@ -21,7 +21,7 @@ async def _seed_board_spec_card(
     board_settings: dict | None = None,
     spec_status=None,
 ):
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Board,
         Card,
         CardStatus,
@@ -64,7 +64,7 @@ async def _seed_board_spec_card(
 
 
 async def _critical_logs(db, *, board_id: str, entity_id: str | None = None):
-    from okto_pulse.core.models.db import ActivityLog
+    from sqlalchemy_test_models import ActivityLog
     from okto_pulse.core.services.critical_context_guard import (
         CRITICAL_CONTEXT_DECISION_ACTION,
     )
@@ -80,7 +80,7 @@ async def _critical_logs(db, *, board_id: str, entity_id: str | None = None):
 
 
 async def test_card_move_resolves_full_context_before_status_mutation(db_factory):
-    from okto_pulse.core.models.db import Card, CardStatus
+    from sqlalchemy_test_models import Card, CardStatus
     from okto_pulse.core.models.schemas import CardMove
     from okto_pulse.core.services.main import CardService
 
@@ -119,7 +119,7 @@ async def test_card_move_resolves_full_context_before_status_mutation(db_factory
 
 
 async def test_create_card_resolves_parent_spec_context_before_insert(db_factory):
-    from okto_pulse.core.models.db import Card
+    from sqlalchemy_test_models import Card
     from okto_pulse.core.models.schemas import CardCreate
     from okto_pulse.core.services.main import CardService
 
@@ -162,7 +162,7 @@ async def test_create_card_resolves_parent_spec_context_before_insert(db_factory
 
 
 async def test_update_card_resolves_card_context_before_write(db_factory):
-    from okto_pulse.core.models.db import Card
+    from sqlalchemy_test_models import Card
     from okto_pulse.core.models.schemas import CardUpdate
     from okto_pulse.core.services.main import CardService
 
@@ -200,7 +200,7 @@ async def test_update_card_resolves_card_context_before_write(db_factory):
 
 
 async def test_guard_disabled_records_decision_without_context_fingerprint(db_factory):
-    from okto_pulse.core.models.db import CardStatus
+    from sqlalchemy_test_models import CardStatus
     from okto_pulse.core.models.schemas import CardMove
     from okto_pulse.core.services.main import CardService
 
@@ -233,7 +233,7 @@ async def test_guard_disabled_records_decision_without_context_fingerprint(db_fa
 
 
 async def test_full_context_failure_blocks_card_move_before_mutation(monkeypatch, db_factory):
-    from okto_pulse.core.models.db import Card, CardStatus
+    from sqlalchemy_test_models import Card, CardStatus
     from okto_pulse.core.models.schemas import CardMove
     from okto_pulse.core.services.critical_context_guard import FullContextUnavailableError
     from okto_pulse.core.services.main import CardService
@@ -286,7 +286,7 @@ async def test_mcp_spec_evaluation_resolves_full_context_and_appends_evaluation(
 ):
     """TC-BG01-05 / ts_d98f3528 — MCP spec eval is guarded behaviorally."""
     from okto_pulse.core.mcp import server as mcp_server
-    from okto_pulse.core.models.db import Spec, SpecStatus
+    from sqlalchemy_test_models import Spec, SpecStatus
     from okto_pulse.core.services.critical_context_guard import CriticalAction
 
     class SpecSpyResolver:
@@ -388,7 +388,7 @@ async def test_mcp_spec_evaluation_failure_does_not_append_evaluation(
 ):
     """TC-BG01-05 / ts_d98f3528 — guarded failure is pre-mutation."""
     from okto_pulse.core.mcp import server as mcp_server
-    from okto_pulse.core.models.db import Spec, SpecStatus
+    from sqlalchemy_test_models import Spec, SpecStatus
 
     class EmptySpecResolver:
         async def resolve_full_context(self, **_kwargs):

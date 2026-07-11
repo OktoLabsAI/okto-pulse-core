@@ -24,14 +24,12 @@ Counter ``kg_global_discovery_reindex_total`` (OR ``or_34a86124`` /
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable
 
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
@@ -76,11 +74,13 @@ class ReindexErrorCode(str, Enum):
 # Visible-from-Health/Report mapping. ``failed`` is recorded but the
 # health surface still gates the operator: it's not the same as
 # "silently stale", because the reason + job_ref are persisted.
-VISIBLE_STATUSES: frozenset[str] = frozenset({
-    ReindexStatus.REINDEXED.value,
-    ReindexStatus.REINDEX_PENDING.value,
-    ReindexStatus.FAILED.value,
-})
+VISIBLE_STATUSES: frozenset[str] = frozenset(
+    {
+        ReindexStatus.REINDEXED.value,
+        ReindexStatus.REINDEX_PENDING.value,
+        ReindexStatus.FAILED.value,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +189,7 @@ def _coerce_reason(reason: str) -> str:
 
 # --- Reindex adapter type --------------------------------------------------
 
+
 # Reindex adapter signature: receives (board_id, kg_generation_id,
 # affected_refs) and returns a tuple ``(success, indexed_generation,
 # job_ref, detail)``. ``success=False`` lands on the pending path with
@@ -235,7 +236,7 @@ class GlobalDiscoveryReindexStatusStore:
     + the rebuild report read from the same source of truth.
     """
 
-    base_dir: Path | None = None
+    base_dir: object | None = None
     artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
@@ -250,24 +251,6 @@ class GlobalDiscoveryReindexStatusStore:
                 artifact_store=self.artifact_store,
             ),
         )
-
-    def _base_dir(self) -> Path:
-        if self.base_dir is None:
-            raise RuntimeError(
-                "base_dir is unavailable when RebuildAuditArtifactStore is configured"
-            )
-        return self.base_dir
-
-    def _board_dir(self, board_id: str) -> Path:
-        return (
-            self._base_dir()
-            / REBUILD_DIRNAME
-            / REINDEX_DIRNAME
-            / board_id
-        )
-
-    def _record_path(self, board_id: str, kg_generation_id: str) -> Path:
-        return self._board_dir(board_id) / f"{kg_generation_id}.json"
 
     def _record_key(self, board_id: str, kg_generation_id: str) -> RebuildAuditKey:
         return RebuildAuditKey(
@@ -325,22 +308,15 @@ class GlobalDiscoveryReindexStatusStore:
                     "detail": detail,
                     "recorded_at": recorded_at,
                 }
-                if self.artifact_store is not None:
-                    key = self._record_key(board_id, kg_generation_id)
-                    self.artifact_store.write_json_atomic(key, payload)
-                    record_ref = key.to_ref()
-                else:
-                    self._board_dir(board_id).mkdir(parents=True, exist_ok=True)
-                    path = self._record_path(board_id, kg_generation_id)
-                    tmp = path.with_suffix(".json.tmp")
-                    with tmp.open("w", encoding="utf-8") as fh:
-                        json.dump(payload, fh, indent=2)
-                    tmp.replace(path)
-                    record_ref = str(path)
+                key = self._record_key(board_id, kg_generation_id)
+                self.artifact_store.write_json_atomic(key, payload)
+                record_ref = self.artifact_store.reference(key)
             except Exception as exc:
                 logger.error(
                     "kg.global_discovery_reindex.record_failed board=%s gen=%s err=%s",
-                    board_id, kg_generation_id, exc,
+                    board_id,
+                    kg_generation_id,
+                    exc,
                 )
                 _bump_reindex(
                     board_id=board_id,
@@ -369,23 +345,17 @@ class GlobalDiscoveryReindexStatusStore:
             record_ref=record_ref,
         )
 
-    def get_status(
-        self, board_id: str, kg_generation_id: str
-    ) -> dict[str, Any] | None:
-        if self.artifact_store is not None:
+    def get_status(self, board_id: str, kg_generation_id: str) -> dict[str, Any] | None:
+        try:
             return self.artifact_store.read_json(
                 self._record_key(board_id, kg_generation_id)
             )
-        path = self._record_path(board_id, kg_generation_id)
-        if not path.exists():
-            return None
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                return json.load(fh)
         except Exception as exc:
             logger.error(
                 "kg.global_discovery_reindex.read_failed board=%s gen=%s err=%s",
-                board_id, kg_generation_id, exc,
+                board_id,
+                kg_generation_id,
+                exc,
             )
             return None
 
@@ -394,31 +364,13 @@ class GlobalDiscoveryReindexStatusStore:
         board, or ``None`` if there is no record yet. ``recorded_at``
         ISO8601 sorts lexically — same key the report drilldown shows."""
 
-        if self.artifact_store is not None:
-            rows = self.artifact_store.list_json(
-                RebuildAuditKey(
-                    namespace="global_discovery_reindex",
-                    board_id=board_id,
-                )
+        rows = self.artifact_store.list_json(
+            RebuildAuditKey(
+                namespace="global_discovery_reindex",
+                board_id=board_id,
             )
-            return max(rows, key=lambda row: str(row.get("recorded_at", "")), default=None)
-
-        directory = self._board_dir(board_id)
-        if not directory.exists():
-            return None
-        latest_payload: dict[str, Any] | None = None
-        latest_ts = ""
-        for entry in directory.glob("*.json"):
-            try:
-                with entry.open("r", encoding="utf-8") as fh:
-                    payload = json.load(fh)
-            except Exception:
-                continue
-            ts = str(payload.get("recorded_at", ""))
-            if ts > latest_ts:
-                latest_ts = ts
-                latest_payload = payload
-        return latest_payload
+        )
+        return max(rows, key=lambda row: str(row.get("recorded_at", "")), default=None)
 
 
 # --- Reindexer -------------------------------------------------------------
@@ -491,13 +443,13 @@ class GlobalDiscoveryReindexer:
         refs = tuple(affected_refs) if affected_refs is not None else ()
 
         try:
-            attempt = self.reindex_adapter(
-                board_id, kg_generation_id, refs
-            )
+            attempt = self.reindex_adapter(board_id, kg_generation_id, refs)
         except Exception as exc:
             logger.error(
                 "kg.global_discovery_reindex.adapter_failed board=%s gen=%s err=%s",
-                board_id, kg_generation_id, exc,
+                board_id,
+                kg_generation_id,
+                exc,
             )
             attempt = ReindexAttempt(
                 success=False,
@@ -533,7 +485,10 @@ class GlobalDiscoveryReindexer:
             logger.error(
                 "kg.global_discovery_reindex.store_failure board=%s gen=%s "
                 "intended_status=%s store_error=%s",
-                board_id, kg_generation_id, status_value, record.error_code,
+                board_id,
+                kg_generation_id,
+                status_value,
+                record.error_code,
             )
             return ReindexOutcome(
                 status=ReindexStatus.FAILED.value,
@@ -547,9 +502,9 @@ class GlobalDiscoveryReindexer:
                     record.error_code
                     or ReindexErrorCode.REINDEX_STATUS_STORE_UNAVAILABLE.value
                 ),
-                detail=record.detail or attempt.detail or (
-                    f"intended_status={status_value} not visible due to store failure"
-                ),
+                detail=record.detail
+                or attempt.detail
+                or (f"intended_status={status_value} not visible due to store failure"),
             )
 
         return ReindexOutcome(

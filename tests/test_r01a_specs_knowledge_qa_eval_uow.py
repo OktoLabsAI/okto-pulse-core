@@ -26,10 +26,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import specs as specs_api
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.api.specs import router as specs_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import specs as specs_api
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.specs import router as specs_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu3d-s4-user"
@@ -66,7 +66,7 @@ def client():
 
 
 async def _seed_spec() -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.core.models.schemas import SpecCreate
     from okto_pulse.core.services import SpecService
 
@@ -86,7 +86,7 @@ async def _seed_question(spec_id: str, asked_by: str) -> str:
     """Insert a raw Q&A item so the answerer differs from the asker (a
     successful answer requires asked_by != answered_by under the default
     self-answer policy)."""
-    from okto_pulse.core.models.db import SpecQAItem
+    from sqlalchemy_test_models import SpecQAItem
 
     async with get_session_factory()() as db:
         qa = SpecQAItem(
@@ -294,8 +294,7 @@ async def test_get_knowledge_use_case_raises_for_missing() -> None:
         GetSpecKnowledgeUseCase,
     )
     from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

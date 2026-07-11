@@ -37,14 +37,7 @@ def test_ts1_new_non_relational_import_without_ledger_blocks(tmp_path: Path) -> 
 
 
 def test_ts2_non_relational_baselines_have_complete_per_item_ownership() -> None:
-    assert IMPORT_BOUNDARY_BASELINE_LEDGER
-    for key, entry in IMPORT_BOUNDARY_BASELINE_LEDGER.items():
-        assert key
-        assert entry.owner and entry.owner != "okto-pulse-core/architecture"
-        assert entry.reason
-        assert entry.removal_criterion
-        assert entry.spec_or_wave
-        assert entry.risk
+    assert IMPORT_BOUNDARY_BASELINE_LEDGER == {}
 
     report = ImportBoundaryGate().run(ImportBoundaryGateInput(mode="bootstrap"))
     non_relational_baselines = [
@@ -53,14 +46,7 @@ def test_ts2_non_relational_baselines_have_complete_per_item_ownership() -> None
         if v["status"] == "baseline" and v["category"] not in _RELATIONAL_CATEGORIES
     ]
 
-    assert non_relational_baselines
-    for violation in non_relational_baselines:
-        assert violation["baseline_key"] in IMPORT_BOUNDARY_BASELINE_LEDGER
-        assert violation["owner"] != "okto-pulse-core/architecture"
-        assert violation["baseline_reason"]
-        assert violation["removal_criterion"]
-        assert violation["source_spec"]
-        assert violation["risk"]
+    assert non_relational_baselines == []
 
 
 def test_ts3_singleton_gate_blocks_runtime_extra_baseline_without_ledger(
@@ -98,8 +84,10 @@ def test_ts3_singleton_gate_blocks_runtime_extra_baseline_without_ledger(
 def test_ts3_current_runtime_singleton_baseline_is_fully_ledgered() -> None:
     report = AntiSingletonGate().run(AntiSingletonGateInput())
 
-    assert report.status == "baseline"
+    assert report.status == "passed"
     assert report.evidence["missing_runtime_ledger"] == []
+    assert report.evidence["detected_count"] == 0
+    assert report.evidence["baseline_count"] == 0
 
 
 def test_ts4_core_ports_resolves_as_real_pure_layer() -> None:

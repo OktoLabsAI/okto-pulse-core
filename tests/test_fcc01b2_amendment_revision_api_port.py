@@ -85,9 +85,6 @@ class FakeAmendmentRevisionApiBackend:
         self.amendment.status = new_status
         return self.amendment
 
-    async def refresh(self, entity) -> None:
-        self.calls.append("refresh")
-
     async def path_b_resolution(self, **kwargs):
         self.calls.append("path_b_resolution")
         return {
@@ -150,6 +147,5 @@ async def test_create_runs_with_fake_backend_without_relational_session():
         "get_bug",
         "get_spec",
         "create_amendment",
-        "refresh",
         "eligibility",
     ]

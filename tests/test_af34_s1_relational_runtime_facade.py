@@ -8,7 +8,6 @@ import pytest
 
 from okto_pulse.core.infra import database as private_database
 from okto_pulse.core.ports import (
-    Base,
     RelationalDatabasePathUnavailable,
     close_db,
     configure_database_runtime,
@@ -56,7 +55,6 @@ def test_public_facade_preserves_injected_runtime() -> None:
     def session_factory() -> object:
         return object()
 
-    assert Base is private_database.Base
     assert is_database_runtime_configured() is False
 
     configure_database_runtime(engine=engine, session_factory=session_factory)

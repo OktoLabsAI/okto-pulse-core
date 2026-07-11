@@ -225,7 +225,7 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
         configure_kg_registry,
     )
 
-    saved = (reg_mod._registry, reg_mod._configured)
+    saved = reg_mod.capture_registry_state_for_tests()
 
     class _SF:
         def __call__(self):  # pragma: no cover - never invoked here
@@ -262,9 +262,7 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
             graph_transaction=object(),
             graph_schema_manager=object(),
             graph_lifecycle=object(),
-            graph_path_resolver=object(),
             graph_runtime_store=object(),
-            safe_write_step_adapter=object(),
             global_discovery_runtime=object(),
             board_source_reader=object(),
         )
@@ -275,7 +273,7 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
         assert r.event_bus is sentinel_bus
         assert r.audit_repo is sentinel_audit
     finally:
-        reg_mod._registry, reg_mod._configured = saved
+        reg_mod.restore_registry_state_for_tests(saved)
 
 
 def test_tr3_non_composed_call_fails_closed():
@@ -290,7 +288,7 @@ def test_tr3_non_composed_call_fails_closed():
         reset_registry_for_tests,
     )
 
-    saved = (reg_mod._registry, reg_mod._configured)
+    saved = reg_mod.capture_registry_state_for_tests()
 
     class _SF:
         def __call__(self):  # pragma: no cover
@@ -307,4 +305,4 @@ def test_tr3_non_composed_call_fails_closed():
         with pytest.raises(RuntimeError):
             reg_mod.get_kg_registry()
     finally:
-        reg_mod._registry, reg_mod._configured = saved
+        reg_mod.restore_registry_state_for_tests(saved)

@@ -11,18 +11,16 @@ from __future__ import annotations
 
 import pytest
 
-from okto_pulse.core.api.kg_routes import list_pending_tree
+from okto_pulse.community.api.kg_routes import list_pending_tree
 from okto_pulse.core.application.use_cases import ActorContext
-from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
-
-
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 def _actor(board_id: str) -> ActorContext:
     return ActorContext("u", "rest", board_id=board_id)
 
 
 @pytest.mark.asyncio
 async def test_pending_tree_empty_board(db_factory):
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     factory = db_factory
     async with factory() as db:
@@ -43,7 +41,7 @@ async def test_pending_tree_empty_board(db_factory):
 async def test_pending_tree_hierarchical_shape(db_factory):
     """Seed a single ideation→refinement→spec→sprint→card chain and
     verify the tree produced by the endpoint matches the parent links."""
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Board, Card, Ideation, Refinement, Spec, Sprint,
     )
     factory = db_factory
@@ -98,7 +96,7 @@ async def test_pending_tree_hierarchical_shape(db_factory):
 @pytest.mark.asyncio
 async def test_pending_tree_depth_limits_children(db_factory):
     """depth=2 should return ideations + refinements but no deeper."""
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Board, Ideation, Refinement, Spec,
     )
     factory = db_factory
@@ -127,7 +125,7 @@ async def test_pending_tree_depth_limits_children(db_factory):
 @pytest.mark.asyncio
 async def test_pending_tree_counters_track_queue_status(db_factory):
     """ConsolidationQueue statuses must flow into levels counters."""
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Board, ConsolidationQueue, Ideation, Spec,
     )
     factory = db_factory

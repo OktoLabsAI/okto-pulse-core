@@ -1,13 +1,12 @@
 """Transport-neutral building blocks for application use cases (spec #09).
 
 Defines the ``UseCase`` protocol, the transport-neutral ``ActorContext``, the
-command/result markers, the domain error hierarchy used by inbound adapters to
-map failures, and the transitional UnitOfWork bridge.
+command/result markers, and the domain error hierarchy used by inbound adapters
+to map failures.
 
 This module lives inside the purity-gated ``application/use_cases`` package and
-therefore imports no transport framework. It deliberately avoids importing
-SQLAlchemy: the UnitOfWork is duck-typed as ``Any`` so the application layer
-stays free of the relational adapter (that boundary is closed by spec #04).
+therefore imports no transport framework or persistence implementation. Use
+cases depend only on the typed ``PulseUnitOfWork`` port.
 """
 
 from __future__ import annotations
@@ -15,6 +14,12 @@ from __future__ import annotations
 from typing import Any, Literal, Mapping, Protocol, TypeVar, runtime_checkable
 
 from okto_pulse.core.ports.authentication import Principal
+from okto_pulse.core.domain.realm import (
+    LOCAL_REALM_ID,
+    RealmScope,
+    require_realm_scope,
+)
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 Source = Literal["rest", "mcp", "system"]
 
@@ -33,6 +38,7 @@ class ActorContext:
         "actor_name",
         "board_id",
         "realm_id",
+        "realm_scope",
         "permissions",
         "roles",
     )
@@ -45,6 +51,7 @@ class ActorContext:
         actor_name: str | None = None,
         board_id: str | None = None,
         realm_id: str | None = None,
+        realm_scope: RealmScope | None = None,
         permissions: Mapping[str, Any] | None = None,
         roles: tuple[str, ...] = (),
     ) -> None:
@@ -54,7 +61,14 @@ class ActorContext:
         # MCP agent name). None lets the service resolve it (the REST behavior).
         self.actor_name = actor_name
         self.board_id = board_id
-        self.realm_id = realm_id
+        if realm_scope is None and realm_id:
+            realm_scope = (
+                RealmScope.local()
+                if realm_id == LOCAL_REALM_ID
+                else RealmScope.tenant(realm_id)
+            )
+        self.realm_scope = realm_scope
+        self.realm_id = realm_scope.realm_id if realm_scope is not None else realm_id
         self.permissions = permissions
         self.roles = roles
 
@@ -64,6 +78,9 @@ class ActorContext:
             f"actor_name={self.actor_name!r}, board_id={self.board_id!r}, "
             f"realm_id={self.realm_id!r})"
         )
+
+    def require_realm_scope(self) -> RealmScope:
+        return require_realm_scope(self.realm_scope)
 
 
 def actor_context_from_principal(
@@ -99,7 +116,11 @@ def actor_context_from_principal(
         source,
         actor_name=str(actor_name) if actor_name else None,
         board_id=board_id,
-        realm_id=principal.realm_id,
+        realm_scope=(
+            RealmScope.local()
+            if principal.realm_id == LOCAL_REALM_ID
+            else RealmScope.tenant(principal.realm_id or "")
+        ),
         permissions=permissions,
         roles=roles,
     )
@@ -113,13 +134,17 @@ ResultT = TypeVar("ResultT", covariant=True)
 class UseCase(Protocol[CommandT, ResultT]):
     """A transport-free application operation (tr_3d5b5204).
 
-    ``uow`` is typed ``Any`` as a transitional bridge while the concrete
-    ``PulseUnitOfWork`` port remains external to this package. Adapters pass a
-    UnitOfWork exposing ``.session``/``.commit()``; bare relational sessions are
-    rejected at this boundary.
+    Adapters supply the ``PulseUnitOfWork`` port; no relational implementation
+    detail is exposed to the application layer.
     """
 
-    async def execute(self, command: CommandT, *, actor: ActorContext, uow: Any) -> ResultT:
+    async def execute(
+        self,
+        command: CommandT,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> ResultT:
         ...
 
 
@@ -161,40 +186,9 @@ class PermissionDeniedError(UseCaseError):
         super().__init__(message)
 
 
-# --- Transitional UnitOfWork bridge (removed when spec #04 closes the port) ---
-
-
-def session_of(uow: Any) -> Any:
-    """Return the relational session for ``uow``.
-
-    Accepts only a UnitOfWork exposing a non-null ``.session``. Bare
-    relational sessions must be wrapped by the registered UnitOfWorkFactory.
-    """
-    missing = object()
-    session = getattr(uow, "session", missing)
-    if session is missing:
-        raise TypeError("uow must expose .session; bare sessions are not accepted")
-    if session is None:
-        raise TypeError("uow.session must not be None")
-    return session
-
-
-async def commit(uow: Any) -> None:
+async def commit(uow: PulseUnitOfWork) -> None:
     """Commit the transaction owned by ``uow``."""
     commit_fn = getattr(uow, "commit", None)
     if commit_fn is None:
         raise TypeError("uow must provide an awaitable commit()")
     await commit_fn()
-
-
-def relational_context_from_uow(value: Any) -> Any:
-    """Expose an adapter-neutral relational context to legacy Core services.
-
-    Migrated inbound adapters receive a ``PulseUnitOfWork``.  A small number of
-    pre-strangler Core application services still accept their relational
-    context directly; this bridge unwraps the UoW without importing a concrete
-    session type.  Passing a context directly remains supported for non-HTTP
-    callers while MCP finishes its own UoW migration.
-    """
-
-    return getattr(value, "session", value)

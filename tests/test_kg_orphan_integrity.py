@@ -25,7 +25,7 @@ from okto_pulse.core.kg.orphan_integrity import (
     schema_relationship_pairs_for_orphan_scanner,
 )
 from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     MULTI_REL_TYPES,
     NODE_TYPES,
     REL_TYPES,

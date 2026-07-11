@@ -9,10 +9,11 @@ signature is transport-neutral — it never exposes ``AsyncSession``/``get_db``.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, session_of
-from okto_pulse.core.services.application_kg import list_stale_canonical_parity
+from okto_pulse.core.application.use_cases.base import ActorContext
 
 
 class ListStaleCanonicalParityCommand:
@@ -43,11 +44,9 @@ class ListStaleCanonicalParityUseCase:
         command: ListStaleCanonicalParityCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListStaleCanonicalParityResult:
-        session = session_of(uow)
-        data = await list_stale_canonical_parity(
-            session,
+        data = await uow.services.kg.list_stale_canonical_parity(
             board_id=command.board_id,
             limit=command.limit,
             offset=command.offset,

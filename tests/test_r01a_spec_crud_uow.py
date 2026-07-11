@@ -19,10 +19,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import specs as specs_api
-from okto_pulse.core.api.specs import router as specs_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import specs as specs_api
+from okto_pulse.community.api.specs import router as specs_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu3a-user"
@@ -50,7 +50,7 @@ def _client(user: str = USER) -> TestClient:
 
 
 async def _seed_board(owner: str = USER) -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu3a-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -161,8 +161,7 @@ async def test_update_spec_permission_use_case_raises_permission_denied() -> Non
     )
     from okto_pulse.core.application.use_cases.base import ActorContext
     from okto_pulse.core.models.schemas import SpecUpdate
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     board_id = await _seed_board()
     spec_id = await _seed_spec(board_id)
     actor = ActorContext(USER, "rest")
@@ -222,7 +221,7 @@ def test_spec_crud_endpoints_take_uow_not_raw_session() -> None:
 
 
 def test_spec_crud_use_case_module_has_no_api_or_session_in_public_surface() -> None:
-    """Clean Core: the use case module imports no okto_pulse.core.api and exposes
+    """Clean Core: the use case module imports no okto_pulse.community.api and exposes
     no AsyncSession/select/get_db in its source."""
     import ast
     from pathlib import Path
@@ -233,7 +232,7 @@ def test_spec_crud_use_case_module_has_no_api_or_session_in_public_surface() -> 
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            assert not (node.module or "").startswith("okto_pulse.core.api"), node.module
+            assert not (node.module or "").startswith("okto_pulse.community.api"), node.module
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     assert "AsyncSession" not in names
     assert "get_db" not in names

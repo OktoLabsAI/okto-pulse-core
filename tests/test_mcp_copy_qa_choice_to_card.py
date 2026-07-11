@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from okto_pulse.core.models.db import Card, CardStatus, CardType, Spec
+from sqlalchemy_test_models import Card, CardStatus, CardType, Spec
 from okto_pulse.core.services.bug_regression_scenarios import (
     BugRegressionCoverageState,
     BugRegressionEligibilityReason,

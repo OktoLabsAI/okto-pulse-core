@@ -105,18 +105,14 @@ def test_enum_serialized_value_parity():
         assert got == members, (enum_name, got, members)
 
 
-def test_db_reexports_domain_enums_by_identity():
-    # FR1/FR2: db must re-export the SAME enum objects (not a divergent copy) so
-    # legacy `from core.models.db import CardStatus` stays wire- and identity-
-    # compatible with the agnostic source of truth.
+def test_models_package_exports_domain_enums_without_db_compatibility_module():
     from okto_pulse.core.domain import enums as de
-    from okto_pulse.core.models import db
+    import okto_pulse.core.models as public_models
 
     for name in _FROZEN_ENUM_VALUES:
-        if hasattr(db, name):
-            assert getattr(db, name) is getattr(de, name), (
-                f"{name} re-exported from db diverged from core.domain.enums"
-            )
+        if hasattr(public_models, name):
+            assert getattr(public_models, name) is getattr(de, name)
+    assert not hasattr(public_models, "db")
 
 
 def test_real_schema_round_trips_enum_to_frozen_value():

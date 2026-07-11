@@ -12,6 +12,8 @@ map (HTTP 409); a missing spec becomes :class:`EntityNotFoundError` (HTTP 404).
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any, Mapping
 
 from okto_pulse.core.application.use_cases.base import (
@@ -19,9 +21,8 @@ from okto_pulse.core.application.use_cases.base import (
     CommandValidationError,
     EntityNotFoundError,
     commit,
-    session_of,
 )
-from okto_pulse.core.services import SpecService
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 _REQUIRED_FIELDS = (
     "completeness",
@@ -82,11 +83,13 @@ class SubmitSpecValidationResult:
         self.payload = payload
 
 
-async def _resolve_reviewer_name(session: Any, actor_id: str, board_id: str) -> str:
+async def _resolve_reviewer_name(
+    services: ApplicationServiceCatalog,
+    actor_id: str,
+    board_id: str,
+) -> str:
     try:
-        from okto_pulse.core.services.main import resolve_actor_name
-
-        return await resolve_actor_name(session, actor_id, board_id)
+        return await services.resolve_actor_name(actor_id, board_id)
     except Exception:
         return actor_id
 
@@ -95,18 +98,19 @@ class SubmitSpecValidationUseCase:
     """Submit a spec validation gate record without any transport dependency."""
 
     async def execute(
-        self, command: SubmitSpecValidationCommand, *, actor: ActorContext, uow: Any
+        self, command: SubmitSpecValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SubmitSpecValidationResult:
         command.validate()
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if spec is None:
             raise EntityNotFoundError("spec", command.spec_id)
         # MCP supplies the resolved agent name (actor.actor_name); REST leaves it
         # None and we resolve it here — preserving each surface's reviewer_name.
         reviewer_name = actor.actor_name or await _resolve_reviewer_name(
-            session, actor.actor_id, spec.board_id
+            uow.services,
+            actor.actor_id,
+            spec.board_id,
         )
         # ResourceGateError / ValueError propagate to the adapter (HTTP 409),
         # mirroring api/specs.py:submit_spec_validation.

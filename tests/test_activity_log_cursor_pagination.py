@@ -25,7 +25,7 @@ from okto_pulse.core.mcp.server import (
     _decode_activity_cursor,
     _encode_activity_cursor,
 )
-from okto_pulse.core.models.db import ActivityLog, Board
+from sqlalchemy_test_models import ActivityLog, Board
 
 
 # ---------------------------------------------------------------------------

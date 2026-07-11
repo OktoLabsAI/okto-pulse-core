@@ -33,12 +33,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import specs as specs_api
-from okto_pulse.core.api.specs import router as specs_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import specs as specs_api
+from okto_pulse.community.api.specs import router as specs_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.models.db import Board, Card, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
 
 USER = "r01a-fu3e-s3-user"
 PREFIX = "/api/v1"
@@ -327,8 +327,7 @@ async def test_link_ir_use_case_raises_for_missing_spec() -> None:
         ActorContext,
         EntityNotFoundError,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):
@@ -350,8 +349,7 @@ async def test_link_or_use_case_raises_for_missing_spec() -> None:
         ActorContext,
         EntityNotFoundError,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

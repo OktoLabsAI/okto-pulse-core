@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
+from okto_pulse.core.domain.realm import RealmScope
 from okto_pulse.core.kg.interfaces.registry import (
     get_kg_registry,
     reset_registry_for_tests,
@@ -44,6 +45,9 @@ class MockAuthContext:
     async def get_accessible_boards(self) -> list[str]:
         return self._boards
 
+    async def get_realm_scope(self) -> RealmScope:
+        return RealmScope.tenant("test-realm")
+
     def has_admin_role(self) -> bool:
         return False
 
@@ -54,6 +58,9 @@ class UnauthenticatedContext:
 
     async def get_accessible_boards(self) -> list[str]:
         return []
+
+    async def get_realm_scope(self) -> RealmScope:
+        return RealmScope.tenant("test-realm")
 
     def has_admin_role(self) -> bool:
         return False

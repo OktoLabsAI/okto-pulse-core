@@ -1,4 +1,4 @@
-"""LayerResolver current-tree-v2 — maps the physical source tree to layers.
+"""LayerResolver current-tree-v3 - maps the post-extraction source tree to layers.
 
 Spec #12, tr_c3f8fa6d + contract ``api_24add273``. Canonical mapping of the
 *current* repository layout (NOT an aspirational one): ``core/domain``,
@@ -30,14 +30,22 @@ LEGACY_APPLICATION_TRANSITIONAL_DEBT = "legacy_application_transitional_debt"
 FUTURE_TARGET = "future_target"
 UNCLASSIFIED = "unclassified"
 
-LAYER_RESOLVER_VERSION = "current-tree-v2"
+LAYER_RESOLVER_VERSION = "current-tree-v3"
 
 #: Exact-file rules win over prefix rules (e.g. ``core/app.py`` is composition,
 #: not outbound). Ordered most-specific-first.
 _EXACT_FILE_LAYERS: tuple[tuple[str, str], ...] = (
     ("okto_pulse/core/app.py", COMPOSITION),
     ("okto_pulse/core/composition.py", COMPOSITION),
-    ("okto_pulse/core/discovery_params_schema.py", OUTBOUND),
+    ("okto_pulse/core/discovery_params_schema.py", DOMAIN),
+    ("okto_pulse/core/infra/auth.py", PORTS),
+    ("okto_pulse/core/infra/config.py", PORTS),
+    ("okto_pulse/core/infra/daily_tick.py", APPLICATION),
+    ("okto_pulse/core/infra/permissions.py", DOMAIN),
+    ("okto_pulse/core/infra/relational_lifecycle_decomposition.py", APPLICATION),
+    ("okto_pulse/core/infra/schema_lifecycle.py", PORTS),
+    ("okto_pulse/core/infra/startup_schema_sweep.py", APPLICATION),
+    ("okto_pulse/core/infra/storage.py", PORTS),
     ("pyproject.toml", PACKAGING_OPS_EDITION),
 )
 
@@ -47,14 +55,17 @@ _PREFIX_LAYERS: tuple[tuple[str, str], ...] = (
     ("okto_pulse/core/domain/", DOMAIN),
     ("okto_pulse/core/application/", APPLICATION),
     ("okto_pulse/core/ports/", PORTS),
+    ("okto_pulse/core/repositories/interfaces/", PORTS),
+    ("okto_pulse/core/kg/interfaces/", PORTS),
+    ("okto_pulse/core/kg/providers/", OUTBOUND),
     ("okto_pulse/core/inbound/", INBOUND),
     ("okto_pulse/core/api/", INBOUND),
     ("okto_pulse/core/mcp/", INBOUND),
     ("okto_pulse/core/repositories/", OUTBOUND),
     ("okto_pulse/core/infra/", OUTBOUND),
-    ("okto_pulse/core/kg/", OUTBOUND),
+    ("okto_pulse/core/kg/", APPLICATION),
     ("okto_pulse/core/telemetry/", OUTBOUND),
-    ("okto_pulse/core/models/", OUTBOUND),
+    ("okto_pulse/core/models/", DOMAIN),
     ("okto_pulse/core/events/", EVENT_RUNTIME_MESSAGING),
     ("okto_pulse/core/services/", LEGACY_APPLICATION_TRANSITIONAL_DEBT),
     ("okto_pulse/core/commands/", LEGACY_APPLICATION_TRANSITIONAL_DEBT),

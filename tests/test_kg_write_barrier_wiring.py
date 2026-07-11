@@ -46,7 +46,7 @@ def _force_strict_mode():
 
 
 def test_kg_tick_reset_calls_require_write_token():
-    from okto_pulse.core.api import kg_tick
+    from okto_pulse.community.api import kg_tick
 
     src = inspect.getsource(kg_tick._reset_last_recomputed_at)
     assert "require_write_token" in src
@@ -59,9 +59,9 @@ def test_outbox_worker_apply_event_calls_require_global_write_token():
     # wired require_global_write_token() here; the old assertion pinned the
     # per-board require_write_token(board_id) by copy-paste and went stale.
     # (The sibling global-write tests below already use the global token.)
-    from okto_pulse.core.kg.global_discovery import outbox_worker
+    from okto_pulse.core.application.processors import global_outbox as outbox_worker
 
-    src = inspect.getsource(outbox_worker.OutboxWorker._apply_event)
+    src = inspect.getsource(outbox_worker.GlobalOutboxProcessor._apply_event)
     assert "require_global_write_token" in src
     assert "require_global_write_token()" in src
 
@@ -111,7 +111,7 @@ def test_bootstrap_global_discovery_calls_require_global_write_token(monkeypatch
 
     from okto_pulse.core.composition import RuntimeProviderMissing
     from okto_pulse.core.kg import interfaces as interfaces_pkg
-    from okto_pulse.core.kg.global_discovery import schema
+    import global_graph_testing as schema
     from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 
     calls: list[str] = []
@@ -142,7 +142,7 @@ def test_purge_global_discovery_storage_calls_require_global_write_token(monkeyp
     without a composed runtime — never a silent core-side purge."""
     from okto_pulse.core.composition import RuntimeProviderMissing
     from okto_pulse.core.kg import interfaces as interfaces_pkg
-    from okto_pulse.core.kg.global_discovery import schema
+    import global_graph_testing as schema
     from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 
     calls: list[tuple[str, str]] = []
@@ -210,15 +210,13 @@ def test_bootstrap_global_discovery_blocked_in_strict_without_guard():
     guard MUST raise WriteLifecycleViolation BEFORE the ladybug import
     or DDL execution. Proves the barrier is the first statement in the
     function body."""
-    from okto_pulse.core.kg.global_discovery import schema
-
+    import global_graph_testing as schema
     with pytest.raises(WriteLifecycleViolation):
         schema.bootstrap_global_discovery()
 
 
 def test_purge_global_discovery_storage_blocked_in_strict_without_guard():
-    from okto_pulse.core.kg.global_discovery import schema
-
+    import global_graph_testing as schema
     with pytest.raises(WriteLifecycleViolation):
         schema.purge_global_discovery_storage(reason="test")
 

@@ -2,10 +2,9 @@
 
 Proves the persistence ports are real and behavior-correct: the SQLAlchemy
 UnitOfWork round-trips via the repositories (add/commit/get + rollback), is
-realm-ready without enforcement, satisfies the protocols, and — critically for
-the strangler seam — powers an existing spec #09 use case unchanged via the
-transitional ``session`` bridge. The ORM-return debt ledger is asserted against
-the verified baseline.
+realm-ready without enforcement, satisfies the protocols, and powers an existing
+spec #09 use case through typed application capabilities. The ORM-return debt
+ledger is asserted against the verified baseline.
 """
 
 from __future__ import annotations
@@ -20,16 +19,16 @@ from okto_pulse.core.application.use_cases import (
     CreateBoardUseCase,
 )
 from okto_pulse.core.models import BoardCreate
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus, Spec
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus, Spec
 from okto_pulse.core.repositories import (
     ORM_BASE_CLASS_BASELINE,
-    SESSION_BRIDGE_DEBT,
     PulseUnitOfWork,
     RepositoryCatalog,
+    is_orm_return_excepted,
+)
+from sqlalchemy_test_unit_of_work import (
     SQLAlchemyUnitOfWork,
     SQLAlchemyUnitOfWorkFactory,
-    TransitionalDebt,
-    is_orm_return_excepted,
 )
 
 ACTOR = "uow04-actor"
@@ -62,22 +61,13 @@ def test_orm_debt_baseline_and_exceptions():
     assert not is_orm_return_excepted(board, repository=card_repo)
 
 
-def test_session_bridge_is_registered_debt():
-    assert isinstance(SESSION_BRIDGE_DEBT, TransitionalDebt)
-    assert SESSION_BRIDGE_DEBT.kind == "session_bridge"
-    assert "SQLAlchemyUnitOfWork.session" in SESSION_BRIDGE_DEBT.location
-    assert SESSION_BRIDGE_DEBT.owner
-    assert SESSION_BRIDGE_DEBT.deadline
-    assert SESSION_BRIDGE_DEBT.withdrawal_criterion
-
-
 def test_base_class_count_matches_baseline():
     # Cross-check the documented baseline against the live mapped classes DEFINED
     # IN models/db.py (the spec scopes the baseline to that module). Filtering by
     # __module__ keeps the count stable against test-only models other tests
     # register on the shared Base. A model addition here surfaces the debt drift
     # (the gate card b37786d9 enforces it live).
-    from okto_pulse.core.models.db import Base
+    from sqlalchemy_test_models import Base
 
     mapped = len(
         [
@@ -213,12 +203,12 @@ async def test_realm_id_is_carried_not_enforced(db_factory):
 
 
 # --------------------------------------------------------------------------- #
-# Strangler seam: a spec #09 use case runs unchanged on a real PulseUnitOfWork
+# Typed catalog: a spec #09 use case runs unchanged on a real PulseUnitOfWork
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.asyncio
-async def test_uow_session_bridge_powers_spec09_use_case(db_factory):
+async def test_uow_typed_catalog_powers_spec09_use_case(db_factory):
     factory = SQLAlchemyUnitOfWorkFactory(db_factory)
     async with factory() as uow:
         result = await CreateBoardUseCase().execute(

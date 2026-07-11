@@ -138,23 +138,21 @@ async def start_historical_consolidation(*args: Any, **kwargs: Any) -> Any:
 
 
 def create_deterministic_worker(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+    from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
 
     return DeterministicWorker(*args, **kwargs)
 
 
-def create_consolidation_worker(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
+def create_consolidation_processor(*args: Any, **kwargs: Any) -> Any:
+    from okto_pulse.core.application.processors import ConsolidationProcessor
 
-    return ConsolidationWorker(*args, **kwargs)
+    return ConsolidationProcessor(*args, **kwargs)
 
 
 def signal_consolidation_worker() -> None:
-    from okto_pulse.core.kg.workers.consolidation import (
-        signal_consolidation_worker as _signal,
-    )
+    from okto_pulse.core.application.runtime_workers import signal_runtime_worker
 
-    _signal()
+    signal_runtime_worker("consolidation_worker")
 
 
 async def cancel_historical(*args: Any, **kwargs: Any) -> Any:

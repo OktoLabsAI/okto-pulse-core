@@ -30,8 +30,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from okto_pulse.core.api.kg_health import KGHealthResponse
-from okto_pulse.core.kg.schema import (
+from okto_pulse.community.api.kg_health import KGHealthResponse
+from kg_schema_testing import (
     LAST_RECOMPUTED_COLUMNS,
     NODE_TYPES,
     SCHEMA_VERSION,
@@ -45,8 +45,8 @@ from okto_pulse.core.kg.scoring import (
     _resolve_severity_boost,
     reset_contradict_warn_counters,
 )
-from okto_pulse.core.kg.workers.consolidation import _card_to_dict
-from okto_pulse.core.models.db import (
+from okto_pulse.core.application.processors.consolidation import _card_to_dict
+from sqlalchemy_test_models import (
     Board,
     BugSeverity,
     CardPriority,
@@ -121,7 +121,7 @@ def test_ts29_eleven_node_types_share_common_attrs_block():
     # The DDL builder substitutes _COMMON_NODE_ATTRS verbatim — covered by the
     # existing ``_build_node_ddl`` test, but we re-assert here so a future
     # refactor that splits attrs per node type breaks IMPL-F too.
-    from okto_pulse.core.kg.schema import _build_node_ddl
+    from kg_schema_testing import _build_node_ddl
 
     for node_type in NODE_TYPES:
         ddl = _build_node_ddl(node_type)
@@ -747,7 +747,7 @@ async def test_emit_hit_flushed_event_persists_domain_event_row(
     """Helper writes a domain_events row + handler executions per registered handler."""
     from sqlalchemy import select as _select
     from okto_pulse.core.kg.kg_service import _emit_hit_flushed_event
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         DomainEventHandlerExecution,
         DomainEventRow,
     )
@@ -905,7 +905,7 @@ async def test_impl_c_update_card_emits_priority_change_event(
     """CardService.update_card with new priority emits CardPriorityChanged."""
     from sqlalchemy import select as _select
     from okto_pulse.core.services.main import CardService
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Card, CardPriority, DomainEventHandlerExecution,
         DomainEventRow,
     )
@@ -967,7 +967,7 @@ async def test_impl_c_update_card_no_priority_change_no_event(
     """Updating fields other than priority must NOT emit CardPriorityChanged."""
     from sqlalchemy import select as _select
     from okto_pulse.core.services.main import CardService
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Card, CardPriority,
         DomainEventHandlerExecution, DomainEventRow,
     )
@@ -1023,7 +1023,7 @@ async def test_impl_c_severity_event_only_for_bug_cards(
     """Non-bug cards must not emit CardSeverityChanged even when severity set."""
     from sqlalchemy import select as _select
     from okto_pulse.core.services.main import CardService
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         BugSeverity, Card, CardType,
         DomainEventHandlerExecution, DomainEventRow,
     )
@@ -1155,7 +1155,7 @@ def test_impl_d_apscheduler_dependency_installed():
 
 def test_impl_d_emit_daily_tick_callable_exists():
     """The lifespan callback exists and is module-level (APScheduler-friendly)."""
-    from okto_pulse.core.app import _emit_daily_tick
+    from okto_pulse.community.app import _emit_daily_tick
 
     assert callable(_emit_daily_tick)
 

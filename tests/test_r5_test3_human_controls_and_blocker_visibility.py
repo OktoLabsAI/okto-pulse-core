@@ -23,13 +23,15 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from sqlalchemy import select
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_r5t3_"))
 
-import okto_pulse.core.api.cognitive_action_center as ac_api
-from okto_pulse.core.api.cognitive_action_center import (
+import okto_pulse.community.api.cognitive_action_center as ac_api
+from okto_pulse.community.api.cognitive_action_center import (
     CognitiveClearRequest,
     CognitiveSkipRequest,
     clear_cognitive_skip_endpoint,
@@ -43,7 +45,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     ConsolidationDeadLetter,
@@ -163,7 +165,7 @@ async def test_ts_9455d0bf_human_cognitive_apply_and_remove_audited(db_factory, 
         applied = await record_cognitive_skip_endpoint(
             board, CognitiveSkipRequest(source_ref=source_ref, reason_code="duplicate_bug",
                                         justification="dup of X", evidence_refs=["card:other"]),
-            db, actor=USER_ID)
+            SQLAlchemyUnitOfWork(db), actor=USER_ID)
     assert applied["status"] == CognitiveItemStatus.SKIPPED.value
     assert applied["actor"] == USER_ID and applied["reason_code"] == "duplicate_bug"
     assert applied["justification"] == "dup of X" and applied["evidence_refs"] == ["card:other"]
@@ -171,7 +173,11 @@ async def test_ts_9455d0bf_human_cognitive_apply_and_remove_audited(db_factory, 
 
     async with db_factory() as db:
         cleared = await clear_cognitive_skip_endpoint(
-            board, CognitiveClearRequest(source_ref=source_ref), db, actor=USER_ID)
+            board,
+            CognitiveClearRequest(source_ref=source_ref),
+            SQLAlchemyUnitOfWork(db),
+            actor=USER_ID,
+        )
     assert cleared["status"] == CognitiveItemStatus.PENDING.value
     assert cleared["actor"] == USER_ID and cleared["updated_at"] is not None
     # durable ledger reflects the reopen.
@@ -265,7 +271,7 @@ async def test_ts_85e18262_human_skip_cannot_mark_debt_resolved(db_factory, tmp_
         with pytest.raises(HTTPException) as exc:
             await record_cognitive_skip_endpoint(
                 board, CognitiveSkipRequest(source_ref=source_ref, reason_code="duplicate_bug"),
-                db, actor=USER_ID)
+                SQLAlchemyUnitOfWork(db), actor=USER_ID)
     assert exc.value.status_code == 409
     assert exc.value.detail["error"] == "technical_debt_cannot_be_skipped"
     # the item was NOT skipped — debt not masked.

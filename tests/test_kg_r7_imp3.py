@@ -54,13 +54,13 @@ from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ProposeReconciliationRequest,
 )
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     AGENT_ID,
     _commit_consolidation_with_board_graph_lifecycle,
     _process_queue_entry,
     _run_deterministic_worker,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -83,7 +83,7 @@ USER_ID = "user-r7-imp3"
 
 
 async def _setup_board(db_factory) -> str:
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
 
     board_id = f"r7imp3-{uuid.uuid4().hex[:12]}"
     bootstrap_board_graph(board_id)
@@ -95,7 +95,7 @@ async def _setup_board(db_factory) -> str:
 
 
 def _seed_bug(board_id: str, *, graph_layer: str) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     bug_id = f"r7i3b_{uuid.uuid4().hex[:12]}"
@@ -119,7 +119,7 @@ def _seed_bug(board_id: str, *, graph_layer: str) -> str:
 def _seed_materialized_learning_with_working_bug(board_id: str, source_ref: str) -> str:
     """Pre-existing canonical Learning validating only a WORKING Bug (historical
     partition-integrity violation already on the graph)."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     learning_id = f"r7i3l_{uuid.uuid4().hex[:12]}"

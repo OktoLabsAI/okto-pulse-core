@@ -29,11 +29,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
+
 #: The edition-registered relational UnitOfWorkFactory (None until a composition
 #: root — or the test harness — registers one). NO implicit default.
-_unit_of_work_factory: Any = None
-_content_ingestion_resolver: Any = None
-_relational_runtime_factory: Any = None
+_UOW_KEY = "runtime.unit_of_work_factory"
+_CONTENT_KEY = "runtime.content_ingestion_resolver"
+_RELATIONAL_KEY = "runtime.relational_runtime_factory"
 
 
 def register_unit_of_work_factory(factory: Any) -> None:
@@ -44,20 +50,18 @@ def register_unit_of_work_factory(factory: Any) -> None:
     writer wins so a re-composed app / test can re-point the seam. ``factory`` is
     duck-typed: it must expose ``wrap(session)`` (request-scoped REST path) and be
     callable for the MCP / worker fresh-session path."""
-    global _unit_of_work_factory
-    _unit_of_work_factory = factory
+    register_runtime_value(_UOW_KEY, factory)
 
 
 def reset_unit_of_work_factory() -> None:
     """Drop the registered factory (test isolation / teardown). After a reset a
     resolve fails closed until something registers again — there is no fallback."""
-    global _unit_of_work_factory
-    _unit_of_work_factory = None
+    reset_runtime_values(_UOW_KEY)
 
 
 def is_unit_of_work_factory_registered() -> bool:
     """Whether an edition provider is currently registered on the seam."""
-    return _unit_of_work_factory is not None
+    return resolve_runtime_value(_UOW_KEY) is not None
 
 
 def resolve_unit_of_work_factory(*, preferred: Any = None) -> Any:
@@ -68,7 +72,15 @@ def resolve_unit_of_work_factory(*, preferred: Any = None) -> Any:
     over the process-global seam. When neither ``preferred`` nor the registered
     seam is available, raise — there is NO implicit fallback to a core concrete
     (R01B FR3 / AC4 fail-closed)."""
-    factory = preferred if preferred is not None else _unit_of_work_factory
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
+
+    composition = current_runtime_composition()
+    scoped = composition.uow_factory if composition is not None else None
+    factory = preferred if preferred is not None else scoped
+    if factory is None:
+        factory = resolve_runtime_value(_UOW_KEY)
     if factory is None:
         raise RuntimeError(
             "No relational UnitOfWorkFactory provider is registered (R01B FR3 "
@@ -92,14 +104,12 @@ def register_content_ingestion_resolver(resolver: Any) -> None:
     Community registers a resolver here instead of the core importing pathlib or
     http clients in tool handlers.
     """
-    global _content_ingestion_resolver
-    _content_ingestion_resolver = resolver
+    register_runtime_value(_CONTENT_KEY, resolver)
 
 
 def reset_content_ingestion_resolver() -> None:
     """Drop the registered content-ingestion resolver (test isolation)."""
-    global _content_ingestion_resolver
-    _content_ingestion_resolver = None
+    reset_runtime_values(_CONTENT_KEY)
 
 
 def resolve_content_ingestion_resolver(*, preferred: Any = None) -> Any | None:
@@ -108,7 +118,19 @@ def resolve_content_ingestion_resolver(*, preferred: Any = None) -> Any | None:
     This seam is optional because inline MCP payloads are a complete core path.
     A missing resolver only fails calls that provide ``content_reference``.
     """
-    return preferred if preferred is not None else _content_ingestion_resolver
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
+
+    composition = current_runtime_composition()
+    scoped = (
+        composition.content_ingestion_resolver if composition is not None else None
+    )
+    if preferred is not None:
+        return preferred
+    if scoped is not None:
+        return scoped
+    return resolve_runtime_value(_CONTENT_KEY)
 
 
 # ---------------------------------------------------------------------------
@@ -124,24 +146,30 @@ def register_relational_runtime_factory(factory: Any) -> None:
     through ``core.infra.database.create_database``; production Community startup
     configures the runtime directly from its adapter.
     """
-    global _relational_runtime_factory
-    _relational_runtime_factory = factory
+    register_runtime_value(_RELATIONAL_KEY, factory)
 
 
 def reset_relational_runtime_factory() -> None:
     """Drop the registered relational runtime factory."""
-    global _relational_runtime_factory
-    _relational_runtime_factory = None
+    reset_runtime_values(_RELATIONAL_KEY)
 
 
 def is_relational_runtime_factory_registered() -> bool:
     """Whether a relational runtime factory is currently registered."""
-    return _relational_runtime_factory is not None
+    return resolve_runtime_value(_RELATIONAL_KEY) is not None
 
 
 def resolve_relational_runtime_factory(*, preferred: Any = None) -> Any:
     """Return a registered relational runtime factory, fail-closed if absent."""
-    factory = preferred if preferred is not None else _relational_runtime_factory
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
+
+    composition = current_runtime_composition()
+    scoped = composition.relational_runtime_factory if composition is not None else None
+    factory = preferred if preferred is not None else scoped
+    if factory is None:
+        factory = resolve_runtime_value(_RELATIONAL_KEY)
     if factory is None:
         raise RuntimeError(
             "No relational runtime factory is registered. The edition adapter must "

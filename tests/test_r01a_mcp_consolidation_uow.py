@@ -36,7 +36,7 @@ from okto_pulse.core.application.use_cases import (
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.kg.primitives import add_edge_candidate, add_node_candidate
-from okto_pulse.core.kg.schema import bootstrap_board_graph
+from kg_schema_testing import bootstrap_board_graph
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
     AddNodeCandidateRequest,
@@ -49,9 +49,7 @@ from okto_pulse.core.kg.schemas import (
     ProposeReconciliationRequest,
 )
 from okto_pulse.core.kg.source_maturity import MATURITY_CANONICAL_ELIGIBLE
-from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
-
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 def _uowf(db_factory):
     """The MCP UnitOfWorkFactory equivalent over the test session factory — the
     same shape get_unit_of_work_factory_for_mcp() builds in production."""

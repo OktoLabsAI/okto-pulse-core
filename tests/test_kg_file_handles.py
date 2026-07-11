@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     board_kuzu_path,
     bootstrap_board_graph,
     close_all_connections,

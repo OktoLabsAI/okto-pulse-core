@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _card_to_dict,
     _resolve_missing_link_candidates,
     _spec_to_dict,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import (
+from okto_pulse.core.application.processors.deterministic_kg import (
     EmittedNode,
     MissingLinkCandidate,
     WORKER_VERSION,

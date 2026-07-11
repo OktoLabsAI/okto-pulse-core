@@ -14,10 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Mapping, Protocol, runtime_checkable
-
-if TYPE_CHECKING:  # pragma: no cover - type hints only, never imported at runtime
-    from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any, Mapping, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -41,7 +38,7 @@ class RuntimeEventBusPort(Protocol):
     """
 
     async def publish_runtime_event(
-        self, event: RuntimeEvent, *, session: AsyncSession | None = None
+        self, event: RuntimeEvent, *, session: Any | None = None
     ) -> None:
         """Publish a runtime event, optionally within the caller's session."""
         ...

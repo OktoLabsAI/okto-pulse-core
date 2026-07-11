@@ -17,8 +17,9 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
-from okto_pulse.core.kg.interfaces.board_graph_runtime import BoardGraphRuntime
 from okto_pulse.core.kg.interfaces.board_source_reader import BoardSourceReader
 from okto_pulse.core.kg.interfaces.cache_backend import CacheBackend
 from okto_pulse.core.kg.interfaces.cypher_executor import CypherExecutor
@@ -28,7 +29,6 @@ from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
 from okto_pulse.core.kg.interfaces.embedding import EmbeddingProvider
 from okto_pulse.core.kg.interfaces.event_bus import EventBus
 from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycle
-from okto_pulse.core.kg.interfaces.graph_path_resolver import GraphPathResolver
 from okto_pulse.core.kg.interfaces.graph_recovery import GraphRecovery
 from okto_pulse.core.kg.interfaces.graph_runtime_store import GraphRuntimeStore
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
@@ -43,6 +43,7 @@ from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
 from okto_pulse.core.kg.interfaces.rebuild_ingestion import RebuildIngestionPort
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
+    RebuildAuditArtifactStoreResolver,
 )
 from okto_pulse.core.kg.interfaces.session_store import SessionStore
 
@@ -72,14 +73,12 @@ class KGProviderRegistry:
     graph_transaction: GraphTransaction | None = None
     graph_schema_manager: GraphSchemaManager | None = None
     graph_lifecycle: GraphLifecycle | None = None
-    graph_path_resolver: GraphPathResolver | None = None
     graph_runtime_store: GraphRuntimeStore | None = None
-    safe_write_step_adapter: Any | None = None
-    board_graph_runtime: BoardGraphRuntime | None = None
     global_discovery_runtime: GlobalDiscoveryRuntime | None = None
     board_source_reader: BoardSourceReader | None = None
     rebuild_ingestion_port: RebuildIngestionPort | None = None
     rebuild_audit_artifact_store: RebuildAuditArtifactStore | None = None
+    rebuild_audit_artifact_store_resolver: RebuildAuditArtifactStoreResolver | None = None
     cognitive_pending_work_provider: CognitivePendingWorkProvider | None = None
     # KGD-01 FR4 — quarantine restore port (dry-run/apply with backup-swap).
     # Optional slot: supplied by the Community composition; read-time
@@ -135,6 +134,11 @@ class KGProviderRegistry:
     def require_rebuild_audit_artifact_store(self) -> RebuildAuditArtifactStore:
         return self._require_provider("rebuild_audit_artifact_store")
 
+    def require_rebuild_audit_artifact_store_resolver(
+        self,
+    ) -> RebuildAuditArtifactStoreResolver:
+        return self._require_provider("rebuild_audit_artifact_store_resolver")
+
     def require_cognitive_pending_work_provider(self) -> CognitivePendingWorkProvider:
         return self._require_provider("cognitive_pending_work_provider")
 
@@ -145,99 +149,15 @@ class KGProviderRegistry:
         return self._require_provider("graph_recovery")
 
 
-_registry: KGProviderRegistry | None = None
 _lock = threading.Lock()
-_configured = False
-
-
-def _build_defaults() -> KGProviderRegistry:
-    """Build a registry with test-only in-memory defaults.
-
-    Populates Onda 1 (config, cache, rate_limiter, embedding), Onda 2
-    (session_store), and in-memory graph fakes. event_bus and audit_repo are not
-    defaulted here: real runtimes must compose them explicitly and tests must
-    provide fakes via defaults_factory/overrides.
-    """
-    from okto_pulse.core.kg.providers.testing.memory import (
-        InMemoryCacheBackend,
-        InMemorySessionStore,
-        InMemoryTokenBucket,
-    )
-    from okto_pulse.core.kg.providers.testing.settings_config import SettingsKGConfig
-    from okto_pulse.core.kg.providers.testing.memory_graph_store import (
-        InMemoryCypherExecutor,
-        InMemoryBoardGraphRuntime,
-        InMemoryGraphLifecycle,
-        InMemoryGraphPathResolver,
-        InMemoryGraphRuntimeStore,
-        InMemoryGraphSchemaManager,
-        InMemoryGraphStore,
-        InMemoryGraphTransaction,
-        in_memory_safe_write_step_adapter,
-    )
-    from okto_pulse.core.kg.providers.testing.memory_global_discovery_runtime import (
-        InMemoryGlobalDiscoveryRuntime,
-    )
-    from okto_pulse.core.kg.providers.testing.memory_board_source_reader import (
-        InMemoryBoardSourceReader,
-    )
-    from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
-        InMemoryCognitivePendingWorkProvider,
-        InMemoryRebuildAuditArtifactStore,
-    )
-    from okto_pulse.core.kg.providers.testing.embedding import (
-        build_testing_embedding_provider,
-    )
-
-    config = SettingsKGConfig()
-    graph_store = InMemoryGraphStore()
-    graph_path_resolver = InMemoryGraphPathResolver()
-    graph_schema_manager = InMemoryGraphSchemaManager(graph_store)
-    return KGProviderRegistry(
-        # Onda 1
-        config=config,
-        cache_backend=InMemoryCacheBackend(),
-        rate_limiter=InMemoryTokenBucket(),
-        embedding_provider=build_testing_embedding_provider(config),
-        # Onda 2
-        session_store=InMemorySessionStore(
-            default_ttl_seconds=config.kg_session_ttl_seconds,
-        ),
-        # Onda 3
-        graph_store=graph_store,
-        cypher_executor=InMemoryCypherExecutor(),
-        # Onda 4 — test-only graph storage fakes
-        graph_transaction=InMemoryGraphTransaction(),
-        graph_schema_manager=graph_schema_manager,
-        graph_lifecycle=InMemoryGraphLifecycle(
-            resolver=graph_path_resolver,
-            schema_manager=graph_schema_manager,
-        ),
-        graph_path_resolver=graph_path_resolver,
-        graph_runtime_store=InMemoryGraphRuntimeStore(
-            store=graph_store,
-            resolver=graph_path_resolver,
-            schema_manager=graph_schema_manager,
-        ),
-        safe_write_step_adapter=in_memory_safe_write_step_adapter,
-        board_graph_runtime=InMemoryBoardGraphRuntime(
-            store=graph_store,
-            resolver=graph_path_resolver,
-            schema_manager=graph_schema_manager,
-        ),
-        global_discovery_runtime=InMemoryGlobalDiscoveryRuntime(),
-        board_source_reader=InMemoryBoardSourceReader(),
-        rebuild_audit_artifact_store=InMemoryRebuildAuditArtifactStore(),
-        cognitive_pending_work_provider=InMemoryCognitivePendingWorkProvider(),
-        # event_bus, audit_repo, auth_context_factory supplied by composition
-    )
+_RUNTIME_KEY = "kg.provider_registry"
 
 
 def _build_graph_defaults() -> dict[str, Any]:
     """No production graph defaults exist in core.
 
     Runtime graph providers must be supplied by the composition root (Community
-    today, future SaaS adapters later). Tests use ``_build_defaults`` fakes.
+    today, future SaaS adapters later). Tests inject explicit fakes.
     """
     return {}
 
@@ -279,7 +199,6 @@ def configure_kg_registry(
     ``defaults_factory`` (the sanctioned fake route). ``config`` is a REQUIRED
     slot the composition must provide.
     """
-    global _registry, _configured
     with _lock:
         composed = base_registry is not None or defaults_factory is not None
         if base_registry is not None:
@@ -337,9 +256,7 @@ def configure_kg_registry(
                 "graph_transaction",
                 "graph_schema_manager",
                 "graph_lifecycle",
-                "graph_path_resolver",
                 "graph_runtime_store",
-                "safe_write_step_adapter",
                 "global_discovery_runtime",
                 "board_source_reader",
             )
@@ -358,8 +275,7 @@ def configure_kg_registry(
                 "tests use a defaults_factory / explicit fakes."
             )
 
-        _registry = reg
-        _configured = True
+        register_runtime_value(_RUNTIME_KEY, reg)
 
 
 def get_kg_registry() -> KGProviderRegistry:
@@ -374,7 +290,8 @@ def get_kg_registry() -> KGProviderRegistry:
     registry before composition is a fail-closed, actionable error — never a late
     ``AttributeError`` on a ``None`` slot.
     """
-    if _registry is None:
+    registry = resolve_runtime_value(_RUNTIME_KEY)
+    if registry is None:
         raise RuntimeError(
             "KG registry not configured: the composition must call "
             "configure_kg_registry(base_registry=...) (Community edition) or "
@@ -382,11 +299,24 @@ def get_kg_registry() -> KGProviderRegistry:
             "core no longer builds implicit Onda A defaults (cache_backend / "
             "rate_limiter / session_store / config)."
         )
-    return _registry
+    return registry
 
 
 def reset_registry_for_tests() -> None:
     """Drop the cached registry — tests only."""
-    global _registry, _configured
-    _registry = None
-    _configured = False
+    reset_runtime_values(_RUNTIME_KEY)
+
+
+def capture_registry_state_for_tests() -> KGProviderRegistry | None:
+    """Capture the context-local registry for a test that temporarily replaces it."""
+
+    return resolve_runtime_value(_RUNTIME_KEY)
+
+
+def restore_registry_state_for_tests(registry: KGProviderRegistry | None) -> None:
+    """Restore a registry captured by :func:`capture_registry_state_for_tests`."""
+
+    if registry is None:
+        reset_registry_for_tests()
+    else:
+        register_runtime_value(_RUNTIME_KEY, registry)

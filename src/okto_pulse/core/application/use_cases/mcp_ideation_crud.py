@@ -5,7 +5,7 @@ PURITY GUARDRAIL (Codex-mandated, enforced by test_r01a_mcp_ideation_uow.py): th
 module is transport-free. It MUST NOT import the MCP server/transport package nor any
 server-side transport helper. The MCP adapter (server.py) keeps JSON parsing /
 coercion, the board-scoping envelopes, and the MCP aggregation projections (the
-``get_ideation`` refinements/specs/qa_items shape is built over ``uow.session`` while
+``get_ideation`` refinements/specs/qa_items shape is built by the inbound adapter while
 the lazy ORM relationships are live — the Codex-approved get_spec_context precedent).
 
 Ideation family traits (from the inventory): board-scope is ASYMMETRIC — present on
@@ -15,15 +15,15 @@ on create; create uses ``skip_ownership_check=True`` like the MCP spec create.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
-from okto_pulse.core.services import IdeationService
 
 
 # --- create (skip_ownership; adapter keeps the IdeationCreate build + envelope) -
@@ -51,9 +51,9 @@ class McpCreateIdeationUseCase:
     and the id/title/status/version envelope."""
 
     async def execute(
-        self, command: McpCreateIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: McpCreateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpCreateIdeationResult:
-        ideation = await IdeationService(session_of(uow)).create_ideation(
+        ideation = await uow.services.ideations.create_ideation(
             command.board_id,
             actor.actor_id,
             command.ideation_data,
@@ -63,7 +63,7 @@ class McpCreateIdeationUseCase:
         return McpCreateIdeationResult(ideation)
 
 
-# --- get (board-scoped; adapter builds the lazy aggregation over uow.session) -
+# --- get (board-scoped; adapter builds the presentation aggregation) ---------
 
 
 class McpGetIdeationCommand:
@@ -85,12 +85,12 @@ class McpGetIdeationUseCase:
     """Board-scoped ideation fetch (read, no commit). A missing OR cross-board ideation
     is ``EntityNotFoundError`` -> the adapter's ``"Ideation not found"``. The
     refinements/specs/qa_items aggregation envelope is built by the adapter over
-    ``uow.session`` (lazy ORM relationships) — the get_spec_context precedent."""
+    its presentation capability; the use case never exposes persistence internals."""
 
     async def execute(
-        self, command: McpGetIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetIdeationResult:
-        ideation = await IdeationService(session_of(uow)).get_ideation(
+        ideation = await uow.services.ideations.get_ideation(
             command.ideation_id
         )
         if not ideation or ideation.board_id != command.board_id:
@@ -124,9 +124,9 @@ class McpUpdateIdeationUseCase:
     the id/title/status/version/complexity envelope."""
 
     async def execute(
-        self, command: McpUpdateIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateIdeationResult:
-        ideation = await IdeationService(session_of(uow)).update_ideation(
+        ideation = await uow.services.ideations.update_ideation(
             command.ideation_id, actor.actor_id, command.payload
         )
         if not ideation:
@@ -158,9 +158,9 @@ class McpDeleteIdeationUseCase:
     ``deleted=False`` -> ``"Ideation not found"``."""
 
     async def execute(
-        self, command: McpDeleteIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteIdeationResult:
-        deleted = await IdeationService(session_of(uow)).delete_ideation(
+        deleted = await uow.services.ideations.delete_ideation(
             command.ideation_id, actor.actor_id
         )
         await commit(uow)
@@ -192,9 +192,9 @@ class McpGetIdeationSnapshotUseCase:
     coerces ``version`` to int and builds the snapshot envelope."""
 
     async def execute(
-        self, command: McpGetIdeationSnapshotCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetIdeationSnapshotCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetIdeationSnapshotResult:
-        snapshot = await IdeationService(session_of(uow)).get_snapshot(
+        snapshot = await uow.services.ideations.get_snapshot(
             command.ideation_id, command.version
         )
         return McpGetIdeationSnapshotResult(snapshot)
@@ -220,9 +220,9 @@ class McpGetIdeationHistoryUseCase:
     parity). The adapter coerces ``limit`` to int and builds the history envelope."""
 
     async def execute(
-        self, command: McpGetIdeationHistoryCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetIdeationHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetIdeationHistoryResult:
-        entries = await IdeationService(session_of(uow)).list_history(
+        entries = await uow.services.ideations.list_history(
             command.ideation_id, command.limit
         )
         return McpGetIdeationHistoryResult(entries)
@@ -257,15 +257,13 @@ class McpGetIdeationKnowledgeUseCase:
     via ``_serialize_knowledge_base``."""
 
     async def execute(
-        self, command: McpGetIdeationKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetIdeationKnowledgeResult:
-        from okto_pulse.core.services import IdeationKnowledgeService
 
-        session = session_of(uow)
-        ideation = await IdeationService(session).get_ideation(command.ideation_id)
+        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
         if not ideation or ideation.board_id != command.board_id:
             raise EntityNotFoundError("ideation", command.ideation_id)
-        kb = await IdeationKnowledgeService(session).get_knowledge(command.knowledge_id)
+        kb = await uow.services.ideation_knowledge.get_knowledge(command.knowledge_id)
         if not kb or kb.ideation_id != command.ideation_id:
             return McpGetIdeationKnowledgeResult(None, kb_not_found=True)
         return McpGetIdeationKnowledgeResult(kb)
@@ -293,15 +291,13 @@ class McpAddIdeationKnowledgeUseCase:
     (``_resolve_text_content``), builds the ``IdeationKnowledgeCreate`` and serializes."""
 
     async def execute(
-        self, command: McpAddIdeationKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddIdeationKnowledgeResult:
-        from okto_pulse.core.services import IdeationKnowledgeService
 
-        session = session_of(uow)
-        ideation = await IdeationService(session).get_ideation(command.ideation_id)
+        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
         if not ideation or ideation.board_id != command.board_id:
             raise EntityNotFoundError("ideation", command.ideation_id)
-        kb = await IdeationKnowledgeService(session).create_knowledge(
+        kb = await uow.services.ideation_knowledge.create_knowledge(
             command.ideation_id, actor.actor_id, command.kb_data
         )
         await commit(uow)
@@ -329,15 +325,13 @@ class McpDeleteIdeationKnowledgeUseCase:
     ``kb_not_found`` (no delete). Commit only after a real delete."""
 
     async def execute(
-        self, command: McpDeleteIdeationKnowledgeCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteIdeationKnowledgeResult:
-        from okto_pulse.core.services import IdeationKnowledgeService
 
-        session = session_of(uow)
-        ideation = await IdeationService(session).get_ideation(command.ideation_id)
+        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
         if not ideation or ideation.board_id != command.board_id:
             raise EntityNotFoundError("ideation", command.ideation_id)
-        kservice = IdeationKnowledgeService(session)
+        kservice = uow.services.ideation_knowledge
         kb = await kservice.get_knowledge(command.knowledge_id)
         if not kb or kb.ideation_id != command.ideation_id:
             return McpDeleteIdeationKnowledgeResult(kb_not_found=True)
@@ -374,18 +368,15 @@ class McpAskIdeationChoiceQuestionUseCase:
     The adapter parses options_json / coerces options into the ``IdeationQACreate``."""
 
     async def execute(
-        self, command: McpAskIdeationChoiceQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAskIdeationChoiceQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAskIdeationChoiceQuestionResult:
-        from okto_pulse.core.services import BoardService
-        from okto_pulse.core.services.main import IdeationQAService
 
-        session = session_of(uow)
-        qa = await IdeationQAService(session).create_question(
+        qa = await uow.services.ideation_qa.create_question(
             command.ideation_id, actor.actor_id, command.data
         )
         if not qa:
             return McpAskIdeationChoiceQuestionResult(None, ideation_not_found=True)
-        await BoardService(session)._log_activity(
+        await uow.services.boards._log_activity(
             board_id=command.board_id,
             action="ideation_choice_question_added",
             actor_type="agent",
@@ -447,13 +438,11 @@ class McpAnswerIdeationQuestionUseCase:
     ``None`` result -> ``qa_not_found`` -> "Q&A item not found or invalid selection"."""
 
     async def execute(
-        self, command: McpAnswerIdeationQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAnswerIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAnswerIdeationQuestionResult:
-        from okto_pulse.core.services import BoardService, QASelfAnsweringNotAllowedError
-        from okto_pulse.core.services.main import IdeationQAService
+        from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
-        session = session_of(uow)
-        service = IdeationQAService(session)
+        service = uow.services.ideation_qa
         try:
             qa = await service.answer_question(
                 command.qa_id,
@@ -467,7 +456,7 @@ class McpAnswerIdeationQuestionUseCase:
             return McpAnswerIdeationQuestionResult(None, self_answer_error=exc)
         if not qa:
             return McpAnswerIdeationQuestionResult(None, qa_not_found=True)
-        await BoardService(session)._log_activity(
+        await uow.services.boards._log_activity(
             board_id=command.board_id,
             action="ideation_question_answered",
             actor_type="agent",
@@ -505,16 +494,13 @@ class McpDeleteIdeationQuestionUseCase:
     delete -> ``qa_not_found`` -> "Q&A item not found" (no log, no commit)."""
 
     async def execute(
-        self, command: McpDeleteIdeationQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteIdeationQuestionResult:
-        from okto_pulse.core.services import BoardService
-        from okto_pulse.core.services.main import IdeationQAService
 
-        session = session_of(uow)
-        deleted = await IdeationQAService(session).delete_question(command.qa_id)
+        deleted = await uow.services.ideation_qa.delete_question(command.qa_id)
         if not deleted:
             return McpDeleteIdeationQuestionResult(qa_not_found=True)
-        await BoardService(session)._log_activity(
+        await uow.services.boards._log_activity(
             board_id=command.board_id,
             action="ideation_question_deleted",
             actor_type="agent",
@@ -554,14 +540,13 @@ class McpEvaluateIdeationUseCase:
     adapter builds the scope dict (int + ``\\n``) and the envelope."""
 
     async def execute(
-        self, command: McpEvaluateIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: McpEvaluateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpEvaluateIdeationResult:
         from okto_pulse.core.services.persistence_mutation import (
             mark_mutable_field_modified,
         )
 
-        session = session_of(uow)
-        service = IdeationService(session)
+        service = uow.services.ideations
 
         if command.scope:
             ideation = await service.get_ideation(command.ideation_id)
@@ -642,13 +627,11 @@ class McpLinkStoryToIdeationUseCase:
     or cross-board link is ``not_found``. Re-fetches the story after commit."""
 
     async def execute(
-        self, command: McpLinkStoryToIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: McpLinkStoryToIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpLinkStoryToIdeationResult:
         from okto_pulse.core.services.permission_policy import Permissions
-        from okto_pulse.core.services import StoryService
 
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         story = await service.get_story(command.story_id)
         if not story or story.board_id != command.board_id:
             return McpLinkStoryToIdeationResult(not_found=True)
@@ -710,13 +693,11 @@ class McpConvertStoriesUseCase:
     keeps the board-level permission, the coercion + the StoryConversionRequest build."""
 
     async def execute(
-        self, command: McpConvertStoriesCommand, *, actor: ActorContext, uow: Any
+        self, command: McpConvertStoriesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpConvertStoriesResult:
         from okto_pulse.core.services.permission_policy import Permissions
-        from okto_pulse.core.services import StoryService
 
-        session = session_of(uow)
-        service = StoryService(session)
+        service = uow.services.stories
         for story_id in command.story_ids:
             story = await service.get_story(story_id)
             if not story or story.board_id != command.board_id:

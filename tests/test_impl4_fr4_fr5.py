@@ -15,7 +15,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecUpdate
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.main import SpecService

@@ -33,15 +33,15 @@ from okto_pulse.core.kg.global_discovery.layer_parity import (
     detect_digest_layer_mismatches,
     list_digest_layer_mismatches,
 )
-from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
-from okto_pulse.core.kg.global_discovery.schema import (
+from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
+from global_graph_testing import (
     bootstrap_global_discovery,
     open_global_connection,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
-from okto_pulse.core.models.db import Board, GlobalUpdateOutbox, KuzuNodeRef
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
+from sqlalchemy_test_models import Board, GlobalUpdateOutbox, KuzuNodeRef
 from okto_pulse.core.services.kg_health_service import get_kg_health
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
@@ -133,7 +133,7 @@ async def _run_outbox(db_factory, board_id, refs) -> int:
             payload={"session_id": session_id, "nodes_added": len(refs)},
         ))
         await db.commit()
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 async def _run_outbox_no_refs(db_factory, board_id) -> int:
@@ -146,7 +146,7 @@ async def _run_outbox_no_refs(db_factory, board_id) -> int:
             payload={"session_id": session_id, "nodes_added": 0},
         ))
         await db.commit()
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 def _digest_layer(board_id, node_id) -> str | None:

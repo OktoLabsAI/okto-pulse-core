@@ -7,37 +7,41 @@ class SettingsKGConfig:
     """Expose configured Core settings through the ``KGConfig`` test contract."""
 
     def __init__(self) -> None:
+        pass
+
+    @staticmethod
+    def _settings():
         from okto_pulse.core.infra.config import get_settings
 
-        self._settings = get_settings()
+        return get_settings()
 
     @property
     def kg_base_dir(self) -> str:
-        return self._settings.kg_base_dir
+        return self._settings().kg_base_dir
 
     @property
     def kg_embedding_mode(self) -> str:
-        return self._settings.kg_embedding_mode
+        return self._settings().kg_embedding_mode
 
     @property
     def kg_embedding_model(self) -> str:
-        return self._settings.kg_embedding_model
+        return self._settings().kg_embedding_model
 
     @property
     def kg_embedding_dim(self) -> int:
-        return self._settings.kg_embedding_dim
+        return self._settings().kg_embedding_dim
 
     @property
     def kg_session_ttl_seconds(self) -> int:
-        return self._settings.kg_session_ttl_seconds
+        return self._settings().kg_session_ttl_seconds
 
     @property
     def kg_cleanup_interval_seconds(self) -> int:
-        return self._settings.kg_cleanup_interval_seconds
+        return self._settings().kg_cleanup_interval_seconds
 
     @property
     def kg_cleanup_enabled(self) -> bool:
-        return self._settings.kg_cleanup_enabled
+        return self._settings().kg_cleanup_enabled
 
 
 __all__ = ["SettingsKGConfig"]

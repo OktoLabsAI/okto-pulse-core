@@ -1,8 +1,8 @@
 """Telemetry EVENT-store factory registry (spec R10-B/R10-E fulfilled).
 
 The composition root (the Community edition) registers a factory that builds a
-:class:`~okto_pulse.core.ports.telemetry.TelemetryEventStore` for a given
-``metrics_dir`` / ``retention_days``. The core telemetry runtime
+:class:`~okto_pulse.core.ports.telemetry.TelemetryEventStore` for a given opaque
+state reference and retention policy. The core telemetry runtime
 (``TelemetryService``) obtains the store ONLY through
 :func:`get_telemetry_event_store` — it never references the concrete
 ``LocalTelemetryStore`` (removed in R10-E Pass 2; Community owns it as
@@ -20,31 +20,27 @@ Deterministic + test-isolated: the factory is a single module global, reset via
 from __future__ import annotations
 
 import logging
-import threading
-from pathlib import Path
 from typing import Any, Callable
 
 from okto_pulse.core.ports.telemetry import TelemetryEventStore
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
 logger = logging.getLogger("okto_pulse.telemetry.event_store")
 
-#: A factory: ``(metrics_dir: Path, retention_days: int) -> TelemetryEventStore``.
-TelemetryEventStoreFactory = Callable[[Path, int], TelemetryEventStore]
+#: A factory: ``(state_ref: str, retention_days: int) -> TelemetryEventStore``.
+TelemetryEventStoreFactory = Callable[[str, int], TelemetryEventStore]
 
-_factory: TelemetryEventStoreFactory | None = None
-_lock = threading.Lock()
+_RUNTIME_KEY = "telemetry.event_store.factory"
 
 
 def register_telemetry_event_store_factory(factory: TelemetryEventStoreFactory) -> None:
     """Register the edition's event-store factory (composition root). Idempotent
     overwrite; thread-safe."""
-    global _factory
-    with _lock:
-        _factory = factory
+    register_runtime_value(_RUNTIME_KEY, factory)
 
 
 def get_telemetry_event_store(
-    metrics_dir: Any, retention_days: int = 30
+    state_ref: Any, retention_days: int = 30
 ) -> TelemetryEventStore:
     """Build the EVENT store via the registered factory (fail-closed: R10-E Pass 2).
 
@@ -54,9 +50,9 @@ def get_telemetry_event_store(
     Calling without a registered factory raises ``RuntimeError`` and emits a
     structured signal (secret-free, bounded).
     """
-    base = Path(metrics_dir)
-    if _factory is not None:
-        return _factory(base, retention_days)
+    factory = resolve_runtime_value(_RUNTIME_KEY)
+    if factory is not None:
+        return factory(str(state_ref), retention_days)
     # R10-E Pass 2 fail-closed: no provider → structured error (never instantiates
     # a concrete class). The composition root (Community) registers before any use.
     logger.error(
@@ -78,9 +74,7 @@ def get_telemetry_event_store(
 
 def reset_telemetry_event_store_factory_for_tests() -> None:
     """Drop the registered factory (tests only)."""
-    global _factory
-    with _lock:
-        _factory = None
+    reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [

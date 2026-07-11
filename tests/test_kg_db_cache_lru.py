@@ -14,7 +14,7 @@ import os
 
 import pytest
 
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     bootstrap_board_graph,
     board_kuzu_path,
     close_all_connections,

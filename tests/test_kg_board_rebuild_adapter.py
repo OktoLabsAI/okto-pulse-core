@@ -291,11 +291,8 @@ def test_prepare_board_graph_storage_quarantines_existing_graph(
     from kg_registry_testing import configure_test_kg_registry
     from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.interfaces.graph_lifecycle import PurgeReport
-
-    class _Resolver:
-        def board_graph_path(self, board_id: str) -> Path:
-            assert board_id == "b1"
-            return graph
+    from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
+    import okto_pulse.community.adapters.kg_runtime as kg_runtime
 
     class _Lifecycle:
         async def purge(self, board_id: str, *, reason: str) -> PurgeReport:
@@ -310,19 +307,25 @@ def test_prepare_board_graph_storage_quarantines_existing_graph(
                 board_id=board_id,
                 status="purged",
                 reason=reason,
-                affected_paths=tuple(moved),
+                affected_storage_refs=tuple(
+                    StorageRef(path, "test_graph") for path in moved
+                ),
                 quarantined=True,
             )
 
     configure_test_kg_registry()
-    get_kg_registry().graph_path_resolver = _Resolver()
     get_kg_registry().graph_lifecycle = _Lifecycle()
+    original_board_path = kg_runtime.board_kuzu_path
+    kg_runtime.board_kuzu_path = lambda board_id: graph
 
-    adapter = BoardRebuildIngestionAdapter(db_path=tmp_path / "pulse.db")
-    moved = adapter.prepare_board_graph_storage(
-        board_id="b1",
-        reason="explicit_rebuild:test",
-    )
+    try:
+        adapter = BoardRebuildIngestionAdapter(db_path=tmp_path / "pulse.db")
+        moved = adapter.prepare_board_graph_storage(
+            board_id="b1",
+            reason="explicit_rebuild:test",
+        )
+    finally:
+        kg_runtime.board_kuzu_path = original_board_path
 
     assert moved == (str(graph), str(wal))
     assert not graph.exists()
@@ -393,11 +396,19 @@ def test_rebuild_step_result_counts_include_enqueue_left_alone(
 ) -> None:
     from okto_pulse.core.kg import canonical_cognitive_preservation
 
-    adapter = BoardRebuildIngestionAdapter(db_path=tmp_path / "pulse.db")
+    adapter = BoardRebuildIngestionAdapter(
+        db_path=tmp_path / "pulse.db",
+        drain_timeout_seconds=0.01,
+        drain_hard_timeout_seconds=0.02,
+        drain_poll_interval_seconds=0.001,
+    )
     monkeypatch.setattr(
         canonical_cognitive_preservation,
         "snapshot_canonical_cognitive",
-        lambda _board_id: {"readable": True, "nodes": []},
+        lambda board_id: canonical_cognitive_preservation.CognitiveSnapshot(
+            board_id=board_id,
+            readable=True,
+        ),
     )
     monkeypatch.setattr(
         BoardRebuildIngestionAdapter,
@@ -415,14 +426,8 @@ def test_rebuild_step_result_counts_include_enqueue_left_alone(
     )
     monkeypatch.setattr(
         BoardRebuildIngestionAdapter,
-        "drain_until_idle",
-        lambda self, **_: {
-            "idle": False,
-            "final_depth": 4,
-            "waited_seconds": 0.0,
-            "grace_applied": False,
-            "hard_timed_out": False,
-        },
+        "queue_depth",
+        lambda self, _board_id: 4,
     )
     step = adapter.build_step_adapter(
         source_resolver=lambda _req: ({"artifact_type": "spec", "id": "s1"},),
@@ -709,4 +714,4 @@ def test_rebuild_endpoint_wires_registry_lifecycle_adapter() -> None:
     ).read_text(encoding="utf-8")
 
     assert "step_adapter=lambda b, g, s: LifecycleStepResult(ok=True)" not in endpoint
-    assert "step_adapter=get_kg_registry().safe_write_step_adapter" in endpoint
+    assert "step_adapter=get_kg_registry().graph_lifecycle.apply_step" in endpoint

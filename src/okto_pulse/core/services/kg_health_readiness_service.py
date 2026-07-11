@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.rebuild_audit import emit_cognitive_technical_signal_sample
 from okto_pulse.core.ports.scheduler import SchedulerControl
@@ -61,7 +60,7 @@ def build_technical_signal_counters(health: dict) -> dict[str, int]:
 
 
 async def _non_maskable_items(
-    db: AsyncSession, board_id: str, health: dict, *, artifact_ref: str | None,
+    db: object, board_id: str, health: dict, *, artifact_ref: str | None,
 ) -> list[dict[str, Any]]:
     """Per-item drill-down for every OPEN technical signal — derived from the DLQ,
     the open canonical debt and the persistence root-cause (never from a cognitive
@@ -129,7 +128,7 @@ async def _non_maskable_items(
     return items
 
 
-async def _enforcement_active(db: AsyncSession, board_id: str) -> bool:
+async def _enforcement_active(db: object, board_id: str) -> bool:
     from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
     from okto_pulse.core.services.main import _cognitive_readiness_blocking_active
 
@@ -144,7 +143,7 @@ async def _enforcement_active(db: AsyncSession, board_id: str) -> bool:
 
 async def build_health_readiness(
     board_id: str,
-    db: AsyncSession,
+    db: object,
     *,
     profile: str = "summary",
     surface: str = "rest",

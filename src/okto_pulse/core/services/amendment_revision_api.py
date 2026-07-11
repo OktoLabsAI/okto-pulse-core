@@ -154,8 +154,6 @@ class AmendmentRevisionApiBackend(Protocol):
         actor: str,
     ) -> Any: ...
 
-    async def refresh(self, entity: Any) -> None: ...
-
     async def path_b_resolution(
         self,
         *,
@@ -177,7 +175,6 @@ _BACKEND_METHODS = frozenset(
         "associate_artifacts",
         "set_lineage_state",
         "set_status",
-        "refresh",
         "path_b_resolution",
         "eligibility",
     }
@@ -277,9 +274,6 @@ class AmendmentRevisionApiService:
             regression_test_task_ids=regression_test_task_ids,
             automated_regression_refs=automated_regression_refs,
         )
-        # Load server-side columns (created_at/updated_at) inside the async
-        # context before serializing — avoids a lazy MissingGreenlet.
-        await self._backend.refresh(amendment)
         return self._serialize_revision(amendment)
 
     async def get(self, *, board_id: str, bug_id: str, amendment_id: str) -> dict[str, Any]:
@@ -340,7 +334,6 @@ class AmendmentRevisionApiService:
             automated_regression_refs=automated_regression_refs,
             actor=actor,
         )
-        await self._backend.refresh(amendment)
         return self._serialize_revision(amendment)
 
     async def transition_lifecycle(
@@ -436,7 +429,6 @@ class AmendmentRevisionApiService:
             )
         if new_status is not None:
             amendment = await self._backend.set_status(amendment_id, new_status, actor)
-        await self._backend.refresh(amendment)
         return self._serialize_revision(amendment)
 
     # -- internals ---------------------------------------------------------

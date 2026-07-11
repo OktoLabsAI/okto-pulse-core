@@ -9,10 +9,11 @@ import time
 from types import SimpleNamespace
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.models.db import Card, Spec
+from okto_pulse.core.ports.discovery_selector import (
+    SelectorCardFact,
+    SelectorSpecFact,
+    get_discovery_selector_read_port,
+)
 from okto_pulse.core.services.reference_resolution import resolve_spec_references
 
 
@@ -162,7 +163,7 @@ class SelectorAccessPolicy(Protocol):
 
     async def can_read_board(
         self,
-        db: AsyncSession,
+        db: Any,
         identity: Any,
         board_id: str,
     ) -> bool:
@@ -170,9 +171,9 @@ class SelectorAccessPolicy(Protocol):
 
     async def can_read_spec(
         self,
-        db: AsyncSession,
+        db: Any,
         identity: Any,
-        spec: Spec,
+        spec: SelectorSpecFact,
     ) -> bool:
         """Return whether the identity can read selector options for the spec."""
 
@@ -182,7 +183,7 @@ class DenyAllSelectorAccessPolicy:
 
     async def can_read_board(
         self,
-        db: AsyncSession,
+        db: Any,
         identity: Any,
         board_id: str,
     ) -> bool:
@@ -190,9 +191,9 @@ class DenyAllSelectorAccessPolicy:
 
     async def can_read_spec(
         self,
-        db: AsyncSession,
+        db: Any,
         identity: Any,
-        spec: Spec,
+        spec: SelectorSpecFact,
     ) -> bool:
         return False
 
@@ -202,7 +203,7 @@ class AllowAllSelectorAccessPolicy:
 
     async def can_read_board(
         self,
-        db: AsyncSession,
+        db: Any,
         identity: Any,
         board_id: str,
     ) -> bool:
@@ -210,9 +211,9 @@ class AllowAllSelectorAccessPolicy:
 
     async def can_read_spec(
         self,
-        db: AsyncSession,
+        db: Any,
         identity: Any,
-        spec: Spec,
+        spec: SelectorSpecFact,
     ) -> bool:
         return True
 
@@ -702,7 +703,7 @@ def _child_subtitle(
     return _compact_text(text, max_len=128)
 
 
-def _project_spec_option(spec: Spec) -> SelectorOption:
+def _project_spec_option(spec: SelectorSpecFact) -> SelectorOption:
     status = _enum_value(getattr(spec, "status", None))
     return SelectorOption(
         id=str(spec.id),
@@ -716,7 +717,7 @@ def _project_spec_option(spec: Spec) -> SelectorOption:
     )
 
 
-def _project_card_option(card: Card) -> SelectorOption:
+def _project_card_option(card: SelectorCardFact) -> SelectorOption:
     status = _enum_value(getattr(card, "status", None))
     priority = _enum_value(getattr(card, "priority", None))
     card_type = _enum_value(getattr(card, "card_type", None))
@@ -748,7 +749,7 @@ def _project_card_option(card: Card) -> SelectorOption:
 
 def _project_child_option(
     *,
-    spec: Spec,
+    spec: SelectorSpecFact,
     child_type: SpecChildType,
     item: dict[str, Any],
     fallback_index: int,
@@ -782,20 +783,24 @@ def _project_child_option(
     )
 
 
-def structured_spec_snapshot(spec: Spec) -> Any:
+def structured_spec_snapshot(spec: SelectorSpecFact) -> Any:
     """Return only structured selector fields, avoiding artifact lazy loads."""
 
     return SimpleNamespace(
         id=getattr(spec, "id", None),
         title=getattr(spec, "title", None),
-        functional_requirements=getattr(spec, "functional_requirements", None) or [],
-        business_rules=getattr(spec, "business_rules", None) or [],
-        technical_requirements=getattr(spec, "technical_requirements", None) or [],
-        decisions=getattr(spec, "decisions", None) or [],
-        acceptance_criteria=getattr(spec, "acceptance_criteria", None) or [],
-        api_contracts=getattr(spec, "api_contracts", None) or [],
-        integration_requirements=getattr(spec, "integration_requirements", None) or [],
-        observability_requirements=getattr(spec, "observability_requirements", None) or [],
+        functional_requirements=list(getattr(spec, "functional_requirements", None) or []),
+        business_rules=list(getattr(spec, "business_rules", None) or []),
+        technical_requirements=list(getattr(spec, "technical_requirements", None) or []),
+        decisions=list(getattr(spec, "decisions", None) or []),
+        acceptance_criteria=list(getattr(spec, "acceptance_criteria", None) or []),
+        api_contracts=list(getattr(spec, "api_contracts", None) or []),
+        integration_requirements=list(
+            getattr(spec, "integration_requirements", None) or []
+        ),
+        observability_requirements=list(
+            getattr(spec, "observability_requirements", None) or []
+        ),
     )
 
 
@@ -817,7 +822,7 @@ class DiscoverySelectorCatalog:
 
     async def list_options(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         board_id: str,
         selector_kind: SelectorKind,
@@ -890,7 +895,7 @@ class DiscoverySelectorCatalog:
 
     async def _list_spec_options(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         board_id: str,
         identity: Any,
@@ -904,7 +909,7 @@ class DiscoverySelectorCatalog:
             raise DiscoverySelectorAccessDenied("Board selector access denied")
 
         specs = await self._load_specs(db, board_id=board_id, status=status)
-        readable_specs: list[Spec] = []
+        readable_specs: list[SelectorSpecFact] = []
         for spec in specs:
             if await self._access_policy.can_read_spec(db, identity, spec):
                 readable_specs.append(spec)
@@ -943,7 +948,7 @@ class DiscoverySelectorCatalog:
 
     async def _list_card_options(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         board_id: str,
         identity: Any,
@@ -987,7 +992,7 @@ class DiscoverySelectorCatalog:
 
     async def _list_spec_child_options(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         board_id: str,
         identity: Any,
@@ -1052,41 +1057,43 @@ class DiscoverySelectorCatalog:
 
     async def _load_specs(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         board_id: str,
         status: str | None,
-    ) -> list[Spec]:
-        stmt = select(Spec).where(Spec.board_id == board_id).order_by(Spec.title.asc())
-        if status not in (None, "", "active", "all"):
-            stmt = stmt.where(Spec.status == status)
-        result = await db.execute(stmt)
-        return list(result.scalars().all())
+    ) -> list[SelectorSpecFact]:
+        return list(
+            await get_discovery_selector_read_port().list_specs(
+                db,
+                board_id=board_id,
+                status=status,
+            )
+        )
 
     async def _load_cards(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         board_id: str,
         status: str | None,
-    ) -> list[Card]:
-        stmt = (
-            select(Card)
-            .where(Card.board_id == board_id, Card.archived.is_(False))
-            .order_by(Card.updated_at.desc(), Card.title.asc())
+    ) -> list[SelectorCardFact]:
+        return list(
+            await get_discovery_selector_read_port().list_cards(
+                db,
+                board_id=board_id,
+                status=status,
+            )
         )
-        if status not in (None, "", "active", "all"):
-            stmt = stmt.where(Card.status == status)
-        result = await db.execute(stmt)
-        return list(result.scalars().all())
 
     async def _load_spec(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         board_id: str,
         spec_id: str,
-    ) -> Spec | None:
-        stmt = select(Spec).where(Spec.board_id == board_id, Spec.id == spec_id)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+    ) -> SelectorSpecFact | None:
+        return await get_discovery_selector_read_port().get_spec(
+            db,
+            board_id=board_id,
+            spec_id=spec_id,
+        )

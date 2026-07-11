@@ -26,15 +26,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_layer_"))
 
 import okto_pulse.core.mcp.kg_query_tools as qt
-from okto_pulse.core.api.kg_routes import get_subgraph
+from okto_pulse.community.api.kg_routes import get_subgraph
 from okto_pulse.core.kg.embedding import get_embedding_provider
-from okto_pulse.core.kg.global_discovery.schema import (
+from global_graph_testing import (
     bootstrap_global_discovery,
     open_global_connection,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.mcp.kg_query_tools import register_kg_query_tools
 
 

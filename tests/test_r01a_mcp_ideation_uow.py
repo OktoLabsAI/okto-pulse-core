@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 
 BOARD_ID = "r01a-mcpideation"
 OTHER_BOARD_ID = "r01a-mcpideation-other"

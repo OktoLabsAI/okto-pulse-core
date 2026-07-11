@@ -37,7 +37,7 @@ from okto_pulse.core.kg.rebuild_service import (
     _verify_materialized_layers,
 )
 from okto_pulse.core.kg.source_maturity import classify_source_for_kg
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     BugSeverity,
     Card,

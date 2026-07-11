@@ -28,15 +28,13 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.models.db import GlobalUpdateOutbox
+from okto_pulse.core.ports.kg_operational import get_kg_worker_audit_port
 
 logger = logging.getLogger("okto_pulse.kg.canonical_demotion_global_sync")
 
 
 async def sync_stale_demotion_to_global_discovery(
-    db: AsyncSession, *, board_id: str
+    context: object, *, board_id: str
 ) -> dict[str, Any]:
     """Enqueue a Global Discovery outbox event so the GD worker's R1 parity
     reconciler converges DecisionDigest layers to the (post-demotion) board graph
@@ -45,15 +43,15 @@ async def sync_stale_demotion_to_global_discovery(
     so a repeated sync after convergence is a no-op."""
     session_id = f"stalesync_{uuid.uuid4().hex[:16]}"
     event_id = str(uuid.uuid4())
-    db.add(GlobalUpdateOutbox(
+    await get_kg_worker_audit_port().emit_outbox_event(
+        context,
         event_id=event_id,
         board_id=board_id,
         session_id=session_id,
         event_type="consolidation_committed",
         payload={"session_id": session_id, "nodes_added": 0,
                  "reason": "r2_stale_demotion_global_sync"},
-    ))
-    await db.flush()
+    )
     logger.info(
         "kg.stale_demotion.global_sync_enqueued board=%s event=%s",
         board_id, event_id,

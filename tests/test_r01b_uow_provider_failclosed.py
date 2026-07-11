@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from okto_pulse.core.api.deps import get_unit_of_work
+from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.runtime_registry import (
     is_unit_of_work_factory_registered,
@@ -28,15 +28,18 @@ from okto_pulse.core.runtime_registry import (
 
 
 @pytest.mark.asyncio
-async def test_rest_get_unit_of_work_fails_closed_without_provider(db_factory):
+async def test_rest_get_unit_of_work_fails_closed_without_provider():
     # Empty the seam (the conftest autouse provider) and build a request whose app
     # has NO runtime_composition → both resolution sources are absent.
     reset_unit_of_work_factory()
     assert not is_unit_of_work_factory_registered()
     fake_request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
-    async with db_factory() as session:
+    dependency = get_unit_of_work(request=fake_request)
+    try:
         with pytest.raises(HTTPException) as exc_info:
-            await get_unit_of_work(request=fake_request, db=session)
+            await anext(dependency)
+    finally:
+        await dependency.aclose()
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail["code"] == "persistence_provider_not_configured"
     assert "No relational UnitOfWorkFactory" in exc_info.value.detail["message"]

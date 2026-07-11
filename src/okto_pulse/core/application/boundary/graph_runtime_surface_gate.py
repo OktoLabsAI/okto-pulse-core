@@ -55,76 +55,9 @@ REQUIRED_COMPATIBILITY_FIELDS: tuple[str, ...] = (
 )
 
 
-LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER: tuple[
+HISTORICAL_GRAPH_RUNTIME_COMPATIBILITY_LEDGER: tuple[
     GraphRuntimeCompatibilityEntry, ...
 ] = (
-    GraphRuntimeCompatibilityEntry(
-        token="board_kuzu_path",
-        legacy_surface="BoardGraphRuntime compatibility shim",
-        neutral_surface="GraphRuntimeStore.exists/graph_state/footprint",
-        files=(
-            "okto_pulse/core/kg/interfaces/board_graph_runtime.py",
-            "okto_pulse/core/kg/schema.py",
-        ),
-        owner="okto-pulse-core/kg + okto-pulse-community/adapters",
-        reason=(
-            "Existing integrations and legacy tests still import the historical "
-            "board graph runtime/path shim while new core paths consume "
-            "GraphRuntimeStore."
-        ),
-        removal_criterion=(
-            "Remove after Community and test fixtures stop importing board path "
-            "symbols and all startup/lifecycle checks consume GraphRuntimeStore "
-            "or GraphLifecycle ports."
-        ),
-        validation_oracle=(
-            "GraphRuntimeSurfaceGate, R16D lifecycle ports, AF17 runtime store "
-            "tests and kg.schema import classification gate."
-        ),
-    ),
-    GraphRuntimeCompatibilityEntry(
-        token="open_kuzu_db",
-        legacy_surface="BoardGraphRuntime concrete DB opener",
-        neutral_surface="GraphTransaction/GlobalDiscoveryRuntime adapter methods",
-        files=("okto_pulse/core/kg/interfaces/board_graph_runtime.py",),
-        owner="okto-pulse-community/adapters",
-        reason=(
-            "Global-discovery Community adapters need a transition hook for the "
-            "local Ladybug/Kuzu runtime without reintroducing imports in core."
-        ),
-        removal_criterion=(
-            "Remove when GlobalDiscoveryRuntime exposes every concrete open/load "
-            "operation through adapter-owned methods and no core-facing shim uses "
-            "the Kuzu name."
-        ),
-        validation_oracle=(
-            "R09 global discovery runtime tests and graph runtime surface gate."
-        ),
-    ),
-    GraphRuntimeCompatibilityEntry(
-        token="apply_ladybug_lifecycle_step",
-        legacy_surface="safe-write lifecycle callable",
-        neutral_surface="GraphLifecycle operation contract",
-        files=(
-            "okto_pulse/core/kg/interfaces/board_graph_runtime.py",
-            "okto_pulse/core/kg/schema.py",
-        ),
-        owner="okto-pulse-community/adapters",
-        reason=(
-            "The rebuild/safe-write orchestrator still accepts a per-step "
-            "callable while the broader lifecycle surface is represented by "
-            "GraphLifecycle."
-        ),
-        removal_criterion=(
-            "Remove after the lifecycle-step primitive is either represented on "
-            "GraphLifecycle or the orchestrator no longer needs adapter-specific "
-            "per-step callbacks."
-        ),
-        validation_oracle=(
-            "R16D lifecycle ports, global discovery consumer gate and AF37 "
-            "compatibility tests."
-        ),
-    ),
     GraphRuntimeCompatibilityEntry(
         token="KuzuNodeRef",
         legacy_surface="SQLite audit/outbox model name and table",
@@ -275,25 +208,31 @@ LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER: tuple[
     ),
 )
 
+# F16 terminal budget: these rows document prior public migration concerns but
+# no longer authorize a concrete graph-runtime surface in Core.
+LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER: tuple[
+    GraphRuntimeCompatibilityEntry, ...
+] = ()
+
 
 class GraphRuntimeSurfaceGate:
     gate_id = "graph_runtime_surface"
 
     _FORBIDDEN_TERMS: tuple[str, ...] = (
         "Path",
+        "Database",
+        "Connection",
         "graph.lbug",
         "board_kuzu_path",
+        "open_kuzu_db",
+        "apply_ladybug_lifecycle_step",
+        "affected_paths",
+        "kuzu",
         "ladybug",
         "neptune",
     )
-    _COMPATIBILITY_ALLOWLIST: tuple[str, ...] = (
-        "okto_pulse/core/kg/interfaces/board_graph_runtime.py",
-        "okto_pulse/core/kg/schema.py",
-    )
-    _SKIPPED_LEGACY_CONTRACTS: frozenset[str] = frozenset({
-        "okto_pulse/core/kg/interfaces/board_graph_runtime.py",
-        "okto_pulse/core/kg/schema.py",
-    })
+    _COMPATIBILITY_ALLOWLIST: tuple[str, ...] = ()
+    _SKIPPED_LEGACY_CONTRACTS: frozenset[str] = frozenset()
     _PATH_TOKEN = re.compile(r"\bPath\b")
 
     def run(self, data: GraphRuntimeSurfaceGateInput | None = None) -> GateReport:
@@ -318,7 +257,11 @@ class GraphRuntimeSurfaceGate:
             for line_no, line in enumerate(lines, start=1):
                 lower = line.lower()
                 for term in self._FORBIDDEN_TERMS:
-                    matched = bool(self._PATH_TOKEN.search(line)) if term == "Path" else term in lower
+                    matched = (
+                        bool(re.search(rf"\b{re.escape(term)}\b", line))
+                        if term in {"Path", "Database", "Connection"}
+                        else term in lower
+                    )
                     if matched:
                         violations.append({
                             "file": rel,

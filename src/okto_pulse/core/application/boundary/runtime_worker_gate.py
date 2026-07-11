@@ -84,6 +84,9 @@ class RuntimeWorkerBoundaryGate:
         core_root = _package_root(source_root, "core")
         if core_root is not None:
             scan_targets.append(core_root / "app.py")
+            processor_root = core_root / "application" / "processors"
+            if processor_root.exists():
+                scan_targets.extend(sorted(processor_root.glob("*.py")))
         community_root = _package_root(
             community_source_root if community_source_root is not None else source_root,
             "community",
@@ -111,6 +114,8 @@ class RuntimeWorkerBoundaryGate:
                 )
                 continue
             findings.extend(_scan_tree(rel, tree))
+            if "/application/processors/" in f"/{rel}":
+                findings.extend(_scan_processor_runtime(rel, tree))
 
         evidence = {
             "forbidden_worker_symbols": list(FORBIDDEN_DIRECT_WORKER_SYMBOLS),
@@ -160,7 +165,7 @@ def _scan_tree(rel: str, tree: ast.AST) -> list[RuntimeWorkerBoundaryFinding]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 symbol = alias.asname or alias.name.split(".", maxsplit=1)[0]
-                if alias.name == "okto_pulse.core.app":
+                if alias.name == "okto_pulse.community.app":
                     core_app_aliases.add(symbol)
                     findings.append(
                         RuntimeWorkerBoundaryFinding(
@@ -184,7 +189,7 @@ def _scan_tree(rel: str, tree: ast.AST) -> list[RuntimeWorkerBoundaryFinding]:
             module = node.module or ""
             for alias in node.names:
                 symbol = alias.name
-                if module == "okto_pulse.core.app" and symbol in forbidden_private_tick:
+                if module == "okto_pulse.community.app" and symbol in forbidden_private_tick:
                     findings.append(
                         RuntimeWorkerBoundaryFinding(
                             file=rel,
@@ -226,6 +231,65 @@ def _scan_tree(rel: str, tree: ast.AST) -> list[RuntimeWorkerBoundaryFinding]:
     return findings
 
 
+def _scan_processor_runtime(
+    rel: str,
+    tree: ast.AST,
+) -> list[RuntimeWorkerBoundaryFinding]:
+    findings: list[RuntimeWorkerBoundaryFinding] = []
+    forbidden_classes = {"EventDispatcher", "ConsolidationWorker", "OutboxWorker"}
+    forbidden_factories = {
+        "get_cleanup_worker",
+        "get_consolidation_worker",
+        "get_outbox_worker",
+        "reset_cleanup_worker_for_tests",
+        "reset_consolidation_worker_for_tests",
+        "reset_outbox_worker_for_tests",
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name in forbidden_classes:
+            findings.append(
+                RuntimeWorkerBoundaryFinding(
+                    file=rel,
+                    line=node.lineno,
+                    kind="core_runtime_worker_class",
+                    symbol=node.name,
+                )
+            )
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name in forbidden_factories:
+                findings.append(
+                    RuntimeWorkerBoundaryFinding(
+                        file=rel,
+                        line=node.lineno,
+                        kind="core_runtime_worker_factory",
+                        symbol=node.name,
+                    )
+                )
+        elif isinstance(node, ast.Call):
+            dotted = _dotted_name(node.func)
+            if dotted.endswith(".create_task") or dotted.endswith(".ensure_future"):
+                findings.append(
+                    RuntimeWorkerBoundaryFinding(
+                        file=rel,
+                        line=node.lineno,
+                        kind="core_processor_task_creation",
+                        symbol=dotted,
+                    )
+                )
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(target, ast.Name) and target.id == "_singleton" for target in targets):
+                findings.append(
+                    RuntimeWorkerBoundaryFinding(
+                        file=rel,
+                        line=node.lineno,
+                        kind="core_processor_singleton",
+                        symbol="_singleton",
+                    )
+                )
+    return findings
+
+
 def _scan_attribute(
     rel: str,
     node: ast.Attribute,
@@ -238,7 +302,7 @@ def _scan_attribute(
     owner = _root_name(node.value)
     dotted = _dotted_name(node)
     if node.attr in forbidden_private_tick and (
-        owner in core_app_aliases or dotted.startswith("okto_pulse.core.app.")
+        owner in core_app_aliases or dotted.startswith("okto_pulse.community.app.")
     ):
         findings.append(
             RuntimeWorkerBoundaryFinding(

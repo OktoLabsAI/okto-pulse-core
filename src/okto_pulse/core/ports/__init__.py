@@ -70,7 +70,6 @@ from .authentication import (
 )
 from .mcp_instructions import (
     McpInstructionProvider,
-    StaticFileMcpInstructionProvider,
     StaticMcpInstructionProvider,
 )
 from .mcp_trace import McpTraceRecord, McpTraceSink, TraceWriteResult
@@ -282,7 +281,6 @@ __all__ = [
     "McpHostProviderMissing",
     "McpResourceCatalog",
     "McpResourceSpec",
-    "StaticFileMcpInstructionProvider",
     "StaticMcpInstructionProvider",
     "StaticMcpResourceCatalog",
     "catalog_link_integrity",

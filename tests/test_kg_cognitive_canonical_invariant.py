@@ -83,7 +83,7 @@ def _seed_node(kconn, orch, node_type: str, node_id: str, source_ref: str) -> No
 
 
 def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str]:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
@@ -111,7 +111,7 @@ def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str
 def _get_decision_layer_maturity(
     board_id: str, source_ref: str,
 ) -> tuple[str | None, str | None]:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(

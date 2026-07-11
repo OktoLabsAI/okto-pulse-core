@@ -33,7 +33,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.router import api_router
+from okto_pulse.community.api.router import api_router
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.kg.candidate_decision_store import (
@@ -52,7 +52,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Ideation,
     Spec,

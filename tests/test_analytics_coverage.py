@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from okto_pulse.core.api.analytics import _resolve_linked_criteria_to_indices
+from okto_pulse.community.api.analytics import _resolve_linked_criteria_to_indices
 
 
 AC_LIST = [

@@ -10,12 +10,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import me as me_api
-from okto_pulse.core.api import presets as presets_api
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.api.me import router as me_router
-from okto_pulse.core.api.presets import router as presets_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import me as me_api
+from okto_pulse.community.api import presets as presets_api
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.me import router as me_router
+from okto_pulse.community.api.presets import router as presets_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "fcc01c-user"
@@ -46,7 +46,7 @@ async def _seed_preset(
     is_builtin: bool = False,
     flags: dict | None = None,
 ) -> str:
-    from okto_pulse.core.models.db import PermissionPreset
+    from sqlalchemy_test_models import PermissionPreset
 
     preset_id = f"preset-fcc01c-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -65,7 +65,7 @@ async def _seed_preset(
 
 
 async def _seed_agent_with_preset(*, preset_id: str, flags: dict | None = None) -> str:
-    from okto_pulse.core.models.db import Agent
+    from sqlalchemy_test_models import Agent
 
     agent_id = f"agent-fcc01c-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -85,7 +85,7 @@ async def _seed_agent_with_preset(*, preset_id: str, flags: dict | None = None) 
 
 
 async def _preset_exists(preset_id: str) -> bool:
-    from okto_pulse.core.models.db import PermissionPreset
+    from sqlalchemy_test_models import PermissionPreset
 
     async with get_session_factory()() as db:
         return await db.get(PermissionPreset, preset_id) is not None

@@ -31,7 +31,7 @@ from okto_pulse.core.mcp.context_projection import (
     project_task_context,
 )
 from okto_pulse.core.mcp.projection_envelope import ENVELOPE_METADATA_KEYS
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,

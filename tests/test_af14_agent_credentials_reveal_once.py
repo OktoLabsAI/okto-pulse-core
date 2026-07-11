@@ -6,14 +6,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.agents import router as agents_router
+from okto_pulse.community.api.agents import router as agents_router
 from okto_pulse.core.application.boundary.agent_secret_surface_gate import (
     KIND_PLAINTEXT_AGENT_PERSISTENCE,
     KIND_PERSISTED_SECRET_FIELD,
     KIND_RESPONSE_SECRET_FIELD,
     run_agent_secret_surface_gate,
 )
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.models.schemas import AgentCreate, AgentResponse, AgentRevealResponse
 from okto_pulse.core.ports.mcp_auth import McpCredential, mcp_credential_from_sources

@@ -28,7 +28,7 @@ from okto_pulse.core.kg.rebuild_audit import (
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
 from okto_pulse.core.mcp.kg_tools import register_kg_tools
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     CanonicalDebt,
     ConsolidationDeadLetter,

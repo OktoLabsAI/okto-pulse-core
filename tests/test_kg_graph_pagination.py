@@ -25,8 +25,8 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from okto_pulse.core.api import kg_routes
-from okto_pulse.core.api.kg_routes import router as kg_router
+from okto_pulse.community.api import kg_routes
+from okto_pulse.community.api.kg_routes import router as kg_router
 from okto_pulse.core.application.use_cases import ActorContext
 
 
@@ -517,7 +517,7 @@ class TestCrossPageEdges:
     conectados como se fossem órfãos."""
 
     def test_fetch_edges_includes_edges_with_one_endpoint_in_page(self, monkeypatch):
-        from okto_pulse.core.api import kg_routes
+        from okto_pulse.community.api import kg_routes
         from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
         class _CypherExecutor:

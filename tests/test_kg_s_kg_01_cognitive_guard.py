@@ -350,7 +350,7 @@ _FORBIDDEN_NEW_EDGE_NAMES = frozenset(
 
 
 def test_ts_kg_07_no_new_edge_names_introduced():
-    from okto_pulse.core.kg.schema import MULTI_REL_TYPES, REL_TYPES
+    from kg_schema_testing import MULTI_REL_TYPES, REL_TYPES
     from okto_pulse.core.kg.schemas import KGEdgeType
 
     rel_names = {r[0] for r in REL_TYPES} | {m[0] for m in MULTI_REL_TYPES}
@@ -363,7 +363,7 @@ def test_ts_kg_07_no_new_edge_names_introduced():
 
 
 def test_ts_kg_07_taxonomy_reuses_validates_and_relates_to():
-    from okto_pulse.core.kg.schema import relationship_endpoint_pairs
+    from kg_schema_testing import relationship_endpoint_pairs
     from okto_pulse.core.kg.schemas import KGEdgeType
 
     dto_names = {e.value for e in KGEdgeType}

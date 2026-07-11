@@ -38,7 +38,6 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.canonical_learning_partition import (
     HISTORICAL_DEBT_REASON,
@@ -333,7 +332,7 @@ def evaluate_canonical_learning_publication(
 
 
 async def pending_or_debt_exclusions(
-    db: AsyncSession, *, board_id: str
+    db: object, *, board_id: str
 ) -> dict[str, str]:
     """Map ``normalized artifact_id -> exclusion reason_code`` for the board's
     OPEN canonical debt (IMP2) and active cognitive holds (IMP1).
@@ -681,7 +680,7 @@ def _validate_filters(
 
 
 async def list_canonical_partition_integrity(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     reason_code: str | None = None,
@@ -757,7 +756,7 @@ async def list_canonical_partition_integrity(
 
 
 async def get_canonical_partition_integrity_detail(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     node_id: str,

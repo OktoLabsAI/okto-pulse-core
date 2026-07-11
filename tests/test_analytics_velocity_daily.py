@@ -12,7 +12,7 @@ from okto_pulse.core.services.analytics_service import (
     _bucket_key,
     _build_velocity_buckets,
 )
-from okto_pulse.core.api.analytics import (
+from okto_pulse.community.api.analytics import (
     router,
 )
 

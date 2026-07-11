@@ -55,7 +55,7 @@ def _node(candidate_id: str, node_type: str, source_ref: str = ""):
 
 
 def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(

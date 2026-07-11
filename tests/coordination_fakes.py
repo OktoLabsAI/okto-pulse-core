@@ -9,7 +9,15 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from sqlalchemy import select
+
 from okto_pulse.core.ports.coordination import LeaseHandle, WriteLockHandle
+from sqlalchemy_test_models import (
+    ConsolidationQueue,
+    DomainEventHandlerExecution,
+    DomainEventRow,
+    GlobalUpdateOutbox,
+)
 from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
     InMemoryRebuildAuditArtifactStore,
 )
@@ -63,6 +71,56 @@ class FakeLeaseProvider:
 
     def is_held(self, resource: str) -> bool:
         return self._lock_for(resource).locked()
+
+
+class FakeClaimRepository:
+    """SQLAlchemy-backed test fake for the storage-neutral claim port."""
+
+    async def claim_global_outbox(self, session, *, limit: int):
+        result = await session.execute(
+            select(GlobalUpdateOutbox)
+            .where(
+                GlobalUpdateOutbox.processed_at.is_(None),
+                GlobalUpdateOutbox.retry_count >= 0,
+            )
+            .order_by(GlobalUpdateOutbox.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def claim_domain_event_executions(self, session, *, limit: int, now):
+        result = await session.execute(
+            select(
+                DomainEventHandlerExecution.id,
+                DomainEventHandlerExecution.event_id,
+            )
+            .join(
+                DomainEventRow,
+                DomainEventRow.id == DomainEventHandlerExecution.event_id,
+            )
+            .where(DomainEventHandlerExecution.status == "pending")
+            .where(
+                (DomainEventHandlerExecution.next_attempt_at.is_(None))
+                | (DomainEventHandlerExecution.next_attempt_at <= now)
+            )
+            .order_by(DomainEventRow.occurred_at.asc(), DomainEventRow.id.asc())
+            .limit(limit)
+        )
+        return list(result.all())
+
+    async def claim_consolidation_queue(
+        self, session, *, board_id: str | None, limit: int
+    ):
+        query = (
+            select(ConsolidationQueue)
+            .where(ConsolidationQueue.status == "pending")
+            .order_by(ConsolidationQueue.created_at.asc())
+            .limit(limit)
+        )
+        if board_id is not None:
+            query = query.where(ConsolidationQueue.board_id == board_id)
+        result = await session.execute(query)
+        return list(result.scalars().all())
 
 
 class FakeWriteLockPort:
@@ -279,22 +337,26 @@ class FakeRebuildAuditArtifactStore(InMemoryRebuildAuditArtifactStore):
         super().__init__()
         self._base_dir = Path(base_dir)
 
-    def quarantine_paths(
+    def quarantine_storage(
         self,
         *,
         board_id: str,
         graph_type: str,
-        affected_paths,
+        affected_storage_refs,
         reason: str,
         reason_bucket: str,
         correlation_ids,
         kg_generation_id: str | None,
         retention_days: int,
-        scope_roots,
-        base_dir_hint: str | None = None,
+        scope_storage_refs,
+        base_storage_ref_hint=None,
     ) -> dict:
-        roots = [Path(root).resolve() for root in scope_roots]
-        resolved = [Path(path).resolve() for path in affected_paths]
+        from okto_pulse.community.adapters.local_storage_ref import (
+            resolve_local_storage_ref,
+        )
+
+        roots = [resolve_local_storage_ref(ref) for ref in scope_storage_refs]
+        resolved = [resolve_local_storage_ref(ref) for ref in affected_storage_refs]
         for path in resolved:
             if not any(_is_relative_to(path, root) for root in roots):
                 from okto_pulse.core.kg.quarantine import (
@@ -303,13 +365,15 @@ class FakeRebuildAuditArtifactStore(InMemoryRebuildAuditArtifactStore):
                 )
 
                 raise QuarantineError(
-                    QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE,
+                    QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE,
                     retryable=False,
                     reason=f"path {path} is not under any KG storage root",
                 )
 
         qid = f"q_{uuid.uuid4().hex}"
-        quarantine_dir = self._quarantine_base(base_dir_hint) / "quarantine" / qid
+        quarantine_dir = (
+            self._quarantine_base(base_storage_ref_hint) / "quarantine" / qid
+        )
         quarantine_dir.mkdir(parents=True, exist_ok=False)
         moved: list[str] = []
         files_moved = 0
@@ -328,6 +392,10 @@ class FakeRebuildAuditArtifactStore(InMemoryRebuildAuditArtifactStore):
             "reason_bucket": reason_bucket,
             "correlation_ids": list(correlation_ids),
             "affected_paths_relative": moved,
+            "affected_storage_refs": [
+                {"token": ref.token, "namespace": ref.namespace}
+                for ref in affected_storage_refs
+            ],
             "kg_generation_id": kg_generation_id,
             "software_version": "test",
             "quarantined_at": now.isoformat(),
@@ -344,9 +412,9 @@ class FakeRebuildAuditArtifactStore(InMemoryRebuildAuditArtifactStore):
         self,
         *,
         active_after_iso: str | None = None,
-        base_dir_hint: str | None = None,
+        base_storage_ref_hint=None,
     ):
-        root = self._quarantine_base(base_dir_hint) / "quarantine"
+        root = self._quarantine_base(base_storage_ref_hint) / "quarantine"
         if not root.exists():
             return []
         rows = []
@@ -358,10 +426,10 @@ class FakeRebuildAuditArtifactStore(InMemoryRebuildAuditArtifactStore):
         self,
         *,
         quarantine_id: str,
-        base_dir_hint: str | None = None,
+        base_storage_ref_hint=None,
     ):
         path = (
-            self._quarantine_base(base_dir_hint)
+            self._quarantine_base(base_storage_ref_hint)
             / "quarantine"
             / quarantine_id
             / "manifest.json"
@@ -370,8 +438,14 @@ class FakeRebuildAuditArtifactStore(InMemoryRebuildAuditArtifactStore):
             return None
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def _quarantine_base(self, base_dir_hint: str | None) -> Path:
-        return Path(base_dir_hint) if base_dir_hint else self._base_dir
+    def _quarantine_base(self, base_storage_ref_hint=None) -> Path:
+        if base_storage_ref_hint is None:
+            return self._base_dir
+        from okto_pulse.community.adapters.local_storage_ref import (
+            resolve_local_storage_ref,
+        )
+
+        return resolve_local_storage_ref(base_storage_ref_hint)
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:

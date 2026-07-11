@@ -51,7 +51,7 @@ PUBLIC_FACADE_SYMBOLS: dict[str, tuple[str, ...]] = {
     ),
     "okto_pulse.core.services.application_kg": (
         "configure_provider_registry",
-        "create_consolidation_worker",
+        "create_consolidation_processor",
         "create_deterministic_worker",
         "create_provider_registry",
         "get_current_provider_registry",
@@ -146,8 +146,6 @@ def test_ts_72c34282_public_service_facades_import_internals_lazily_only() -> No
                     "okto_pulse.core.infra.database",
                     "okto_pulse.core.models.db",
                     "okto_pulse.core.kg.interfaces.registry",
-                    "okto_pulse.core.kg.workers.consolidation",
-                    "okto_pulse.core.kg.workers.deterministic_worker",
                     "okto_pulse.core.kg.governance",
                 }, f"{rel_path} imports {module} at module load"
 
@@ -163,8 +161,6 @@ def test_ts_a87cad8b_docs_do_not_bless_private_modules_as_public_api() -> None:
         "from okto_pulse.core.infra.database import",
         "from okto_pulse.core.models.db import",
         "from okto_pulse.core.kg.interfaces.registry import",
-        "from okto_pulse.core.kg.workers.consolidation import",
-        "from okto_pulse.core.kg.workers.deterministic_worker import",
         "from okto_pulse.core.mcp.server import",
     )
 

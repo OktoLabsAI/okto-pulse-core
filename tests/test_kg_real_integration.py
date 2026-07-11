@@ -58,7 +58,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
 
-from okto_pulse.core.kg.schema import NODE_TYPES
+from kg_schema_testing import NODE_TYPES
 from okto_pulse.core.kg.tier_power import get_schema_info
 
 
@@ -240,7 +240,7 @@ def test_real_count_relationships():
 
     db, conn = _open_real_kuzu()
     try:
-        from okto_pulse.core.kg.schema import REL_TYPES
+        from kg_schema_testing import REL_TYPES
         for rel_name, from_type, to_type in REL_TYPES:
             try:
                 res = conn.execute(f"MATCH ()-[r:{rel_name}]->() RETURN count(r)")

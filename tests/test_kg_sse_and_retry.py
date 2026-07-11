@@ -15,7 +15,7 @@ def _actor(board_id: str) -> ActorContext:
 
 @pytest.mark.asyncio
 async def test_sse_endpoint_rejects_invalid_since(db_factory):
-    from okto_pulse.core.api.kg_routes import stream_kg_events
+    from okto_pulse.community.api.kg_routes import stream_kg_events
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as exc:
@@ -25,7 +25,7 @@ async def test_sse_endpoint_rejects_invalid_since(db_factory):
 
 @pytest.mark.asyncio
 async def test_sse_endpoint_returns_streaming_response(db_factory):
-    from okto_pulse.core.api.kg_routes import stream_kg_events
+    from okto_pulse.community.api.kg_routes import stream_kg_events
     from fastapi.responses import StreamingResponse
 
     resp = await stream_kg_events(board_id="b1", since=None)
@@ -37,8 +37,8 @@ async def test_sse_endpoint_returns_streaming_response(db_factory):
 @pytest.mark.asyncio
 async def test_sse_endpoint_streams_outbox_events(db_factory):
     """Seed GlobalUpdateOutbox rows and assert the stream emits them."""
-    from okto_pulse.core.api.kg_routes import stream_kg_events
-    from okto_pulse.core.models.db import GlobalUpdateOutbox
+    from okto_pulse.community.api.kg_routes import stream_kg_events
+    from sqlalchemy_test_models import GlobalUpdateOutbox
 
     factory = db_factory
     async with factory() as db:
@@ -78,10 +78,9 @@ async def test_sse_endpoint_streams_outbox_events(db_factory):
 async def test_retry_endpoint_404_when_entry_missing(db_factory):
     from fastapi import HTTPException
 
-    from okto_pulse.core.api.kg_routes import retry_pending_entry
-    from okto_pulse.core.models.db import Board
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
-
+    from okto_pulse.community.api.kg_routes import retry_pending_entry
+    from sqlalchemy_test_models import Board
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     factory = db_factory
     async with factory() as db:
         db.add(Board(id="b", name="b", owner_id="u"))
@@ -96,10 +95,9 @@ async def test_retry_endpoint_404_when_entry_missing(db_factory):
 
 @pytest.mark.asyncio
 async def test_retry_endpoint_resets_failed_entry(db_factory):
-    from okto_pulse.core.api.kg_routes import retry_pending_entry
-    from okto_pulse.core.models.db import Board, ConsolidationQueue
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
-
+    from okto_pulse.community.api.kg_routes import retry_pending_entry
+    from sqlalchemy_test_models import Board, ConsolidationQueue
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     factory = db_factory
     async with factory() as db:
         db.add(Board(id="b_retry", name="b", owner_id="u"))
@@ -134,12 +132,11 @@ async def test_retry_endpoint_resets_failed_entry(db_factory):
 @pytest.mark.asyncio
 async def test_retry_endpoint_recursive_reopens_descendants(db_factory):
     """When replaying a spec, cards/sprints under it must also be reopened."""
-    from okto_pulse.core.api.kg_routes import retry_pending_entry
-    from okto_pulse.core.models.db import (
+    from okto_pulse.community.api.kg_routes import retry_pending_entry
+    from sqlalchemy_test_models import (
         Board, Card, ConsolidationQueue, Spec, Sprint,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     factory = db_factory
     async with factory() as db:
         board = Board(id="b_rec", name="n", description="", owner_id="u")

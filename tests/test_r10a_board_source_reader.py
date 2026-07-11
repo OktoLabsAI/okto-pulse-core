@@ -220,7 +220,7 @@ def test_kg_rebuild_build_source_store_uses_registry_reader() -> None:
 
     configure_test_kg_registry(board_source_reader=_Reader())
 
-    from okto_pulse.core.api.kg_rebuild import _build_source_store
+    from okto_pulse.community.api.kg_rebuild import _build_source_store
 
     assert _build_source_store()("b-reg") == [{"artifact_type": "spec", "id": "b-reg"}]
 

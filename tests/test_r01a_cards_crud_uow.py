@@ -17,10 +17,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import cards as cards_api
-from okto_pulse.core.api.cards import router as cards_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import cards as cards_api
+from okto_pulse.community.api.cards import router as cards_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu4-s1-user"
@@ -48,7 +48,7 @@ async def _seed_card(title: str = "fu4-s1-card") -> str:
     # create, so this deliberately bypasses CardService.create_card's spec-status
     # gate (a normal card needs an approved/in_progress/done spec) — the card just
     # needs to satisfy the "every card belongs to a spec" invariant.
-    from okto_pulse.core.models.db import Board, Card, Spec
+    from sqlalchemy_test_models import Board, Card, Spec
 
     bid = f"board-fu4s1-{uuid.uuid4().hex[:8]}"
     sid = f"spec-fu4s1-{uuid.uuid4().hex[:8]}"
@@ -139,8 +139,7 @@ async def test_delete_card_404(client) -> None:
 async def test_get_card_use_case_raises_for_missing_card() -> None:
     from okto_pulse.core.application.use_cases import GetCardCommand, GetCardUseCase
     from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

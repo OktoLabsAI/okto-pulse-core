@@ -145,7 +145,7 @@ def test_matrix_surfaces_absent_removed_dependencies_as_accepted_rows(tmp_path: 
     assert removed["asyncpg"].classification == "removed"
 
 
-def test_matrix_keeps_common_relational_baseline_from_name_ban(tmp_path: Path):
+def test_matrix_blocks_community_owned_relational_dependencies_in_core(tmp_path: Path):
     pyproject, src = _repo(
         tmp_path,
         ["sqlalchemy[asyncio]>=2.0", "aiosqlite>=0.19", "numpy>=1.26"],
@@ -163,21 +163,16 @@ def test_matrix_keeps_common_relational_baseline_from_name_ban(tmp_path: Path):
     manifest_rows = [
         row for row in report.rows if row.surface == "manifest"
     ]
-    sqlalchemy = next(
-        row for row in manifest_rows if row.symbol_or_dependency == "sqlalchemy"
-    )
-    assert sqlalchemy.classification == "core_common"
-    assert sqlalchemy.severity == "accepted"
-    assert sqlalchemy.adapter_key is None
     aiosqlite = next(row for row in manifest_rows if row.symbol_or_dependency == "aiosqlite")
-    assert aiosqlite.classification == "core_common"
-    assert aiosqlite.severity == "accepted"
-    assert aiosqlite.adapter_key is None
+    assert aiosqlite.classification == "community_owned"
+    assert aiosqlite.severity == "blocking"
     numpy = next(row for row in manifest_rows if row.symbol_or_dependency == "numpy")
-    assert numpy.classification == "temporary_exception"
+    assert numpy.classification == "community_owned"
+    assert numpy.severity == "blocking"
     assert numpy.adapter_key is None
     assert numpy.owning_fcc_or_wave is None
     assert numpy.evidence_field_impact is None
+    assert report.ok is False
 
 
 def test_matrix_links_unowned_requests_and_scheduler_to_residual_adapters(
@@ -309,7 +304,7 @@ def test_real_inventory_residual_adapter_keys_have_owner_and_remediation(tmp_pat
     assert report.adapter_keys_missing == ()
 
 
-def test_real_repo_matrix_smoke_reports_current_backlog_without_requiring_clean_core():
+def test_real_repo_matrix_is_terminally_conformant():
     report = build_conformance_matrix(audit_wheel=False)
 
     assert report.rows
@@ -317,20 +312,12 @@ def test_real_repo_matrix_smoke_reports_current_backlog_without_requiring_clean_
     assert {
         row.classification for row in report.rows
     } <= set(get_args(MatrixClassification))
-    assert any(
-        row.symbol_or_dependency == "sqlalchemy"
-        and row.classification == "core_common"
-        and row.surface in {"manifest", "lock"}
-        for row in report.rows
-    )
+    assert report.ok is True
+    assert not any(row.severity == "blocking" for row in report.rows)
+    assert not any(row.classification == "violation" for row in report.rows)
     assert any(
         row.adapter_key in FCC07A_RESIDUAL_KEYS
         and row.surface == "adapter_inventory"
-        for row in report.rows
-    )
-    assert any(
-        row.severity == "blocking"
-        and row.diagnostic_code == "forbidden_import_root"
         for row in report.rows
     )
 
@@ -357,7 +344,7 @@ def test_cli_emits_deterministic_json_matrix(tmp_path: Path, capsys):
 
     out = capsys.readouterr().out
     payload = json.loads(out)
-    assert code == 0
+    assert code == 1
     assert payload["adapter_keys_missing"] == []
     assert payload["rows"] == sorted(
         payload["rows"],
@@ -371,7 +358,8 @@ def test_cli_emits_deterministic_json_matrix(tmp_path: Path, capsys):
     )
     assert any(
         row["symbol_or_dependency"] == "aiosqlite"
-        and row["classification"] == "core_common"
+        and row["classification"] == "community_owned"
+        and row["severity"] == "blocking"
         for row in payload["rows"]
     )
 

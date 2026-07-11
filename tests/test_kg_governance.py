@@ -16,8 +16,8 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gov_"))
 
 from sqlalchemy import select
 
-from okto_pulse.core.models import db as _models  # noqa: F401
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+import sqlalchemy_test_models as _models  # noqa: F401
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.infra.database import create_database, get_session_factory, init_db
 from okto_pulse.core.kg.governance import (
     cancel_historical,
@@ -136,7 +136,7 @@ class TestHistoricalOptIn:
         """DELETE-on-ack removes queue rows, so progress must use the run total."""
         import uuid
         import okto_pulse.core.kg.governance as governance
-        from okto_pulse.core.models.db import ConsolidationQueue
+        from sqlalchemy_test_models import ConsolidationQueue
 
         async def _graph_has_nodes(_board_id: str) -> bool:
             return True
@@ -199,7 +199,7 @@ class TestHistoricalOptIn:
         """Terminal failed rows must not look like a clean completed run."""
         import uuid
         import okto_pulse.core.kg.governance as governance
-        from okto_pulse.core.models.db import ConsolidationQueue
+        from sqlalchemy_test_models import ConsolidationQueue
 
         async def _graph_has_nodes(_board_id: str) -> bool:
             return True
@@ -280,7 +280,7 @@ class TestHistoricalOptIn:
         from datetime import datetime, timezone
 
         import okto_pulse.core.kg.governance as governance
-        from okto_pulse.core.models.db import (
+        from sqlalchemy_test_models import (
             ConsolidationAudit,
             GlobalUpdateOutbox,
             KuzuNodeRef,
@@ -420,7 +420,7 @@ class TestHistoricalDedupFilter:
         """Primary regression: a terminal row from event:spec.moved must NOT
         poison the dedup set so the historical pass can re-enqueue the spec."""
         import uuid
-        from okto_pulse.core.models.db import ConsolidationQueue
+        from sqlalchemy_test_models import ConsolidationQueue
 
         board_id = "board-dedup-event-done"
         await _seed_board_with_spec(db_factory, board_id)
@@ -472,7 +472,7 @@ class TestHistoricalDedupFilter:
         """retry_from_ui failed rows must be cleared on historical start
         so the next attempt gets a clean slot."""
         import uuid
-        from okto_pulse.core.models.db import ConsolidationQueue
+        from sqlalchemy_test_models import ConsolidationQueue
 
         board_id = "board-dedup-failed-retry"
         await _seed_board_with_spec(db_factory, board_id)
@@ -519,7 +519,7 @@ class TestHistoricalDedupFilter:
         duplicate — the UNIQUE constraint would reject it anyway, but the
         dedup filter must skip it cleanly."""
         import uuid
-        from okto_pulse.core.models.db import ConsolidationQueue
+        from sqlalchemy_test_models import ConsolidationQueue
 
         board_id = "board-dedup-pending-preserved"
         await _seed_board_with_spec(db_factory, board_id)
@@ -566,7 +566,7 @@ class TestHistoricalDedupFilter:
         the pre-check, but even if that didn't trigger, the dedup must
         treat paused rows as live."""
         import uuid
-        from okto_pulse.core.models.db import ConsolidationQueue
+        from sqlalchemy_test_models import ConsolidationQueue
 
         board_id = "board-dedup-paused-preserved"
         await _seed_board_with_spec(db_factory, board_id)
@@ -615,7 +615,7 @@ class TestHistoricalDedupFilter:
         """Multiple artifacts with terminal rows from DIFFERENT sources
         must all be cleared and re-queued in a single pass."""
         import uuid
-        from okto_pulse.core.models.db import Board, ConsolidationQueue
+        from sqlalchemy_test_models import Board, ConsolidationQueue
 
         board_id = "board-dedup-mixed"
 

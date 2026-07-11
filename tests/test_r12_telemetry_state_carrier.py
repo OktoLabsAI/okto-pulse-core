@@ -57,7 +57,9 @@ def test_state_registry_is_fail_closed_without_carrier(tmp_path: Path) -> None:
     }
 
 
-def test_consent_and_migration_notice_preserve_full_dict_carrier(tmp_path: Path) -> None:
+def test_consent_and_migration_notice_preserve_full_dict_carrier(
+    tmp_path: Path,
+) -> None:
     settings = _settings(tmp_path)
     metrics_dir = tmp_path / "metrics"
     original = {
@@ -106,7 +108,9 @@ def test_consent_and_migration_notice_preserve_full_dict_carrier(tmp_path: Path)
         assert reloaded[key] == original[key]
 
 
-def test_resolve_telemetry_config_accepts_injected_state_snapshot(tmp_path: Path) -> None:
+def test_resolve_telemetry_config_accepts_injected_state_snapshot(
+    tmp_path: Path,
+) -> None:
     settings = _settings(tmp_path)
     save_state(tmp_path / "metrics", {"mode": "disabled"})
 
@@ -196,12 +200,21 @@ def test_public_surfaces_do_not_emit_install_token_or_hash(tmp_path: Path) -> No
         def append_event(self, event): ...
         def append_sent(self, record, *, failed=False): ...
         def append_snapshot(self, record): ...
-        def confirmed_event_ids(self): return set()
-        def iter_events(self, *, since=None): return ()
-        def summarize(self, *, window_days=30): return {}
-        def prune_old(self, *, now=None): return {}
-        def export_local(self, output_path=None): ...
-        def purge_local(self): return {}
+        def confirmed_event_ids(self):
+            return set()
+
+        def iter_events(self, *, since=None):
+            return ()
+
+        def summarize(self, *, window_days=30):
+            return {}
+
+        def prune_old(self, *, now=None):
+            return {}
+
+        def export_events(self, output_path=None): ...
+        def purge_events(self):
+            return {}
 
     from okto_pulse.core.telemetry.event_store_registry import (
         register_telemetry_event_store_factory,

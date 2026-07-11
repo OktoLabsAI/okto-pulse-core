@@ -37,7 +37,7 @@ from okto_pulse.core.kg.agent.extractors.source_ref import (
     per_concept_source_ref,
 )
 from okto_pulse.core.kg.interfaces import get_kg_registry
-from okto_pulse.core.models.db import CardType
+from sqlalchemy_test_models import CardType
 
 
 # --------------------------------------------------------------------------

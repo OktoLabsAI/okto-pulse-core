@@ -6,7 +6,7 @@ Proves, deterministically and re-executably (Codex IMP3 acceptance criteria):
   1. metadata FAIL-CLOSED — an incomplete/dangling cluster governance is an error
      (withdrawal_criterion + blocked_by axis + debt_ref are mandatory);
   2. debt_ref / withdrawal_criterion / blocked_by are present AND resolve to the
-     real debt ledger (ORM_RETURN_DEBT / SESSION_BRIDGE_DEBT) — unified governance;
+     real ORM return debt ledger — unified governance;
   3. the allowlist only SHRINKS (ratchet) and a NEW core ORM consumer still FAILS;
   4. the drainability rule is DETERMINISTIC and tied to the ledger (port-backed ⟺
      the ORM type is a registered ORM_RETURN_DEBT aggregate) — not a hardcoded 0;
@@ -36,7 +36,7 @@ from okto_pulse.core.repositories.core_orm_import_gate import (
     run_core_orm_import_gate,
     validate_allowlist_metadata,
 )
-from okto_pulse.core.repositories.debt import ORM_RETURN_DEBT, SESSION_BRIDGE_DEBT
+from okto_pulse.core.repositories.debt import ORM_RETURN_DEBT
 from okto_pulse.core.repositories.orm_consumer_split_inventory import (
     CATEGORY_ORM_DEFINITION,
     ORM_DRAINED_BY_IMP3,
@@ -54,8 +54,7 @@ from okto_pulse.core.repositories.orm_consumer_split_inventory import (
 
 def test_governance_metadata_complete_on_real_tree():
     assert validate_allowlist_metadata() == []
-    # the shrunk allowlist includes AF35-S2 worker helper drains (65 -> 63)
-    assert len(CORE_ORM_IMPORT_ALLOWLIST) == 63
+    assert CORE_ORM_IMPORT_ALLOWLIST == {}
 
 
 def test_every_cluster_carries_full_governance_resolving_to_ledger():
@@ -69,7 +68,7 @@ def test_every_cluster_carries_full_governance_resolving_to_ledger():
         ref = entry["debt_ref"]
         if ref is not None:
             target = resolve_debt_ref(ref)
-            assert target in (ORM_RETURN_DEBT, SESSION_BRIDGE_DEBT), (file_label, ref)
+            assert target is ORM_RETURN_DEBT, (file_label, ref)
             assert target, file_label  # non-empty ledger entry
 
 
@@ -122,14 +121,9 @@ def test_good_clusters_remain_valid_under_injection(monkeypatch):
 
 def test_allowlist_ratchet_only_shrinks():
     prev = dict(CORE_ORM_IMPORT_ALLOWLIST)
-    a_file = next(iter(prev))
-    shrunk = {k: v for k, v in prev.items() if k != a_file}
     grown = {**prev, "src/okto_pulse/core/api/_imp3_new.py": "rest"}
-    relabelled = {**prev, a_file: "bootstrap"}
-    assert core_orm_allowlist_only_shrinks(prev, shrunk) is True
     assert core_orm_allowlist_only_shrinks(prev, prev) is True
     assert core_orm_allowlist_only_shrinks(prev, grown) is False
-    assert core_orm_allowlist_only_shrinks(prev, relabelled) is False
 
 
 def test_gate_green_and_new_consumer_outside_allowlist_fails(tmp_path):
@@ -162,17 +156,7 @@ def test_ported_aggregates_derived_from_debt_ledger():
 def test_drainability_classifies_port_backed_vs_no_port_from_tree():
     classification = drainability_classification()
     sites = classification["sites"]
-    assert sites, "expected ORM get-by-id sites on the real tree"
-    # every port-backed site's symbol is a ledger aggregate; no-port sites are not
-    for s in sites:
-        if s["port_backed"]:
-            assert s["symbol"] in PORTED_AGGREGATE_ORM_TYPES
-        else:
-            assert s["symbol"] not in PORTED_AGGREGATE_ORM_TYPES
-    # the rule is real: both partitions are populated (Board is port-backed; at
-    # least one no-port aggregate like Card exists in the tree)
-    assert any(s["port_backed"] and s["symbol"] == "Board" for s in sites)
-    assert any(not s["port_backed"] for s in sites)
+    assert sites == []
 
 
 def test_no_file_fully_drainable_now_after_imp3_drains():
@@ -197,12 +181,14 @@ def test_drained_files_absent_and_coupling_free():
 
 def test_governance_report_explicit_remainder_nothing_hidden():
     rep = core_orm_governance_report()
-    assert rep["allowlisted_files"] == 63
+    assert rep["allowlisted_files"] == 0
     rem = rep["remainder"]
     assert rem["hidden"] == 0
     assert rem["all_temporary"] is True
     assert rem["unclassified"] == 0  # no silent bridge
-    # per-surface counts sum to the total — the remainder is fully accounted
+    assert rem["total_orm_definition_couplings"] == 0
+    assert rem["by_surface"] == {}
+    # per-surface counts sum to the total - the remainder is fully accounted
     assert sum(rem["by_surface"].values()) == rem["total_orm_definition_couplings"]
     # the 4 drains are re-proven coupling-free in the report
     assert rep["drained_this_card"]["still_coupled"] == []
@@ -225,10 +211,6 @@ def test_report_clusters_governance_resolves():
         assert c["blocked_by"] in BLOCKED_BY_AXES
         if c["debt_ref"] is not None:
             assert c["debt_ref_resolves"] is True
-    # session-bridge debt is reported with an objective (non-hidden) zero-reduction
-    sb = rep["session_bridge"]
-    assert sb["reduction_now"] == 0
-    assert sb["withdrawal_criterion"] == SESSION_BRIDGE_DEBT.withdrawal_criterion
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +222,7 @@ async def test_board_port_drain_is_equivalent_to_orm_get(db_factory):
     ``resolve_unit_of_work_factory().wrap(db).boards.get(id)`` — returns the same
     board for an existing id and None for a missing id (existence get-by-id,
     no owner/permission predicate lost)."""
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
     from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
     bid = "imp3-drain-equiv"

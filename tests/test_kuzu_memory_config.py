@@ -58,7 +58,7 @@ def test_core_settings_rejects_unsupported_max_db_size():
 
 def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
     """AC2: _open_kuzu_db multiplies MB/GB by 1024^2 / 1024^3 correctly."""
-    from okto_pulse.core.kg import schema as schema_module
+    import kg_schema_testing as schema_module
 
     # Pin CoreSettings to explicit values so the test is deterministic even
     # if the suite-wide fixture wiggled the singleton.
@@ -91,7 +91,7 @@ def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
 
 def test_open_kuzu_db_failure_message_includes_graph_settings(tmp_path):
     """Ladybug open failures include the active graph settings and fix hint."""
-    from okto_pulse.core.kg import schema as schema_module
+    import kg_schema_testing as schema_module
 
     configure_settings(CoreSettings(
         kg_kuzu_buffer_pool_mb=512,
@@ -120,7 +120,7 @@ def test_open_kuzu_db_failure_message_includes_graph_settings(tmp_path):
 
 def test_open_kuzu_db_retries_pybind_when_capi_shared_lib_is_missing(tmp_path):
     """A missing C-API shared library is a backend issue, not KG corruption."""
-    from okto_pulse.core.kg import schema as schema_module
+    import kg_schema_testing as schema_module
     import okto_pulse.community.adapters.kg_runtime as kg_runtime
 
     configure_settings(CoreSettings(
@@ -242,7 +242,7 @@ def test_open_kuzu_db_controls_wal_salvage_flag():
 def test_pool_cap_reads_core_settings(monkeypatch, caplog):
     """AC4: without env var, pool cap comes from CoreSettings; env var
     overrides with a deprecation warning."""
-    from okto_pulse.core.kg import connection_pool
+    from okto_pulse.community.adapters import graph_connection_pool as connection_pool
 
     monkeypatch.delenv("KG_CONNECTION_POOL_SIZE", raising=False)
     configure_settings(CoreSettings(kg_connection_pool_size=8))
@@ -257,7 +257,7 @@ def test_pool_cap_reads_core_settings(monkeypatch, caplog):
 
 def test_pool_cap_env_invalid_falls_back_to_settings(monkeypatch):
     """Invalid env var doesn't crash — falls back to CoreSettings."""
-    from okto_pulse.core.kg import connection_pool
+    from okto_pulse.community.adapters import graph_connection_pool as connection_pool
 
     configure_settings(CoreSettings(kg_connection_pool_size=12))
     monkeypatch.setenv("KG_CONNECTION_POOL_SIZE", "not-a-number")
@@ -273,8 +273,8 @@ async def settings_client():
     """Minimal ASGI client wrapping just the settings router for fast tests."""
     from fastapi import FastAPI
 
-    from okto_pulse.core.api.settings import router
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.settings import router
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     app = FastAPI()

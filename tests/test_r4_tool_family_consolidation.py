@@ -27,7 +27,7 @@ from okto_pulse.core.mcp.tool_family_registry import (
     ToolFamilyRegistry,
     emit_alias_usage,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,

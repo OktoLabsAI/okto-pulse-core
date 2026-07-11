@@ -37,10 +37,10 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import cards as cards_api
-from okto_pulse.core.api.cards import router as cards_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import cards as cards_api
+from okto_pulse.community.api.cards import router as cards_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu4-s4-user"
@@ -85,7 +85,7 @@ async def _seed_card(*, knowledge_bases: list | None = None) -> tuple[str, str]:
     these endpoints read activity/seen/knowledge, not create, so this deliberately
     bypasses ``CardService.create_card``'s spec-status gate.
     """
-    from okto_pulse.core.models.db import Board, Card, CardStatus, Spec
+    from sqlalchemy_test_models import Board, Card, CardStatus, Spec
 
     bid = f"board-fu4s4-{uuid.uuid4().hex[:8]}"
     sid = f"spec-fu4s4-{uuid.uuid4().hex[:8]}"
@@ -109,7 +109,7 @@ async def _seed_card(*, knowledge_bases: list | None = None) -> tuple[str, str]:
 
 
 async def _seed_activity(board_id: str, card_id: str, action: str, *, created_at: datetime) -> str:
-    from okto_pulse.core.models.db import ActivityLog
+    from sqlalchemy_test_models import ActivityLog
 
     log_id = f"act-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -133,7 +133,7 @@ async def _seed_activity(board_id: str, card_id: str, action: str, *, created_at
 async def _seed_comment_and_seen(card_id: str) -> tuple[str, str, str]:
     """Seed a comment on the card + an agent that has seen it. Returns
     (comment_id, agent_id, agent_name)."""
-    from okto_pulse.core.models.db import Agent, AgentSeenItem, Comment
+    from sqlalchemy_test_models import Agent, AgentSeenItem, Comment
 
     comment_id = f"cmt-{uuid.uuid4().hex[:8]}"
     agent_id = f"agent-{uuid.uuid4().hex[:8]}"
@@ -354,8 +354,7 @@ async def test_get_knowledge_use_case_entity_type_discrimination() -> None:
         GetCardKnowledgeCommand,
         GetCardKnowledgeUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
 

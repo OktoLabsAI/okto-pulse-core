@@ -18,9 +18,11 @@ per item, summary), preserving the exact tool behaviour.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, session_of
+from okto_pulse.core.application.use_cases.base import ActorContext
 
 
 def _readiness_service():
@@ -71,13 +73,10 @@ class EvaluateBugCognitiveClosureUseCase:
     propagates."""
 
     async def execute(
-        self, command: EvaluateBugCognitiveClosureCommand, *, actor: ActorContext, uow: Any
+        self, command: EvaluateBugCognitiveClosureCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> EvaluateBugCognitiveClosureResult:
-        from okto_pulse.core.services.application_kg import evaluate_bug_cognitive_closure
-
-        data = await evaluate_bug_cognitive_closure(
+        data = await uow.services.kg.evaluate_bug_cognitive_closure(
             _readiness_service(),
-            session_of(uow),
             board_id=command.board_id,
             bug_id=command.bug_id,
             evidence=command.evidence or {},
@@ -138,19 +137,10 @@ class ListCognitiveReadinessItemsUseCase:
         self._readiness_service_factory = readiness_service_factory or _readiness_service
 
     async def execute(
-        self, command: ListCognitiveReadinessItemsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListCognitiveReadinessItemsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCognitiveReadinessItemsResult:
-        from okto_pulse.core.services.application_kg import (
-            build_cognitive_action_center_read_model,
-        )
-        from okto_pulse.core.services.main import cognitive_enforcement_active
-
-        session = session_of(uow)
-        read_model = build_cognitive_action_center_read_model(
-            self._readiness_service_factory()
-        )
-        result = await read_model.list_signals(
-            session,
+        result = await uow.services.kg.list_cognitive_signals(
+            self._readiness_service_factory(),
             board_id=command.board_id,
             signal=command.signal,
             artifact_id=command.artifact_id,
@@ -162,7 +152,9 @@ class ListCognitiveReadinessItemsUseCase:
             offset=command.offset,
             kg_generation_id=command.kg_generation_id,
         )
-        enforcement_active = await cognitive_enforcement_active(session, command.board_id)
+        enforcement_active = await uow.services.kg.cognitive_enforcement_active(
+            command.board_id
+        )
         return ListCognitiveReadinessItemsResult(result, enforcement_active)
 
 
@@ -196,17 +188,16 @@ class EvaluateCognitiveReadinessUseCase:
     ``CognitiveReadinessError`` propagates."""
 
     async def execute(
-        self, command: EvaluateCognitiveReadinessCommand, *, actor: ActorContext, uow: Any
+        self, command: EvaluateCognitiveReadinessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> EvaluateCognitiveReadinessResult:
-        from okto_pulse.core.services.main import cognitive_enforcement_active
-
-        session = session_of(uow)
-        verdict = await _readiness_service().evaluate_artifact(
-            session,
+        verdict = await uow.services.kg.evaluate_cognitive_readiness(
+            _readiness_service(),
             board_id=command.board_id,
             source_ref=command.source_ref,
             kg_generation_id=command.kg_generation_id,
             has_reusable_cognition=command.has_reusable_cognition,
         )
-        enforcement_active = await cognitive_enforcement_active(session, command.board_id)
+        enforcement_active = await uow.services.kg.cognitive_enforcement_active(
+            command.board_id
+        )
         return EvaluateCognitiveReadinessResult(verdict, enforcement_active)

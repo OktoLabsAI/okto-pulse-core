@@ -24,14 +24,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import agents as agents_api
-from okto_pulse.core.api import kg_stale_canonical_parity as stale_api
-from okto_pulse.core.api import queue_health as queue_api
-from okto_pulse.core.api.agents import router as agents_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.api.kg_stale_canonical_parity import router as stale_router
-from okto_pulse.core.api.queue_health import router as queue_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import agents as agents_api
+from okto_pulse.community.api import kg_stale_canonical_parity as stale_api
+from okto_pulse.community.api import queue_health as queue_api
+from okto_pulse.community.api.agents import router as agents_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.kg_stale_canonical_parity import router as stale_router
+from okto_pulse.community.api.queue_health import router as queue_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.repositories.relational_boundary_gate import (
     default_use_cases_path,

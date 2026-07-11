@@ -57,14 +57,12 @@ def test_real_core_has_no_embedded_or_dedup_schema_imports():
     verdict_by_file = {i.file: i.verdict for i in report.importers}
     assert not any(f.startswith("kg/providers/embedded/") for f in verdict_by_file)
     assert "kg/dedup_migration.py" not in verdict_by_file
-    # The allowlisted CLI lives in tools/ (outside core/), but it no longer imports
-    # kg.schema; it remains documented in the allowlist and correctly drops out of
-    # the importer table.
-    assert report.allowlist["migration_cli"] == "tools/kg_migrate_schema.py"
+    assert report.allowlist["migration_cli"] == ""
+    assert report.allowlist["migration_files"] == []
     assert "tools/kg_migrate_schema.py" not in verdict_by_file
 
 
-def test_allowlisted_cli_without_schema_import_is_not_counted():
+def test_retired_cli_without_schema_import_needs_no_allowance():
     report = run_gate()
     cli = next(
         (i for i in report.importers if i.file == "tools/kg_migrate_schema.py"), None
@@ -73,7 +71,7 @@ def test_allowlisted_cli_without_schema_import_is_not_counted():
         "the kg migrate-schema CLI no longer imports kg.schema and must not be "
         "invented as an importer"
     )
-    assert report.allowlist["migration_cli"] == "tools/kg_migrate_schema.py"
+    assert report.allowlist["migration_cli"] == ""
 
 
 def test_reconciliation_explains_count_divergence_real_core():
@@ -89,17 +87,23 @@ def test_reconciliation_explains_count_divergence_real_core():
     # The earlier core/-only scan under-counted by omitting the tools/ CLI.
     assert rec["current_importer_files"] == len(report.importers)
     assert rec["current_import_statements"] >= rec["current_importer_files"]
-    assert "drift" in rec["explanation"]
+    assert "closure oracle" in rec["explanation"]
+    assert rec["current_importer_files"] == 0
+    assert rec["current_import_statements"] == 0
 
 
 def test_recounted_refs_present_real_core():
     refs = run_gate().recounted_refs
-    assert set(refs["baseline"]) == {
+    assert {
         "open_board_connection",
         "board_kuzu_path",
         "close_all_connections",
-    }
-    assert all(refs["current"][k] >= 1 for k in refs["baseline"])
+        "open_kuzu_db",
+        "apply_ladybug_lifecycle_step",
+        "affected_paths",
+        "purge_board_graph_storage",
+    } == set(refs["baseline"])
+    assert set(refs["current"].values()) == {0}
 
 
 # --------------------------------------------------------------------------- #
@@ -132,7 +136,7 @@ def test_path_and_lifecycle_symbols_target_correct_ports(tmp_path):
     )
     report = run_gate(tmp_path)
     p = next(i for i in report.importers if i.file == "p.py")
-    assert p.blocking is True and p.target_port == "GraphPathResolver"
+    assert p.blocking is True and p.target_port == "GraphRuntimeStore/StorageRef"
     lc = next(i for i in report.importers if i.file == "l.py")
     assert lc.blocking is True and lc.target_port == "GraphLifecycle"
 

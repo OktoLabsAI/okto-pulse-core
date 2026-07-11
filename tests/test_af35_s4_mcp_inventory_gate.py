@@ -398,12 +398,9 @@ async def test_af35_s4_migrated_mcp_tool_fails_closed_without_uow_provider(
             permissions=None,
         )
 
-    def _unexpected_db_fallback():
-        raise AssertionError("migrated MCP wrapper must not fall back to get_db_for_mcp")
-
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _ctx)
     monkeypatch.setattr(mcp_server, "check_permission", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", _unexpected_db_fallback)
+    assert not hasattr(mcp_server, "get_db_for_mcp")
 
     reset_unit_of_work_factory()
     assert not is_unit_of_work_factory_registered()

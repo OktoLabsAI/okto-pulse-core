@@ -220,7 +220,7 @@ def test_ts_3ce862a7_agent_contracts_unchanged():
     assert "api_key_hash" not in fields  # response never leaks the stored hash
     assert "reveal_once_secret" in AgentRevealResponse.model_fields
 
-    from okto_pulse.core.models.db import Agent
+    from sqlalchemy_test_models import Agent
 
     cols = {c.name for c in Agent.__table__.columns}
     assert {"api_key", "api_key_hash"} <= cols  # transitional columns stay
@@ -264,7 +264,7 @@ def test_ts_178da21e_port_and_gate_introduce_no_saas_symbols():
 
 
 def test_ts_178da21e_agent_credential_contract_not_removed():
-    from okto_pulse.core.models.db import Agent
+    from sqlalchemy_test_models import Agent
 
     cols = {c.name for c in Agent.__table__.columns}
     # register-before-remove: the api_key / api_key_hash credential columns stay.

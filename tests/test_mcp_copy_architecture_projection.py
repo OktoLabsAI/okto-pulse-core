@@ -32,7 +32,7 @@ from okto_pulse.core.mcp.projection_envelope import (
     ENVELOPE_METADATA_KEYS,
     _stable_payload_bytes,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,

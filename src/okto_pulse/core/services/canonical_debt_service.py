@@ -1,10 +1,4 @@
-"""CanonicalDebt read/retry service.
-
-The ledger records artifacts that are not safe to promote to the canonical KG
-yet. Manual retry scheduling is deliberately queue-like and does not mutate the
-graph directly; the consolidation agent can consume the marker when KG health
-admits writes.
-"""
+"""Canonical-debt rules over an edition-owned persistence store."""
 
 from __future__ import annotations
 
@@ -12,45 +6,27 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from okto_pulse.core.ports.canonical_debt import (
+    CanonicalDebtRecord,
+    get_canonical_debt_store,
+)
 
-from okto_pulse.core.models.db import CanonicalDebt
 
-
-OPEN_STATES = frozenset({
-    "pending",
-    "retry_scheduled",
-    "deferred",
-    "failed",
-    "blocked",
-    # Back-compat for rows created by early local builds before the state
-    # vocabulary was aligned with the spec.
-    "retryable",
-})
-TERMINAL_STATES = frozenset({
-    "committed",
-    "not_applicable",
-    "superseded",
-    # Back-compat aliases.
-    "promoted",
-    "discarded",
-})
-
-RETRYABLE_STATES = frozenset({
-    "pending",
-    "retry_scheduled",
-    "deferred",
-    "failed",
-    "blocked",
-    "retryable",
-})
+OPEN_STATES = frozenset(
+    {"pending", "retry_scheduled", "deferred", "failed", "blocked", "retryable"}
+)
+TERMINAL_STATES = frozenset(
+    {"committed", "not_applicable", "superseded", "promoted", "discarded"}
+)
+RETRYABLE_STATES = frozenset(
+    {"pending", "retry_scheduled", "deferred", "failed", "blocked", "retryable"}
+)
 
 
 @dataclass(frozen=True, slots=True)
 class CanonicalDebtListResult:
     items: list[dict[str, Any]]
-    counts: dict[str, int]
+    counts: dict[str, Any]
     total: int
 
 
@@ -62,10 +38,9 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat()
 
 
-def _canonical_debt_next_action(canonical_state: str | None, dlq_ref: str | None) -> str:
-    """Suggested next action for a canonical-debt row (SPEC4 card 2e913ac3,
-    AC ac_26acf1db). Lets an agent act from the drill-down alone, without local
-    file forensics."""
+def _canonical_debt_next_action(
+    canonical_state: str | None, dlq_ref: str | None
+) -> str:
     state = (canonical_state or "").lower()
     if state == "retry_scheduled":
         return "wait_for_scheduled_retry"
@@ -82,15 +57,15 @@ def _canonical_debt_next_action(canonical_state: str | None, dlq_ref: str | None
     return "inspect_canonical_debt"
 
 
-def canonical_debt_to_dict(row: CanonicalDebt) -> dict[str, Any]:
+def canonical_debt_to_dict(row: Any) -> dict[str, Any]:
     return {
         "id": row.id,
         "board_id": row.board_id,
         "artifact_type": row.artifact_type,
         "artifact_id": row.artifact_id,
-        # SPEC4 (card 2e913ac3): bounded suggested next action so the drill-down
-        # row is actionable without reading local files (AC ac_26acf1db).
-        "next_action": _canonical_debt_next_action(row.canonical_state, row.dlq_ref),
+        "next_action": _canonical_debt_next_action(
+            row.canonical_state, row.dlq_ref
+        ),
         "source_ref": row.source_ref,
         "source_version": row.source_version,
         "content_hash": row.content_hash,
@@ -114,35 +89,28 @@ def canonical_debt_to_dict(row: CanonicalDebt) -> dict[str, Any]:
 
 
 async def summarize_canonical_debt(
-    db: AsyncSession,
-    board_id: str,
+    db: object, board_id: str
 ) -> dict[str, Any]:
-    rows = (await db.execute(
-        select(CanonicalDebt.canonical_state, func.count())
-        .where(CanonicalDebt.board_id == board_id)
-        .group_by(CanonicalDebt.canonical_state)
-    )).all()
-    by_state = {str(state): int(count) for state, count in rows}
-    open_count = sum(by_state.get(state, 0) for state in OPEN_STATES)
-    terminal_count = sum(by_state.get(state, 0) for state in TERMINAL_STATES)
-    retryable_count = sum(
-        by_state.get(state, 0)
-        for state in ("pending", "deferred", "failed", "retryable")
+    by_state = await get_canonical_debt_store().counts_by_state(
+        db, board_id=board_id
     )
-    blocked_count = by_state.get("blocked", 0)
-    scheduled_count = by_state.get("retry_scheduled", 0)
     return {
-        "open_count": open_count,
-        "retryable_count": retryable_count,
-        "blocked_count": blocked_count,
-        "retry_scheduled_count": scheduled_count,
-        "terminal_count": terminal_count,
+        "open_count": sum(by_state.get(state, 0) for state in OPEN_STATES),
+        "retryable_count": sum(
+            by_state.get(state, 0)
+            for state in ("pending", "deferred", "failed", "retryable")
+        ),
+        "blocked_count": by_state.get("blocked", 0),
+        "retry_scheduled_count": by_state.get("retry_scheduled", 0),
+        "terminal_count": sum(
+            by_state.get(state, 0) for state in TERMINAL_STATES
+        ),
         "by_state": by_state,
     }
 
 
 async def list_canonical_debt(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     artifact_type: str | None = None,
@@ -150,33 +118,23 @@ async def list_canonical_debt(
     limit: int = 50,
     offset: int = 0,
 ) -> CanonicalDebtListResult:
-    predicates = [CanonicalDebt.board_id == board_id]
-    if artifact_type:
-        predicates.append(CanonicalDebt.artifact_type == artifact_type)
-    if state:
-        predicates.append(CanonicalDebt.canonical_state == state)
-    where_clause = and_(*predicates)
-
-    total = int(await db.scalar(
-        select(func.count()).select_from(CanonicalDebt).where(where_clause)
-    ) or 0)
-    rows = (await db.execute(
-        select(CanonicalDebt)
-        .where(where_clause)
-        .order_by(CanonicalDebt.updated_at.desc(), CanonicalDebt.id.asc())
-        .offset(max(0, offset))
-        .limit(max(1, min(limit, 200)))
-    )).scalars().all()
-    summary = await summarize_canonical_debt(db, board_id)
+    total, rows = await get_canonical_debt_store().list_records(
+        db,
+        board_id=board_id,
+        artifact_type=artifact_type,
+        state=state,
+        limit=max(1, min(limit, 200)),
+        offset=max(0, offset),
+    )
     return CanonicalDebtListResult(
         items=[canonical_debt_to_dict(row) for row in rows],
-        counts=summary,
+        counts=await summarize_canonical_debt(db, board_id),
         total=total,
     )
 
 
 async def upsert_canonical_debt(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     artifact_type: str,
@@ -195,28 +153,21 @@ async def upsert_canonical_debt(
     queue_ref: str | None = None,
     dlq_ref: str | None = None,
     evidence_ref: str | None = None,
-) -> CanonicalDebt:
-    """Create or update one semantic canonical debt marker.
-
-    The unique key intentionally follows the spec's idempotency rule:
-    board + artifact + target status + source hash. The caller owns commit
-    boundaries so this helper can participate in larger workflow transactions.
-    """
-
+) -> CanonicalDebtRecord:
     if not content_hash:
         raise ValueError("content_hash is required for CanonicalDebt")
+    store = get_canonical_debt_store()
+    row = await store.find_by_identity(
+        db,
+        board_id=board_id,
+        artifact_type=artifact_type,
+        artifact_id=artifact_id,
+        target_status=target_status,
+        content_hash=content_hash,
+    )
     now = datetime.now(timezone.utc)
-    row = (await db.execute(
-        select(CanonicalDebt).where(
-            CanonicalDebt.board_id == board_id,
-            CanonicalDebt.artifact_type == artifact_type,
-            CanonicalDebt.artifact_id == artifact_id,
-            CanonicalDebt.target_status == target_status,
-            CanonicalDebt.content_hash == content_hash,
-        )
-    )).scalar_one_or_none()
     if row is None:
-        row = CanonicalDebt(
+        row = CanonicalDebtRecord(
             board_id=board_id,
             artifact_type=artifact_type,
             artifact_id=artifact_id,
@@ -237,36 +188,33 @@ async def upsert_canonical_debt(
             created_at=now,
             updated_at=now,
         )
-        db.add(row)
-        await db.flush()
-        return row
-
-    row.source_ref = source_ref
-    row.source_version = source_version
-    row.canonical_state = canonical_state
-    row.graph_layer = graph_layer
-    row.maturity_status = maturity_status
-    row.failure_reason = failure_reason
-    row.last_error = last_error
-    row.owner_agent_id = owner_agent_id
-    row.correlation_id = correlation_id
-    row.queue_ref = queue_ref
-    row.dlq_ref = dlq_ref
-    row.evidence_ref = evidence_ref
-    row.updated_at = now
-    await db.flush()
-    return row
+    else:
+        row.source_ref = source_ref
+        row.source_version = source_version
+        row.canonical_state = canonical_state
+        row.graph_layer = graph_layer
+        row.maturity_status = maturity_status
+        row.failure_reason = failure_reason
+        row.last_error = last_error
+        row.owner_agent_id = owner_agent_id
+        row.correlation_id = correlation_id
+        row.queue_ref = queue_ref
+        row.dlq_ref = dlq_ref
+        row.evidence_ref = evidence_ref
+        row.updated_at = now
+    return await store.save(db, row)
 
 
 async def schedule_canonical_debt_retry(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     debt_id: str,
     actor_id: str,
     kg_health_state: str,
 ) -> dict[str, Any]:
-    row = await db.get(CanonicalDebt, debt_id)
+    store = get_canonical_debt_store()
+    row = await store.get(db, debt_id=debt_id)
     if row is None or row.board_id != board_id:
         return {
             "ok": False,
@@ -280,13 +228,18 @@ async def schedule_canonical_debt_retry(
             "attempt_consumed": False,
             "debt": canonical_debt_to_dict(row),
         }
-
-    if kg_health_state in {"quarantined", "recovery_needed", "backpressure", "at_risk"}:
+    now = datetime.now(timezone.utc)
+    if kg_health_state in {
+        "quarantined",
+        "recovery_needed",
+        "backpressure",
+        "at_risk",
+    }:
         row.canonical_state = "blocked"
         row.failure_reason = f"kg_health_{kg_health_state}"
         row.owner_agent_id = actor_id
-        row.updated_at = datetime.now(timezone.utc)
-        await db.commit()
+        row.updated_at = now
+        row = await store.save(db, row, commit=True)
         return {
             "ok": False,
             "error": "kg_health_blocks_retry",
@@ -294,14 +247,11 @@ async def schedule_canonical_debt_retry(
             "attempt_consumed": False,
             "debt": canonical_debt_to_dict(row),
         }
-
-    now = datetime.now(timezone.utc)
     row.canonical_state = "retry_scheduled"
     row.next_retry_at = now
     row.owner_agent_id = actor_id
     row.updated_at = now
-    await db.commit()
-    await db.refresh(row)
+    row = await store.save(db, row, commit=True)
     return {
         "ok": True,
         "attempt_consumed": False,
@@ -311,21 +261,14 @@ async def schedule_canonical_debt_retry(
 
 
 async def reconcile_canonical_debt_with_evidence(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     canonical_evidence: list[dict[str, Any]],
     actor_id: str,
     report_ref: str | None = None,
 ) -> dict[str, Any]:
-    """Mark open debts committed only when rebuild evidence matches.
-
-    Evidence rows must carry at least ``source_ref`` and ``content_hash``.
-    ``source_version`` is checked when both sides have it. This keeps rebuild
-    reconciliation deterministic and prevents closing debt just because an
-    artifact with a similar id exists.
-    """
-
+    store = get_canonical_debt_store()
     now = datetime.now(timezone.utc)
     committed: list[dict[str, Any]] = []
     for evidence in canonical_evidence:
@@ -333,14 +276,13 @@ async def reconcile_canonical_debt_with_evidence(
         content_hash = str(evidence.get("content_hash") or "")
         if not source_ref or not content_hash:
             continue
-        rows = (await db.execute(
-            select(CanonicalDebt).where(
-                CanonicalDebt.board_id == board_id,
-                CanonicalDebt.source_ref == source_ref,
-                CanonicalDebt.content_hash == content_hash,
-                CanonicalDebt.canonical_state.in_(tuple(OPEN_STATES)),
-            )
-        )).scalars().all()
+        rows = await store.find_open_by_evidence(
+            db,
+            board_id=board_id,
+            source_ref=source_ref,
+            content_hash=content_hash,
+            open_states=tuple(OPEN_STATES),
+        )
         for row in rows:
             evidence_version = evidence.get("source_version")
             if (
@@ -356,8 +298,8 @@ async def reconcile_canonical_debt_with_evidence(
             )
             row.owner_agent_id = actor_id
             row.updated_at = now
+            await store.save(db, row)
             committed.append(canonical_debt_to_dict(row))
-    await db.flush()
     summary = await summarize_canonical_debt(db, board_id)
     return {
         "committed_count": len(committed),
@@ -368,7 +310,7 @@ async def reconcile_canonical_debt_with_evidence(
 
 
 async def mark_canonical_debt_committed_for_artifact(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     artifact_type: str,
@@ -377,29 +319,22 @@ async def mark_canonical_debt_committed_for_artifact(
     evidence_ref: str | None = None,
     target_status: str = "canonical_consolidation",
 ) -> dict[str, Any]:
-    """Resolve open queue-failure debts after a later successful commit.
-
-    Queue failure debts use a retry-attempt hash, not the artifact content hash,
-    so evidence-hash reconciliation cannot close them. A subsequent successful
-    consolidation for the same artifact is the deterministic terminal evidence.
-    """
-
+    store = get_canonical_debt_store()
+    rows = await store.find_open_for_artifact(
+        db,
+        board_id=board_id,
+        artifact_type=artifact_type,
+        artifact_id=artifact_id,
+        target_status=target_status,
+        open_states=tuple(OPEN_STATES),
+    )
     now = datetime.now(timezone.utc)
-    rows = (await db.execute(
-        select(CanonicalDebt).where(
-            CanonicalDebt.board_id == board_id,
-            CanonicalDebt.artifact_type == artifact_type,
-            CanonicalDebt.artifact_id == artifact_id,
-            CanonicalDebt.target_status == target_status,
-            CanonicalDebt.canonical_state.in_(tuple(OPEN_STATES)),
-        )
-    )).scalars().all()
     for row in rows:
         row.canonical_state = "committed"
         row.evidence_ref = evidence_ref
         row.owner_agent_id = actor_id
         row.updated_at = now
-    await db.flush()
+        await store.save(db, row)
     summary = await summarize_canonical_debt(db, board_id)
     return {
         "committed_count": len(rows),

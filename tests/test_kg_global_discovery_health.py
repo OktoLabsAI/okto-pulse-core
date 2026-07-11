@@ -24,21 +24,21 @@ from sqlalchemy import delete
 
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.global_discovery import metrics as gdm
-from okto_pulse.core.kg.global_discovery.outbox_worker import (
+from okto_pulse.core.application.processors.global_outbox import (
     DIGESTED_NODE_TYPES,
-    OutboxWorker,
+    GlobalOutboxProcessor,
 )
-from okto_pulse.core.kg.global_discovery.schema import (
+from global_graph_testing import (
     bootstrap_global_discovery,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.health import check_global
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     VECTOR_INDEX_TYPES,
     bootstrap_board_graph,
     open_board_connection,
 )
-from okto_pulse.core.models.db import GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     configure_test_kg_registry,
@@ -97,7 +97,7 @@ async def _run_outbox(db_factory, board_id, refs):
             payload={"session_id": session_id, "nodes_added": len(refs)},
         ))
         await db.commit()
-    return await OutboxWorker(db_factory, interval_seconds=5).process_once()
+    return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
 
 @pytest.mark.asyncio

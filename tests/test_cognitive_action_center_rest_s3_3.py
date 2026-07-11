@@ -22,8 +22,8 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-import okto_pulse.core.api.cognitive_action_center as ac_api
-from okto_pulse.core.api.cognitive_action_center import (
+import okto_pulse.community.api.cognitive_action_center as ac_api
+from okto_pulse.community.api.cognitive_action_center import (
     CognitiveClearRequest,
     CognitiveSkipRequest,
     clear_cognitive_skip_endpoint,
@@ -31,14 +31,14 @@ from okto_pulse.core.api.cognitive_action_center import (
     list_cognitive_readiness_items,
     record_cognitive_skip_endpoint,
 )
-from okto_pulse.core.api.router import api_router
+from okto_pulse.community.api.router import api_router
 from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     compute_cognitive_item_id,
 )
-from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 
 NOW = datetime(2026, 6, 17, 12, 0, 0, tzinfo=timezone.utc)
 UUID_A = "aaaaaaaa-5555-5555-5555-aaaaaaaaaaaa"

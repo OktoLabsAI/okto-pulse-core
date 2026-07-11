@@ -21,13 +21,17 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import distinct, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
+from okto_pulse.core.domain.queue_health import (
+    active_queue_next_action as _active_queue_next_action,
+    age_seconds as _age_seconds,
+    classify_active_queue,
+    worst_active_queue_classification,
+)
 from okto_pulse.core.kg.commit_coordinator import kuzu_lock_retries_5m
-from okto_pulse.core.models.db import (
-    ConsolidationDeadLetter,
-    ConsolidationQueue,
+from okto_pulse.core.ports.queue_health import (
+    get_queue_health_read_port,
 )
 
 
@@ -35,8 +39,8 @@ _CLAIMS_WINDOW_S = 300  # keep enough history for both 1m and 5m views
 _CLAIM_TIMESTAMPS: deque[datetime] = deque()
 _CLAIM_LOCK = threading.Lock()
 
-_ALERT_FIRED_TOTAL = 0
 _ALERT_FIRED_LOCK = threading.Lock()
+_ALERT_FIRED_KEY = "services.queue_health.alert_fired_total"
 
 
 def record_claim(now: datetime | None = None) -> None:
@@ -69,11 +73,10 @@ def claims_per_min(window_s: int, now: datetime | None = None) -> int:
 
 def reset_claim_counters_for_tests() -> None:
     """Drop the claims sliding window — only for tests."""
-    global _ALERT_FIRED_TOTAL
     with _CLAIM_LOCK:
         _CLAIM_TIMESTAMPS.clear()
     with _ALERT_FIRED_LOCK:
-        _ALERT_FIRED_TOTAL = 0
+        reset_runtime_values(_ALERT_FIRED_KEY)
 
 
 def record_alert_fired() -> None:
@@ -83,18 +86,18 @@ def record_alert_fired() -> None:
     surfaces this as a monotonic counter (no time window) — operators
     typically chart the delta between scrapes, similar to a Prometheus counter.
     """
-    global _ALERT_FIRED_TOTAL
     with _ALERT_FIRED_LOCK:
-        _ALERT_FIRED_TOTAL += 1
+        total = int(resolve_runtime_value(_ALERT_FIRED_KEY) or 0)
+        register_runtime_value(_ALERT_FIRED_KEY, total + 1)
 
 
 def alert_fired_total() -> int:
     """Return the lifetime crossing counter (monotonic since process start)."""
     with _ALERT_FIRED_LOCK:
-        return _ALERT_FIRED_TOTAL
+        return int(resolve_runtime_value(_ALERT_FIRED_KEY) or 0)
 
 
-async def get_queue_health(db: AsyncSession) -> dict[str, Any]:
+async def get_queue_health(db: object) -> dict[str, Any]:
     """Compose the full /api/v1/kg/queue/health payload.
 
     Returns the 13-key shape declared in the API contract (FR9 + TR16
@@ -107,15 +110,9 @@ async def get_queue_health(db: AsyncSession) -> dict[str, Any]:
     alert_threshold = settings.kg_queue_alert_threshold
     now = datetime.now(timezone.utc)
 
-    queue_depth = await db.scalar(
-        select(func.count()).where(ConsolidationQueue.status == "pending")
-    ) or 0
-
-    oldest_triggered = await db.scalar(
-        select(func.min(ConsolidationQueue.triggered_at)).where(
-            ConsolidationQueue.status == "pending",
-        )
-    )
+    storage = await get_queue_health_read_port().health_snapshot(db)
+    queue_depth = storage.queue_depth
+    oldest_triggered = storage.oldest_pending_at
     if oldest_triggered is not None:
         if oldest_triggered.tzinfo is None:
             oldest_triggered = oldest_triggered.replace(tzinfo=timezone.utc)
@@ -123,20 +120,9 @@ async def get_queue_health(db: AsyncSession) -> dict[str, Any]:
     else:
         oldest_pending_age_s = 0.0
 
-    claimed_count = await db.scalar(
-        select(func.count()).where(ConsolidationQueue.status == "claimed")
-    ) or 0
-
-    claimed_boards_result = await db.execute(
-        select(distinct(ConsolidationQueue.board_id)).where(
-            ConsolidationQueue.status == "claimed",
-        )
-    )
-    claimed_boards = sorted(b for b in claimed_boards_result.scalars().all() if b)
-
-    dead_letter_count = await db.scalar(
-        select(func.count()).select_from(ConsolidationDeadLetter)
-    ) or 0
+    claimed_count = storage.claimed_count
+    claimed_boards = list(storage.claimed_boards)
+    dead_letter_count = storage.dead_letter_count
 
     # Worker pool snapshot — gracefully degrades when the singleton is
     # absent or hasn't been started yet (e.g. unit tests with no lifespan).
@@ -144,11 +130,10 @@ async def get_queue_health(db: AsyncSession) -> dict[str, Any]:
     workers_idle = 0
     workers_draining_count = 0
     try:
-        from okto_pulse.core.kg.workers.consolidation import (
-            get_consolidation_worker,
+        from okto_pulse.core.application.runtime_workers import (
+            runtime_worker_snapshot,
         )
-        worker = get_consolidation_worker()
-        snapshot = getattr(worker, "snapshot_pool", lambda: None)()
+        snapshot = runtime_worker_snapshot("consolidation_worker")
         if snapshot is not None:
             workers_active = int(snapshot.get("active", 0))
             workers_idle = int(snapshot.get("idle", 0))
@@ -184,53 +169,10 @@ async def get_queue_health(db: AsyncSession) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _ACTIVE_CQ_STATUSES = ("pending", "claimed")
-# worst-wins ordering for the overall classification.
-_ACTIVE_QUEUE_RANK = {"idle": 0, "transient": 1, "stuck": 2, "backpressure": 3}
-
-
-def _age_seconds(oldest: datetime | None, now: datetime) -> float:
-    if oldest is None:
-        return 0.0
-    if oldest.tzinfo is None:
-        oldest = oldest.replace(tzinfo=timezone.utc)
-    return max(0.0, (now - oldest).total_seconds())
-
-
-def classify_active_queue(
-    *, depth: int, oldest_age_s: float, alert_threshold: int, stuck_age_s: int,
-) -> str:
-    """transient | stuck | backpressure | idle (R6-IMP2).
-
-    backpressure wins on volume (depth at/over the queue alert threshold); stuck
-    on age (oldest active item older than the advisory stuck age); transient when
-    active but under both thresholds; idle when empty."""
-    if depth <= 0:
-        return "idle"
-    if depth >= alert_threshold:
-        return "backpressure"
-    if oldest_age_s >= stuck_age_s:
-        return "stuck"
-    return "transient"
-
-
-def _active_queue_next_action(classification: str, worker_mode: str) -> str:
-    """Suggested next action for the active-queue drill-down (SPEC4 card
-    2e913ac3, AC ac_26acf1db) — actionable without local-file forensics."""
-    if classification == "backpressure":
-        return "investigate_backpressure_pause_writes_or_scale"
-    if classification == "stuck":
-        return (
-            "start_consolidation_worker"
-            if worker_mode == "stopped"
-            else "inspect_stuck_queue_check_worker"
-        )
-    if classification == "transient":
-        return "monitor_transient_inflight_work"
-    return "none"
 
 
 async def get_active_queue_drilldown(
-    db: AsyncSession, board_id: str | None = None,
+    db: object, board_id: str | None = None,
 ) -> dict[str, Any]:
     """Drill-down of the ACTIVE operational queue depth, split by source.
 
@@ -243,47 +185,38 @@ async def get_active_queue_drilldown(
         DEAD_LETTER_RETRY_SENTINEL,
         MAX_OUTBOX_RETRIES,
     )
-    from okto_pulse.core.models.db import GlobalUpdateOutbox
-
     settings = get_settings()
     alert_threshold = int(settings.kg_queue_alert_threshold)
     stuck_age_s = int(settings.kg_queue_stuck_age_seconds)
     now = datetime.now(timezone.utc)
 
-    # worker_mode — derived from the consolidation worker singleton (no new state).
+    # worker_mode comes from the active app-scoped runner registry.
     worker_mode = "unknown"
     try:
-        from okto_pulse.core.kg.workers.consolidation import (
-            get_consolidation_worker,
+        from okto_pulse.core.application.runtime_workers import (
+            runtime_worker_is_running,
         )
-        worker = get_consolidation_worker()
-        worker_mode = "running" if getattr(worker, "is_running", False) else "stopped"
+        worker_mode = (
+            "running"
+            if runtime_worker_is_running("consolidation_worker")
+            else "stopped"
+        )
     except Exception:
         worker_mode = "unknown"
 
-    def _cq_where(*extra):
-        clauses = list(extra)
-        if board_id is not None:
-            clauses.append(ConsolidationQueue.board_id == board_id)
-        return clauses
+    storage = await get_queue_health_read_port().active_snapshot(
+        db,
+        board_id=board_id,
+        active_statuses=_ACTIVE_CQ_STATUSES,
+        max_outbox_retries=MAX_OUTBOX_RETRIES,
+        dead_letter_retry_sentinel=DEAD_LETTER_RETRY_SENTINEL,
+    )
 
     # --- Source 1: ConsolidationQueue (pending/claimed) ---
-    cq_by_status: dict[str, int] = {}
-    for status in _ACTIVE_CQ_STATUSES:
-        cq_by_status[status] = int(await db.scalar(
-            select(func.count()).where(*_cq_where(ConsolidationQueue.status == status))
-        ) or 0)
+    cq_by_status = storage.consolidation_by_status
     cq_depth = sum(cq_by_status.values())
-    cat_rows = (await db.execute(
-        select(ConsolidationQueue.artifact_type, func.count())
-        .where(*_cq_where(ConsolidationQueue.status.in_(_ACTIVE_CQ_STATUSES)))
-        .group_by(ConsolidationQueue.artifact_type)
-    )).all()
-    cq_by_category = {str(a or "unknown"): int(n) for a, n in cat_rows}
-    cq_oldest = await db.scalar(
-        select(func.min(ConsolidationQueue.triggered_at))
-        .where(*_cq_where(ConsolidationQueue.status.in_(_ACTIVE_CQ_STATUSES)))
-    )
+    cq_by_category = storage.consolidation_by_category
+    cq_oldest = storage.consolidation_oldest_at
     cq_age = _age_seconds(cq_oldest, now)
     cq_class = classify_active_queue(
         depth=cq_depth, oldest_age_s=cq_age,
@@ -291,18 +224,8 @@ async def get_active_queue_drilldown(
     )
 
     # --- Source 2: GlobalUpdateOutbox (still in the retry window; dead_letter excluded) ---
-    ob_active = [
-        GlobalUpdateOutbox.processed_at.is_(None),
-        GlobalUpdateOutbox.retry_count >= 0,
-        GlobalUpdateOutbox.retry_count < MAX_OUTBOX_RETRIES,
-        GlobalUpdateOutbox.retry_count != DEAD_LETTER_RETRY_SENTINEL,
-    ]
-    if board_id is not None:
-        ob_active.append(GlobalUpdateOutbox.board_id == board_id)
-    ob_depth = int(await db.scalar(select(func.count()).where(*ob_active)) or 0)
-    ob_oldest = await db.scalar(
-        select(func.min(GlobalUpdateOutbox.created_at)).where(*ob_active)
-    )
+    ob_depth = storage.outbox_depth
+    ob_oldest = storage.outbox_oldest_at
     ob_age = _age_seconds(ob_oldest, now)
     ob_class = classify_active_queue(
         depth=ob_depth, oldest_age_s=ob_age,
@@ -310,7 +233,7 @@ async def get_active_queue_drilldown(
     )
 
     total_active_depth = cq_depth + ob_depth
-    overall = max((cq_class, ob_class), key=lambda c: _ACTIVE_QUEUE_RANK[c])
+    overall = worst_active_queue_classification(cq_class, ob_class)
 
     return {
         "board_id": board_id,

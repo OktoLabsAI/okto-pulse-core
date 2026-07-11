@@ -33,7 +33,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_cognitive_item_id,
 )
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 
 USER_ID = "r5-test1-user"
 UUID_A = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"

@@ -12,6 +12,8 @@ The worker NEVER writes the graph inside the event drain and uses a cognitive
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, resolve_runtime_value
+
 import asyncio
 import logging
 
@@ -117,31 +119,36 @@ def build_closeout_input_loader(session_factory):
     ledger item from SQL (Card/Spec/Board settings) + the live graph (bug probe,
     related Decision)."""
     from okto_pulse.core.events.handlers.cognitive_extraction import _summariser_factory
-    from okto_pulse.core.models.db import Board, Card, Spec
+    from okto_pulse.core.ports.domain_event_delivery import (
+        get_domain_event_fact_reader,
+    )
 
     async def _loader(board_id: str, item) -> dict:
         kind = (item.source_ref.split(":", 1)[0] or "").lower()
         ident = item.source_ref.split(":", 1)[-1]
+        reader = get_domain_event_fact_reader()
         if item.artifact_type == "bug" or kind == "bug":
             async with session_factory() as db:
-                card = await db.get(Card, ident)
-                board = await db.get(Board, board_id)
-            settings = (board.settings or {}) if board is not None else {}
+                card = await reader.load_cognitive_card_facts(db, card_id=ident)
+                settings = await reader.load_board_settings(db, board_id=board_id)
+            settings = settings or {}
             llm_config = settings.get("cognitive_llm_config")
             summariser = _summariser_factory(llm_config) if llm_config else None
             return {
                 "bug_card_id": ident,
-                "bug_title": getattr(card, "title", "") or "",
-                "bug_action_plan": getattr(card, "action_plan", "") or "",
+                "bug_title": card.title if card and card.title else "",
+                "bug_action_plan": (
+                    card.action_plan if card and card.action_plan else ""
+                ),
                 "llm_config": llm_config,
                 "summariser": summariser,
                 "bug_probe": _graph_bug_probe(board_id),
             }
         if item.artifact_type == "spec" or kind == "spec":
             async with session_factory() as db:
-                spec = await db.get(Spec, ident)
+                spec = await reader.load_cognitive_spec_facts(db, spec_id=ident)
             return {
-                "spec_context": getattr(spec, "context", "") or "",
+                "spec_context": spec.context if spec and spec.context else "",
                 "decision_ref": _lookup_spec_decision_node(board_id, ident),
             }
         return {}
@@ -230,14 +237,15 @@ class CognitiveCloseoutWorker:
             await asyncio.sleep(self._interval_s)
 
 
-_worker: CognitiveCloseoutWorker | None = None
+_RUNTIME_KEY = "kg.workers.cognitive_closeout"
 
 
 def get_cognitive_closeout_worker(session_factory=None) -> CognitiveCloseoutWorker:
-    global _worker
-    if _worker is None:
+    worker = resolve_runtime_value(_RUNTIME_KEY)
+    if worker is None:
         if session_factory is None:
-            from okto_pulse.core.infra.database import get_session_factory
+            from okto_pulse.core.ports.relational_runtime import get_session_factory
             session_factory = get_session_factory()
-        _worker = CognitiveCloseoutWorker(session_factory)
-    return _worker
+        worker = CognitiveCloseoutWorker(session_factory)
+        register_runtime_value(_RUNTIME_KEY, worker)
+    return worker

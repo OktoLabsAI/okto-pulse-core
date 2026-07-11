@@ -116,12 +116,12 @@ class TestBackwardCompat:
         assert hasattr(tpl, "GET_SUPERSEDENCE_CHAIN")
 
     def test_open_board_connection_importable(self):
-        from okto_pulse.core.kg.schema import open_board_connection
+        from kg_schema_testing import open_board_connection
 
         assert callable(open_board_connection)
 
     def test_schema_constants_importable(self):
-        from okto_pulse.core.kg.schema import (
+        from kg_schema_testing import (
             MULTI_REL_TYPES,
             NODE_TYPES,
             REL_TYPES,

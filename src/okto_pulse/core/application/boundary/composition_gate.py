@@ -46,18 +46,9 @@ DEFERRED_BOUNDARIES: tuple[str, ...] = (
     "graph_lifecycle",
 )
 
-#: Versioned catalogue of CATALOGUED EXISTING DEBT (``"file::symbol"``) — the
-#: owned-provider wiring already present in the core app layer at this point in
-#: the strangler, owner=okto-pulse-core/architecture, promotion_criteria="migrate
-#: into the composition root". These (and ONLY these) classify as ``baseline``;
-#: any owned wiring NOT in this catalogue is NEW and blocks. This is a reviewed
-#: snapshot, never a self-scan — a self-scan would mask new wiring.
-DEFAULT_COMPOSITION_BASELINE: frozenset[str] = frozenset(
-    {
-        "okto_pulse/core/mcp/server.py::register_session_factory",
-        "okto_pulse/core/services/settings_service.py::configure_settings",
-    }
-)
+#: Zero-debt ratchet. Any owned-provider wiring found outside an explicit
+#: RuntimeComposition is new and blocks; completed debt is never re-baselined.
+DEFAULT_COMPOSITION_BASELINE: frozenset[str] = frozenset()
 
 #: Concrete symbols that wire an owned provider when CALLED/instantiated.
 PROVIDER_WIRING_SYMBOLS: dict[str, str] = {

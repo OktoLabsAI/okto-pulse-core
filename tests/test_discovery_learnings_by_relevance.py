@@ -11,7 +11,7 @@ import os
 import pytest
 
 from kg_registry_testing import RealBoardCypherExecutorForTests, configure_test_kg_registry
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     bootstrap_board_graph,
     close_all_connections,
     open_board_connection,

@@ -37,7 +37,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Iterable
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from okto_pulse.core.application.artifact_propagation import propagate_artifacts
+from okto_pulse.core.ports.effective_resource import (
+    get_effective_resource_persistence_port,
+)
 
 logger = logging.getLogger("okto_pulse.core.services.effective_resource_propagation")
 
@@ -116,7 +119,7 @@ class ResourcePropagationError(Exception):
         return payload
 
 
-async def _resolve_lineage(db: AsyncSession, board_id: str, entity_type: str, entity_id: str):
+async def _resolve_lineage(db: Any, board_id: str, entity_type: str, entity_id: str):
     """Resolve the canonical effective lineage. Raises
     ``ResourceLineageResolutionError`` on any resolution failure (lineage error or
     a missing/invalid entity) so callers fail closed before persisting."""
@@ -272,7 +275,7 @@ def _mockup_dicts(entity) -> list[dict[str, Any]]:
 
 
 async def propagate_effective_resources_to_spec(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     spec,
@@ -293,9 +296,7 @@ async def propagate_effective_resources_to_spec(
     from okto_pulse.core.services.main import (
         RefinementService,
         propagate_architecture_designs,
-        propagate_artifacts,
     )
-    from okto_pulse.core.models.db import SpecKnowledgeBase
 
     lineage = await _resolve_lineage(db, board_id, "refinement", refinement_id)
     states = _states_by_type(lineage)
@@ -329,11 +330,19 @@ async def propagate_effective_resources_to_spec(
             kbs = _kb_dicts(self_entity, source_type="refinement", source_id=refinement.id,
                             source_title=refinement.title, source_version=refinement.version)
             await propagate_artifacts(
-                db=db, source_mockups=None, source_qa_items=qa_snapshot,
-                source_knowledge_bases=kbs, target_entity=spec,
-                target_kb_class=SpecKnowledgeBase, user_id=user_id, kb_ids=kb_ids,
-                source_type="refinement", source_id=refinement.id,
-                source_title=refinement.title, source_version=refinement.version,
+                db,
+                source_mockups=None,
+                source_qa_items=qa_snapshot,
+                source_knowledge_bases=kbs,
+                target_entity=spec,
+                target_kb_entity="spec_knowledge_base",
+                user_id=user_id,
+                mockup_ids=None,
+                kb_ids=kb_ids,
+                source_type="refinement",
+                source_id=refinement.id,
+                source_title=refinement.title,
+                source_version=refinement.version,
             )
             qa_snapshot = []  # only propagate Q&A once
             counts["knowledge_base"] = len(kbs)
@@ -347,10 +356,17 @@ async def propagate_effective_resources_to_spec(
                             source_title=getattr(ancestor_entity, "title", None),
                             source_version=getattr(ancestor_entity, "version", None))
             await propagate_artifacts(
-                db=db, source_mockups=None, source_qa_items=qa_snapshot,
-                source_knowledge_bases=kbs, target_entity=spec,
-                target_kb_class=SpecKnowledgeBase, user_id=user_id, kb_ids=kb_ids,
-                source_type="ideation", source_id=ancestor_entity.id,
+                db,
+                source_mockups=None,
+                source_qa_items=qa_snapshot,
+                source_knowledge_bases=kbs,
+                target_entity=spec,
+                target_kb_entity="spec_knowledge_base",
+                user_id=user_id,
+                mockup_ids=None,
+                kb_ids=kb_ids,
+                source_type="ideation",
+                source_id=ancestor_entity.id,
                 source_title=getattr(ancestor_entity, "title", None),
                 source_version=getattr(ancestor_entity, "version", None),
             )
@@ -378,9 +394,15 @@ async def propagate_effective_resources_to_spec(
         elif mk_state is not None and mk_state.direct_count > 0:
             mockups = _mockup_dicts(self_entity)
             await propagate_artifacts(
-                db=db, source_mockups=mockups, source_qa_items=qa_snapshot,
-                source_knowledge_bases=None, target_entity=spec, target_kb_class=None,
-                user_id=user_id, mockup_ids=mockup_ids,
+                db,
+                source_mockups=mockups,
+                source_qa_items=qa_snapshot,
+                source_knowledge_bases=None,
+                target_entity=spec,
+                target_kb_entity=None,
+                user_id=user_id,
+                mockup_ids=mockup_ids,
+                kb_ids=None,
             )
             qa_snapshot = []
             counts["mockup"] = len(mockups)
@@ -392,9 +414,15 @@ async def propagate_effective_resources_to_spec(
         elif mk_state is not None and mk_state.inherited_count > 0 and ancestor_entity is not None:
             mockups = _mockup_dicts(ancestor_entity)
             await propagate_artifacts(
-                db=db, source_mockups=mockups, source_qa_items=qa_snapshot,
-                source_knowledge_bases=None, target_entity=spec, target_kb_class=None,
-                user_id=user_id, mockup_ids=mockup_ids,
+                db,
+                source_mockups=mockups,
+                source_qa_items=qa_snapshot,
+                source_knowledge_bases=None,
+                target_entity=spec,
+                target_kb_entity=None,
+                user_id=user_id,
+                mockup_ids=mockup_ids,
+                kb_ids=None,
             )
             qa_snapshot = []
             counts["mockup"] = len(mockups)
@@ -471,7 +499,7 @@ def _aggregate_status(by_type: dict[str, Any]) -> str:
 
 
 async def resolve_effective_card_copy_plan(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     spec_id: str,
@@ -514,59 +542,28 @@ async def resolve_effective_card_copy_plan(
 
 
 async def load_effective_kb_items(
-    db: AsyncSession, source_entity_type: str, source_entity_id: str
+    db: Any, source_entity_type: str, source_entity_id: str
 ) -> list[dict[str, Any]]:
     """Load the knowledge-base CONTENT of an effective ancestor (ideation/
     refinement/spec) for a card-copy fallback. ``id`` is the EFFECTIVE kb id the
     copy tool must echo into a gate-readable identity field."""
-    from sqlalchemy import select
-
-    from okto_pulse.core.models.db import (
-        IdeationKnowledgeBase,
-        RefinementKnowledgeBase,
-        SpecKnowledgeBase,
+    return await get_effective_resource_persistence_port().load_knowledge_bases(
+        db,
+        source_entity_type=source_entity_type,
+        source_entity_id=source_entity_id,
     )
-
-    model, fk = {
-        "ideation": (IdeationKnowledgeBase, IdeationKnowledgeBase.ideation_id),
-        "refinement": (RefinementKnowledgeBase, RefinementKnowledgeBase.refinement_id),
-        "spec": (SpecKnowledgeBase, SpecKnowledgeBase.spec_id),
-    }.get(source_entity_type, (None, None))
-    if model is None:
-        return []
-    result = await db.execute(
-        select(model).where(fk == source_entity_id).order_by(model.created_at.asc())
-    )
-    out: list[dict[str, Any]] = []
-    for kb in result.scalars().all():
-        out.append({
-            "id": kb.id,
-            "title": kb.title,
-            "description": getattr(kb, "description", None),
-            "content": kb.content,
-            "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
-            # R6-IMP4: preserve the parent's canonical root across the card-copy hop.
-            "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
-        })
-    return out
 
 
 async def load_effective_mockup_items(
-    db: AsyncSession, source_entity_type: str, source_entity_id: str
+    db: Any, source_entity_type: str, source_entity_id: str
 ) -> list[dict[str, Any]]:
     """Load the screen-mockup payloads of an effective ancestor for a card-copy
     fallback. Each mockup keeps its original ``id`` (the effective/obligation id)."""
-    from okto_pulse.core.models.db import Ideation, Refinement, Spec
-
-    model = {"ideation": Ideation, "refinement": Refinement, "spec": Spec}.get(
-        source_entity_type
+    return await get_effective_resource_persistence_port().load_mockups(
+        db,
+        source_entity_type=source_entity_type,
+        source_entity_id=source_entity_id,
     )
-    if model is None:
-        return []
-    entity = await db.get(model, source_entity_id)
-    if entity is None:
-        return []
-    return [m for m in (getattr(entity, "screen_mockups", None) or []) if isinstance(m, dict)]
 
 
 __all__ = [

@@ -104,7 +104,7 @@ def test_graph_db_key_change_persists_via_guard_without_runtime_effect():
     async def _run():
         from okto_pulse.core.infra.config import GRAPH_DB_MAX_SIZE_GB_VALUES
         from okto_pulse.core.infra.database import get_session_factory
-        from okto_pulse.core.services.settings_service import AppSetting
+        from sqlalchemy_test_models import AppSetting
 
         factory = get_session_factory()
         async with factory() as db:

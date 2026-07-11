@@ -53,6 +53,7 @@ ALLOWLISTED_FILES: frozenset[str] = frozenset(
         "okto_pulse/core/application/use_cases/mcp_profile_activity.py",
         "okto_pulse/core/application/use_cases/update_agent.py",
         "okto_pulse/core/application/use_cases/update_board_overrides.py",
+        "okto_pulse/core/application/service_catalog.py",
         "okto_pulse/core/mcp/__init__.py",
         "okto_pulse/core/mcp/server.py",
         "okto_pulse/core/services/__init__.py",

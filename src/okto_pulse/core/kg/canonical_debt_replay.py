@@ -25,8 +25,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
@@ -80,7 +78,7 @@ def _target_ids(source_refs: list[str] | None) -> set[str] | None:
 
 
 async def replay_canonical_debt_by_maturity(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     source_refs: list[str] | None = None,
@@ -147,7 +145,7 @@ async def replay_canonical_debt_by_maturity(
     return result
 
 
-async def replay_canonical_debt_post_commit(db: AsyncSession, *, board_id: str) -> None:
+async def replay_canonical_debt_post_commit(db: object, *, board_id: str) -> None:
     """Best-effort post-commit trigger for the consolidation worker. A failure is
     logged and NEVER marks debt committed nor fails the commit (no silent success:
     only the existing verified reconcile contract commits anything)."""

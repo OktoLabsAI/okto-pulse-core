@@ -15,10 +15,10 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from okto_pulse.core.api.boards import router as boards_router
+from okto_pulse.community.api.boards import router as boards_router
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.models.db import Board
+from sqlalchemy_test_models import Board
 from okto_pulse.core.models.schemas import BoardSettings
 from okto_pulse.core.services.main import IdeationService
 

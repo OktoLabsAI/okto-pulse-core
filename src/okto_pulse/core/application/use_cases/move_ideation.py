@@ -11,16 +11,16 @@ surfaced as :class:`EntityNotFoundError` (adapter maps to HTTP 404).
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
 from okto_pulse.core.models import IdeationMove
-from okto_pulse.core.services import IdeationService
 
 
 class MoveIdeationCommand:
@@ -47,10 +47,9 @@ class MoveIdeationUseCase:
     """Change an ideation's status without any transport dependency."""
 
     async def execute(
-        self, command: MoveIdeationCommand, *, actor: ActorContext, uow: Any
+        self, command: MoveIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveIdeationResult:
-        session = session_of(uow)
-        service = IdeationService(session)
+        service = uow.services.ideations
         # AmbiguityGateError (and any transition guard error) propagates to the
         # adapter unchanged — mirrors api/ideations.py:move_ideation ordering.
         # actor.actor_name is None for REST (the service resolves it) and the MCP

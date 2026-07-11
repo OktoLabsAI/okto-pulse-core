@@ -46,7 +46,7 @@ CONCRETE_PERSISTENCE_ROOTS: frozenset[str] = frozenset(
 )
 #: Transport/auth-coupled symbols that must never appear in a pure layer.
 PURE_FORBIDDEN_SYMBOLS: frozenset[str] = frozenset(
-    {"Request", "Depends", "ContextVar", "_active_api_key"}
+    {"Request", "Depends", "_active_api_key"}
 )
 #: Internal module prefixes that pure layers must not import (Community repos,
 #: concrete adapter packages reached as modules rather than framework roots).

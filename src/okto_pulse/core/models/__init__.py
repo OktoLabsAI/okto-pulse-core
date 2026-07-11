@@ -1,10 +1,4 @@
-"""Models module exports.
-
-Lazy (PEP 562) re-export surface. Resolving an attribute imports ONLY the
-submodule that defines it, so `import okto_pulse.core.models.schemas` (Pydantic)
-no longer eager-loads the SQLAlchemy ORM in `.db` (R01C FR1/FR4, AC1). Enums
-resolve to the agnostic `core.domain.enums` layer, never the ORM.
-"""
+"""Lazy exports for transport schemas and domain enums."""
 
 from __future__ import annotations
 
@@ -21,46 +15,6 @@ if TYPE_CHECKING:  # real imports for static analysis only — never run at impo
         SpecStatus,
         StoryStatus,
         SprintStatus,
-    )
-    from okto_pulse.core.models.db import (
-        ActivityLog,
-        Agent,
-        AgentBoard,
-        AgentSeenItem,
-        ArchitectureDesign,
-        ArchitectureDesignVersion,
-        ArchitectureDiagramPayload,
-        ArchitectureFinding,
-        ArchitectureFindingRun,
-        ArchitectureWarningAcknowledgement,
-        Attachment,
-        BoardShare,
-        CardDependency,
-        Board,
-        Card,
-        Comment,
-        Ideation,
-        IdeationHistory,
-        IdeationKnowledgeBase,
-        IdeationQAItem,
-        IdeationSnapshot,
-        QAItem,
-        Refinement,
-        RefinementHistory,
-        RefinementKnowledgeBase,
-        RefinementQAItem,
-        RefinementSnapshot,
-        ResourceNotApplicable,
-        Spec,
-        SpecHistory,
-        SpecKnowledgeBase,
-        SpecQAItem,
-        Story,
-        StoryIdeationLink,
-        Sprint,
-        SprintHistory,
-        SprintQAItem,
-        Topic,
     )
     from okto_pulse.core.models.schemas import (
         ActivityLogResponse,
@@ -181,46 +135,6 @@ _ENUM_NAMES = (
     "StoryStatus",
     "SprintStatus",
 )
-_ORM_NAMES = (
-    "ActivityLog",
-    "Agent",
-    "AgentBoard",
-    "AgentSeenItem",
-    "ArchitectureDesign",
-    "ArchitectureDesignVersion",
-    "ArchitectureDiagramPayload",
-    "ArchitectureFinding",
-    "ArchitectureFindingRun",
-    "ArchitectureWarningAcknowledgement",
-    "Attachment",
-    "BoardShare",
-    "CardDependency",
-    "Board",
-    "Card",
-    "Comment",
-    "Ideation",
-    "IdeationHistory",
-    "IdeationKnowledgeBase",
-    "IdeationQAItem",
-    "IdeationSnapshot",
-    "QAItem",
-    "Refinement",
-    "RefinementHistory",
-    "RefinementKnowledgeBase",
-    "RefinementQAItem",
-    "RefinementSnapshot",
-    "ResourceNotApplicable",
-    "Spec",
-    "SpecHistory",
-    "SpecKnowledgeBase",
-    "SpecQAItem",
-    "Story",
-    "StoryIdeationLink",
-    "Sprint",
-    "SprintHistory",
-    "SprintQAItem",
-    "Topic",
-)
 _SCHEMA_NAMES = (
     "ActivityLogResponse",
     "AgentBoardOverridesUpdate",
@@ -332,8 +246,6 @@ _SCHEMA_NAMES = (
 _SOURCE: dict[str, str] = {}
 for _n in _ENUM_NAMES:
     _SOURCE[_n] = "okto_pulse.core.domain.enums"
-for _n in _ORM_NAMES:
-    _SOURCE[_n] = "okto_pulse.core.models.db"
 for _n in _SCHEMA_NAMES:
     _SOURCE[_n] = "okto_pulse.core.models.schemas"
 
@@ -352,53 +264,15 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
-    # DB Models
-    "ActivityLog",
-    "Agent",
-    "AgentBoard",
-    "AgentSeenItem",
-    "ArchitectureDesign",
-    "ArchitectureDesignVersion",
-    "ArchitectureDiagramPayload",
-    "ArchitectureFinding",
-    "ArchitectureFindingRun",
-    "ArchitectureWarningAcknowledgement",
-    "Attachment",
-    "BoardShare",
-    "CardDependency",
-    "Board",
-    "Card",
+    # Domain enums
     "CardPriority",
     "CardStatus",
-    "Comment",
-    "Ideation",
     "IdeationComplexity",
-    "IdeationHistory",
-    "IdeationKnowledgeBase",
-    "IdeationQAItem",
-    "IdeationSnapshot",
     "IdeationStatus",
-    "QAItem",
-    "Refinement",
-    "RefinementHistory",
-    "RefinementKnowledgeBase",
-    "RefinementQAItem",
-    "RefinementSnapshot",
     "RefinementStatus",
-    "ResourceNotApplicable",
-    "Spec",
-    "SpecHistory",
-    "SpecKnowledgeBase",
-    "SpecQAItem",
     "SpecStatus",
-    "Story",
-    "StoryIdeationLink",
     "StoryStatus",
-    "Sprint",
-    "SprintHistory",
-    "SprintQAItem",
     "SprintStatus",
-    "Topic",
     # Schemas
     "ActivityLogResponse",
     "AgentBoardOverridesUpdate",

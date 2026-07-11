@@ -16,13 +16,13 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from okto_pulse.core.api.amendment_revisions import AmendmentRevisionCreateRequest
+from okto_pulse.community.api.amendment_revisions import AmendmentRevisionCreateRequest
 from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     AmendmentHotfixRevision,
     Board,
     BugSeverity,

@@ -28,8 +28,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_r5i5_"))
 
-import okto_pulse.core.api.cognitive_action_center as ac_api
-from okto_pulse.core.api.cognitive_action_center import (
+import okto_pulse.community.api.cognitive_action_center as ac_api
+from okto_pulse.community.api.cognitive_action_center import (
     CognitiveSkipRequest,
     record_cognitive_skip_endpoint,
 )
@@ -40,7 +40,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_cognitive_item_id,
 )
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 from okto_pulse.core.services.human_control_metrics import (
     get_human_control_required_count,

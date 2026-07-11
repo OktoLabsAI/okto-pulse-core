@@ -9,7 +9,7 @@ from okto_pulse.core.kg.cognitive_closeout_gate import (
 )
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
 from okto_pulse.core.mcp.kg_tools import register_kg_tools
-from okto_pulse.core.models.db import Spec
+from sqlalchemy_test_models import Spec
 from okto_pulse.core.models.schemas import BoardSettings, SpecCreate, SpecUpdate
 
 

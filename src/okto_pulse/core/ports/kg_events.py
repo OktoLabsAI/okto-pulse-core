@@ -8,6 +8,8 @@ allows a SaaS edition to provide the same stream from another event store.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
@@ -70,29 +72,28 @@ class KGEventsReaderPort(Protocol):
         """Return ordered events for a reconnecting client."""
 
 
-_kg_events_reader_port: KGEventsReaderPort | None = None
+_RUNTIME_KEY = "ports.kg_events.reader"
 
 
 def register_kg_events_reader_port(reader: KGEventsReaderPort) -> None:
     """Register the concrete event source selected by the edition."""
 
-    global _kg_events_reader_port
-    _kg_events_reader_port = reader
+    register_runtime_value(_RUNTIME_KEY, reader)
 
 
 def get_kg_events_reader_port() -> KGEventsReaderPort:
     """Resolve the configured event source, failing closed when absent."""
 
-    if _kg_events_reader_port is None:
+    reader = resolve_runtime_value(_RUNTIME_KEY)
+    if reader is None:
         raise KGEventsProviderMissing()
-    return _kg_events_reader_port
+    return reader
 
 
 def reset_kg_events_reader_port_for_tests() -> None:
     """Clear explicit test composition."""
 
-    global _kg_events_reader_port
-    _kg_events_reader_port = None
+    reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [

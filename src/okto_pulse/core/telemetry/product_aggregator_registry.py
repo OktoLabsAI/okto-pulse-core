@@ -2,7 +2,7 @@
 
 The composition root (the Community edition) registers a factory that builds a
 :class:`~okto_pulse.core.ports.telemetry.ProductAggregationPort` for a given
-``settings`` / ``metrics_dir``. The core telemetry runtime obtains the aggregator
+settings object and opaque state reference. The core telemetry runtime obtains the aggregator
 ONLY through :func:`get_product_aggregator` — it never references the concrete
 ``ProductTelemetryAggregator`` (removed in R10-E Pass 2; Community owns it as
 ``community.adapters.product_telemetry.CommunityProductTelemetryAggregator``).
@@ -16,30 +16,26 @@ error, no concrete instantiation.
 from __future__ import annotations
 
 import logging
-import threading
-from pathlib import Path
 from typing import Any, Callable
 
 from okto_pulse.core.ports.telemetry import ProductAggregationPort
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
 logger = logging.getLogger("okto_pulse.telemetry.product_aggregator")
 
-#: A factory: ``(settings, metrics_dir: Path) -> ProductAggregationPort``.
-ProductAggregatorFactory = Callable[[Any, Path], ProductAggregationPort]
+#: A factory: ``(settings, state_ref: str) -> ProductAggregationPort``.
+ProductAggregatorFactory = Callable[[Any, str], ProductAggregationPort]
 
-_product_aggregator_factory: ProductAggregatorFactory | None = None
-_lock = threading.Lock()
+_RUNTIME_KEY = "telemetry.product_aggregator.factory"
 
 
 def register_product_aggregator_factory(factory: ProductAggregatorFactory) -> None:
     """Register the edition's product-aggregator factory (composition root).
     Idempotent overwrite; thread-safe."""
-    global _product_aggregator_factory
-    with _lock:
-        _product_aggregator_factory = factory
+    register_runtime_value(_RUNTIME_KEY, factory)
 
 
-def get_product_aggregator(settings: Any, metrics_dir: Any) -> ProductAggregationPort:
+def get_product_aggregator(settings: Any, state_ref: Any) -> ProductAggregationPort:
     """Build the product aggregator via the registered factory (fail-closed: R10-E Pass 2).
 
     R10-E Pass 2: the register-before-remove fallback that built
@@ -48,9 +44,9 @@ def get_product_aggregator(settings: Any, metrics_dir: Any) -> ProductAggregatio
     Calling without a registered factory raises ``RuntimeError`` and emits a
     structured signal (secret-free, bounded).
     """
-    base = Path(metrics_dir)
-    if _product_aggregator_factory is not None:
-        return _product_aggregator_factory(settings, base)
+    factory = resolve_runtime_value(_RUNTIME_KEY)
+    if factory is not None:
+        return factory(settings, str(state_ref))
     # R10-E Pass 2 fail-closed: no provider → structured error (never instantiates
     # a concrete class). The composition root (Community) registers before any use.
     logger.error(
@@ -72,9 +68,7 @@ def get_product_aggregator(settings: Any, metrics_dir: Any) -> ProductAggregatio
 
 def reset_product_aggregator_factory_for_tests() -> None:
     """Drop the registered factory (tests only)."""
-    global _product_aggregator_factory
-    with _lock:
-        _product_aggregator_factory = None
+    reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [

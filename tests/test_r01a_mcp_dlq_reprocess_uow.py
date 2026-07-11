@@ -30,8 +30,7 @@ from okto_pulse.core.application.use_cases import (
     VerifyConnectivityClassUseCase,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
-from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 ACTOR = ActorContext("fu2-mcp-agent", "mcp")
 
 
@@ -47,7 +46,7 @@ def _uowf():
 
 async def _seed_dlq_row(board_id: str) -> str:
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import ConsolidationDeadLetter
+    from sqlalchemy_test_models import ConsolidationDeadLetter
 
     row_id = f"dlq-fu2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -68,7 +67,7 @@ async def _seed_dlq_row(board_id: str) -> str:
 
 async def _seed_board(board_id: str) -> None:
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     async with get_session_factory()() as db:
         if await db.get(Board, board_id) is None:
@@ -78,7 +77,7 @@ async def _seed_board(board_id: str) -> None:
 
 async def _dlq_exists(board_id: str, row_id: str) -> bool:
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import ConsolidationDeadLetter
+    from sqlalchemy_test_models import ConsolidationDeadLetter
 
     async with get_session_factory()() as db:
         row = await db.get(ConsolidationDeadLetter, row_id)
@@ -167,7 +166,7 @@ async def test_dead_letter_reprocess_persists_requeue() -> None:
 @pytest.mark.asyncio
 async def test_dead_letter_reprocess_rolls_back_on_mid_flow_failure() -> None:
     """Rollback parity: a mid-flow failure persists no partial DLQ state."""
-    from okto_pulse.core.models.db import ConsolidationDeadLetter
+    from sqlalchemy_test_models import ConsolidationDeadLetter
 
     board_id = _board()
     marker_id = f"dlq-marker-{uuid.uuid4().hex[:8]}"

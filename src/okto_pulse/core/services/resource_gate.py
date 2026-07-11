@@ -1,14 +1,10 @@
-"""Resource Gate service facade.
-
-The SQLAlchemy-backed implementation is isolated behind the explicit adapter in
-``okto_pulse.core.repositories.sqlalchemy.resource_gate_service``. This module
-keeps the historical public import path while avoiding eager adapter imports
-during core package startup.
-"""
+"""Resource Gate application facade over an edition-owned persistence adapter."""
 
 from __future__ import annotations
 
 from typing import Any
+
+from okto_pulse.core.runtime_context import register_runtime_value, resolve_runtime_value
 
 from okto_pulse.core.services.resource_gate_contracts import (
     ENTITY_TYPES,
@@ -28,19 +24,21 @@ from okto_pulse.core.services.resource_lineage import (
     ResolvedResourceLineageService,
 )
 
-_IMPL_CLS: type | None = None
+_RUNTIME_KEY = "services.resource_gate.impl_class"
 
 
 def _build_impl_class() -> type:
-    global _IMPL_CLS
-    if _IMPL_CLS is not None:
-        return _IMPL_CLS
+    cached = resolve_runtime_value(_RUNTIME_KEY)
+    if cached is not None:
+        return cached
 
-    from okto_pulse.core.repositories import sqlalchemy_resource_gate_service_class
+    from okto_pulse.core.ports.relational_services import (
+        resolve_resource_gate_service_class,
+    )
 
-    SQLAlchemyResourceGateService = sqlalchemy_resource_gate_service_class()
+    adapter_service_class = resolve_resource_gate_service_class()
 
-    class _ResolvedResourceGateService(SQLAlchemyResourceGateService):
+    class _ResolvedResourceGateService(adapter_service_class):
         """Compatibility facade over the adapter-owned implementation."""
 
         async def _resolve_resource_lineage(
@@ -90,8 +88,8 @@ def _build_impl_class() -> type:
                 return "not_applicable"
             return "missing"
 
-    _IMPL_CLS = _ResolvedResourceGateService
-    return _IMPL_CLS
+    register_runtime_value(_RUNTIME_KEY, _ResolvedResourceGateService)
+    return _ResolvedResourceGateService
 
 
 class _ResourceGateServiceMeta(type):

@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from okto_pulse.core.api.boards import create_board as rest_create_board
-from okto_pulse.core.api.ideations import move_ideation as rest_move_ideation
+from okto_pulse.community.api.boards import create_board as rest_create_board
+from okto_pulse.community.api.ideations import move_ideation as rest_move_ideation
 from okto_pulse.core.application.golden_inbound_replay import (
     FlowOutcome,
     GoldenInboundReplay,
@@ -28,13 +28,13 @@ from okto_pulse.core.application.use_cases import (
     EntityNotFoundError,
 )
 from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-from okto_pulse.core.inbound.rest_adapter import RESTAdapterContract
+from okto_pulse.community.inbound.rest_adapter import RESTAdapterContract
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.repositories import SQLAlchemyUnitOfWork
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.models import BoardCreate, IdeationMove
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.services import BoardService, IdeationService
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 from okto_pulse.core.services.main import AmbiguityGateError
@@ -86,11 +86,14 @@ def _stub_auth():
 
 
 def _norm_board(board) -> dict:
+    attached = getattr(board, "values", None)
+    if attached is None:
+        attached = board.__dict__
     return {
         "name": board.name,
         "owner_id": board.owner_id,
-        "agents": board.__dict__.get("agents"),
-        "settings_present": board.__dict__.get("settings") is not None,
+        "agents": attached.get("agents"),
+        "settings_present": attached.get("settings") is not None,
     }
 
 
@@ -193,10 +196,18 @@ async def _before_create_board(db, *, name: str) -> object:
     board = await service.create_board(USER_ID, BoardCreate(name=name), realm_id=None)
     await db.commit()
     board = await service.get_board(board.id)
-    board.__dict__["agents"] = []
-    board.__dict__["settings"] = BoardGovernanceService.normalize_settings(
-        getattr(board, "settings", None)
-    )
+    attached = getattr(board, "attach", None)
+    values = {
+        "agents": [],
+        "settings": BoardGovernanceService.normalize_settings(
+            getattr(board, "settings", None)
+        ),
+    }
+    if callable(attached):
+        for key, value in values.items():
+            attached(key, value)
+    else:
+        board.__dict__.update(values)
     return board
 
 
@@ -258,11 +269,12 @@ async def test_move_ideation_rest_equivalent(db_factory):
 
     async def _before():
         async with db_factory() as db:
-            service = IdeationService(db)
+            uow = _wrap_uow(db)
+            service = uow.services.ideations
             await service.move_ideation(
                 id_before, USER_ID, IdeationMove(status=IdeationStatus.REVIEW)
             )
-            await db.commit()
+            await uow.commit()
             return await service.get_ideation(id_before)
 
     async def _after():

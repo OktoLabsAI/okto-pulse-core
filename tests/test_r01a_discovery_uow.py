@@ -26,10 +26,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import discovery as discovery_api
-from okto_pulse.core.api.discovery import router as discovery_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import discovery as discovery_api
+from okto_pulse.community.api.discovery import router as discovery_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu7-s4-user"
@@ -64,7 +64,7 @@ def _now() -> datetime:
 
 
 async def _seed_intent(*, active: bool = True, category: str = "explore") -> str:
-    from okto_pulse.core.models.db import DiscoveryIntent
+    from sqlalchemy_test_models import DiscoveryIntent
 
     iid = f"intent-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -86,7 +86,7 @@ async def _seed_intent(*, active: bool = True, category: str = "explore") -> str
 
 
 async def _seed_board(owner_id: str = USER) -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu7s4-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -96,7 +96,7 @@ async def _seed_board(owner_id: str = USER) -> str:
 
 
 async def _seed_saved_search(board_id: str) -> str:
-    from okto_pulse.core.models.db import DiscoverySavedSearch
+    from sqlalchemy_test_models import DiscoverySavedSearch
 
     sid = f"saved-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -115,7 +115,7 @@ async def _seed_saved_search(board_id: str) -> str:
 
 
 async def _seed_history(board_id: str, user_id: str) -> str:
-    from okto_pulse.core.models.db import DiscoverySearchHistory
+    from sqlalchemy_test_models import DiscoverySearchHistory
 
     hid = f"hist-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -249,8 +249,7 @@ async def test_execute_use_case_raises_for_missing_intent() -> None:
         ExecuteDiscoveryIntentCommand,
         ExecuteDiscoveryIntentUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):
@@ -269,8 +268,7 @@ async def test_list_intents_use_case_returns_active_only() -> None:
         ListDiscoveryIntentsCommand,
         ListDiscoveryIntentsUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     active_id = await _seed_intent(active=True)
     inactive_id = await _seed_intent(active=False)
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())

@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.api.architecture import _http_error_from_value
-from okto_pulse.core.api.cards import _resource_gate_detail as _card_resource_gate_detail
-from okto_pulse.core.api.specs import _resource_gate_detail as _spec_resource_gate_detail
+from okto_pulse.community.api.architecture import _http_error_from_value
+from okto_pulse.community.api.cards import _resource_gate_detail as _card_resource_gate_detail
+from okto_pulse.community.api.specs import _resource_gate_detail as _spec_resource_gate_detail
 from okto_pulse.core.mcp.server import (
     _mcp_architecture_error,
     _resource_gate_error_response,
 )
-from okto_pulse.core.models.db import ArchitectureDesign, Board, Ideation
+from sqlalchemy_test_models import ArchitectureDesign, Board, Ideation
 from okto_pulse.core.services.architecture import (
     ArchitectureFindingGate,
     ArchitectureDesignRepository,
@@ -184,14 +184,17 @@ async def test_architecture_finding_gate_runtime_follows_store_when_payload_woul
 
 def test_resource_gate_is_the_only_done_blocking_wiring_surface() -> None:
     resource_gate_source = _read_core_source("services/resource_gate.py")
+    resource_gate_impl_source = _read_core_source(
+        "repositories/sqlalchemy/resource_gate_service.py"
+    )
     transition_service_source = _read_core_source("services/main.py")
 
     # Robust against one-line vs multi-line import formatting: the wiring must
     # import ArchitectureFindingGate from the architecture service. The usage
     # assertion below pins the actual gate call, so behavior stays guarded.
-    assert "from okto_pulse.core.services.architecture import" in resource_gate_source
-    assert "ArchitectureFindingGate" in resource_gate_source
-    assert "ArchitectureFindingGate(self.db).evaluate" in resource_gate_source
+    assert "from okto_pulse.core.services.architecture import" in resource_gate_impl_source
+    assert "ArchitectureFindingGate" in resource_gate_impl_source
+    assert "ArchitectureFindingGate(self.db).evaluate" in resource_gate_impl_source
     for token in (
         "TopologyWarningEngine",
         "ArchitectureWarningRecord",
@@ -213,7 +216,7 @@ def test_resource_gate_is_the_only_done_blocking_wiring_surface() -> None:
     )
 
     allowed_blocker_paths = {
-        SRC / "services" / "resource_gate.py",
+        SRC / "repositories" / "sqlalchemy" / "resource_gate_service.py",
         SRC / "services" / "architecture_observability.py",
     }
     blocker_token = "architecture_findings_block_done"

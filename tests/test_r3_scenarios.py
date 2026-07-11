@@ -28,7 +28,7 @@ from r3_scenario_helpers import (
     seed_refinement,
 )
 
-from okto_pulse.core.models.db import Card, ResourceNotApplicable, Spec, SpecKnowledgeBase
+from sqlalchemy_test_models import Card, ResourceNotApplicable, Spec, SpecKnowledgeBase
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 

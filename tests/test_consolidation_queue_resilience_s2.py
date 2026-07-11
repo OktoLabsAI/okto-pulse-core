@@ -23,11 +23,11 @@ from okto_pulse.core.events.handlers.consolidation_enqueuer import (
 )
 from okto_pulse.core.events.types import CardCreated
 from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
-from okto_pulse.core.kg.workers.dead_letter import (
+from okto_pulse.core.application.processors.dead_letter import (
     build_attempt_entry,
     route_to_dead_letter,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     ConsolidationDeadLetter,
     ConsolidationQueue,
@@ -287,7 +287,7 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
     readable through a live process handle.
     """
 
-    import okto_pulse.core.kg.workers.consolidation as worker
+    import okto_pulse.core.application.processors.consolidation as worker
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.safe_write_lifecycle import (
         LifecycleStepResult,
@@ -320,8 +320,8 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
 
     monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
     registry = get_kg_registry()
-    original_step_adapter = registry.safe_write_step_adapter
-    registry.safe_write_step_adapter = fake_lifecycle_step
+    original_step_adapter = registry.graph_lifecycle.apply_step
+    registry.graph_lifecycle.apply_step = fake_lifecycle_step
     entry = SimpleNamespace(
         id="queue-guarded",
         board_id=BOARD_ID_S2,
@@ -337,7 +337,7 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
             db=object(),
         )
     finally:
-        registry.safe_write_step_adapter = original_step_adapter
+        registry.graph_lifecycle.apply_step = original_step_adapter
         set_barrier_mode(original_mode)
 
     assert resp.nodes_added == 1
@@ -359,7 +359,7 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
     o close_reopen_probe, que saiu do hot path por FR-4).
     """
 
-    import okto_pulse.core.kg.workers.consolidation as worker
+    import okto_pulse.core.application.processors.consolidation as worker
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.safe_write_lifecycle import (
         STEP_CHECKPOINT,
@@ -376,8 +376,8 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
 
     monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
     registry = get_kg_registry()
-    original_step_adapter = registry.safe_write_step_adapter
-    registry.safe_write_step_adapter = fake_lifecycle_step
+    original_step_adapter = registry.graph_lifecycle.apply_step
+    registry.graph_lifecycle.apply_step = fake_lifecycle_step
     entry = SimpleNamespace(
         id="queue-probe-failed",
         board_id=BOARD_ID_S2,
@@ -394,7 +394,7 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
                 db=object(),
             )
     finally:
-        registry.safe_write_step_adapter = original_step_adapter
+        registry.graph_lifecycle.apply_step = original_step_adapter
 
 
 # ----------------------------------------------------------------------

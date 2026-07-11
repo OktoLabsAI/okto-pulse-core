@@ -30,10 +30,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import cards as cards_api
-from okto_pulse.core.api.cards import router as cards_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import cards as cards_api
+from okto_pulse.community.api.cards import router as cards_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu4-s2-user"
@@ -78,7 +78,7 @@ def client():
 
 
 async def _seed_board_spec() -> tuple[str, str]:
-    from okto_pulse.core.models.db import Board, Spec
+    from sqlalchemy_test_models import Board, Spec
 
     bid = f"board-fu4s2-{uuid.uuid4().hex[:8]}"
     sid = f"spec-fu4s2-{uuid.uuid4().hex[:8]}"
@@ -102,7 +102,7 @@ async def _seed_card(
     # dependency/validation endpoints, not create, so this deliberately bypasses
     # CardService.create_card's spec-status gate — the card just needs to satisfy
     # the "every card belongs to a spec" invariant.
-    from okto_pulse.core.models.db import Board, Card, CardStatus, Spec
+    from sqlalchemy_test_models import Board, Card, CardStatus, Spec
 
     if board_id is None or spec_id is None:
         board_id, spec_id = await _seed_board_spec()
@@ -323,9 +323,8 @@ async def test_move_card_use_case_raises_for_missing_card() -> None:
     from okto_pulse.core.application.use_cases import MoveCardCommand, MoveCardUseCase
     from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
     from okto_pulse.core.models.schemas import CardMove
-    from okto_pulse.core.models.db import CardStatus
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_models import CardStatus
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

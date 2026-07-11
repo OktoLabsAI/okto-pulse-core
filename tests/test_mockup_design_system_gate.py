@@ -29,7 +29,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     BoardDesignSystem,
     DesignSystem,
@@ -329,7 +329,8 @@ async def test_dangling_design_system_fail_closed_under_blocking():
         board = await _board(db, "blocking")
         ds = await _global_ds(db)
         await _link(db, board.id, ds.id)
-        await db.delete(ds)  # link now dangles -> configured but broken
+        mapped_ds = await db.get(DesignSystem, ds.id)
+        await db.delete(mapped_ds)  # link now dangles -> configured but broken
         await db.flush()
         gate = MockupDesignSystemGate(db)
         with pytest.raises(DesignSystemError) as exc:
@@ -417,7 +418,7 @@ async def test_create_spec_gates_embedded_mockups_at_creation():
 
 async def test_spec_to_card_propagation_gates_noncompliant_mockup():
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Card, CardStatus
+    from sqlalchemy_test_models import Card, CardStatus
     from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
     async with get_session_factory()() as db:
@@ -447,9 +448,9 @@ async def test_spec_to_card_propagation_gates_noncompliant_mockup():
 
 
 async def test_rest_create_screen_mockup_gates_blocking_and_valid():
-    from okto_pulse.core.api.screen_mockups import create_screen_mockup
+    from okto_pulse.community.api.screen_mockups import create_screen_mockup
     from okto_pulse.core.infra.database import get_session_factory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     async with get_session_factory()() as db:
         board = await _board(db, "blocking")
         ds = await _global_ds(db)
@@ -462,7 +463,7 @@ async def test_rest_create_screen_mockup_gates_blocking_and_valid():
                 "spec", spec.id,
                 raw={"title": "M", "design_system_ref": "fake", "design_system_version": 1,
                      "design_system_evidence": "e"},
-                db=db, actor=USER_ID,
+                db=SQLAlchemyUnitOfWork(db), actor=USER_ID,
             )
         assert exc.value.code == "design_system_not_found"
         assert not ((await db.get(Spec, spec.id)).screen_mockups or [])  # nothing persisted
@@ -472,7 +473,7 @@ async def test_rest_create_screen_mockup_gates_blocking_and_valid():
             "spec", spec.id,
             raw={"title": "M", "design_system_ref": ds.id, "design_system_version": ds.version,
                  "design_system_evidence": "figma://proof"},
-            db=db, actor=USER_ID,
+            db=SQLAlchemyUnitOfWork(db), actor=USER_ID,
         )
         assert result["success"] is True and result["design_system_gate"]["outcome"] == "pass"
         assert len((await db.get(Spec, spec.id)).screen_mockups or []) == 1
@@ -482,7 +483,7 @@ async def test_cross_board_propagation_gates_against_destination_design_system()
     """A mockup valid for board X's Design System, copied to board Y (different DS,
     blocking), must be gated against Y's effective Design System (destination), not X's."""
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import Card, CardStatus
+    from sqlalchemy_test_models import Card, CardStatus
     from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
     async with get_session_factory()() as db:
@@ -563,7 +564,8 @@ async def test_screen_mockups_writer_census_all_gated():
     core_dir = pathlib.Path(core_pkg.__file__).parent
     writers = _screen_mockup_attribute_writers(core_dir)
     expected = {
-        ("services/main.py", "propagate_artifacts"),       # gated (delta vs existing)
+        ("application/artifact_propagation.py", "propagate_artifacts"),  # gated delta
+        ("services/main.py", "_legacy_propagate_artifacts"),  # pending dead-code removal
         ("services/main.py", "create_spec"),               # gated (old=[] baseline)
         ("services/main.py", "create_story"),              # gated (old=[] baseline)
         ("services/main.py", "create_refinement"),         # gated manual (old=[]) + propagate_artifacts

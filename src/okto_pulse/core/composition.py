@@ -21,9 +21,18 @@ concrete adapter; it is composition-layer wiring, not application logic.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from collections import Counter
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Any, AsyncIterator, Protocol, Sequence, runtime_checkable
+
+from .runtime_context import (
+    RuntimeValueRegistry,
+    runtime_value_scope,
+    snapshot_runtime_values,
+)
 
 #: Providers owned by #03 that MUST be present under ``strict_runtime=True``.
 REQUIRED_OWNED_PROVIDERS: tuple[str, ...] = (
@@ -41,6 +50,10 @@ OPTIONAL_OWNED_PROVIDERS: tuple[str, ...] = (
     "mcp_session_factory",
     "uow_factory",
     "lifecycle_hooks",
+    "worker_registry",
+    "relational_engine",
+    "content_ingestion_resolver",
+    "relational_runtime_factory",
 )
 
 #: Providers that must be present when an environment explicitly opts into
@@ -111,6 +124,14 @@ class RuntimeComposition:
     # REST/MCP consumers to it is IMP2 (FR3).
     uow_factory: Any = None
     lifecycle_hooks: Sequence[LifecycleHook] = field(default_factory=tuple)
+    worker_registry: Any = None
+    relational_engine: Any = None
+    content_ingestion_resolver: Any = None
+    relational_runtime_factory: Any = None
+    runtime_values: RuntimeValueRegistry = field(default_factory=snapshot_runtime_values)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "lifecycle_hooks", tuple(self.lifecycle_hooks))
 
     def missing_required(self, *, require_lifecycle_hooks: bool = False) -> list[str]:
         """Required owned providers that are absent (``None``)."""
@@ -144,6 +165,51 @@ def validate_required_providers(
     )
     if missing:
         raise RuntimeProviderMissing(missing[0], missing=missing)
+
+
+_active_runtime_composition: ContextVar[RuntimeComposition | None] = ContextVar(
+    "okto_pulse_active_runtime_composition",
+    default=None,
+)
+_bridge_usage: Counter[str] = Counter()
+_bridge_usage_lock = Lock()
+
+
+def current_runtime_composition() -> RuntimeComposition | None:
+    """Return the composition bound to the current ASGI/task context."""
+
+    return _active_runtime_composition.get()
+
+
+@contextmanager
+def runtime_composition_scope(composition: RuntimeComposition):
+    """Bind one immutable composition for the current sync/async task."""
+
+    if not isinstance(composition, RuntimeComposition):
+        raise InvalidRuntimeComposition("composition must be a RuntimeComposition")
+    token = _active_runtime_composition.set(composition)
+    try:
+        with runtime_value_scope(composition.runtime_values):
+            yield composition
+    finally:
+        _active_runtime_composition.reset(token)
+
+
+def record_runtime_bridge_usage(bridge: str) -> None:
+    """Count a compatibility fallback so its removal gate is measurable."""
+
+    with _bridge_usage_lock:
+        _bridge_usage[bridge] += 1
+
+
+def runtime_bridge_usage_snapshot() -> dict[str, int]:
+    with _bridge_usage_lock:
+        return dict(_bridge_usage)
+
+
+def reset_runtime_bridge_usage_for_tests() -> None:
+    with _bridge_usage_lock:
+        _bridge_usage.clear()
 
 
 @runtime_checkable

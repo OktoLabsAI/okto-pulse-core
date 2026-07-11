@@ -41,7 +41,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-import okto_pulse.core.app as _core_app  # noqa: F401  (register ORM models)
+import okto_pulse.community.app as _core_app  # noqa: F401  (register ORM models)
 import okto_pulse.core.infra.database as _db_mod
 import okto_pulse.core.mcp.server as server
 from okto_pulse.core.services.main import AgentService
@@ -68,7 +68,7 @@ def _harness_env():
         settings=_config._settings_instance,
         engine=_db_mod._engine,
         factory=_db_mod._session_factory,
-        reg=(_reg._registry, _reg._configured),
+        reg=_reg.capture_registry_state_for_tests(),
         mcp_sf=server._mcp_session_factory,
         mcp_auth=server._mcp_authenticator,
         uow_factory=_runtime_registry._unit_of_work_factory,
@@ -94,7 +94,7 @@ def _harness_env():
         _config._settings_instance = saved["settings"]
         _db_mod._engine = saved["engine"]
         _db_mod._session_factory = saved["factory"]
-        _reg._registry, _reg._configured = saved["reg"]
+        _reg.restore_registry_state_for_tests(saved["reg"])
         server._mcp_session_factory = saved["mcp_sf"]
         server._mcp_authenticator = saved["mcp_auth"]
         _runtime_registry._unit_of_work_factory = saved["uow_factory"]
@@ -110,8 +110,8 @@ async def _seed(tmp: str) -> None:
     """Create the DB, register the MCP session factory, seed agents + boards, and
     register the AuthContext factory bound to the REAL server agent/db providers."""
     from kg_registry_testing import configure_test_kg_registry
-    from okto_pulse.core.models.db import Agent, AgentBoard, Board
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from sqlalchemy_test_models import Agent, AgentBoard, Board
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.runtime_registry import register_unit_of_work_factory
 
     _db_mod.create_database(f"sqlite+aiosqlite:///{Path(tmp) / 'r08d.db'}")
@@ -207,7 +207,7 @@ def _client(app):
 async def _agent_full_snapshot():
     """Every observable agent field, incl. the last_used_at audit timestamp."""
     async with _db_mod.get_session_factory()() as s:
-        from okto_pulse.core.models.db import Agent
+        from sqlalchemy_test_models import Agent
 
         rows = (await s.execute(select(Agent))).scalars().all()
         return {
@@ -221,7 +221,7 @@ async def _agent_security_snapshot():
     permission flags) — excludes display metadata. MCP read auth is non-mutating,
     so tests that need to prove no audit touch compare the full snapshot."""
     async with _db_mod.get_session_factory()() as s:
-        from okto_pulse.core.models.db import Agent
+        from sqlalchemy_test_models import Agent
 
         rows = (await s.execute(select(Agent))).scalars().all()
         return {a.id: (a.api_key_hash, a.is_active, a.permission_flags) for a in rows}

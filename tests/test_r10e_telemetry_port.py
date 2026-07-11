@@ -51,7 +51,8 @@ def test_get_telemetry_port_without_factory_raises_runtime_error(tmp_path, caplo
         get_telemetry_port(_settings(tmp_path))
 
     signals = [
-        r for r in caplog.records
+        r
+        for r in caplog.records
         if r.__dict__.get("metric_name") == "telemetry_port_no_provider_total"
     ]
     assert len(signals) == 1
@@ -83,7 +84,8 @@ def test_registered_factory_short_circuits_fail_closed(tmp_path, caplog):
 
     # The error signal is NOT emitted when a factory is registered.
     assert not [
-        r for r in caplog.records
+        r
+        for r in caplog.records
         if r.__dict__.get("metric_name") == "telemetry_port_no_provider_total"
     ]
 
@@ -105,16 +107,28 @@ def test_factory_conformance_isinstance_and_exercise(tmp_path):
         def append_event(self, e): ...
         def append_sent(self, r, *, failed=False): ...
         def append_snapshot(self, r): ...
-        def confirmed_event_ids(self): return set()
-        def iter_events(self, *, since=None): return ()
-        def summarize(self, *, window_days=30): return {}
-        def prune_old(self, *, now=None): return {}
-        def export_local(self, output_path=None): ...
-        def purge_local(self): return {}
+        def confirmed_event_ids(self):
+            return set()
+
+        def iter_events(self, *, since=None):
+            return ()
+
+        def summarize(self, *, window_days=30):
+            return {}
+
+        def prune_old(self, *, now=None):
+            return {}
+
+        def export_events(self, output_path=None): ...
+        def purge_events(self):
+            return {}
 
     class _NullAgg:
-        def __init__(self, s=None, m=None): pass
-        def aggregate(self): return ProductState.from_dict({k: {"stub": 0} for k in PRODUCT_METRIC_KEYS})
+        def __init__(self, s=None, m=None):
+            pass
+
+        def aggregate(self):
+            return ProductState.from_dict({k: {"stub": 0} for k in PRODUCT_METRIC_KEYS})
 
     reset_telemetry_event_store_factory_for_tests()
     reset_product_aggregator_factory_for_tests()
@@ -183,12 +197,13 @@ def test_pass2_all_registries_are_fail_closed(tmp_path, caplog):
 def test_pass2_singleton_gate_baseline_still_covers_all_four_factories():
     """The four factory globals are baselined (not flagged as new singletons)."""
     from okto_pulse.core.application.boundary.singleton_gate import AntiSingletonGate
+
     sg = AntiSingletonGate().run()
     new_names = {n["name"] for n in sg.evidence["new_singletons"]}
     for name in (
         "_telemetry_port_factory",
         "_telemetry_sender_factory",
-        "_factory",               # event_store_registry._factory
+        "_factory",  # event_store_registry._factory
         "_product_aggregator_factory",
     ):
         assert name not in new_names, f"{name!r} flagged as new singleton"

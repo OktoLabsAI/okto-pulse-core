@@ -7,6 +7,8 @@ belong to an edition adapter.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, Sequence, runtime_checkable
@@ -81,29 +83,28 @@ class RelationalEffectsPort(Protocol):
         ...
 
 
-_relational_effects_port: RelationalEffectsPort | None = None
+_RUNTIME_KEY = "ports.relational_effects.port"
 
 
 def register_relational_effects_port(port: RelationalEffectsPort) -> None:
     """Register the edition-owned relational effects port."""
 
-    global _relational_effects_port
-    _relational_effects_port = port
+    register_runtime_value(_RUNTIME_KEY, port)
 
 
 def get_relational_effects_port() -> RelationalEffectsPort:
     """Return the registered relational effects port, fail-closed if absent."""
 
-    if _relational_effects_port is None:
+    port = resolve_runtime_value(_RUNTIME_KEY)
+    if port is None:
         raise RelationalEffectsProviderMissing()
-    return _relational_effects_port
+    return port
 
 
 def reset_relational_effects_port_for_tests() -> None:
     """Drop the registered port for test isolation."""
 
-    global _relational_effects_port
-    _relational_effects_port = None
+    reset_runtime_values(_RUNTIME_KEY)
 
 
 __all__ = [

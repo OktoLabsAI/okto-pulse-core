@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from okto_pulse.core.models.db import CardType
+from sqlalchemy_test_models import CardType
 # Spec R01A REST-FU2f: the analytics card-type helpers were consolidated into the
 # service (api/analytics.py no longer keeps its own copy after the strangle). Both
 # aliases now resolve to the single canonical service implementation, so the

@@ -19,15 +19,15 @@ SERVICE-OWNED commits (these use cases must NOT add a UoW commit there).
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     commit,
-    session_of,
 )
-from okto_pulse.core.services import SpecService
 
 
 # --- move (board-scope + old_status capture + state machine) ----------------
@@ -59,9 +59,9 @@ class McpMoveSpecUseCase:
     adapter to map in that exact order."""
 
     async def execute(
-        self, command: McpMoveSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: McpMoveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMoveSpecResult:
-        service = SpecService(session_of(uow))
+        service = uow.services.specs
         existing = await service.get_spec(command.spec_id)
         if not existing or existing.board_id != command.board_id:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -105,9 +105,9 @@ class McpUpdateSpecUseCase:
     build the ``SpecUpdate`` payload (resolved in the adapter) before calling this."""
 
     async def execute(
-        self, command: McpUpdateSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateSpecResult:
-        spec = await SpecService(session_of(uow)).update_spec(
+        spec = await uow.services.specs.update_spec(
             command.spec_id, actor.actor_id, command.payload
         )
         if not spec:
@@ -161,15 +161,13 @@ class McpDeriveSpecUseCase:
     (matching the legacy MCP tool, unlike the REST DeriveSpecUseCase)."""
 
     async def execute(
-        self, command: McpDeriveSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeriveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeriveSpecResult:
-        from okto_pulse.core.services import IdeationService, RefinementService
 
-        session = session_of(uow)
         service = (
-            IdeationService(session)
+            uow.services.ideations
             if command.source == "ideation"
-            else RefinementService(session)
+            else uow.services.refinements
         )
         spec = await service.derive_spec(
             command.source_id,
@@ -230,16 +228,14 @@ class McpCreateSpecUseCase:
     (``to_error_dict``) and keeps the ``invalid status`` / multi-value coercion."""
 
     async def execute(
-        self, command: McpCreateSpecCommand, *, actor: ActorContext, uow: Any
+        self, command: McpCreateSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpCreateSpecResult:
         from okto_pulse.core.services.effective_resource_propagation import (
             ResourceLineageResolutionError,
             ResourcePropagationError,
-            propagate_effective_resources_to_spec,
         )
 
-        session = session_of(uow)
-        spec = await SpecService(session).create_spec(
+        spec = await uow.services.specs.create_spec(
             command.board_id, actor.actor_id, command.spec_data, skip_ownership_check=True
         )
         if not spec:
@@ -248,12 +244,13 @@ class McpCreateSpecUseCase:
         resource_propagation = None
         if command.refinement_id:
             try:
-                resource_propagation = await propagate_effective_resources_to_spec(
-                    session,
+                resource_propagation = (
+                    await uow.services.propagate_effective_resources_to_spec(
                     board_id=command.board_id,
                     spec=spec,
                     refinement_id=command.refinement_id,
                     user_id=actor.actor_id,
+                    )
                 )
             except ResourceLineageResolutionError as exc:
                 return McpCreateSpecResult(spec, lineage_error=exc)
@@ -264,7 +261,7 @@ class McpCreateSpecUseCase:
         return McpCreateSpecResult(spec, resource_propagation)
 
 
-# --- get_spec_context (board-scope only; adapter aggregates over uow.session) -
+# --- get_spec_context (board-scope only; adapter owns presentation projection) -
 
 
 class McpGetSpecContextCommand:
@@ -288,12 +285,12 @@ class McpGetSpecContextUseCase:
     ``{"error": "Spec not found"}`` (BEFORE the aggregation). Transport-free: the
     heavy presentation aggregation (5+ services, the sprint swallow, projection /
     gate_readiness, ``_mcp_architecture_for_parent`` / ``_serialize_knowledge_base``)
-    is a Codex-approved exception that stays in the adapter over ``uow.session``."""
+    stays in the inbound presentation adapter and outside the use case."""
 
     async def execute(
-        self, command: McpGetSpecContextCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetSpecContextCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetSpecContextResult:
-        spec = await SpecService(session_of(uow)).get_spec(command.spec_id)
+        spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:
             raise EntityNotFoundError("spec", command.spec_id)
         return McpGetSpecContextResult(spec)
@@ -363,7 +360,7 @@ class McpAddBusinessRuleUseCase:
     → commit → core coverage. No board-scope (matches the legacy ``if not spec``)."""
 
     async def execute(
-        self, command: McpAddBusinessRuleCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddBusinessRuleCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddBusinessRuleResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -371,8 +368,7 @@ class McpAddBusinessRuleUseCase:
         )
         from okto_pulse.core.services.traceability import spec_coverage_summary
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -467,7 +463,7 @@ class McpUpdateBusinessRuleUseCase:
     in the adapter."""
 
     async def execute(
-        self, command: McpUpdateBusinessRuleCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateBusinessRuleCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateBusinessRuleResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -475,8 +471,7 @@ class McpUpdateBusinessRuleUseCase:
         )
         from okto_pulse.core.services.traceability import spec_coverage_summary
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -566,13 +561,12 @@ class McpRemoveSpecEntityUseCase:
     envelopes (the target_type is validated BEFORE this call)."""
 
     async def execute(
-        self, command: McpRemoveSpecEntityCommand, *, actor: ActorContext, uow: Any
+        self, command: McpRemoveSpecEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpRemoveSpecEntityResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.traceability import spec_coverage_summary
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -649,9 +643,9 @@ class McpListBusinessRulesUseCase:
     projection + ``emit_compaction_metric`` stay in the adapter (transport)."""
 
     async def execute(
-        self, command: McpListBusinessRulesCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListBusinessRulesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListBusinessRulesResult:
-        spec = await SpecService(session_of(uow)).get_spec(command.spec_id)
+        spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
         rules = list(spec.business_rules or [])
@@ -746,7 +740,7 @@ class McpAddApiContractUseCase:
     canonicalizes the ValidationError and renders the envelopes."""
 
     async def execute(
-        self, command: McpAddApiContractCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddApiContractCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddApiContractResult:
         from pydantic import ValidationError
 
@@ -757,8 +751,7 @@ class McpAddApiContractUseCase:
         )
         from okto_pulse.core.services.traceability import spec_coverage_summary
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -900,7 +893,7 @@ class McpUpdateApiContractUseCase:
     envelope (returns the contract + the adapter's deprecation_warning)."""
 
     async def execute(
-        self, command: McpUpdateApiContractCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateApiContractCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateApiContractResult:
         from pydantic import ValidationError
 
@@ -910,8 +903,7 @@ class McpUpdateApiContractUseCase:
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
         )
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -998,9 +990,9 @@ class McpListApiContractsUseCase:
     in the adapter (transport)."""
 
     async def execute(
-        self, command: McpListApiContractsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListApiContractsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListApiContractsResult:
-        spec = await SpecService(session_of(uow)).get_spec(command.spec_id)
+        spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
         contracts = list(spec.api_contracts or [])
@@ -1086,7 +1078,7 @@ class McpAddDecisionUseCase:
     -> persist. The adapter coerces ``alternatives``/tokens and renders envelopes."""
 
     async def execute(
-        self, command: McpAddDecisionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddDecisionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddDecisionResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1094,8 +1086,7 @@ class McpAddDecisionUseCase:
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
         )
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -1208,7 +1199,7 @@ class McpUpdateDecisionUseCase:
     (no CLEAR branch in the legacy) -> status validation -> persist."""
 
     async def execute(
-        self, command: McpUpdateDecisionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateDecisionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateDecisionResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1216,8 +1207,7 @@ class McpUpdateDecisionUseCase:
             resolve_linked_requirement_tokens_to_fr_or_tr_ids,
         )
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -1345,7 +1335,7 @@ class McpAddIntegrationRequirementUseCase:
     and renders envelopes."""
 
     async def execute(
-        self, command: McpAddIntegrationRequirementCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddIntegrationRequirementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddIntegrationRequirementResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1354,8 +1344,7 @@ class McpAddIntegrationRequirementUseCase:
         )
         from okto_pulse.core.services.traceability import spec_coverage_summary
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -1429,9 +1418,9 @@ class McpListIntegrationRequirementsUseCase:
     ``EntityNotFoundError`` -> "Spec not found"."""
 
     async def execute(
-        self, command: McpListIntegrationRequirementsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListIntegrationRequirementsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListIntegrationRequirementsResult:
-        spec = await SpecService(session_of(uow)).get_spec(command.spec_id)
+        spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:
             raise EntityNotFoundError("spec", command.spec_id)
         requirements = list(getattr(spec, "integration_requirements", None) or [])
@@ -1521,7 +1510,7 @@ class McpAddObservabilityRequirementUseCase:
     linked_integration_requirements and renders envelopes."""
 
     async def execute(
-        self, command: McpAddObservabilityRequirementCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddObservabilityRequirementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddObservabilityRequirementResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1530,8 +1519,7 @@ class McpAddObservabilityRequirementUseCase:
         )
         from okto_pulse.core.services.traceability import spec_coverage_summary
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -1604,9 +1592,9 @@ class McpListObservabilityRequirementsUseCase:
     ``EntityNotFoundError`` -> "Spec not found"."""
 
     async def execute(
-        self, command: McpListObservabilityRequirementsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListObservabilityRequirementsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListObservabilityRequirementsResult:
-        spec = await SpecService(session_of(uow)).get_spec(command.spec_id)
+        spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:
             raise EntityNotFoundError("spec", command.spec_id)
         requirements = list(getattr(spec, "observability_requirements", None) or [])
@@ -1691,7 +1679,7 @@ class McpAddTestScenarioUseCase:
     commit -> core coverage. The adapter renders the typed envelopes."""
 
     async def execute(
-        self, command: McpAddTestScenarioCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddTestScenarioResult:
         from okto_pulse.core.services.application_schemas import SpecUpdate
         from okto_pulse.core.services.analytics_service import (
@@ -1703,8 +1691,7 @@ class McpAddTestScenarioUseCase:
         )
         from okto_pulse.core.services.traceability import spec_coverage_summary
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -1773,9 +1760,9 @@ class McpListTestScenariosUseCase:
     coverage-map / summary projection stays in the adapter (presentation)."""
 
     async def execute(
-        self, command: McpListTestScenariosCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListTestScenariosCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListTestScenariosResult:
-        spec = await SpecService(session_of(uow)).get_spec(command.spec_id)
+        spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
         return McpListTestScenariosResult(
@@ -1829,9 +1816,9 @@ class McpUpdateTestScenarioUseCase:
     the adapter to map to the legacy envelopes."""
 
     async def execute(
-        self, command: McpUpdateTestScenarioCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateTestScenarioResult:
-        service = SpecService(session_of(uow))
+        service = uow.services.specs
         result = await service.update_test_scenario(
             command.spec_id,
             actor.actor_id,
@@ -1870,9 +1857,9 @@ class McpDeleteTestScenarioUseCase:
     adapter to map."""
 
     async def execute(
-        self, command: McpDeleteTestScenarioCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteTestScenarioCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteTestScenarioResult:
-        service = SpecService(session_of(uow))
+        service = uow.services.specs
         result = await service.delete_test_scenario(
             command.spec_id, actor.actor_id, command.scenario_id
         )
@@ -1932,15 +1919,13 @@ class McpApplyStructuredSpecEntityUseCase:
     payload/expected-version parsing and renders ``result.as_dict()``."""
 
     async def execute(
-        self, command: McpApplyStructuredSpecEntityCommand, *, actor: ActorContext, uow: Any
+        self, command: McpApplyStructuredSpecEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpApplyStructuredSpecEntityResult:
         from okto_pulse.core.services.spec_structured_entities import (
             StructuredSpecEntityCommand,
-            StructuredSpecEntityService,
         )
 
-        session = session_of(uow)
-        service = StructuredSpecEntityService(session)
+        service = uow.services.structured_specs
         result = await service.apply(
             StructuredSpecEntityCommand(
                 board_id=command.board_id,
@@ -1959,7 +1944,7 @@ class McpApplyStructuredSpecEntityUseCase:
         if result.success and result.changed_fields:
             await commit(uow)
         else:
-            await session.rollback()
+            await uow.rollback()
         return McpApplyStructuredSpecEntityResult(result)
 
 
@@ -1998,15 +1983,14 @@ class McpMigrateSpecDecisionsUseCase:
     shell. ``no_block`` -> the adapter's "nothing to migrate" envelope."""
 
     async def execute(
-        self, command: McpMigrateSpecDecisionsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpMigrateSpecDecisionsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMigrateSpecDecisionsResult:
         import re
         import uuid as _uuid
 
         from okto_pulse.core.services.application_schemas import SpecUpdate
 
-        session = session_of(uow)
-        service = SpecService(session)
+        service = uow.services.specs
         spec = await service.get_spec(command.spec_id)
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)

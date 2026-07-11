@@ -27,10 +27,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import guidelines as guidelines_api
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.api.guidelines import router as guidelines_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import guidelines as guidelines_api
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.guidelines import router as guidelines_router
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu7-s3-user"
@@ -68,7 +68,7 @@ def client():
 
 
 async def _seed_board(owner: str = USER, name: str = "fu7s3") -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu7s3-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -79,7 +79,7 @@ async def _seed_board(owner: str = USER, name: str = "fu7s3") -> str:
 
 async def _seed_guideline(owner: str = OTHER, *, scope: str = "global") -> str:
     """Insert a raw global guideline owned by ``owner`` (proves the owner gate)."""
-    from okto_pulse.core.models.db import Guideline
+    from sqlalchemy_test_models import Guideline
 
     gid = f"gl-fu7s3-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -366,8 +366,7 @@ async def test_get_board_guidelines_use_case_raises_for_missing_board() -> None:
         GetBoardGuidelinesCommand,
         GetBoardGuidelinesUseCase,
     )
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
-
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

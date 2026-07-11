@@ -10,13 +10,11 @@ signatures are transport-neutral — they never expose ``AsyncSession``/``get_db
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext, session_of
-from okto_pulse.core.services.queue_health_service import (
-    get_active_queue_drilldown,
-    get_queue_health,
-)
+from okto_pulse.core.application.use_cases.base import ActorContext
 
 
 class GetQueueHealthCommand:
@@ -36,9 +34,9 @@ class GetQueueHealthUseCase:
     """Live consolidation-queue health snapshot, transport-free."""
 
     async def execute(
-        self, command: GetQueueHealthCommand, *, actor: ActorContext, uow: Any
+        self, command: GetQueueHealthCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetQueueHealthResult:
-        return GetQueueHealthResult(data=await get_queue_health(session_of(uow)))
+        return GetQueueHealthResult(data=await uow.services.kg.queue_health())
 
 
 class GetQueueDrilldownCommand:
@@ -61,8 +59,8 @@ class GetQueueDrilldownUseCase:
     """Active-queue drilldown (board-scoped or global), transport-free."""
 
     async def execute(
-        self, command: GetQueueDrilldownCommand, *, actor: ActorContext, uow: Any
+        self, command: GetQueueDrilldownCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetQueueDrilldownResult:
         return GetQueueDrilldownResult(
-            data=await get_active_queue_drilldown(session_of(uow), command.board_id)
+            data=await uow.services.kg.queue_drilldown(command.board_id)
         )

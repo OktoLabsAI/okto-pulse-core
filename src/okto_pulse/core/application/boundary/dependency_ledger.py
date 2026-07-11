@@ -108,13 +108,8 @@ class LedgerEntry:
         }
 
 
-#: The temporary-exception tokens that remain direct core dependencies after AF40.
-#: ``requests`` + ``chardet`` moved to Community ownership and are kept in the
-#: AF40 matrix below, not in this exception set.
-CANONICAL_TEMPORARY_EXCEPTION_TOKENS: tuple[str, ...] = (
-    "aiosqlite",
-    "numpy",
-)
+#: Terminal F16 state: no concrete dependency is temporarily accepted in Core.
+CANONICAL_TEMPORARY_EXCEPTION_TOKENS: tuple[str, ...] = ()
 
 #: AF40 dependency-ownership matrix tokens. Every token here must have a ledger
 #: row with owner, consumer, manifest state, removal/permanence criterion and an
@@ -126,13 +121,8 @@ CANONICAL_AF40_DEPENDENCY_TOKENS: tuple[str, ...] = (
     "numpy",
 )
 
-#: AF40 tokens that intentionally remain direct core dependencies for now. They
-#: are non-telemetry carry-forward items; changing them to removed or
-#: community-owned requires their relational/KG owner specs and oracles.
-CANONICAL_AF40_CARRY_FORWARD_TOKENS: tuple[str, ...] = (
-    "aiosqlite",
-    "numpy",
-)
+#: Terminal F16 state: all AF40 carry-forward rows have been withdrawn.
+CANONICAL_AF40_CARRY_FORWARD_TOKENS: tuple[str, ...] = ()
 
 
 def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
@@ -197,66 +187,51 @@ def build_dependency_ledger() -> tuple[LedgerEntry, ...]:
             transitive_consumer=None,
             expected_source_import_roots=(),
         ),
-        # --- temporary exceptions: direct dep, NO import, pinned transitively ---
+        # --- transferred to Community packaging/runtime ownership --------------
         LedgerEntry(
             token="aiosqlite",
-            classification="temporary_exception",
+            classification="community_owned",
             kind="dependency",
-            owner_wave=(
-                "AF40-R1 carry-forward: #04_repository_uow + "
-                "#16_schema_migrations (#05-D relational boundary)"
-            ),
-            current_owner="okto-pulse-community/adapters",
+            owner_wave="F14 dependency ownership closure",
+            current_owner="okto-pulse-community relational adapter",
             reason=(
-                "Non-telemetry carry-forward. Async SQLite driver loaded BY URL "
-                "by SQLAlchemy for local Community databases "
-                "(sqlite+aiosqlite). Direct dependency with no explicit import "
-                "in src/okto_pulse/core — SQLAlchemy resolves the dbapi from the "
-                "connection URL."
+                "The async SQLite driver is loaded by URL by the Community "
+                "SQLAlchemy adapter. Core has no relational implementation or "
+                "driver dependency."
             ),
             removal_criterion=(
-                "Do not remove or classify as telemetry-owned in AF40. Remove "
-                "from the core package only once packaging/dependency ownership "
-                "fully moves the relational driver to the Community distribution "
-                "without breaking core test/runtime fixtures."
+                "Already transferred: aiosqlite must remain absent from Core "
+                "source, manifest, lock and wheel; Community declares it directly."
             ),
             validation_oracle=(
-                "dependency_conformance AF40 carry-forward guard accepts "
-                "aiosqlite only as a ledgered direct-dep/no-import temporary "
-                "exception; #05-D relational boundary gate "
-                "(test_r05d_data_ownership) governs the actual move."
+                "F14 distribution_dependency_ownership and R05-E conformance "
+                "reject Core reintroduction and verify Community direct ownership."
             ),
-            direct_dep_no_import=True,
-            transitive_consumer="SQLAlchemy sqlite+aiosqlite async driver (Community local DB URL)",
+            direct_dep_no_import=False,
+            transitive_consumer=None,
             expected_source_import_roots=(),
         ),
         LedgerEntry(
             token="numpy",
-            classification="temporary_exception",
+            classification="community_owned",
             kind="dependency",
-            owner_wave="AF40-R1 carry-forward: #13_llm_embedding_rerank / KG vector stack",
-            current_owner="okto-pulse-core/kg",
+            owner_wave="F14 dependency ownership closure",
+            current_owner="okto-pulse-community embedding/rerank runtime",
             reason=(
-                "Non-telemetry carry-forward. Numeric backing for the embedding "
-                "/ rerank vector stack. Direct dependency with NO import in "
-                "src/okto_pulse/core (only a comment in "
-                "kg/rerank/cross_encoder.py); pulled transitively by the ML stack "
-                "(sentence-transformers / transformers / scikit-learn / scipy)."
+                "NumPy is a transitive implementation dependency of the Community "
+                "sentence-transformers stack. Core exposes only embedding/rerank "
+                "ports and deterministic policy."
             ),
             removal_criterion=(
-                "Do not remove or classify as telemetry-owned in AF40. Remove "
-                "from the core default only once the embedding/rerank adapters "
-                "(#13) move to the Community edition and the vector stack is "
-                "composition-owned; audit D3 (numpy domain-scoring usage) before "
-                "removal."
+                "Already transferred: numpy must remain absent from Core source, "
+                "manifest, lock and wheel."
             ),
             validation_oracle=(
-                "dependency_conformance AF40 carry-forward guard accepts numpy "
-                "only as a ledgered direct-dep/no-import temporary exception "
-                "pinned by the #13 embedding stack."
+                "R05-E dependency conformance blocks Core reintroduction; the "
+                "Community wheel smoke resolves the ML dependency transitively."
             ),
-            direct_dep_no_import=True,
-            transitive_consumer="sentence-transformers / transformers / scikit-learn / scipy",
+            direct_dep_no_import=False,
+            transitive_consumer=None,
             expected_source_import_roots=(),
         ),
         LedgerEntry(

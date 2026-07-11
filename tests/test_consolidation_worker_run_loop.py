@@ -1,47 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from types import SimpleNamespace
 
 import pytest
 
-from okto_pulse.core.kg.workers import consolidation
-from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
+from okto_pulse.core.application.processors import consolidation
+from okto_pulse.core.application.processors.consolidation import ConsolidationProcessor
 from okto_pulse.core.ports.coordination import (
     register_coordination_providers,
     reset_coordination_providers_for_tests,
 )
 
 from tests.coordination_fakes import FakeWriteLockPort
-
-
-class _RecordingWorker(ConsolidationWorker):
-    def __init__(self) -> None:
-        super().__init__(
-            session_factory=lambda: None,
-            heartbeat_seconds=30,
-            batch_size=1,
-        )
-        self.calls: list[float] = []
-
-    async def process_batch(self) -> int:
-        self.calls.append(time.monotonic())
-        if len(self.calls) <= 2:
-            return 1
-        raise asyncio.CancelledError
-
-
-@pytest.mark.asyncio
-async def test_worker_drains_next_batch_immediately_after_progress() -> None:
-    worker = _RecordingWorker()
-    worker._running = True
-    worker._wake_event = asyncio.Event()
-
-    await asyncio.wait_for(worker._run_loop(), timeout=1.0)
-
-    assert len(worker.calls) == 3
-    assert worker.calls[1] - worker.calls[0] < 0.1
 
 
 @pytest.mark.asyncio
@@ -51,7 +22,7 @@ async def test_queue_entry_processing_is_serialized_per_board(
     active = 0
     max_active = 0
 
-    async def fake_process(_db, _entry) -> bool:
+    async def fake_process(_db, _entry, **_kwargs) -> bool:
         nonlocal active, max_active
         active += 1
         max_active = max(max_active, active)
@@ -88,7 +59,7 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
 ) -> None:
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core import app as app_mod
+    from okto_pulse.community import app as app_mod
     from okto_pulse.core.infra import auth as auth_mod
     from okto_pulse.core.infra import database as database_mod
     from okto_pulse.core.infra import storage as storage_mod

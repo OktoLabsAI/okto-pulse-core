@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.canonical_stale_reconciler import (
     COGNITIVE_NODE_TYPES,
@@ -130,7 +129,7 @@ def detect_board_graph_stale(board_id: str) -> list[dict[str, Any]]:
 
 
 async def list_stale_canonical_parity(
-    db: AsyncSession, *, board_id: str, limit: int = 50, offset: int = 0
+    db: object, *, board_id: str, limit: int = 50, offset: int = 0
 ) -> dict[str, Any]:
     """Read-only unified stale-canonical parity drilldown (MCP/REST).
 

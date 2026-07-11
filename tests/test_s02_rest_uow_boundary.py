@@ -5,9 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from okto_pulse.core.application.use_cases.base import relational_context_from_uow
-
-
 _REST_FILES = (
     "kg_cognitive_candidate_commands.py",
     "kg_rebuild.py",
@@ -46,12 +43,22 @@ def test_s02_migrated_rest_handlers_do_not_import_raw_session_dependencies() -> 
         assert "get_db" not in imported_names, filename
 
 
-def test_s02_uow_context_bridge_accepts_a_port_owned_opaque_context() -> None:
-    session = object()
-    uow = type("SaaSUow", (), {"session": session})()
-
-    assert relational_context_from_uow(uow) is session
-    assert relational_context_from_uow(session) is session
+def test_s02_uow_context_bridge_is_absent() -> None:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "okto_pulse"
+        / "core"
+        / "application"
+        / "use_cases"
+        / "base.py"
+    )
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    function_names = {
+        node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+    }
+    assert "session_of" not in function_names
+    assert "relational_context_from_uow" not in function_names
 
 
 def test_s02_generic_events_hub_has_no_sqlalchemy_or_database_factory() -> None:

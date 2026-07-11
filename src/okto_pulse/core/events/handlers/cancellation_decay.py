@@ -22,7 +22,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import CardCancelled, CardRestored
@@ -136,7 +135,7 @@ async def _revert_decay(board_id: str, card_id: str) -> int:
 class CancellationDecayHandler:
     """Apply decay penalty to KG nodes derived from a cancelled card."""
 
-    async def handle(self, event: CardCancelled, session: AsyncSession) -> None:
+    async def handle(self, event: CardCancelled, session: object) -> None:
         # `session` is the SQL async session provided by the dispatcher; we
         # do NOT write SQL state here — all mutation is on the Kùzu graph.
         nodes_affected = await _apply_decay(event.board_id, event.card_id)
@@ -156,7 +155,7 @@ class CancellationDecayHandler:
 class CancellationRestoreHandler:
     """Revert the decay penalty when a cancelled card is restored."""
 
-    async def handle(self, event: CardRestored, session: AsyncSession) -> None:
+    async def handle(self, event: CardRestored, session: object) -> None:
         nodes_affected = await _revert_decay(event.board_id, event.card_id)
         logger.info(
             "kg.cancellation_decay.reverted",

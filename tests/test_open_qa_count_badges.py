@@ -20,9 +20,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from okto_pulse.core.api.boards import get_board_columns
+from okto_pulse.community.api.boards import get_board_columns
 from okto_pulse.core.infra.database import get_session_factory
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -37,7 +37,7 @@ from okto_pulse.core.models.db import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import IdeationSummary, SpecSummary
-from okto_pulse.core.repositories.sqlalchemy.unit_of_work import SQLAlchemyUnitOfWork
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from okto_pulse.core.services.main import IdeationService, SpecService
 
 USER = "open-qa-badge-user"
@@ -252,7 +252,7 @@ async def test_inherited_answered_qa_does_not_inflate_open_qa_count():
     ``answered_at`` — e o badge define "aberta" como ``answered_at IS NULL``,
     então TODA Q&A respondida herdada virava falso-aberta no derivado (100%
     dos badges de refinements/specs do board 0.2.3 eram falsos)."""
-    from okto_pulse.core.models.db import (
+    from sqlalchemy_test_models import (
         Refinement,
         RefinementQAItem,
         RefinementStatus,

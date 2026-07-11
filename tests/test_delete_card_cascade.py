@@ -22,7 +22,7 @@ import pytest
 import pytest_asyncio
 
 from okto_pulse.core.infra.database import get_session_factory
-from okto_pulse.core.models.db import Board, Card, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, CardType, Spec, SpecStatus
 from okto_pulse.core.services.main import CardService
 
 

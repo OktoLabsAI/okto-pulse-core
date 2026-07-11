@@ -13,7 +13,7 @@ from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     AmendmentHotfixRevision,
     Board,
     BugSeverity,

@@ -28,7 +28,7 @@ class _Agent:
 
 async def _seed_agent_boards(agent_id: str, n: int = 2) -> list[str]:
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import AgentBoard, Board
+    from sqlalchemy_test_models import AgentBoard, Board
 
     factory = get_session_factory()
     board_ids: list[str] = []

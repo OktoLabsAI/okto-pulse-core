@@ -11,7 +11,6 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from okto_pulse.core.ports.coordination import (
@@ -183,9 +182,9 @@ class KGSingleWriterLock:
 
     def __init__(
         self,
-        base_dir: Path | None = None,
+        base_dir: object | None = None,
         *,
-        board_dir_resolver: "callable[[str], Path] | None" = None,
+        board_dir_resolver: Any | None = None,
         write_lock_port: WriteLockPort | None = None,
     ) -> None:
         self._write_lock_port = write_lock_port

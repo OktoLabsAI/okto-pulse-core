@@ -26,7 +26,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,

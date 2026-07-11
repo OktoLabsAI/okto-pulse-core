@@ -1,37 +1,8 @@
-"""Quarantine-before-purge service (KG-01 FR7+FR10, contract api_ee77f56f).
+"""Quarantine-before-purge application policy.
 
-Before any purge of `graph.lbug`, `discovery.lbug` or their sidecars, the
-recovery service MUST move the affected files into quarantine and write
-an auditable manifest. This module is the canonical implementation:
-
-* Moves files atomically into `<base_dir>/quarantine/<quarantine_id>/`.
-* Writes a `manifest.json` next to them, capturing every field required
-  by TR8 (board_id, graph_type, kg_generation_id, reason, timestamps,
-  software_version, correlation_ids).
-* Validates `affected_paths` against the scoped recovery boundary —
-  paths outside known KG storage roots raise `affected_path_out_of_scope`
-  per TR9 / BR `Application data must never be deleted`.
-* Computes `retention_until` from a configurable `retention_days`
-  (TR9 default = 30 days) so an operator-driven cleanup job can prune
-  stale quarantines without losing recent evidence.
-* Emits the canonical `kg_quarantine_total{board_id, graph_type,
-  outcome, reason}` counter (OR `or_05fd5cd3`). Outcomes include
-  `created` and the failure modes; reason values are constrained to a
-  safe enum to avoid leaking sensitive content.
-
-The service does NOT delete the original files after moving — they ARE
-moved (renamed) into quarantine, which is the atomic operation. A
-caller that fails between move and manifest write would leave files in
-quarantine but with no manifest; the public API treats that as a hard
-error and refuses the partial state by attempting a best-effort rollback.
-
-Storage layout:
-
-    <base_dir>/
-        quarantine/
-            <quarantine_id>/
-                manifest.json
-                <copied/moved files>
+Core validates graph type, retention and reason semantics. Edition adapters own
+storage layout, scope resolution, compensation and durable manifest writes.
+Only opaque ``StorageRef`` values cross this boundary.
 """
 
 from __future__ import annotations
@@ -43,8 +14,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any
+
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 
 logger = logging.getLogger("okto_pulse.kg.quarantine")
 
@@ -78,7 +50,7 @@ class QuarantineErrorCode(str, Enum):
     """Typed error codes per contract api_ee77f56f response_errors."""
 
     QUARANTINE_STORAGE_UNAVAILABLE = "quarantine_storage_unavailable"
-    AFFECTED_PATH_OUT_OF_SCOPE = "affected_path_out_of_scope"
+    STORAGE_REF_OUT_OF_SCOPE = "storage_ref_out_of_scope"
 
 
 class QuarantineError(Exception):
@@ -133,7 +105,7 @@ class QuarantineResponse:
 
 @dataclass(frozen=True, slots=True)
 class QuarantineManifest:
-    """In-memory view of the on-disk manifest (TR8)."""
+    """Semantic view of a quarantine manifest (TR8)."""
 
     quarantine_id: str
     board_id: str
@@ -141,7 +113,7 @@ class QuarantineManifest:
     reason: str
     reason_bucket: str  # one of QuarantineReason
     correlation_ids: tuple[str, ...]
-    affected_paths_relative: tuple[str, ...]
+    affected_storage_refs: tuple[StorageRef, ...]
     kg_generation_id: str | None
     software_version: str
     quarantined_at: str
@@ -156,7 +128,10 @@ class QuarantineManifest:
             "reason": self.reason,
             "reason_bucket": self.reason_bucket,
             "correlation_ids": list(self.correlation_ids),
-            "affected_paths_relative": list(self.affected_paths_relative),
+            "affected_storage_refs": [
+                {"token": ref.token, "namespace": ref.namespace}
+                for ref in self.affected_storage_refs
+            ],
             "kg_generation_id": self.kg_generation_id,
             "software_version": self.software_version,
             "quarantined_at": self.quarantined_at,
@@ -262,15 +237,15 @@ class KGQuarantineService:
     def __init__(
         self,
         *,
-        base_dir: Path,
-        scope_roots: list[Path],
+        scope_storage_refs: list[StorageRef],
+        base_storage_ref_hint: StorageRef | None = None,
         config: QuarantineConfig | None = None,
         artifact_store: Any | None = None,
     ) -> None:
-        if not scope_roots:
-            raise ValueError("scope_roots must include at least one KG storage root")
-        self._base_dir_hint = str(base_dir)
-        self._scope_roots = tuple(str(Path(r)) for r in scope_roots)
+        if not scope_storage_refs:
+            raise ValueError("scope_storage_refs must include at least one storage scope")
+        self._base_storage_ref_hint = base_storage_ref_hint
+        self._scope_storage_refs = tuple(scope_storage_refs)
         self._config = config or QuarantineConfig()
         self._artifact_store = artifact_store
 
@@ -279,12 +254,12 @@ class KGQuarantineService:
         *,
         board_id: str,
         graph_type: str,
-        affected_paths: list[str],
+        affected_storage_refs: list[StorageRef],
         reason: str,
         correlation_ids: list[str],
         kg_generation_id: str | None = None,
     ) -> QuarantineResponse:
-        """Quarantine the supplied paths and write the manifest.
+        """Quarantine the supplied storage references and write the manifest.
 
         Returns the contract-shaped response on success; raises
         ``QuarantineError`` with the appropriate typed code on failure.
@@ -298,11 +273,11 @@ class KGQuarantineService:
                 reason=QuarantineReason.UNKNOWN.value,
             )
             raise QuarantineError(
-                QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE,
+                QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE,
                 retryable=False,
                 reason=f"unknown graph_type: {graph_type}",
             )
-        if not affected_paths:
+        if not affected_storage_refs:
             _bump_quarantine_counter(
                 board_id=board_id,
                 graph_type=graph_type,
@@ -310,30 +285,30 @@ class KGQuarantineService:
                 reason=QuarantineReason.UNKNOWN.value,
             )
             raise QuarantineError(
-                QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE,
+                QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE,
                 retryable=False,
-                reason="affected_paths must be non-empty",
+                reason="affected_storage_refs must be non-empty",
             )
 
         store = self._store()
         reason_bucket = _bucket_reason(reason)
         try:
-            payload = store.quarantine_paths(
+            payload = store.quarantine_storage(
                 board_id=board_id,
                 graph_type=graph_type,
-                affected_paths=tuple(affected_paths),
+                affected_storage_refs=tuple(affected_storage_refs),
                 reason=reason,
                 reason_bucket=reason_bucket,
                 correlation_ids=tuple(correlation_ids),
                 kg_generation_id=kg_generation_id,
                 retention_days=self._config.retention_days,
-                scope_roots=self._scope_roots,
-                base_dir_hint=self._base_dir_hint,
+                scope_storage_refs=self._scope_storage_refs,
+                base_storage_ref_hint=self._base_storage_ref_hint,
             )
         except QuarantineError as exc:
             outcome = (
                 "out_of_scope"
-                if exc.code is QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE
+                if exc.code is QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE
                 else "storage_unavailable"
             )
             _bump_quarantine_counter(
@@ -387,14 +362,14 @@ class KGQuarantineService:
     def list_active(self) -> list[QuarantineManifest]:
         rows = self._store().list_quarantine_manifests(
             active_after_iso=datetime.now(timezone.utc).isoformat(),
-            base_dir_hint=self._base_dir_hint,
+            base_storage_ref_hint=self._base_storage_ref_hint,
         )
         return [self._manifest_from_payload(row) for row in rows]
 
     def inspect(self, quarantine_id: str) -> QuarantineManifest | None:
         payload = self._store().read_quarantine_manifest(
             quarantine_id=quarantine_id,
-            base_dir_hint=self._base_dir_hint,
+            base_storage_ref_hint=self._base_storage_ref_hint,
         )
         if payload is None:
             return None
@@ -423,8 +398,12 @@ class KGQuarantineService:
             reason=str(payload["reason"]),
             reason_bucket=str(payload["reason_bucket"]),
             correlation_ids=tuple(payload.get("correlation_ids") or ()),
-            affected_paths_relative=tuple(
-                payload.get("affected_paths_relative") or ()
+            affected_storage_refs=tuple(
+                StorageRef(
+                    token=str(ref["token"]),
+                    namespace=str(ref.get("namespace") or "graph"),
+                )
+                for ref in (payload.get("affected_storage_refs") or ())
             ),
             kg_generation_id=(
                 str(payload["kg_generation_id"])

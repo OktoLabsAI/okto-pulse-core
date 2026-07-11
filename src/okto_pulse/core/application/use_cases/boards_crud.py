@@ -26,6 +26,8 @@ is applied inside the read/update use cases exactly as ``create_board`` does.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
@@ -33,24 +35,29 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     PermissionDeniedError,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
-from okto_pulse.core.services import (
-    AgentService,
-    BoardService,
-    CardService,
-    ShareService,
-)
 from okto_pulse.core.services.board_governance import BoardGovernanceService
+
+
+def _attach_value(entity: Any, name: str, value: Any) -> None:
+    attach = getattr(entity, "attach", None)
+    if callable(attach):
+        attach(name, value)
+    else:
+        entity.__dict__[name] = value
 
 
 def _attach_effective_board_settings(board: Any) -> Any:
     """Normalize a board's persisted settings to the effective gate config —
     the transport-free twin of ``api/boards.py:_attach_effective_board_settings``."""
     if board is not None:
-        board.__dict__["settings"] = BoardGovernanceService.normalize_settings(
-            getattr(board, "settings", None)
+        _attach_value(
+            board,
+            "settings",
+            BoardGovernanceService.normalize_settings(
+                getattr(board, "settings", None)
+            ),
         )
     return board
 
@@ -93,9 +100,9 @@ class ListBoardsUseCase:
     to each board — exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: ListBoardsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListBoardsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListBoardsResult:
-        boards, _ = await BoardService(session_of(uow)).list_boards(
+        boards, _ = await uow.services.boards.list_boards(
             actor.actor_id,
             command.offset,
             command.limit,
@@ -132,27 +139,27 @@ class GetBoardUseCase:
     preserved) — exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: GetBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: GetBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetBoardResult:
-        session = session_of(uow)
-        board = await BoardService(session).get_board(
+        board = await uow.services.boards.get_board(
             command.board_id,
             actor.actor_id,
             query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
         )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
-        board_agents = await AgentService(session).list_agents_for_board(command.board_id)
+        board_agents = await uow.services.agents.list_agents_for_board(command.board_id)
         cards_list = list(board.cards or [])
-        board.__dict__["counts"] = {
-            "cards": len(cards_list),
-            "agents": len(board_agents),
-        }
+        _attach_value(
+            board,
+            "counts",
+            {"cards": len(cards_list), "agents": len(board_agents)},
+        )
         if command.compact:
-            board.__dict__["agents"] = []
-            board.__dict__["cards"] = []
+            _attach_value(board, "agents", [])
+            _attach_value(board, "cards", [])
         else:
-            board.__dict__["agents"] = board_agents
+            _attach_value(board, "agents", board_agents)
         return GetBoardResult(_attach_effective_board_settings(board))
 
 
@@ -181,10 +188,9 @@ class UpdateBoardUseCase:
     loaded and effective settings attached — exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: UpdateBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardResult:
-        session = session_of(uow)
-        service = BoardService(session)
+        service = uow.services.boards
         board = await service.update_board(
             command.board_id,
             actor.actor_id,
@@ -199,8 +205,10 @@ class UpdateBoardUseCase:
             actor.actor_id,
             query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
         )
-        board.__dict__["agents"] = await AgentService(session).list_agents_for_board(
-            command.board_id
+        _attach_value(
+            board,
+            "agents",
+            await uow.services.agents.list_agents_for_board(command.board_id),
         )
         return UpdateBoardResult(_attach_effective_board_settings(board))
 
@@ -225,9 +233,9 @@ class DeleteBoardUseCase:
     delete."""
 
     async def execute(
-        self, command: DeleteBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: DeleteBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteBoardResult:
-        deleted = await BoardService(session_of(uow)).delete_board(
+        deleted = await uow.services.boards.delete_board(
             command.board_id, actor.actor_id
         )
         if not deleted:
@@ -264,9 +272,9 @@ class CreateCardInBoardUseCase:
     loaded — exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: CreateCardInBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: CreateCardInBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateCardInBoardResult:
-        service = CardService(session_of(uow))
+        service = uow.services.cards
         card = await service.create_card(
             command.board_id,
             actor.actor_id,
@@ -304,9 +312,9 @@ class GetBoardColumnsUseCase:
     filtering stay in the adapter, exactly as the legacy endpoint shaped them."""
 
     async def execute(
-        self, command: GetBoardColumnsCommand, *, actor: ActorContext, uow: Any
+        self, command: GetBoardColumnsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetBoardColumnsResult:
-        board = await BoardService(session_of(uow)).get_board(
+        board = await uow.services.boards.get_board(
             command.board_id,
             actor.actor_id,
             query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
@@ -341,11 +349,10 @@ class ArchiveTreeUseCase:
     to map. Commits after the cascade — exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: ArchiveTreeCommand, *, actor: ActorContext, uow: Any
+        self, command: ArchiveTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ArchiveTreeResult:
-        from okto_pulse.core.services.main import ArchiveService
 
-        counts = await ArchiveService(session_of(uow)).archive_tree(
+        counts = await uow.services.archives.archive_tree(
             command.entity_type, command.entity_id
         )
         await commit(uow)
@@ -374,11 +381,10 @@ class RestoreTreeUseCase:
     endpoint did."""
 
     async def execute(
-        self, command: RestoreTreeCommand, *, actor: ActorContext, uow: Any
+        self, command: RestoreTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RestoreTreeResult:
-        from okto_pulse.core.services.main import ArchiveService
 
-        counts = await ArchiveService(session_of(uow)).restore_tree(
+        counts = await uow.services.archives.restore_tree(
             command.entity_type, command.entity_id
         )
         await commit(uow)
@@ -411,9 +417,9 @@ class ShareBoardUseCase:
     the legacy 403 detail; commits after the share."""
 
     async def execute(
-        self, command: ShareBoardCommand, *, actor: ActorContext, uow: Any
+        self, command: ShareBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ShareBoardResult:
-        share = await ShareService(session_of(uow)).share_board(
+        share = await uow.services.shares.share_board(
             command.board_id,
             actor.actor_id,
             actor.realm_id or "",
@@ -449,9 +455,9 @@ class ListBoardSharesUseCase:
     the legacy endpoint did."""
 
     async def execute(
-        self, command: ListBoardSharesCommand, *, actor: ActorContext, uow: Any
+        self, command: ListBoardSharesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListBoardSharesResult:
-        service = ShareService(session_of(uow))
+        service = uow.services.shares
         perm = await service.get_user_permission(
             command.board_id,
             actor.actor_id,
@@ -484,9 +490,9 @@ class UpdateBoardShareUseCase:
     carrying the legacy 403 detail; commits after the update."""
 
     async def execute(
-        self, command: UpdateBoardShareCommand, *, actor: ActorContext, uow: Any
+        self, command: UpdateBoardShareCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardShareResult:
-        share = await ShareService(session_of(uow)).update_share(
+        share = await uow.services.shares.update_share(
             command.share_id,
             actor.actor_id,
             command.data,
@@ -516,9 +522,9 @@ class RevokeBoardShareUseCase:
     detail; commits after the revoke."""
 
     async def execute(
-        self, command: RevokeBoardShareCommand, *, actor: ActorContext, uow: Any
+        self, command: RevokeBoardShareCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RevokeBoardShareResult:
-        revoked = await ShareService(session_of(uow)).revoke_share(
+        revoked = await uow.services.shares.revoke_share(
             command.share_id,
             actor.actor_id,
             query_scope=_query_scope_for_actor(actor),

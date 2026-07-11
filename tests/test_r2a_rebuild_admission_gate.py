@@ -20,15 +20,15 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
-from okto_pulse.core.api.kg_rebuild import (
+import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
+from okto_pulse.community.api.kg_rebuild import (
     _REBUILD_REJECT_STATES,
     _refuse_rebuild_if_quarantined,
     router as rebuild_router,
 )
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import Board, BoardShare
+from sqlalchemy_test_models import Board, BoardShare
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +406,7 @@ def test_fr9_health_probe_uses_get_kg_health_in_preflight():
     a hardcoded stub returning 'healthy').  Verified by source inspection:
     the stub that returned base_state='healthy' unconditionally must be gone,
     and _raw_health from the real get_kg_health call must be used."""
-    import okto_pulse.core.api.kg_rebuild as m
+    import okto_pulse.community.api.kg_rebuild as m
     source = inspect.getsource(m.post_rebuild_preflight)
     # Real health call must be present.
     assert "get_kg_health" in source, (
@@ -427,7 +427,7 @@ def test_fr9_health_probe_uses_get_kg_health_in_preflight():
 def test_all_three_endpoints_accept_db_parameter():
     """FR10 (defence-in-depth): each REST endpoint must accept an async DB
     session dependency so the per-board scope check can query the Board table."""
-    import okto_pulse.core.api.kg_rebuild as m
+    import okto_pulse.community.api.kg_rebuild as m
     for fn in (m.post_rebuild_preflight, m.post_rebuild_confirm, m.post_rebuild_run):
         sig = inspect.signature(fn)
         assert "db" in sig.parameters, (

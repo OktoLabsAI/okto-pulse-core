@@ -7,6 +7,8 @@ registry below, but concrete implementations belong to an edition adapter.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
@@ -147,11 +149,11 @@ class ConfigValidationPort(Protocol):
         ...
 
 
-_lease_provider: LeaseProvider | None = None
-_write_lock_port: WriteLockPort | None = None
-_claim_repository: ClaimRepository | None = None
-_runtime_settings_provider: RuntimeSettingsProvider | None = None
-_config_validation_port: ConfigValidationPort | None = None
+_LEASE_KEY = "ports.coordination.lease"
+_WRITE_LOCK_KEY = "ports.coordination.write_lock"
+_CLAIM_KEY = "ports.coordination.claim_repository"
+_SETTINGS_KEY = "ports.coordination.runtime_settings"
+_VALIDATION_KEY = "ports.coordination.config_validation"
 
 
 def register_coordination_providers(
@@ -164,66 +166,57 @@ def register_coordination_providers(
 ) -> None:
     """Register edition-owned coordination providers."""
 
-    global _lease_provider
-    global _write_lock_port
-    global _claim_repository
-    global _runtime_settings_provider
-    global _config_validation_port
-
     if lease_provider is not None:
-        _lease_provider = lease_provider
+        register_runtime_value(_LEASE_KEY, lease_provider)
     if write_lock_port is not None:
-        _write_lock_port = write_lock_port
+        register_runtime_value(_WRITE_LOCK_KEY, write_lock_port)
     if claim_repository is not None:
-        _claim_repository = claim_repository
+        register_runtime_value(_CLAIM_KEY, claim_repository)
     if runtime_settings_provider is not None:
-        _runtime_settings_provider = runtime_settings_provider
+        register_runtime_value(_SETTINGS_KEY, runtime_settings_provider)
     if config_validation_port is not None:
-        _config_validation_port = config_validation_port
+        register_runtime_value(_VALIDATION_KEY, config_validation_port)
 
 
 def get_lease_provider() -> LeaseProvider:
-    if _lease_provider is None:
+    provider = resolve_runtime_value(_LEASE_KEY)
+    if provider is None:
         raise CoordinationProviderMissing("lease_provider")
-    return _lease_provider
+    return provider
 
 
 def get_write_lock_port() -> WriteLockPort:
-    if _write_lock_port is None:
+    port = resolve_runtime_value(_WRITE_LOCK_KEY)
+    if port is None:
         raise CoordinationProviderMissing("write_lock_port")
-    return _write_lock_port
+    return port
 
 
 def get_claim_repository() -> ClaimRepository:
-    if _claim_repository is None:
+    repository = resolve_runtime_value(_CLAIM_KEY)
+    if repository is None:
         raise CoordinationProviderMissing("claim_repository")
-    return _claim_repository
+    return repository
 
 
 def get_runtime_settings_provider() -> RuntimeSettingsProvider:
-    if _runtime_settings_provider is None:
+    provider = resolve_runtime_value(_SETTINGS_KEY)
+    if provider is None:
         raise CoordinationProviderMissing("runtime_settings_provider")
-    return _runtime_settings_provider
+    return provider
 
 
 def get_config_validation_port() -> ConfigValidationPort:
-    if _config_validation_port is None:
+    port = resolve_runtime_value(_VALIDATION_KEY)
+    if port is None:
         raise CoordinationProviderMissing("config_validation_port")
-    return _config_validation_port
+    return port
 
 
 def reset_coordination_providers_for_tests() -> None:
-    global _lease_provider
-    global _write_lock_port
-    global _claim_repository
-    global _runtime_settings_provider
-    global _config_validation_port
-
-    _lease_provider = None
-    _write_lock_port = None
-    _claim_repository = None
-    _runtime_settings_provider = None
-    _config_validation_port = None
+    reset_runtime_values(
+        _LEASE_KEY, _WRITE_LOCK_KEY, _CLAIM_KEY, _SETTINGS_KEY, _VALIDATION_KEY
+    )
 
 
 __all__ = [

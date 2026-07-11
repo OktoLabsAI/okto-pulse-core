@@ -30,8 +30,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Callable, Iterable, Protocol, runtime_checkable
 
 RESOURCE_URI_SCHEME = "okto-pulse://"
 _URI_RE = re.compile(r"okto-pulse://[a-zA-Z0-9_/\-]+")
@@ -69,22 +68,22 @@ class McpResourceSpec:
     #: catalog (it is NOT a raw URI conflict). Used so the Community runtime serves
     #: the full backend-aware content while the core common spec stays backend-free.
     same_uri_overlay: bool = False
+    # Stable package-relative identifier retained for catalog projections. It is
+    # metadata only; loading is always performed by ``loader``.
     path: str | None = None
     content: str | None = None
-    base_dir: Path | None = field(default=None, compare=False, repr=False)
+    loader: Callable[[], str] | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.uri.startswith(RESOURCE_URI_SCHEME):
-            raise ValueError(f"resource uri must start with {RESOURCE_URI_SCHEME!r}: {self.uri!r}")
-        if (self.path is None) == (self.content is None):
-            raise ValueError(f"{self.uri}: exactly one of path/content must be set")
-        if self.kind not in _RESOURCE_KINDS:
-            raise ValueError(f"{self.uri}: kind must be one of {sorted(_RESOURCE_KINDS)}")
-        # FAIL-CLOSED: a path-loader without a base_dir would silently read '' —
-        # forbid it so a misconfigured spec cannot serve an empty resource.
-        if self.path is not None and self.base_dir is None:
             raise ValueError(
-                f"{self.uri}: a path-loader requires base_dir (refusing a silently-empty resource)"
+                f"resource uri must start with {RESOURCE_URI_SCHEME!r}: {self.uri!r}"
+            )
+        if (self.loader is None) == (self.content is None):
+            raise ValueError(f"{self.uri}: exactly one of loader/content must be set")
+        if self.kind not in _RESOURCE_KINDS:
+            raise ValueError(
+                f"{self.uri}: kind must be one of {sorted(_RESOURCE_KINDS)}"
             )
 
     @property
@@ -96,15 +95,7 @@ class McpResourceSpec:
         traversal outside it yields '' — never an arbitrary file)."""
         if self.content is not None:
             return self.content
-        if self.path is None or self.base_dir is None:
-            return ""
-        base = self.base_dir.resolve()
-        candidate = (base / self.path).resolve()
-        try:
-            candidate.relative_to(base)
-        except ValueError:
-            return ""  # path traversal attempt — refuse, never read outside base
-        return candidate.read_text(encoding="utf-8") if candidate.exists() else ""
+        return self.loader() if self.loader is not None else ""
 
 
 @runtime_checkable
@@ -174,7 +165,9 @@ class CompositeMcpResourceCatalog:
     def catalogs(self) -> tuple[McpResourceCatalog, ...]:
         return self._catalogs
 
-    def with_catalog(self, catalog: McpResourceCatalog) -> "CompositeMcpResourceCatalog":
+    def with_catalog(
+        self, catalog: McpResourceCatalog
+    ) -> "CompositeMcpResourceCatalog":
         """Return a NEW composite with ``catalog`` appended (immutable compose)."""
         return CompositeMcpResourceCatalog((*self._catalogs, catalog))
 
@@ -260,8 +253,8 @@ FORBIDDEN_COMMON_TERMS: tuple[str, ...] = (
 #: Windows drive paths (``C:\...``), the user data dir (``~/.okto-pulse``), and
 #: absolute Unix system/data dirs. Case-insensitive.
 _LOCAL_PATH_PATTERNS: tuple[str, ...] = (
-    r"[A-Za-z]:\\[^\s\"'`]+",                       # Windows drive path  C:\Users\...
-    r"~[\\/]\.okto[\-_]pulse",                      # user data dir  ~/.okto-pulse
+    r"[A-Za-z]:\\[^\s\"'`]+",  # Windows drive path  C:\Users\...
+    r"~[\\/]\.okto[\-_]pulse",  # user data dir  ~/.okto-pulse
     r"(?<![\w.])/(?:home|users|opt|data|root)/[\w./\-]+",  # abs Unix system/data dirs
 )
 _LOCAL_PATH_RE = re.compile("|".join(_LOCAL_PATH_PATTERNS), re.IGNORECASE)
@@ -293,8 +286,13 @@ def scan_forbidden_terms(
                 )
         for match in _LOCAL_PATH_RE.findall(raw):
             findings.append(
-                {"uri": s.uri, "edition": s.edition, "kind": s.kind,
-                 "term": LOCAL_PATH_TERM, "match": match}
+                {
+                    "uri": s.uri,
+                    "edition": s.edition,
+                    "kind": s.kind,
+                    "term": LOCAL_PATH_TERM,
+                    "match": match,
+                }
             )
     return tuple(findings)
 
@@ -320,7 +318,9 @@ def scan_forbidden_text_surfaces(
             if term in blob:
                 findings.append({"surface": surface, "term": term})
         for match in _LOCAL_PATH_RE.findall(text):
-            findings.append({"surface": surface, "term": LOCAL_PATH_TERM, "match": match})
+            findings.append(
+                {"surface": surface, "term": LOCAL_PATH_TERM, "match": match}
+            )
     return tuple(findings)
 
 

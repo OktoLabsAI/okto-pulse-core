@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
     Ideation,

@@ -308,7 +308,7 @@ class TestNLQuery:
     def test_query_returns_dict(self):
         import tempfile
         os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_tp_"))
-        from okto_pulse.core.kg.schema import bootstrap_board_graph
+        from kg_schema_testing import bootstrap_board_graph
         bootstrap_board_graph("board-nl-test")
         result = execute_natural_query("board-nl-test", "test query")
         assert "nodes" in result
@@ -317,7 +317,7 @@ class TestNLQuery:
     def test_query_exact_fallback_finds_bug_without_vector_index_hit(self):
         import tempfile
         os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_tp_"))
-        from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+        from kg_schema_testing import bootstrap_board_graph, open_board_connection
 
         board_id = "board-nl-bug-test"
         bootstrap_board_graph(board_id)

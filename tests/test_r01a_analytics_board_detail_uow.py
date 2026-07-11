@@ -18,10 +18,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import analytics as analytics_api
-from okto_pulse.core.api.analytics import router as analytics_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api import analytics as analytics_api
+from okto_pulse.community.api.analytics import router as analytics_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu2c-user"
@@ -45,7 +45,7 @@ def _client(user: str = USER) -> TestClient:
 
 
 async def _seed_board(owner: str = USER) -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-fu2c-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -67,7 +67,7 @@ async def _seed_spec(board_id: str) -> str:
 
 
 async def _seed_sprint(board_id: str, spec_id: str) -> str:
-    from okto_pulse.core.models.db import Sprint
+    from sqlalchemy_test_models import Sprint
 
     sid = f"sprint-fu2c-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -143,7 +143,7 @@ async def test_sprint_analytics_200_and_sprint_404() -> None:
 async def test_quality_use_case_matches_reader() -> None:
     from okto_pulse.core.application.use_cases import BoardQualityCommand, BoardQualityUseCase
     from okto_pulse.core.application.use_cases.base import ActorContext
-    from okto_pulse.core.repositories import SQLAlchemyUnitOfWorkFactory
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.services.analytics_service import compute_quality
 
     board_id = await _seed_board()

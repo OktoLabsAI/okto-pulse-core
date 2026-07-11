@@ -32,7 +32,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
     compute_cognitive_item_id,
 )
-from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 from datetime import datetime, timedelta, timezone
@@ -187,7 +187,7 @@ async def test_ts_d8123753_skip_is_ledger_only(tmp_path, db_factory, monkeypatch
     _seed_pending_item(store, board, gen, src)
 
     # Teeth: se o skip tocar o grafo KG, isto explode.
-    import okto_pulse.core.kg.schema as schema_mod
+    import kg_schema_testing as schema_mod
 
     def _boom(*_a, **_k):
         raise AssertionError("skip ledger-only NÃO pode abrir o grafo KG")

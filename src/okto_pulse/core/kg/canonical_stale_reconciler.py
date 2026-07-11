@@ -31,7 +31,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.canonical_learning_partition import (
     _bug_artifact_id,
@@ -294,7 +293,7 @@ def _classify_cognitive(
 
 
 async def _route_cognitive_to_debt(
-    db: AsyncSession, board_id: str, intent: dict[str, Any], correlation_id: str
+    db: object, board_id: str, intent: dict[str, Any], correlation_id: str
 ) -> None:
     """Route a material bug-derived Learning irregularity to the EXISTING R7
     CanonicalDebt contract (idempotent; no new taxonomy). Preserves the canonical
@@ -321,7 +320,7 @@ async def _route_cognitive_to_debt(
 
 
 async def reconcile_stale_canonical(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     source_refs: list[str] | None = None,

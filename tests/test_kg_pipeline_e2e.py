@@ -80,7 +80,7 @@ def e2e_tempdir(monkeypatch):
     # on Windows. Close them before rmtree or the directory cleanup flakes
     # with ``WinError 32``.
     try:
-        from okto_pulse.core.kg.schema import close_all_connections
+        from kg_schema_testing import close_all_connections
 
         close_all_connections()
     except Exception:
@@ -112,7 +112,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
         get_session_factory,
         init_db,
     )
-    from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
+    from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
     from okto_pulse.core.kg.health import (
         check_global,
         check_kuzu,
@@ -130,7 +130,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
         commit_consolidation,
         propose_reconciliation,
     )
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
     from okto_pulse.core.kg.schemas import (
         AddEdgeCandidateRequest,
         BeginConsolidationRequest,
@@ -141,7 +141,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
         NodeCandidate,
         ProposeReconciliationRequest,
     )
-    from okto_pulse.core.models.db import Board, Card, ConsolidationQueue, Spec
+    from sqlalchemy_test_models import Board, Card, ConsolidationQueue, Spec
 
     # --- bootstrap DB + registry ---------------------------------------
     db_url = os.environ["DATABASE_URL"]
@@ -341,7 +341,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
         assert commit.connectivity["passed"] is True
 
     # --- drain the outbox once to mirror into global discovery ---------
-    worker = OutboxWorker(session_factory=session_factory, interval_seconds=5)
+    worker = GlobalOutboxProcessor(session_factory=session_factory, interval_seconds=5)
     # process_once is the test-friendly hook — no asyncio.Task lifecycle needed.
     processed = await worker.process_once()
     assert processed >= 1, f"outbox worker did not process any events (got {processed})"

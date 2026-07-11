@@ -27,10 +27,9 @@ from okto_pulse.core.application.use_cases import (
     SubmitSpecValidationUseCase,
     UseCase,
     commit,
-    session_of,
 )
 from okto_pulse.core.models import BoardCreate, IdeationMove
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
 ACTOR = "uc09-actor"
@@ -90,7 +89,7 @@ def test_purity_gate_flags_transport_leaks(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# UseCase protocol + transitional uow bridge (tr_3d5b5204, tr_b18aefe5)
+# UseCase protocol + opaque UnitOfWork contract (tr_3d5b5204, tr_b18aefe5)
 # --------------------------------------------------------------------------- #
 
 
@@ -109,25 +108,18 @@ def test_actor_context_is_transport_neutral_data():
 
 
 @pytest.mark.asyncio
-async def test_uow_bridge_requires_unitofwork_shape():
+async def test_uow_commit_uses_only_the_typed_transaction_capability():
     class _FakeUow:
-        def __init__(self, session):
-            self.session = session
+        def __init__(self):
             self.commits = 0
 
         async def commit(self):
             self.commits += 1
 
-    sentinel = object()
-    uow = _FakeUow(sentinel)
-    assert session_of(uow) is sentinel
+    uow = _FakeUow()
+    assert not hasattr(uow, "session")
     await commit(uow)
     assert uow.commits == 1
-
-    # A bare session (no `.session` attribute) is rejected at the application boundary.
-    bare = object()
-    with pytest.raises(TypeError, match="bare sessions are not accepted"):
-        session_of(bare)
 
 
 # --------------------------------------------------------------------------- #
@@ -175,7 +167,7 @@ async def test_create_board_use_case_persists_and_shapes(db_factory):
         assert board.name == "UC09 Board"
         assert board.owner_id == ACTOR
         # Same post-processing as api/boards.py:create_board.
-        assert board.__dict__["agents"] == []
+        assert board.agents == []
         assert board.__dict__["settings"] is not None
 
 

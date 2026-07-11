@@ -25,7 +25,7 @@ import pytest
 from sqlalchemy import delete, select
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, BoardDesignSystem, DesignSystem
+from sqlalchemy_test_models import Board, BoardDesignSystem, DesignSystem
 from okto_pulse.core.models.schemas import BoardCreate, BoardSettings
 from okto_pulse.core.services.default_board_configuration import (
     DefaultBoardConfigurationError,

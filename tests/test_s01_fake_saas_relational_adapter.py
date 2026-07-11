@@ -32,8 +32,12 @@ from okto_pulse.core.testing import FakeSaaSRelationalApplicationAdapter
 
 
 class _OpaqueSaaSUow:
-    def __init__(self) -> None:
-        self.session = object()
+    def __init__(self, adapter: FakeSaaSRelationalApplicationAdapter) -> None:
+        self.services = type(
+            "FakeServices",
+            (),
+            {"permission_presets": adapter.permission_presets(None)},
+        )()
         self.commit_calls = 0
 
     async def commit(self) -> None:
@@ -50,7 +54,7 @@ async def test_s01_core_use_cases_run_unchanged_against_a_saas_adapter() -> None
         board_ids={"tenant-board"},
         permissions={"boards": {"read": True}},
     )
-    uow = _OpaqueSaaSUow()
+    uow = _OpaqueSaaSUow(adapter)
     actor = ActorContext("saas-agent", "system", board_id="tenant-board")
 
     reset_relational_application_adapter_for_tests()
@@ -82,15 +86,18 @@ async def test_s01_core_use_cases_run_unchanged_against_a_saas_adapter() -> None
             GetMyPermissionsCommand(board_id="tenant-board"), actor=actor, uow=uow
         )
 
+        adapter_context = object()
         authenticated = await authenticate_agent_by_api_key(
-            uow.session, "saas-secret", credential_source="saas_gateway"
+            adapter_context, "saas-secret", credential_source="saas_gateway"
         )
         context = await resolve_agent_permission_context(
-            uow.session, "saas-agent", board_id="tenant-board"
+            adapter_context, "saas-agent", board_id="tenant-board"
         )
-        board_ids = await list_accessible_board_ids_for_agent(uow.session, "saas-agent")
+        board_ids = await list_accessible_board_ids_for_agent(
+            adapter_context, "saas-agent"
+        )
         has_access = await agent_has_board_access(
-            uow.session, "saas-agent", "tenant-board"
+            adapter_context, "saas-agent", "tenant-board"
         )
     finally:
         reset_relational_application_adapter_for_tests()

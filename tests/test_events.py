@@ -21,8 +21,7 @@ import pytest_asyncio
 from sqlalchemy import select, update
 
 from okto_pulse.core.events import EVENT_TYPES, EventBus, publish
-from okto_pulse.core.events.dispatcher import (
-    EventDispatcher,
+from okto_pulse.core.application.processors.event_delivery import (
     MAX_ATTEMPTS,
 )
 from okto_pulse.core.events.handlers.cancellation_decay import (
@@ -46,12 +45,12 @@ from okto_pulse.core.events.types import (
     SpecVersionBumped,
     StoryLinkedToIdeation,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     bootstrap_board_graph,
     close_all_connections,
     open_board_connection,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     ConsolidationQueue,
     DomainEventHandlerExecution,
@@ -60,10 +59,43 @@ from okto_pulse.core.models.db import (
     Refinement,
 )
 from kg_registry_testing import configure_real_graph_test_kg_registry
+from sqlalchemy_domain_event_delivery_store import build_test_event_processor
 
 
 BOARD_ID = "board-events-test"
 USER_ID = "user-events-test"
+
+
+class _TestClaimRepository:
+    async def claim_domain_event_executions(self, session, *, limit: int, now):
+        result = await session.execute(
+            select(
+                DomainEventHandlerExecution.id,
+                DomainEventHandlerExecution.event_id,
+            )
+            .join(
+                DomainEventRow,
+                DomainEventRow.id == DomainEventHandlerExecution.event_id,
+            )
+            .where(DomainEventHandlerExecution.status == "pending")
+            .where(
+                (DomainEventHandlerExecution.next_attempt_at.is_(None))
+                | (DomainEventHandlerExecution.next_attempt_at <= now)
+            )
+            .order_by(DomainEventRow.occurred_at.asc(), DomainEventRow.id.asc())
+            .limit(limit)
+        )
+        return list(result.all())
+
+    async def claim_global_outbox(self, session, *, limit: int):
+        del session, limit
+        return []
+
+    async def claim_consolidation_queue(
+        self, session, *, board_id: str | None, limit: int
+    ):
+        del session, board_id, limit
+        return []
 
 
 @pytest_asyncio.fixture
@@ -221,14 +253,14 @@ async def test_dispatcher_drain_creates_consolidation_queue_row(
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         # Wake + drain happens via the loop itself; give it a beat.
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         execs = (await session.execute(select(DomainEventHandlerExecution))).scalars().all()
         assert len(execs) == 1
@@ -278,13 +310,13 @@ async def test_dedup_same_entity_only_one_queue_row(db_factory, clean_tables):
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         queue_rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -316,13 +348,13 @@ async def test_dedup_allows_distinct_entities(db_factory, clean_tables):
             )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.8)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         queue_rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -351,13 +383,13 @@ async def test_card_cancelled_gets_priority_high(db_factory, clean_tables):
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         queue_rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -389,13 +421,13 @@ async def test_spec_version_bumped_gets_priority_high(db_factory, clean_tables):
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         queue_rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -437,14 +469,14 @@ async def test_startup_recovery_resets_processing_to_pending(db_factory, clean_t
         ))
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         # Wait for drain to pick up the now-'pending' recovered row.
         await asyncio.sleep(0.8)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         exec_row = (await session.execute(
             select(DomainEventHandlerExecution).where(
@@ -500,9 +532,10 @@ async def test_retry_then_dlq_after_max_attempts(db_factory, clean_tables):
             ))
             await session.commit()
 
-        dispatcher = EventDispatcher(db_factory)
+        dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
         try:
-            await dispatcher.start()
+            await dispatcher.recover_orphans()
+            await dispatcher.process_batch()
             # Fast-forward: after each failed attempt, reset next_attempt_at
             # so the next drain picks it up immediately. Loop until the row
             # either lands in DLQ or we hit a safety cap.
@@ -523,11 +556,10 @@ async def test_retry_then_dlq_after_max_attempts(db_factory, clean_tables):
                     )).scalar_one()
                     if row.status == "dlq":
                         break
-                dispatcher.notify()
+                await dispatcher.process_batch()
                 await asyncio.sleep(0.25)
         finally:
-            await dispatcher.stop(timeout=2.0)
-
+            pass
         async with db_factory() as session:
             exec_row = (await session.execute(
                 select(DomainEventHandlerExecution).where(
@@ -573,27 +605,16 @@ async def test_publish_latency_under_15ms(db_factory, clean_tables):
     assert elapsed_ms < 15.0, f"publish took {elapsed_ms:.2f}ms"
 
 
-# --- AC11: dispatcher start + stop are observable ---
+# --- AC11: Core processor has no runtime lifecycle ---
 
 
-@pytest.mark.asyncio
-async def test_dispatcher_start_and_stop(db_factory, clean_tables, caplog):
-    """start()/stop() log the expected messages and leave task in done state."""
-    import logging
+def test_event_processor_does_not_own_asyncio_task(db_factory, clean_tables):
+    processor = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
 
-    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.dispatcher")
-
-    dispatcher = EventDispatcher(db_factory)
-    await dispatcher.start()
-    assert dispatcher._task is not None
-    assert not dispatcher._task.done()
-
-    await dispatcher.stop(timeout=2.0)
-    assert dispatcher._task.done()
-
-    log_text = " ".join(r.message for r in caplog.records)
-    assert "EventDispatcher started" in log_text
-    assert "EventDispatcher stopped" in log_text
+    assert not hasattr(processor, "_task")
+    assert not hasattr(processor, "start")
+    assert not hasattr(processor, "stop")
+    assert callable(processor.process_batch)
 
 
 # --- Sanity: payload_for_storage excludes top-level fields ---
@@ -639,13 +660,13 @@ async def test_spec_semantic_changed_enqueues_spec_normal(db_factory, clean_tabl
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -675,13 +696,13 @@ async def test_refinement_semantic_changed_enqueues_refinement(db_factory, clean
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -717,13 +738,13 @@ async def test_card_linked_to_spec_enqueues_spec_not_card(db_factory, clean_tabl
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -757,13 +778,13 @@ async def test_card_unlinked_from_spec_enqueues_spec(db_factory, clean_tables):
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -800,13 +821,13 @@ async def test_semantic_burst_dedup_to_single_queue_row(db_factory, clean_tables
             )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.8)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -844,13 +865,13 @@ async def test_story_linked_to_ideation_enqueues_story_and_ideation(
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.8)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -871,7 +892,7 @@ async def test_refinement_artifact_materializes_lineage_in_worker(db_factory, cl
     Refinement is no longer a no-op: it should produce a deterministic
     lineage Entity and clear successfully when the row exists.
     """
-    from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
+    from okto_pulse.core.application.processors.consolidation import _process_queue_entry
 
     configure_real_graph_test_kg_registry()
     ideation_id = "idea-ref-lineage"
@@ -947,13 +968,13 @@ async def test_card_moved_dual_target_enqueues_card_and_spec(db_factory, clean_t
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -996,13 +1017,13 @@ async def test_card_conclusion_added_dual_target_enqueues_card_and_spec(db_facto
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -1046,13 +1067,13 @@ async def test_card_moved_burst_dedup_to_single_pair(db_factory, clean_tables):
             )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(1.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -1092,13 +1113,13 @@ async def test_card_moved_orphan_skips_spec_enqueue(db_factory, clean_tables, ca
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -1148,13 +1169,13 @@ async def test_card_moved_emits_reenqueue_fired_log(db_factory, clean_tables, ca
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     fired_records = [
         rec for rec in caplog.records
         if "reenqueue.fired" in rec.message
@@ -1192,13 +1213,13 @@ async def test_card_conclusion_orphan_skips_spec_enqueue(db_factory, clean_table
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         rows = (await session.execute(
             select(ConsolidationQueue).where(
@@ -1247,7 +1268,7 @@ def test_human_curated_column_declared_in_schema():
     handles legacy boards. Drift documented: column named human_curated
     (not created_by_agent) because the latter is a STRING storing agent_id.
     """
-    from okto_pulse.core.kg.schema import (
+    from kg_schema_testing import (
         HUMAN_CURATED_COLUMNS,
         SCHEMA_VERSION,
         _COMMON_NODE_ATTRS,
@@ -1558,13 +1579,13 @@ async def test_decay_applied(db_factory, clean_tables, decay_board, caplog):
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(1.0)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     entity = _fetch_node_fields(decay_board, "Entity", "node-e1")
     decision = _fetch_node_fields(decay_board, "Decision", "node-d1")
     assert abs(entity["relevance_score"] - 0.3) < 1e-6
@@ -1599,13 +1620,13 @@ async def test_decay_clamp_floor(db_factory, clean_tables, decay_board):
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(1.0)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     node = _fetch_node_fields(decay_board, "Entity", "node-floor")
     assert node["relevance_score"] == 0.0
     assert node["revocation_reason"] == REVOCATION_REASON
@@ -1629,13 +1650,13 @@ async def test_decay_idempotent(db_factory, clean_tables, decay_board):
                 session=session,
             )
             await session.commit()
-        dispatcher = EventDispatcher(db_factory)
+        dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
         try:
-            await dispatcher.start()
+            await dispatcher.recover_orphans()
+            await dispatcher.process_batch()
             await asyncio.sleep(0.8)
         finally:
-            await dispatcher.stop(timeout=2.0)
-
+            pass
     await _publish_and_drain()
     first = _fetch_node_fields(decay_board, "Entity", "node-idem")
     assert abs(first["relevance_score"] - 0.4) < 1e-6  # 0.9 - 0.5
@@ -1679,13 +1700,13 @@ async def test_decay_reverted(db_factory, clean_tables, decay_board, caplog):
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(1.0)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     node = _fetch_node_fields(decay_board, "Entity", "node-revert")
     assert abs(node["relevance_score"] - 0.8) < 1e-6  # 0.3 + 0.5
     assert node["revocation_reason"] is None
@@ -1720,13 +1741,13 @@ async def test_restore_selective_by_reason(db_factory, clean_tables, decay_board
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(1.0)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     match = _fetch_node_fields(decay_board, "Entity", "node-match")
     other = _fetch_node_fields(decay_board, "Entity", "node-other")
     assert abs(match["relevance_score"] - 0.8) < 1e-6
@@ -1756,13 +1777,13 @@ async def test_decay_zero_nodes(db_factory, clean_tables, decay_board, caplog):
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(0.8)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         exec_rows = (await session.execute(
             select(DomainEventHandlerExecution).where(
@@ -1797,13 +1818,13 @@ async def test_handler_isolation_on_failure(db_factory, clean_tables, decay_boar
         )
         await session.commit()
 
-    dispatcher = EventDispatcher(db_factory)
+    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
     try:
-        await dispatcher.start()
+        await dispatcher.recover_orphans()
+        await dispatcher.process_batch()
         await asyncio.sleep(1.0)
     finally:
-        await dispatcher.stop(timeout=2.0)
-
+        pass
     async with db_factory() as session:
         queue_rows = (await session.execute(
             select(ConsolidationQueue).where(

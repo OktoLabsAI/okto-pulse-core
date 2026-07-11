@@ -39,6 +39,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Iterable
 
+from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycleStepResult
+
 logger = logging.getLogger("okto_pulse.kg.safe_write_lifecycle")
 
 
@@ -214,12 +216,7 @@ class SafeWriteLifecycleResponse:
     correlation_id: str
 
 
-@dataclass(frozen=True, slots=True)
-class LifecycleStepResult:
-    """Per-step result returned by the storage adapter callable."""
-
-    ok: bool
-    detail: str | None = None
+LifecycleStepResult = GraphLifecycleStepResult
 
 
 # A storage adapter is a callable that knows how to execute one of the

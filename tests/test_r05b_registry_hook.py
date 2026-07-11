@@ -113,9 +113,7 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
             graph_transaction=_Sentinel(),
             graph_schema_manager=_Sentinel(),
             graph_lifecycle=_Sentinel(),
-            graph_path_resolver=_Sentinel(),
             graph_runtime_store=_Sentinel(),
-            safe_write_step_adapter=_Sentinel(),
             global_discovery_runtime=_Sentinel(),
             board_source_reader=_Sentinel(),
         )
@@ -139,7 +137,6 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
         assert reg.graph_transaction is base.graph_transaction
         assert reg.graph_schema_manager is base.graph_schema_manager
         assert reg.graph_lifecycle is base.graph_lifecycle
-        assert reg.graph_path_resolver is base.graph_path_resolver
         assert reg.graph_runtime_store is base.graph_runtime_store
         # audit_repo / event_bus are composition-supplied, never auto-wired.
         assert reg.audit_repo is base.audit_repo
@@ -184,9 +181,7 @@ def test_ts_66c96a7e_defaults_factory_path_also_composes(monkeypatch):
                 graph_transaction=_Sentinel(),
                 graph_schema_manager=_Sentinel(),
                 graph_lifecycle=_Sentinel(),
-                graph_path_resolver=_Sentinel(),
                 graph_runtime_store=_Sentinel(),
-                safe_write_step_adapter=_Sentinel(),
                 global_discovery_runtime=_Sentinel(),
                 board_source_reader=_Sentinel(),
             )

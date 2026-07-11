@@ -25,8 +25,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import (
     CardPriorityChanged,
@@ -38,7 +36,9 @@ from okto_pulse.core.kg.scoring import (
     _resolve_priority_boost,
     _resolve_severity_boost,
 )
-from okto_pulse.core.models.db import Card
+from okto_pulse.core.ports.domain_event_delivery import (
+    get_domain_event_fact_reader,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -261,12 +261,15 @@ async def _recompute_boost(
 
 async def _handle_boost_event(
     event: CardPriorityChanged | CardSeverityChanged,
-    session: AsyncSession,
+    session: object,
     *,
     trigger_event_type: str,
 ) -> None:
     """Shared handler body for both priority and severity events."""
-    card = await session.get(Card, event.card_id)
+    card = await get_domain_event_fact_reader().load_card_boost_facts(
+        session,
+        card_id=event.card_id,
+    )
     if card is None:
         logger.warning(
             "kg.scoring.boost_handler_card_missing card=%s board=%s",
@@ -275,13 +278,13 @@ async def _handle_boost_event(
         return
 
     new_priority_value = (
-        card.priority.value if card.priority is not None else None
+        card.priority
     )
     new_severity_value = (
-        card.severity.value if card.severity is not None else None
+        card.severity
     )
     card_type_value = (
-        card.card_type.value if card.card_type is not None else None
+        card.card_type
     )
 
     await _recompute_boost(
@@ -299,7 +302,7 @@ async def _handle_boost_event(
 @register_handler("card.priority_changed")
 class CardPriorityChangedHandler:
     async def handle(
-        self, event: CardPriorityChanged, session: AsyncSession,
+        self, event: CardPriorityChanged, session: object,
     ) -> None:
         await _handle_boost_event(
             event, session, trigger_event_type="card.priority_changed",
@@ -309,7 +312,7 @@ class CardPriorityChangedHandler:
 @register_handler("card.severity_changed")
 class CardSeverityChangedHandler:
     async def handle(
-        self, event: CardSeverityChanged, session: AsyncSession,
+        self, event: CardSeverityChanged, session: object,
     ) -> None:
         await _handle_boost_event(
             event, session, trigger_event_type="card.severity_changed",

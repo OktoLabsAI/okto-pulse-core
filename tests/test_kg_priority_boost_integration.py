@@ -13,8 +13,8 @@ import os
 
 import pytest
 
-from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
-from okto_pulse.core.kg.schema import (
+from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
+from kg_schema_testing import (
     NODE_TYPES,
     PRIORITY_BOOST_COLUMNS,
     bootstrap_board_graph,

@@ -13,18 +13,22 @@ from typing import Iterator
 
 
 _FORBIDDEN_REBUILD_ROOT_HELPER = "default_" + "rebuild_base_dir"
-_FORBIDDEN_REBUILD_ROOT_SYMBOLS = frozenset({
-    "_REBUILD_" + "BASE_DIR",
-    "_LEGACY_" + "REBUILD_BASE_DIR_SEAM",
-})
-_ALLOWLISTED_TEMPDIR_SEAMS = frozenset({
-    # Full-clean-core smoke checks whether the OS temp root is writable before
-    # it creates a disposable venv. It is an ephemeral prerequisite probe.
-    (
-        "application/boundary/final_clean_core_full_smoke.py",
-        "detect_full_prerequisites",
-    ),
-})
+_FORBIDDEN_REBUILD_ROOT_SYMBOLS = frozenset(
+    {
+        "_REBUILD_" + "BASE_DIR",
+        "_LEGACY_" + "REBUILD_BASE_DIR_SEAM",
+    }
+)
+_ALLOWLISTED_TEMPDIR_SEAMS = frozenset(
+    {
+        # Full-clean-core smoke checks whether the OS temp root is writable before
+        # it creates a disposable venv. It is an ephemeral prerequisite probe.
+        (
+            "application/boundary/final_clean_core_full_smoke.py",
+            "detect_full_prerequisites",
+        ),
+    }
+)
 _PATH_ENV_KEYS = frozenset({"OKTO_PULSE_" + "REBUILD_BASE_DIR"})
 
 
@@ -55,7 +59,7 @@ class RebuildAuditStorageLedgerEntry:
         return (self.path, self.kind, self.symbol)
 
 
-_BASE_DIR_LEDGER: tuple[RebuildAuditStorageLedgerEntry, ...] = (
+HISTORICAL_BASE_DIR_LEDGER: tuple[RebuildAuditStorageLedgerEntry, ...] = (
     RebuildAuditStorageLedgerEntry(
         path="kg/candidate_decision_store.py",
         kind="field",
@@ -99,21 +103,6 @@ _BASE_DIR_LEDGER: tuple[RebuildAuditStorageLedgerEntry, ...] = (
         removal_criterion=(
             "Remove after all reindex status callers inject artifact_store or "
             "composition has no direct path constructors."
-        ),
-    ),
-    RebuildAuditStorageLedgerEntry(
-        path="kg/quarantine.py",
-        kind="arg",
-        symbol="KGQuarantineService.__init__.base_dir",
-        classification="quarantine_compat_bridge",
-        owner="AF38-R1",
-        reason=(
-            "Quarantine still accepts an explicit local base for compatibility with "
-            "existing local recovery flows while artifact refs use the store."
-        ),
-        removal_criterion=(
-            "Remove when quarantine file movement is fully owned by Community or "
-            "a dedicated quarantine port."
         ),
     ),
     RebuildAuditStorageLedgerEntry(
@@ -345,20 +334,6 @@ _BASE_DIR_LEDGER: tuple[RebuildAuditStorageLedgerEntry, ...] = (
         ),
     ),
     RebuildAuditStorageLedgerEntry(
-        path="kg/stress_chaos_executor.py",
-        kind="arg",
-        symbol="KGChaosExecutor.__init__.base_dir",
-        classification="stress_chaos_evidence",
-        owner="AF38-R1",
-        reason=(
-            "Chaos executor writes disposable test/evidence files and is outside "
-            "productive rebuild artifact storage."
-        ),
-        removal_criterion=(
-            "Remove if chaos evidence is moved behind an explicit evidence store."
-        ),
-    ),
-    RebuildAuditStorageLedgerEntry(
         path="kg/stress_runner.py",
         kind="field",
         symbol="KGStressProfileRunner.base_dir",
@@ -404,6 +379,9 @@ _BASE_DIR_LEDGER: tuple[RebuildAuditStorageLedgerEntry, ...] = (
     ),
 )
 
+# F16 closes every transitional allowance. Historical entries remain only as
+# migration evidence; the executable budget is intentionally zero.
+_BASE_DIR_LEDGER: tuple[RebuildAuditStorageLedgerEntry, ...] = ()
 _BASE_DIR_LEDGER_BY_KEY = {entry.key(): entry for entry in _BASE_DIR_LEDGER}
 
 
@@ -496,10 +474,7 @@ def _call_name(node: ast.AST) -> str:
 def _forbidden_rebuild_root_symbol(node: ast.AST) -> str | None:
     if isinstance(node, ast.Name) and node.id in _FORBIDDEN_REBUILD_ROOT_SYMBOLS:
         return node.id
-    if (
-        isinstance(node, ast.Attribute)
-        and node.attr in _FORBIDDEN_REBUILD_ROOT_SYMBOLS
-    ):
+    if isinstance(node, ast.Attribute) and node.attr in _FORBIDDEN_REBUILD_ROOT_SYMBOLS:
         return node.attr
     if isinstance(node, ast.alias) and node.name in _FORBIDDEN_REBUILD_ROOT_SYMBOLS:
         return node.name
@@ -545,7 +520,9 @@ def _ledger_integrity_violations() -> list[RebuildAuditStorageGateViolation]:
     return violations
 
 
-def rebuild_audit_storage_fallback_ledger() -> tuple[RebuildAuditStorageLedgerEntry, ...]:
+def rebuild_audit_storage_fallback_ledger() -> tuple[
+    RebuildAuditStorageLedgerEntry, ...
+]:
     """Return the governed residual AF38 filesystem compatibility ledger."""
 
     return _BASE_DIR_LEDGER

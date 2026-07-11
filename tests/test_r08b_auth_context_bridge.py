@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-import okto_pulse.core.app as _core_app  # noqa: F401  (registers ORM models)
+import okto_pulse.community.app as _core_app  # noqa: F401  (registers ORM models)
 import okto_pulse.core.infra.database as _db_mod
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
 from okto_pulse.core.ports.mcp_auth import AgentAuthSession
@@ -38,10 +38,12 @@ def _seeded_db():
     membership. Yields (session_factory, ids). Restores settings/engine/factory."""
     import okto_pulse.core.infra.config as _config
     from okto_pulse.core.infra.config import CoreSettings
+    from okto_pulse.core.runtime_context import (
+        capture_runtime_values_for_tests,
+        restore_runtime_values_for_tests,
+    )
 
-    saved_settings = _config._settings_instance
-    saved_engine = _db_mod._engine
-    saved_factory = _db_mod._session_factory
+    saved_runtime = capture_runtime_values_for_tests()
     saved_data = os.environ.get("DATA_DIR")
     import tempfile
 
@@ -49,7 +51,7 @@ def _seeded_db():
     os.environ["DATA_DIR"] = tmp
     _config.configure_settings(CoreSettings())
 
-    from okto_pulse.core.models.db import Agent, AgentBoard, Board
+    from sqlalchemy_test_models import Agent, AgentBoard, Board
 
     now = datetime.now(timezone.utc)
 
@@ -75,9 +77,7 @@ def _seeded_db():
             asyncio.run(_db_mod.close_db())
         except Exception:
             pass
-        _config._settings_instance = saved_settings
-        _db_mod._engine = saved_engine
-        _db_mod._session_factory = saved_factory
+        restore_runtime_values_for_tests(saved_runtime)
         if saved_data is None:
             os.environ.pop("DATA_DIR", None)
         else:
@@ -172,7 +172,7 @@ def test_ts7f7bbdfd_kg_query_tools_use_auth_context_no_bypass(_seeded_db):
     from okto_pulse.core.kg.interfaces import registry as reg
     from okto_pulse.core.mcp.kg_query_tools import _get_user_boards
 
-    saved = (reg._registry, reg._configured)
+    saved = reg.capture_registry_state_for_tests()
     try:
         async def _agent_a1():
             return _Agent("A1")
@@ -198,7 +198,7 @@ def test_ts7f7bbdfd_kg_query_tools_use_auth_context_no_bypass(_seeded_db):
         agent2, boards2 = asyncio.run(_get_user_boards())
         assert agent2.id == "A2" and boards2 == []
     finally:
-        reg._registry, reg._configured = saved
+        reg.restore_registry_state_for_tests(saved)
 
 
 # ===========================================================================
@@ -208,7 +208,7 @@ def test_ts8c088b7d_missing_auth_context_fails_closed(_seeded_db):
     from okto_pulse.core.kg.interfaces import registry as reg
     from okto_pulse.core.mcp.kg_query_tools import _get_user_boards
 
-    saved = (reg._registry, reg._configured)
+    saved = reg.capture_registry_state_for_tests()
     try:
         # NO auth_context_factory registered -> fail closed. The injected
         # get_agent/get_uow callables must not be consulted.
@@ -228,7 +228,7 @@ def test_ts8c088b7d_missing_auth_context_fails_closed(_seeded_db):
         )
         assert agent is None and boards == []
     finally:
-        reg._registry, reg._configured = saved
+        reg.restore_registry_state_for_tests(saved)
 
 
 def test_ts8c088b7d_server_facades_not_removed():
@@ -244,7 +244,7 @@ def test_ts8c088b7d_server_facades_not_removed():
 def test_ts8c088b7d_api_key_surface_secret_free():
     # TR1/TR5: R08-B does NOT remove/alter Agent.api_key/api_key_hash, while
     # AgentResponse stays secret-free.
-    from okto_pulse.core.models.db import Agent
+    from sqlalchemy_test_models import Agent
     from okto_pulse.core.models.schemas import AgentResponse
 
     agent_cols = {c.name for c in Agent.__table__.columns}

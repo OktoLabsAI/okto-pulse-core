@@ -31,7 +31,7 @@ from okto_pulse.core.kg.cognitive_readiness import (
 )
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
-from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 UUID_A = "11111111-1111-1111-1111-111111111111"

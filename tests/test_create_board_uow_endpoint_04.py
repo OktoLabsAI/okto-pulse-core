@@ -17,10 +17,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import boards as boards_api
-from okto_pulse.core.api.boards import router as boards_router
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.infra.auth import get_realm_id, require_user
+from okto_pulse.community.api import boards as boards_api
+from okto_pulse.community.api.boards import router as boards_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.repositories import PulseUnitOfWork
 
@@ -38,7 +39,7 @@ def _client() -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
-    app.dependency_overrides[get_realm_id] = lambda: None
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -67,13 +68,14 @@ def test_create_board_handler_depends_on_unit_of_work_not_raw_session():
 
 
 @pytest.mark.asyncio
-async def test_get_unit_of_work_binds_the_request_session(db_factory):
-    # R01B FR3: with no app.state.runtime_composition the dependency resolves the
-    # process-level seam (the conftest-registered provider) and wraps the request
-    # session port-shaped — no core concrete is constructed by get_unit_of_work.
+async def test_get_unit_of_work_owns_the_request_transaction():
+    # F12: the edition factory owns creation, realm resolution and teardown.
     fake_request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
-    async with db_factory() as session:
-        uow = await get_unit_of_work(request=fake_request, db=session)
+    dependency = get_unit_of_work(request=fake_request)
+    try:
+        uow = await anext(dependency)
         assert isinstance(uow, PulseUnitOfWork)  # port-shaped, not concrete-locked
-        # Bound to the request session (preserving scope/override), not a fresh one.
-        assert uow.session is session
+        assert not hasattr(uow, "session")
+        assert uow.services is not None
+    finally:
+        await dependency.aclose()

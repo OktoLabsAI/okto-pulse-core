@@ -24,13 +24,14 @@ pre-check or surfaced from inside the catalog — exactly as before.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
     EntityNotFoundError,
-    session_of,
 )
 
 
@@ -53,13 +54,10 @@ class ListDiscoveryIntentsUseCase:
     commit)."""
 
     async def execute(
-        self, command: ListDiscoveryIntentsCommand, *, actor: ActorContext, uow: Any
+        self, command: ListDiscoveryIntentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListDiscoveryIntentsResult:
-        from okto_pulse.core.services.discovery_catalog_reader import (
-            DiscoveryCatalogReader,
-        )
 
-        intents = await DiscoveryCatalogReader(session_of(uow)).list_active_intents()
+        intents = await uow.services.discovery_catalog.list_active_intents()
         return ListDiscoveryIntentsResult(intents)
 
 
@@ -127,28 +125,9 @@ class ListDiscoverySelectorOptionsUseCase:
         command: ListDiscoverySelectorOptionsCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListDiscoverySelectorOptionsResult:
-        from okto_pulse.core.services.discovery_catalog_reader import (
-            DiscoverySelectorRestAccessPolicy,
-        )
-        from okto_pulse.core.services.discovery_selector_catalog import (
-            DiscoverySelectorAccessDenied,
-            DiscoverySelectorCatalog,
-            get_default_discovery_selector_cache,
-        )
-
-        session = session_of(uow)
-        policy = DiscoverySelectorRestAccessPolicy()
-        if not await policy.can_read_board(session, actor.actor_id, command.board_id):
-            raise DiscoverySelectorAccessDenied("selector_access_denied")
-
-        catalog = DiscoverySelectorCatalog(
-            policy,
-            cache=get_default_discovery_selector_cache(),
-        )
-        result = await catalog.list_options(
-            session,
+        payload, cache_status = await uow.services.list_discovery_selector_options(
             board_id=command.board_id,
             selector_kind=command.selector_kind,  # type: ignore[arg-type]
             identity=actor.actor_id,
@@ -160,7 +139,7 @@ class ListDiscoverySelectorOptionsUseCase:
             offset=command.offset,
             include_superseded=command.include_superseded,
         )
-        return ListDiscoverySelectorOptionsResult(result.to_dict(), result.cache_status)
+        return ListDiscoverySelectorOptionsResult(payload, cache_status)
 
 
 # --- saved searches (read) --------------------------------------------------
@@ -190,13 +169,10 @@ class ListDiscoverySavedSearchesUseCase:
         command: ListDiscoverySavedSearchesCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListDiscoverySavedSearchesResult:
-        from okto_pulse.core.services.discovery_catalog_reader import (
-            DiscoveryCatalogReader,
-        )
 
-        items = await DiscoveryCatalogReader(session_of(uow)).list_saved_searches(
+        items = await uow.services.discovery_catalog.list_saved_searches(
             command.board_id
         )
         return ListDiscoverySavedSearchesResult(items)
@@ -229,13 +205,10 @@ class ListDiscoverySearchHistoryUseCase:
         command: ListDiscoverySearchHistoryCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ListDiscoverySearchHistoryResult:
-        from okto_pulse.core.services.discovery_catalog_reader import (
-            DiscoveryCatalogReader,
-        )
 
-        items = await DiscoveryCatalogReader(session_of(uow)).list_search_history(
+        items = await uow.services.discovery_catalog.list_search_history(
             command.board_id, actor.actor_id
         )
         return ListDiscoverySearchHistoryResult(items)
@@ -278,23 +251,20 @@ class ExecuteDiscoveryIntentUseCase:
         command: ExecuteDiscoveryIntentCommand,
         *,
         actor: ActorContext,
-        uow: Any,
+        uow: PulseUnitOfWork,
     ) -> ExecuteDiscoveryIntentResult:
-        from okto_pulse.core.services.discovery_catalog_reader import (
-            DiscoveryCatalogReader,
-        )
-        from okto_pulse.core.services.discovery_executor import execute_intent
-
         if not command.board_id:
             raise CommandValidationError("board_id is required")
 
-        session = session_of(uow)
-        intent = await DiscoveryCatalogReader(session).get_intent(command.intent_id)
+        intent = await uow.services.discovery_catalog.get_intent(command.intent_id)
         if intent is None or not intent.active:
             raise EntityNotFoundError("intent", command.intent_id)
 
-        result = await execute_intent(
-            session, actor.actor_id, command.board_id, intent, command.params or {}
+        result = await uow.services.execute_discovery_intent(
+            identity=actor.actor_id,
+            board_id=command.board_id,
+            intent=intent,
+            params=command.params or {},
         )
         result["intent_id"] = intent.id
         result["intent_name"] = intent.name

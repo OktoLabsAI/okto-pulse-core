@@ -27,12 +27,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from okto_pulse.core.app import install_request_validation_handler
+from okto_pulse.community.app import install_request_validation_handler
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.inbound.enum_error_envelope import canonical_enum_error
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Spec,
     SpecStatus,
@@ -139,7 +139,7 @@ async def rest_ctx(db_factory):
     by the SAME installer ``create_app`` uses (no copy-drift)."""
     ids = await _seed(db_factory)
 
-    from okto_pulse.core.api.sprints import router as sprints_router
+    from okto_pulse.community.api.sprints import router as sprints_router
 
     app = FastAPI()
     install_request_validation_handler(app)

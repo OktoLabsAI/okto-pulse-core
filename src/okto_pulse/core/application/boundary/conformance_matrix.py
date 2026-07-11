@@ -43,7 +43,7 @@ MatrixClassification = Literal[
 MatrixSeverity = Literal["blocking", "warning", "accepted", "info"]
 
 TESTING_PROVIDER_PREFIX = "okto_pulse.core.kg.providers.testing"
-CORE_COMMON_BASELINE_TOKENS = frozenset({"aiosqlite", "sqlalchemy"})
+CORE_COMMON_BASELINE_TOKENS: frozenset[str] = frozenset()
 DEFERRED_RELATIONAL_SEAM_ADAPTER_KEYS = frozenset({"asyncpg_postgres_driver"})
 
 # Bounded bridge from governed dependency tokens to the residual adapter inventory.

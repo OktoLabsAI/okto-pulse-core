@@ -28,7 +28,7 @@ from okto_pulse.core.kg.kg_service import (
     get_kg_service,
     reset_kg_service_for_tests,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     SCHEMA_VERSION,
     bootstrap_board_graph,
     open_board_connection,

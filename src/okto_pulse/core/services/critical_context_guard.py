@@ -16,9 +16,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping, Protocol
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from okto_pulse.core.ports.critical_context import get_critical_context_read_port
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 from okto_pulse.core.services.governance_observability import (
     METRIC_CRITICAL_CONTEXT_GUARD_DECISION,
@@ -293,7 +291,7 @@ class DatabaseFullContextResolver:
     avoiding lazy relationship access and avoiding persistence of the payload.
     """
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: Any) -> None:
         self.db = db
 
     async def resolve_full_context(
@@ -304,184 +302,17 @@ class DatabaseFullContextResolver:
         entity_id: str,
         critical_action: CriticalAction,
     ) -> Any:
-        from okto_pulse.core.models.db import (
-            Board,
-            Card,
-            Ideation,
-            Refinement,
-            Spec,
-            Sprint,
+        return await get_critical_context_read_port().resolve_full_context(
+            self.db,
+            board_id=board_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            critical_action=critical_action.value,
         )
-
-        model_by_type = {
-            "card": Card,
-            "spec": Spec,
-            "sprint": Sprint,
-            "ideation": Ideation,
-            "refinement": Refinement,
-        }
-        model_cls = model_by_type.get(entity_type)
-        if model_cls is None:
-            raise ValueError(f"unsupported_full_context_entity_type: {entity_type}")
-
-        entity = await self.db.get(model_cls, entity_id)
-        if entity is None:
-            raise ValueError(f"full_context_unavailable: {entity_type} not found")
-        if getattr(entity, "board_id", None) != board_id:
-            raise ValueError(
-                "full_context_unavailable: entity belongs to a different board"
-            )
-
-        board = await self.db.get(Board, board_id)
-        payload: dict[str, Any] = {
-            "board": await self._snapshot(
-                board,
-                include=("id", "name", "description", "settings", "updated_at"),
-            ),
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "critical_action": critical_action.value,
-            entity_type: await self._snapshot(entity),
-            "relations": await self._resolve_relations(entity_type, entity),
-        }
-        return payload
-
-    async def _snapshot(
-        self,
-        model: Any,
-        *,
-        include: tuple[str, ...] | None = None,
-    ) -> dict[str, Any]:
-        if model is not None:
-            await self.db.refresh(model)
-        return _model_snapshot(model, include=include)
-
-    async def _resolve_relations(self, entity_type: str, entity: Any) -> dict[str, Any]:
-        from okto_pulse.core.models.db import (
-            Card,
-            CardDependency,
-            Ideation,
-            Refinement,
-            Spec,
-            Sprint,
-        )
-
-        if entity_type == "card":
-            spec = await self.db.get(Spec, entity.spec_id) if entity.spec_id else None
-            sprint = await self.db.get(Sprint, entity.sprint_id) if entity.sprint_id else None
-            dependency_rows = (
-                await self.db.execute(
-                    select(CardDependency.depends_on_id)
-                    .where(CardDependency.card_id == entity.id)
-                    .order_by(CardDependency.depends_on_id.asc())
-                )
-            ).scalars().all()
-            return {
-                "spec": await self._snapshot(spec),
-                "sprint": await self._snapshot(sprint),
-                "depends_on_ids": list(dependency_rows),
-                "resolved_dependency_count": len(dependency_rows),
-                "linked_test_task_ids": list(entity.linked_test_task_ids or []),
-                "test_scenario_ids": list(entity.test_scenario_ids or []),
-            }
-
-        if entity_type == "spec":
-            card_count = (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(Card)
-                    .where(Card.spec_id == entity.id, Card.archived.is_(False))
-                )
-            ).scalar() or 0
-            sprint_count = (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(Sprint)
-                    .where(Sprint.spec_id == entity.id, Sprint.archived.is_(False))
-                )
-            ).scalar() or 0
-            cards = (
-                await self.db.execute(
-                    select(Card.id, Card.title, Card.status, Card.card_type)
-                    .where(Card.spec_id == entity.id, Card.archived.is_(False))
-                    .order_by(Card.created_at.asc())
-                )
-            ).all()
-            return {
-                "card_count": int(card_count),
-                "sprint_count": int(sprint_count),
-                "cards": [
-                    {
-                        "id": row.id,
-                        "title": row.title,
-                        "status": _json_safe(row.status),
-                        "card_type": _json_safe(row.card_type),
-                    }
-                    for row in cards
-                ],
-            }
-
-        if entity_type == "sprint":
-            spec = await self.db.get(Spec, entity.spec_id) if entity.spec_id else None
-            card_count = (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(Card)
-                    .where(Card.sprint_id == entity.id, Card.archived.is_(False))
-                )
-            ).scalar() or 0
-            return {
-                "spec": await self._snapshot(spec),
-                "card_count": int(card_count),
-                "test_scenario_ids": list(entity.test_scenario_ids or []),
-            }
-
-        if entity_type == "ideation":
-            refinement_count = (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(Refinement)
-                    .where(Refinement.ideation_id == entity.id, Refinement.archived.is_(False))
-                )
-            ).scalar() or 0
-            spec_count = (
-                await self.db.execute(
-                    select(func.count())
-                    .select_from(Spec)
-                    .where(Spec.ideation_id == entity.id, Spec.archived.is_(False))
-                )
-            ).scalar() or 0
-            return {
-                "refinement_count": int(refinement_count),
-                "spec_count": int(spec_count),
-            }
-
-        if entity_type == "refinement":
-            ideation = await self.db.get(Ideation, entity.ideation_id) if entity.ideation_id else None
-            specs = (
-                await self.db.execute(
-                    select(Spec.id, Spec.title, Spec.status)
-                    .where(Spec.refinement_id == entity.id, Spec.archived.is_(False))
-                    .order_by(Spec.created_at.asc())
-                )
-            ).all()
-            return {
-                "ideation": await self._snapshot(ideation),
-                "specs": [
-                    {
-                        "id": row.id,
-                        "title": row.title,
-                        "status": _json_safe(row.status),
-                    }
-                    for row in specs
-                ],
-            }
-
-        return {}
 
 
 def build_default_full_context_resolvers(
-    db: AsyncSession,
+    db: Any,
 ) -> dict[str, FullContextResolver]:
     resolver = DatabaseFullContextResolver(db)
     return {
@@ -613,7 +444,7 @@ class FullContextCriticalActionGuard:
 
     def __init__(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         resolvers: Mapping[str, FullContextResolver] | None = None,
         fingerprint_provider: type[ContextFingerprintProvider] = ContextFingerprintProvider,

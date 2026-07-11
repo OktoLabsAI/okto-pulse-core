@@ -7,18 +7,20 @@ Work path so wrappers do not open ``get_db_for_mcp`` directly.
 
 from __future__ import annotations
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
 from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
-    session_of,
 )
 from okto_pulse.core.application.use_cases._service_payload import (
     payload,
     payload_choices,
 )
+from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 
 @dataclass(frozen=True)
@@ -27,16 +29,14 @@ class McpPayloadResult:
 
 
 async def _log_card_activity(
-    session: Any,
+    services: ApplicationServiceCatalog,
     board_id: str,
     card_id: str,
     action: str,
     actor: ActorContext,
     details: dict[str, Any] | None = None,
 ) -> None:
-    from okto_pulse.core.services import BoardService
-
-    await BoardService(session)._log_activity(
+    await services.boards._log_activity(
         board_id=board_id,
         card_id=card_id,
         action=action,
@@ -115,14 +115,12 @@ class McpAskQuestionCommand:
 
 class McpAskQuestionUseCase:
     async def execute(
-        self, command: McpAskQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAskQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        session = session_of(uow)
 
         if command.target_type == "card":
-            from okto_pulse.core.services import QAService
 
-            qa = await QAService(session).create_question(
+            qa = await uow.services.qa.create_question(
                 command.parent_id,
                 actor.actor_id,
                 payload(question=command.question),
@@ -132,7 +130,7 @@ class McpAskQuestionUseCase:
                     {"error": "Failed to create question (card not found)"}
                 )
             await _log_card_activity(
-                session,
+                uow.services,
                 command.board_id,
                 command.parent_id,
                 "question_added",
@@ -152,35 +150,31 @@ class McpAskQuestionUseCase:
             )
 
         if command.target_type in ("ideation", "refinement", "spec"):
-            from okto_pulse.core.services import BoardService
 
             if command.target_type == "ideation":
-                from okto_pulse.core.services import IdeationQAService as QAService
 
                 action = "ideation_question_added"
                 not_found = "Ideation not found"
                 key = "ideation_id"
             elif command.target_type == "refinement":
-                from okto_pulse.core.services import RefinementQAService as QAService
 
                 action = "refinement_question_added"
                 not_found = "Refinement not found"
                 key = "refinement_id"
             else:
-                from okto_pulse.core.services import SpecQAService as QAService
 
                 action = "spec_question_added"
                 not_found = "Spec not found"
                 key = "spec_id"
 
-            qa = await QAService(session).create_question(
+            qa = await uow.services.qa.create_question(
                 command.parent_id,
                 actor.actor_id,
                 payload(question=command.question),
             )
             if not qa:
                 return McpPayloadResult({"error": not_found})
-            await BoardService(session)._log_activity(
+            await uow.services.boards._log_activity(
                 board_id=command.board_id,
                 action=action,
                 actor_type="agent",
@@ -200,9 +194,8 @@ class McpAskQuestionUseCase:
                 }
             )
 
-        from okto_pulse.core.services.main import SprintQAService
 
-        qa = await SprintQAService(session).create_question(
+        qa = await uow.services.sprint_qa.create_question(
             command.parent_id,
             actor.actor_id,
             command.question,
@@ -231,13 +224,12 @@ class McpAnswerQuestionCommand:
 
 class McpAnswerQuestionUseCase:
     async def execute(
-        self, command: McpAnswerQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAnswerQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import QAService, QASelfAnsweringNotAllowedError
+        from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
-        session = session_of(uow)
         try:
-            qa = await QAService(session).answer_question(
+            qa = await uow.services.qa.answer_question(
                 command.qa_id,
                 actor.actor_id,
                 payload(answer=command.answer),
@@ -250,7 +242,7 @@ class McpAnswerQuestionUseCase:
         if not qa:
             return McpPayloadResult({"error": "Failed to answer question (not found)"})
         await _log_card_activity(
-            session,
+            uow.services,
             command.board_id,
             qa.card_id,
             "question_answered",
@@ -278,11 +270,10 @@ class McpDeleteQuestionCommand:
 
 class McpDeleteQuestionUseCase:
     async def execute(
-        self, command: McpDeleteQuestionCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import QAService
 
-        deleted = await QAService(session_of(uow)).delete_question(command.qa_id)
+        deleted = await uow.services.qa.delete_question(command.qa_id)
         await commit(uow)
         if not deleted:
             return McpPayloadResult({"error": "Q&A item not found"})
@@ -298,12 +289,10 @@ class McpAddCommentCommand:
 
 class McpAddCommentUseCase:
     async def execute(
-        self, command: McpAddCommentCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import CommentService
 
-        session = session_of(uow)
-        comment = await CommentService(session).create_comment(
+        comment = await uow.services.comments.create_comment(
             command.card_id,
             actor.actor_id,
             payload(content=command.content),
@@ -311,7 +300,7 @@ class McpAddCommentUseCase:
         if not comment:
             return McpPayloadResult({"error": "Failed to create comment (card not found)"})
         await _log_card_activity(
-            session,
+            uow.services,
             command.board_id,
             command.card_id,
             "comment_added",
@@ -344,17 +333,15 @@ class McpAddChoiceCommentCommand:
 
 class McpAddChoiceCommentUseCase:
     async def execute(
-        self, command: McpAddChoiceCommentCommand, *, actor: ActorContext, uow: Any
+        self, command: McpAddChoiceCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import CommentService
 
-        session = session_of(uow)
         comment_type = (
             command.comment_type
             if command.comment_type in ("choice", "multi_choice")
             else "choice"
         )
-        comment = await CommentService(session).create_comment(
+        comment = await uow.services.comments.create_comment(
             command.card_id,
             actor.actor_id,
             payload(
@@ -369,7 +356,7 @@ class McpAddChoiceCommentUseCase:
                 {"error": "Failed to create choice comment (card not found)"}
             )
         await _log_card_activity(
-            session,
+            uow.services,
             command.board_id,
             command.card_id,
             "choice_comment_added",
@@ -405,11 +392,10 @@ class McpRespondToChoiceCommand:
 
 class McpRespondToChoiceUseCase:
     async def execute(
-        self, command: McpRespondToChoiceCommand, *, actor: ActorContext, uow: Any
+        self, command: McpRespondToChoiceCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import CommentService
 
-        comment = await CommentService(session_of(uow)).respond_to_choice(
+        comment = await uow.services.comments.respond_to_choice(
             comment_id=command.comment_id,
             responder_id=actor.actor_id,
             responder_name=actor.actor_name or "",
@@ -442,12 +428,10 @@ class McpGetChoiceResponsesCommand:
 
 class McpGetChoiceResponsesUseCase:
     async def execute(
-        self, command: McpGetChoiceResponsesCommand, *, actor: ActorContext, uow: Any
+        self, command: McpGetChoiceResponsesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import CommentService
 
-        session = session_of(uow)
-        comment = await CommentService(session).get_comment(command.comment_id)
+        comment = await uow.services.comments.get_comment(command.comment_id)
         await commit(uow)
         if not comment or comment.comment_type == "text":
             return McpPayloadResult({"error": "Choice comment not found"})
@@ -472,11 +456,10 @@ class McpListCommentsCommand:
 
 class McpListCommentsUseCase:
     async def execute(
-        self, command: McpListCommentsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListCommentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import CardService
 
-        card = await CardService(session_of(uow)).get_card(command.card_id)
+        card = await uow.services.cards.get_card(command.card_id)
         await commit(uow)
         if not card or card.board_id != command.board_id:
             return McpPayloadResult({"error": "Card not found"})
@@ -508,12 +491,10 @@ class McpUpdateCommentCommand:
 
 class McpUpdateCommentUseCase:
     async def execute(
-        self, command: McpUpdateCommentCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import CommentService
 
-        session = session_of(uow)
-        comment = await CommentService(session).update_comment(
+        comment = await uow.services.comments.update_comment(
             command.comment_id,
             actor.actor_id,
             payload(content=command.content),
@@ -523,7 +504,7 @@ class McpUpdateCommentUseCase:
                 {"error": "Comment not found or not owned by this agent"}
             )
         await _log_card_activity(
-            session,
+            uow.services,
             command.board_id,
             comment.card_id,
             "comment_updated",
@@ -531,7 +512,7 @@ class McpUpdateCommentUseCase:
             {"content": command.content[:100]},
         )
         await commit(uow)
-        await session.refresh(comment)
+        await uow.reload(comment)
         return McpPayloadResult(
             {
                 "success": True,
@@ -556,12 +537,10 @@ class McpDeleteCommentCommand:
 
 class McpDeleteCommentUseCase:
     async def execute(
-        self, command: McpDeleteCommentCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import CommentService
 
-        session = session_of(uow)
-        comment_service = CommentService(session)
+        comment_service = uow.services.comments
         comment = await comment_service.get_comment(command.comment_id)
         card_id = comment.card_id if comment else None
         deleted = await comment_service.delete_comment(
@@ -574,7 +553,7 @@ class McpDeleteCommentUseCase:
             )
         if card_id:
             await _log_card_activity(
-                session,
+                uow.services,
                 command.board_id,
                 card_id,
                 "comment_deleted",
@@ -594,11 +573,10 @@ class McpUploadAttachmentCommand:
 
 class McpUploadAttachmentUseCase:
     async def execute(
-        self, command: McpUploadAttachmentCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUploadAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import AttachmentService
 
-        attachment = await AttachmentService(session_of(uow)).upload_attachment(
+        attachment = await uow.services.attachments.upload_attachment(
             card_id=command.card_id,
             user_id=actor.actor_id,
             filename=command.filename,
@@ -631,11 +609,10 @@ class McpListAttachmentsCommand:
 
 class McpListAttachmentsUseCase:
     async def execute(
-        self, command: McpListAttachmentsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpListAttachmentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import CardService
 
-        card = await CardService(session_of(uow)).get_card(command.card_id)
+        card = await uow.services.cards.get_card(command.card_id)
         await commit(uow)
         if not card or card.board_id != command.board_id:
             return McpPayloadResult({"error": "Card not found"})
@@ -661,11 +638,10 @@ class McpDeleteAttachmentCommand:
 
 class McpDeleteAttachmentUseCase:
     async def execute(
-        self, command: McpDeleteAttachmentCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import AttachmentService
 
-        deleted = await AttachmentService(session_of(uow)).delete_attachment(
+        deleted = await uow.services.attachments.delete_attachment(
             command.attachment_id
         )
         await commit(uow)
@@ -683,13 +659,12 @@ class McpCreateTopicCommand:
 
 class McpCreateTopicUseCase:
     async def execute(
-        self, command: McpCreateTopicCommand, *, actor: ActorContext, uow: Any
+        self, command: McpCreateTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import StoryService, TopicOperationError
+        from okto_pulse.core.services import TopicOperationError
 
-        session = session_of(uow)
         try:
-            topic = await StoryService(session).create_topic(
+            topic = await uow.services.stories.create_topic(
                 command.board_id,
                 actor.actor_id,
                 payload(
@@ -722,12 +697,11 @@ class McpUpdateTopicCommand:
 
 class McpUpdateTopicUseCase:
     async def execute(
-        self, command: McpUpdateTopicCommand, *, actor: ActorContext, uow: Any
+        self, command: McpUpdateTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import StoryService, TopicOperationError
+        from okto_pulse.core.services import TopicOperationError
 
-        session = session_of(uow)
-        story_service = StoryService(session)
+        story_service = uow.services.stories
         topic = await story_service.get_topic(command.topic_id)
         if not topic or topic.board_id != command.board_id:
             return McpPayloadResult(
@@ -773,12 +747,11 @@ class McpSetTopicArchivedCommand:
 
 class McpSetTopicArchivedUseCase:
     async def execute(
-        self, command: McpSetTopicArchivedCommand, *, actor: ActorContext, uow: Any
+        self, command: McpSetTopicArchivedCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import StoryService, TopicOperationError
+        from okto_pulse.core.services import TopicOperationError
 
-        session = session_of(uow)
-        story_service = StoryService(session)
+        story_service = uow.services.stories
         topic = await story_service.get_topic(command.topic_id)
         if not topic or topic.board_id != command.board_id:
             return McpPayloadResult(
@@ -830,12 +803,11 @@ class McpDeleteTopicCommand:
 
 class McpDeleteTopicUseCase:
     async def execute(
-        self, command: McpDeleteTopicCommand, *, actor: ActorContext, uow: Any
+        self, command: McpDeleteTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import StoryService, TopicOperationError
+        from okto_pulse.core.services import TopicOperationError
 
-        session = session_of(uow)
-        story_service = StoryService(session)
+        story_service = uow.services.stories
         topic = await story_service.get_topic(command.topic_id)
         if not topic or topic.board_id != command.board_id:
             return McpPayloadResult(
@@ -885,12 +857,11 @@ class McpMergeTopicsCommand:
 
 class McpMergeTopicsUseCase:
     async def execute(
-        self, command: McpMergeTopicsCommand, *, actor: ActorContext, uow: Any
+        self, command: McpMergeTopicsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-        from okto_pulse.core.services import StoryService, TopicOperationError
+        from okto_pulse.core.services import TopicOperationError
 
-        session = session_of(uow)
-        story_service = StoryService(session)
+        story_service = uow.services.stories
         source = await story_service.get_topic(command.source_topic_id)
         if not source or source.board_id != command.board_id:
             return McpPayloadResult(

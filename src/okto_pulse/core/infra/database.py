@@ -7,17 +7,13 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Awaitable
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import declarative_base
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
 logger = logging.getLogger(__name__)
 
-# Base class for models — always available at import time
-Base = declarative_base()
-
 # Module-level runtime handles injected by the edition composition root.
-_engine = None
-_session_factory = None
+_ENGINE_KEY = "infra.database.engine"
+_SESSION_FACTORY_KEY = "infra.database.session_factory"
 
 
 def configure_database_runtime(*, engine: Any, session_factory: Any) -> None:
@@ -26,24 +22,24 @@ def configure_database_runtime(*, engine: Any, session_factory: Any) -> None:
     Core owns the ORM schema and business lifecycle still present in this module,
     but the concrete engine/session construction belongs to an edition adapter.
     """
-    global _engine, _session_factory
     if engine is None:
         raise ValueError("engine is required")
     if session_factory is None:
         raise ValueError("session_factory is required")
-    _engine = engine
-    _session_factory = session_factory
+    register_runtime_value(_ENGINE_KEY, engine)
+    register_runtime_value(_SESSION_FACTORY_KEY, session_factory)
 
 
 def reset_database_runtime_for_tests() -> None:
     """Drop registered runtime handles for isolated tests."""
-    global _engine, _session_factory
-    _engine = None
-    _session_factory = None
+    reset_runtime_values(_ENGINE_KEY, _SESSION_FACTORY_KEY)
 
 
 def is_database_runtime_configured() -> bool:
-    return _engine is not None and _session_factory is not None
+    return (
+        resolve_runtime_value(_ENGINE_KEY) is not None
+        and resolve_runtime_value(_SESSION_FACTORY_KEY) is not None
+    )
 
 
 def create_database(url: str, *, echo: bool = False) -> None:
@@ -144,8 +140,8 @@ async def cancel_safe_session_scope(
 
 
 @asynccontextmanager
-async def cancel_safe_session() -> AsyncGenerator[AsyncSession, None]:
-    """AsyncSession cujo fechamento sobrevive a um hard-cancel da request.
+async def cancel_safe_session() -> AsyncGenerator[Any, None]:
+    """Edition session whose close survives a hard-cancelled request.
 
     Use em generators de streaming (SSE, exports) onde a desconexão do
     cliente cancela a task no meio de awaits. Fora de streaming, o
@@ -157,20 +153,36 @@ async def cancel_safe_session() -> AsyncGenerator[AsyncSession, None]:
 
 def get_engine():
     """Return the async engine (asserts it has been initialised)."""
-    assert _engine is not None, (
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
+
+    composition = current_runtime_composition()
+    if composition is not None and composition.relational_engine is not None:
+        return composition.relational_engine
+    engine = resolve_runtime_value(_ENGINE_KEY)
+    assert engine is not None, (
         "Database runtime not initialised. The edition composition root must call "
         "configure_database_runtime() first."
     )
-    return _engine
+    return engine
 
 
 def get_session_factory():
     """Return the async session factory (asserts it has been initialised)."""
-    assert _session_factory is not None, (
+    from okto_pulse.core.composition import (
+        current_runtime_composition,
+    )
+
+    composition = current_runtime_composition()
+    if composition is not None and composition.session_factory is not None:
+        return composition.session_factory
+    session_factory = resolve_runtime_value(_SESSION_FACTORY_KEY)
+    assert session_factory is not None, (
         "Database runtime not initialised. The edition composition root must call "
         "configure_database_runtime() first."
     )
-    return _session_factory
+    return session_factory
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +234,7 @@ async def _quiet_cleanup(awaitable: Awaitable[None]) -> None:
 
 
 @asynccontextmanager
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_db_session() -> AsyncGenerator[Any, None]:
     """Get database session as async context manager."""
     session = get_session_factory()()
     try:
@@ -235,7 +247,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         await _quiet_cleanup(session.close())
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[Any, None]:
     """FastAPI dependency for database session."""
     session = get_session_factory()()
     try:

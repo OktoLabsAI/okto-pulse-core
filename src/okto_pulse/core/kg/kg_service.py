@@ -14,6 +14,8 @@ responsive under concurrent load.
 
 from __future__ import annotations
 
+from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+
 import asyncio
 import logging
 import threading
@@ -377,7 +379,7 @@ async def _emit_hit_flushed_event(
     try:
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import KGHitFlushed
-        from okto_pulse.core.infra.database import get_session_factory
+        from okto_pulse.core.ports.relational_runtime import get_session_factory
     except Exception as exc:  # pragma: no cover — import-time guard
         logger.debug(
             "kg.hit_flushed.import_failed err=%s", exc,
@@ -1225,12 +1227,9 @@ class KGService:
 
         results: list[dict] = []
         try:
-            _, conn = global_runtime.open_connection()
-            res = None
-            try:
-                # HNSW over DecisionDigest.embedding, joined to Board via
-                # CONTAINS_DECISION so we can filter to the caller's scope.
-                cypher = (
+            # HNSW over DecisionDigest.embedding, joined to Board via
+            # CONTAINS_DECISION so we can filter to the caller's scope.
+            cypher = (
                     "CALL QUERY_VECTOR_INDEX("
                     "'DecisionDigest', 'digest_embedding_idx', $vec, $search_k) "
                     "WITH node, distance "
@@ -1242,41 +1241,31 @@ class KGService:
                     f"{tpl.layer_label_projection('node')}, distance "
                     "ORDER BY distance ASC LIMIT $search_k"
                 )
-                res = conn.execute(
-                    cypher,
-                    {
-                        "vec": query_vec,
-                        "search_k": search_k,
-                        "boards": scope,
-                        "graph_layer": layer,
-                    },
-                )
-                while res.has_next():
-                    row = res.get_next()
-                    dist = float(row[7])
-                    sim = max(0.0, min(1.0, 1.0 - dist))
-                    if sim < min_similarity:
-                        continue
-                    results.append({
-                        "board_id": row[0],
-                        "digest_id": row[1],
-                        "id": row[2],
-                        "title": row[3],
-                        "summary": row[4],
-                        "node_type": row[5],
-                        "graph_layer": row[6],
-                        "similarity": sim,
-                    })
-            finally:
-                if res is not None:
-                    try:
-                        res.close()
-                    except Exception:
-                        pass
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+            res = global_runtime.execute(
+                cypher,
+                {
+                    "vec": query_vec,
+                    "search_k": search_k,
+                    "boards": scope,
+                    "graph_layer": layer,
+                },
+            )
+            while res.has_next():
+                row = res.get_next()
+                dist = float(row[7])
+                sim = max(0.0, min(1.0, 1.0 - dist))
+                if sim < min_similarity:
+                    continue
+                results.append({
+                    "board_id": row[0],
+                    "digest_id": row[1],
+                    "id": row[2],
+                    "title": row[3],
+                    "summary": row[4],
+                    "node_type": row[5],
+                    "graph_layer": row[6],
+                    "similarity": sim,
+                })
         except Exception as exc:
             logger.debug("kg.query_global.failed err=%s", exc)
             return []
@@ -1298,10 +1287,7 @@ class KGService:
         # Mirrors the per-board fallback in search.py so global stays usable
         # while the meta-graph is still warming up.
         try:
-            _, conn = global_runtime.open_connection()
-            res = None
-            try:
-                cypher = (
+            cypher = (
                     "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
                     "WHERE b.board_id IN $boards AND d.embedding IS NOT NULL "
                     f"AND {tpl.layer_filter_clause('d')} "
@@ -1309,44 +1295,35 @@ class KGService:
                     "d.one_line_summary, d.node_type, "
                     f"{tpl.layer_label_projection('d')}, d.embedding LIMIT 500"
                 )
-                res = conn.execute(cypher, {"boards": scope, "graph_layer": layer})
-                scored: list[dict] = []
-                qv = query_vec
-                qnorm = sum(x * x for x in qv) ** 0.5 or 1.0
-                while res.has_next():
-                    row = res.get_next()
-                    emb = row[7]
-                    if not emb or len(emb) != len(qv):
-                        continue
-                    dot = sum(a * b for a, b in zip(qv, emb))
-                    enorm = sum(x * x for x in emb) ** 0.5 or 1.0
-                    sim = max(0.0, min(1.0, dot / (qnorm * enorm)))
-                    if sim < min_similarity:
-                        continue
-                    scored.append({
-                        "board_id": row[0],
-                        "digest_id": row[1],
-                        "id": row[2],
-                        "title": row[3],
-                        "summary": row[4],
-                        "node_type": row[5],
-                        "graph_layer": row[6],
-                        "similarity": sim,
-                    })
-                scored.sort(key=lambda r: r["similarity"], reverse=True)
-                return self._filter_global_results_to_existing_nodes(
-                    scored,
-                )[:top_k]
-            finally:
-                if res is not None:
-                    try:
-                        res.close()
-                    except Exception:
-                        pass
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+            res = global_runtime.execute(
+                cypher,
+                {"boards": scope, "graph_layer": layer},
+            )
+            scored: list[dict] = []
+            qv = query_vec
+            qnorm = sum(x * x for x in qv) ** 0.5 or 1.0
+            while res.has_next():
+                row = res.get_next()
+                emb = row[7]
+                if not emb or len(emb) != len(qv):
+                    continue
+                dot = sum(a * b for a, b in zip(qv, emb))
+                enorm = sum(x * x for x in emb) ** 0.5 or 1.0
+                sim = max(0.0, min(1.0, dot / (qnorm * enorm)))
+                if sim < min_similarity:
+                    continue
+                scored.append({
+                    "board_id": row[0],
+                    "digest_id": row[1],
+                    "id": row[2],
+                    "title": row[3],
+                    "summary": row[4],
+                    "node_type": row[5],
+                    "graph_layer": row[6],
+                    "similarity": sim,
+                })
+            scored.sort(key=lambda r: r["similarity"], reverse=True)
+            return self._filter_global_results_to_existing_nodes(scored)[:top_k]
         except Exception as exc:
             logger.debug("kg.query_global.fallback_failed err=%s", exc)
             return filtered_hnsw[:top_k]
@@ -1412,16 +1389,16 @@ class KGService:
 
 
 # Module-level default instance.
-_default_service: KGService | None = None
+_RUNTIME_KEY = "kg.service.default"
 
 
 def get_kg_service() -> KGService:
-    global _default_service
-    if _default_service is None:
-        _default_service = KGService()
-    return _default_service
+    service = resolve_runtime_value(_RUNTIME_KEY)
+    if service is None:
+        service = KGService()
+        register_runtime_value(_RUNTIME_KEY, service)
+    return service
 
 
 def reset_kg_service_for_tests() -> None:
-    global _default_service
-    _default_service = None
+    reset_runtime_values(_RUNTIME_KEY)

@@ -5,10 +5,10 @@ import uuid
 import pytest_asyncio
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.resource_gate import router as resource_gate_router
+from okto_pulse.community.api.resource_gate import router as resource_gate_router
 from okto_pulse.core.infra import auth as _auth_mod
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Ideation, Spec
+from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Ideation, Spec
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 

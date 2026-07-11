@@ -48,12 +48,11 @@ from okto_pulse.core.kg.canonical_cognitive_preservation import (
     snapshot_canonical_cognitive,
 )
 from okto_pulse.core.kg.rebuild_service import RebuildStepInput
-from okto_pulse.core.kg.schema import bootstrap_board_graph
+from kg_schema_testing import bootstrap_board_graph
 from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_WORKING
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     RealBoardGraphLifecycleForTests,
-    RealBoardGraphPathResolverForTests,
     RealBoardGraphTransactionForTests,
     configure_test_kg_registry,
 )
@@ -76,7 +75,6 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
         graph_transaction=RealBoardGraphTransactionForTests(),
-        graph_path_resolver=RealBoardGraphPathResolverForTests(),
         graph_lifecycle=RealBoardGraphLifecycleForTests(),
     )
 

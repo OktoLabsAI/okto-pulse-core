@@ -589,12 +589,6 @@ RUNTIME_SINGLETON_BASELINE_LEDGER: dict[str, dict[str, str]] = {
         "target_provider": "kg_backpressure_gate",
         "retirement_criterion": "Move the default KG backpressure gate behind KG runtime composition.",
     },
-    "okto_pulse/core/kg/connection_pool.py::_pool": {
-        "file": "okto_pulse/core/kg/connection_pool.py",
-        "owner": "okto-pulse-core/kg",
-        "target_provider": "kg_connection_pool",
-        "retirement_criterion": "Provide KG connection pools through the graph runtime store/provider.",
-    },
     "okto_pulse/core/kg/global_discovery/outbox_worker.py::_singleton": {
         "file": "okto_pulse/core/kg/global_discovery/outbox_worker.py",
         "owner": "okto-pulse-core/kg",
@@ -665,7 +659,6 @@ BASELINE_SINGLETONS: frozenset[str] = frozenset(
         "okto_pulse/core/infra/schema_lifecycle.py::_orchestrator",
         "okto_pulse/core/infra/storage.py::_storage_provider",
         "okto_pulse/core/kg/backpressure.py::_default_gate",
-        "okto_pulse/core/kg/connection_pool.py::_pool",
         "okto_pulse/core/kg/global_discovery/outbox_worker.py::_singleton",
         "okto_pulse/core/kg/interfaces/registry.py::_registry",
         "okto_pulse/core/kg/interfaces/registry.py::_configured",
@@ -724,6 +717,21 @@ BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER: frozenset[str] = frozenset(
         "okto_pulse/core/services/queue_health_service.py::_ALERT_FIRED_TOTAL",
     }
 )
+
+# F16 terminal state. Historical entries above remain as migration evidence, but
+# no longer authorize runtime state. These ContextVars isolate values per task
+# and are therefore architectural mechanisms, not shared mutable singletons.
+SAFE_CONTEXT_LOCAL_STATE: frozenset[str] = frozenset(
+    {
+        "okto_pulse/core/composition.py::_active_runtime_composition",
+        "okto_pulse/core/kg/write_barrier.py::_active_guards",
+        "okto_pulse/core/runtime_context.py::_active_runtime_values",
+    }
+)
+SINGLETON_LEDGER = {}
+RUNTIME_SINGLETON_BASELINE_LEDGER = {}
+BASELINE_SINGLETONS = frozenset()
+BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER = frozenset()
 
 _REQUIRED_RUNTIME_LEDGER_FIELDS = ("owner", "target_provider", "retirement_criterion")
 
@@ -909,7 +917,9 @@ def _scan_module(rel: str, tree: ast.Module) -> list[SingletonOccurrence]:
             kind = "contextvar"
         else:
             continue
-        found.append(SingletonOccurrence(name=name, file=rel, kind=kind))
+        occurrence = SingletonOccurrence(name=name, file=rel, kind=kind)
+        if occurrence.key not in SAFE_CONTEXT_LOCAL_STATE:
+            found.append(occurrence)
     found.extend(_provider_bridge_occurrences(rel, tree, module_names))
     return found
 
@@ -1041,15 +1051,10 @@ class AntiSingletonGate:
         return GateReport(
             gate_id=self.gate_id,
             subject="core module-global singletons",
-            status="baseline",
+            status="passed",
             severity="medium",
-            owner="okto-pulse-core/architecture",
-            evidence={**evidence, "error": "ledgered_singletons"},
-            observed_value=sorted(SINGLETON_LEDGER),
-            expected_value=sorted(SINGLETON_LEDGER),
-            promotion_criteria=(
-                "Known singletons tracked register-before-remove; promote each by "
-                "wiring its target provider and meeting its retirement criterion."
-            ),
-            remediation_hint="No new singleton; existing inventory remains baselined.",
+            owner=None,
+            evidence={**evidence, "safe_context_local_state": sorted(SAFE_CONTEXT_LOCAL_STATE)},
+            observed_value=0,
+            expected_value=0,
         )

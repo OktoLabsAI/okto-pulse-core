@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import DomainEvent
@@ -88,7 +87,7 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
 class ConsolidationEnqueuer:
     """Maps domain events to ConsolidationQueue rows with dedup + priority."""
 
-    async def handle(self, event: DomainEvent, session: AsyncSession) -> None:
+    async def handle(self, event: DomainEvent, session: object) -> None:
         targets = self._map_targets(event)
         if not targets:
             # Defensive: unknown event_type or missing payload field.
@@ -105,7 +104,7 @@ class ConsolidationEnqueuer:
         artifact_type: str,
         artifact_id: str,
         priority: str,
-        session: AsyncSession,
+        session: object,
     ) -> None:
         # Bug 4a430c6d (race fix): the relational port atomically merges
         # concurrent events for the same (board_id, artifact_type, artifact_id)

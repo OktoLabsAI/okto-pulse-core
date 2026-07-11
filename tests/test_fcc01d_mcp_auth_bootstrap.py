@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from okto_pulse.core.infra.permissions import Permissions, map_legacy_permissions
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Agent, AgentBoard, Board, PermissionPreset
+from sqlalchemy_test_models import Agent, AgentBoard, Board, PermissionPreset
 from okto_pulse.core.ports import AgentAuthSession, McpCredential
 from okto_pulse.core.services.main import AgentService
 
@@ -240,16 +240,19 @@ async def test_agent_context_board_and_global_parity(
                 agent_id=ids["legacy_agent_id"],
                 agent_name="Legacy Agent",
                 is_active=True,
+                metadata={"realm_id": "local"},
             ),
             "granular-key": AgentAuthSession(
                 agent_id=ids["granular_agent_id"],
                 agent_name="Granular Agent",
                 is_active=True,
+                metadata={"realm_id": "local"},
             ),
             "denied-key": AgentAuthSession(
                 agent_id=ids["denied_agent_id"],
                 agent_name="Denied Agent",
                 is_active=True,
+                metadata={"realm_id": "local"},
             ),
         }
     )

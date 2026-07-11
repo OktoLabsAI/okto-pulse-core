@@ -293,7 +293,7 @@ def test_ts_b161c1d3_common_surface_has_no_concrete_isinstance():
     de descrição (a docstring pode mencioná-las ao explicar a mudança)."""
     import textwrap
 
-    from okto_pulse.core.api import kg_routes
+    from okto_pulse.community.api import kg_routes
 
     src = textwrap.dedent(inspect.getsource(kg_routes._describe_embedding_provider))
     fn = ast.parse(src).body[0]

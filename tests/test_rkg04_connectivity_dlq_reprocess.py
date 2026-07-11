@@ -26,10 +26,10 @@ from sqlalchemy import select
 
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
-from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
-from okto_pulse.core.kg.workers.dead_letter import route_to_dead_letter
-from okto_pulse.core.models.db import (
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
+from okto_pulse.core.application.processors.consolidation import _process_queue_entry
+from okto_pulse.core.application.processors.dead_letter import route_to_dead_letter
+from sqlalchemy_test_models import (
     Board,
     ConsolidationDeadLetter,
     ConsolidationQueue,

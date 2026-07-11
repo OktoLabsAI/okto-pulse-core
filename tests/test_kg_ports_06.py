@@ -14,8 +14,8 @@ import pytest
 from okto_pulse.core.kg.interfaces import (
     GraphHandle,
     GraphLifecycle,
-    GraphPathResolver,
     GraphSchemaManager,
+    GraphStatementResult,
     GraphTransaction,
     PurgeReport,
     RebuildReport,
@@ -55,9 +55,7 @@ def test_onda4_ports_registered_as_memory_fakes(registry):
     assert isinstance(registry.graph_transaction, GraphTransaction)
     assert isinstance(registry.graph_schema_manager, GraphSchemaManager)
     assert isinstance(registry.graph_lifecycle, GraphLifecycle)
-    assert isinstance(registry.graph_path_resolver, GraphPathResolver)
     assert type(registry.graph_transaction).__name__ == "InMemoryGraphTransaction"
-    assert type(registry.graph_path_resolver).__name__ == "InMemoryGraphPathResolver"
 
 
 def test_semantic_graph_store_is_a_live_sync_port(registry):
@@ -69,21 +67,18 @@ def test_semantic_graph_store_is_a_live_sync_port(registry):
 
 
 # --------------------------------------------------------------------------- #
-# GraphPathResolver exposes backend-neutral storage state
+# GraphRuntimeStore exposes backend-neutral storage state
 # --------------------------------------------------------------------------- #
 
 
-def test_path_resolver_exposes_memory_storage_state(registry, board):
-    resolver = registry.graph_path_resolver
-    path = resolver.board_graph_path(board)
-    assert path.name == "graph.memory"
-    assert resolver.exists(board) is False
-    state = resolver.storage_state(board)
+def test_runtime_store_exposes_memory_storage_state(registry, board):
+    runtime_store = registry.graph_runtime_store
+    assert runtime_store.exists(board) is False
+    state = runtime_store.graph_state(board)
     assert state.board_id == board
-    assert state.path == path
+    assert state.storage_ref.token == f"board:{board}"
     assert state.exists is False
-    assert state.size_bytes >= 0
-    assert state.backend == "memory"
+    assert state.backend == "logical_memory"
     assert isinstance(state.locked, bool)
     assert state.quarantined is False
 
@@ -124,7 +119,7 @@ async def test_lifecycle_open_then_query_then_close(registry, board):
     assert isinstance(handle, GraphHandle)
     assert handle.board_id == board
     assert handle.opened is True
-    assert handle.backend == "memory"
+    assert handle.storage_ref.namespace == "memory_graph"
     assert isinstance(handle.locked, bool) and isinstance(handle.quarantined, bool)
     await lifecycle.close(board)
 
@@ -147,7 +142,7 @@ async def test_lifecycle_purge_returns_structured_report(registry):
     assert report.status == "noop"
     assert report.reason == "ports06-test"
     assert report.quarantined is False
-    assert report.affected_paths == ()
+    assert report.affected_storage_refs == ()
 
 
 # --------------------------------------------------------------------------- #
@@ -160,7 +155,9 @@ async def test_transaction_scope_executes_and_closes(registry, board):
     query = "MATCH (m:BoardMeta) RETURN count(m)"
     scope = await registry.graph_transaction.begin(board)
     async with scope:
-        assert scope.execute(query) == []
+        result = scope.execute(query)
+        assert isinstance(result, GraphStatementResult)
+        assert result.rows == ()
 
 
 @pytest.mark.asyncio

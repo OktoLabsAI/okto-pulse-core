@@ -16,11 +16,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.deps import get_unit_of_work
-from okto_pulse.core.api.default_board_config import router as default_board_config_router
-from okto_pulse.core.api.guidelines import router as guidelines_router
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.default_board_config import router as default_board_config_router
+from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.core.application.scope import QueryScope
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.models.schemas import GuidelineUpdate
 
@@ -55,7 +55,7 @@ def client() -> TestClient:
 
 
 async def _seed_board(owner: str) -> str:
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     board_id = f"af23-board-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -70,7 +70,7 @@ async def _seed_guideline(
     scope: str = "global",
     board_id: str | None = None,
 ) -> str:
-    from okto_pulse.core.models.db import Guideline
+    from sqlalchemy_test_models import Guideline
 
     guideline_id = f"af23-guideline-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
@@ -90,7 +90,7 @@ async def _seed_guideline(
 
 
 async def _link_guideline(board_id: str, guideline_id: str, priority: int = 1) -> None:
-    from okto_pulse.core.models.db import BoardGuideline
+    from sqlalchemy_test_models import BoardGuideline
 
     async with get_session_factory()() as db:
         db.add(
@@ -339,7 +339,7 @@ def test_ts4_mcp_default_guideline_tools_pass_query_scope() -> None:
 async def test_ts5_mcp_cross_scope_priority_update_is_denied() -> None:
     from sqlalchemy import select
 
-    from okto_pulse.core.models.db import BoardGuideline
+    from sqlalchemy_test_models import BoardGuideline
 
     board_id = await _seed_board(OTHER)
     guideline_id = await _seed_guideline(OTHER)

@@ -1,13 +1,10 @@
 """Telemetry ports (spec R10-A, IMP1) — PURE contracts + DTOs for the telemetry
-boundary, so the sender / store / product-aggregation can move to Community
-behind a port in R10-B/C/D WITHOUT the core knowing the concrete persistence
-(``LocalTelemetryStore``), transport (``requests`` / ``sqlite3``) or aggregator
-(``ProductTelemetryAggregator``).
+boundary, so effectful implementations can move to an edition behind ports
+without Core knowing concrete persistence, transport or aggregation technology.
 
 PURITY (TS01): this module imports stdlib ``dataclasses`` / ``typing`` /
-``datetime`` ONLY. It does NOT import ``TelemetryService`` / ``LocalTelemetryStore``
-/ ``ProductTelemetryAggregator`` / ``requests`` / ``sqlite3`` — importing
-``okto_pulse.core.ports`` never loads the telemetry runtime.
+``datetime`` ONLY. Importing ``okto_pulse.core.ports`` never loads an edition
+telemetry runtime.
 
 The DTOs MIRROR the current serialization bit-for-bit (TS02):
   - ``TelemetryResult``  <-> ``TelemetryService.record_event`` return dict;
@@ -25,7 +22,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Iterable, Protocol, runtime_checkable
 
 # --- Product-aggregate family vocabulary (R10-D) -----------------------------
@@ -195,9 +191,11 @@ class ProductState:
 
 @runtime_checkable
 class TelemetrySink(Protocol):
-    """The delta/snapshot transmit boundary (today: ``TelemetrySender``). The
-    concrete adapter owns ``requests`` / circuit-breaker / install-token; this
-    port never references them."""
+    """The delta/snapshot delivery boundary.
+
+    The concrete adapter owns transport, retry and credentials; this port never
+    references those details.
+    """
 
     def send_pending(self) -> dict[str, Any]:
         """Transmit pending batches; return a bounded, secret-free result."""
@@ -230,19 +228,21 @@ class TelemetryStateStore(Protocol):
 
 @runtime_checkable
 class TelemetryStateCarrier(Protocol):
-    """Full-dict telemetry state carrier for ``metrics_dir/state.json``.
+    """Full-dict telemetry state carrier for an edition-owned state scope.
 
     The concrete adapter is edition-owned (Community for the local edition) and
     must preserve every existing key, including unknown fields, migration
     notices, history, watermark, failure_state, install-token lifecycle and
-    beacon/schema fields. Public DTOs still use the redacted view contracts.
+    beacon/schema fields. ``state_ref`` is opaque to Core: only the edition may
+    interpret it as a filesystem path, tenant key, object-store key, or another
+    persistence locator. Public DTOs still use the redacted view contracts.
     """
 
-    def load_state(self, metrics_dir: Path) -> dict[str, Any]:
+    def load_state(self, state_ref: str) -> dict[str, Any]:
         """Load the complete persisted telemetry state dictionary."""
         ...
 
-    def save_state(self, metrics_dir: Path, state: dict[str, Any]) -> None:
+    def save_state(self, state_ref: str, state: dict[str, Any]) -> None:
         """Persist the complete telemetry state dictionary atomically."""
         ...
 
@@ -252,41 +252,42 @@ class TelemetryEffectConfigProvider(Protocol):
     """Edition-owned telemetry effect configuration.
 
     Core may consume explicit values supplied on settings, but it must not choose
-    local telemetry directories or concrete beacon endpoints by itself. Editions
-    provide those defaults here at composition time.
+    a persistence locator or delivery transport by itself. Editions provide
+    opaque values here at composition time and remain solely responsible for
+    interpreting them.
     """
 
-    def metrics_dir(self, settings: Any) -> Path | str | None:
-        """Return the edition-owned metrics directory, or None if unavailable."""
+    def state_ref(self, settings: Any) -> str | None:
+        """Return an opaque edition-owned state reference, if available."""
         ...
 
-    def beacon_url(self, settings: Any) -> str | None:
-        """Return the edition-owned beacon URL, or None when not configured."""
+    def delivery_target(self, settings: Any) -> str | None:
+        """Return an opaque edition-owned delivery target, if configured."""
         ...
 
 
 @runtime_checkable
 class TelemetryEventStore(Protocol):
-    """Local append-only telemetry EVENT persistence boundary (today:
-    ``LocalTelemetryStore``). The concrete adapter owns the JSONL layout
-    (``metrics_dir/{events,sent,failures,exports,snapshots}``), the
-    confirmation-ledger, retention/prune, and the ``metrics_dir`` path-guard
-    (``PATH_OUTSIDE_METRICS_DIR``); this port never references the FS itself.
+    """Append-only telemetry event persistence boundary.
+
+    The concrete adapter owns its physical layout, confirmation ledger,
+    retention policy and destination guards. Returned references are opaque
+    strings; Core never interprets them as filesystem paths or transport URLs.
 
     R10-B separates EVENT persistence (here) from CONSENT/STATE persistence
     (:class:`TelemetryStateStore`) so the store can move to the Community edition
     behind this contract without the core knowing the concrete layout."""
 
-    def append_event(self, event: dict[str, Any]) -> Path:
-        """Append a closed-schema event (filed by ``occurred_at`` date)."""
+    def append_event(self, event: dict[str, Any]) -> str:
+        """Append a closed-schema event and return its opaque artifact reference."""
         ...
 
-    def append_sent(self, record: dict[str, Any], *, failed: bool = False) -> Path:
+    def append_sent(self, record: dict[str, Any], *, failed: bool = False) -> str:
         """Append a sent/confirmation (or, with ``failed=True``, a failure) record."""
         ...
 
-    def append_snapshot(self, record: dict[str, Any]) -> Path:
-        """Append a product-telemetry snapshot record (local, append-only)."""
+    def append_snapshot(self, record: dict[str, Any]) -> str:
+        """Append a product-telemetry snapshot record."""
         ...
 
     def confirmed_event_ids(self) -> set[str]:
@@ -305,20 +306,22 @@ class TelemetryEventStore(Protocol):
         """Retention sweep: drop confirmed-and-old, preserve pending."""
         ...
 
-    def export_local(self, output_path: Path | None = None) -> Path:
-        """Export the local events to a JSONL file (within ``metrics_dir``)."""
+    def export_events(self, destination_ref: str | None = None) -> str:
+        """Export events to an edition-owned destination reference."""
         ...
 
-    def purge_local(self) -> dict[str, int]:
-        """Purge the local event/sent/failure/export files. Returns counts."""
+    def purge_events(self) -> dict[str, int]:
+        """Purge edition-owned event artifacts and return bounded counts."""
         ...
 
 
 @runtime_checkable
 class PublishHealthSource(Protocol):
-    """A single publish-health SIGNAL source (local / install_lifecycle /
-    aws_ingest / report_athena). The pure ``resolve_publish_health`` classifier
-    consumes these by contract — it never reads the FS/AWS itself."""
+    """A single publish-health signal source.
+
+    The pure classifier consumes these by contract and never reads a concrete
+    filesystem, cloud service or transport itself.
+    """
 
     @property
     def name(self) -> str: ...

@@ -28,12 +28,21 @@ class _NullStore:
     def append_event(self, e): ...
     def append_sent(self, r, *, failed=False): ...
     def append_snapshot(self, r): ...
-    def confirmed_event_ids(self): return set()
-    def iter_events(self, *, since=None): return ()
-    def summarize(self, *, window_days=30): return {}
-    def prune_old(self, *, now=None): return {}
-    def export_local(self, output_path=None): ...
-    def purge_local(self): return {}
+    def confirmed_event_ids(self):
+        return set()
+
+    def iter_events(self, *, since=None):
+        return ()
+
+    def summarize(self, *, window_days=30):
+        return {}
+
+    def prune_old(self, *, now=None):
+        return {}
+
+    def export_events(self, output_path=None): ...
+    def purge_events(self):
+        return {}
 
 
 @pytest.fixture(autouse=True)
@@ -44,14 +53,22 @@ def _register_fake_store():
         register_telemetry_event_store_factory,
         reset_telemetry_event_store_factory_for_tests,
     )
+
     reset_telemetry_event_store_factory_for_tests()
     register_telemetry_event_store_factory(lambda base, ret: _NullStore())
     yield
     reset_telemetry_event_store_factory_for_tests()
 
+
 _SECRET_TOKEN = "SECRET-INSTALL-TOKEN"
 _SECRET_HASH = "SECRET-TOKEN-HASH"
-_AC_FIELDS = ("status", "reason_code", "last_success_at", "last_failure_at", "next_retry_at")
+_AC_FIELDS = (
+    "status",
+    "reason_code",
+    "last_success_at",
+    "last_failure_at",
+    "next_retry_at",
+)
 
 
 def _settings(tmp_path: Path) -> CoreSettings:
