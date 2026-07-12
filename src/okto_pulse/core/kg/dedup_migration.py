@@ -1,11 +1,22 @@
-"""NC-8 — one-shot migration to consolidate duplicate Kuzu nodes.
+"""NC-8 — consolidate duplicate Kuzu nodes per (node_type, source_artifact_ref).
 
-Spec 7f23535f. Identifies groups `(node_type, source_artifact_ref)` with
-count > 1 in the per-board Kuzu graph, picks the most-recent node as
-canonical, re-points all incoming/outgoing edges of duplicates to the
-canonical, then `DETACH DELETE`s the duplicates.
+Spec 7f23535f originally re-pointed every edge of the duplicates to the
+canonical node and `DETACH DELETE`d them. Spec MKG-C-S1 (BR1/D2) makes the
+default REVERSIBLE BY CONSTRUCTION:
 
-Idempotent — running on a clean board reports 0 actions.
+* the complete pre-operation snapshot (member attrs + every incident edge
+  with every property) is appended to the off-graph EquivalenceLedger
+  BEFORE the first graph write (fail-closed);
+* duplicates are TOMBSTONED (``superseded_by = survivor``) — zero edge
+  re-point and zero physical delete (the bulk in-place mutation class that
+  corrupted the same engine elsewhere: marginalia ADR 0007 / KGD-01);
+* the legacy physical path only exists behind ``hard_delete=True`` and is
+  classified ``forbidden`` by the CurationPolicy — physical
+  materialization happens only inside the deterministic rebuild.
+
+Idempotent — groups consider ACTIVE members only, so a re-run after a
+tombstone dedup reports 0 actions. Un-merge = ledger revoke +
+de-tombstone (see ``kg unmerge``).
 """
 
 from __future__ import annotations
@@ -14,8 +25,19 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+import uuid
+
 from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.curation_policy import require_curation_allowed
 from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.ports.kg_equivalence_ledger import (
+    EquivalenceRecord,
+    require_equivalence_ledger,
+)
+from okto_pulse.core.ports.kg_curation_proposals import (
+    CurationProposal,
+    require_curation_proposal_store,
+)
 from okto_pulse.core.kg.schema_contract import (
     EDGE_METADATA_COLUMNS,
     MULTI_REL_TYPES,
@@ -50,9 +72,13 @@ def _fetch_groups(kconn, node_type: str) -> list[dict[str, Any]]:
     title, human_curated}]}`. Empty list when no duplicates exist —
     callers can short-circuit.
     """
+    # MKG-C-S1: ACTIVE members only — a tombstoned duplicate must not
+    # re-enter the group on the next run (idempotency of the reversible
+    # default) nor be counted as a duplicate again.
     res = kconn.execute(
         f"MATCH (n:{node_type}) "
         f"WHERE n.source_artifact_ref <> '' "
+        f"AND n.superseded_by IS NULL "
         f"RETURN n.source_artifact_ref, n.id, n.created_at, n.title, "
         f"n.human_curated"
     )
@@ -213,30 +239,156 @@ def _delete_node(kconn, node_type: str, node_id: str) -> None:
     )
 
 
+def _snapshot_group(
+    kconn,
+    node_type: str,
+    members: list[dict[str, Any]],
+    rel_pairs: list[tuple[str, str, str]],
+) -> dict[str, Any]:
+    """Complete pre-operation snapshot for the ledger (FR2, R1/R2).
+
+    Node attrs are read whole (``RETURN n``) so nothing is hand-picked;
+    the ``embedding`` vector is excluded — it is HNSW-locked, reproducible
+    from title+content, and the tombstone default preserves the node
+    itself anyway (the snapshot is reversal evidence, not a backup of the
+    index). Edges carry EVERY metadata property plus the base attrs —
+    never the 5 hardcoded ones of the legacy repoint (R2).
+    """
+
+    nodes: list[dict[str, Any]] = []
+    for member in members:
+        res = kconn.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n",
+            {"id": member["id"]},
+        )
+        try:
+            if res.has_next():
+                raw = res.get_next()[0]
+                attrs = {
+                    k: v
+                    for k, v in dict(raw).items()
+                    if not k.startswith("_") and k != "embedding"
+                }
+                nodes.append({"id": member["id"], "attrs": attrs})
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+
+    attr_cols = ", ".join(f"r.{name}" for name, _ in EDGE_METADATA_COLUMNS)
+    edges: list[dict[str, Any]] = []
+    seen: set[tuple] = set()
+    for member in members:
+        for rel_name, from_t, to_t in rel_pairs:
+            try:
+                rows = _read_edge_rows(
+                    kconn,
+                    f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
+                    f"WHERE a.id = $id OR b.id = $id "
+                    f"RETURN a.id, b.id, r.confidence, "
+                    f"r.created_by_session_id, r.created_at, {attr_cols}",
+                    {"id": member["id"]},
+                )
+            except Exception:
+                continue
+            for row in rows:
+                key = (rel_name, from_t, to_t, row[0], row[1])
+                if key in seen:
+                    continue
+                seen.add(key)
+                props = {
+                    "confidence": row[2],
+                    "created_by_session_id": row[3],
+                    "created_at": row[4],
+                }
+                for i, (name, _type) in enumerate(EDGE_METADATA_COLUMNS):
+                    props[name] = row[5 + i]
+                edges.append(
+                    {
+                        "type": rel_name,
+                        "from_type": from_t,
+                        "to_type": to_t,
+                        "from": row[0],
+                        "to": row[1],
+                        "props": props,
+                    }
+                )
+    return {"nodes": nodes, "edges": edges}
+
+
+def _tombstone_members(
+    kconn,
+    node_type: str,
+    duplicates: list[dict[str, Any]],
+    canonical_id: str,
+    record_id: str,
+) -> int:
+    """Reversible default (FR3/D2): mark duplicates superseded by the
+    survivor — traceable to the ledger record; zero edge writes."""
+
+    ts = datetime.now(timezone.utc).isoformat()
+    for dup in duplicates:
+        kconn.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id "
+            f"SET n.superseded_by = $survivor, "
+            f"n.superseded_at = timestamp($ts), "
+            f"n.revocation_reason = $reason",
+            {
+                "id": dup["id"],
+                "survivor": canonical_id,
+                "ts": ts,
+                "reason": f"dedup:{record_id}",
+            },
+        )
+    return len(duplicates)
+
+
 def migrate_dedup_entities(
     board_id: str,
     *,
     dry_run: bool = False,
+    confirmed: bool = False,
+    hard_delete: bool = False,
+    created_by: str = "cli:kg-dedup",
 ) -> dict[str, Any]:
-    """Run dedup migration for a single board, return structured report.
+    """Run dedup for a single board, return structured report.
+
+    Spec MKG-C-S1: the write path is gated by the CurationPolicy — a
+    write without ``confirmed=True`` raises ``CurationPolicyError``
+    (propose_only) and ``hard_delete=True`` is always refused
+    (forbidden). The confirmed default records the complete snapshot in
+    the EquivalenceLedger BEFORE the first graph write and tombstones
+    the duplicates — no edge re-point, no physical delete (D2).
 
     On dry_run=True, all read steps execute (lookup duplicates, simulate
-    edge counts) but no DELETE/CREATE writes happen. Idempotent: a board
-    with zero duplicates returns `{groups: 0, total_duplicates_removed:
-    0, edges_repointed: 0}` immediately.
+    edge counts) but nothing is written — graph, ledger and proposals
+    all stay untouched (S8).
     """
+    if not dry_run:
+        # FR5/BR2 — enforcement at the operation boundary: forbidden
+        # always raises; an unconfirmed write raises with actionable
+        # remediation.
+        require_curation_allowed(
+            "kg_dedup_hard_delete" if hard_delete else "kg_dedup_entities",
+            confirmed=confirmed,
+        )
     started = datetime.now(timezone.utc).isoformat()
     rel_pairs = _all_rel_pairs()
     groups_summary: list[dict[str, Any]] = []
     total_dups = 0
     total_edges = 0
+    ledger_records = 0
 
     async def _run_migration() -> None:
+        # BR1 fail-closed: writing without a composed ledger must abort
+        # BEFORE the graph transaction even opens.
+        ledger = None if dry_run else require_equivalence_ledger()
         async with await get_kg_registry().graph_transaction.begin(board_id) as kconn:
-            _run_migration_in_scope(kconn)
+            await _run_migration_in_scope(kconn, ledger)
 
-    def _run_migration_in_scope(kconn: Any) -> None:
-        nonlocal total_dups, total_edges
+    async def _run_migration_in_scope(kconn: Any, ledger: Any) -> None:
+        nonlocal total_dups, total_edges, ledger_records
         for node_type in NODE_TYPES:
             try:
                 groups = _fetch_groups(kconn, node_type)
@@ -256,35 +408,39 @@ def migrate_dedup_entities(
                 canonical = members[0]
                 duplicates = members[1:]
                 edges_for_group = 0
-                for dup in duplicates:
-                    if not dry_run:
+                record_id = None
+                if not dry_run:
+                    # FR2 (BR1): complete snapshot appended BEFORE any
+                    # graph write — an append failure aborts the whole
+                    # operation with the graph untouched.
+                    record_id = f"eqv_{uuid.uuid4().hex[:16]}"
+                    evidence = _snapshot_group(
+                        kconn, node_type, members, rel_pairs
+                    )
+                    await ledger.append(
+                        EquivalenceRecord(
+                            record_id=record_id,
+                            board_id=board_id,
+                            node_type=node_type,
+                            survivor_id=canonical["id"],
+                            merged_ids=tuple(d["id"] for d in duplicates),
+                            operation="dedup_entities",
+                            evidence=evidence,
+                            created_by=created_by,
+                        )
+                    )
+                    ledger_records += 1
+                    # FR3/D2: reversible default — tombstone, zero edge
+                    # writes, zero deletes.
+                    _tombstone_members(
+                        kconn, node_type, duplicates,
+                        canonical["id"], record_id,
+                    )
+                else:
+                    for dup in duplicates:
+                        # Dry-run: count the edges that WOULD be involved.
                         for rel_name, from_t, to_t in rel_pairs:
                             try:
-                                edges_for_group += _repoint_edges(
-                                    kconn,
-                                    rel_name, from_t, to_t,
-                                    dup["id"], canonical["id"],
-                                )
-                            except Exception as exc:
-                                # Edge re-point failure is non-fatal —
-                                # log and continue. Operator sees this
-                                # in the report for triage.
-                                logger.warning(
-                                    "kg.dedup.repoint_failed rel=%s "
-                                    "from=%s to=%s dup=%s canonical=%s "
-                                    "err=%s",
-                                    rel_name, from_t, to_t,
-                                    dup["id"], canonical["id"], exc,
-                                    extra={
-                                        "event": "kg.dedup.repoint_failed",
-                                    },
-                                )
-                        _delete_node(kconn, node_type, dup["id"])
-                    else:
-                        # Dry-run: count the edges that WOULD be moved.
-                        for rel_name, from_t, to_t in rel_pairs:
-                            try:
-                                # Simpler count via direct match:
                                 res = kconn.execute(
                                     f"MATCH (a:{from_t})-[r:{rel_name}]->"
                                     f"(b:{to_t}) "
@@ -307,22 +463,36 @@ def migrate_dedup_entities(
                     "source_artifact_ref": group["source_artifact_ref"],
                     "duplicates_found": group["count"],
                     "canonical_id": canonical["id"],
-                    "edges_repointed": edges_for_group,
-                    "deleted_ids": [d["id"] for d in duplicates],
+                    "edges_repointed": 0 if not dry_run else edges_for_group,
+                    "deleted_ids": [],
+                    "tombstoned_ids": [d["id"] for d in duplicates],
+                    "record_id": record_id,
                 })
                 total_dups += len(duplicates)
                 total_edges += edges_for_group
 
     run_async_blocking(_run_migration())
+    if ledger_records:
+        # FR6/TR5: every ledger write invalidates the fold cache.
+        from okto_pulse.core.kg.equivalence_fold import (
+            invalidate_equivalence_fold_cache,
+        )
+
+        invalidate_equivalence_fold_cache(board_id)
     completed = datetime.now(timezone.utc).isoformat()
     report = {
         "board_id": board_id,
         "dry_run": dry_run,
+        "mode": "dry_run" if dry_run else "tombstone",
         "groups": len(groups_summary),
-        "total_duplicates_removed": 0 if dry_run else total_dups,
-        "duplicates_planned": total_dups if dry_run else total_dups,
-        "edges_repointed": 0 if dry_run else total_edges,
-        "edges_planned": total_edges if dry_run else total_edges,
+        # Physical removals are ZERO by construction in the reversible
+        # default (legacy key preserved for report consumers).
+        "total_duplicates_removed": 0,
+        "nodes_tombstoned": 0 if dry_run else total_dups,
+        "ledger_records_created": ledger_records,
+        "duplicates_planned": total_dups,
+        "edges_repointed": 0,
+        "edges_planned": total_edges if dry_run else 0,
         "started_at": started,
         "executed_at": completed,
         "details": groups_summary,
@@ -341,6 +511,283 @@ def migrate_dedup_entities(
         },
     )
     return report
+
+
+class StaleProposalError(Exception):
+    """Approval refused: the graph state diverged from the proposal (BR5).
+
+    Stable code ``stale_proposal`` — the mutation did NOT happen; re-run
+    ``--propose`` to capture a fresh plan.
+    """
+
+    code = "stale_proposal"
+
+    def __init__(self, proposal_id: str, expected_hash: str, current_hash: str):
+        self.proposal_id = proposal_id
+        self.expected_hash = expected_hash
+        self.current_hash = current_hash
+        super().__init__(
+            f"stale_proposal: proposal {proposal_id} hash {expected_hash[:12]} "
+            f"!= current plan hash {current_hash[:12]} — nothing was mutated; "
+            f"re-run --propose."
+        )
+
+
+def _count_incident_edges(kconn, rel_pairs, node_id: str) -> int:
+    total = 0
+    for rel_name, from_t, to_t in rel_pairs:
+        try:
+            res = kconn.execute(
+                f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
+                f"WHERE a.id = $id OR b.id = $id RETURN count(r)",
+                {"id": node_id},
+            )
+            try:
+                total += int(res.get_next()[0])
+            finally:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    return total
+
+
+def _build_canonical_plan(board_id: str) -> dict[str, Any]:
+    """Scan-only canonical plan of the dedup (TR7): groups ordered by
+    (node_type, source_artifact_ref); member ids sorted; per-member edge
+    counts included so ANY relevant state change flips the hash."""
+
+    rel_pairs = _all_rel_pairs()
+    plan_groups: list[dict[str, Any]] = []
+
+    async def _scan() -> None:
+        async with await get_kg_registry().graph_transaction.begin(board_id) as kconn:
+            for node_type in NODE_TYPES:
+                try:
+                    groups = _fetch_groups(kconn, node_type)
+                except Exception:
+                    continue
+                for group in groups:
+                    members = group["members"]
+                    canonical = members[0]
+                    duplicates = sorted(d["id"] for d in members[1:])
+                    plan_groups.append({
+                        "node_type": node_type,
+                        "source_artifact_ref": group["source_artifact_ref"],
+                        "survivor_id": canonical["id"],
+                        "merged_ids": duplicates,
+                        "edge_counts": {
+                            dup_id: _count_incident_edges(
+                                kconn, rel_pairs, dup_id
+                            )
+                            for dup_id in duplicates
+                        },
+                    })
+
+    run_async_blocking(_scan())
+    plan_groups.sort(
+        key=lambda g: (g["node_type"], g["source_artifact_ref"])
+    )
+    return {"operation": "dedup_entities", "groups": plan_groups}
+
+
+def compute_proposal_hash(plan: dict[str, Any]) -> str:
+    """sha256 of the canonically serialized plan (deterministic — TR7)."""
+
+    import hashlib
+    import json
+
+    payload = json.dumps(plan, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def propose_dedup_entities(
+    board_id: str, *, created_by: str = "cli:kg-dedup"
+) -> dict[str, Any]:
+    """FR7 (--propose): persist the canonical plan + hash. ZERO mutation —
+    graph and equivalence ledger stay untouched."""
+
+    plan = _build_canonical_plan(board_id)
+    proposal_hash = compute_proposal_hash(plan)
+    proposal = CurationProposal(
+        proposal_id=f"prop_{uuid.uuid4().hex[:16]}",
+        board_id=board_id,
+        operation="dedup_entities",
+        plan=plan,
+        proposal_hash=proposal_hash,
+        created_by=created_by,
+    )
+    store = require_curation_proposal_store()
+    run_async_blocking(store.append(proposal))
+    logger.info(
+        "kg.curation.proposed proposal=%s board=%s groups=%d hash=%s",
+        proposal.proposal_id, board_id, len(plan["groups"]), proposal_hash,
+        extra={
+            "event": "kg.curation.proposed",
+            "proposal_id": proposal.proposal_id,
+            "board_id": board_id,
+            "groups": len(plan["groups"]),
+            "proposal_hash": proposal_hash,
+        },
+    )
+    return {
+        "board_id": board_id,
+        "proposal_id": proposal.proposal_id,
+        "proposal_hash": proposal_hash,
+        "groups": len(plan["groups"]),
+        "duplicates_planned": sum(
+            len(g["merged_ids"]) for g in plan["groups"]
+        ),
+        "plan": plan,
+    }
+
+
+def approve_dedup_proposal(
+    board_id: str, proposal_id: str, *, created_by: str = "cli:kg-dedup"
+) -> dict[str, Any]:
+    """FR7/BR5 (--approve): recompute the plan and compare hashes BEFORE
+    any write. Equal → execute the reversible tombstone path and mark the
+    proposal resolved; different → ``StaleProposalError`` with the graph
+    intact."""
+
+    from okto_pulse.core.ports.kg_curation_proposals import (
+        CurationProposalError,
+    )
+
+    store = require_curation_proposal_store()
+    proposal = run_async_blocking(store.get(proposal_id))
+    if proposal is None:
+        raise CurationProposalError(
+            "curation_proposal_not_found", proposal_id=proposal_id
+        )
+    if proposal.board_id != board_id:
+        raise CurationProposalError(
+            "curation_proposal_board_mismatch",
+            proposal_id=proposal_id,
+            remediation=f"Proposal belongs to board {proposal.board_id}.",
+        )
+    if proposal.status != "pending":
+        raise CurationProposalError(
+            "curation_proposal_already_resolved",
+            proposal_id=proposal_id,
+            remediation=f"Proposal status is {proposal.status!r}.",
+        )
+
+    current_plan = _build_canonical_plan(board_id)
+    current_hash = compute_proposal_hash(current_plan)
+    if current_hash != proposal.proposal_hash:
+        raise StaleProposalError(
+            proposal_id, proposal.proposal_hash, current_hash
+        )
+
+    # Hash equality proves the current groups ARE the proposed plan —
+    # executing the reversible default acts on exactly those groups.
+    report = migrate_dedup_entities(
+        board_id, confirmed=True, created_by=created_by
+    )
+    run_async_blocking(store.resolve(proposal_id, "resolved"))
+    report["proposal_id"] = proposal_id
+    report["proposal_status"] = "resolved"
+    logger.info(
+        "kg.curation.approved proposal=%s board=%s",
+        proposal_id, board_id,
+        extra={
+            "event": "kg.curation.approved",
+            "proposal_id": proposal_id,
+            "board_id": board_id,
+        },
+    )
+    return report
+
+
+def unmerge_equivalence(board_id: str, record_id: str) -> dict[str, Any]:
+    """Un-merge (spec MKG-C-S1 FR4/BR3): logically reverse a dedup merge.
+
+    De-tombstones the members THIS record tombstoned (guarded by the
+    traceable ``revocation_reason='dedup:<record_id>'`` so a member later
+    superseded by something else is never touched), then revokes the
+    ledger record. NEVER re-points edges (bulk in-place is forbidden —
+    ADR 0007/KGD-01); the write order (graph first, revoke second) makes
+    a partial failure convergent: re-running the un-merge repeats the
+    idempotent de-tombstone and completes the revoke.
+
+    An already-revoked record is an idempotent no-op with a warning.
+    """
+
+    from okto_pulse.core.ports.kg_equivalence_ledger import (
+        EquivalenceLedgerError,
+    )
+
+    # The explicit record_id IS the confirmation artifact (same pattern as
+    # the DLQ list->reprocess(id) pair) — the policy still gates the
+    # operation class.
+    require_curation_allowed("kg_unmerge", confirmed=True)
+
+    result: dict[str, Any] = {
+        "board_id": board_id,
+        "record_id": record_id,
+        "already_revoked": False,
+        "members_restored": 0,
+        "revoked": False,
+    }
+
+    async def _run() -> None:
+        ledger = require_equivalence_ledger()
+        record = await ledger.get(record_id)
+        if record is None:
+            raise EquivalenceLedgerError(
+                "equivalence_record_not_found", record_id=record_id
+            )
+        if record.board_id != board_id:
+            raise EquivalenceLedgerError(
+                "equivalence_record_board_mismatch",
+                board_id=board_id,
+                record_id=record_id,
+                remediation=f"Record belongs to board {record.board_id}.",
+            )
+        result["survivor_id"] = record.survivor_id
+        if not record.is_active:
+            logger.warning(
+                "kg.equivalence.unmerge_noop record=%s already revoked at %s",
+                record_id, record.revoked_at,
+            )
+            result["already_revoked"] = True
+            return
+        restored = 0
+        async with await get_kg_registry().graph_transaction.begin(board_id) as kconn:
+            for member_id in record.merged_ids:
+                kconn.execute(
+                    f"MATCH (n:{record.node_type}) WHERE n.id = $id "
+                    f"AND n.revocation_reason = $reason "
+                    f"SET n.superseded_by = NULL, n.superseded_at = NULL, "
+                    f"n.revocation_reason = NULL",
+                    {"id": member_id, "reason": f"dedup:{record_id}"},
+                )
+                restored += 1
+        await ledger.revoke(record_id, "unmerge")
+        # FR6/TR5: revoke is a ledger write — desagrupa imediatamente.
+        from okto_pulse.core.kg.equivalence_fold import (
+            invalidate_equivalence_fold_cache,
+        )
+
+        invalidate_equivalence_fold_cache(board_id)
+        result["members_restored"] = restored
+        result["revoked"] = True
+        logger.info(
+            "kg.equivalence.unmerged record=%s board=%s members=%d",
+            record_id, board_id, restored,
+            extra={
+                "event": "kg.equivalence.unmerged",
+                "record_id": record_id,
+                "board_id": board_id,
+                "members_restored": restored,
+            },
+        )
+
+    run_async_blocking(_run())
+    return result
 
 
 def format_report_table(report: dict[str, Any]) -> str:

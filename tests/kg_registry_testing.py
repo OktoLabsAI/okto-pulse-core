@@ -157,6 +157,111 @@ relational fallback). The test-only ``_build_defaults`` does NOT supply them, so
 
     register_cognitive_source_store(_InMemoryCognitiveSourceStore())
 
+    # Spec MKG-C-S1 (FR1): curation merges append to the EquivalenceLedger
+    # fail-closed; a fresh in-memory ledger per configuration keeps dedup
+    # and fold tests self-contained.
+    from okto_pulse.core.ports.kg_equivalence_ledger import (
+        register_equivalence_ledger,
+    )
+
+    register_equivalence_ledger(_InMemoryEquivalenceLedger())
+
+    from okto_pulse.core.ports.kg_curation_proposals import (
+        register_curation_proposal_store,
+    )
+
+    register_curation_proposal_store(_InMemoryCurationProposalStore())
+
+
+class _InMemoryCurationProposalStore:
+    """Test-only proposal store (MKG-C FR7)."""
+
+    def __init__(self) -> None:
+        self.proposals: dict[str, Any] = {}
+
+    async def append(self, proposal: Any) -> str:
+        self.proposals.setdefault(proposal.proposal_id, proposal)
+        return proposal.proposal_id
+
+    async def get(self, proposal_id: str) -> Any:
+        return self.proposals.get(proposal_id)
+
+    async def resolve(self, proposal_id: str, status: str) -> Any:
+        from dataclasses import replace
+        from datetime import datetime, timezone
+
+        from okto_pulse.core.ports.kg_curation_proposals import (
+            CurationProposalError,
+        )
+
+        proposal = self.proposals.get(proposal_id)
+        if proposal is None:
+            raise CurationProposalError(
+                "curation_proposal_not_found", proposal_id=proposal_id
+            )
+        updated = replace(
+            proposal,
+            status=status,
+            resolved_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self.proposals[proposal_id] = updated
+        return updated
+
+    async def pending_for_board(self, board_id: str) -> tuple:
+        rows = [
+            pr for pr in self.proposals.values()
+            if pr.board_id == board_id and pr.status == "pending"
+        ]
+        rows.sort(key=lambda pr: (pr.created_at or "", pr.proposal_id))
+        return tuple(rows)
+
+
+class _InMemoryEquivalenceLedger:
+    """Test-only equivalence ledger: append-only, revoke stamps revoked_at."""
+
+    def __init__(self) -> None:
+        self.records: dict[str, Any] = {}
+
+    async def append(self, record: Any) -> str:
+        if record.record_id in self.records:
+            return record.record_id
+        self.records[record.record_id] = record
+        return record.record_id
+
+    async def revoke(self, record_id: str, reason: str) -> Any:
+        from dataclasses import replace
+        from datetime import datetime, timezone
+
+        from okto_pulse.core.ports.kg_equivalence_ledger import (
+            EquivalenceLedgerError,
+        )
+
+        record = self.records.get(record_id)
+        if record is None:
+            raise EquivalenceLedgerError(
+                "equivalence_record_not_found", record_id=record_id
+            )
+        if record.revoked_at is not None:
+            return record
+        updated = replace(
+            record,
+            revoked_at=datetime.now(timezone.utc).isoformat(),
+            revoke_reason=reason,
+        )
+        self.records[record_id] = updated
+        return updated
+
+    async def get(self, record_id: str) -> Any:
+        return self.records.get(record_id)
+
+    async def active_for_board(self, board_id: str) -> tuple:
+        rows = [
+            r for r in self.records.values()
+            if r.board_id == board_id and r.revoked_at is None
+        ]
+        rows.sort(key=lambda r: (r.created_at or "", r.record_id))
+        return tuple(rows)
+
 
 class _InMemoryCognitiveSourceStore:
     """Test-only durable store: append-only, per-configuration lifetime."""

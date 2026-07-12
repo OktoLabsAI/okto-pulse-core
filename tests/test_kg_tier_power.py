@@ -283,10 +283,12 @@ class TestSchemaInfo:
     def test_stable_types_count(self):
         info = get_schema_info("board-x")
         assert len(info["stable_node_types"]) == 11
-        # 10 REL_TYPES single-pair entries + 5 MULTI_REL_TYPES names (implements,
-        # relates_to, belongs_to, originates_from, covered_by). S-KG-01 added the
-        # additive `relates_to` Learning taxonomy entry (reused edge name, +1).
-        assert len(info["stable_rel_types"]) == 15
+        # 10 REL_TYPES single-pair entries + 6 MULTI_REL_TYPES names (implements,
+        # relates_to, belongs_to, originates_from, covered_by, supersedes).
+        # S-KG-01 added the additive `relates_to` Learning taxonomy entry;
+        # spec MKG-D-S1 promoted `supersedes` to a universal multi-pair edge
+        # (walkable chain for all node types, +1).
+        assert len(info["stable_rel_types"]) == 16
         rel_names = {rel["name"] for rel in info["stable_rel_types"]}
         assert {"belongs_to", "originates_from", "covered_by"} <= rel_names
 
@@ -351,4 +353,5 @@ class TestMCPRegistration:
         import inspect
         from okto_pulse.core.mcp import kg_power_tools
         src = inspect.getsource(kg_power_tools.register_kg_power_tools)
-        assert src.count("@mcp.tool()") == 5
+        # 5 originais + okto_pulse_kg_provenance_drift (spec MKG-B-S1 FR7).
+        assert src.count("@mcp.tool()") == 6

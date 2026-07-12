@@ -938,6 +938,19 @@ def execute_natural_query(
 
     total_before_filter = len(all_results)
     all_results = _dedupe_natural_results(all_results)
+    # Spec MKG-C-S1 (FR6): fold ACTIVE equivalence members into their
+    # survivor (post-fetch, off-graph mapping); best similarity survives.
+    from okto_pulse.core.kg.equivalence_fold import (
+        fold_rows as _fold_eqv_rows,
+        load_equivalence_mapping as _load_eqv_mapping,
+    )
+
+    _eqv_mapping = _load_eqv_mapping(board_id)
+    if _eqv_mapping:
+        all_results = _fold_eqv_rows(
+            all_results, _eqv_mapping,
+            id_keys=("node_id",), dedupe_key="node_id", score_key="similarity",
+        )
     filtered_out = 0
     if temporal_filter_requested and all_results:
         node_ids = [r["node_id"] for r in all_results]

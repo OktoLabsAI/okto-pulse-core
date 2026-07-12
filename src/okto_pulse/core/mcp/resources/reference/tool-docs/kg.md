@@ -713,6 +713,14 @@ Returns:
 
 ## `okto_pulse_kg_query_cypher`
 
+> **Equivalence fold exclusion (spec MKG-C-S1):** raw Cypher results are
+> NOT folded by the equivalence ledger — rows may expose MEMBER node ids
+> of active merges until the physical materialization inside the
+> deterministic rebuild. The curated recall surfaces (related context,
+> similar nodes, contradictions, natural query) fold members into their
+> survivor automatically.
+
+
 Execute a read-only Cypher query directly against a board's graph.
 
 Safety rails applied automatically:

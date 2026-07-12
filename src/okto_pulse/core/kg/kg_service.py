@@ -939,7 +939,7 @@ class KGService:
                     board_id, artifact_id, f, graph_layer=layer,
                 ),
             )
-        return [
+        shaped = [
             {
                 "center_id": r[0], "center_title": r[1],
                 "hop1_id": r[2], "hop1_title": r[3],
@@ -948,6 +948,34 @@ class KGService:
             }
             for r in rows
         ]
+        # Spec MKG-C-S1 (FR6/BR4): fold members of ACTIVE equivalences into
+        # their survivor post-fetch (composes with the in-Cypher graph_layer
+        # scoping above — equivalences live OFF-graph, the store cannot
+        # know them). Rows that collapse onto the same hop tuple dedupe.
+        from okto_pulse.core.kg.equivalence_fold import (
+            fold_rows,
+            load_equivalence_mapping,
+        )
+
+        mapping = load_equivalence_mapping(board_id)
+        if mapping:
+            shaped = fold_rows(
+                shaped, mapping,
+                id_keys=("center_id", "hop1_id", "hop2_id"),
+            )
+            deduped: list[dict] = []
+            seen: set[tuple] = set()
+            for row in shaped:
+                key = (
+                    row["center_id"], row["hop1_id"], row["hop2_id"],
+                    row["rel1_type"], row["rel2_type"],
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(row)
+            shaped = deduped
+        return shaped
 
     # ------------------------------------------------------------------
     # 3. get_supersedence_chain (FR-15)
@@ -1029,7 +1057,7 @@ class KGService:
             "find_contradictions", board_id, {"node_id": node_id},
             lambda: store.find_contradictions(board_id, node_id, limit),
         )
-        return [
+        pairs = [
             {
                 "id_a": r[0], "title_a": r[1],
                 "id_b": r[2], "title_b": r[3],
@@ -1037,6 +1065,17 @@ class KGService:
             }
             for r in rows
         ]
+        # Spec MKG-C-S1 (FR6): fold equivalence members; a pair that
+        # collapses onto itself (member vs its survivor) is dropped.
+        from okto_pulse.core.kg.equivalence_fold import (
+            fold_pair_rows,
+            load_equivalence_mapping,
+        )
+
+        mapping = load_equivalence_mapping(board_id)
+        if mapping:
+            pairs = fold_pair_rows(pairs, mapping, key_a="id_a", key_b="id_b")
+        return pairs
 
     # ------------------------------------------------------------------
     # 5. find_similar_decisions (FR-13) — HNSW + ranking
@@ -1105,6 +1144,19 @@ class KGService:
                 "combined_score": round(combined, 4),
             })
 
+        # Spec MKG-C-S1 (FR6): fold equivalence members into the survivor
+        # BEFORE the final ranking cut, keeping the best-scoring row.
+        from okto_pulse.core.kg.equivalence_fold import (
+            fold_rows,
+            load_equivalence_mapping,
+        )
+
+        mapping = load_equivalence_mapping(board_id)
+        if mapping:
+            results = fold_rows(
+                results, mapping,
+                id_keys=("id",), dedupe_key="id", score_key="combined_score",
+            )
         results.sort(key=lambda x: x["combined_score"], reverse=True)
         return results[:top_k]
 
