@@ -1,0 +1,233 @@
+"""MKG-B C5 — kg_provenance_drift report (scenario S6, AC6).
+
+(a) artifact edited after consolidation → node listed (content_changed);
+(a') node anchor diverges from the last consolidated state → content_changed;
+(b) artifact deleted → artifact_missing (terminal);
+(c) nothing changed → empty list; and the report NEVER writes to the graph.
+"""
+
+from __future__ import annotations
+
+import gc
+import shutil
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+from kg_registry_testing import configure_real_graph_test_kg_registry
+
+from okto_pulse.core.kg.provenance_drift import provenance_drift_report
+
+from test_kg_dedup_nc8 import (  # noqa: F401  (harness reuse)
+    _bootstrap_test_board,
+)
+from test_kg_provenance_commit_fill import (  # noqa: F401  (harness reuse)
+    _drive_with_provenance,
+    _prov_row,
+)
+
+pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _restore_conftest_engine():
+    from okto_pulse.core.infra.database import create_database, get_engine
+
+    prior_url = str(get_engine().url)
+    yield
+    if str(get_engine().url) != prior_url:
+        create_database(prior_url, echo=False)
+
+
+@pytest.fixture
+def drift_tempdir(monkeypatch):
+    base = Path(tempfile.mkdtemp(prefix="okto_pulse_drift_"))
+    db_path = base / "pulse.db"
+    kg_path = base / "kg"
+    kg_path.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("OKTO_PULSE_DATA_DIR", str(base))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    monkeypatch.setenv("KG_BASE_DIR", str(kg_path))
+    monkeypatch.setenv("KG_CLEANUP_ENABLED", "false")
+    monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
+    configure_real_graph_test_kg_registry()
+
+    yield base
+
+    try:
+        from kg_schema_testing import close_all_connections
+
+        close_all_connections()
+    except Exception:
+        pass
+    gc.collect()
+    shutil.rmtree(base, ignore_errors=True)
+
+
+async def _insert_spec_row(session_factory, board_id: str, spec_id: str) -> None:
+    from okto_pulse.community.adapters.sqlalchemy_models import Spec
+
+    async with session_factory() as db:
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec alvo do drift",
+                created_by="mkgb-drift-test",
+            )
+        )
+        await db.commit()
+
+
+async def _touch_spec_row(session_factory, spec_id: str) -> None:
+    """Simulate an artifact edit AFTER the consolidation landed."""
+    from sqlalchemy import update
+
+    from okto_pulse.community.adapters.sqlalchemy_models import Spec
+
+    async with session_factory() as db:
+        await db.execute(
+            update(Spec)
+            .where(Spec.id == spec_id)
+            .values(
+                title="Spec alvo do drift EDITADA",
+                updated_at=datetime.now(timezone.utc) + timedelta(seconds=5),
+            )
+        )
+        await db.commit()
+
+
+async def _delete_spec_row(session_factory, spec_id: str) -> None:
+    from sqlalchemy import delete
+
+    from okto_pulse.community.adapters.sqlalchemy_models import Spec
+
+    async with session_factory() as db:
+        await db.execute(delete(Spec).where(Spec.id == spec_id))
+        await db.commit()
+
+
+def _graph_snapshot(board_id: str, artifact_ref: str) -> dict:
+    return _prov_row(board_id, artifact_ref)
+
+
+async def test_s6_clean_board_reports_no_drift(drift_tempdir, monkeypatch):
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    await _insert_spec_row(session_factory, board_id, spec_id)
+    artifact_ref = f"spec:{spec_id}"
+
+    await _drive_with_provenance(
+        session_factory, board_id, artifact_ref, "[MKG-B] Drift limpo",
+        content="conteudo",
+    )
+    report = await provenance_drift_report(board_id)
+    # AC6(c): nothing changed → empty list; the consolidated node was checked.
+    assert report["drifted_count"] == 0
+    assert report["drifted"] == []
+    assert report["checked_count"] >= 1
+    # Technical root (ref sem 'tipo:id' consolidável) fica em skipped, nunca
+    # em falso drift.
+    assert report["skipped_count"] >= 1
+
+
+async def test_s6_artifact_edited_after_consolidation_is_drifted(
+    drift_tempdir, monkeypatch
+):
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    await _insert_spec_row(session_factory, board_id, spec_id)
+    artifact_ref = f"spec:{spec_id}"
+
+    await _drive_with_provenance(
+        session_factory, board_id, artifact_ref, "[MKG-B] Drift por edicao",
+        content="conteudo",
+    )
+    await _touch_spec_row(session_factory, spec_id)
+
+    report = await provenance_drift_report(board_id)
+    drifted = {d["node_id"]: d for d in report["drifted"]}
+    node = _prov_row(board_id, artifact_ref)
+    assert node["id"] in drifted
+    entry = drifted[node["id"]]
+    assert entry["reason"] == "content_changed"
+    assert entry["detail"] == "artifact_updated_after_last_consolidation"
+    assert entry["persisted_hash"] == node["source_content_hash"]
+    assert report["drifted_by_reason"]["content_changed"] >= 1
+
+
+async def test_s6_stale_anchor_vs_latest_consolidation_is_drifted(
+    drift_tempdir, monkeypatch
+):
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    await _insert_spec_row(session_factory, board_id, spec_id)
+    artifact_ref = f"spec:{spec_id}"
+
+    await _drive_with_provenance(
+        session_factory, board_id, artifact_ref, "[MKG-B] Ancora velha",
+        content="conteudo",
+    )
+    node = _prov_row(board_id, artifact_ref)
+    # Diverge the persisted anchor from the latest audit (models a curated
+    # node whose protected content no longer matches the source state).
+    from kg_schema_testing import open_board_connection
+
+    conn_ctx = open_board_connection(board_id)
+    with conn_ctx as (_kdb, kconn):
+        kconn.execute(
+            "MATCH (n:Entity) WHERE n.id = $id "
+            "SET n.source_content_hash = 'deadbeef'",
+            {"id": node["id"]},
+        )
+
+    report = await provenance_drift_report(board_id, "Entity")
+    drifted = {d["node_id"]: d for d in report["drifted"]}
+    assert node["id"] in drifted
+    assert drifted[node["id"]]["reason"] == "content_changed"
+    assert drifted[node["id"]]["persisted_hash"] == "deadbeef"
+    assert drifted[node["id"]]["current_hash"] not in (None, "deadbeef")
+
+
+async def test_s6_deleted_artifact_is_terminal_drift_and_readonly(
+    drift_tempdir, monkeypatch
+):
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    await _insert_spec_row(session_factory, board_id, spec_id)
+    artifact_ref = f"spec:{spec_id}"
+
+    await _drive_with_provenance(
+        session_factory, board_id, artifact_ref, "[MKG-B] Fonte deletada",
+        content="conteudo",
+    )
+    await _delete_spec_row(session_factory, spec_id)
+
+    before = _graph_snapshot(board_id, artifact_ref)
+    report = await provenance_drift_report(board_id)
+    after = _graph_snapshot(board_id, artifact_ref)
+
+    node_id = before["id"]
+    drifted = {d["node_id"]: d for d in report["drifted"]}
+    assert node_id in drifted
+    # AC6(b): deleted source = terminal drift, a reason of its own.
+    assert drifted[node_id]["reason"] == "artifact_missing"
+    assert report["drifted_by_reason"]["artifact_missing"] >= 1
+    # AC6: read-only — the graph is byte-identical after the report.
+    assert before == after
+
+
+async def test_s6_unknown_node_type_rejected(drift_tempdir, monkeypatch):
+    await _bootstrap_test_board(monkeypatch)
+    with pytest.raises(ValueError):
+        await provenance_drift_report("board", "NotAType")
+
+
+def test_s6_mcp_tool_registered_within_budget():
+    import asyncio as _asyncio
+    import importlib
+
+    mod = importlib.import_module("okto_pulse.core.mcp.server")
+    tools = _asyncio.run(mod.mcp.get_tools())
+    tool = tools.get("okto_pulse_kg_provenance_drift")
+    assert tool is not None
+    # TR do budget R1.1: descrição ≤900 chars.
+    assert len(tool.description or "") <= 900

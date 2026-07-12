@@ -24,6 +24,11 @@ class AuditRepository(Protocol):
         """Return audit row by session_id."""
         ...
 
+    async def get_node_refs_by_session(self, session_id: str) -> list[NodeRefData]:
+        """Return the graph-node back-references recorded by a committed
+        session (spec MKG-B-S1 FR5/TR4 -- count-only re-attestation)."""
+        ...
+
     async def commit_consolidation_records(
         self,
         audit: ConsolidationAuditData,

@@ -315,7 +315,11 @@ async def _begin_with_learning(
             candidate=NodeCandidate(
                 candidate_id=candidate_id,
                 node_type=KGNodeType.LEARNING,
-                title="Connectivity learning",
+                # Same normalized title as _seed_node's "Seed Learning": since
+                # spec MKG-D-S1 (FR8) an identity-bearing TITLE change on NC-8
+                # reuse supersedes-with-trail instead of merging — this helper
+                # exercises the same-title dedup/merge path.
+                title="Seed Learning",
                 source_artifact_ref=source_ref,
                 source_confidence=0.95,
             ),

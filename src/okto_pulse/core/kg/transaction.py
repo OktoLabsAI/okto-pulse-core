@@ -208,7 +208,9 @@ class TransactionOrchestrator:
         # Required so supersede_node's create works once it has real call
         # sites (spec eca49df9 / TR6).
         columns = ", ".join(
-            f"{k}: timestamp(${k})" if k == "created_at" else f"{k}: ${k}"
+            f"{k}: timestamp(${k})"
+            if k in ("created_at", "last_attested_at") and params[k] is not None
+            else f"{k}: ${k}"
             for k in params
         )
         stmt = f"CREATE (n:{node_type} {{{columns}}})"

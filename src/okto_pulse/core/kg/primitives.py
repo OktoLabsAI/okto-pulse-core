@@ -332,6 +332,15 @@ async def begin_consolidation(
                 "previous_session_id": previous_session_id,
             },
         )
+        # Spec MKG-B-S1 (FR5, D2): identical re-assertion is corroboration —
+        # count-only bump on the origin session's nodes, no reprocessing.
+        await _register_count_only_attestation(
+            registry,
+            board_id=req.board_id,
+            artifact_id=req.artifact_id,
+            previous_session_id=previous_session_id,
+            trigger="begin",
+        )
 
     session = await store.create(
         session_id=session_id,
@@ -341,6 +350,10 @@ async def begin_consolidation(
         agent_id=agent_id,
         raw_content=req.raw_content,
     )
+    if nothing_changed:
+        # Idempotency for the begin→propose flow (D2): the re-assertion was
+        # already counted above; propose must not count it again.
+        session.count_only_attested = True
 
     for cand in req.deterministic_candidates:
         if cand.candidate_id in session.node_candidates:
@@ -646,7 +659,22 @@ async def propose_reconciliation(
         )
         nothing_changed = bool(latest and _audit_hash(latest) == session.content_hash)
     else:
+        latest = None
         nothing_changed = False
+
+    # Spec MKG-B-S1 (FR5, D2): propose re-checks the hash, so a session that
+    # began BEFORE an identical commit landed still counts the re-assertion.
+    # The session flag keeps the normal begin→propose flow at exactly one
+    # count per re-assertion.
+    if nothing_changed and not session.count_only_attested:
+        await _register_count_only_attestation(
+            registry,
+            board_id=session.board_id,
+            artifact_id=session.artifact_id,
+            previous_session_id=_audit_session_id(latest) if latest else None,
+            trigger="propose",
+        )
+        session.count_only_attested = True
 
     existing_matches_by_candidate: dict[str, list] = {}
     if not nothing_changed:
@@ -1601,6 +1629,7 @@ def _do_graph_commit(
     agent_id: str,
     embedder,
     kg_health_state: str,
+    session_content_hash: str = "",
 ) -> tuple[dict, object, list, datetime, dict]:
     """Synchronous graph writes for ``commit_consolidation``.
 
@@ -1794,6 +1823,8 @@ def _do_graph_commit(
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
                     "human_curated": False,
                     "generation": successor_generation,
+                    # Spec MKG-B-S1 (FR2/FR3): successor is a fresh assertion.
+                    **_provenance_attrs(cand, session_content_hash),
                     "embedding": embedding,
                 }
                 orch.supersede_node(
@@ -1894,6 +1925,9 @@ def _do_graph_commit(
                             ),
                             "human_curated": False,
                             "generation": trail_generation,
+                            # Spec MKG-B-S1 (FR2/FR3): trail successor is a
+                            # fresh assertion — count restarts at 1.
+                            **_provenance_attrs(cand, session_content_hash),
                             "embedding": embedding,
                         }
                         orch.supersede_node(
@@ -1948,6 +1982,13 @@ def _do_graph_commit(
                             ),
                             "source_confidence": cand.source_confidence,
                             "priority_boost": getattr(cand, "priority_boost", 0.0),
+                            # Spec MKG-B-S1 (FR3/D5): the rewrite is a NEW
+                            # assertion — restamp the provenance anchor so
+                            # drift clears after the re-consolidation remedy.
+                            **_provenance_attrs(
+                                cand, session_content_hash,
+                                seed_attestation=False,
+                            ),
                             "embedding": embedding,
                         }
                         _apply_kuzu_node_update_partial(
@@ -1975,6 +2016,11 @@ def _do_graph_commit(
                                 ),
                             },
                         )
+                    # Spec MKG-B-S1 (FR4, D3): the reuse itself is a
+                    # re-attestation — counted on BOTH branches (curated
+                    # included: content is protected, maturity metadata
+                    # is not).
+                    _bump_attestation(orch, node_type, existing_id)
                     candidate_to_kuzu_id[cand_id] = existing_id
                     candidate_to_node_type[cand_id] = node_type
                     # Spec eca49df9 (FR5/AC6): count + audit the NC-8
@@ -2040,6 +2086,9 @@ def _do_graph_commit(
                 # writes unless the agent passes an explicit override.
                 "human_curated": False,
                 "generation": 0,
+                # Spec MKG-B-S1 (FR2/FR3): extraction provenance + first
+                # attestation recorded at birth.
+                **_provenance_attrs(cand, session_content_hash),
                 "embedding": embedding,
             }
             _apply_kuzu_node_create_with_timestamp(
@@ -2260,6 +2309,7 @@ async def commit_consolidation(
                 agent_id,
                 registry.require_embedding_provider(),
                 kg_health_state,
+                session.content_hash,
             )
         except KGPrimitiveError:
             raise
@@ -2402,6 +2452,150 @@ def _node_is_human_curated(kconn, node_type: str, node_id: str) -> bool:
 # Spec MKG-A-S1: canonical cognitive node types with a durable source
 # (kept in lockstep with canonical_cognitive_preservation.COGNITIVE_TYPES).
 _COGNITIVE_SOURCE_TYPES: tuple[str, ...] = ("Learning", "Alternative", "Assumption")
+
+
+_SOURCE_QUOTE_MAX_CHARS = 500
+
+
+def _provenance_attrs(
+    cand, session_content_hash: str, *, seed_attestation: bool = True
+) -> dict:
+    """Spec MKG-B-S1 (FR1/FR2/FR3): extraction provenance + attestation seed
+    written on every node materialization (CREATE / SUPERSEDE / NC-8 trail).
+
+    Optional span/extraction fields come from the candidate; the quote is
+    truncated at this boundary (BR2) so an oversized agent payload can never
+    bloat the graph. ``attestation_count`` starts at 1 — a node has been
+    asserted exactly once at birth.
+
+    ``seed_attestation=False`` is the NC-8 in-place UPDATE variant: the
+    content is being rewritten by a NEW assertion, so the provenance anchor
+    (span/extraction/source_content_hash) is restamped to describe the new
+    content — without the restamp, kg_provenance_drift would keep flagging
+    the node forever after the re-consolidation remedy (D5). Attestation
+    counters are excluded there — ``_bump_attestation`` accumulates them
+    (N -> N+1, never reset to 1).
+    """
+
+    quote = getattr(cand, "source_span_quote", None)
+    if quote is not None:
+        quote = quote[:_SOURCE_QUOTE_MAX_CHARS]
+    attrs = {
+        "source_span_start": getattr(cand, "source_span_start", None),
+        "source_span_end": getattr(cand, "source_span_end", None),
+        "source_span_quote": quote,
+        "extraction_model_id": getattr(cand, "extraction_model_id", None),
+        "extraction_prompt_hash": getattr(cand, "extraction_prompt_hash", None),
+        "source_content_hash": session_content_hash or None,
+    }
+    if seed_attestation:
+        attrs["attestation_count"] = 1
+        attrs["last_attested_at"] = _now_iso()
+    return attrs
+
+
+def _bump_attestation(orch, node_type: str, node_id: str) -> None:
+    """Spec MKG-B-S1 (FR4, D3): NC-8 reuse re-attests the node — the counter
+    accumulates as a maturity signal even when the content write is skipped
+    (human_curated). NULL-safe: a legacy node without the column value counts
+    as one prior attestation.
+    """
+
+    orch.execute_graph(
+        f"MATCH (n:{node_type}) WHERE n.id = $id "
+        f"SET n.attestation_count = coalesce(n.attestation_count, 1) + 1, "
+        f"n.last_attested_at = timestamp($ts)",
+        {"id": node_id, "ts": _now_iso()},
+    )
+
+
+def _do_count_only_attestation(
+    board_id: str, refs: list[tuple[str, str]]
+) -> list[str]:
+    """Sync graph write for the count-only re-attestation (FR5/TR4).
+
+    One SET per referenced node — zero content writes, zero re-embedding,
+    no compensation records (same monotonic-evidence stance as the NC-8
+    bump, D6). Returns the node ids bumped.
+    """
+
+    async def _run() -> list[str]:
+        bumped: list[str] = []
+        registry = get_kg_registry()
+        async with await registry.graph_transaction.begin(board_id) as scope:
+            for node_type, node_id in refs:
+                try:
+                    scope.execute(
+                        f"MATCH (n:{node_type}) WHERE n.id = $id "
+                        f"SET n.attestation_count = "
+                        f"coalesce(n.attestation_count, 1) + 1, "
+                        f"n.last_attested_at = timestamp($ts)",
+                        {"id": node_id, "ts": _now_iso()},
+                    )
+                    bumped.append(node_id)
+                except Exception as exc:
+                    logger.warning(
+                        "kg.attestation.count_only_node_failed board=%s "
+                        "node=%s type=%s err=%s",
+                        board_id, node_id, node_type, exc,
+                    )
+        return bumped
+
+    return run_async_blocking(_run())
+
+
+async def _register_count_only_attestation(
+    registry,
+    *,
+    board_id: str,
+    artifact_id: str,
+    previous_session_id: str | None,
+    trigger: str,
+) -> None:
+    """Spec MKG-B-S1 (FR5/TR4, D2 + OR1): an identical-content re-assertion
+    (nothing_changed short-circuit) still counts as corroboration — bump
+    attestation on the nodes of the last audited session of the same origin.
+
+    Best-effort by design: attestation is a monotonic evidence metric, so a
+    failure here logs a warning and NEVER breaks begin/propose. Also degrades
+    silently when the composed audit_repo predates the node-ref read (older
+    editions).
+    """
+
+    if not previous_session_id:
+        return
+    try:
+        getter = getattr(registry.audit_repo, "get_node_refs_by_session", None)
+        if getter is None:
+            return
+        refs = await getter(previous_session_id)
+        pairs = sorted(
+            {(r.graph_node_type, r.graph_node_id) for r in refs}
+        )
+        if not pairs:
+            return
+        bumped = await _run_graph_io(
+            _do_count_only_attestation, board_id, pairs
+        )
+        logger.info(
+            "kg.attestation.count_only board=%s artifact_id=%s "
+            "origin_session=%s trigger=%s nodes=%d",
+            board_id, artifact_id, previous_session_id, trigger, len(bumped),
+            extra={
+                "event": "kg.attestation.count_only",
+                "board_id": board_id,
+                "artifact_id": artifact_id,
+                "origin_session_id": previous_session_id,
+                "trigger": trigger,
+                "nodes_attested": bumped,
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "kg.attestation.count_only_failed board=%s artifact_id=%s "
+            "origin_session=%s trigger=%s err=%s",
+            board_id, artifact_id, previous_session_id, trigger, exc,
+        )
 
 
 def _cognitive_source_record_kwargs(
@@ -2655,6 +2849,13 @@ _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset({
     # protected. Historical/HNSW-locked fields (embedding, created_at,
     # query_hits, human_curated, …) remain excluded.
     "graph_layer", "maturity_status",
+    # Spec MKG-B-S1 (FR3/D5): extraction provenance is CONTENT-DERIVED —
+    # when the NC-8 rewrite replaces the content, the anchor must describe
+    # the new assertion (drift clears after re-consolidation). Attestation
+    # counters stay EXCLUDED: they accumulate via _bump_attestation and can
+    # never be reset by an update payload.
+    "source_span_start", "source_span_end", "source_span_quote",
+    "extraction_model_id", "extraction_prompt_hash", "source_content_hash",
 })
 
 # Kuzu HNSW vector indexes (see `VECTOR_INDEX_TYPES` in schema.py) own
@@ -2719,8 +2920,12 @@ def _apply_kuzu_node_create_with_timestamp(
     params = dict(attrs)
     params["id"] = node_id
     params["source_session_id"] = orch.session_id
+    # last_attested_at (spec MKG-B-S1) is a TIMESTAMP column too — same
+    # coercion constraint as created_at; NULL passes through unwrapped.
     columns = ", ".join(
-        f"{k}: timestamp(${k})" if k == "created_at" else f"{k}: ${k}"
+        f"{k}: timestamp(${k})"
+        if k in ("created_at", "last_attested_at") and params[k] is not None
+        else f"{k}: ${k}"
         for k in params
     )
     orch.execute_graph(

@@ -78,7 +78,7 @@ specs, or stories as applicable; cards receive resource context only through
 `okto_pulse_kg_get_decision_history`, `okto_pulse_kg_get_related_context`, `okto_pulse_kg_get_supersedence_chain`, `okto_pulse_kg_find_contradictions`, `okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_explain_constraint`, `okto_pulse_kg_list_alternatives`, `okto_pulse_kg_get_learning_from_bugs`, `okto_pulse_kg_query_global`
 
 ## KG — Query (Power)
-`okto_pulse_kg_query_cypher`, `okto_pulse_kg_query_natural`, `okto_pulse_kg_schema_info`
+`okto_pulse_kg_query_cypher`, `okto_pulse_kg_query_natural`, `okto_pulse_kg_schema_info`, `okto_pulse_kg_provenance_drift`
 
 ## KG — Operational
 `okto_pulse_kg_health`, `okto_pulse_kg_health_readiness`, `okto_pulse_kg_dead_letter_list`, `okto_pulse_kg_dead_letter_reprocess`, `okto_pulse_kg_connectivity_dlq_diagnose`, `okto_pulse_kg_connectivity_dlq_reprocess`, `okto_pulse_kg_connectivity_dlq_verify`, `okto_pulse_kg_migrate_schema`, `okto_pulse_kg_tick_run_now`

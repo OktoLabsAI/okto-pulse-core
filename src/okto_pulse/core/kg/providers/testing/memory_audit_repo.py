@@ -38,6 +38,9 @@ class InMemoryAuditRepository:
                 return a
         return None
 
+    async def get_node_refs_by_session(self, session_id: str) -> list[NodeRefData]:
+        return [r for r in self.node_refs if r.session_id == session_id]
+
     async def commit_consolidation_records(
         self,
         audit: ConsolidationAuditData,

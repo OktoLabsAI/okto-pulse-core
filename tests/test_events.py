@@ -1279,7 +1279,7 @@ def test_human_curated_column_declared_in_schema():
     # Schema bumped to 0.3.2 (Ideação #5) to mark this column on bootstrap;
     # subsequent additive bumps (e.g. 0.3.3 for last_recomputed_at — Ideação
     # #4) preserve the column, so we assert the floor with set membership.
-    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7", "0.3.8"}
+    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7", "0.3.8", "0.3.9"}
 
 
 def test_human_curated_migration_helper_exists_and_is_called():

@@ -69,6 +69,10 @@ class ConsolidationSession:
     reconciliation_hints: dict[str, ReconciliationHint] = field(default_factory=dict)
     # Fields populated during commit — used by abort/compensating delete.
     committed_kuzu_node_refs: list[dict[str, Any]] = field(default_factory=list)
+    # Spec MKG-B-S1 (FR5, D2): set once a count-only attestation has been
+    # registered for this session's identical-content detection, so a
+    # begin→propose flow never double-counts the same re-assertion.
+    count_only_attested: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def is_expired(self) -> bool:

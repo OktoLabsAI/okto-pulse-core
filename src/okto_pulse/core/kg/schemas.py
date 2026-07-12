@@ -102,6 +102,15 @@ class NodeCandidate(BaseModel):
         le=0.2,
         description="Additive boost derived from source card priority, frozen at insert time",
     )
+    # Spec MKG-B-S1 (FR1, D1): optional extraction provenance carried by the
+    # candidate and written verbatim at commit when present. The quote is
+    # truncated to 500 chars at the commit boundary (BR2), not here — the
+    # session preserves what the agent sent.
+    source_span_start: int | None = Field(None, ge=0)
+    source_span_end: int | None = Field(None, ge=0)
+    source_span_quote: str | None = None
+    extraction_model_id: str | None = None
+    extraction_prompt_hash: str | None = None
 
 
 class EdgeCandidate(BaseModel):

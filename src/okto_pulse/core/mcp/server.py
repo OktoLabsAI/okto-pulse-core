@@ -15816,18 +15816,15 @@ async def okto_pulse_kg_canonical_partition_integrity_list(
 ) -> str:
     """
     List canonical Learning partition-integrity signals for KG health drill-down
-    (R7). READ-ONLY: surfaces go-forward cognitive holds, historical canonical
-    debt, mixed-evidence deferred and provenance-only observed Learnings. Each
-    item carries an S-KG-02 ``classification`` (Learning-centric: missing_source,
-    unresolved_source, canonical_learning_resolved, weak_provenance,
-    invalid_orphan_learning) plus the response's ``classification_counts`` census;
-    the existing ``status`` / ``counts`` are preserved.
+    (R7). READ-ONLY: cognitive holds, canonical debt, mixed-evidence deferred and
+    provenance-only Learnings. Each item carries an S-KG-02 ``classification``
+    (missing_source, unresolved_source, canonical_learning_resolved,
+    weak_provenance, invalid_orphan_learning) + ``classification_counts`` census.
 
-    Mirrors REST `GET /api/v1/kg/{board_id}/canonical-partition-integrity` (and the
-    per-node `.../{node_id}` detail, which carries the same ``classification`` so
-    the two surfaces stay consistent). This tool NEVER skips, clears, force-closes
-    or resolves an R7 hold/debt — those are human-only (use the human REST
-    surface). Filters: reason_code, graph_layer, source_ref, node_id, status.
+    Mirrors REST `GET /api/v1/kg/{board_id}/canonical-partition-integrity` (same
+    ``classification`` on the per-node detail). NEVER skips, clears or resolves
+    an R7 hold/debt — human-only. Filters: reason_code, graph_layer, source_ref,
+    node_id, status.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -17523,22 +17520,16 @@ async def okto_pulse_kg_rebuild_run(
     """
     Executa o rebuild do KG — gemelar do REST POST /api/v1/kg/rebuild/run.
 
-    Consome o token single-use emitido por okto_pulse_kg_rebuild_confirm e
-    executa o rebuild completo sob o admin lane KG-01. NUNCA muta o grafo se
-    o token for inválido, o manifesto tiver mudado ou o lock exclusivo não
-    puder ser adquirido.
+    Consome o token single-use de okto_pulse_kg_rebuild_confirm e executa o
+    rebuild sob o admin lane KG-01. NUNCA muta o grafo se o token for
+    inválido, o manifesto mudou ou o lock exclusivo falhar.
 
-    Admission gate (FR8): recusa com rebuild_refused_quarantined quando
-    graph_state == 'quarantined' mesmo antes de consumir o token.
-    recovery_needed É ADMITIDO (rebuild é a saída prescrita desse estado).
+    Admission gate (FR8): recusa rebuild_refused_quarantined quando
+    graph_state == 'quarantined' antes de consumir o token; recovery_needed
+    é admitido (rebuild é a saída prescrita).
 
-    Parâmetros:
-        board_id        — UUID do board
-        confirmation_id — token emitido por /confirm
-        operation       — operação canônica (deve bater com /confirm)
-        preflight_hash  — SHA-256 hex (deve bater com /confirm)
-        manifest_ref    — identificador do manifesto (deve bater com /confirm)
-        reason          — descrição textual (auditoria), máx 512 chars
+    confirmation_id/operation/preflight_hash/manifest_ref devem bater com o
+    /confirm; reason é auditoria (máx 512 chars).
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -17744,20 +17735,15 @@ async def okto_pulse_kg_quarantine_restore(
     """
     Restore de quarentena do KG — dry-run/apply com backup-swap (KGD-01 FR4/BR4).
 
-    A quarentena (<kg_base>/quarantine/<quarantine_id>/) preserva snapshots de
-    grafos quarentenados; esta tool torna esses snapshots restauráveis. Com
     apply=false (default) retorna o plano auditável (arquivos, destinos,
-    conflitos, tamanhos) SEM nenhuma mutação. Com apply=true move os arquivos
-    vivos do board para uma NOVA quarentena com manifest (backup-swap;
-    backup_quarantine_id no resultado), copia o snapshot de volta, valida o
-    open do board e emite os eventos kg.quarantine.restore_dry_run /
-    kg.quarantine.restored.
+    conflitos, tamanhos) SEM mutação. apply=true move os arquivos vivos do
+    board para uma NOVA quarentena com manifest (backup_quarantine_id no
+    resultado), copia o snapshot de volta, valida o open do board e emite
+    kg.quarantine.restore_dry_run / kg.quarantine.restored.
 
-    Response: {plan: array, applied: bool, backup_quarantine_id?: string}.
-    Erros estruturados: quarantine_not_found (id inexistente), board_locked
-    (servidor ativo segurando o board — exigir janela de manutenção),
-    partial_restore (falha no meio — o manifest da operação registra o estado
-    exato para rollback; nunca um board meio-restaurado silencioso).
+    Response: {plan, applied, backup_quarantine_id?}. Erros: quarantine_not_found,
+    board_locked (exigir janela de manutenção), partial_restore (manifest
+    registra o estado exato para rollback — nunca meio-restaurado silencioso).
     """
     agent = await _get_authenticated_agent()
     if agent is None:

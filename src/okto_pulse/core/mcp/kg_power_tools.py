@@ -405,6 +405,33 @@ args: okto-pulse://reference/tool-docs/kg."""
         return json.dumps(result, default=str)
 
     @mcp.tool()
+    async def okto_pulse_kg_provenance_drift(
+        board_id: str,
+        node_type: str = "",
+    ) -> str:
+        """Read-only artifact→node drift report: compares each node's persisted
+source_content_hash against the artifact's latest consolidation and current
+existence. Reasons: content_changed | artifact_missing (deleted source, terminal).
+Returns checked_count/drifted_count/skipped_count + drifted list. Remedy is a
+normal re-consolidation; the graph is never modified. node_type optionally
+narrows to one table."""
+        from okto_pulse.core.kg.provenance_drift import provenance_drift_report
+
+        agent = await get_agent()
+        if agent is None:
+            return _err("unauthorized", "authentication required")
+        try:
+            report = await asyncio.wait_for(
+                provenance_drift_report(
+                    board_id, node_type or None
+                ),
+                timeout=60.0,
+            )
+        except ValueError as e:
+            return _err("invalid_node_type", str(e))
+        return json.dumps(report, default=str)
+
+    @mcp.tool()
     async def okto_pulse_kg_query_reflective(
         board_id: str,
         nl_query: str,

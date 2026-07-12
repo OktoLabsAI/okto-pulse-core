@@ -271,6 +271,13 @@ def _create_node(
     columns = ", ".join(f"{k}: ${k}" for k in params)
     stmt = f"CREATE (n:{node_type} {{{columns}}}) RETURN n.id"
     stmt = stmt.replace("created_at: $created_at", "created_at: timestamp($created_at)")
+    # Spec MKG-B-S1: replayed payloads may carry last_attested_at (TIMESTAMP)
+    # as an ISO string — same coercion constraint as created_at.
+    if params.get("last_attested_at") is not None:
+        stmt = stmt.replace(
+            "last_attested_at: $last_attested_at",
+            "last_attested_at: timestamp($last_attested_at)",
+        )
     if not _execute_write_has_row(board_id, stmt, params):
         raise ValueError(f"node was not created: {node_type}({node_id})")
 

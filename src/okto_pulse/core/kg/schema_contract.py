@@ -13,7 +13,7 @@ from okto_pulse.core.kg.cognitive_policy import (
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.3.8"
+SCHEMA_VERSION = "0.3.9"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -225,6 +225,14 @@ STABLE_NODE_PROPERTIES: tuple[str, ...] = (
     "revocation_reason",
     "human_curated",
     "generation",
+    "source_span_start",
+    "source_span_end",
+    "source_span_quote",
+    "extraction_model_id",
+    "extraction_prompt_hash",
+    "source_content_hash",
+    "attestation_count",
+    "last_attested_at",
 )
 
 RELEVANCE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -256,6 +264,26 @@ GENERATION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("generation", "INT64"),
 )
 
+PROVENANCE_COLUMNS: tuple[tuple[str, str], ...] = (
+    # Spec MKG-B-S1 (FR1): atomic provenance — WHERE inside the artifact a
+    # node came from, WHO/HOW extracted it, and the source content hash at
+    # extraction time (drift detection). All optional at write time.
+    ("source_span_start", "INT64"),
+    ("source_span_end", "INT64"),
+    ("source_span_quote", "STRING"),
+    ("extraction_model_id", "STRING"),
+    ("extraction_prompt_hash", "STRING"),
+    ("source_content_hash", "STRING"),
+)
+
+ATTESTATION_COLUMNS: tuple[tuple[str, str], ...] = (
+    # Spec MKG-B-S1 (FR2): graded multi-source corroboration. NEW names —
+    # the retired 'corroboration_count' must NEVER return (its PRESENCE
+    # flags a board as v0.2.0 and triggers a destructive recreate).
+    ("attestation_count", "INT64"),
+    ("last_attested_at", "TIMESTAMP"),
+)
+
 LEGACY_NODE_COLUMNS: tuple[str, ...] = (
     "validation_status",
     "corroboration_count",
@@ -270,8 +298,10 @@ def vector_index_name(node_type: str) -> str:
 __all__ = [
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
+    "ATTESTATION_COLUMNS",
     "GENERATION_COLUMNS",
     "HUMAN_CURATED_COLUMNS",
+    "PROVENANCE_COLUMNS",
     "KG_LAYER_COLUMNS",
     "LAST_RECOMPUTED_COLUMNS",
     "LEGACY_NODE_COLUMNS",

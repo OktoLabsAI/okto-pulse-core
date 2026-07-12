@@ -125,6 +125,33 @@ def reset_contradict_warn_counters() -> None:
 # permissive or too tight.
 DECAY_REORDER_POOL_MULTIPLIER = 3
 
+# Spec MKG-B-S1 (FR6, D4): corroboration boost calibration.
+ATTESTATION_BOOST_RATE = 0.1
+ATTESTATION_BOOST_CAP = 1.5
+
+
+def attestation_boost(attestation_count: int | None) -> float:
+    """Spec MKG-B-S1 (FR6, D4): multiplicative saturating corroboration factor.
+
+    ``min(1 + 0.1*ln(count), 1.5)`` — monotonic in count, saturates at 1.5x
+    and NEUTRAL (exactly 1.0) at count<=1: a single attestation carries no
+    corroboration, so uncorroborated/legacy scores stay byte-stable (AC7 —
+    NULL reads as 1, never fails). The ln argument is anchored at ``count``
+    (not ``1+count``) so the baseline factor is exactly 1.0 — deliberate
+    calibration of D4 that keeps the R2 score band unchanged for fresh
+    nodes; AC5's ordering and saturation behaviour are identical.
+
+    Single pure function consumed by BOTH the composition (tick/recompute)
+    and the on-read reorder — never duplicated (TR5, dual-path R8).
+    """
+
+    count = 1 if attestation_count is None else max(1, int(attestation_count))
+    if count <= 1:
+        return 1.0
+    return min(
+        1.0 + ATTESTATION_BOOST_RATE * math.log(count), ATTESTATION_BOOST_CAP
+    )
+
 
 def _apply_decay_reorder(
     rows: list[dict[str, Any]],
@@ -164,7 +191,14 @@ def _apply_decay_reorder(
         # without persisting it back to Kùzu.
         stale_hit_term = HITS_WEIGHT * float(raw_hits)
         decayed_hit_term = HITS_WEIGHT * decayed_hits
-        decayed_relevance = original - stale_hit_term + decayed_hit_term
+        # Spec MKG-B-S1 (FR6/TR5): the SAME attestation factor used by the
+        # tick recompute is applied on-read, so a corroborated node ranks
+        # above an identical uncorroborated one even before the next tick.
+        # Rows without the key (legacy callers) get the neutral 1.0.
+        boost = attestation_boost(row.get("attestation_count"))
+        decayed_relevance = (
+            original - stale_hit_term + decayed_hit_term
+        ) * boost
         enriched.append(
             {
                 **row,
@@ -272,6 +306,7 @@ def _compute_relevance(
     decayed_hits: float,
     contradict_penalty: float,
     priority_boost: float = 0.0,
+    attestation_count: int | None = None,
 ) -> float:
     """Combine the four signals (plus frozen priority_boost) into [0.0, 1.5].
 
@@ -312,6 +347,10 @@ def _compute_relevance(
         - contradict_penalty
         + priority_boost
     )
+    # Spec MKG-B-S1 (FR6, D4): multiplicative corroboration factor applied
+    # to the full composition BEFORE the clamp — the 1.5 cap still bounds
+    # the result; neutral (1.0) for count<=1/NULL.
+    raw *= attestation_boost(attestation_count)
 
     if raw < CLAMP_MIN or raw > CLAMP_MAX:
         logger.warning(
@@ -438,7 +477,7 @@ def _fetch_node_inputs(
             f"n.query_hits, n.last_queried_at, n.relevance_score, "
             f"CASE WHEN COUNT(c) = 0 THEN 0.0 "
             f"ELSE SUM(COALESCE(c.confidence, $default_conf)) END, "
-            f"n.priority_boost",
+            f"n.priority_boost, n.attestation_count",
             {"nid": node_id, "default_conf": DEFAULT_CONTRADICT_CONFIDENCE},
         )
     except Exception as exc:
@@ -461,6 +500,11 @@ def _fetch_node_inputs(
     # priority_boost persisted column — NULL on legacy rows pre-migration,
     # which maps cleanly to 0.0 (no boost, no-op additive term).
     priority_boost = float(row[7]) if row[7] is not None else 0.0
+    # Spec MKG-B-S1 (AC7): NULL attestation_count reads as 1 (neutral
+    # factor) — legacy boards (and short fake rows in older test doubles)
+    # never fail nor shift.
+    raw_attestation = row[8] if len(row) > 8 else None
+    attestation_count = int(raw_attestation) if raw_attestation is not None else 1
 
     # Spec 20f67c2a (Ideação #5, BR2): cap contradict_penalty at
     # CONTRADICT_PENALTY_CAP so an unbounded sum of incoming :contradicts
@@ -495,6 +539,7 @@ def _fetch_node_inputs(
         "raw_contradict_penalty": raw_penalty,
         "score_before": score_before,
         "priority_boost": priority_boost,
+        "attestation_count": attestation_count,
     }
 
 
@@ -555,6 +600,7 @@ def _recompute_relevance(
         decayed,
         inputs["contradict_penalty"],
         priority_boost=inputs["priority_boost"],
+        attestation_count=inputs["attestation_count"],
     )
 
     if abs(new_score - inputs["score_before"]) > 1e-6:
@@ -640,6 +686,7 @@ def _recompute_relevance_batch(
             decayed,
             inputs["contradict_penalty"],
             priority_boost=inputs["priority_boost"],
+            attestation_count=inputs["attestation_count"],
         )
         score_rows_by_type.setdefault(node_type, []).append(
             {"id": node_id, "score": new_score, "now": now_iso}
