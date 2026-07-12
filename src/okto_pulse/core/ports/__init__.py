@@ -129,6 +129,15 @@ from .kg_events import (
     register_kg_events_reader_port,
     reset_kg_events_reader_port_for_tests,
 )
+from .kg_cognitive_source import (
+    CognitiveSourceError,
+    CognitiveSourceRecord,
+    CognitiveSourceStore,
+    register_cognitive_source_store,
+    require_cognitive_source_store,
+    reset_cognitive_source_store_for_tests,
+    resolve_cognitive_source_store,
+)
 from .relational_runtime import (
     RelationalDatabasePathUnavailable,
     close_db,
@@ -295,6 +304,9 @@ __all__ = [
     "DataBootstrapStep",
     "DataBootstrapStepResult",
     "DataBootstrapper",
+    "CognitiveSourceError",
+    "CognitiveSourceRecord",
+    "CognitiveSourceStore",
     "EffectivePermissions",
     "JobSpec",
     "KG_DAILY_TICK_JOB_ID",
@@ -392,6 +404,10 @@ __all__ = [
     "register_coordination_providers",
     "register_kg_operational_ports",
     "register_mcp_host_provider",
+    "register_cognitive_source_store",
+    "require_cognitive_source_store",
+    "reset_cognitive_source_store_for_tests",
+    "resolve_cognitive_source_store",
     "register_kg_events_reader_port",
     "register_relational_effects_port",
     "register_relational_application_adapter",

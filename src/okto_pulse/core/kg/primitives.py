@@ -27,6 +27,7 @@ from functools import partial
 
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+from okto_pulse.core.kg.node_identity import derive_natural_key, mint_node_id
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
     CONNECTIVITY_ERROR_CODE,
@@ -1627,6 +1628,9 @@ def _do_graph_commit(
     )
     candidate_to_kuzu_id: dict[str, str] = {}
     candidate_to_node_type: dict[str, str] = {}
+    # Spec MKG-A-S1 (FR4): durable-source records collected for cognitive
+    # nodes (Learning/Alternative/Assumption) written by this commit.
+    cognitive_source_records: list[dict] = []
 
     try:
         connectivity = _validate_kuzu_connectivity_before_commit(
@@ -1751,7 +1755,21 @@ def _do_graph_commit(
                 and getattr(hint, "target_node_id", None)
             ):
                 superseded_id = hint.target_node_id
-                new_node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
+                # Spec MKG-A-S1 (FR1/FR3, D1): deterministic successor id.
+                # The successor mints generation = superseded generation + 1
+                # so it NEVER collides with the superseded node while staying
+                # stable across re-execution (rebuild/replay).
+                successor_generation = (
+                    _node_generation(graph_scope, node_type, superseded_id) + 1
+                )
+                new_node_id = mint_node_id(
+                    board_id,
+                    node_type,
+                    derive_natural_key(
+                        cand.source_artifact_ref, node_type, cand.title
+                    ),
+                    successor_generation,
+                )
                 embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
                 new_attrs = {
                     "title": cand.title,
@@ -1771,6 +1789,7 @@ def _do_graph_commit(
                     "last_queried_at": None,
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
                     "human_curated": False,
+                    "generation": successor_generation,
                     "embedding": embedding,
                 }
                 orch.supersede_node(
@@ -1779,6 +1798,17 @@ def _do_graph_commit(
                 )
                 candidate_to_kuzu_id[cand_id] = new_node_id
                 candidate_to_node_type[cand_id] = node_type
+                if node_type in _COGNITIVE_SOURCE_TYPES:
+                    cognitive_source_records.append(
+                        _cognitive_source_record_kwargs(
+                            board_id=board_id,
+                            session_id=session_id,
+                            node_id=new_node_id,
+                            node_type=node_type,
+                            generation=successor_generation,
+                            attrs=new_attrs,
+                        )
+                    )
                 logger.info(
                     "kg.consolidation.superseded candidate=%s new=%s old=%s "
                     "type=%s session=%s",
@@ -1882,7 +1912,15 @@ def _do_graph_commit(
                     )
                     continue
 
-            node_id = f"{node_type.lower()}_{uuid.uuid4().hex[:12]}"
+            # Spec MKG-A-S1 (FR1/FR2, D1/D2): deterministic id for fresh
+            # CREATEs — same (board, type, natural key) always mints the
+            # same id, so references survive graph rebuilds.
+            node_id = mint_node_id(
+                board_id,
+                node_type,
+                derive_natural_key(cand.source_artifact_ref, node_type, cand.title),
+                0,
+            )
             embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
 
             node_attrs = {
@@ -1907,6 +1945,7 @@ def _do_graph_commit(
                 # later via back-office; the UPDATE path then skips
                 # writes unless the agent passes an explicit override.
                 "human_curated": False,
+                "generation": 0,
                 "embedding": embedding,
             }
             _apply_kuzu_node_create_with_timestamp(
@@ -1914,6 +1953,17 @@ def _do_graph_commit(
             )
             candidate_to_kuzu_id[cand_id] = node_id
             candidate_to_node_type[cand_id] = node_type
+            if node_type in _COGNITIVE_SOURCE_TYPES:
+                cognitive_source_records.append(
+                    _cognitive_source_record_kwargs(
+                        board_id=board_id,
+                        session_id=session_id,
+                        node_id=node_id,
+                        node_type=node_type,
+                        generation=0,
+                        attrs=node_attrs,
+                    )
+                )
 
         for edge in edge_candidates.values():
             from_id, from_xref_type = _resolve_endpoint(
@@ -2004,6 +2054,25 @@ def _do_graph_commit(
                 "kg.scoring.commit_hook_failed session=%s err=%s",
                 session_id, exc,
             )
+
+        # Spec MKG-A-S1 (FR4/D5, BR2): append the durable cognitive-source
+        # records BEFORE the graph transaction commits. On failure the
+        # graph writes are rolled back AND compensated (rollback alone is
+        # not reliable on this engine — same belt-and-braces as the generic
+        # failure branch below), so the graph is NEVER ahead of the durable
+        # source. Append is idempotent per (node_id, generation), so
+        # retrying the commit after the store recovers is safe.
+        try:
+            _append_cognitive_source_records(
+                board_id, session_id, cognitive_source_records
+            )
+        except KGPrimitiveError:
+            try:
+                run_async_blocking(graph_scope.rollback())
+            except Exception:
+                pass
+            _compensate_kuzu_writes(board_id, session_id, orch.records)
+            raise
 
         committed_at = datetime.now(timezone.utc)
         run_async_blocking(graph_scope.commit())
@@ -2234,6 +2303,128 @@ def _node_is_human_curated(kconn, node_type: str, node_id: str) -> bool:
     except Exception:
         pass
     return False
+
+
+# Spec MKG-A-S1: canonical cognitive node types with a durable source
+# (kept in lockstep with canonical_cognitive_preservation.COGNITIVE_TYPES).
+_COGNITIVE_SOURCE_TYPES: tuple[str, ...] = ("Learning", "Alternative", "Assumption")
+
+
+def _cognitive_source_record_kwargs(
+    *,
+    board_id: str,
+    session_id: str,
+    node_id: str,
+    node_type: str,
+    generation: int,
+    attrs: dict,
+) -> dict:
+    """Build the durable-source record payload for one cognitive node.
+
+    ``payload`` carries every attribute persisted on the graph node
+    (embedding included) so a rebuild replay is a literal restoration
+    (spec FR4/BR3). ``evidence_refs`` preserves the original binding.
+    """
+
+    payload = dict(attrs)
+    source_ref = str(payload.get("source_artifact_ref") or "")
+    return {
+        "node_id": node_id,
+        "board_id": board_id,
+        "node_type": node_type,
+        "generation": generation,
+        "payload": payload,
+        "evidence_refs": (source_ref,) if source_ref else (),
+        "source_session_id": session_id,
+        "committed_at": _now_iso(),
+    }
+
+
+def _append_cognitive_source_records(
+    board_id: str, session_id: str, records: list[dict]
+) -> None:
+    """Append cognitive-source records fail-closed (spec MKG-A-S1 FR4/D5).
+
+    Raises ``KGPrimitiveError`` with the stable code
+    ``kg_cognitive_source_unavailable`` — the caller's KGPrimitiveError
+    branch rolls the graph transaction back, keeping the graph behind the
+    durable source.
+    """
+
+    if not records:
+        return
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        CognitiveSourceError,
+        CognitiveSourceRecord,
+        require_cognitive_source_store,
+    )
+
+    try:
+        store = require_cognitive_source_store()
+        for record_kwargs in records:
+            run_async_blocking(store.append(CognitiveSourceRecord(**record_kwargs)))
+    except CognitiveSourceError as exc:
+        # OR1: structured failure log — the operator must distinguish
+        # "commit aborted: durable source unavailable" from graph failures.
+        logger.error(
+            "kg.cognitive_source.append_failed board=%s session=%s "
+            "node_id=%s reason=%s",
+            board_id,
+            session_id,
+            exc.node_id,
+            exc.failure_reason,
+            extra={
+                "event": "kg.cognitive_source.append_failed",
+                "board_id": board_id,
+                "session_id": session_id,
+                "node_id": exc.node_id,
+                "failure_reason": exc.failure_reason,
+            },
+        )
+        raise KGPrimitiveError(
+            "kg_cognitive_source_unavailable",
+            "cognitive durable-source append failed; commit aborted "
+            "fail-closed (the graph is never ahead of the durable source). "
+            "Retry after the application database recovers — the append is "
+            "idempotent per (node_id, generation).",
+            session_id=session_id,
+            details={
+                "board_id": board_id,
+                "failure_reason": exc.failure_reason,
+                "node_id": exc.node_id,
+            },
+        ) from exc
+
+
+def _node_generation(kconn, node_type: str, node_id: str) -> int:
+    """Read a node's supersedence generation (spec MKG-A-S1 FR3).
+
+    Treats NULL as 0 — legacy nodes from before the generation column have
+    no value and start the deterministic chain at generation 0. Returns 0
+    on any read error so a supersede of a legacy node still mints
+    generation 1 deterministically instead of failing the commit.
+    """
+    if not node_id:
+        return 0
+    cypher = (
+        f"MATCH (n:{node_type}) "
+        f"WHERE n.id = $id "
+        f"RETURN n.generation LIMIT 1"
+    )
+    try:
+        res = kconn.execute(cypher, {"id": node_id})
+        try:
+            if res.has_next():
+                value = res.get_next()[0]
+                return int(value) if value is not None else 0
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return 0
 
 
 _CROSS_SESSION_PREFIXES: tuple[str, ...] = (

@@ -13,7 +13,7 @@ from okto_pulse.core.kg.cognitive_policy import (
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.3.7"
+SCHEMA_VERSION = "0.3.8"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -212,6 +212,7 @@ STABLE_NODE_PROPERTIES: tuple[str, ...] = (
     "superseded_at",
     "revocation_reason",
     "human_curated",
+    "generation",
 )
 
 RELEVANCE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -237,6 +238,12 @@ KG_LAYER_COLUMNS: tuple[tuple[str, str], ...] = (
     ("maturity_status", "STRING"),
 )
 
+GENERATION_COLUMNS: tuple[tuple[str, str], ...] = (
+    # Spec MKG-A-S1 (FR3): supersedence generation for deterministic node
+    # identity. NULL (legacy nodes) reads as 0; SUPERSEDE mints old+1.
+    ("generation", "INT64"),
+)
+
 LEGACY_NODE_COLUMNS: tuple[str, ...] = (
     "validation_status",
     "corroboration_count",
@@ -251,6 +258,7 @@ def vector_index_name(node_type: str) -> str:
 __all__ = [
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
+    "GENERATION_COLUMNS",
     "HUMAN_CURATED_COLUMNS",
     "KG_LAYER_COLUMNS",
     "LAST_RECOMPUTED_COLUMNS",

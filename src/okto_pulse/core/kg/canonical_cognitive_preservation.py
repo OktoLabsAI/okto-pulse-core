@@ -418,6 +418,99 @@ def restore_canonical_cognitive(board_id: str, snapshot: CognitiveSnapshot) -> R
     return result
 
 
+def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
+    """Literal replay of the durable cognitive source (spec MKG-A-S1 FR5/D4).
+
+    Runs AFTER :func:`restore_canonical_cognitive` in the rebuild restore
+    step. Create-if-absent MERGE per ``node_id``: nodes already present
+    (survivors or snapshot-restored) are NEVER touched — no duplication
+    (AC5) and ``human_curated`` content is trivially inviolable (BR3/AC6).
+    Restoration is literal: no LLM, payload and evidence binding come
+    byte-for-byte from the durable record. A second run is a no-op.
+
+    When the pre-purge snapshot was ``unreadable`` this replay is what
+    brings the cognitive knowledge back (AC4) — the failure class of the
+    2026-07-10 incident (73 nodes lost) is closed here.
+
+    Returns a dict merged into the preservation summary:
+    ``replayed_cognitive_count`` (OR2), ``replay_skipped_present_count``,
+    ``durable_source_status`` (``ok`` | ``absent`` | ``error:<reason>``)
+    and ``replay_failed`` items (never silently dropped).
+    """
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        CognitiveSourceError,
+        resolve_cognitive_source_store,
+    )
+
+    store = resolve_cognitive_source_store()
+    if store is None:
+        logger.warning(
+            "kg.cognitive_replay.store_absent board=%s — durable replay "
+            "skipped (no CognitiveSourceStore registered)",
+            board_id,
+        )
+        return {
+            "replayed_cognitive_count": 0,
+            "replay_skipped_present_count": 0,
+            "durable_source_status": "absent",
+            "replay_failed": [],
+        }
+
+    try:
+        records = _run_async_blocking(store.enumerate(board_id))
+    except CognitiveSourceError as exc:
+        logger.error(
+            "kg.cognitive_replay.enumerate_failed board=%s reason=%s",
+            board_id,
+            exc.failure_reason,
+        )
+        return {
+            "replayed_cognitive_count": 0,
+            "replay_skipped_present_count": 0,
+            "durable_source_status": f"error:{exc.failure_reason}",
+            "replay_failed": [],
+        }
+
+    replayed = 0
+    skipped_present = 0
+    failed: list[dict[str, Any]] = []
+    for record in records:
+        node_type = record.node_type
+        if node_type not in COGNITIVE_TYPES:
+            continue
+        if _node_present(board_id, node_type, record.node_id):
+            skipped_present += 1
+            continue
+        attrs = dict(record.payload)
+        attrs.pop("id", None)
+        try:
+            _create_node(board_id, node_type, record.node_id, attrs)
+            replayed += 1
+        except Exception as exc:  # noqa: BLE001 — recorded, never silent
+            failed.append({"node_id": record.node_id, "error": str(exc)})
+    if failed:
+        logger.error(
+            "kg.cognitive_replay.partial board=%s replayed=%d failed=%d",
+            board_id,
+            replayed,
+            len(failed),
+        )
+    else:
+        logger.info(
+            "kg.cognitive_replay.done board=%s replayed=%d skipped_present=%d",
+            board_id,
+            replayed,
+            skipped_present,
+        )
+    return {
+        "replayed_cognitive_count": replayed,
+        "replay_skipped_present_count": skipped_present,
+        "durable_source_status": "ok",
+        "replay_failed": failed,
+    }
+
+
 def preservation_summary(
     snapshot: CognitiveSnapshot, restore: RestoreResult
 ) -> dict[str, Any]:

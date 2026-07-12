@@ -196,6 +196,14 @@ class RebuildSourceSet:
     skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     legacy_unknown: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    # Spec MKG-A-S1 (FR5/TR5): deterministic digest of the durable cognitive
+    # source class ('cognitive_durable'). {} when the store is absent or has
+    # no records for this board — in that case the source_set_hash payload is
+    # byte-identical to the pre-feature composition (no rebaseline storm).
+    # These records are replay-only: they NEVER enter sources/
+    # materializable_sources (the consolidation enqueue path), the rebuild
+    # restores them literally via replay_durable_cognitive.
+    cognitive_durable_digest: dict[str, Any] = field(default_factory=dict)
 
     @property
     def eligible_count(self) -> int:
@@ -275,6 +283,10 @@ class RebuildSourceSet:
             "legacy_unknown_count": self.legacy_unknown_count,
             "layer_counts": self.layer_counts,
             "source_partition_counts": self.source_partition_counts,
+            "cognitive_durable_digest": dict(self.cognitive_durable_digest),
+            "cognitive_durable_count": int(
+                self.cognitive_durable_digest.get("count", 0)
+            ),
         }
 
 
@@ -552,7 +564,53 @@ class RebuildSourceEnumerator:
             skipped_by_maturity=tuple(skipped_by_maturity_rows),
             skipped_expired_working=tuple(skipped_expired_rows),
             legacy_unknown=tuple(legacy_unknown_rows),
+            cognitive_durable_digest=_cognitive_durable_digest(board_id),
         )
+
+
+def _cognitive_durable_digest(board_id: str) -> dict[str, Any]:
+    """Deterministic digest of the durable cognitive class (spec MKG-A-S1 TR5).
+
+    Returns ``{}`` when no CognitiveSourceStore is registered (feature
+    absent) or when the board has no durable records — the source_set_hash
+    then stays byte-identical to the pre-feature composition. A registered
+    store that FAILS to read raises (fail-closed, contract api_33539a3f):
+    the rebuild reports a structured enumeration error, never a silent
+    partial manifest.
+    """
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        resolve_cognitive_source_store,
+    )
+
+    store = resolve_cognitive_source_store()
+    if store is None:
+        return {}
+    from okto_pulse.core.kg.async_bridge import run_async_blocking
+
+    records = run_async_blocking(store.enumerate(board_id))
+    if not records:
+        return {}
+    canonical = [
+        {
+            "node_id": record.node_id,
+            "node_type": record.node_type,
+            "generation": record.generation,
+            "payload_hash": hashlib.sha256(
+                json.dumps(
+                    dict(record.payload),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode("utf-8")
+            ).hexdigest(),
+        }
+        for record in records
+    ]
+    digest = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return {"count": len(canonical), "digest": digest}
 
 
 # --- Manifest builder + store -----------------------------------------------
@@ -591,6 +649,11 @@ def _compose_source_set_hash_with(source_set: RebuildSourceSet, project) -> str:
         "skipped_cancelled_count": source_set.skipped_cancelled_count,
         "source_partition_counts": source_set.source_partition_counts,
     }
+    # Spec MKG-A-S1 (TR5): the durable cognitive class binds into the hash
+    # ONLY when records exist — boards without durable records keep their
+    # pre-feature hash byte-for-byte (v1 reproduction contract preserved).
+    if source_set.cognitive_durable_digest.get("count"):
+        payload_dict["cognitive_durable"] = dict(source_set.cognitive_durable_digest)
     payload = json.dumps(
         payload_dict,
         sort_keys=True,
