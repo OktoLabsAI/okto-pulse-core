@@ -39,7 +39,17 @@ _ID_HASH_CHARS = 24
 _CONTENT_KEY_HASH_CHARS = 16
 _SEP = b"\x00"
 
-__all__ = ["derive_natural_key", "mint_node_id"]
+__all__ = ["derive_natural_key", "mint_node_id", "normalize_text"]
+
+
+def normalize_text(value: str | None) -> str:
+    """Canonical NFKC-casefold-strip normalization (spec MKG-A-S1 FR2).
+
+    Shared by the content natural key AND the NC-8 identity-change
+    criterion (spec MKG-D-S1 FR8/TR6) so the two rules can never drift.
+    """
+
+    return unicodedata.normalize("NFKC", value or "").casefold().strip()
 
 
 def derive_natural_key(
@@ -58,7 +68,7 @@ def derive_natural_key(
     ref = (source_artifact_ref or "").strip()
     if ref:
         return ref
-    normalized_title = unicodedata.normalize("NFKC", title or "").casefold().strip()
+    normalized_title = normalize_text(title)
     digest = hashlib.sha256()
     digest.update(node_type.encode("utf-8"))
     digest.update(_SEP)

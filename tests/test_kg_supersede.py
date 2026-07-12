@@ -80,20 +80,24 @@ def test_supersede_decision_creates_node_marks_old_and_makes_edge():
     assert orch.counters.edges_added == 1
 
 
-def test_supersede_cognitive_type_has_no_supersedes_edge_and_no_lone_create():
-    # Alternative is not Decision -> no edge. Only create_node + mark-old run.
-    conn = _FakeConnection()
+def test_supersede_cognitive_type_creates_universal_supersedes_edge():
+    # Spec MKG-D-S1 (FR4): the :supersedes edge is universal — cognitive
+    # types now get the walkable trail too (was Decision-only; the previous
+    # assertion of NO edge is deliberately inverted by MKG-D).
+    conn = _FakeConnection(
+        _FakeResult(False), _FakeResult(False), _FakeResult(False), _FakeResult(True)
+    )
     orch = _orch(conn)
 
     orch.supersede_node("Alternative", "alternative_new", "alternative_old", dict(_NEW_ATTRS))
 
     stmts = [s for s, _ in conn.statements]
-    # New node created + old marked, but NO :supersedes edge (schema unsupported).
     assert any(s.startswith("CREATE (n:Alternative") for s in stmts)
     assert any("SET old.superseded_by" in s for s in stmts)
-    assert not any("supersedes" in s.lower() for s in stmts)
-    assert len(stmts) == 2  # exactly create + mark-old, nothing else (no lone CREATE)
-    # Counter still increments for cognitive types; no edge.
+    # Walkable :supersedes edge between Alternative labels.
+    assert any(
+        "supersedes" in s and "a:Alternative" in s for s in stmts
+    ), stmts
     assert orch.counters.nodes_superseded == 1
     assert orch.counters.nodes_added == 0
-    assert orch.counters.edges_added == 0
+    assert orch.counters.edges_added == 1

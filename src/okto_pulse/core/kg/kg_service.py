@@ -957,7 +957,21 @@ class KGService:
         self,
         board_id: str,
         decision_id: str,
+        node_type: str = "Decision",
     ) -> dict:
+        # Spec MKG-D-S1 (FR6): generic per-type chain with a NODE_TYPES
+        # allowlist (fail-closed) — Decision default keeps the legacy
+        # behaviour byte-identical.
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
+
+        if node_type not in NODE_TYPES:
+            raise KGToolError(
+                code="invalid_node_type",
+                message=(
+                    f"node_type {node_type!r} is not a KG node type; "
+                    f"allowed: {', '.join(NODE_TYPES)}"
+                ),
+            )
         store = _get_graph_store()
         chain: list[dict] = []
         current_id = decision_id
@@ -974,7 +988,9 @@ class KGService:
             return str(ts)
 
         for _ in range(10):  # max depth safety
-            rows = store.traverse_supersedence(board_id, current_id)
+            rows = store.traverse_supersedence(
+                board_id, current_id, node_type=node_type
+            )
             if not rows:
                 break
             next_node = {

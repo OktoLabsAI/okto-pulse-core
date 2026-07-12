@@ -18,6 +18,9 @@ class QueryFilters:
     # Default 0.3 below the neutral 0.5 so newly-created nodes still
     # pass through the filter. Callers can pass 0.0 to disable.
     min_relevance: float = 0.3
+    # Spec MKG-D-S1 (FR7): recall returns ACTIVE memory by default —
+    # superseded nodes surface only via explicit opt-in.
+    include_superseded: bool = False
 
 
 @runtime_checkable
@@ -33,7 +36,11 @@ class SemanticGraphStore(Protocol):
     ) -> list[list]: ...
 
     def traverse_supersedence(
-        self, board_id: str, decision_id: str, max_depth: int = 10
+        self,
+        board_id: str,
+        decision_id: str,
+        max_depth: int = 10,
+        node_type: str = "Decision",
     ) -> list[list]: ...
 
     def find_contradictions(

@@ -147,6 +147,41 @@ relational fallback). The test-only ``_build_defaults`` does NOT supply them, so
     defaults.update(overrides)
     configure_kg_registry(defaults_factory=build_testing_kg_registry, **defaults)
 
+    # Spec MKG-A-S1 (FR4): cognitive commits append to the durable
+    # CognitiveSourceStore fail-closed. Register a fresh in-memory store per
+    # configuration so cognitive commits work in tests; tests exercising the
+    # fail-closed path register their own broken store explicitly and reset.
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        register_cognitive_source_store,
+    )
+
+    register_cognitive_source_store(_InMemoryCognitiveSourceStore())
+
+
+class _InMemoryCognitiveSourceStore:
+    """Test-only durable store: append-only, per-configuration lifetime."""
+
+    def __init__(self) -> None:
+        self.records: list[Any] = []
+
+    async def append(self, record: Any) -> str:
+        for existing in self.records:
+            if (
+                existing.node_id == record.node_id
+                and existing.generation == record.generation
+            ):
+                return existing.node_id
+        self.records.append(record)
+        return record.node_id
+
+    async def enumerate(self, board_id: str):
+        return tuple(
+            sorted(
+                (r for r in self.records if r.board_id == board_id),
+                key=lambda r: (r.committed_at or "", r.node_id, r.generation),
+            )
+        )
+
 
 def configure_real_graph_test_kg_registry(**overrides: Any) -> None:
     """Configure test registry fakes plus real Community graph providers.

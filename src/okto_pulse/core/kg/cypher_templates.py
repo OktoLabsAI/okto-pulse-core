@@ -50,6 +50,18 @@ def layer_filter_clause(var: str, *, param: str = "$graph_layer") -> str:
     return f"({param} = 'all' OR {var}.graph_layer = {param})"
 
 
+def superseded_filter_clause(var: str, *, param: str = "$include_superseded") -> str:
+    """Fail-closed active-memory filter for node alias ``var`` (spec
+    MKG-D-S1 FR7, decision D5 — same single-source pattern as
+    ``layer_filter_clause``, born from bug 07bdf670).
+
+    Default recall EXCLUDES superseded nodes; the caller opts in by binding
+    ``<param> = true``. ``superseded_by IS NULL`` is NULL-safe by
+    construction.
+    """
+    return f"({param} = true OR {var}.superseded_by IS NULL)"
+
+
 def layer_label_projection(var: str, *, alias: str = "graph_layer") -> str:
     """Fail-SAFE label projection for ``var.graph_layer`` (bug 07bdf670).
 
@@ -68,11 +80,12 @@ def layer_label_projection(var: str, *, alias: str = "graph_layer") -> str:
 # Variable-length path on :supersedes up to depth 10.
 # ---------------------------------------------------------------------------
 
-GET_DECISION_HISTORY = """
+GET_DECISION_HISTORY = f"""
 MATCH (d:Decision)
 WHERE d.title CONTAINS $topic
   AND d.source_confidence >= $min_confidence
   AND d.relevance_score >= $min_relevance
+  AND {superseded_filter_clause('d')}
 RETURN d.id, d.title, d.content, d.created_at, d.source_confidence,
        d.relevance_score, d.superseded_by
 ORDER BY d.relevance_score DESC, d.created_at DESC
@@ -89,9 +102,11 @@ MATCH (center)-[r1]-(hop1)
 WHERE center.source_artifact_ref = $artifact_id
   AND center.source_confidence >= $min_confidence
   AND {layer_filter_clause('hop1')}
+  AND {superseded_filter_clause('hop1')}
 OPTIONAL MATCH (hop1)-[r2]-(hop2)
 WHERE (hop2 IS NULL
-       OR {layer_filter_clause('hop2')})
+       OR ({layer_filter_clause('hop2')}
+           AND {superseded_filter_clause('hop2')}))
 RETURN center.id AS center_id, center.title AS center_title,
        hop1.id AS hop1_id, hop1.title AS hop1_title,
        hop2.id AS hop2_id, hop2.title AS hop2_title,
@@ -109,6 +124,30 @@ MATCH (current:Decision {id: $decision_id})-[:supersedes]->(next:Decision)
 RETURN next.id, next.title, next.created_at,
        next.superseded_by, next.superseded_at
 """
+
+
+def supersedence_chain_template(node_type: str) -> str:
+    """Label-parametrized supersedence chain (spec MKG-D-S1 FR6).
+
+    ``node_type`` is validated against the NODE_TYPES allowlist BEFORE any
+    string interpolation — an unknown label fails closed with ValueError,
+    never a free-form Cypher injection. Decision keeps the exact legacy
+    template text (retrocompat).
+    """
+    from okto_pulse.core.kg.schema_contract import NODE_TYPES
+
+    if node_type not in NODE_TYPES:
+        raise ValueError(
+            f"invalid_node_type: {node_type!r} (allowed: {NODE_TYPES})"
+        )
+    if node_type == "Decision":
+        return GET_SUPERSEDENCE_CHAIN
+    return (
+        f"\nMATCH (current:{node_type} {{id: $decision_id}})"
+        f"-[:supersedes]->(next:{node_type})\n"
+        "RETURN next.id, next.title, next.created_at,\n"
+        "       next.superseded_by, next.superseded_at\n"
+    )
 
 # ---------------------------------------------------------------------------
 # 4. find_contradictions — FR-14

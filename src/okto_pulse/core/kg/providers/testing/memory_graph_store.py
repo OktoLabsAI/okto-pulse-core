@@ -185,7 +185,8 @@ class InMemoryGraphStore:
         return self.find_by_artifact(board_id, artifact_id, filters)
 
     def traverse_supersedence(
-        self, board_id: str, decision_id: str, max_depth: int = 10
+        self, board_id: str, decision_id: str, max_depth: int = 10,
+        node_type: str = "Decision",
     ) -> list[list]:
         nodes = self._board_nodes(board_id)
         node = nodes.get(decision_id)

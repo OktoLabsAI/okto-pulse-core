@@ -128,7 +128,7 @@ async def _drive_one_session(
             board_id=board_id,
             artifact_type="spec",
             artifact_id=artifact_ref.split(":", 1)[1],
-            raw_content=f"NC-8 dedup test — {title}",
+            raw_content=f"NC-8 dedup test — {title} :: {content}",
             deterministic_candidates=[root_cand, cand],
         ),
         agent_id=agent_id,
@@ -477,9 +477,11 @@ async def test_tc3_reconsolidation_counts_and_audits_merge(
     assert commit1.nodes_added >= 1
     assert commit1.nodes_merged == 0  # first commit is a create, not a merge
 
-    # Re-consolidate the SAME ref with changed content -> NC-8 dedup-reuse.
+    # Re-consolidate the SAME ref with changed CONTENT (same title) ->
+    # NC-8 dedup-reuse. A changed TITLE would now supersede-with-trail
+    # instead (spec MKG-D-S1 FR8), covered by test_kg_nc8_supersede_trail.
     commit2 = await _drive_one_session(
-        session_factory, board_id, artifact_ref, "[TC-3] titulo atualizado", content="v2"
+        session_factory, board_id, artifact_ref, "[TC-3] titulo original", content="v2"
     )
 
     # AC6: merge counted + audited, not a silent nodes_updated:0/superseded:0.
@@ -723,12 +725,14 @@ async def test_ts2_reconsolidation_updates_attrs_preserves_history(
     assert snapshot_before["title"] == "Original"
     assert snapshot_before["content"] == "A"
 
+    # Same title (identity) with refreshed content — a changed title now
+    # supersedes-with-trail (spec MKG-D-S1 FR8; see test_kg_nc8_supersede_trail).
     await _drive_one_session(
-        session_factory, board_id, artifact_ref, "Atualizado", "B"
+        session_factory, board_id, artifact_ref, "Original", "B"
     )
     snapshot_after = _query_one(board_id, artifact_ref)
     # Attrs updated:
-    assert snapshot_after["title"] == "Atualizado"
+    assert snapshot_after["title"] == "Original"
     assert snapshot_after["content"] == "B"
     # Same underlying node (same kuzu id, same created_at):
     assert snapshot_after["id"] == snapshot_before["id"], (
@@ -808,8 +812,11 @@ async def test_ts8_dedup_reused_log_emitted(dedup_tempdir, monkeypatch):
     handler = _Capture(level=logging.INFO)
     logger.addHandler(handler)
     try:
+        # Same title (a changed title would supersede-with-trail instead —
+        # spec MKG-D-S1 FR8) with different content to hit the reuse path.
         await _drive_one_session(
-            session_factory, board_id, artifact_ref, "Spec for log test (v2)"
+            session_factory, board_id, artifact_ref, "Spec for log test",
+            content="conteudo novo v2",
         )
     finally:
         logger.removeHandler(handler)

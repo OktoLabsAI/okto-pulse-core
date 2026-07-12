@@ -147,6 +147,7 @@ def find_similar_nodes_by_type(
     top_k: int = 5,
     min_similarity: float = 0.0,
     conn=None,
+    include_superseded: bool = False,
 ) -> list[SimilarNodeRaw]:
     """Run k-NN against one node type's HNSW index with fallback to manual calculation.
 
@@ -161,37 +162,48 @@ def find_similar_nodes_by_type(
     if node_type not in VECTOR_INDEX_TYPES:
         return []
 
+    # Spec MKG-D-S1 (FR7, D6): the k-NN cannot attribute-filter, so
+    # superseded nodes would occupy top_k slots and silently degrade recall.
+    # Over-fetch a pool (same multiplier the decay reorder uses), project
+    # superseded_by in the SAME call, filter in Python and trim to top_k.
+    from okto_pulse.core.kg.scoring import DECAY_REORDER_POOL_MULTIPLIER
+
+    fetch_k = top_k if include_superseded else max(
+        top_k, top_k * DECAY_REORDER_POOL_MULTIPLIER
+    )
+
     results: list[SimilarNodeRaw] = []
     try:
+        idx = vector_index_name(node_type)
+        cypher = (
+            f"CALL QUERY_VECTOR_INDEX("
+            f"'{node_type}', '{idx}', $vec, $k) "
+            f"RETURN node.id, node.title, node.source_artifact_ref, "
+            f"distance, node.superseded_by"
+        )
         if conn is None:
-            idx = vector_index_name(node_type)
-            cypher = (
-                f"CALL QUERY_VECTOR_INDEX("
-                f"'{node_type}', '{idx}', $vec, $k) "
-                f"RETURN node.id, node.title, node.source_artifact_ref, distance"
-            )
             result = get_kg_registry().cypher_executor.execute_read_only(
-                board_id, cypher, {"vec": query_vector, "k": top_k}, max_rows=top_k,
+                board_id, cypher, {"vec": query_vector, "k": fetch_k},
+                max_rows=fetch_k,
             )
             rows = result.get("rows", [])
         else:
-            idx = vector_index_name(node_type)
-            cypher = (
-                f"CALL QUERY_VECTOR_INDEX("
-                f"'{node_type}', '{idx}', $vec, $k) "
-                f"RETURN node.id, node.title, node.source_artifact_ref, distance"
-            )
-            result = conn.execute(cypher, {"vec": query_vector, "k": top_k})
+            result = conn.execute(cypher, {"vec": query_vector, "k": fetch_k})
             rows = []
             while result.has_next():
                 rows.append(result.get_next())
         for row in rows:
+            if len(results) >= top_k:
+                break
+            superseded_by = row[4] if len(row) > 4 else None
+            if superseded_by and not include_superseded:
+                continue
             raw = SimilarNodeRaw(
                 kuzu_node_id=row[0],
                 node_type=node_type,
                 title=row[1],
                 source_artifact_ref=row[2] if len(row) > 2 else None,
-                distance=float(row[3] if len(row) > 3 else row[-1]),
+                distance=float(row[3]),
             )
             if raw.similarity >= min_similarity:
                 results.append(raw)

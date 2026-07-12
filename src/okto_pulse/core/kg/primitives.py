@@ -27,7 +27,11 @@ from functools import partial
 
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-from okto_pulse.core.kg.node_identity import derive_natural_key, mint_node_id
+from okto_pulse.core.kg.node_identity import (
+    derive_natural_key,
+    mint_node_id,
+    normalize_text,
+)
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
     CONNECTIVITY_ERROR_CODE,
@@ -1839,6 +1843,96 @@ def _do_graph_commit(
                     is_curated = _node_is_human_curated(
                         graph_scope, node_type, existing_id
                     )
+                    # Spec MKG-D-S1 (FR8/D7): an identity-bearing change
+                    # (normalized TITLE differs) on a non-curated reuse is
+                    # a supersede-with-trail — the previous state is
+                    # preserved as a walkable chain entry instead of
+                    # evaporating under a destructive UPDATE. Same-title
+                    # content refinement stays the in-place UPDATE below.
+                    if not is_curated and normalize_text(
+                        cand.title
+                    ) != normalize_text(
+                        _node_title(graph_scope, node_type, existing_id)
+                    ):
+                        trail_generation = (
+                            _node_generation(graph_scope, node_type, existing_id)
+                            + 1
+                        )
+                        trail_node_id = mint_node_id(
+                            board_id,
+                            node_type,
+                            derive_natural_key(
+                                cand.source_artifact_ref, node_type, cand.title
+                            ),
+                            trail_generation,
+                        )
+                        embedding = embedder.encode(
+                            f"{cand.title}\n{cand.content or ''}"
+                        )
+                        trail_attrs = {
+                            "title": cand.title,
+                            "content": cand.content or "",
+                            "context": cand.context or "",
+                            "justification": cand.justification or "",
+                            "source_artifact_ref": cand.source_artifact_ref or "",
+                            "graph_layer": getattr(
+                                cand, "graph_layer", "canonical"
+                            ),
+                            "maturity_status": getattr(
+                                cand, "maturity_status", "canonical_eligible"
+                            ),
+                            "created_at": _now_iso(),
+                            "created_by_agent": agent_id,
+                            "source_confidence": cand.source_confidence,
+                            "relevance_score": getattr(
+                                cand, "relevance_score", 0.5
+                            ),
+                            "query_hits": 0,
+                            "last_queried_at": None,
+                            "priority_boost": getattr(
+                                cand, "priority_boost", 0.0
+                            ),
+                            "human_curated": False,
+                            "generation": trail_generation,
+                            "embedding": embedding,
+                        }
+                        orch.supersede_node(
+                            node_type,
+                            trail_node_id,
+                            existing_id,
+                            trail_attrs,
+                            revocation_reason=(
+                                "title change on NC-8 reuse (MKG-D trail)"
+                            ),
+                        )
+                        candidate_to_kuzu_id[cand_id] = trail_node_id
+                        candidate_to_node_type[cand_id] = node_type
+                        if node_type in _COGNITIVE_SOURCE_TYPES:
+                            cognitive_source_records.append(
+                                _cognitive_source_record_kwargs(
+                                    board_id=board_id,
+                                    session_id=session_id,
+                                    node_id=trail_node_id,
+                                    node_type=node_type,
+                                    generation=trail_generation,
+                                    attrs=trail_attrs,
+                                )
+                            )
+                        logger.info(
+                            "kg.consolidation.reuse_superseded candidate=%s "
+                            "old=%s new=%s type=%s session=%s",
+                            cand_id, existing_id, trail_node_id, node_type,
+                            session_id,
+                            extra={
+                                "event": "kg.consolidation.reuse_superseded",
+                                "candidate_id": cand_id,
+                                "superseded_node_id": existing_id,
+                                "new_node_id": trail_node_id,
+                                "node_type": node_type,
+                                "session_id": session_id,
+                            },
+                        )
+                        continue
                     if not is_curated:
                         embedding = embedder.encode(
                             f"{cand.title}\n{cand.content or ''}"
@@ -2394,6 +2488,36 @@ def _append_cognitive_source_records(
                 "node_id": exc.node_id,
             },
         ) from exc
+
+
+def _node_title(kconn, node_type: str, node_id: str) -> str:
+    """Read a node's current title (spec MKG-D-S1 FR8 trail criterion).
+
+    Returns "" on missing node or read error — an unreadable title then
+    compares as different only when the candidate title is non-empty,
+    which errs on the side of preserving history.
+    """
+    if not node_id:
+        return ""
+    cypher = (
+        f"MATCH (n:{node_type}) "
+        f"WHERE n.id = $id "
+        f"RETURN n.title LIMIT 1"
+    )
+    try:
+        res = kconn.execute(cypher, {"id": node_id})
+        try:
+            if res.has_next():
+                value = res.get_next()[0]
+                return str(value) if value is not None else ""
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return ""
 
 
 def _node_generation(kconn, node_type: str, node_id: str) -> int:

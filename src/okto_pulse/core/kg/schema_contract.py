@@ -88,8 +88,20 @@ def _cognitive_relates_to_endpoint_pairs() -> tuple[tuple[str, str], ...]:
     )
 
 
+def _supersedes_endpoint_pairs() -> tuple[tuple[str, str], ...]:
+    """(T, T) pairs for every node type (spec MKG-D-S1 FR4).
+
+    The supersedence chain is walkable for ALL 11 types
+    (supersede-never-delete); the base single-pair table stays declared in
+    REL_TYPES (same dual-declaration pattern as ``implements``), and the
+    extra pairs are ensured via ALTER ADD on existing boards.
+    """
+    return tuple((node_type, node_type) for node_type in NODE_TYPES)
+
+
 MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("implements", (("APIContract", "Constraint"),)),
+    ("supersedes", _supersedes_endpoint_pairs()),
     ("relates_to", _cognitive_relates_to_endpoint_pairs()),
     (
         "belongs_to",

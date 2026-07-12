@@ -251,14 +251,15 @@ okto-pulse://reference/tool-docs/kg."""
     async def okto_pulse_kg_get_supersedence_chain(
         board_id: str,
         decision_id: str,
+        node_type: str = "Decision",
     ) -> str:
         """
-        Trace what superseded what for a specific decision. Returns the
-        chain of superseded decisions up to depth 10.
+        Trace what superseded what for a node. Chain up to depth 10.
 
         Args:
             board_id: Board ID
-            decision_id: Decision node ID to trace from
+            decision_id: Node ID to trace from
+            node_type: KG node type (default Decision)
 
         Returns:
             JSON with chain, depth, current_active
@@ -271,7 +272,9 @@ okto-pulse://reference/tool-docs/kg."""
         try:
             svc.check_board_access(boards, board_id)
             logger.debug("[KG] kg_get_supersedence_chain offloading to thread")
-            result = await asyncio.to_thread(svc.get_supersedence_chain, board_id, decision_id)
+            result = await asyncio.to_thread(
+                svc.get_supersedence_chain, board_id, decision_id, node_type
+            )
             logger.debug("[KG] kg_get_supersedence_chain thread returned: depth=%d", result.get("depth", 0))
             resp = SupersedenceChainResponse(
                 chain=[SupersedenceEntry(**e) for e in result["chain"]],

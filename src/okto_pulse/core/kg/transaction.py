@@ -275,14 +275,17 @@ class TransactionOrchestrator:
             },
         )
 
-        # 3. Create the :supersedes edge
-        if node_type == "Decision":
-            self.create_edge(
-                "supersedes",
-                new_node_id,
-                superseded_node_id,
-                attrs={"confidence": 1.0},
-            )
+        # 3. Create the walkable :supersedes edge — universal for ALL node
+        # types (spec MKG-D-S1 FR4; was Decision-only until the rel became
+        # multi-pair). from/to hints are mandatory for multi-pair rels.
+        self.create_edge(
+            "supersedes",
+            new_node_id,
+            superseded_node_id,
+            attrs={"confidence": 1.0},
+            from_type=node_type,
+            to_type=node_type,
+        )
 
     def create_edge(
         self,
