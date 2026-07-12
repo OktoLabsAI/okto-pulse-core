@@ -1005,6 +1005,23 @@ Errors:
     `rebuild_refused_quarantined` — graph is quarantined; use KG reset flow first.
     `rebuild_run_failed` — unexpected error during rebuild (detail in response).
 
+## `okto_pulse_kg_export_jsonld`
+
+Read-only JSON-LD export of a board graph (spec MKG-E-S1 / FR5-FR6).
+
+Fixed PROV-O mapping: nodes → `prov:Entity` with `pulse:nodeType` /
+`pulse:kindOf`; `source_artifact_ref` → `prov:wasDerivedFrom`; session →
+`prov:wasGeneratedBy`; agent → `prov:wasAttributedTo`; supersedence →
+`prov:wasRevisionOf` on the successor. Edges are typed `pulse:Edge`
+entries. Deterministic: stable ordering + sorted keys — the same board
+always serializes to the same bytes.
+
+Paged by a stable `node_id` cursor: pass `next_cursor` until
+`last_page=true`; the concatenation of pages is the full export. An
+unreadable graph returns `kg_export_failed` and never a partial document.
+The CLI twin (`okto-pulse kg export --output`) writes the full document
+atomically offline. REST is deliberately absent (spec decision D7).
+
 ## `okto_pulse_kg_provenance_drift`
 
 Read-only artifact→node drift report (spec MKG-B-S1 / FR7).

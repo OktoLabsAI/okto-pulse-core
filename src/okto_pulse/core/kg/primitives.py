@@ -1823,6 +1823,7 @@ def _do_graph_commit(
                     "priority_boost": getattr(cand, "priority_boost", 0.0),
                     "human_curated": False,
                     "generation": successor_generation,
+                    "kind_of": getattr(cand, "kind_of", None),
                     # Spec MKG-B-S1 (FR2/FR3): successor is a fresh assertion.
                     **_provenance_attrs(cand, session_content_hash),
                     "embedding": embedding,
@@ -1925,6 +1926,7 @@ def _do_graph_commit(
                             ),
                             "human_curated": False,
                             "generation": trail_generation,
+                            "kind_of": getattr(cand, "kind_of", None),
                             # Spec MKG-B-S1 (FR2/FR3): trail successor is a
                             # fresh assertion — count restarts at 1.
                             **_provenance_attrs(cand, session_content_hash),
@@ -1982,6 +1984,7 @@ def _do_graph_commit(
                             ),
                             "source_confidence": cand.source_confidence,
                             "priority_boost": getattr(cand, "priority_boost", 0.0),
+                            "kind_of": getattr(cand, "kind_of", None),
                             # Spec MKG-B-S1 (FR3/D5): the rewrite is a NEW
                             # assertion — restamp the provenance anchor so
                             # drift clears after the re-consolidation remedy.
@@ -2086,6 +2089,7 @@ def _do_graph_commit(
                 # writes unless the agent passes an explicit override.
                 "human_curated": False,
                 "generation": 0,
+                "kind_of": getattr(cand, "kind_of", None),
                 # Spec MKG-B-S1 (FR2/FR3): extraction provenance + first
                 # attestation recorded at birth.
                 **_provenance_attrs(cand, session_content_hash),
@@ -2280,6 +2284,9 @@ async def commit_consolidation(
     # process never blocks the wrong board. Raises in STRICT, logs+counter
     # in SOFT.
     require_write_token(session.board_id)
+
+    # Spec MKG-E-S1 (FR4): subtype opt-in validation BEFORE any write.
+    await _validate_subtype_declarations(dict(session.node_candidates))
 
     async with session.lock:
         effective_hints = dict(session.reconciliation_hints)
@@ -2507,6 +2514,68 @@ def _bump_attestation(orch, node_type: str, node_id: str) -> None:
         f"n.last_attested_at = timestamp($ts)",
         {"id": node_id, "ts": _now_iso()},
     )
+
+
+async def _validate_subtype_declarations(node_candidates: dict) -> None:
+    """Spec MKG-E-S1 (FR4/BR2, D3): opt-in fail-closed subtype validation.
+
+    Candidates WITHOUT kind_of pass untouched (the entire pre-MKG-E flow is
+    byte-compatible). Candidates WITH kind_of require the registry (an
+    edition without the port fails closed) and every (node_type, kind_of)
+    pair must be declared — otherwise the commit aborts BEFORE any graph
+    write with the actionable code ``kg_subtype_undeclared``.
+    """
+
+    pairs: set = set()
+    for cand in node_candidates.values():
+        kind_of = getattr(cand, "kind_of", None)
+        if kind_of:
+            pairs.add((_enum_value(cand.node_type), kind_of))
+    if not pairs:
+        return
+
+    from okto_pulse.core.ports.kg_subtype_registry import (
+        SubtypeRegistryError,
+        normalize_kind_of,
+        require_node_subtype_registry,
+    )
+
+    try:
+        registry = require_node_subtype_registry()
+        declared = await registry.list_all()
+    except SubtypeRegistryError as exc:
+        raise KGPrimitiveError(
+            "kg_subtype_registry_unavailable",
+            str(exc),
+            details={"remediation": exc.remediation},
+        ) from exc
+
+    declared_by_type: dict = {}
+    declared_keys: set = set()
+    for declaration in declared:
+        declared_by_type.setdefault(declaration.node_type, []).append(
+            declaration.kind_of
+        )
+        declared_keys.add(
+            (declaration.node_type, normalize_kind_of(declaration.kind_of))
+        )
+
+    for node_type, kind_of in sorted(pairs):
+        if (node_type, normalize_kind_of(kind_of)) not in declared_keys:
+            raise KGPrimitiveError(
+                "kg_subtype_undeclared",
+                (
+                    f"kind_of {kind_of!r} is not declared for node_type "
+                    f"{node_type} — declare it first (kg subtype declare)."
+                ),
+                details={
+                    "node_type": node_type,
+                    "kind_of": kind_of,
+                    "declared_subtypes": sorted(
+                        declared_by_type.get(node_type, [])
+                    ),
+                },
+            )
 
 
 def _do_count_only_attestation(
@@ -2856,6 +2925,8 @@ _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset({
     # never be reset by an update payload.
     "source_span_start", "source_span_end", "source_span_quote",
     "extraction_model_id", "extraction_prompt_hash", "source_content_hash",
+    # Spec MKG-E-S1 (FR4): the declared subtype is content-derived too.
+    "kind_of",
 })
 
 # Kuzu HNSW vector indexes (see `VECTOR_INDEX_TYPES` in schema.py) own

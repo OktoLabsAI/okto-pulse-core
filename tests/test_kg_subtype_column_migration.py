@@ -1,5 +1,5 @@
-"""MKG-B C1 — provenance + attestation columns migration (S1) and the
-anti-legacy regression guard (S8)."""
+"""MKG-E C1 — kind_of column migration (S1) + physical-enforcement
+non-regression assertions (S8, static part)."""
 
 from __future__ import annotations
 
@@ -12,26 +12,24 @@ from pathlib import Path
 import pytest
 
 from okto_pulse.core.kg.schema_contract import (
-    ATTESTATION_COLUMNS,
     LEGACY_NODE_COLUMNS,
-    PROVENANCE_COLUMNS,
+    NODE_TYPES,
     SCHEMA_VERSION,
     STABLE_NODE_PROPERTIES,
+    SUBTYPE_COLUMNS,
+    VECTOR_INDEX_TYPES,
 )
 
 from kg_schema_testing import (
-    NODE_TYPES,
     bootstrap_board_graph,
     close_all_connections,
     open_board_connection,
 )
 
-NEW_COLUMNS = [name for name, _ in PROVENANCE_COLUMNS + ATTESTATION_COLUMNS]
-
 
 @pytest.fixture
 def kg_tempdir(monkeypatch):
-    base = Path(tempfile.mkdtemp(prefix="okto_pulse_provmig_"))
+    base = Path(tempfile.mkdtemp(prefix="okto_pulse_subtypemig_"))
     monkeypatch.setenv("KG_BASE_DIR", str(base))
     monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
     yield base
@@ -59,53 +57,50 @@ def _columns(kconn, node_type: str) -> set[str]:
     return cols
 
 
-def test_s1_fresh_bootstrap_has_all_new_columns_and_version(kg_tempdir):
+def test_s1_fresh_bootstrap_has_kind_of_and_version(kg_tempdir):
     assert SCHEMA_VERSION == "0.3.10"
     board_id = str(uuid.uuid4())
     bootstrap_board_graph(board_id)
     conn_ctx = open_board_connection(board_id)
     with conn_ctx as (_kdb, kconn):
         for node_type in NODE_TYPES:
-            cols = _columns(kconn, node_type)
-            for col in NEW_COLUMNS:
-                assert col in cols, f"{node_type} missing {col}"
+            assert "kind_of" in _columns(kconn, node_type), node_type
 
 
-def test_s1_legacy_shaped_table_gains_columns_idempotently(kg_tempdir):
-    from okto_pulse.community.adapters.kg_runtime import (
-        _ensure_attestation_columns,
-        _ensure_provenance_columns,
-    )
+def test_s1_legacy_shaped_table_gains_kind_of_idempotently(kg_tempdir):
+    from okto_pulse.community.adapters.kg_runtime import _ensure_subtype_columns
 
     board_id = str(uuid.uuid4())
     bootstrap_board_graph(board_id)
     conn_ctx = open_board_connection(board_id)
     with conn_ctx as (_kdb, kconn):
         kconn.execute(
-            "CREATE NODE TABLE IF NOT EXISTS LegacyShimB ("
+            "CREATE NODE TABLE IF NOT EXISTS LegacyShimE ("
             "id STRING PRIMARY KEY, title STRING)"
         )
-        added = _ensure_provenance_columns(kconn, "LegacyShimB")
-        added += _ensure_attestation_columns(kconn, "LegacyShimB")
-        assert sorted(added) == sorted(NEW_COLUMNS)
-        # Idempotent second run adds nothing.
-        assert _ensure_provenance_columns(kconn, "LegacyShimB") == []
-        assert _ensure_attestation_columns(kconn, "LegacyShimB") == []
+        added = _ensure_subtype_columns(kconn, "LegacyShimE")
+        assert added == ["kind_of"]
+        assert _ensure_subtype_columns(kconn, "LegacyShimE") == []
 
 
-def test_s8_legacy_names_never_reactivated(kg_tempdir):
-    from okto_pulse.community.adapters.graph_ddl import COMMON_NODE_ATTRIBUTES
-    from okto_pulse.community.adapters.kg_runtime import _node_has_legacy_columns
+def test_s8_physical_enforcement_untouched(kg_tempdir):
+    """Static half of S8: the closed physical taxonomy is unchanged and
+    kind_of never enters the vector/digest surface."""
+    from okto_pulse.core.application.processors.global_outbox import (
+        DIGESTED_NODE_TYPES,
+    )
+    from okto_pulse.community.adapters.kg_runtime import (
+        _node_has_legacy_columns,
+    )
 
-    # The retired names never appear in the new tuples, stable props or DDL.
-    for legacy in LEGACY_NODE_COLUMNS:
-        assert legacy not in NEW_COLUMNS
-        assert legacy not in STABLE_NODE_PROPERTIES
-        assert legacy not in COMMON_NODE_ATTRIBUTES
-    # LEGACY_NODE_COLUMNS itself is byte-identical to the audited value.
+    assert len(NODE_TYPES) == 11
+    assert tuple(DIGESTED_NODE_TYPES) == tuple(VECTOR_INDEX_TYPES)
+    assert "kind_of" not in VECTOR_INDEX_TYPES
+    assert "kind_of" in STABLE_NODE_PROPERTIES
     assert LEGACY_NODE_COLUMNS == ("validation_status", "corroboration_count")
+    for name, _ in SUBTYPE_COLUMNS:
+        assert name not in LEGACY_NODE_COLUMNS
 
-    # A freshly bootstrapped board is NEVER classified as v0.2.0-legacy.
     board_id = str(uuid.uuid4())
     bootstrap_board_graph(board_id)
     conn_ctx = open_board_connection(board_id)

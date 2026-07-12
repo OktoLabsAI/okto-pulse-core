@@ -172,6 +172,52 @@ relational fallback). The test-only ``_build_defaults`` does NOT supply them, so
 
     register_curation_proposal_store(_InMemoryCurationProposalStore())
 
+    from okto_pulse.core.ports.kg_subtype_registry import (
+        register_node_subtype_registry,
+    )
+
+    register_node_subtype_registry(_InMemoryNodeSubtypeRegistry())
+
+
+class _InMemoryNodeSubtypeRegistry:
+    """Test-only subtype registry (MKG-E FR2/FR3) — same pure rules."""
+
+    def __init__(self) -> None:
+        self.declarations: list[Any] = []
+
+    async def declare(self, declaration: Any) -> Any:
+        from dataclasses import replace
+        from datetime import datetime, timezone
+
+        from okto_pulse.core.ports.kg_subtype_registry import (
+            validate_subtype_declaration,
+        )
+
+        validate_subtype_declaration(declaration, tuple(self.declarations))
+        stored = replace(
+            declaration,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self.declarations.append(stored)
+        return stored
+
+    async def get(self, node_type: str, kind_of: str) -> Any:
+        from okto_pulse.core.ports.kg_subtype_registry import normalize_kind_of
+
+        normalized = normalize_kind_of(kind_of)
+        for declaration in self.declarations:
+            if (
+                declaration.node_type == node_type
+                and normalize_kind_of(declaration.kind_of) == normalized
+            ):
+                return declaration
+        return None
+
+    async def list_all(self) -> tuple:
+        return tuple(
+            sorted(self.declarations, key=lambda d: (d.node_type, d.kind_of))
+        )
+
 
 class _InMemoryCurationProposalStore:
     """Test-only proposal store (MKG-C FR7)."""

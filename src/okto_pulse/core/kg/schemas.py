@@ -111,6 +111,10 @@ class NodeCandidate(BaseModel):
     source_span_quote: str | None = None
     extraction_model_id: str | None = None
     extraction_prompt_hash: str | None = None
+    # Spec MKG-E-S1 (FR4, D3): optional declarative subtype — when present
+    # it MUST be declared in the NodeSubtypeRegistry (validated fail-closed
+    # at commit); absent is always valid (incremental adoption).
+    kind_of: str | None = None
 
 
 class EdgeCandidate(BaseModel):

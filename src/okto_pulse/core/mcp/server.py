@@ -15616,6 +15616,12 @@ from okto_pulse.core.mcp.kg_power_tools import (
 
 _register_kg_power_tools(mcp, get_agent=_get_authenticated_agent)
 
+from okto_pulse.core.mcp.kg_export_tools import (
+    register_kg_export_tools as _register_kg_export_tools,
+)
+
+_register_kg_export_tools(mcp, get_agent=_get_authenticated_agent)
+
 
 # ============================================================================
 # KG HEALTH (spec 20f67c2a — Ideação #5, FR2)

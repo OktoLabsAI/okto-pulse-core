@@ -13,7 +13,7 @@ from okto_pulse.core.kg.cognitive_policy import (
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.3.9"
+SCHEMA_VERSION = "0.3.10"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -232,6 +232,7 @@ STABLE_NODE_PROPERTIES: tuple[str, ...] = (
     "extraction_prompt_hash",
     "source_content_hash",
     "attestation_count",
+    "kind_of",
     "last_attested_at",
 )
 
@@ -284,6 +285,15 @@ ATTESTATION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("last_attested_at", "TIMESTAMP"),
 )
 
+# Spec MKG-E-S1 (FR1, D1): declarative subtyping by PROPERTY, never by new
+# label/table — a semantic type declares kind_of against one of the 11
+# closed physical primitives (registry-validated at commit); the physical
+# enforcement (typed tables, endpoint pairs, connectivity guard, per-type
+# HNSW) stays untouched.
+SUBTYPE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("kind_of", "STRING"),
+)
+
 LEGACY_NODE_COLUMNS: tuple[str, ...] = (
     "validation_status",
     "corroboration_count",
@@ -299,6 +309,7 @@ __all__ = [
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
     "ATTESTATION_COLUMNS",
+    "SUBTYPE_COLUMNS",
     "GENERATION_COLUMNS",
     "HUMAN_CURATED_COLUMNS",
     "PROVENANCE_COLUMNS",
