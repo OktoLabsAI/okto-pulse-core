@@ -73,7 +73,10 @@ def test_tool_names_stable_after_compaction():
     # Compaction only touched docstrings; every tool keeps the okto_pulse_ prefix.
     # Surface size is additive after the R1 baseline. Keep the current reviewed
     # surface pinned so accidental tool drops/duplicates remain visible.
-    assert len(names) == 259
+    # 2026-07-12 (auditoria MCP): re-pinned 259→265 (pin apodrecido enquanto 6
+    # tools entraram); o delta exato agora é nomeado por
+    # test_mcp_tools_catalog_drift.py.
+    assert len(names) == 265
     assert all(n.startswith("okto_pulse_") for n in names)
 
 
@@ -124,8 +127,10 @@ def test_compacted_tool_preserves_parameter_schema():
 
 def test_no_silent_enum_narrowing():
     # We did NOT migrate any prose enum to Literal — schemas stay byte-stable
-    # (test_mcp_schema_snapshot.py passes unchanged). Spot-check that a field
-    # that documents an enum in prose is still a plain string, not narrowed.
+    # (drift now guarded by test_mcp_tools_catalog_drift.py; the schema
+    # snapshot pilot was retired in the 2026-07-12 MCP surface audit).
+    # Spot-check that a field documenting an enum in prose is still a plain
+    # string, not narrowed.
     tools = _tools()
     props = tools["okto_pulse_create_card"].parameters.get("properties", {})
     assert props["card_type"].get("type") == "string"

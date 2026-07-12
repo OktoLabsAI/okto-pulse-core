@@ -21,7 +21,7 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Editing only in "draft"**: `okto_pulse_update_refinement` only works when status is `draft`
 - **Use Q&A** to clarify scope and decisions with the user. If investigation reveals two or more valid interpretations, ask before inferring; refinement assumptions become expensive rework in specs, tasks, mockups, Architecture Designs, tests, and validations.
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
-- **Triage pending derivations**: the canonical surface to find done refinements that still lack a derived spec is `okto_pulse_list_by_board(entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})` — see `okto-pulse://reference/list_tools`
+- **Triage pending derivations**: the canonical surface to find done refinements that still lack a derived spec is `okto_pulse_list_by_board(entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})` — see `okto-pulse://reference/list_tools`. `entity_type="refinement"` **REQUIRES** `filters.ideation_id` (omitting it fails with `missing_required_filter`); `entity_type="sprint"` likewise requires `filters.spec_id`.
 
 ## 2.2a Mandatory Deep Investigation — Refinement is Research, Not Paraphrasing
 

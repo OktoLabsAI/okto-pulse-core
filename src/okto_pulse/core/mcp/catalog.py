@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass
-from typing import Any, Callable, get_type_hints
+from typing import Annotated, Any, Callable, get_args, get_origin, get_type_hints
 
 from pydantic import TypeAdapter
 
@@ -88,7 +88,10 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
 
     signature = inspect.signature(fn)
     try:
-        annotations = get_type_hints(fn)
+        # include_extras keeps Annotated[...] metadata so parameter
+        # descriptions declared via pydantic Field(description=...) reach the
+        # MCP schema (auditoria MCP 2026-07-12, achado #69).
+        annotations = get_type_hints(fn, include_extras=True)
     except Exception:
         annotations = getattr(fn, "__annotations__", {}) or {}
 
@@ -101,7 +104,18 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
         ):
             continue
         annotation = annotations.get(parameter.name, parameter.annotation)
+        description = None
+        if get_origin(annotation) is Annotated:
+            args = get_args(annotation)
+            annotation = args[0]
+            for meta in args[1:]:
+                meta_description = getattr(meta, "description", None)
+                if meta_description:
+                    description = meta_description
+                    break
         schema = _json_schema_for(annotation)
+        if description:
+            schema["description"] = description
         if parameter.default is inspect.Signature.empty:
             required.append(parameter.name)
         else:

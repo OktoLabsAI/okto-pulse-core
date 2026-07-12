@@ -16,10 +16,8 @@ Args:
     ideation_id: Ideation ID (for context/validation)
     qa_id: Q&A item ID to answer
     answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-    selected: Option IDs for choice questions, accepted in three formats:
-        ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
-        (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
-        See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
+    selected: Option IDs for choice questions — multi-value; formats:
+        okto-pulse://reference/multivalue.
 
 Returns:
     JSON with updated Q&A item
@@ -32,14 +30,8 @@ Args:
     board_id: Board ID
     ideation_id: Ideation ID
     question: The question text
-    options: Option labels in any of three formats:
-        - JSON array (preferred when labels contain commas):
-          ``'["Mermaid (text-based, lightweight)", "ExcaliDraw (heavy)"]'``
-        - Pipe-separated (when labels contain commas but not pipes):
-          ``"Option A|Option B|Option C"``
-        - Comma-separated (legacy, fragile if a label contains a comma):
-          ``"Option A,Option B,Option C"``
-        See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
+    options: Option labels — multi-value; formats:
+        okto-pulse://reference/multivalue.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
     allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -74,9 +66,7 @@ Args:
     problem_statement: What problem does this idea solve? (optional)
     proposed_approach: How might this be implemented? (optional)
     assignee_id: User/agent ID to assign (optional)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional)
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional)
 
 Returns:
     JSON with created ideation details
@@ -212,6 +202,7 @@ Args:
     board_id: Board ID
     ideation_id: Ideation ID
     status: New status — one of: draft, review, approved, evaluating, done, cancelled
+    cancellation_reason: REQUIRED when status=cancelled; reopening clears it.
 
 Returns:
     JSON with updated ideation status
@@ -248,9 +239,7 @@ Args:
     problem_statement: New problem statement (optional, empty = no change)
     proposed_approach: New proposed approach (optional, empty = no change)
     assignee_id: New assignee (optional, empty = no change)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional, empty = no change)
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional, empty = no change)
 
 Returns:
     JSON with updated ideation details

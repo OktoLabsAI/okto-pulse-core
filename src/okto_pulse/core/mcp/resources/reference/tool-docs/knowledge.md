@@ -79,10 +79,8 @@ Args:
     board_id: Board ID
     spec_id: Source spec ID
     card_id: Target card ID
-    knowledge_ids: Multi-value knowledge base IDs to copy (empty = copy ALL).
-        Preferred native list (e.g. ``["kb_a", "kb_b"]``); legacy string accepted
-        as JSON array or pipe-separated. Comma-only string is REJECTED. See
-        ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+    knowledge_ids: Multi-value knowledge base IDs to copy (empty = copy ALL) —
+        formats: okto-pulse://reference/multivalue.
 
 Returns:
     JSON with count of knowledge entries copied and total card KEs

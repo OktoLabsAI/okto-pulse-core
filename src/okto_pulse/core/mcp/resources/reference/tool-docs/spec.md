@@ -38,10 +38,8 @@ Args:
     spec_id: Spec ID (for context/validation)
     qa_id: Q&A item ID to answer
     answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-    selected: Option IDs for choice questions, accepted in three formats:
-        ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
-        (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
-        See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
+    selected: Option IDs for choice questions — multi-value; formats:
+        okto-pulse://reference/multivalue.
 
 Returns:
     JSON with updated Q&A item
@@ -55,14 +53,8 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     question: The question text
-    options: Option labels in any of three formats:
-        - JSON array (preferred when labels contain commas):
-          ``'["OAuth2 (RFC 6749, recommended)", "API Keys", "Both"]'``
-        - Pipe-separated (when labels contain commas but not pipes):
-          ``"OAuth2|API Keys|Both"``
-        - Comma-separated (legacy, fragile if a label contains a comma):
-          ``"OAuth2,API Keys,Both"``
-        See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
+    options: Option labels — multi-value; formats:
+        okto-pulse://reference/multivalue.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
     allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -98,9 +90,7 @@ Args:
     acceptance_criteria: Pipe-separated list of acceptance criteria (e.g. "All tests pass|No console errors")
     status: Spec status — one of: draft, review, approved, in_progress, done, cancelled (default: draft)
     assignee_id: User/agent ID to assign (optional)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue.
     ideation_id: Optional parent ideation ID for traceability when creating a spec manually
     refinement_id: Optional parent refinement ID for traceability when creating a spec manually
 
@@ -222,6 +212,9 @@ Args:
         the common "what rules today?" path. Set to "true" to get the
         full history (active + superseded + revoked). A `decisions_stats`
         summary is always included so you can see what was filtered.
+    profile: Response projection — one of: summary (default), detail, full,
+        legacy. Use `summary` for exploration and `full` before evaluating,
+        moving, or deriving cards. See okto-pulse://reference/projection-profiles.
 
 Returns:
     JSON with complete spec context: all requirements + structured sections + artifacts + cards + sprints
@@ -293,6 +286,7 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     status: New status — one of: draft, review, approved, validated, in_progress, done, cancelled
+    cancellation_reason: REQUIRED when status=cancelled; reopening clears it.
 
 Returns:
     JSON with updated spec status
@@ -385,9 +379,7 @@ Args:
     technical_requirements: Pipe-separated list of technical constraints (optional, empty = no change)
     acceptance_criteria: Pipe-separated list of acceptance criteria (optional, empty = no change)
     assignee_id: New assignee (optional, empty = no change)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional, empty = no change)
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional, empty = no change)
 
 Returns:
     JSON with updated spec details

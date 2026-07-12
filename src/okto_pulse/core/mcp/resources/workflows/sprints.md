@@ -11,12 +11,12 @@ Sprints break large specs into incremental deliverables with scoped gates and ev
 **Lifecycle:** draft → active → review → closed (cancelled from any state)
 
 **When to use sprints:**
-- Specs with many tasks (typically 6+ cards) benefit from sprint breakdown
-- The system automatically suggests sprints during spec validation (approved → validated) when task count exceeds the threshold
+- Specs with many tasks (8+ cards, the default threshold) benefit from sprint breakdown
+- The system automatically suggests sprints during spec validation (approved → validated) when task count exceeds the threshold (default 8)
 - Sprints are optional — specs can work without them
 
 **Creating sprints:**
-1. Use `okto_pulse_suggest_sprints(board_id, spec_id, threshold?)` to get AI-suggested breakdown
+1. Use `okto_pulse_suggest_sprints(board_id, spec_id, threshold?)` (threshold default: 8) to get AI-suggested breakdown
 2. Create sprints with `okto_pulse_create_sprint` — scope test_scenario_ids and business_rule_ids from the spec
 3. Assign cards with `okto_pulse_assign_tasks_to_sprint(board_id, sprint_id, card_ids)`
 
@@ -101,8 +101,6 @@ When a sprint is in `review` status, submit an evaluation via `okto_pulse_submit
 | `overall_score` | Overall assessment considering all dimensions. |
 
 **recommendation:** `approve` (sprint can close), `request_changes` (needs rework), `reject` (fundamentally flawed)
-
-**Permission flags:** 25 flags under `sprint.*` — entity (9), move (4), interact_in (5), qa (3), evaluations (3), history_read (1)
 
 ### Sprint Status Transitions
 

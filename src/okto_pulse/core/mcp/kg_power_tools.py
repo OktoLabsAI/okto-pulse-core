@@ -243,16 +243,16 @@ okto-pulse://reference/tool-docs/kg."""
         until: str = "",
         graph_layer: str = "canonical",
     ) -> str:
-        """Natural-language search over a board's knowledge graph using hybrid search
-(embedding + HNSW + traversal), falling back to string match if embedding is
-unavailable. Deterministic — invokes NO LLM (configured embedding adapter or stub).
-Args include nl_query, limit (default 20), min_confidence (default 0.5), and optional
-since/until ISO-8601 bounds on created_at. graph_layer (canonical|working|all,
-default canonical) scopes results by KG layer; an invalid value fails closed with a
-structured error BEFORE execution. Returns nodes, total_matches, applied_graph_layer
-(echo) and a layer_audit (counts_by_layer) where metadata/legacy_unknown never count
-as canonical/working leakage, plus optional warning and temporal_filter metadata when
-a time bound is active. Full args: okto-pulse://reference/tool-docs/kg."""
+        """Natural-language search over a board's knowledge graph using hybrid
+        search (embedding + HNSW + traversal), falling back to string match when
+        embedding is unavailable. Deterministic — invokes NO LLM. Optional
+        min_confidence (default 0.5) and since/until ISO-8601 bounds on
+        created_at; graph_layer (canonical|working|all, default canonical) scopes
+        results by KG layer and fails closed on invalid values BEFORE execution.
+        Returns nodes, total_matches, applied_graph_layer and a layer_audit where
+        metadata/legacy_unknown never count as canonical/working leakage.
+        Docs: okto-pulse://reference/tool-docs/kg.
+        """
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
@@ -302,17 +302,9 @@ a time bound is active. Full args: okto-pulse://reference/tool-docs/kg."""
         board_id: str = "",
         include_internal: str = "false",
     ) -> str:
-        """
-        Return schema introspection: stable node types, rel types, vector
-        indexes. Internal types require include_internal=true + admin role.
-
-        Args:
-            board_id: Optional board ID (empty = global schema namespace)
-            include_internal: "true" to include internal types (admin only)
-
-        Returns:
-            JSON with schema_version, stable_node_types, stable_rel_types,
-            vector_indexes, optionally internal_*_types
+        """Return KG schema introspection: schema_version, stable node types, rel
+        types and vector indexes (global namespace when board_id is empty).
+        Internal types require include_internal="true" + admin role.
         """
         agent = await get_agent()
         if agent is None:
@@ -437,28 +429,10 @@ narrows to one table."""
         nl_query: str,
         limit: int = 20,
     ) -> str:
-        """
-        V1 stub of the reflective retrieve loop (ideação db8e984f).
-
-        The full agentic loop (critic_evaluate → dispatch action →
-        retrieve retry) requires an LLM callable (critic_fn) — MCP
-        tools can't receive Python callables, so this V1 delegates to
-        the standard execute_natural_query and labels the response
-        as a "v1_stub_no_critic_wired" stop reason.
-
-        To use the real loop, call
-        ``okto_pulse.core.kg.retrieve_critic.reflect()`` programmatically
-        from a Python host that wires its own LLM provider.
-
-        Args:
-            board_id: Board ID (authorization: kg.query.global).
-            nl_query: Natural-language query (same as
-                okto_pulse_kg_query_natural).
-            limit: Max rows (default 20).
-
-        Returns:
-            JSON with rows + reflection metadata:
-            ``{nodes, total_matches, stopped_reason, iterations}``.
+        """Reflective NL query over a board's KG (authorization: kg.query.global).
+        V1 stub: delegates to the kg_query_natural core (params board_id,
+        nl_query, limit) and returns nodes, total_matches, iterations and
+        stopped_reason='v1_stub_no_critic_wired'.
         """
         agent = await get_agent()
         if agent is None:

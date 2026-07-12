@@ -253,16 +253,8 @@ okto-pulse://reference/tool-docs/kg."""
         decision_id: str,
         node_type: str = "Decision",
     ) -> str:
-        """
-        Trace what superseded what for a node. Chain up to depth 10.
-
-        Args:
-            board_id: Board ID
-            decision_id: Node ID to trace from
-            node_type: KG node type (default Decision)
-
-        Returns:
-            JSON with chain, depth, current_active
+        """Trace what superseded what for a node (default node_type Decision), up to
+        depth 10. Returns chain, depth and current_active.
         """
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
@@ -291,18 +283,9 @@ okto-pulse://reference/tool-docs/kg."""
         node_id: str = "",
         max_rows: int = 50,
     ) -> str:
-        """
-        Find contradictory decision pairs via :contradicts relationship.
-        When node_id is provided, returns only pairs involving that node.
-        Without node_id, returns all contradiction pairs (limit 50).
-
-        Args:
-            board_id: Board ID
-            node_id: Optional Decision node ID (empty = all pairs)
-            max_rows: Maximum pairs (default 50)
-
-        Returns:
-            JSON with pairs: [{id_a, title_a, id_b, title_b, confidence}]
+        """Find contradictory decision pairs via the :contradicts relationship. With
+        node_id, returns only pairs involving that node; without it, all pairs
+        (max_rows default 50).
         """
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
@@ -332,18 +315,9 @@ okto-pulse://reference/tool-docs/kg."""
         top_k: int = 10,
         min_similarity: float = 0.3,
     ) -> str:
-        """
-        Find decisions similar to a topic using hybrid ranking:
-        0.5*semantic + 0.2*graph_centrality + 0.2*recency + 0.1*confidence.
-
-        Args:
-            board_id: Board ID
-            topic: Natural language description to match against
-            top_k: Maximum results (default 10)
-            min_similarity: Minimum similarity threshold (default 0.3)
-
-        Returns:
-            JSON with decisions ordered by combined_score DESC
+        """Find decisions similar to a natural-language topic using hybrid ranking
+        (0.5*semantic + 0.2*graph_centrality + 0.2*recency + 0.1*confidence),
+        ordered by combined_score DESC.
         """
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
@@ -371,16 +345,8 @@ okto-pulse://reference/tool-docs/kg."""
         board_id: str,
         constraint_id: str,
     ) -> str:
-        """
-        Explain the origin of a constraint: the spec/decision it derives from,
+        """Explain the origin of a constraint: the spec/decision it derives from,
         related constraints, and any violations (bugs) registered against it.
-
-        Args:
-            board_id: Board ID
-            constraint_id: Constraint node ID
-
-        Returns:
-            JSON with constraint details, origins, and violations
         """
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
@@ -405,17 +371,9 @@ okto-pulse://reference/tool-docs/kg."""
         decision_id: str,
         max_rows: int = 100,
     ) -> str:
-        """
-        List alternatives that were considered and discarded for a decision,
-        including their reason_discarded from the narrative.
-
-        Args:
-            board_id: Board ID
-            decision_id: Decision node ID
-            max_rows: Maximum results (default 100)
-
-        Returns:
-            JSON with alternatives list
+        """List alternatives that were considered and discarded for a decision,
+        including their reason_discarded from the narrative (max_rows default
+        100).
         """
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
@@ -445,18 +403,9 @@ okto-pulse://reference/tool-docs/kg."""
         min_confidence: float = 0.5,
         max_rows: int = 100,
     ) -> str:
-        """
-        Get lessons learned from bugs in a specific area. Returns Learning
-        nodes connected to Bug nodes via :validates relationship.
-
-        Args:
-            board_id: Board ID
-            area: Area keyword to filter bugs by (matches title/content)
-            min_confidence: Minimum confidence (default 0.5)
-            max_rows: Maximum results (default 100)
-
-        Returns:
-            JSON with learnings: [{learning_id, learning_title, bug_id, bug_title}]
+        """Get lessons learned from bugs in an area (keyword match on
+        title/content). Returns Learning nodes connected to Bug nodes via the
+        :validates relationship, filtered by min_confidence (default 0.5).
         """
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
@@ -486,22 +435,11 @@ okto-pulse://reference/tool-docs/kg."""
         top_k: int = 10,
         graph_layer: str = "canonical",
     ) -> str:
-        """
-        Cross-board semantic search via the global discovery layer. Returns
-        matching decisions from all boards the agent has access to, filtered
-        by ACL.
-
-        Args:
-            board_id: Optional board_id to restrict search (empty = all boards)
-            nl_query: Natural language query string
-            top_k: Maximum results (default 10)
-            graph_layer: canonical, working, or all (default canonical);
-                invalid values fail closed.
-
-        Returns:
-            JSON `{results: [{board_id, id, title, similarity, graph_layer}],
-            count, applied_graph_layer}`. `applied_graph_layer` echoes the layer
-            actually applied (canonical|working|all).
+        """Cross-board semantic search via the global discovery layer. Returns
+        matching decisions from all boards the agent has access to, filtered by
+        ACL; optional board_id restricts to one board (empty = all). graph_layer
+        accepts canonical|working|all (default canonical); invalid values fail
+        closed. The response echoes applied_graph_layer.
         """
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:

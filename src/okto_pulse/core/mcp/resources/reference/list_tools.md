@@ -1,3 +1,6 @@
+---
+version: "1.0"
+---
 # Consolidated List Tools (P0.B)
 
 The following 4 polymorphic tools are the supported MCP list surface.

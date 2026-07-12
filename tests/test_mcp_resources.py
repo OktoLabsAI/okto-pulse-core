@@ -24,7 +24,9 @@ RESOURCES_DIR = (
 MCP_DIR = Path(__file__).parent.parent / "src" / "okto_pulse" / "core" / "mcp"
 SERVER_PY = MCP_DIR / "server.py"
 
-EXPECTED_FILES = [
+# Core set that must ALWAYS exist (deleting one of these is a breaking change
+# to the instructions' Quick Navigation table).
+_REQUIRED_FILES = [
     "workflows/stories.md",
     "workflows/ideations.md",
     "workflows/refinements.md",
@@ -40,6 +42,19 @@ EXPECTED_FILES = [
     "reference/spec_gates.md",
     "reference/projection_profiles.md",
 ]
+
+# 2026-07-12 (auditoria MCP, achado #34): the gate now discovers EVERY
+# bundled resource via glob, so a new .md automatically enters the
+# frontmatter/version checks instead of silently drifting outside them.
+EXPECTED_FILES = sorted(
+    str(p.relative_to(RESOURCES_DIR)).replace("\\", "/")
+    for p in RESOURCES_DIR.rglob("*.md")
+)
+
+
+def test_required_core_resources_present() -> None:
+    missing = [f for f in _REQUIRED_FILES if f not in EXPECTED_FILES]
+    assert missing == [], f"core resources missing from bundle: {missing}"
 
 EXPECTED_URIS = [
     "okto-pulse://workflows/stories",
@@ -93,8 +108,11 @@ def test_resource_file_has_frontmatter(rel_path: str) -> None:
     match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
     assert match is not None, f"{rel_path}: could not find closing '---' of frontmatter"
     frontmatter_body = match.group(1)
-    assert 'version: "1.0"' in frontmatter_body, (
-        f"{rel_path}: frontmatter missing 'version: \"1.0\"'. "
+    # 2026-07-12 (achado #34): any versioned frontmatter is accepted — the
+    # gate guards PRESENCE of a version marker, not a pinned value (files
+    # legitimately rev, e.g. api-contract.md is at "1.1").
+    assert re.search(r'version: "\d+\.\d+"', frontmatter_body), (
+        f"{rel_path}: frontmatter missing a version marker. "
         f"Found: {frontmatter_body!r}"
     )
 
@@ -125,9 +143,9 @@ def test_load_resource_file_missing_returns_empty() -> None:
     # because we only import the helpers, not run FastMCP.
     from okto_pulse.core.mcp import server as _srv
 
-    # Ensure the cache does not contain this key from a previous run
-    _srv._resources_cache.pop("__nonexistent_test_path__.md", None)
-
+    # 2026-07-12: the old _resources_cache dict was removed in the loader
+    # refactor (_load_bundled_text reads the immutable package directly) —
+    # the contract under test is only the fail-soft return value.
     result = _srv._load_resource_file("__nonexistent_test_path__.md")
     assert result == "", (
         "_load_resource_file() should return '' for a missing file, not raise an exception."
@@ -197,17 +215,18 @@ def test_uri_in_effective_catalog(uri: str) -> None:
 
 
 def test_load_resource_file_cache_idempotent() -> None:
-    """Calling _load_resource_file() twice for the same path returns the same object."""
+    """Repeated loads of the same immutable resource return identical content.
+
+    2026-07-12: object-identity (`is`) dropped — the loader refactor removed
+    the _resources_cache dict; resources are immutable package files, so the
+    stable contract is content equality across calls."""
     from okto_pulse.core.mcp import server as _srv
 
     path = "workflows/stories.md"
-    # Clear cache entry to force a fresh load
-    _srv._resources_cache.pop(path, None)
-
     first = _srv._load_resource_file(path)
     second = _srv._load_resource_file(path)
-    assert first is second, (
-        "_load_resource_file() should return the cached string object on second call."
+    assert first == second, (
+        "_load_resource_file() should return identical content on repeat calls."
     )
     assert len(first) > 0, "stories.md returned empty content — file may be missing."
 

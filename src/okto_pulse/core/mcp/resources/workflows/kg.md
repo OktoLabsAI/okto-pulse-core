@@ -13,15 +13,17 @@ version: "1.0"
 
 ## Consolidation Primitives (7 tools)
 
-| Tool | Args | Purpose |
-|------|------|---------|
-| `okto_pulse_kg_begin_consolidation` | board_id, artifact_type, artifact_id, raw_content, deterministic_candidates? | Open a transactional session. Returns session_id + SHA256 dedup. |
-| `okto_pulse_kg_add_node_candidate` | session_id, candidate | Add a node candidate. Not persisted until commit. |
-| `okto_pulse_kg_add_edge_candidate` | session_id, candidate | Add an edge. Endpoints reference in-session candidates or existing nodes via `kg:` prefix. |
-| `okto_pulse_kg_get_similar_nodes` | session_id, candidate_id, top_k?, min_similarity? | HNSW vector search against existing graph. |
-| `okto_pulse_kg_propose_reconciliation` | session_id | Server computes deterministic hints: ADD/UPDATE/SUPERSEDE/NOOP. |
-| `okto_pulse_kg_commit_consolidation` | session_id, summary_text?, agent_overrides? | Atomically write to the embedded graph database + audit row + outbox event. |
-| `okto_pulse_kg_abort_consolidation` | session_id, reason? | Drop the session without writing. |
+> Args/returns for every `okto_pulse_kg_*` tool live in `okto-pulse://reference/tool-docs/kg` — the tables in this workflow list purpose only.
+
+| Tool | Purpose |
+|------|---------|
+| `okto_pulse_kg_begin_consolidation` | Open a transactional session. Returns session_id + SHA256 dedup. |
+| `okto_pulse_kg_add_node_candidate` | Add a node candidate. Not persisted until commit. |
+| `okto_pulse_kg_add_edge_candidate` | Add an edge. Endpoints reference in-session candidates or existing nodes via `kg:` prefix. |
+| `okto_pulse_kg_get_similar_nodes` | HNSW vector search against existing graph. |
+| `okto_pulse_kg_propose_reconciliation` | Server computes deterministic hints: ADD/UPDATE/SUPERSEDE/NOOP. |
+| `okto_pulse_kg_commit_consolidation` | Atomically write to the embedded graph database + audit row + outbox event. |
+| `okto_pulse_kg_abort_consolidation` | Drop the session without writing. |
 
 **Node types (11):** Decision, Criterion, Constraint, Assumption, Requirement, Entity, APIContract, TestScenario, Bug, Learning, Alternative
 
@@ -57,7 +59,7 @@ version: "1.0"
 >
 > This rule keys ONLY on the existing `graph_state` field and the existing structured `graph_unavailable`. Recovering a degraded graph is the separate KG Health recovery flow (an operator-driven path, out of scope for this rule), and this rule does **not** define any new error code or response envelope for the degraded case. When `graph_state` is not one of the two degraded values, run the mandatory query sets normally.
 
-**Stage 1 — Ideation (before moving to `evaluating` or answering any Q&A)**
+**Stage 1 — Ideation (before moving to `evaluating` and before answering any Q&A)**
 
 | Query | Why it's required |
 |---|---|
@@ -85,25 +87,25 @@ version: "1.0"
 
 ## Tier Primary Query Tools (9 tools)
 
-| Tool | Args | Purpose |
-|------|------|---------|
-| `okto_pulse_kg_get_decision_history` | board_id, topic, min_confidence?, max_rows? | Trace decisions about a topic over time |
-| `okto_pulse_kg_get_related_context` | board_id, artifact_id, min_confidence?, max_rows? | 2-hop neighborhood |
-| `okto_pulse_kg_get_supersedence_chain` | board_id, decision_id | Full chain of what superseded what |
-| `okto_pulse_kg_find_contradictions` | board_id, node_id?, max_rows? | Contradictory decision pairs |
-| `okto_pulse_kg_find_similar_decisions` | board_id, topic, top_k?, min_similarity? | Semantic search with hybrid ranking |
-| `okto_pulse_kg_explain_constraint` | board_id, constraint_id | Origin, related constraints, violations |
-| `okto_pulse_kg_list_alternatives` | board_id, decision_id, max_rows? | Alternatives considered and discarded |
-| `okto_pulse_kg_get_learning_from_bugs` | board_id, area, min_confidence?, max_rows? | Lessons learned from bugs |
-| `okto_pulse_kg_query_global` | board_id?, nl_query, top_k? | Cross-board semantic search |
+| Tool | Purpose |
+|------|---------|
+| `okto_pulse_kg_get_decision_history` | Trace decisions about a topic over time |
+| `okto_pulse_kg_get_related_context` | 2-hop neighborhood |
+| `okto_pulse_kg_get_supersedence_chain` | Full chain of what superseded what |
+| `okto_pulse_kg_find_contradictions` | Contradictory decision pairs |
+| `okto_pulse_kg_find_similar_decisions` | Semantic search with hybrid ranking |
+| `okto_pulse_kg_explain_constraint` | Origin, related constraints, violations |
+| `okto_pulse_kg_list_alternatives` | Alternatives considered and discarded |
+| `okto_pulse_kg_get_learning_from_bugs` | Lessons learned from bugs |
+| `okto_pulse_kg_query_global` | Cross-board semantic search |
 
 ## Tier Power Escape Hatch (3 tools)
 
-| Tool | Args | Purpose |
-|------|------|---------|
-| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms?, include_working? | Read-only Cypher directly on the embedded graph database. Defaults to canonical-only rows; pass `include_working=true` when validating working graph ingestion. |
-| `okto_pulse_kg_query_natural` | board_id, nl_query, limit?, min_confidence? | Natural language search via embedding + HNSW |
-| `okto_pulse_kg_schema_info` | board_id?, include_internal? | Schema introspection: node types, rel types, vector indexes |
+| Tool | Purpose |
+|------|---------|
+| `okto_pulse_kg_query_cypher` | Read-only Cypher directly on the embedded graph database. Defaults to canonical-only rows; pass `include_working=true` when validating working graph ingestion. |
+| `okto_pulse_kg_query_natural` | Natural language search via embedding + HNSW |
+| `okto_pulse_kg_schema_info` | Schema introspection: node types, rel types, vector indexes |
 
 **Safety rails:** Timeout: 5s default, 30s max. Max rows: 1000 default, 10000 max. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
 

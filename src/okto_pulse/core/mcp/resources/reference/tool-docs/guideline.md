@@ -73,28 +73,53 @@ Returns:
 
 ## `okto_pulse_list_default_guideline_candidates`
 
-List global catalog guidelines eligible to become defaults for new boards.
+List GLOBAL catalog guidelines with derived eligibility and current default
+status from the umbrella template (spec 8a2fad91 / FR1, admin read). REST twin:
+GET /guidelines/default-candidates. Perm: BOARD_READ.
 
-Only global guidelines can be selected as defaults; inline board guidelines are
-never eligible.
+Only global guidelines can become defaults; inline board guidelines are never
+eligible.
 
 Args:
     board_id: Board ID used for authentication.
-    tag: Optional tag filter.
+    scope: Template scope (default `global`).
+    template_id: Optional — inspect a specific template version; empty uses
+        the active template.
 
 Returns:
     JSON with candidate guidelines and current default selection state.
 
 ## `okto_pulse_update_default_guideline_refs`
 
-Replace the global default guideline references applied to future boards.
+Update a template's `guideline_default_refs` using only GLOBAL catalog
+guidelines (spec 8a2fad91 / FR1, admin write). REST twin: POST
+/default-board-configurations/{template_id}/guidelines. Perm: SPECS_UPDATE.
+
+Inline/missing/non-global refs are rejected fail-closed (structured error).
+An ACTIVE template is copy-on-write: a new version is created and activated;
+a draft mutates in-place.
 
 Args:
     board_id: Board ID used for authentication.
-    guideline_ids: Multi-value global guideline IDs, or empty/CLEAR to remove.
+    template_id: Default board-configuration template ID.
+    guideline_default_refs: List of global guideline refs to set (empty list
+        clears the defaults).
 
 Returns:
-    JSON with the active default guideline references and rejected IDs, if any.
+    JSON with the EFFECTIVE template (including its default guideline refs).
+
+## `okto_pulse_update_board_guideline_priority`
+
+Update the priority of a guideline linked to a board. Higher priority means
+the guideline sorts first in `okto_pulse_get_board_guidelines`.
+
+Args:
+    board_id: Board ID
+    guideline_id: Linked guideline ID
+    priority: New priority (higher = more important)
+
+Returns:
+    JSON with the updated board-guideline link.
 
 ## `okto_pulse_unlink_guideline_from_board`
 

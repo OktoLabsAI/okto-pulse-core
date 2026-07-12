@@ -23,14 +23,12 @@ Call the matching `okto_pulse_get_{ideation,refinement,spec,sprint}_context` (or
 
 ```
 1. okto_pulse_get_task_context(board_id, card_id, profile="full", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)
-2. okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id)
-3. okto_pulse_copy_knowledge_to_card(board_id, spec_id, card_id)
-4. okto_pulse_copy_architecture_to_card(board_id, spec_id, card_id)
-5. okto_pulse_move_card(status="in_progress")
-6. BEGIN WORK
+2. Attach applicable artifacts — follow the Card-Level Artifact Attachment path in §2.8 of okto-pulse://workflows/cards (the single source: copy tools per artifact, decide per KE/mockup/Architecture Design, and any skip requires a one-line justifying comment)
+3. okto_pulse_move_card(status="in_progress")
+4. BEGIN WORK
 ```
 
-**Never skip card execution steps 1 and 5.**
+**Never skip card execution steps 1 and 3.**
 
 This is an operational protocol rule: the MCP server does not prove that you read context; your audit trail and artifact quality do.
 

@@ -49,10 +49,7 @@ Args:
     status: Card status - one of: not_started, started, in_progress, validation, on_hold, done, cancelled
     priority: Card priority - one of: none, low, medium, high, very_high, critical (default: none)
     assignee_id: User ID to assign (optional)
-    labels: Multi-value labels — preferred native list (e.g. ``["bug", "frontend"]``);
-        legacy string accepted as JSON array ``'["bug", "frontend"]'`` or
-        pipe-separated ``"bug|frontend"``. Comma-only string is REJECTED.
-        See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue.
     test_scenario_ids: Multi-value test scenario IDs (e.g. ``["ts_abc", "ts_def"]``)
         — same input shapes as ``labels`` above. For test cards, this is MANDATORY.
         A single card is capped by the board's ``max_scenarios_per_card`` setting
@@ -201,9 +198,8 @@ Returns:
 
 Update card details. Pass only the fields you want to change; omit the rest.
 
-Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
-native list; legacy pipe-separated string is also accepted. Comma-only strings
-are REJECTED. For bidirectional scenario linking, use
+Multi-value fields (labels, test_scenario_ids, linked_test_task_ids) — formats:
+okto-pulse://reference/multivalue. For bidirectional scenario linking, use
 `okto_pulse_link_task(target_type="scenario", ...)`.
 
 ## Path B amendment revisions (cross-spec regression evidence)

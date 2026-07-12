@@ -14,7 +14,9 @@ import uuid as _uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from importlib.resources import files as package_files
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
+
+from pydantic import Field
 
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
@@ -1998,13 +2000,11 @@ def _parse_include(include: str) -> set[str]:
 
 @mcp.tool()
 async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
+    """Get board details. Defaults to a minimal overview envelope; pass
+    `include` to inline collections. Token-optimized default: the response
+    carries id, name, description, owner_id, settings, counts{} and
+    timestamps — ~200B vs ~10KB on a typical board.
     """
-    Get board details. Defaults to a minimal overview envelope; pass `include` to
-    inline collections.
-
-    Ideação MCP-token-optimization Story 2: the default response carries id,
-    name, description, owner_id, settings, counts{} and timestamps — ~200B vs
-    ~10KB on a typical board."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2332,19 +2332,15 @@ async def okto_pulse_get_activity_log(
     card_id: str = "",
     include_details: bool = False,
 ) -> str:
+    """Get the board activity log with optional filtering and pagination.
+    Default rows carry id, action, trigger, card_id, created_at + a
+    deterministic server-built `summary` (~120B per row vs ~1.5KB); pass
+    include_details=true for the full nested details object (legacy shape).
+    Pass `cursor` (opaque base64 from a prior next_cursor) for O(1) keyset
+    pagination, and envelope=true to receive {items, next_cursor} instead of a
+    raw list. Legacy `offset` is silently ignored unless
+    OKTO_PULSE_LEGACY_OFFSET=1.
     """
-    Get the activity log (history) for the board with optional filtering and pagination.
-
-    Ideação MCP-token-optimization Story 3: default response carries id, action,
-    trigger, card_id, created_at + a deterministic `summary` string built
-    server-side from details — ~120B per row vs ~1.5KB. Pass include_details=true
-    to receive the full nested details object (legacy shape).
-
-    Cursor-pagination follow-up: pass ``cursor`` (opaque base64 from a prior
-    ``next_cursor``) for O(1) keyset pagination independent of page depth.
-    Pass ``envelope=true`` to receive ``{items, next_cursor}`` instead of a
-    raw list (default keeps Story 3 list shape — backward compat). Legacy
-    ``offset`` is silently ignored unless ``OKTO_PULSE_LEGACY_OFFSET=1``."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -2421,12 +2417,13 @@ async def okto_pulse_create_card(
     steps_to_reproduce: str = "",
     action_plan: str = "",
 ) -> str:
-    """
-    Create a new card on the board. Every card MUST be linked to a spec.
+    """Create a new card on the board. Every card MUST be linked to a spec.
+    The spec must be approved/in_progress/done (test cards also accept
+    validated); create test cards BEFORE requesting spec validation.
 
-    For card_type='test', test_scenario_ids is mandatory and is limited by the
-    board setting max_scenarios_per_card (default 3). Split larger scenario
-    sets into separate test cards before creating/linking them.
+    For card_type='test', test_scenario_ids is mandatory and limited by the
+    board setting max_scenarios_per_card (default 3); split larger scenario
+    sets into separate test cards. Errors: max_scenarios_per_card_exceeded.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -2762,18 +2759,20 @@ async def okto_pulse_get_task_context(
     include_comments: str = "true",
     include_architecture: str = "true",
     include_superseded: str = "false",
-    profile: str = "summary",
+    profile: Annotated[str, Field(description="summary | detail | full | legacy — full is MANDATORY before any status-changing move")] = "summary",
 ) -> str:
-    """
-    Task card context: card body, linked spec requirements/scenarios/BRs/contracts,
-    validations, resources and Q&A. Use `summary` for exploration and `profile="full"`
-    before card work or status-changing moves.
+    """Task card context: card body, linked spec
+    requirements/scenarios/BRs/contracts, validations, resources and Q&A. Use
+    `summary` for exploration and `profile="full"` before card work or
+    status-changing moves.
 
-    Test cards expose `test_card_operational_flow`: update linked scenarios with
-    `okto_pulse_update_test_scenario_status`, then move the card to done; task
-    validation is not used. `gate_readiness` mirrors the active done-gate and
-    cognitive-readiness verdict without mutating or skipping anything.
-    Full docs: okto-pulse://reference/tool-docs/misc."""
+    Test cards expose `test_card_operational_flow`: update linked scenarios
+    with okto_pulse_update_test_scenario_status, then move the card to done;
+    task validation is not used. `gate_readiness` mirrors the active done-gate
+    and cognitive-readiness verdict without mutating or skipping anything.
+    Profiles: okto-pulse://reference/projection-profiles.
+    Docs: okto-pulse://reference/tool-docs/misc.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3270,22 +3269,24 @@ async def okto_pulse_update_card(
 async def okto_pulse_move_card(
     board_id: str,
     card_id: str,
-    status: str,
+    status: Annotated[str, Field(description="Target column; moving to validation/done requires the execution-report fields")],
     position: int = -1,
-    conclusion: str = "",
-    completeness: int = -1,
+    conclusion: Annotated[str, Field(description="Execution report — required for validation/done moves")] = "",
+    completeness: Annotated[int, Field(description="0-100; -1 when no execution report is required")] = -1,
     completeness_justification: str = "",
-    drift: int = -1,
+    drift: Annotated[int, Field(description="0-100 deviation from spec; -1 when not required")] = -1,
     drift_justification: str = "",
-    cancellation_reason: str = "",
+    cancellation_reason: Annotated[str, Field(description="Required when status=cancelled; cleared on reopen")] = "",
 ) -> str:
     """Move a card to a different column/position on the board.
 
-    Moving to 'validation' or 'done' REQUIRES conclusion, completeness (0-100),
-    completeness_justification, drift (0-100), and drift_justification so the
-    reviewer can validate the claim. Use -1 for completeness/drift when no
-    execution report is required (e.g. moving to on_hold or started).
-    status='cancelled' requires cancellation_reason; reopening clears it.
+    Moving to 'validation' or 'done' REQUIRES conclusion, completeness
+    (0-100), completeness_justification, drift (0-100), and
+    drift_justification so the reviewer can validate the claim. Use -1 for
+    completeness/drift when no execution report is required (e.g. moving to
+    on_hold or started). status='cancelled' requires cancellation_reason;
+    reopening clears it. Errors: resource_gate_missing_resources;
+    missing_regression_test_task (bug -> in_progress).
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -3456,8 +3457,10 @@ async def okto_pulse_add_card_dependency(
 async def okto_pulse_remove_card_dependency(
     board_id: str, card_id: str, depends_on_id: str
 ) -> str:
+    """Remove a dependency link between two cards. Permanent, no undo — re-add
+    with okto_pulse_add_card_dependency if needed.
+    Docs: okto-pulse://reference/destructive_ops
     """
-    Remove a dependency between two cards."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -3766,8 +3769,9 @@ async def okto_pulse_answer_question(board_id: str, qa_id: str, answer: str) -> 
 
 @mcp.tool()
 async def okto_pulse_delete_question(board_id: str, qa_id: str) -> str:
+    """Delete a Q&A item from a card. Permanent, no undo — the question and any
+    recorded answer are removed. Docs: okto-pulse://reference/destructive_ops
     """
-    Delete a Q&A item from a card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4029,8 +4033,9 @@ async def okto_pulse_update_comment(
 
 @mcp.tool()
 async def okto_pulse_delete_comment(board_id: str, comment_id: str) -> str:
+    """Delete the agent's own comment. Permanent, no undo.
+    Docs: okto-pulse://reference/destructive_ops
     """
-    Delete the agent's own comment."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4133,8 +4138,9 @@ async def okto_pulse_list_attachments(board_id: str, card_id: str) -> str:
 
 @mcp.tool()
 async def okto_pulse_delete_attachment(board_id: str, attachment_id: str) -> str:
+    """Delete an attachment. Permanent, no undo.
+    Docs: okto-pulse://reference/destructive_ops
     """
-    Delete an attachment."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -4307,7 +4313,9 @@ async def okto_pulse_update_topic(
 
 @mcp.tool()
 async def okto_pulse_archive_topic(board_id: str, topic_id: str) -> str:
-    """Archive a Topic without archiving its Stories."""
+    """Archive a Topic without archiving its Stories. Not a delete — reversible
+    via okto_pulse_restore_topic. Docs: okto-pulse://reference/destructive_ops
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5574,17 +5582,18 @@ async def okto_pulse_derive_spec_from_ideation(
     architecture_design_ids: list[str] | str = "",
     architecture_propagation_mode: str = "copy",
 ) -> str:
-    """
-    Create a spec draft from a DONE ideation. The ideation must be in 'done' status
-    (meaning it has been fully reviewed and snapshotted). The spec will have rich context
-    compiled from the ideation but structured fields (requirements, criteria) left empty
-    for deliberate analysis.
+    """Create a spec draft from a DONE ideation (fully reviewed and
+    snapshotted). The spec gets rich context compiled from the ideation —
+    its description/context embed the FULL parent ideation context (large) —
+    while structured fields (requirements, criteria) stay empty for deliberate
+    analysis.
 
     Artifacts (mockups, KBs, Architecture Designs) from the ideation are
-    automatically propagated to the spec. Use mockup_ids/kb_ids/
+    automatically propagated to the spec; use mockup_ids/kb_ids/
     architecture_design_ids to select specific ones (default: all).
     architecture_propagation_mode accepts copy, derive, reference_only, or
-    none; "snapshot" is not a mode."""
+    none; "snapshot" is not a mode.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5863,7 +5872,9 @@ async def okto_pulse_delete_ideation_knowledge(
     ideation_id: str,
     knowledge_id: str,
 ) -> str:
-    """Delete a knowledge base item from an ideation."""
+    """Delete a knowledge base item from an ideation. Permanent, no undo.
+    Docs: okto-pulse://reference/destructive_ops
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6192,8 +6203,10 @@ async def okto_pulse_create_refinement(
 
 @mcp.tool()
 async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
+    """Get full details of a refinement including its specs and Q&A items. The
+    refinement description embeds the full parent ideation context — responses
+    can be large.
     """
-    Get full details of a refinement including its specs and Q&A items."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -6621,15 +6634,17 @@ async def okto_pulse_derive_spec_from_refinement(
     architecture_design_ids: list[str] | str = "",
     architecture_propagation_mode: str = "copy",
 ) -> str:
-    """
-    Create a spec draft from a DONE refinement. The refinement must be in 'done' status.
-    Context is compiled from the refinement's scope, analysis, decisions, and Q&A.
+    """Create a spec draft from a DONE refinement. Context is compiled from the
+    refinement's scope, analysis, decisions, and Q&A — the refinement
+    description (and thus the spec) embeds the FULL parent ideation context
+    (large).
 
     Artifacts (mockups, KBs, Architecture Designs) from the refinement are
-    automatically propagated to the spec. Use mockup_ids/kb_ids/
+    automatically propagated to the spec; use mockup_ids/kb_ids/
     architecture_design_ids to select specific ones (default: all).
     architecture_propagation_mode accepts copy, derive, reference_only, or
-    none; "snapshot" is not a mode."""
+    none; "snapshot" is not a mode.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7144,16 +7159,16 @@ async def okto_pulse_get_spec_context(
     include_qa: str = "true",
     include_architecture: str = "true",
     include_superseded: str = "false",
-    profile: str = "summary",
+    profile: Annotated[str, Field(description="summary | detail | full | legacy — full is MANDATORY before any status-changing move")] = "summary",
 ) -> str:
+    """Consolidated spec context: requirements, scenarios, rules, contracts,
+    IR/OR, decisions, resources, Q&A, evaluations, cards and sprints. Use
+    `summary` for exploration and `profile="full"` before evaluating, moving,
+    or deriving cards. Includes read-only `gate_readiness` for spec transition
+    gates; cognitive readiness is per-card — call okto_pulse_get_task_context
+    for card verdicts. Profiles: okto-pulse://reference/projection-profiles.
+    Docs: okto-pulse://reference/tool-docs/misc.
     """
-    Consolidated spec context: requirements, scenarios, rules, contracts, IR/OR,
-    decisions, resources, Q&A, evaluations, cards and sprints. Use `summary` for
-    exploration and `profile="full"` before evaluating, moving, or deriving cards.
-
-    Includes read-only `gate_readiness` for spec transition gates. Cognitive
-    readiness is per-card; call `okto_pulse_get_task_context` for card verdicts.
-    Full docs: okto-pulse://reference/tool-docs/misc."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7590,13 +7605,11 @@ async def okto_pulse_add_test_scenario(
     linked_criteria: str = "",
     notes: str = "",
 ) -> str:
-    """
-    Add a test scenario to a spec. Test scenarios translate acceptance criteria into
-    concrete Given/When/Then test plans.
-
-    scenario_type accepts exactly: unit, integration, e2e, manual, negative.
-    Unsupported values fail closed with invalid_scenario_type and no mutation.
-    Use negative for expected denial/error-path behavior.
+    """Add a test scenario to a spec. Test scenarios translate acceptance
+    criteria into concrete Given/When/Then test plans. scenario_type accepts
+    exactly: unit, integration, e2e, manual, negative (use negative for
+    expected denial/error-path behavior); unsupported values fail closed with
+    no mutation. Errors: invalid_scenario_type.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7833,19 +7846,20 @@ async def okto_pulse_update_test_scenario_status(
     board_id: str,
     spec_id: str,
     scenario_id: str,
-    status: str,
-    evidence: str = "",
+    status: Annotated[str, Field(description="draft | ready | automated | passed | failed")],
+    evidence: Annotated[str, Field(description="JSON evidence; passed/failed require an evidence_class payload or a full run-log (NC-9 gate)")] = "",
 ) -> str:
-    """Update a test scenario's status, optionally attaching structured evidence that the
-    test exists/ran. Test-theater prevention gate (NC-9): when skip_test_evidence_global
-    is False (default), status=automated requires evidence.test_file_path+test_function;
-    passed/failed require either an explicit evidence_class with its required fields
-    or unclassed run-log evidence with evidence.last_run_at AND
-    (output_snippet OR test_run_id) AND expected_output_snapshot AND
-    non_replayable_justification; draft/ready optional. When skip is True the gate is bypassed but a
-    test_scenario.evidence_gate_skipped audit log is emitted. Evidence persists inline;
-    test_scenario.status_changed audit emitted on success. Full details:
-    okto-pulse://reference/tool-docs/test-scenario."""
+    """Update a test scenario's status, optionally attaching structured evidence
+    that the test exists/ran. Test-theater prevention gate (NC-9), active
+    unless skip_test_evidence_global is set: status=automated requires
+    evidence.test_file_path + test_function; passed/failed require an explicit
+    evidence_class with its required fields, or unclassed run-log evidence
+    (full matrix in the tool-doc); draft/ready optional. When skipped, a
+    test_scenario.evidence_gate_skipped audit is emitted; evidence persists
+    inline. Errors: status_not_mutable (scenario on a locked spec not linked
+    to an executable test card).
+    Docs: okto-pulse://reference/tool-docs/test-scenario.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7961,17 +7975,15 @@ async def okto_pulse_update_test_scenario(
 ) -> str:
     """Edit the BODY of a test scenario (title/given/when/then/scenario_type/
     linked_criteria/notes). Does NOT accept status — status stays exclusive to
-    okto_pulse_update_test_scenario_status so no second NC-9 bypass is created.
-
-    Empty-string params mean "leave unchanged". To intentionally CLEAR a field,
-    list it in `clear` (pipe-separated); only `notes` and `linked_criteria` are
-    clearable. `linked_criteria` is a pipe-separated list of AC index/id/text,
-    resolved to AC ids (fail-closed on unresolved tokens).
-
-    Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
-    scenario that holds evidence invalidates it: status resets to `ready` and the
-    evidence is dropped. Cosmetic edits (title/notes) preserve status + evidence.
-    Respects the spec content-lock."""
+    okto_pulse_update_test_scenario_status (no second NC-9 bypass).
+    Empty-string params mean "leave unchanged"; to intentionally CLEAR a field
+    list it in `clear` (pipe-separated; only notes and linked_criteria are
+    clearable). linked_criteria is a pipe-separated list of AC index/id/text,
+    resolved to AC ids fail-closed. Editing a SEMANTIC field
+    (given/when/then/scenario_type/linked_criteria) of a scenario holding
+    evidence resets status to `ready` and drops the evidence; cosmetic edits
+    (title/notes) preserve both. Respects the spec content-lock.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8143,19 +8155,15 @@ async def okto_pulse_link_task(
     card_id: str,
     spec_id: str = "",
 ) -> str:
+    """Generic task-linking tool — dispatches on `target_type`; short codes
+    (fr, tr, ir, or) and the long names (functional_requirement,
+    technical_requirement, integration_requirement,
+    observability_requirement) are accepted. Replaces the former per-type
+    task-linking tools plus direct Functional Requirement linking in a single
+    entry point. Note: direct FR task links are traceability links — the FR
+    coverage gate is satisfied by Business Rules linked to FRs, not by FR
+    linked_task_ids.
     """
-    Generic task-linking tool — dispatches on `target_type`. Short codes
-    (`fr`, `tr`, `ir`, `or`) and their long names (`functional_requirement`,
-    `technical_requirement`, `integration_requirement`,
-    `observability_requirement`) are accepted.
-    Equivalent to the former per-type task-linking tools plus direct Functional
-    Requirement task linking. Note: direct FR task links are traceability links;
-    the FR coverage gate is satisfied by Business Rules linked to FRs, not by
-    FR `linked_task_ids`.
-    exposes a single entry point so agents don't have to pre-load eight near-
-    identical tool schemas.
-
-    Ideação MCP-token-optimization Story 5."""
     target_type = (target_type or "").strip().lower()
     target_type = _LINK_TASK_TARGET_ALIASES.get(target_type, target_type)
     if target_type not in _LINK_TASK_TARGET_TYPES:
@@ -8940,16 +8948,18 @@ async def okto_pulse_add_architecture_design(
     diagrams: list[dict] | str = "",
     architecture_warning_acknowledgement: dict | str = "",
 ) -> str:
-    """Create an Architecture Design on an ideation, refinement, or spec. Card
-    Architecture Designs are read-only governed snapshots; use
-    okto_pulse_copy_architecture_to_card to refresh card context. Use whenever
-    the artifact benefits from explicit architecture (services, modules, databases,
-    queues, events, integrations, runtime boundaries, API contracts, data flows,
-    ownership). For non-trivial payloads call okto_pulse_get_architecture_design_schema
-    then okto_pulse_validate_architecture_design_payload, and persist only after
-    valid=true + reviewed warnings. The server critiques the full payload before
-    accepting; fix cited fields and retry rather than hiding architecture in prose. Full
-    guide: okto-pulse://reference/tool-docs/architecture."""
+    """Create an Architecture Design on an ideation, refinement, or spec (card
+    designs are read-only governed snapshots — use
+    okto_pulse_copy_architecture_to_card to refresh card context). Use
+    whenever the artifact benefits from explicit architecture (services,
+    modules, databases, queues, events, integrations, contracts, data flows,
+    ownership). For non-trivial payloads call
+    okto_pulse_get_architecture_design_schema then
+    okto_pulse_validate_architecture_design_payload and persist only after
+    valid=true + reviewed warnings; the server critiques the full payload
+    before accepting — fix cited fields and retry rather than hiding
+    architecture in prose. Docs: okto-pulse://reference/tool-docs/architecture.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9115,8 +9125,9 @@ async def okto_pulse_update_architecture_design(
 
 @mcp.tool()
 async def okto_pulse_delete_architecture_design(board_id: str, design_id: str) -> str:
+    """Delete an Architecture Design. Permanent, no undo.
+    Docs: okto-pulse://reference/destructive_ops
     """
-    Delete an Architecture Design."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9309,17 +9320,16 @@ async def okto_pulse_copy_architecture_to_card(
     card_id: str,
     design_ids: list[str] | str = "",
     architecture_warning_acknowledgement: dict | str = "",
-    profile: str = "summary",
+    profile: Annotated[str, Field(description="summary | full | legacy (copy tools have no detail profile)")] = "summary",
 ) -> str:
+    """Copy Architecture Designs from a spec to a card/task as deep-copy
+    snapshots. profile=summary (default) returns copy metadata only (copied,
+    design_ids, total_on_card + the projection envelope); full/legacy include
+    the complete copied architecture_designs. Bodies are persisted on the
+    card regardless of profile — read them with
+    okto_pulse_get_task_context(profile=full).
+    Profiles: okto-pulse://reference/projection-profiles.
     """
-    Copy Architecture Designs from a spec to a card/task as deep-copy snapshots.
-
-    `profile` (R2): `summary` (default) returns the copy metadata only —
-    `copied`, `design_ids`, `total_on_card` and the R5 `projection` envelope, NOT
-    the full architecture bodies. `full`/`legacy` return the prior payload with the
-    complete copied `architecture_designs`. The bodies are persisted on the card
-    regardless of profile; read them with `okto_pulse_get_task_context(profile=full)`
-    or re-call here with `profile=full`."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9734,22 +9744,15 @@ async def okto_pulse_list_blockers(
     stale_hours: int = 72,
     filter_type: str = "",
 ) -> str:
+    """Triage view of everything stalling the funnel, with root-cause
+    classification. Each entry carries a `type` the agent can act on directly:
+    dependency_blocked (active card with a not-DONE depends_on target),
+    on_hold (explicitly paused card), stale (started/in_progress/validation
+    card untouched beyond stale_hours), spec_pending_validation (approved spec
+    with no 'approve' evaluation), spec_no_cards (validated/in_progress spec
+    with zero linked cards), uncovered_scenario (test scenario with no linked
+    test card — the test-coverage gate will fail).
     """
-    Triage view of everything stalling the funnel, with root-cause classification.
-
-    Every returned entry carries a `type` so the agent can act directly:
-
-    - `dependency_blocked` — card is active while at least one `depends_on`
-      target is not DONE.
-    - `on_hold` — card is explicitly paused (status=on_hold).
-    - `stale` — card is started/in_progress/validation and hasn't been
-      touched for more than `stale_hours`.
-    - `spec_pending_validation` — spec is approved but has no 'approve'
-      evaluation yet, blocking promotion to in_progress.
-    - `spec_no_cards` — spec is validated/in_progress but has zero linked
-      cards (implementation hasn't started).
-    - `uncovered_scenario` — test scenario has no linked test card, so the
-      test-coverage gate will fail."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10140,8 +10143,10 @@ async def okto_pulse_remove_business_rule(
     spec_id: str,
     rule_id: str,
 ) -> str:
+    """Remove a business rule from a spec. Permanent, no undo — FR->BR coverage
+    provided by this rule is lost.
+    Docs: okto-pulse://reference/destructive_ops
     """
-    Remove a business rule from a spec."""
     return await _remove_spec_entity_impl(
         board_id,
         spec_id,
@@ -10657,16 +10662,16 @@ async def okto_pulse_add_decision(
     linked_requirements: str = "",
     notes: str = "",
 ) -> str:
-    """
-    Add a formalized Decision to a spec.
+    """Add a formalized Decision to a spec.
 
     A Decision records a contextual CHOICE — the reasoning behind picking one
     path over alternatives. Different from BusinessRule (which is a NORM, a
-    prescriptive "DEVE" statement): use a Decision to capture design
+    prescriptive "MUST" statement): use a Decision to capture design
     intent, tradeoffs, or team consensus. The KG extracts Decisions into
     queryable nodes, and the optional coverage gate (opt-in) can require each
-    Decision to have ≥1 linked task. linked_requirements accepts FR refs and
-    structured TR refs."""
+    Decision to have >=1 linked task. linked_requirements accepts FR refs and
+    structured TR refs.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11155,9 +11160,12 @@ async def okto_pulse_add_api_contract(
     linked_rules: list[str] | str = "",
     notes: str = "",
 ) -> str:
+    """Add an API contract to a spec. API contracts define endpoints,
+    request/response shapes, and link to FR/TR requirements and business
+    rules. method must be an HTTP verb (GET/POST/..., upper-cased); for
+    non-HTTP contracts pass method=TOOL/COMPONENT/EVENT, which infers
+    contract_type. Docs: okto-pulse://reference/tool-docs/api-contract.
     """
-    Add an API contract to a spec. API contracts define endpoints, request/response
-    shapes, and link to FR/TR requirements and business rules."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11422,8 +11430,9 @@ async def okto_pulse_remove_api_contract(
     spec_id: str,
     contract_id: str,
 ) -> str:
+    """Remove an API contract from a spec. Permanent, no undo — contract
+    coverage links are lost. Docs: okto-pulse://reference/destructive_ops
     """
-    Remove an API contract from a spec."""
     return await _remove_spec_entity_impl(
         board_id,
         spec_id,
@@ -11745,18 +11754,17 @@ async def okto_pulse_add_screen_mockup(
     design_system_version: int | None = None,
     design_system_evidence=None,
 ) -> str:
+    """Add a screen mockup (HTML+Tailwind, rendered in the dashboard) to a spec,
+    ideation, refinement, or story. Card mockups are read-only governed
+    snapshots — use okto_pulse_copy_mockups_to_card to refresh card context.
+    design_system_ref / design_system_version / design_system_evidence feed
+    the MockupDesignSystemGate: when the board has an effective Design System
+    and design_system_gate_mode=blocking, an invalid/missing ref is rejected
+    BEFORE persistence; advisory persists with a design_system_gate warning;
+    off / no Design System does not block.
+    Errors: design_system_required, design_system_not_found,
+    design_system_version_mismatch, design_system_evidence_missing.
     """
-    Add a screen mockup to a source entity (spec, ideation, refinement, or story).
-    Card mockups are read-only governed snapshots; use okto_pulse_copy_mockups_to_card
-    to refresh card context.
-    Screens contain HTML+Tailwind content that renders as visual mockups in the dashboard.
-
-    design_system_ref (Design System id), design_system_version and design_system_evidence
-    feed the MockupDesignSystemGate (spec 3a006f65): when the board has an effective Design
-    System and design_system_gate_mode=blocking, an invalid/missing ref is rejected BEFORE
-    persistence (design_system_required / design_system_not_found /
-    design_system_version_mismatch / design_system_evidence_missing); advisory persists +
-    returns a design_system_gate warning; off / no Design System does not block."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12256,8 +12264,9 @@ async def okto_pulse_update_guideline(
 
 @mcp.tool()
 async def okto_pulse_delete_guideline(board_id: str, guideline_id: str) -> str:
+    """Delete a guideline. Permanent, no undo — also removes all board links in
+    cascade. Docs: okto-pulse://reference/destructive_ops
     """
-    Delete a guideline. Also removes all board links."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12442,8 +12451,9 @@ async def okto_pulse_update_board_guideline_priority(
 
 @mcp.tool()
 async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
+    """Delete a spec. Permanent, no undo — derived cards are unlinked but not
+    deleted. Docs: okto-pulse://reference/destructive_ops
     """
-    Delete a spec. Derived cards are unlinked but not deleted."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -12818,12 +12828,15 @@ async def okto_pulse_ask_spec_choice_question(
     allow_free_text: str = "false",
     options_json: str = "",
 ) -> str:
+    """Ask a choice question (poll/form) on a spec's Q&A board — the respondent
+    picks from predefined options. Use for structured answers, e.g. "Which
+    auth approach?". options_json (optional, takes precedence over options):
+    JSON array of option objects, each requiring a non-empty label;
+    recommended defaults to false, tradeoff to null. Multi-value params
+    (options/selected): JSON array (preferred — safe for labels containing
+    commas) or pipe-separated string. Format rules:
+    okto-pulse://reference/multivalue.
     """
-        Ask a choice question (poll/form) on a spec's Q&A board. The respondent picks from predefined options.
-        Use this when you need a structured answer — e.g. "Which auth approach?" with options.
-
-    options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13159,8 +13172,9 @@ async def okto_pulse_add_spec_knowledge(
 async def okto_pulse_delete_spec_knowledge(
     board_id: str, spec_id: str, knowledge_id: str
 ) -> str:
+    """Delete a knowledge base item from a spec. Permanent, no undo.
+    Docs: okto-pulse://reference/destructive_ops
     """
-    Delete a knowledge base item from a spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13359,8 +13373,9 @@ async def okto_pulse_add_refinement_knowledge(
 async def okto_pulse_delete_refinement_knowledge(
     board_id: str, refinement_id: str, knowledge_id: str
 ) -> str:
+    """Delete a knowledge base item from a refinement. Permanent, no undo.
+    Docs: okto-pulse://reference/destructive_ops
     """
-    Delete a knowledge base item from a refinement."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -13993,8 +14008,9 @@ async def okto_pulse_delete_sprint_evaluation(
     sprint_id: str,
     evaluation_id: str,
 ) -> str:
+    """Delete your own sprint evaluation. Permanent, no undo.
+    Docs: okto-pulse://reference/destructive_ops
     """
-    Delete your own sprint evaluation."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -14365,22 +14381,19 @@ async def okto_pulse_confirm_amendment_coverage(
     regression_test_task_id: str,
     regression_scenario_id: str,
 ) -> str:
+    """Confirm Path B amendment coverage — validator-only writer of the
+    non-forgeable attestation that lets the bug gate treat a cross-spec Path B
+    regression artifact as closure-ready. Fail-closed preconditions: the test
+    task + scenario MUST be declared by THIS amendment, the test task MUST be
+    done with SPEC3 reexecutable evidence, and the caller MUST hold validator
+    critical-context authorization — all necessary but NOT sufficient; the
+    gate derives coverage from the persisted attestation. Preflight (BUG-01)
+    runs the SAME eligibility predicate as the gate, so success implies the
+    attestation is persisted AND gate-consumable.
+    Errors: coverage_not_gate_consumable (inert tuple — nothing persisted),
+    distinct from coverage_pending (confirmation not yet recorded).
+    Docs: okto-pulse://reference/tool-docs/card.
     """
-    Confirm Path B amendment coverage (validator-only · G2 · card c9cf9781).
-
-    Writes the single non-forgeable attestation letting the bug gate treat a
-    cross-spec Path B regression artifact as closure-ready. Fail-closed: the
-    test task + scenario MUST be declared by THIS amendment, the test task MUST
-    be done with SPEC3 reexecutable evidence, and the caller MUST hold validator
-    critical-context authorization — all NECESSARY but NOT sufficient; the gate
-    derives coverage from the persisted attestation.
-
-    Preflight (BUG-01): BEFORE persisting, runs the SAME eligibility predicate
-    the bug regression gate uses; success implies the attestation is persisted
-    AND gate-consumable. An inert tuple fails closed with
-    `coverage_not_gate_consumable` (bounded facts, no-bypass remediation) —
-    distinct from `coverage_pending` (validator confirmation not yet recorded).
-    Full docs: okto-pulse://reference/tool-docs/card."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -14432,19 +14445,18 @@ async def okto_pulse_create_amendment_revision(
     regression_test_task_ids: list[str] | None = None,
     automated_regression_refs: list[str] | None = None,
 ) -> str:
+    """Create a Path B AmendmentHotfixRevision for a bug. REST twin: POST
+    /boards/{board_id}/bugs/{bug_id}/amendment-revisions. The amendment binds
+    to the bug's OWN content-locked spec (done/validated, or in_progress still
+    content-locked by an active passed validation) and always starts as
+    'draft'; an in_progress spec that is still editable is rejected — edit it
+    directly. This tool ONLY remediates: it NEVER skips/overrides the bug
+    regression gate and cannot set coverage confirmation (validator-only).
+    Returns the structured amendment payload (status, lineage_state,
+    eligibility, artifacts) or a structured error.
+    Errors: original_spec_not_done_or_locked, bug_spec_mismatch,
+    invalid_initial_status.
     """
-    Create a Path B AmendmentHotfixRevision for a bug (spec be089cd3 · FR1 ·
-    ir_54ceb69b). Twin of POST /boards/{board_id}/bugs/{bug_id}/amendment-revisions.
-
-    The amendment binds to the bug's OWN content-locked spec (done/validated, OR
-    in_progress still content-locked by an active passed validation -
-    current_validation_id -> outcome=success) and always starts as 'draft'. An
-    in_progress spec that is still editable (no active success validation, or a
-    failed/stale/superseded one) is rejected (original_spec_not_done_or_locked) -
-    edit it directly there. This tool ONLY remediates — it NEVER skips/overrides the
-    bug regression gate, and it cannot set coverage confirmation (validator-only).
-    Returns the structured amendment payload (status, lineage_state, eligibility,
-    artifacts) or a structured error (no raw exception text)."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -15467,19 +15479,19 @@ async def okto_pulse_submit_spec_validation(
     general_justification: str,
     recommendation: str,
 ) -> str:
-    """Submit a Spec Validation Gate record for a spec in 'approved' status — a semantic
-    quality gate that runs AFTER the deterministic coverage gates (AC/FR/TR/Contract).
-    Coverage runs first; if any fails the submit is rejected with the violation. Outcome
-    is FAILED if any threshold is violated or recommendation=reject, SUCCESS only if all
-    thresholds pass AND recommendation=approve. On SUCCESS the spec is atomically
-    promoted approved->validated and content-locked. ANTI-PATTERN WARNING: inflating
-    scores to pass the gate is a grave violation — if outcome=failed, iterate on content
-    (scenarios, BRs, TRs) rather than just raising numbers. Full details:
-    okto-pulse://reference/tool-docs/spec.
-
-    Scores are 0-100 integers, NOT 1-5: completeness/assertiveness are higher-is-better
-    and ambiguity is lower-is-better. A 1-5 style value is treated literally and will
-    usually violate the configured thresholds."""
+    """Submit a Spec Validation Gate record for a spec in 'approved' status — a
+    semantic quality gate that runs AFTER the deterministic coverage gates
+    (AC/FR/TR/Contract); if any coverage fails the submit is rejected with the
+    violation. Outcome is FAILED on any threshold violation or
+    recommendation=reject; SUCCESS (all thresholds pass AND
+    recommendation=approve) atomically promotes the spec approved->validated
+    and content-locks it. Scores are 0-100 integers, NOT 1-5:
+    completeness/assertiveness are higher-is-better, ambiguity is
+    lower-is-better. ANTI-PATTERN: never inflate scores to pass the gate —
+    iterate on content (scenarios, BRs, TRs) instead.
+    Errors: resource_gate_missing_resources.
+    Docs: okto-pulse://reference/tool-docs/spec.
+    """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -15630,16 +15642,17 @@ _register_kg_export_tools(mcp, get_agent=_get_authenticated_agent)
 
 @mcp.tool()
 async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
-    """Snapshot of a board's KG health (gemelar do REST GET /api/v1/kg/health). Default
-    profile=summary returns the slim stop-rule fields an agent needs before a KG
-    mutation — graph_state, discovery_state, overall_state, metric_status,
-    classification_reason, correlation_id, memory_pressure_status, recent_events — plus
-    operational scalars (queue_depth, dead_letter_count, total_nodes, default_score_ratio,
-    avg_relevance, contradict_warn_count, last_tick_status), decay_scheduler_diagnostics,
-    and storage_footprint_proxy. Scheduler debt is operational debt and does not by
-    itself require graph recovery. Verbose diagnostics omitted; pass profile=full
-    (or legacy) for the complete dashboard payload. Full guide:
-    okto-pulse://reference/tool-docs/kg."""
+    """Snapshot of a board's KG health. REST twin: GET /api/v1/kg/health.
+    Default profile=summary returns the slim stop-rule fields an agent needs
+    before a KG mutation — graph_state, discovery_state, overall_state,
+    metric_status, classification_reason, correlation_id,
+    memory_pressure_status, recent_events — plus operational scalars,
+    decay_scheduler_diagnostics and storage_footprint_proxy. Scheduler debt is
+    operational and does not by itself require graph recovery. profile=full
+    (or legacy) adds the complete dashboard payload.
+    Profiles: okto-pulse://reference/projection-profiles.
+    Docs: okto-pulse://reference/tool-docs/kg.
+    """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -15682,15 +15695,18 @@ async def okto_pulse_kg_health_readiness(
     profile: str = "summary",
     artifact_ref: str = "",
 ) -> str:
-    """Canonical NON-MASKABLE KG health/readiness (gemelar do REST GET
-    /api/v1/kg/health-readiness, RKG-05). Both summary and full expose
-    `technical_signals` (scalar counters dead_letter_count / technical_dlq_count /
-    canonical_debt_open_count / active_queue_count, SEPARATE domains), `readiness`
-    (`blocking` vs `would_block_done` + reasons + policy_reason), top-level
-    `cognitive_enforcement_mode` / `enforcement_active`, and `non_maskable_items`
-    (per-item drill_down_tool / last_error / next_action). A summary never hides a
-    technical blocker; full adds prose health_issues + root_cause. Optional
-    artifact_ref scopes items. Full guide: okto-pulse://reference/tool-docs/kg."""
+    """Canonical NON-MASKABLE KG health/readiness. REST twin: GET
+    /api/v1/kg/health-readiness (RKG-05). Both summary and full expose
+    technical_signals (scalar counters dead_letter_count / technical_dlq_count
+    / canonical_debt_open_count / active_queue_count — SEPARATE domains),
+    readiness (blocking vs would_block_done + reasons + policy_reason),
+    top-level cognitive_enforcement_mode / enforcement_active, and
+    non_maskable_items (per-item drill_down_tool / last_error / next_action).
+    A summary never hides a technical blocker; full adds prose health_issues +
+    root_cause. Optional artifact_ref scopes items.
+    Profiles: okto-pulse://reference/projection-profiles.
+    Docs: okto-pulse://reference/tool-docs/kg.
+    """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -15820,17 +15836,15 @@ async def okto_pulse_kg_canonical_partition_integrity_list(
     limit: int = 50,
     offset: int = 0,
 ) -> str:
-    """
-    List canonical Learning partition-integrity signals for KG health drill-down
-    (R7). READ-ONLY: cognitive holds, canonical debt, mixed-evidence deferred and
-    provenance-only Learnings. Each item carries an S-KG-02 ``classification``
-    (missing_source, unresolved_source, canonical_learning_resolved,
-    weak_provenance, invalid_orphan_learning) + ``classification_counts`` census.
-
-    Mirrors REST `GET /api/v1/kg/{board_id}/canonical-partition-integrity` (same
-    ``classification`` on the per-node detail). NEVER skips, clears or resolves
-    an R7 hold/debt — human-only. Filters: reason_code, graph_layer, source_ref,
-    node_id, status.
+    """List canonical Learning partition-integrity signals for KG health
+    drill-down (R7). READ-ONLY: cognitive holds, canonical debt,
+    mixed-evidence deferred and provenance-only Learnings. Each item carries
+    an S-KG-02 classification (missing_source, unresolved_source,
+    canonical_learning_resolved, weak_provenance, invalid_orphan_learning) +
+    a classification_counts census. REST twin: GET
+    /api/v1/kg/{board_id}/canonical-partition-integrity. NEVER skips, clears
+    or resolves an R7 hold/debt — human-only. Filters: reason_code,
+    graph_layer, source_ref, node_id, status.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -16390,17 +16404,12 @@ async def okto_pulse_kg_clear_cognitive_skip(
     source_ref: str,
     kg_generation_id: str | None = None,
 ) -> str:
-    """
-    Clear a cognitive skip / no_action, REOPENING the item to pending via the
-    central ledger path (CognitiveReadinessService.clear_cognitive_skip). The
-    clearing actor + timestamp are stamped so the audit trail is preserved; the
-    stale reason_code / revisit_at are dropped. Ledger-only — no KG mutation.
-
-    R5-IMP1 — HUMAN-only control: clearing/reopening a cognitive skip is a human
-    decision and is NOT applicable from the agent-facing MCP surface. This tool
-    fails closed with ``human_control_required`` (mutation_allowed=false,
-    state_changed=false) and never reopens the ledger item. A human operator
-    clears the skip via the IDE control / the human REST surface.
+    """Clear a cognitive skip / no_action, reopening the item to pending via the
+    central ledger path (audit-preserving; ledger-only, no KG mutation).
+    R5-IMP1 — HUMAN-only control: from the agent-facing MCP surface this tool
+    ALWAYS fails closed (mutation_allowed=false, state_changed=false) and
+    never reopens the ledger item; a human operator clears the skip via the
+    IDE control or the human REST surface. Errors: human_control_required.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -16731,21 +16740,17 @@ async def okto_pulse_kg_dead_letter_list(
 
 @mcp.tool()
 async def okto_pulse_kg_queue_drilldown(board_id: str) -> str:
-    """Drill down into the ACTIVE operational queue depth (R6-IMP2).
-
-    Use this when `okto_pulse_kg_health` reports an `active_queue` backlog (a
-    health issue with `drill_down_tool='okto_pulse_kg_queue_drilldown'`) and you
-    need to know WHERE the queue depth comes from. Read-only.
-
-    Returns `worker_mode`, `total_active_depth`, an overall `classification`
-    (transient | stuck | backpressure | idle) and per-source breakdowns:
-      - `consolidation_queue` — pending/claimed by status + by artifact category +
-        oldest_age_seconds;
-      - `global_update_outbox` — pending (retry-window) depth + oldest_age_seconds.
-
-    This is the ACTIVE queue only: dead-letter (DLQ), outbox dead_letter and
-    canonical debt are TERMINAL and intentionally NOT counted here — inspect those
-    via `okto_pulse_kg_dead_letter_list` / `okto_pulse_kg_canonical_debt_list`."""
+    """Drill down into the ACTIVE operational queue depth (R6-IMP2). Read-only.
+    Use when okto_pulse_kg_health reports an active_queue backlog and you need
+    to know WHERE the depth comes from. Returns worker_mode,
+    total_active_depth, a classification (transient|stuck|backpressure|idle)
+    and per-source breakdowns (consolidation_queue by status + artifact
+    category + oldest_age_seconds; global_update_outbox pending depth +
+    oldest_age_seconds). ACTIVE queue only — dead-letter (DLQ), outbox
+    dead_letter and canonical debt are TERMINAL and NOT counted here; inspect
+    those via okto_pulse_kg_dead_letter_list /
+    okto_pulse_kg_canonical_debt_list.
+    """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -16890,16 +16895,15 @@ async def okto_pulse_kg_connectivity_dlq_reprocess(
     dead_letter_ids: list[str] | str = "",
     process_now: str = "true",
 ) -> str:
-    """okto_pulse_kg_connectivity_dlq_reprocess — fail-closed reprocess of the
-    connectivity-guard technical_dlq class (RKG-04).
-
-    Requires EXPLICIT in-class `dead_letter_ids` (from
-    `okto_pulse_kg_connectivity_dlq_diagnose`). Blocks — removing NO DLQ — when the
-    selection is empty (`no_dlq_selected`), missing (`selected_dlq_missing`),
-    out-of-class (`selected_dlq_out_of_class`), the RKG-02/RKG-03 fixes are absent
-    (`rkg02_rkg03_not_applied`) or the KG is quarantined (`kg_quarantined`). It is
-    NEVER a broad reprocess. On success it reuses the idempotent DLQ→queue path
-    (ConsolidationQueue dedup) and, with process_now, runs one worker batch."""
+    """Fail-closed reprocess of the connectivity-guard technical_dlq class
+    (RKG-04). Requires EXPLICIT in-class dead_letter_ids from
+    okto_pulse_kg_connectivity_dlq_diagnose — it is NEVER a broad reprocess.
+    On success it reuses the idempotent DLQ->queue path (ConsolidationQueue
+    dedup) and, with process_now, runs one worker batch.
+    Errors (each blocks, removing NO DLQ): no_dlq_selected,
+    selected_dlq_missing, selected_dlq_out_of_class, rkg02_rkg03_not_applied,
+    kg_quarantined.
+    """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
         return _auth_error()
@@ -17005,19 +17009,14 @@ async def okto_pulse_kg_migrate_schema(
     board_id: str = "",
     all_boards: bool = False,
 ) -> str:
+    """Force-apply schema migrations to fix legacy boards (pre v0.3.2). REST
+    twin: POST /api/v1/kg/{board_id}/migrate-schema. Use when consolidation
+    fails with `Binder exception: Cannot find property X for n` — usually an
+    ALTER ADD missed on a board bootstrapped before that version. Idempotent:
+    re-running on an already-migrated board returns migrated=true with empty
+    columns_added (no-op). NEVER delete the KG's persistent storage to "fix"
+    a board — that destroys the board's whole KG; use this tool instead.
     """
-    Force-apply schema migrations to fix legacy boards (board pre v0.3.2)
-    — gemelar do REST POST /api/v1/kg/{board_id}/migrate-schema.
-
-    Use quando consolidation falha com `Binder exception: Cannot find
-    property X for n` — geralmente significa que ALTER ADD para schema
-    column foi missed em board bootstrapped antes daquela versão.
-
-    Idempotente: re-rodar em board já migrado retorna `migrated=true`
-    com `columns_added` vazio (no-op).
-
-    NUNCA apague o armazenamento persistente do KG para "consertar" —
-    destruiria todo o KG do board. Use esta tool em vez disso."""
     if not board_id and not all_boards:
         return json.dumps({"error": "missing_board_or_all_boards"})
 
@@ -17106,22 +17105,16 @@ async def okto_pulse_kg_tick_run_now(
     board_id: str = "",
     force_full_rebuild: bool = False,
 ) -> str:
+    """Trigger the KG decay tick manually. REST twin: POST
+    /api/v1/kg/tick/run-now. Runs an immediate tick without waiting for the
+    periodic cron: use after mass node rescoring, when default_score_ratio is
+    above 0.7 and stale ranking is suspected, or when debugging a specific
+    board's scoring (pass board_id). force_full_rebuild=true clears
+    last_recomputed_at before the tick (ignores the staleness threshold) —
+    per-trigger ONLY, never a persisted setting.
+    Errors: tick_already_running (concurrent cron/manual calls — the first
+    caller wins the advisory lock).
     """
-    Trigger the KG decay tick manually — gemelar do REST POST /api/v1/kg/tick/run-now.
-
-    Dispara um tick imediato sem esperar o cron periódico. Operador agente
-    chama esta ferramenta quando: (a) acabou de reescalar nodes em massa
-    e quer scoring fresh imediato, (b) detectou que `default_score_ratio`
-    está acima de 0.7 e suspeita de stale ranking, (c) está debugando
-    scoring de um board específico (passe `board_id`).
-
-    Use `force_full_rebuild=true` para zerar `last_recomputed_at` antes
-    do tick (ignora staleness threshold) — útil para boards 0.3.x cujos
-    nodes herdaram defaults sem benefício do tick. SOMENTE per-trigger;
-    NUNCA é setting persistido para evitar full-rebuild noturno acidental.
-
-    Concurrent calls (cron + manual OU duas chamadas manuais) recebem
-    erro `tick_already_running` — primeiro a chegar ganha o advisory lock."""
     # Per-board scope auth: when board_id provided, validate access.
     if board_id:
         ctx = await _get_agent_ctx(board_id)
@@ -17267,20 +17260,15 @@ _rebuild_logger = logging.getLogger("okto_pulse.mcp.rebuild")
 async def okto_pulse_kg_rebuild_preflight(
     board_id: str,
 ) -> str:
-    """
-    Run the KG rebuild preflight for a board — gemelar do REST POST /api/v1/kg/rebuild/preflight.
-
-    Executa a checagem pré-rebuild (read-only, TR13): enumera sources reais via
-    BoardSourceReader, classifica o estado de saúde do KG e persiste
-    o manifesto imutável necessário para /confirm.
-
-    Admission gate (FR8): recusa com rebuild_refused_quarantined quando
-    graph_state == 'quarantined'. recovery_needed É ADMITIDO — rebuild é a
-    saída prescrita desse estado.
-
-    Retorna o mesmo payload do REST: outcome, action_required, base_state,
-    eligible_source_count, preflight_hash, manifest_ref, source_set_hash.
-    Passe manifest_ref + preflight_hash para okto_pulse_kg_rebuild_confirm.
+    """Run the KG rebuild preflight for a board. REST twin: POST
+    /api/v1/kg/rebuild/preflight. Read-only check (TR13): enumerates real
+    sources via BoardSourceReader, classifies the KG health state and persists
+    the immutable manifest required by /confirm. Admission gate (FR8): refuses
+    when graph_state == 'quarantined'; recovery_needed IS admitted — rebuild
+    is the prescribed exit from that state. Returns outcome, action_required,
+    base_state, eligible_source_count, preflight_hash, manifest_ref,
+    source_set_hash; pass manifest_ref + preflight_hash to
+    okto_pulse_kg_rebuild_confirm. Errors: rebuild_refused_quarantined.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -17407,18 +17395,13 @@ async def okto_pulse_kg_rebuild_confirm(
     preflight_hash: str,
     manifest_ref: str,
 ) -> str:
-    """
-    Emite o token de confirmação single-use para um rebuild — gemelar do REST POST /api/v1/kg/rebuild/confirm.
-
-    Carrega o manifesto persistido em /preflight via manifest_ref (NUNCA
-    re-enumera), verifica que preflight_hash bate, e emite o token de
-    confirmação. Passe o token para okto_pulse_kg_rebuild_run.
-
-    Parâmetros:
-        board_id       — UUID do board (mesmo usado em /preflight)
-        operation      — operação canônica (ex: 'rebuild')
-        preflight_hash — SHA-256 hex recebido de /preflight (64 chars)
-        manifest_ref   — identificador do manifesto recebido de /preflight
+    """Issue the single-use confirmation token for a KG rebuild. REST twin:
+    POST /api/v1/kg/rebuild/confirm. Loads the manifest persisted by
+    /preflight via manifest_ref (NEVER re-enumerates), verifies that
+    preflight_hash matches (SHA-256 hex from /preflight), and issues the
+    confirmation token — pass it to okto_pulse_kg_rebuild_run. board_id and
+    operation must match the /preflight call; a hash/manifest mismatch fails
+    closed.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -17523,19 +17506,15 @@ async def okto_pulse_kg_rebuild_run(
     manifest_ref: str,
     reason: str,
 ) -> str:
-    """
-    Executa o rebuild do KG — gemelar do REST POST /api/v1/kg/rebuild/run.
-
-    Consome o token single-use de okto_pulse_kg_rebuild_confirm e executa o
-    rebuild sob o admin lane KG-01. NUNCA muta o grafo se o token for
-    inválido, o manifesto mudou ou o lock exclusivo falhar.
-
-    Admission gate (FR8): recusa rebuild_refused_quarantined quando
-    graph_state == 'quarantined' antes de consumir o token; recovery_needed
-    é admitido (rebuild é a saída prescrita).
-
-    confirmation_id/operation/preflight_hash/manifest_ref devem bater com o
-    /confirm; reason é auditoria (máx 512 chars).
+    """Execute the KG rebuild. REST twin: POST /api/v1/kg/rebuild/run. Consumes
+    the single-use token from okto_pulse_kg_rebuild_confirm and runs the
+    rebuild under the KG-01 admin lane; NEVER mutates the graph if the token
+    is invalid, the manifest changed or the exclusive lock fails.
+    confirmation_id/operation/preflight_hash/manifest_ref must match
+    /confirm; reason is audit-only (max 512 chars). Admission gate (FR8):
+    refuses before consuming the token when graph_state == 'quarantined';
+    recovery_needed is admitted (rebuild is the prescribed exit).
+    Errors: rebuild_refused_quarantined.
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -17738,18 +17717,16 @@ async def okto_pulse_kg_quarantine_restore(
     quarantine_id: str,
     apply: bool = False,
 ) -> str:
-    """
-    Restore de quarentena do KG — dry-run/apply com backup-swap (KGD-01 FR4/BR4).
-
-    apply=false (default) retorna o plano auditável (arquivos, destinos,
-    conflitos, tamanhos) SEM mutação. apply=true move os arquivos vivos do
-    board para uma NOVA quarentena com manifest (backup_quarantine_id no
-    resultado), copia o snapshot de volta, valida o open do board e emite
-    kg.quarantine.restore_dry_run / kg.quarantine.restored.
-
-    Response: {plan, applied, backup_quarantine_id?}. Erros: quarantine_not_found,
-    board_locked (exigir janela de manutenção), partial_restore (manifest
-    registra o estado exato para rollback — nunca meio-restaurado silencioso).
+    """Restore a board's KG from quarantine — dry-run/apply with backup-swap
+    (KGD-01 FR4/BR4). apply=false (default) returns the auditable plan (files,
+    destinations, conflicts, sizes) with NO mutation. apply=true moves the
+    board's live files to a NEW quarantine with manifest (backup_quarantine_id
+    in the result), copies the snapshot back, validates the board open and
+    emits kg.quarantine.restore_dry_run / kg.quarantine.restored. Response:
+    {plan, applied, backup_quarantine_id?}.
+    Errors: quarantine_not_found, board_locked (requires a maintenance
+    window), partial_restore (manifest records the exact state for rollback —
+    never a silent half-restore).
     """
     agent = await _get_authenticated_agent()
     if agent is None:
@@ -17831,27 +17808,25 @@ async def okto_pulse_kg_quarantine_restore(
 @mcp.tool()
 async def okto_pulse_list_by_board(
     board_id: str,
-    entity_type: str,
-    filters: dict[str, Any] | str | None = None,
+    entity_type: Annotated[str, Field(description="spec | ideation | refinement | sprint | story | topic")],
+    filters: Annotated[dict[str, Any] | str | None, Field(description="Per-type filter dict; refinement REQUIRES ideation_id, sprint REQUIRES spec_id")] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> str:
     """List top-level entities of a board by type (replaces the entity-specific
     list_* tools: specs, ideations, refinements, sprints, stories, topics).
+    Returns FULL entity bodies — prefer a low limit for spec listings.
 
-    filters by entity_type (unknown keys -> error_code='invalid_filter' + allowed keys):
-    - spec: status, labels, assignee_id
-    - ideation: status, labels, derivation_pending
-    - refinement: ideation_id (required), status, labels, derivation_pending
-    - sprint: spec_id (required), status
-    - story: status, topic_id, linked, converted, include_archived
-    - topic: include_archived
-
-    derivation_pending (bool) — canonical triage for done ideations/refinements
-    still lacking a derived child (medium/large ideation -> refinement; small
-    ideation or refinement -> spec). Example: entity_type='ideation',
-    filters={"derivation_pending": true}; then derive_spec_from_ideation /
-    derive_spec_from_refinement. Docs: okto-pulse://reference/list_tools"""
+    filters by entity_type: spec: status, labels, assignee_id; ideation:
+    status, labels, derivation_pending; refinement: ideation_id (required),
+    status, labels, derivation_pending; sprint: spec_id (required), status;
+    story: status, topic_id, linked, converted, include_archived; topic:
+    include_archived. derivation_pending (bool) — triage for done
+    ideations/refinements still lacking a derived child; follow with
+    derive_spec_from_ideation / derive_spec_from_refinement.
+    Errors: invalid_filter (unknown keys; returns allowed keys),
+    missing_required_filter. Docs: okto-pulse://reference/list_tools
+    """
     from okto_pulse.core.mcp.filters import (
         invalid_filter_keys,
         supported_filter_keys,

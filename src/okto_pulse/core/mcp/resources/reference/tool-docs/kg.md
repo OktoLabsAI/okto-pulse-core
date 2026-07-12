@@ -8,41 +8,11 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 ## `okto_pulse_kg_abort_consolidation`
 
-Drop an in-flight session without committing.
-
-No compensating delete is applied — commit was never called, so the embedded graph database
-has no partial writes. The session is marked aborted and removed from
-the in-memory registry.
-
-Args:
-    session_id: Session from begin_consolidation
-    reason: Optional reason (logged for audit)
-
-Returns:
-    JSON with session_id, status=aborted
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_add_edge_candidate`
 
-Add an edge candidate to an open session.
-
-Endpoints (from_candidate_id / to_candidate_id) must reference either
-another in-session node candidate OR an existing graph database node via the
-'kg:' prefix (kg:decision_abc123).
-
-Cognitive agents may only propose judgement edges: supersedes,
-contradicts, depends_on, relates_to, validates. Deterministic edges
-such as implements, tests, belongs_to, mentions, violates, and
-derives_from are reserved for the Layer 1 worker and are rejected with
-layer_violation. Endpoint pairs are strict: Decision->Decision for
-supersedes/contradicts/depends_on, Decision->Alternative for
-relates_to, and Learning->Bug for validates.
-
-Args:
-    session_id: Session from begin_consolidation
-    candidate: Dict with candidate_id, edge_type, from/to, confidence
-
-Returns:
-    JSON with accepted=true and edge_count_in_session
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_add_node_candidate`
 
@@ -79,38 +49,11 @@ Returns:
 
 ## `okto_pulse_kg_begin_consolidation`
 
-Open a transactional consolidation session against a board.
-
-Computes SHA256(board + artifact + content) for nothing-changed detection.
-Returns a session_id the agent uses in all subsequent primitives. The
-session has a TTL (default 1h, configurable via kg_session_ttl_seconds)
-and is owned exclusively by the authenticated agent.
-
-Args:
-    board_id: Target board
-    artifact_type: spec | sprint | qa | etc.
-    artifact_id: Source artifact id
-    raw_content: Full artifact content used for SHA256 dedup
-    deterministic_candidates: Pre-extracted node candidates (ORNs, refs)
-
-Returns:
-    JSON with session_id, content_hash, nothing_changed flag, expires_at
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_commit_consolidation`
 
-Atomically commit the session: graph database writes + audit row + outbox event.
-
-agent_overrides map candidate_id → ReconciliationHint for cases where
-the agent's semantic reasoning produces a different op than the
-server's deterministic default.
-
-Args:
-    session_id: Session from begin_consolidation
-    summary_text: Optional session summary (surfaced in dashboard)
-    agent_overrides: Optional per-candidate hint overrides
-
-Returns:
-    JSON with session_id, status=committed, counts, committed_at
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_canonical_debt_list`
 
@@ -136,18 +79,30 @@ Returns:
 
 ## `okto_pulse_kg_canonical_partition_integrity_list`
 
-List canonical/working partition integrity issues for a board.
+List canonical Learning partition-integrity signals for KG health drill-down
+(R7). READ-ONLY: cognitive holds, canonical debt, mixed-evidence deferred and
+provenance-only Learnings. Each item carries an S-KG-02 `classification`
+(missing_source, unresolved_source, canonical_learning_resolved,
+weak_provenance, invalid_orphan_learning) plus a `classification_counts`
+census. Mirrors REST `GET /api/v1/kg/{board_id}/canonical-partition-integrity`
+(same `classification` on the per-node detail).
 
-Use this when KG health reports partition drift or when validating that working
-nodes have not leaked into canonical-only surfaces.
+This tool NEVER skips, clears or resolves an R7 hold/debt — that remains
+human-only.
 
 Args:
     board_id: Board ID.
-    limit: Max rows to return.
-    offset: Page offset.
+    reason_code: Optional reason-code filter.
+    graph_layer: Optional graph-layer filter.
+    source_ref: Optional `<type>:<id>` source reference filter.
+    node_id: Optional node ID filter.
+    status: Optional status filter.
+    limit: Max rows to return (default 50).
+    offset: Page offset (default 0).
 
 Returns:
-    JSON with partition issue rows and bounded counts.
+    JSON with partition-integrity items, `classification_counts`, and bounded
+    counts.
 
 ## `okto_pulse_kg_originates_from_contract_audit`
 
@@ -173,17 +128,7 @@ Returns:
 
 ## `okto_pulse_kg_dead_letter_list`
 
-List dead-lettered consolidation rows.
-
-Use this when `okto_pulse_kg_health` reports `dead_letter_count > 0`
-and you need to inspect which artifacts failed, what error repeated, and
-how many attempts were made. Each row includes the full `errors` array:
-one entry per attempt with error_type, message, occurred_at, and optional
-traceback.
-
-After fixing the root cause (schema migration, WAL recovery, code fix, or
-transient lock contention), call `okto_pulse_kg_dead_letter_reprocess` to
-move selected rows back to the consolidation queue.
+Prose covered by the live tool description. Delta:
 
 Args:
     board_id: Board UUID
@@ -196,18 +141,12 @@ Returns:
 
 ## `okto_pulse_kg_dead_letter_reprocess`
 
-okto_pulse_kg_dead_letter_reprocess — requeue dead-lettered KG
-consolidation rows after the root cause is fixed.
-
-Use this after `okto_pulse_kg_migrate_schema`, WAL recovery, or a code fix
-when DLQ rows should be retried. The tool is idempotent: if a matching
-pending queue row already exists for the same board/artifact, it resets that
-row and removes the DLQ entry instead of creating duplicates.
+Prose covered by the live tool description. Delta:
 
 Args:
     board_id: Board UUID.
-    dead_letter_ids: Optional multi-value DLQ row IDs. Use a native list,
-        JSON array string, or pipe-separated string. Empty means "oldest
+    dead_letter_ids: Optional multi-value DLQ row IDs
+        (formats: okto-pulse://reference/multivalue). Empty means "oldest
         rows for this board up to limit".
     limit: Max DLQ rows to requeue (1-200, default 50).
     process_now: "true" to immediately run one consolidation worker batch
@@ -261,15 +200,12 @@ Returns:
 
 ## `okto_pulse_kg_connectivity_dlq_verify`
 
-After the consolidation worker drains the queue, confirm the connectivity-guard
-class is cleared for the given `artifact_refs` (or the whole class when empty).
-Read-only. A member that returned to the DLQ stays VISIBLE
-(`class_cleared=false` + `remaining_dlq`) — partial success is never masked.
+Prose covered by the live tool description. Delta:
 
 Args:
     board_id: Board UUID.
-    artifact_refs: Optional `type:id` refs to scope the check (native list, JSON
-        array string, or pipe-separated string). Empty checks the whole class.
+    artifact_refs: Optional `type:id` refs to scope the check (formats:
+        okto-pulse://reference/multivalue). Empty checks the whole class.
 
 Returns:
     JSON `{class_cleared, remaining_count, remaining_dlq}`.
@@ -312,43 +248,15 @@ Returns:
 
 ## `okto_pulse_kg_explain_constraint`
 
-Explain the origin of a constraint: the spec/decision it derives from,
-related constraints, and any violations (bugs) registered against it.
-
-Args:
-    board_id: Board ID
-    constraint_id: Constraint node ID
-
-Returns:
-    JSON with constraint details, origins, and violations
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_find_contradictions`
 
-Find contradictory decision pairs via :contradicts relationship.
-When node_id is provided, returns only pairs involving that node.
-Without node_id, returns all contradiction pairs (limit 50).
-
-Args:
-    board_id: Board ID
-    node_id: Optional Decision node ID (empty = all pairs)
-    max_rows: Maximum pairs (default 50)
-
-Returns:
-    JSON with pairs: [{id_a, title_a, id_b, title_b, confidence}]
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_find_similar_decisions`
 
-Find decisions similar to a topic using hybrid ranking:
-0.5*semantic + 0.2*graph_centrality + 0.2*recency + 0.1*confidence.
-
-Args:
-    board_id: Board ID
-    topic: Natural language description to match against
-    top_k: Maximum results (default 10)
-    min_similarity: Minimum similarity threshold (default 0.3)
-
-Returns:
-    JSON with decisions ordered by combined_score DESC
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_get_decision_history`
 
@@ -375,17 +283,7 @@ Returns:
 
 ## `okto_pulse_kg_get_learning_from_bugs`
 
-Get lessons learned from bugs in a specific area. Returns Learning
-nodes connected to Bug nodes via :validates relationship.
-
-Args:
-    board_id: Board ID
-    area: Area keyword to filter bugs by (matches title/content)
-    min_confidence: Minimum confidence (default 0.5)
-    max_rows: Maximum results (default 100)
-
-Returns:
-    JSON with learnings: [{learning_id, learning_title, bug_id, bug_title}]
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_get_related_context`
 
@@ -412,46 +310,16 @@ Returns:
 
 ## `okto_pulse_kg_get_similar_nodes`
 
-Fetch existing graph database nodes similar to an in-session candidate.
-
-MVP uses title-prefix match as a deterministic fallback; production
-replaces with HNSW k-NN via vector index (card 00dae72a).
-
-Args:
-    session_id: Session from begin_consolidation
-    candidate_id: Candidate to compare against
-    top_k: Max neighbors (1-50, default 5)
-    min_similarity: Threshold (0.0-1.0, default 0.3)
-
-Returns:
-    JSON with similar: [SimilarNode]
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_get_supersedence_chain`
 
-Trace what superseded what for a specific decision. Returns the
-chain of superseded decisions up to depth 10.
-
-Args:
-    board_id: Board ID
-    decision_id: Decision node ID to trace from
-
-Returns:
-    JSON with chain, depth, current_active
+Covered fully by the live tool description (args: board_id, decision_id,
+node_type — node_type defaults to Decision).
 
 ## `okto_pulse_kg_health`
 
-Snapshot of the KG health for one board — gemelar do REST GET /api/v1/kg/health.
-
-Returns a SLIM operational view by default (profile=summary): the stop-rule
-fields an agent needs before a KG mutation — graph_state, discovery_state,
-overall_state, metric_status, classification_reason, correlation_id,
-memory_pressure_status, recent_events — plus a few operational scalars
-(queue_depth, dead_letter_count, total_nodes, default_score_ratio,
-avg_relevance, contradict_warn_count, last_tick_status),
-decay_scheduler_diagnostics, and storage_footprint_proxy. Scheduler debt is
-operational debt and does not by itself require graph recovery. Verbose
-diagnostics, state aliases and prose issue descriptions are omitted; pass
-profile=full (or legacy) to get the complete dashboard payload.
+Payload shape covered by the live tool description. Delta:
 
 Use it before kicking off long consolidations (high queue_depth means
 your enqueue may sit pending), after flagging contradictions (spike in
@@ -531,16 +399,7 @@ Returns:
 
 ## `okto_pulse_kg_list_alternatives`
 
-List alternatives that were considered and discarded for a decision,
-including their reason_discarded from the narrative.
-
-Args:
-    board_id: Board ID
-    decision_id: Decision node ID
-    max_rows: Maximum results (default 100)
-
-Returns:
-    JSON with alternatives list
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_list_cognitive_pending_items`
 
@@ -576,73 +435,113 @@ Args:
 
 ## `okto_pulse_kg_list_cognitive_readiness_items`
 
-List cognitive-readiness items that can block completion or validation.
+List board cognitive-readiness rows: cognitive items, canonical debt and
+technical DLQ, reconciled by normalized `artifact_id`. Rows mirror the central
+CognitiveReadinessService verdict; the cognitive `reason_code` stays distinct
+from the technical `error_cause`. `would_block_done` is enforcement-aware
+(false under advisory enforcement even when a blocker is visible).
 
 Use this to inspect outstanding cognitive closeout work before advancing a bug,
 spec, or refinement through a gate.
 
 Args:
     board_id: Board ID.
-    entity_type: Optional source entity type filter.
-    entity_id: Optional source entity ID filter.
+    signal: Optional signal filter (default `all`).
+    artifact_id: Optional normalized artifact ID filter.
+    source_ref: Optional `<type>:<id>` source reference filter.
+    reason_code: Optional bounded cognitive reason-code filter.
     status: Optional readiness status filter.
-    limit: Max rows.
-    offset: Page offset.
+    search: Optional free-text search.
+    limit: Max rows (<=200, default 50).
+    offset: Page offset (default 0).
+    kg_generation_id: Optional KG generation to scope the listing.
 
 Returns:
     JSON with readiness items, counts, and source references.
 
 ## `okto_pulse_kg_evaluate_cognitive_readiness`
 
-Evaluate cognitive-readiness gates for a target entity.
+Evaluate ONE artifact's cognitive readiness via the central
+CognitiveReadinessService. Returns the 6-tier verdict verbatim
+(`readiness_effect`, `blocking`, `tier`, `readiness_signal`, `reason_code`,
+`revisit_at`, `precedence_explanation` = the blocked-by source) — precedence
+is NEVER recomputed here. `would_block_done` is enforcement-aware (see the
+list tool).
 
 Args:
     board_id: Board ID.
-    entity_type: Target entity type.
-    entity_id: Target entity ID.
+    source_ref: `<type>:<id>` reference of the artifact to evaluate. A
+        `bug:<uuid>` reconciles to its `card:<uuid>`. task/test carry no
+        reusable cognition -> advisory.
+    kg_generation_id: Optional KG generation to evaluate against.
 
 Returns:
-    JSON with readiness outcome, blockers, skip state, and remediation text.
+    JSON with the readiness verdict, blockers, skip state, and remediation text.
 
 ## `okto_pulse_kg_evaluate_bug_cognitive_closure`
 
-Evaluate whether a bug has the required cognitive closeout before closure.
+Read-only bug cognitive-closure evaluation. Mirrors the REST/UI classifier and
+the central CognitiveReadinessService verdict; it does not recompute precedence.
+
+Allowed agent actions: `evaluate` (default) and `create_learning`. Agent-facing
+`skip`/`no_action` fails closed with `human_control_required` and never writes
+the ledger — human skip/no_action stays on the authorized UI/REST path and
+cannot mask technical debt.
 
 Args:
     board_id: Board ID.
     bug_id: Bug card ID.
+    evidence: Optional evidence payload for the evaluation.
+    requested_action: `evaluate` (default) or `create_learning`; agent-facing
+        `skip`/`no_action` fails closed.
+    reason_code: Bounded reason code (only meaningful with a skip request,
+        which is human-only here).
+    justification: Optional justification text.
+    evidence_refs: Optional evidence references.
+    revisit_at: Optional revisit timestamp.
 
 Returns:
     JSON with closure readiness, missing cognitive items, and gate outcome.
 
 ## `okto_pulse_kg_record_cognitive_skip`
 
-Record a human-authorized cognitive-readiness skip.
-
-This tool records the skip and its bounded reason. It must not be used as a
-silent bypass for technical blockers.
+Agent-facing cognitive skip/no_action control — HUMAN-only (R5-IMP1). This MCP
+surface fails closed with `human_control_required` (mutation_allowed=false,
+state_changed=false): it performs NO state change and never writes the ledger
+or the KG. A human operator records the skip via the IDE control or the human
+REST/UI surface, which keeps the canonical validations (invalid reason,
+missing revisit date, technical-debt masking).
 
 Args:
     board_id: Board ID.
-    entity_type: Target entity type.
-    entity_id: Target entity ID.
-    reason: Required justification.
+    source_ref: `<type>:<id>` reference of the target artifact.
+    reason_code: Bounded cognitive reason code.
+    justification: Optional justification text.
+    evidence_refs: Optional evidence references.
+    revisit_at: Optional revisit timestamp.
+    kg_generation_id: Optional KG generation.
 
 Returns:
-    JSON with recorded skip state and audit metadata.
+    JSON `human_control_required` envelope (read-only; no mutation).
 
 ## `okto_pulse_kg_clear_cognitive_skip`
 
-Clear a previously recorded cognitive-readiness skip.
+Clear a cognitive skip / no_action, reopening the item to pending via the
+central ledger path — but HUMAN-only (R5-IMP1): clearing/reopening a cognitive
+skip is a human decision and is NOT applicable from the agent-facing MCP
+surface. This tool fails closed with `human_control_required`
+(mutation_allowed=false, state_changed=false) and never reopens the ledger
+item. A human operator clears the skip via the IDE control or the human REST
+surface (ledger-only — no KG mutation; the clearing actor + timestamp are
+stamped and the stale reason_code / revisit_at are dropped).
 
 Args:
     board_id: Board ID.
-    entity_type: Target entity type.
-    entity_id: Target entity ID.
-    reason: Optional audit reason.
+    source_ref: `<type>:<id>` reference of the target artifact.
+    kg_generation_id: Optional KG generation.
 
 Returns:
-    JSON with updated readiness/skip state.
+    JSON `human_control_required` envelope (read-only; no mutation).
 
 ## `okto_pulse_kg_list_cognitive_dlq`
 
@@ -658,32 +557,28 @@ Returns:
 
 ## `okto_pulse_kg_queue_drilldown`
 
-Inspect active KG queue depth and per-state work distribution.
+Drill down into the ACTIVE operational queue depth (R6-IMP2). Read-only.
 
-Use this when KG health reports backlog, at_risk, or backpressure and the agent
-needs to distinguish active queue work from DLQ/debt.
+Use this when `okto_pulse_kg_health` reports an `active_queue` backlog (a
+health issue with `drill_down_tool='okto_pulse_kg_queue_drilldown'`) and you
+need to know WHERE the queue depth comes from. This is the ACTIVE queue only:
+dead-letter (DLQ), outbox dead_letter and canonical debt are TERMINAL and
+intentionally NOT counted here — inspect those via
+`okto_pulse_kg_dead_letter_list` / `okto_pulse_kg_canonical_debt_list`.
 
 Args:
     board_id: Board ID.
-    profile: summary or full.
 
 Returns:
-    JSON with active queue counts, dead-letter counts, and queue diagnostics.
+    JSON with `worker_mode`, `total_active_depth`, an overall `classification`
+    (transient | stuck | backpressure | idle) and per-source breakdowns:
+    `consolidation_queue` (pending/claimed by status + by artifact category +
+    oldest_age_seconds) and `global_update_outbox` (pending retry-window depth
+    + oldest_age_seconds).
 
 ## `okto_pulse_kg_migrate_schema`
 
-Force-apply schema migrations to fix legacy boards (board pre v0.3.2)
-— gemelar do REST POST /api/v1/kg/{board_id}/migrate-schema.
-
-Use quando consolidation falha com `Binder exception: Cannot find
-property X for n` — geralmente significa que ALTER ADD para schema
-column foi missed em board bootstrapped antes daquela versão.
-
-Idempotente: re-rodar em board já migrado retorna `migrated=true`
-com `columns_added` vazio (no-op).
-
-NUNCA delete the per-board graph store para "consertar" — destruiria todo o KG
-do board. Use esta tool em vez disso.
+Prose covered by the live tool description. Delta:
 
 Args:
     board_id: Board UUID específico (mutuamente exclusivo com all_boards)
@@ -697,19 +592,7 @@ Returns:
 
 ## `okto_pulse_kg_propose_reconciliation`
 
-Compute deterministic ADD/UPDATE/SUPERSEDE/NOOP hints for every candidate.
-
-Rules:
-- SHA256 matches last commit → NOOP for all candidates
-- Otherwise → ADD with candidate's self-assessed confidence
-
-UPDATE/SUPERSEDE hints will land once the HNSW index is in place.
-
-Args:
-    session_id: Session from begin_consolidation
-
-Returns:
-    JSON with hints: [ReconciliationHint]
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_query_cypher`
 
@@ -765,22 +648,9 @@ Returns:
 
 ## `okto_pulse_kg_query_global`
 
-Cross-board semantic search via the global discovery layer. Returns
-matching decisions from all boards the agent has access to, filtered
-by ACL.
-
-Args:
-    board_id: Optional board_id to restrict search (empty = all boards)
-    nl_query: Natural language query string
-    top_k: Maximum results (default 10)
-    graph_layer: `canonical` (default) | `working` | `all`. Filters which graph
-        layer the cross-board search reads. Default `canonical` never leaks
-        working nodes; an invalid value fails closed with a structured error.
-
-Returns:
-    JSON `{results: [{board_id, id, title, similarity, graph_layer}], count,
-    applied_graph_layer}`. `applied_graph_layer` echoes the layer actually
-    applied; each result also carries its own `graph_layer`.
+Covered fully by the live tool description. Delta: the default
+`graph_layer=canonical` never leaks working nodes; each result also carries
+its own `graph_layer`.
 
 ## `okto_pulse_kg_query_natural`
 
@@ -809,36 +679,11 @@ Returns:
 
 ## `okto_pulse_kg_query_reflective`
 
-V1 stub of the reflective retrieve loop (ideação db8e984f).
-
-The full agentic loop (critic_evaluate → dispatch action →
-retrieve retry) requires an LLM callable (critic_fn) — MCP
-tools can't receive Python callables, so this V1 delegates to
-the standard execute_natural_query and labels the response
-as a "v1_stub_no_critic_wired" stop reason.
-
-To use the real loop, call
-``okto_pulse.core.kg.retrieve_critic.reflect()`` programmatically
-from a Python host that wires its own LLM provider.
-
-Args:
-    board_id: Board ID (authorization: kg.query.global).
-    nl_query: Natural-language query (same as
-        okto_pulse_kg_query_natural).
-    limit: Max rows (default 20).
-
-Returns:
-    JSON with rows + reflection metadata:
-    ``{nodes, total_matches, stopped_reason, iterations}``.
+Covered fully by the live tool description.
 
 ## `okto_pulse_kg_schema_info`
 
-Return schema introspection: stable node types, rel types, vector
-indexes. Internal types require include_internal=true + admin role.
-
-Args:
-    board_id: Optional board ID (empty = global schema namespace)
-    include_internal: "true" to include internal types (admin only)
+Summary and Args covered by the live tool description. Delta:
 
 Returns:
     JSON with schema_version, stable_node_types, stable_rel_types,
@@ -853,21 +698,7 @@ Returns:
 
 ## `okto_pulse_kg_tick_run_now`
 
-Trigger the KG decay tick manually — gemelar do REST POST /api/v1/kg/tick/run-now.
-
-Dispara um tick imediato sem esperar o cron periódico. Operador agente
-chama esta ferramenta quando: (a) acabou de reescalar nodes em massa
-e quer scoring fresh imediato, (b) detectou que `default_score_ratio`
-está acima de 0.7 e suspeita de stale ranking, (c) está debugando
-scoring de um board específico (passe `board_id`).
-
-Use `force_full_rebuild=true` para zerar `last_recomputed_at` antes
-do tick (ignora staleness threshold) — útil para boards 0.3.x cujos
-nodes herdaram defaults sem benefício do tick. SOMENTE per-trigger;
-NUNCA é setting persistido para evitar full-rebuild noturno acidental.
-
-Concurrent calls (cron + manual OU duas chamadas manuais) recebem
-erro `tick_already_running` — primeiro a chegar ganha o advisory lock.
+Prose covered by the live tool description. Delta:
 
 Args:
     board_id: Optional board UUID. Empty string = global tick (all boards).
@@ -1004,6 +835,30 @@ Returns:
 Errors:
     `rebuild_refused_quarantined` — graph is quarantined; use KG reset flow first.
     `rebuild_run_failed` — unexpected error during rebuild (detail in response).
+
+## `okto_pulse_kg_quarantine_restore`
+
+KG quarantine restore — dry-run/apply with backup-swap (KGD-01 FR4/BR4).
+
+`apply=false` (default) returns the auditable plan (files, destinations,
+conflicts, sizes) with NO mutation. `apply=true` moves the board's live files
+into a NEW quarantine with manifest (`backup_quarantine_id` in the result),
+copies the snapshot back, validates the board open, and emits
+`kg.quarantine.restore_dry_run` / `kg.quarantine.restored`.
+
+Args:
+    quarantine_id: Quarantine ID to restore from.
+    apply: false (default) = dry-run plan only; true = execute the restore
+        with backup-swap.
+
+Returns:
+    JSON `{plan, applied, backup_quarantine_id?}`.
+
+Errors:
+    `quarantine_not_found` — quarantine id does not exist.
+    `board_locked` — require a maintenance window before applying.
+    `partial_restore` — the manifest records the exact state for rollback;
+    never a silent half-restored board.
 
 ## `okto_pulse_kg_export_jsonld`
 

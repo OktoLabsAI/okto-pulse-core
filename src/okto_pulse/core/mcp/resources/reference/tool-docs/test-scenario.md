@@ -25,7 +25,7 @@ Args:
         with a structured ``invalid_scenario_type`` error naming the allowed
         values and NO scenario is appended — it is NEVER silently normalized to
         ``integration``.
-    linked_criteria: Multi-value (pipe ``"0|2"`` or JSON-array ``'["0","2"]'``)
+    linked_criteria: Multi-value (formats: okto-pulse://reference/multivalue)
         references to the acceptance criteria this scenario validates. Each
         token may be a 0-based index, a structured ``ac_id`` (e.g. ``ac_1a2b``),
         or the EXACT acceptance-criterion text. ``ac_id`` is recommended — it is

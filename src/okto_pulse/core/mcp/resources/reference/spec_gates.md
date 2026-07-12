@@ -6,13 +6,7 @@ version: "1.0"
 
 ## Spec Status Transitions
 
-| From | To | Pre-requisites |
-|------|-----|---------------|
-| `draft` | `review` | — |
-| `review` | `approved` | — |
-| `approved` | `validated` | `okto_pulse_submit_spec_validation` with all coverage gates passing + `recommendation=approve` |
-| `validated` | `in_progress` | `okto_pulse_submit_spec_evaluation` with `recommendation=approve` |
-| `in_progress` | `done` | All cards done |
+Transitions table: see `okto-pulse://reference/transitions` (single source). Note the `in_progress` → `done` gate: all linked non-bug, non-archived cards must be `done` or `cancelled`, and when the spec has sprints, all sprints must be `closed` or `cancelled` (minimum 1 closed — see `okto-pulse://workflows/sprints`).
 
 ## Spec Validation Gate — `okto_pulse_submit_spec_validation`
 

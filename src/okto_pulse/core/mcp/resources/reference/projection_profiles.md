@@ -33,6 +33,11 @@ mode — positive `success` is intentionally omitted there. `success: true` and
 An unsupported profile returns a structured error `unsupported_projection`
 with the allowed list under `supported_profiles`.
 
+**Per-family variance:** the `copy_*_to_card` family supports a 3-value
+profile set — `summary`/`full`/`legacy`, **no `detail`**. Passing `detail`
+to a copy tool that exposes `profile` (e.g. `copy_architecture_to_card`)
+returns `unsupported_projection` with the 3-value `supported_profiles` list.
+
 ## Envelope metadata (shared contract SC1)
 
 Every projected response carries:

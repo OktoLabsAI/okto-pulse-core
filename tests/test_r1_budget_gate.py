@@ -138,7 +138,11 @@ def test_callable_names_and_schema_keys_stable():
     tools = _tools()
     # Surface size is additive after the R1 baseline. Keep the current reviewed
     # surface pinned so accidental tool drops/duplicates remain visible.
-    assert len(tools) == 259
+    # 2026-07-12 (auditoria MCP): re-pinned 259→265 — the pin had rotted while
+    # 6 tools landed (chain node_type era +0; kg_provenance_drift, export et
+    # al. +6). Set-level drift is now ALSO guarded by
+    # test_mcp_tools_catalog_drift.py, which names the exact delta.
+    assert len(tools) == 265
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

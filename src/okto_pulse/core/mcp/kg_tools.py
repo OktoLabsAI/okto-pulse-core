@@ -132,23 +132,14 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         raw_content: str,
         deterministic_candidates: list[dict] | None = None,
     ) -> str:
-        """
-        Open a transactional consolidation session against a board.
+        """Open a transactional consolidation session against a board.
 
-        Computes SHA256(board + artifact + content) for nothing-changed detection.
-        Returns a session_id the agent uses in all subsequent primitives. The
-        session has a TTL (default 1h, configurable via kg_session_ttl_seconds)
-        and is owned exclusively by the authenticated agent.
-
-        Args:
-            board_id: Target board
-            artifact_type: spec | sprint | qa | etc.
-            artifact_id: Source artifact id
-            raw_content: Full artifact content used for SHA256 dedup
-            deterministic_candidates: Pre-extracted node candidates (ORNs, refs)
-
-        Returns:
-            JSON with session_id, content_hash, nothing_changed flag, expires_at
+        Computes SHA256(board + artifact + content) for nothing-changed detection
+        (pass the full artifact content as raw_content). Returns the session_id
+        used by all subsequent consolidation primitives, plus content_hash,
+        nothing_changed and expires_at. The session has a TTL (default 1h,
+        configurable via kg_session_ttl_seconds) and is owned exclusively by the
+        authenticated agent.
         """
         agent = await get_agent()
         if agent is None:
@@ -189,18 +180,10 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         session_id: str,
         candidate: dict,
     ) -> str:
-        """
-        Add a node candidate to an open consolidation session.
-
-        The candidate stays in-memory until commit_consolidation or expiry.
-        candidate_id must be unique within the session.
-
-        Args:
-            session_id: Session from begin_consolidation
-            candidate: Dict with candidate_id, node_type, title, content, etc.
-
-        Returns:
-            JSON with accepted=true and node_count_in_session
+        """Add a node candidate to an open consolidation session. The candidate dict
+        (candidate_id, node_type, title, content, ...) stays in-memory until
+        commit_consolidation or session expiry; candidate_id must be unique within
+        the session.
         """
         agent = await get_agent()
         if agent is None:
@@ -220,8 +203,7 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         session_id: str,
         candidate: dict,
     ) -> str:
-        """
-        Add an edge candidate to an open session.
+        """Add an edge candidate to an open consolidation session.
 
         Endpoints (from_candidate_id / to_candidate_id) must reference either
         another in-session node candidate OR an existing persisted KG node via the
@@ -229,18 +211,11 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
 
         Cognitive agents may only propose judgement edges: supersedes,
         contradicts, depends_on, relates_to, validates. Deterministic edges
-        such as implements, tests, belongs_to, mentions, violates, and
-        derives_from are reserved for the Layer 1 worker and are rejected with
-        layer_violation. Endpoint pairs are strict: Decision->Decision for
-        supersedes/contradicts/depends_on, Decision->Alternative for
-        relates_to, and Learning->Bug for validates.
-
-        Args:
-            session_id: Session from begin_consolidation
-            candidate: Dict with candidate_id, edge_type, from/to, confidence
-
-        Returns:
-            JSON with accepted=true and edge_count_in_session
+        (implements, tests, belongs_to, mentions, violates, derives_from) are
+        reserved for the Layer 1 worker. Endpoint pairs are strict:
+        Decision->Decision for supersedes/contradicts/depends_on,
+        Decision->Alternative for relates_to, Learning->Bug for validates.
+        Errors: layer_violation.
         """
         agent = await get_agent()
         if agent is None:
@@ -262,20 +237,10 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         top_k: int = 5,
         min_similarity: float = 0.3,
     ) -> str:
-        """
-        Fetch existing persisted KG nodes similar to an in-session candidate.
-
-        MVP uses title-prefix match as a deterministic fallback; production
-        replaces with HNSW k-NN via vector index (card 00dae72a).
-
-        Args:
-            session_id: Session from begin_consolidation
-            candidate_id: Candidate to compare against
-            top_k: Max neighbors (1-50, default 5)
-            min_similarity: Threshold (0.0-1.0, default 0.3)
-
-        Returns:
-            JSON with similar: [SimilarNode]
+        """Fetch existing persisted KG nodes similar to an in-session candidate
+        (top_k 1-50, default 5; min_similarity 0.0-1.0, default 0.3). MVP uses
+        title-prefix match as a deterministic fallback; production replaces it
+        with HNSW k-NN via the vector index (card 00dae72a).
         """
         agent = await get_agent()
         if agent is None:
@@ -299,20 +264,10 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
     async def okto_pulse_kg_propose_reconciliation(
         session_id: str,
     ) -> str:
-        """
-        Compute deterministic ADD/UPDATE/SUPERSEDE/NOOP hints for every candidate.
-
-        Rules:
-        - SHA256 matches last commit → NOOP for all candidates
-        - Otherwise → ADD with candidate's self-assessed confidence
-
+        """Compute deterministic ADD/UPDATE/SUPERSEDE/NOOP hints for every candidate
+        in the session. If the content SHA256 matches the last commit every hint
+        is NOOP; otherwise ADD with the candidate's self-assessed confidence.
         UPDATE/SUPERSEDE hints will land once the HNSW index is in place.
-
-        Args:
-            session_id: Session from begin_consolidation
-
-        Returns:
-            JSON with hints: [ReconciliationHint]
         """
         agent = await get_agent()
         if agent is None:
@@ -346,20 +301,10 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         summary_text: str = "",
         agent_overrides: dict[str, dict] | None = None,
     ) -> str:
-        """
-        Atomically commit the session: graph-store writes + audit row + outbox event.
-
-        agent_overrides map candidate_id → ReconciliationHint for cases where
-        the agent's semantic reasoning produces a different op than the
-        server's deterministic default.
-
-        Args:
-            session_id: Session from begin_consolidation
-            summary_text: Optional session summary (surfaced in dashboard)
-            agent_overrides: Optional per-candidate hint overrides
-
-        Returns:
-            JSON with session_id, status=committed, counts, committed_at
+        """Atomically commit the session: graph-store writes + audit row + outbox
+        event. agent_overrides map candidate_id -> ReconciliationHint when the
+        agent's semantic reasoning differs from the server's deterministic
+        default; summary_text is surfaced in the dashboard.
         """
         agent = await get_agent()
         if agent is None:
@@ -846,19 +791,10 @@ labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg.""
         session_id: str,
         reason: str = "",
     ) -> str:
-        """
-        Drop an in-flight session without committing.
-
-        No compensating delete is applied — commit was never called, so the graph store
-        has no partial writes. The session is marked aborted and removed from
-        the in-memory registry.
-
-        Args:
-            session_id: Session from begin_consolidation
-            reason: Optional reason (logged for audit)
-
-        Returns:
-            JSON with session_id, status=aborted
+        """Drop an in-flight consolidation session without committing. No
+        compensating delete is applied — commit never ran, so the graph store has
+        no partial writes. The session is marked aborted (reason is logged for
+        audit) and removed from the in-memory registry.
         """
         agent = await get_agent()
         if agent is None:

@@ -36,6 +36,23 @@ Args:
 Returns:
     JSON with the updated Resource Gate summary.
 
+## `okto_pulse_get_allowed_transitions`
+
+Return the allowed lifecycle transitions for an ideation, refinement, or spec
+from the backend transition authority — the same authority the move
+tools/endpoints enforce. Use it to know which `status` values a move will
+accept before calling `okto_pulse_move_*`.
+
+Args:
+    board_id: Board ID
+    entity_type: One of: ideation, refinement, spec
+    entity_id: Target entity ID
+    current_status: Optional status to evaluate from (empty = the entity's
+        current status)
+
+Returns:
+    JSON with the allowed target statuses for the entity.
+
 ## `okto_pulse_get_resource_gate_summary`
 
 Get the Resource Gate state for an SDLC entity.
@@ -85,9 +102,17 @@ Args:
     include_qa: Include Q&A items from card and spec (default "true")
     include_comments: Include card comments (default "true")
     include_architecture: Include Architecture Designs from card and spec (default "true")
+    include_superseded: When "false" (default), superseded/revoked decisions are
+        filtered out; set "true" for full decision history.
+    profile: Response projection — one of: summary (default), detail, full,
+        legacy. Use `summary` for exploration and `full` before card work or
+        status-changing moves. See okto-pulse://reference/projection-profiles.
 
 Returns:
-    JSON with complete task context: card details + spec requirements + linked artifacts
+    JSON with complete task context: card details + spec requirements + linked artifacts.
+    Test cards expose `test_card_operational_flow`; `gate_readiness` mirrors the
+    active done-gate and cognitive-readiness verdict without mutating or skipping
+    anything.
 
 ## `okto_pulse_get_task_validation`
 
@@ -114,18 +139,20 @@ Returns:
 
 ## `okto_pulse_get_publish_health`
 
-Read the metrics publication health surface used by Pulse telemetry.
+Get the local telemetry publish-health status (R5C-A).
 
-Use this before or after an AWS/S3/Firehose validation to inspect the last
-publish attempt, failure state, freshness, and configured availability
-sources without mutating local state.
+Reports whether this install's anonymous usage publishing is healthy,
+degraded, recovering, failing, stale, disabled, or unavailable — plus the
+last success/failure timestamps, the scheduled next retry, and freshness.
+Agent-facing twin of `GET /metrics/publish-health`; it reads the
+install-local failure-state and is NOT board-scoped.
 
-Args:
-    board_id: Board ID used for authentication and scoping.
+No parameters.
 
 Returns:
-    JSON health DTO with source availability, last success/failure details,
-    publish mode, and bounded reason codes.
+    JSON health DTO — the allowlisted, redacted projection only: publish
+    state, last success/failure details, and bounded reason codes. The
+    install id appears solely as `install_id_redacted`; never a token/secret.
 
 ## `okto_pulse_link_task`
 
@@ -224,114 +251,12 @@ Returns:
     JSON preview with eligible candidates, rejected candidates, and semantic-gap
     guidance. The tool is read-only.
 
-## `okto_pulse_create_amendment_revision`
-
-Create a formal hotfix/amendment revision for a bug tied to a content-locked spec
-(`done`/`validated`, OR `in_progress` still content-locked by an active passed
-validation — `current_validation_id` → outcome=success). An `in_progress` spec that
-is still editable (no active success validation, or a `failed`/`stale`/`superseded`
-one) is rejected — edit it directly instead.
-
-Use this for Path B regression remediation when a same-spec scenario cannot be
-reused safely. The revision starts before coverage confirmation; it does not by
-itself close the bug gate.
-
-Args:
-    board_id: Board ID.
-    bug_id: Bug card ID.
-    title: Revision title.
-    description: Optional summary of the semantic gap or hotfix scope.
-
-Returns:
-    JSON with revision identity, status, lineage_state, and required follow-up.
-
-## `okto_pulse_list_amendment_revisions`
-
-List amendment/hotfix revisions for a board or bug.
-
-Use this to inspect Path B readiness before moving a bug forward, especially
-when the bug is blocked with coverage_pending or incomplete lineage.
-
-Args:
-    board_id: Board ID.
-    bug_id: Optional bug card ID filter.
-    status: Optional status filter.
-
-Returns:
-    JSON list with revision status, lineage_state, artifacts, and coverage flags.
-
-## `okto_pulse_get_amendment_revision`
-
-Read one amendment/hotfix revision in detail.
-
-Args:
-    board_id: Board ID.
-    revision_id: Amendment revision ID.
-
-Returns:
-    JSON with lineage artifacts, associated regression scenario/test task,
-    status, and coverage confirmation state.
-
-## `okto_pulse_associate_amendment_revision_artifacts`
-
-Attach or replace the declared artifacts on an amendment revision.
-
-Use this to bind the revision spec, declared regression scenario, regression
-test task, and affected/origin task membership before transition.
-
-Args:
-    board_id: Board ID.
-    revision_id: Amendment revision ID.
-    revision_spec_id: Optional spec ID for the amendment.
-    regression_scenario_id: Optional test scenario ID.
-    regression_test_task_id: Optional test card ID.
-    affected_task_ids: Optional multi-value task IDs.
-
-Returns:
-    JSON with the updated artifact set and remaining lineage requirements.
-
-## `okto_pulse_transition_amendment_revision`
-
-Move an amendment revision through status and lineage-state transitions.
-
-Use this after artifacts are associated. `lineage_state=complete` requires the
-declared scenario, test task, and origin/affected membership. `approved`/`done`
-require complete lineage. This still does not confirm bug coverage; use
-`okto_pulse_confirm_amendment_coverage` for the validator attestation.
-
-Args:
-    board_id: Board ID.
-    revision_id: Amendment revision ID.
-    status: Optional target status.
-    lineage_state: Optional target lineage state.
-    note: Optional transition rationale.
-
-Returns:
-    JSON with updated status, lineage_state, blockers, and next action.
-
-## `okto_pulse_confirm_amendment_coverage`
-
-Validator-only confirmation that the amendment regression artifacts satisfy the
-bug coverage gate.
-
-Use this after the regression test card and declared scenario have fresh
-re-executable evidence. This is the non-forgeable coverage signal consumed by
-bug movement gates. Binding + validator authorization + reexecutable evidence are
-necessary but NOT sufficient: BEFORE persisting, the tool runs the same
-gate-consumability preflight the bug regression gate uses, so success implies the
-attestation is consumable (same-spec routes through Path A by origin/affected-task
-lineage; cross-spec routes through Path B and must reach `path_b_ready`). An inert
-tuple fails closed with `coverage_not_gate_consumable` (see `reference/errors.md`).
-There is no `bug_id` argument — the amendment carries bug/board/original_spec.
-
-Args:
-    board_id: Board ID.
-    amendment_id: Path B AmendmentHotfixRevision ID (carries bug/board/spec).
-    regression_test_task_id: Declared regression test task ID.
-    regression_scenario_id: Declared regression scenario ID.
-
-Returns:
-    JSON with confirmation status and the bug coverage gate readiness.
+The amendment/hotfix revision tools (`okto_pulse_create_amendment_revision`,
+`okto_pulse_list_amendment_revisions`, `okto_pulse_get_amendment_revision`,
+`okto_pulse_associate_amendment_revision_artifacts`,
+`okto_pulse_transition_amendment_revision`,
+`okto_pulse_confirm_amendment_coverage`) are documented in
+`okto-pulse://reference/tool-docs/card`.
 
 ## `okto_pulse_mark_as_seen`
 
@@ -341,9 +266,7 @@ Use this after processing mentions to avoid seeing them again.
 Args:
     board_id: Board ID (for access verification)
     item_ids: Multi-value item IDs to mark as seen (from list_my_mentions item_id
-        field). Preferred native list (e.g. ``["c_a", "qa_b"]``); legacy string
-        accepted as JSON array or pipe-separated. Comma-only string is REJECTED.
-        See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+        field). Formats: okto-pulse://reference/multivalue.
 
 Returns:
     JSON with count of newly marked items
@@ -404,60 +327,67 @@ Returns:
 
 ## `okto_pulse_list_design_systems`
 
-List global and board-scoped design systems visible to the board.
+List Design Systems (spec 3a006f65 / FR2, admin read). REST twin:
+GET /design-systems. Perm: BOARD_READ.
 
 Args:
-    board_id: Board ID.
-    scope: Optional filter such as global or inline.
+    board_id: Board ID used for authentication.
+    scope: `global` lists the global catalog; `inline` lists THIS board's
+        inline Design Systems.
 
 Returns:
-    JSON list with design system metadata and board-link/default flags.
+    JSON list with design system metadata.
 
 ## `okto_pulse_get_design_system`
 
-Read a design system, including its content body.
+Get a Design System by id, including its payload (admin read). REST twin:
+GET /design-systems/{id}. Perm: BOARD_READ.
 
 Args:
     board_id: Board ID used for access checks.
     design_system_id: Design system ID.
 
 Returns:
-    JSON with title, content, scope, tags, and timestamps.
+    JSON with the Design System (title, scope, payload, status, version, timestamps).
 
 ## `okto_pulse_create_design_system`
 
-Create a design system record and its content.
+Create a Design System (spec 3a006f65 / FR1, admin write). REST twin:
+POST /design-systems. Perm: SPECS_UPDATE.
 
-Global design systems can be linked to boards and used as defaults; inline
-design systems belong to the current board.
+`scope="global"` creates a catalog entry that can be linked to any board or
+made a template default; `scope="inline"` binds it to THIS board (board_id).
+An inline Design System can never be a global default.
 
 Args:
     board_id: Board ID.
     title: Design system title.
-    content: Markdown instructions or tokens for mockup generation.
-    scope: global or inline.
-    tags: Optional multi-value tags.
+    scope: `global` (default) or `inline`.
+    payload: Design System payload dict (tokens/instructions).
+    status: Lifecycle status (default `active`).
 
 Returns:
-    JSON with created design system.
+    JSON with the created Design System.
 
 ## `okto_pulse_update_design_system`
 
-Update design system title, content, tags, or active state.
+Update a Design System (admin write); a title/payload change bumps the version.
+REST twin: PATCH /design-systems/{id}. Perm: SPECS_UPDATE.
 
 Args:
     board_id: Board ID.
     design_system_id: Design system ID.
     title: Optional new title.
-    content: Optional new content.
-    tags: Optional replacement tags.
+    payload: Optional replacement payload dict.
+    status: Optional new lifecycle status.
 
 Returns:
-    JSON with updated design system.
+    JSON with the updated Design System.
 
 ## `okto_pulse_delete_design_system`
 
-Delete or deactivate a design system and remove board links.
+Delete a Design System (admin write). REST twin: DELETE /design-systems/{id}.
+Perm: SPECS_UPDATE.
 
 Args:
     board_id: Board ID.
@@ -468,13 +398,22 @@ Returns:
 
 ## `okto_pulse_set_default_design_system`
 
-Set or clear the global default design system used by newly created boards.
+Set the Design System default reference + canonical gate mode on a default
+board-configuration TEMPLATE (spec 3a006f65 / FR3, admin write). REST twin:
+POST /default-board-configurations/{template_id}/design-system. Perm: SPECS_UPDATE.
 
-Only design systems from the global catalog are eligible for default use.
+The `design_system_id` must be a real, global, active DesignSystem —
+inline/synthetic references are rejected fail-closed. An ACTIVE template is
+copy-on-write: the change lands on a new template version.
 
 Args:
     board_id: Board ID used for authentication.
-    design_system_id: Global design system ID, or empty/CLEAR to remove default.
+    template_id: Default board-configuration template ID.
+    design_system_id: Global active Design System ID.
+    gate_mode: Mockup Design System gate mode — `off` (default), `advisory`,
+        or `blocking`.
+    version: Optional Design System version to pin.
+    snapshot: Optional snapshot payload.
 
 Returns:
-    JSON with the active default design system reference.
+    JSON with the EFFECTIVE template and its design_system_default_ref.

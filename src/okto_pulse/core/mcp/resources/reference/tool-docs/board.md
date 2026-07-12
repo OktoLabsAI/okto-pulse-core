@@ -49,14 +49,16 @@ Returns:
 
 ## `okto_pulse_list_default_board_config_versions`
 
-List default board configuration versions.
+List default board-configuration template versions for a scope, plus the
+active template id (admin read). REST twin: GET /default-board-config/versions.
 
 Args:
     board_id: Board ID used for authentication.
-    include_inactive: Optional boolean-like string to include inactive versions.
+    scope: Template scope (default `global`).
 
 Returns:
-    JSON list with version, active flag, author, and created timestamp.
+    JSON list of template versions (version, active flag, author, created
+    timestamp) and the active template id.
 
 ## `okto_pulse_get_board_default_config_diff`
 
@@ -71,40 +73,48 @@ Returns:
 
 ## `okto_pulse_create_default_board_config_version`
 
-Create a new default board configuration version.
+Create a new default board-configuration template version (admin write).
+REST twin: POST /default-board-config/versions. Perm: SPECS_UPDATE.
 
-Use this to define the gate/settings defaults that future boards should inherit.
-Creating a version does not necessarily activate it.
+Use this to define the gate/settings defaults that future boards should
+inherit. Creating a version does not activate it unless `activate=true`
+(single-active is enforced).
 
 Args:
     board_id: Board ID used for authentication.
-    name: Template name.
-    description: Optional description.
-    settings_json: JSON settings payload.
+    settings_payload: Settings dict — validated as BoardSettings.
+    scope: Template scope (default `global`).
+    guideline_default_refs: Optional list of default guideline refs — must
+        reference GLOBAL catalog guidelines.
+    design_system_default_ref: Optional default Design System ref dict — its
+        gate_mode must be valid.
+    activate: When true, activates the new version (default false).
 
 Returns:
-    JSON with created template version and validation results.
+    JSON with the created template version and validation results.
 
 ## `okto_pulse_activate_default_board_config_version`
 
-Activate one default board configuration version for new boards.
+Activate a default board-configuration template version (admin write);
+deactivates every other active version in the scope. REST twin:
+POST /default-board-config/versions/{template_id}/activate. Perm: SPECS_UPDATE.
 
 Args:
     board_id: Board ID used for authentication.
-    template_id: Default configuration template ID.
-    version: Version to activate.
+    template_id: Default configuration template ID to activate.
 
 Returns:
     JSON with the activated version and prior active version, if any.
 
 ## `okto_pulse_deactivate_default_board_config_version`
 
-Deactivate the current default board configuration version.
+Deactivate a default board-configuration template version (admin write).
+REST twin: POST /default-board-config/versions/{template_id}/deactivate.
+Perm: SPECS_UPDATE.
 
 Args:
     board_id: Board ID used for authentication.
-    template_id: Default configuration template ID.
-    version: Version to deactivate.
+    template_id: Default configuration template ID to deactivate.
 
 Returns:
     JSON with updated active/default state.

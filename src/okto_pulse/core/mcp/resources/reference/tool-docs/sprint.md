@@ -38,10 +38,8 @@ Assign cards to a sprint. Cards must belong to the same spec as the sprint.
 Args:
     board_id: Board ID
     sprint_id: Sprint ID
-    card_ids: Multi-value card IDs to assign. Preferred native list (e.g.
-        ``["uuid_a", "uuid_b"]``); legacy string accepted as JSON array or
-        pipe-separated. Comma-only string is REJECTED. See
-        ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+    card_ids: Multi-value card IDs to assign — formats:
+        okto-pulse://reference/multivalue.
 
 Returns:
     JSON with number of cards assigned
@@ -59,17 +57,19 @@ Args:
     expected_outcome: What success looks like when this sprint is done (optional but recommended)
     lane_type: One of `normal` or `hotfix`. `release_validation` is not a lane;
         use `normal` with release-validation title/objective/labels.
+    origin_sprint_id: Optional (empty = unset) — origin sprint lineage for
+        `lane_type=hotfix` (the closed sprint that blocked bug execution).
+        See okto-pulse://workflows/sprints and Path C in
+        okto-pulse://reference/tool-docs/card.
+    origin_bug_id: Optional (empty = unset) — origin bug lineage for
+        `lane_type=hotfix`.
     test_scenario_ids: Multi-value spec test scenario IDs scoped to this sprint —
-        preferred native list; legacy string accepted as JSON array or pipe-separated.
-        Comma-only string is REJECTED. (optional)
+        formats: okto-pulse://reference/multivalue. (optional)
     business_rule_ids: Multi-value spec business rule IDs scoped to this sprint —
-        preferred native list; legacy string accepted as JSON array or pipe-separated.
-        Comma-only string is REJECTED. (optional)
+        formats: okto-pulse://reference/multivalue. (optional)
     start_date: ISO date string (optional)
     end_date: ISO date string (optional)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional)
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional)
 
 Returns:
     JSON with created sprint details
@@ -208,16 +208,16 @@ Args:
     sprint_id: Sprint ID
     title: New title (optional, empty = no change)
     description: New description (optional)
-    test_scenario_ids: Multi-value scoped test scenario IDs — preferred native list;
-        legacy string accepted as JSON array or pipe-separated. Comma-only string is
-        REJECTED. (optional)
-    business_rule_ids: Multi-value scoped business rule IDs — preferred native list;
-        legacy string accepted as JSON array or pipe-separated. Comma-only string is
-        REJECTED. (optional)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional)
+    test_scenario_ids: Multi-value scoped test scenario IDs — formats:
+        okto-pulse://reference/multivalue. (optional)
+    business_rule_ids: Multi-value scoped business rule IDs — formats:
+        okto-pulse://reference/multivalue. (optional)
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional)
     lane_type: One of `normal` or `hotfix`. `release_validation` is not a lane.
+    origin_sprint_id: Optional (empty = unset) — origin sprint lineage for
+        `lane_type=hotfix`.
+    origin_bug_id: Optional (empty = unset) — origin bug lineage for
+        `lane_type=hotfix`.
     skip_test_coverage: "true" or "false" (optional)
     skip_rules_coverage: "true" or "false" (optional)
     skip_qualitative_validation: "true" or "false" (optional)

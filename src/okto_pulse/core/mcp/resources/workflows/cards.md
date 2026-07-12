@@ -6,7 +6,7 @@ version: "1.0"
 
 ## 2.7b Architecture Design — Structural Artifacts (Summary)
 
-Architecture Design is the first-class place for system structure. See the full reference in the spec workflow or the architecture tools documentation. Use `okto_pulse_copy_architecture_to_card` before moving to `in_progress`.
+Architecture Design is the first-class place for system structure. See the full reference in `okto-pulse://reference/tool-docs/architecture`. Use `okto_pulse_copy_architecture_to_card` before moving to `in_progress`.
 
 ## 2.8 Cards (Tasks)
 
@@ -28,7 +28,7 @@ identity used by the Resource Gate.
 
 **Mandatory before moving the card to `in_progress`:**
 
-1. Run `okto_pulse_get_task_context(board_id, card_id, include_knowledge=true, include_mockups=true, include_architecture=true)` and inspect what is already attached.
+1. Run `okto_pulse_get_task_context(board_id, card_id, profile="full", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)` and inspect what is already attached.
 2. For each KE / mockup / Architecture Design the task needs, decide:
    - **Already on the card** → no action.
    - **On the parent spec, relevant to this task** → call the copy tool.
@@ -38,10 +38,7 @@ identity used by the Resource Gate.
 ### Governance Rules (enforced by the system)
 
 1. **Every card must be linked to a spec** — `spec_id` is mandatory in `okto_pulse_create_card`.
-2. **Spec status rules for card creation**:
-   - `card_type="normal"` → spec must be in `approved`, `in_progress`, or `done`
-   - `card_type="test"` → spec must be in `approved`, `validated`, `in_progress`, or `done`
-   - `card_type="bug"` → spec must be in `approved`, `in_progress`, or `done`
+2. **Spec status rules for card creation** — depend on `card_type`; the per-type matrix is in `okto-pulse://reference/card_types`.
 3. **A spec cannot move to `done` without full test coverage** — every acceptance criterion must have at least one test scenario linked.
 4. **A spec cannot move to `done` if it has pending tasks** — all linked non-bug, non-archived cards must be `done` or `cancelled` first.
 5. **No card can advance to `started`/`in_progress` unless ALL test scenarios have linked task cards**.
@@ -51,16 +48,14 @@ identity used by the Resource Gate.
 ### There Are Three Types of Cards
 
 1. **Implementation cards** (`card_type="normal"`) — implement functional/technical requirements from the spec.
-2. **Test cards** (`card_type="test"`, with `test_scenario_ids`) — implement, execute, or validate test scenarios defined in the spec. Key rules:
-   - `card_type="test"` **requires** `test_scenario_ids` to be non-empty.
-   - Respect `board.settings.max_scenarios_per_card` (default 3; some boards set 2). If a group exceeds the cap, create multiple test cards before linking.
-   - The scenario-coverage gate counts **only cards with `card_type="test"`**. A `card_type="normal"` card with `test_scenario_ids` does NOT count toward scenario coverage.
-   - Always use `card_type="test"` when the intent is to cover a scenario.
+2. **Test cards** (`card_type="test"`, requires non-empty `test_scenario_ids`) — cover test scenarios; the scenario-coverage gate counts **only** `card_type="test"` cards.
 3. **Bug cards** (`card_type="bug"`) — track and fix bugs discovered during or after implementation.
+
+Full per-type rules (spec-status matrix, `max_scenarios_per_card` cap, scenario evidence, gate interactions): `okto-pulse://reference/card_types`.
 
 ### When Creating Cards from a Spec (MANDATORY ORDER)
 
-1. **Get full task context**: `okto_pulse_get_task_context(board_id, card_id)` — returns the card + spec with all requirements, TRs, BRs, test scenarios, API contracts, KBs, and mockups.
+1. **Get full spec context**: `okto_pulse_get_spec_context(board_id, spec_id, profile="full")` — returns the spec with all requirements, TRs, BRs, test scenarios, API contracts, KBs, and mockups. (`okto_pulse_get_task_context` needs an existing `card_id` — it belongs to the execution pre-flight in §2.8, not here.)
 2. **Read test scenarios**: `okto_pulse_list_test_scenarios(board_id, spec_id)`.
 3. **Read business rules and API contracts**: `okto_pulse_list_business_rules(board_id, spec_id)` and `okto_pulse_list_api_contracts(board_id, spec_id)`.
 4. **Review conclusions of dependencies**: for every card this one will depend on, call `okto_pulse_get_task_conclusions(board_id, dep_card_id)`.
@@ -80,7 +75,7 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 |---|---|---|
 | One big test card for all scenarios | No granular traceability | Create one test card per scenario or per small group of closely related scenarios |
 | Test card without `okto_pulse_link_task(target_type="scenario", ...)` | Scenario shows "no tasks" — no way to know which card validates it | Always call `okto_pulse_link_task(target_type="scenario", ...)` after creating a test card |
-| Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with all include flags BEFORE any work |
+| Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with `profile="full"` and all include flags BEFORE any work |
 | Card still `not_started` while writing code | Board is inaccurate | Move to `in_progress` BEFORE first line of code |
 
 ## 2.9 Bug Cards — Post-Delivery Bug Tracking
@@ -128,38 +123,17 @@ okto_pulse_create_card(
 
 Reprocessing or closing a bug that surfaced AFTER its spec was locked
 (`done`/`validated`) runs through the SAME Path B gate as any other bug — there
-is **no administrative shortcut and no `skip`/`override`/`force` path**. Work the
-checklist below; every item must be green before the bug closes. It is
-re-executable by an agent end to end and is proven by `tests/test_path_b_e2e.py`.
+is **no administrative shortcut and no `skip`/`override`/`force` path**. The
+canonical sequence is **§2.9 step 2, Path B, steps 1-5 above** — follow it end to
+end; it is re-executable by an agent and proven by `tests/test_path_b_e2e.py`.
+The historical case adds only the differences below:
 
-**Pre-conditions**
-
-- [ ] The bug's spec is **content-locked**: `done`/`validated`, OR `in_progress` still content-locked by an active passed validation (`current_validation_id` → outcome=success). An `in_progress` spec that is still editable (no active success validation, or a `failed`/`stale`/`superseded` one) needs no amendment — edit the spec directly.
-- [ ] You have the bug's authoritative `origin_task_id` (and any real `affected_task_ids`). Membership is authoritative from the bug, never invented by the amendment.
-- [ ] KG health is clean for the board BEFORE you start: `okto_pulse_kg_health` reports no related canonical debt and no related dead-letter (DLQ) entries (cross-check `okto_pulse_kg_canonical_debt_list` and `okto_pulse_kg_dead_letter_list`). Resolve any related debt/DLQ first.
-
-**Closure steps (all via Path B, re-executable)**
-
-1. Create or associate a formal `AmendmentHotfixRevision` for the bug — `okto_pulse_create_amendment_revision` (binds to the bug's own content-locked spec — `done`/`validated`, or `in_progress` still content-locked — and starts as `draft`) or `okto_pulse_associate_amendment_revision_artifacts` onto an existing revision for this bug.
-2. Complete the lineage: exact origin/affected-task membership, revision spec, and the declared regression scenario plus a post-bug regression test task.
-3. Register FRESH re-executable evidence: the regression test card's scenario is `passed`/`automated` with `test_file_path`+`test_function`, or an explicit replayable `evidence_class` such as `mcp_replay_manifest` plus `expected_output_snapshot`, from a GREEN run. Stale or reused evidence does not count.
-4. The validator confirms coverage — `okto_pulse_confirm_amendment_coverage`, the ONLY writer of the non-forgeable `coverage_confirmed` signal. Re-executable evidence is necessary but NOT sufficient without a real validator attestation bound to this amendment + artifact. The tool runs a gate-consumability preflight BEFORE persisting, so a syntactically valid but gate-inert tuple (e.g. a same-spec `unrelated_scenario`) fails closed with `coverage_not_gate_consumable` and persists nothing.
-5. Only now move the bug forward (`move_card`) and close it with a conclusion. Confirm it travelled `coverage_pending` → `path_b_ready` (`okto_pulse_list_amendment_revisions` / `okto_pulse_get_amendment_revision`).
-
-**KG checkpoints (part of Path B regression — not optional)**
-
-- The amendment materializes in the WORKING partition while `draft`/incomplete and becomes canonical ONLY at `done` + complete lineage — verify there is no premature canonical leak.
-- Re-run `okto_pulse_kg_health` after closure: no NEW canonical debt and no NEW DLQ entry attributable to this bug/amendment. If a rebuild ran, the amendment partition must reconcile (no `MATERIALIZED_LAYER_MISMATCH`).
-
-**Do NOT close the bug while any of these hold (fail-closed):**
-
-- The bug is `coverage_pending`: lineage may be eligible but the validator has not confirmed coverage.
-- The amendment is `draft`/`review`/`cancelled`/`superseded`, or its lineage is incomplete (`blocked_amendment_status` / `incomplete_amendment_lineage`).
-- The regression evidence is reused, stale, or missing a replayable class/pointer such as `test_file_path`+`test_function`, `replay_command`, `mcp_replay_manifest`, or `manual_checklist_ref` with the required `expected_output_snapshot`.
-- The candidate scenario is cross-spec or unrelated with no formal amendment backing it (`missing_amendment_revision` / `unrelated_scenario` / `cross_spec_scenario`).
-- `okto_pulse_confirm_amendment_coverage` returned `coverage_not_gate_consumable`: the tuple is gate-inert (binding + evidence are not enough). Fix the reason it returns — a same-spec lineage scenario (Path A) or a consumable cross-spec Path B artifact — never retry with a bypass.
-- A hotfix lane (Path C) is being treated as a substitute for amendment lineage — the lane only unblocks execution and never replaces Path B.
-- KG health still shows related canonical debt or DLQ that you have not resolved.
+- **Pre-condition — authoritative lineage:** you have the bug's authoritative `origin_task_id` (and any real `affected_task_ids`). Membership is authoritative from the bug, never invented by the amendment. (The content-lock rule for the spec is in Path B step 1; an `in_progress` spec that is still editable needs no amendment — edit it directly.)
+- **Pre-condition — clean KG:** BEFORE you start, `okto_pulse_kg_health` reports no related canonical debt and no related dead-letter (DLQ) entries (cross-check `okto_pulse_kg_canonical_debt_list` and `okto_pulse_kg_dead_letter_list`). Resolve any related debt/DLQ first.
+- **FRESH evidence:** the re-executable evidence in Path B step 3 must come from a GREEN run. Stale or reused evidence does not count.
+- **Post-closure verification:** only after the validator confirms coverage (Path B step 4) move the bug forward (`move_card`) and close it with a conclusion. Confirm it travelled `coverage_pending` → `path_b_ready` (`okto_pulse_list_amendment_revisions` / `okto_pulse_get_amendment_revision`).
+- **KG checkpoints (not optional):** the amendment materializes in the WORKING partition while `draft`/incomplete and becomes canonical ONLY at `done` + complete lineage — verify there is no premature canonical leak. Re-run `okto_pulse_kg_health` after closure: no NEW canonical debt and no NEW DLQ entry attributable to this bug/amendment; if a rebuild ran, the amendment partition must reconcile (no `MATERIALIZED_LAYER_MISMATCH`).
+- **Fail-closed — do NOT close while any of these hold:** the bug is `coverage_pending`; the amendment is `draft`/`review`/`cancelled`/`superseded` or its lineage incomplete (`blocked_amendment_status` / `incomplete_amendment_lineage`); the evidence is stale, reused, or missing a replayable class/pointer with the required `expected_output_snapshot`; the scenario is cross-spec/unrelated with no formal amendment backing it (`missing_amendment_revision` / `unrelated_scenario` / `cross_spec_scenario`); `okto_pulse_confirm_amendment_coverage` returned `coverage_not_gate_consumable` (fix the cause — never retry with a bypass); a hotfix lane (Path C) is being treated as a substitute for lineage; or KG health still shows unresolved related debt/DLQ.
 
 There is no way to close a historical bug without validator-confirmed coverage and a clean KG. The error codes are in `reference/errors.md`, the amendment tools in `reference/tool-docs/card.md`, and the KG health contract in `reference/kg-health.md`.
 
@@ -173,7 +147,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 
 ### Implementor Workflow
 
-1. Retrieve context — `okto_pulse_get_task_context(board_id, card_id)`. Check `validation_config.required`.
+1. Retrieve context — `okto_pulse_get_task_context(board_id, card_id, profile="full")`. Check `validation_config.required`.
 2. **MANDATORY for restarts** — if the card has a failed validation, read `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, `general_justification` before changing the implementation.
 3. Move to in_progress — before starting work.
 4. Implement the task.
@@ -184,7 +158,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 ### Validator Workflow
 
 1. Find cards awaiting validation — `okto_pulse_list_cards_by_status(board_id, status="validation")`
-2. Get full context for each card — `okto_pulse_get_task_context(board_id, card_id)`
+2. Get full context for each card — `okto_pulse_get_task_context(board_id, card_id, profile="full")`
 3. Analyze the work — review implementation against card description and spec requirements
 4. Submit validation — `okto_pulse_submit_task_validation(board_id, card_id, ...)` with:
    - `confidence` (0-100) + `confidence_justification`

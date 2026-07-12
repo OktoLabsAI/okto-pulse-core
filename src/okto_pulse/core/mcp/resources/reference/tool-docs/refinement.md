@@ -16,10 +16,8 @@ Args:
     refinement_id: Refinement ID (for context/validation)
     qa_id: Q&A item ID to answer
     answer: Free-text answer (for text questions, or additional text on choice questions with allow_free_text)
-    selected: Option IDs for choice questions, accepted in three formats:
-        ``'["opt_0", "opt_2"]'`` (JSON array, preferred), ``"opt_0|opt_2"``
-        (pipe-separated), or ``"opt_0,opt_2"`` (legacy comma-separated).
-        See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
+    selected: Option IDs for choice questions — multi-value; formats:
+        okto-pulse://reference/multivalue.
 
 Returns:
     JSON with updated Q&A item
@@ -32,14 +30,8 @@ Args:
     board_id: Board ID
     refinement_id: Refinement ID
     question: The question text
-    options: Option labels in any of three formats:
-        - JSON array (preferred when labels contain commas):
-          ``'["Mermaid (text-based, lightweight)", "ExcaliDraw (heavy)"]'``
-        - Pipe-separated (when labels contain commas but not pipes):
-          ``"Option A|Option B|Option C"``
-        - Comma-separated (legacy, fragile if a label contains a comma):
-          ``"Option A,Option B,Option C"``
-        See ``okto_pulse.core.mcp.helpers.parse_multi_value``.
+    options: Option labels — multi-value; formats:
+        okto-pulse://reference/multivalue.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
     allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -78,9 +70,7 @@ Args:
     analysis: Detailed analysis text (optional)
     decisions: Pipe-separated list of decisions made (e.g. "Use REST API|Cache with Redis") (optional)
     assignee_id: User/agent ID to assign (optional)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional)
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional)
     mockup_ids: Pipe-separated mockup IDs to propagate from ideation (optional, empty = all)
     kb_ids: Pipe-separated KB IDs to propagate from ideation (optional, empty = all)
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
@@ -185,6 +175,7 @@ Args:
     board_id: Board ID
     refinement_id: Refinement ID
     status: New status — one of: draft, review, approved, done, cancelled
+    cancellation_reason: REQUIRED when status=cancelled; reopening clears it.
 
 Returns:
     JSON with updated refinement status
@@ -203,9 +194,7 @@ Args:
     analysis: New analysis (optional, empty = no change)
     decisions: Pipe-separated list of decisions (optional, empty = no change)
     assignee_id: New assignee (optional, empty = no change)
-    labels: Multi-value labels — preferred native list (e.g. ``["backend", "api"]``);
-        legacy string accepted as JSON array or pipe-separated. Comma-only string
-        is REJECTED. See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``. (optional, empty = no change)
+    labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional, empty = no change)
 
 Returns:
     JSON with updated refinement details
