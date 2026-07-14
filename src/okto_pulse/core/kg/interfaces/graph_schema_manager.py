@@ -2,7 +2,7 @@
 
 Owns bootstrap / migration / version / validation of a board's graph schema
 WITHOUT exposing ``kg.schema`` migration internals to consumers. Async: the
-contract is the boundary; the embedded adapter runs the synchronous Kùzu calls.
+contract is the boundary; the embedded adapter runs the synchronous graph backend calls.
 """
 
 from __future__ import annotations

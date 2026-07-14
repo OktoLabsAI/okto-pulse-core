@@ -27,6 +27,38 @@ def configure_provider_registry(
     configure_kg_registry(base_registry=base_registry, **kwargs)
 
 
+def configure_commit_coordinator() -> None:
+    """Install a fresh process runtime for Core's graph commit policy."""
+
+    from okto_pulse.core.kg.commit_coordinator import (
+        CommitCoordinator,
+        register_commit_coordinator,
+    )
+
+    register_commit_coordinator(CommitCoordinator())
+
+
+def configure_write_barrier(mode: str) -> None:
+    """Install an instance-owned write barrier configured by the edition."""
+
+    from okto_pulse.core.kg.write_barrier import (
+        WriteBarrierRuntime,
+        configure_write_barrier_runtime,
+    )
+
+    configure_write_barrier_runtime(WriteBarrierRuntime(mode))
+
+
+async def migrate_board_graph_schema(board_id: str) -> dict[str, Any]:
+    """Apply the composed graph schema manager to one board."""
+
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    summary = await get_kg_registry().require_graph_schema_manager().migrate(board_id)
+    summary.setdefault("duration_ms", 0)
+    return summary
+
+
 def get_current_provider_registry() -> Any:
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 

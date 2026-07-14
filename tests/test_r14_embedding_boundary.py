@@ -15,7 +15,7 @@ from okto_pulse.core.kg.interfaces.registry import (
     get_kg_registry,
     reset_registry_for_tests,
 )
-from okto_pulse.core.kg.providers.testing.registry import build_testing_kg_registry
+from testing_kg_registry import build_testing_kg_registry
 from okto_pulse.core.kg.providers.testing.embedding import (
     TestingStubEmbeddingProvider,
 )

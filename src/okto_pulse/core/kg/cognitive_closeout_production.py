@@ -125,7 +125,7 @@ class CloseoutResult:
 @runtime_checkable
 class CognitiveCandidatePersister(Protocol):
     """Persists a cognitive candidate (+ its edges) through the consolidation
-    pipeline to graph.lbug and confirms it is queryable. The real implementation
+    pipeline to board graph and confirms it is queryable. The real implementation
     wraps begin→add_node→add_edge→commit; a fake records calls for tests. The
     closeout service NEVER writes the graph directly (BR2 lives here)."""
 
@@ -135,7 +135,7 @@ class CognitiveCandidatePersister(Protocol):
 
     async def persist(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate) -> bool:
         """Persist the candidate + edges through the consolidation pipeline; return
-        True once committed AND confirmed queryable in graph.lbug (BR2)."""
+        True once committed AND confirmed queryable in board graph (BR2)."""
         ...
 
 
@@ -254,7 +254,7 @@ async def run_cognitive_closeout(
     decision_ref: str | None = None,
 ) -> CloseoutResult:
     """Produce + persist cognitive closeout for one done artifact, returning an
-    honest outcome. ``persister`` owns the candidate→graph.lbug→queryable step."""
+    honest outcome. ``persister`` owns the candidate→board graph→queryable step."""
     result = CloseoutResult(artifact_ref=artifact_ref, artifact_type=artifact_type,
                             outcome=CloseoutOutcome.NO_MATERIAL.value)
 
@@ -314,7 +314,7 @@ async def run_cognitive_closeout(
 
 
 # ---------------------------------------------------------------------------
-# Real persister — drives the consolidation pipeline to graph.lbug (FR2/BR2)
+# Real persister — drives the consolidation pipeline to board graph (FR2/BR2)
 # ---------------------------------------------------------------------------
 
 
@@ -370,15 +370,20 @@ def _resolve_existing_node_id(board_id: str, label: str, ref: str) -> str:
 
 class ConsolidationPipelinePersister:
     """The production persister: drives begin→add_node→add_edge→propose→commit and
-    confirms the node is queryable in graph.lbug. This is the consumer/worker that
-    RKG-01 measured as missing. ``db_factory`` is the async session context manager
-    (matching the consolidation worker's wiring)."""
+    confirms the node is queryable in board graph. This is the consumer/worker that
+    RKG-01 measured as missing. The relational scope factory is supplied by the
+    edition runtime."""
 
-    def __init__(self, db_factory, *, agent_id: str = "cognitive_closeout_worker") -> None:
+    def __init__(
+        self,
+        relational_scope_factory,
+        *,
+        agent_id: str = "cognitive_closeout_worker",
+    ) -> None:
         # #6 (codex): NOT a ``system:`` id — primitives treats system:* as a
         # deterministic Layer-1 writer (ownership bypass). The cognitive closeout
         # must stay on the cognitive writer boundary.
-        self._db_factory = db_factory
+        self._relational_scope_factory = relational_scope_factory
         self._agent_id = agent_id
 
     def already_persisted(self, board_id: str, node_type: str, source_artifact_ref: str) -> bool:
@@ -414,7 +419,7 @@ class ConsolidationPipelinePersister:
         # (begin/add_node/add_edge/propose/commit) must fail-closed to "not
         # persisted", never escape as an uncaught error or a fabricated success.
         try:
-            async with self._db_factory() as db:
+            async with self._relational_scope_factory() as db:
                 begin = await begin_consolidation(
                     BeginConsolidationRequest(
                         board_id=board_id, artifact_type=artifact_type, artifact_id=artifact_id,
@@ -458,7 +463,7 @@ class ConsolidationPipelinePersister:
                 agent_id=self._agent_id, db=None, force_reprocess=True,
             )
             owner_token = f"cognitive-closeout-worker:{cid}:{_uuid.uuid4().hex}"
-            async with self._db_factory() as db:
+            async with self._relational_scope_factory() as db:
                 with under_safe_write(board_id, owner_token, COGNITIVE_CLOSEOUT_COMMIT_OPERATION):
                     await commit_consolidation(
                         CommitConsolidationRequest(session_id=begin.session_id),
@@ -470,13 +475,13 @@ class ConsolidationPipelinePersister:
             logger.info("cognitive_closeout.persist_failed ref=%s step_err=%s",
                         candidate.source_artifact_ref, getattr(exc, "code", exc))
             return False
-        # BR2: effective only when actually queryable in graph.lbug.
+        # BR2: effective only when actually queryable in board graph.
         return self.already_persisted(board_id, candidate.node_type, candidate.source_artifact_ref)
 
 
 # ---------------------------------------------------------------------------
 # Ledger-backed consumer/worker (#1 codex) — handler opens pending; a dedicated
-# cognitive worker drains it OUTSIDE the event drain and persists to graph.lbug.
+# cognitive worker drains it OUTSIDE the event drain and persists to board graph.
 # The ledger IS the candidate→consumer→graph tracking (FR2/BR2).
 # ---------------------------------------------------------------------------
 
@@ -504,6 +509,7 @@ def open_cognitive_closeout_pending(
     board_id: str,
     source_ref: str,
     artifact_type: str,
+    content_hash: str | None = None,
     store: CognitiveConsolidationItemStore | None = None,
     kg_generation_id: str | None = None,
 ) -> int:
@@ -518,13 +524,17 @@ def open_cognitive_closeout_pending(
     materialized = store.materialize_from_marker(
         board_id=board_id, kg_generation_id=gen,
         event_ref="cognitive.closeout.pending",
-        source_set=[{"source_ref": source_ref, "artifact_type": artifact_type}],
+        source_set=[{
+            "source_ref": source_ref,
+            "artifact_type": artifact_type,
+            "content_hash": content_hash,
+        }],
     )
     return int(materialized.item_count)
 
 
 async def drain_cognitive_closeout_pending(
-    db_factory,
+    relational_scope_factory,
     board_id: str,
     *,
     input_loader,
@@ -541,7 +551,10 @@ async def drain_cognitive_closeout_pending(
     (spec_context / bug_* / llm_config / bug_probe / decision_ref) for an item —
     injectable so the worker is testable without the full SQL/graph load."""
     store = store or _default_store()
-    persister = persister or ConsolidationPipelinePersister(db_factory, agent_id=agent_id)
+    persister = persister or ConsolidationPipelinePersister(
+        relational_scope_factory,
+        agent_id=agent_id,
+    )
     gen = _resolve_generation(store, board_id, kg_generation_id)
 
     # Drain fresh pending AND in_progress left by a worker that crashed mid-tick

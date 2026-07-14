@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -322,7 +324,7 @@ async def test_mcp_spec_evaluation_resolves_full_context_and_appends_evaluation(
         spec_id = spec.id
         await db.commit()
 
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     ctx = mcp_server.AgentContext(
         USER_ID,
         "BG Wiring Agent",
@@ -411,7 +413,7 @@ async def test_mcp_spec_evaluation_failure_does_not_append_evaluation(
         spec_id = spec.id
         await db.commit()
 
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     ctx = mcp_server.AgentContext(
         USER_ID,
         "BG Wiring Agent",
@@ -487,7 +489,7 @@ async def test_read_only_mcp_paths_do_not_invoke_critical_context_guard(
         forbidden_guard,
     )
 
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     ctx = mcp_server.AgentContext(
         USER_ID,
         "BG Wiring Agent",

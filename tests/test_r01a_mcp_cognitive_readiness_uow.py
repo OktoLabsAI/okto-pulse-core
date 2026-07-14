@@ -24,8 +24,9 @@ from okto_pulse.core.application.use_cases import (
     ListCognitiveReadinessItemsUseCase,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
-ACTOR = ActorContext("fu3-mcp-agent", "mcp")
+ACTOR = ActorContext("fu3-mcp-agent", "mcp", realm_id=LOCAL_REALM_ID)
 
 
 def _board() -> str:
@@ -40,7 +41,7 @@ def _uowf():
 
 def _service():
     from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessService
-    from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+    from memory_rebuild_audit_storage import (
         InMemoryRebuildAuditArtifactStore,
     )
     from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
@@ -58,7 +59,14 @@ async def _seed_board(board_id: str) -> None:
 
     async with get_session_factory()() as db:
         if await db.get(Board, board_id) is None:
-            db.add(Board(id=board_id, name="fu3", owner_id="fu3-owner"))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="fu3",
+                    owner_id="fu3-owner",
+                    realm_id=LOCAL_REALM_ID,
+                )
+            )
             await db.commit()
 
 
@@ -179,5 +187,9 @@ async def test_enforcement_helper_extracted_and_delegated() -> None:
     await _seed_board(board_id)
     async with get_session_factory()() as db:
         direct = await cognitive_enforcement_active(db, board_id)
-        delegated = await mcp_server._cognitive_enforcement_active(db, board_id)
+    async with _uowf()(actor=ACTOR) as uow:
+        delegated = await mcp_server._cognitive_enforcement_active(
+            uow.services.kg,
+            board_id,
+        )
     assert direct == delegated

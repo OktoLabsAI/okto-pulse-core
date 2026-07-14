@@ -14,7 +14,12 @@ responsive under concurrent load.
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+    runtime_state,
+)
 
 import asyncio
 import logging
@@ -22,6 +27,7 @@ import threading
 import time as _time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import partial
@@ -44,13 +50,19 @@ _graph_io_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="graph
 async def _run_graph_io(func, *args, **kwargs):
     """Run synchronous graph adapter IO in a dedicated thread pool."""
     loop = asyncio.get_running_loop()
-    if kwargs:
-        pfunc = partial(func, *args, **kwargs)
-        return await loop.run_in_executor(_graph_io_executor, pfunc)
-    return await loop.run_in_executor(_graph_io_executor, func, *args)
+    bound = partial(func, *args, **kwargs)
+    context = copy_context()
+    return await loop.run_in_executor(_graph_io_executor, context.run, bound)
 
 
-_run_kuzu = _run_graph_io
+def _as_iso_timestamp(value: Any) -> str | None:
+    """Normalize graph TIMESTAMP values at the typed API boundary."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    isoformat = getattr(value, "isoformat", None)
+    return isoformat() if callable(isoformat) else str(value)
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +161,10 @@ class _HitCacheRegistry:
 
 
 # Module-level registry — single instance shared by all three proxies.
-_registry = _HitCacheRegistry(max_size=5000)
+_registry = runtime_state(
+    "kg.kg_service.hit_cache_registry",
+    lambda: _HitCacheRegistry(max_size=5000),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +252,7 @@ class DefaultFilters:
 class KGToolError(Exception):
     """Typed error for tier primario tools (FR-8)."""
 
-    code: str  # not_found, permission_denied, invalid_param, kuzu_error, timeout, schema_drift, empty_result, graph_unavailable
+    code: str  # not_found, permission_denied, invalid_param, graph_error, timeout, schema_drift, empty_result, graph_unavailable
     message: str
     details: dict = field(default_factory=dict)
 
@@ -286,7 +301,7 @@ def _get_graph_store():
     store = get_kg_registry().graph_store
     if store is None:
         raise KGToolError(
-            code="kuzu_error",
+            code="graph_error",
             message="graph_store not configured in KG registry",
     )
     return store
@@ -314,7 +329,8 @@ def _run_async_blocking(coro):
         except BaseException as exc:  # pragma: no cover - re-raised below
             box["error"] = exc
 
-    thread = threading.Thread(target=_runner, daemon=True)
+    context = copy_context()
+    thread = threading.Thread(target=context.run, args=(_runner,), daemon=True)
     thread.start()
     thread.join()
     if "error" in box:
@@ -351,10 +367,10 @@ def _filters(
     )
 
 
-def _flush_to_kuzu(
+def _flush_to_graph(
     board_id: str, node_type: str, node_id: str, delta: int, now_iso: str,
 ) -> None:
-    """Sync helper: write hit counter delta to Kùzu (runs in thread pool)."""
+    """Sync helper: write hit counter delta to graph backend (runs in thread pool)."""
     _execute_graph_write_sync(
         board_id,
         f"MATCH (n:{node_type} {{id: $nid}}) "
@@ -369,17 +385,15 @@ async def _emit_hit_flushed_event(
 ) -> None:
     """Fire-and-forget publisher for KGHitFlushed (spec 28583299, IMPL-B).
 
-    Opens its own SQLAlchemy session via the application session factory so
-    the search hot path (record_query_hit → _flush_hits) doesn't have to
-    plumb a ``db`` argument through internal helpers. Best-effort: any
-    failure (no session factory in test mode, dispatcher down, etc.) is
+    Opens an edition UnitOfWork so the search hot path does not have to carry
+    a relational context through internal helpers. Best-effort: any
+    failure (no UoW provider in test mode, dispatcher down, etc.) is
     logged and swallowed because the event is operational telemetry — the
     underlying hit flush has already succeeded.
     """
     try:
-        from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import KGHitFlushed
-        from okto_pulse.core.ports.relational_runtime import get_session_factory
+        from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
     except Exception as exc:  # pragma: no cover — import-time guard
         logger.debug(
             "kg.hit_flushed.import_failed err=%s", exc,
@@ -387,8 +401,8 @@ async def _emit_hit_flushed_event(
         return
 
     try:
-        factory = get_session_factory()
-    except AssertionError:
+        factory = resolve_unit_of_work_factory()
+    except RuntimeError:
         # No DB initialised (sync test suites that exercise scoring only).
         return
 
@@ -400,9 +414,10 @@ async def _emit_hit_flushed_event(
         flushed_at=now_iso,
     )
     try:
-        async with factory() as session:
-            await event_publish(event, session=session)
-            await session.commit()
+        realm_scope = factory.resolve_realm_scope()
+        async with factory(realm_scope=realm_scope) as uow:
+            await uow.services.publish_domain_event(event)
+            await uow.commit()
     except Exception as exc:
         logger.warning(
             "kg.hit_flushed.publish_failed board=%s node=%s err=%s",
@@ -454,7 +469,7 @@ class KGService:
     ) -> None:
         """Record that ``node_id`` appeared in a query result top-K.
 
-        Lazy-flushes the counter to Kùzu when the pending count reaches
+        Lazy-flushes the counter to graph backend when the pending count reaches
         ``HIT_FLUSH_THRESHOLD`` (10) or when the last flush was more than
         24h ago. R3 wires this into the hybrid_search top-K; R2 exposes
         it as a public method that tests can exercise directly.
@@ -483,7 +498,7 @@ class KGService:
         node_type: str,
         node_id: str,
     ) -> None:
-        """Write the pending hit counter to Kùzu. Caller holds the lock."""
+        """Write the pending hit counter to graph backend. Caller holds the lock."""
         key = (board_id, node_id)
         delta = _PENDING_HITS.get(key, 0)
         if delta <= 0:
@@ -493,7 +508,7 @@ class KGService:
         now_iso = datetime.now(timezone.utc).isoformat()
         try:
             await _run_graph_io(
-                _flush_to_kuzu, board_id, node_type, node_id, delta, now_iso,
+                _flush_to_graph, board_id, node_type, node_id, delta, now_iso,
             )
         except Exception as exc:
             logger.error(
@@ -598,14 +613,14 @@ class KGService:
         try:
             # open_or_classify turns a fail-closed graph-open failure into a
             # typed KGToolError(code="graph_unavailable"); any other failure
-            # propagates unchanged and is flattened to kuzu_error below (FR6).
+            # propagates unchanged and is flattened to graph_error below (FR6).
             result = open_or_classify(fn, board_id=board_id)
         except Exception as exc:
             dur = (_time.monotonic() - t0) * 1000
             is_unavailable = (
                 isinstance(exc, KGToolError) and exc.code == "graph_unavailable"
             )
-            error_code = "graph_unavailable" if is_unavailable else "kuzu_error"
+            error_code = "graph_unavailable" if is_unavailable else "graph_error"
             if tool_name:
                 emit_tool_metrics(
                     tool_name=tool_name, board_id=board_id,
@@ -615,7 +630,7 @@ class KGService:
             if is_unavailable:
                 raise
             raise KGToolError(
-                code="kuzu_error",
+                code="graph_error",
                 message=f"Query failed: {exc}",
             ) from exc
 
@@ -638,7 +653,7 @@ class KGService:
     def get_node_detail(self, board_id: str, node_id: str) -> dict | None:
         """Fetch one node by id across any node type in the per-board graph.
 
-        Tries each NODE_TYPES table in turn (Kùzu has no polymorphic MATCH).
+        Tries each NODE_TYPES table in turn (graph backend has no polymorphic MATCH).
         Returns the first hit with the shape expected by the KGNode frontend
         type; `None` when the id isn't present in any table.
         """
@@ -731,7 +746,7 @@ class KGService:
         return [
             {
                 "id": r[0], "node_type": r[1], "title": r[2], "content": r[3],
-                "created_at": r[4], "source_confidence": r[5],
+                "created_at": _as_iso_timestamp(r[4]), "source_confidence": r[5],
                 "relevance_score": r[6] if r[6] is not None else 0.5,
                 "source_artifact_ref": r[7],
                 "graph_layer": r[8] if len(r) > 8 and r[8] else "legacy_unknown",
@@ -859,7 +874,7 @@ class KGService:
         return [
             {
                 "id": r[0], "title": r[1], "content": r[2],
-                "created_at": r[3], "source_confidence": r[4],
+                "created_at": _as_iso_timestamp(r[3]), "source_confidence": r[4],
                 "relevance_score": r[5] if r[5] is not None else 0.5,
                 "superseded_by": r[6],
             }
@@ -1006,7 +1021,7 @@ class KGService:
         visited: set[str] = set()
 
         def _str(ts):
-            """Kùzu returns TIMESTAMP as datetime; SupersedenceEntry (pydantic)
+            """graph backend returns TIMESTAMP as datetime; SupersedenceEntry (pydantic)
             expects ISO strings. Normalise here rather than leaking the raw
             datetime through the API boundary."""
             if ts is None:
@@ -1258,7 +1273,7 @@ class KGService:
     ) -> list[dict]:
         """Cross-board discovery via the global discovery meta-graph.
 
-        Queries ~/.okto-pulse/global/discovery.kuzu directly — HNSW over
+        Queries ~/.okto-pulse/global/discovery.graph directly — HNSW over
         DecisionDigest.embedding, scoped to the caller's boards via the
         CONTAINS_DECISION edge. Falls back to manual cosine when the HNSW
         index is empty (same failure mode as per-board search).
@@ -1275,7 +1290,7 @@ class KGService:
         query_vec = embedder.encode(nl_query)
         scope = list(user_boards)
         # R6-IMP3 rework: widen the HNSW window for EVERY layer (including `all`).
-        # QUERY_VECTOR_INDEX returns the GLOBAL top-k BEFORE the board/layer filter,
+        # the indexed similarity adapter returns the GLOBAL top-k BEFORE the board/layer filter,
         # so with many same-embedding digests across boards a narrow window can crowd
         # out the current board's rows (e.g. drop a board's `working` digest under
         # `graph_layer=all`). A wider window + the linear fallback below keep the
@@ -1293,47 +1308,14 @@ class KGService:
         except Exception as exc:
             logger.debug("kg.query_global.layer_schema_migrate_failed err=%s", exc)
 
-        results: list[dict] = []
         try:
-            # HNSW over DecisionDigest.embedding, joined to Board via
-            # CONTAINS_DECISION so we can filter to the caller's scope.
-            cypher = (
-                    "CALL QUERY_VECTOR_INDEX("
-                    "'DecisionDigest', 'digest_embedding_idx', $vec, $search_k) "
-                    "WITH node, distance "
-                    "MATCH (b:Board)-[:CONTAINS_DECISION]->(node) "
-                    "WHERE b.board_id IN $boards "
-                    f"AND {tpl.layer_filter_clause('node')} "
-                    "RETURN b.board_id, node.id, node.original_node_id, "
-                    "node.title, node.one_line_summary, node.node_type, "
-                    f"{tpl.layer_label_projection('node')}, distance "
-                    "ORDER BY distance ASC LIMIT $search_k"
-                )
-            res = global_runtime.execute(
-                cypher,
-                {
-                    "vec": query_vec,
-                    "search_k": search_k,
-                    "boards": scope,
-                    "graph_layer": layer,
-                },
+            results = global_runtime.search_decision_digests(
+                query_vec,
+                board_ids=tuple(scope),
+                graph_layer=layer,
+                top_k=search_k,
+                min_similarity=min_similarity,
             )
-            while res.has_next():
-                row = res.get_next()
-                dist = float(row[7])
-                sim = max(0.0, min(1.0, 1.0 - dist))
-                if sim < min_similarity:
-                    continue
-                results.append({
-                    "board_id": row[0],
-                    "digest_id": row[1],
-                    "id": row[2],
-                    "title": row[3],
-                    "summary": row[4],
-                    "node_type": row[5],
-                    "graph_layer": row[6],
-                    "similarity": sim,
-                })
         except Exception as exc:
             logger.debug("kg.query_global.failed err=%s", exc)
             return []
@@ -1349,49 +1331,16 @@ class KGService:
             if len(filtered_hnsw) == len(results) and len(filtered_hnsw) >= top_k:
                 return filtered_hnsw[:top_k]
 
-        # Fallback: linear scan over DecisionDigest if HNSW returned nothing
-        # (index empty or not yet populated by the outbox worker), or if HNSW
-        # returned stale digest rows that were filtered before filling top_k.
-        # Mirrors the per-board fallback in search.py so global stays usable
-        # while the meta-graph is still warming up.
         try:
-            cypher = (
-                    "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
-                    "WHERE b.board_id IN $boards AND d.embedding IS NOT NULL "
-                    f"AND {tpl.layer_filter_clause('d')} "
-                    "RETURN b.board_id, d.id, d.original_node_id, d.title, "
-                    "d.one_line_summary, d.node_type, "
-                    f"{tpl.layer_label_projection('d')}, d.embedding LIMIT 500"
-                )
-            res = global_runtime.execute(
-                cypher,
-                {"boards": scope, "graph_layer": layer},
+            exhaustive = global_runtime.search_decision_digests(
+                query_vec,
+                board_ids=tuple(scope),
+                graph_layer=layer,
+                top_k=max(search_k, 500),
+                min_similarity=min_similarity,
+                exhaustive=True,
             )
-            scored: list[dict] = []
-            qv = query_vec
-            qnorm = sum(x * x for x in qv) ** 0.5 or 1.0
-            while res.has_next():
-                row = res.get_next()
-                emb = row[7]
-                if not emb or len(emb) != len(qv):
-                    continue
-                dot = sum(a * b for a, b in zip(qv, emb))
-                enorm = sum(x * x for x in emb) ** 0.5 or 1.0
-                sim = max(0.0, min(1.0, dot / (qnorm * enorm)))
-                if sim < min_similarity:
-                    continue
-                scored.append({
-                    "board_id": row[0],
-                    "digest_id": row[1],
-                    "id": row[2],
-                    "title": row[3],
-                    "summary": row[4],
-                    "node_type": row[5],
-                    "graph_layer": row[6],
-                    "similarity": sim,
-                })
-            scored.sort(key=lambda r: r["similarity"], reverse=True)
-            return self._filter_global_results_to_existing_nodes(scored)[:top_k]
+            return self._filter_global_results_to_existing_nodes(exhaustive)[:top_k]
         except Exception as exc:
             logger.debug("kg.query_global.fallback_failed err=%s", exc)
             return filtered_hnsw[:top_k]

@@ -14,7 +14,7 @@ publication layer from the board graph and corrects each digest in place
 cognitive canonical digests intact).
 
 Why a ``nodes_added=0`` event is safe (no fragile empty-event side effects): in
-``_apply_event`` such an event resolves to ZERO ``KuzuNodeRef operation=add`` rows,
+``_apply_event`` such an event resolves to ZERO ``graph reference operation=add`` rows,
 so it (a) upserts the Board summary with ``+0`` decision_count (only refreshes
 ``last_sync_at`` — benign metadata), (b) prunes nothing (the demoted node still
 EXISTS, now ``working``, so it stays in the digestable-id set), (c) runs the R1

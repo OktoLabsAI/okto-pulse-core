@@ -18,6 +18,7 @@ import sys
 import tempfile
 
 import pytest
+from mcp_runtime_testing import register_mcp_test_runtime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r2t4_"))
@@ -59,18 +60,18 @@ async def test_stale_parity_mcp_tool_is_read_only(db_factory, monkeypatch):
     assert canonical_before >= 1
 
     async def _fake_ctx(board_id: str):
-        return object()
+        return type(
+            "Ctx",
+            (),
+            {
+                "agent_id": "r2t4-agent",
+                "agent_name": "r2t4-agent",
+                "permissions": ["board:read"],
+            },
+        )()
 
-    class _DbContext:
-        async def __aenter__(self):
-            self._ctx = db_factory()
-            return await self._ctx.__aenter__()
-
-        async def __aexit__(self, *exc):
-            return await self._ctx.__aexit__(*exc)
-
+    register_mcp_test_runtime(db_factory)
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", lambda: _DbContext())
 
     tool = await mcp_server.mcp.get_tool(STALE_TOOL)
     raw = await tool.fn(board_id=board_id, limit=50, offset=0)

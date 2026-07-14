@@ -87,10 +87,10 @@ def test_productive_core_has_no_retired_embedded_provider_import_or_file() -> No
 def test_test_builder_uses_explicit_testing_fakes_without_community() -> None:
     root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(root / "src")
+    env["PYTHONPATH"] = os.pathsep.join((str(root / "tests"), str(root / "src")))
     script = """
 import sys
-from okto_pulse.core.kg.providers.testing.registry import build_testing_kg_registry
+from testing_kg_registry import build_testing_kg_registry
 registry = build_testing_kg_registry()
 assert registry.cache_backend is not None
 assert registry.rate_limiter is not None

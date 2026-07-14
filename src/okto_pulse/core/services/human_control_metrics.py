@@ -18,11 +18,15 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 _HUMAN_CONTROL_LABELS = ("board_id", "blocked_tool", "blocked_action")
-_human_control_samples = BoundedCounterSampleBuffer(_HUMAN_CONTROL_LABELS)
-_human_control_lock = threading.Lock()
+_human_control_samples = runtime_counter_sample_buffer(
+    "services.human_control",
+    _HUMAN_CONTROL_LABELS,
+)
+_human_control_lock = runtime_lock("services.human_control.samples")
 
 
 def emit_human_control_required(

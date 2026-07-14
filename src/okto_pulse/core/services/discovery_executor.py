@@ -1708,7 +1708,7 @@ async def _exec_learnings(board_id: str, params: dict) -> dict:
     try:
         rows_raw = svc.get_learning_from_bugs(board_id, area=area or None, max_rows=50)
     except Exception as e:  # noqa: BLE001
-        # Upstream Kùzu bug "Parameter area not found" is known to affect
+        # Upstream graph backend bug "Parameter area not found" is known to affect
         # empty-area calls. Degrade gracefully with a typed empty result
         # plus an inline execution note — the UI can display it.
         return {
@@ -1752,7 +1752,7 @@ async def _exec_learnings_by_relevance(board_id: str) -> dict:
     relevance_score (highest first).
 
     Reads the board graph directly (read-only) e roda a query em
-    ``asyncio.to_thread``: queries Kùzu síncronas no event loop foram o
+    ``asyncio.to_thread``: queries graph backend síncronas no event loop foram o
     bloqueador dominante da UI no incidente de 2026-06-10."""
     import asyncio
 
@@ -1828,7 +1828,7 @@ async def _exec_key_decisions(board_id: str) -> dict:
 
     combined = 0.6 * relevance_norm + 0.4 * degree_norm (min-max no board),
     ecoando os pesos do ranking híbrido de find_similar_decisions. Query em
-    asyncio.to_thread (nunca Kùzu síncrono no event loop)."""
+    asyncio.to_thread (nunca graph backend síncrono no event loop)."""
     import asyncio
 
     from okto_pulse.core.kg.interfaces import get_kg_registry

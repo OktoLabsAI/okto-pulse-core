@@ -214,7 +214,7 @@ DEFAULT_CORE_TEST_COMMUNITY_IMPORT_CLASSIFICATIONS: tuple[
         "tests/kg_registry_testing.py",
         "from",
         "okto_pulse.community.adapters.data",
-        1,
+        2,
         "community_integration_marker",
         justification=(
             "Helper must distinguish contract-fake mode from Community integration mode."
@@ -395,7 +395,7 @@ DEFAULT_CORE_TEST_COMMUNITY_IMPORT_CLASSIFICATIONS: tuple[
         "tests/test_kuzu_memory_config.py",
         "import",
         "okto_pulse.community.adapters.kg_runtime",
-        1,
+        2,
         "move_to_community",
     ),
     _cls(
@@ -409,7 +409,7 @@ DEFAULT_CORE_TEST_COMMUNITY_IMPORT_CLASSIFICATIONS: tuple[
         "tests/test_r08d_auth_replay_gates.py",
         "importorskip",
         "okto_pulse.community.adapters.mcp_auth",
-        1,
+        2,
         "move_to_community",
     ),
     _cls(

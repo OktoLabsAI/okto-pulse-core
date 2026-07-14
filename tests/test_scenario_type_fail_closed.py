@@ -21,6 +21,8 @@ Validator can reproduce with:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -103,7 +105,7 @@ async def _stored(db_factory, spec_id) -> list:
 
 
 async def _call_tool(db_factory, tool_name, **kwargs):
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(kwargs["board_id"]))
     ), patch.object(mcp_server, "check_permission", return_value=None):

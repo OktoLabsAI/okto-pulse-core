@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -114,6 +115,7 @@ def test_f01_domain_entities_keep_aggregate_shapes_without_orm() -> None:
 
 
 def test_f01_repository_contracts_import_without_sqlalchemy_runtime() -> None:
+    source_root = Path(__file__).resolve().parents[1] / "src"
     code = (
         "import sys\n"
         "from okto_pulse.core.domain.entities import Board, Ideation, Spec\n"
@@ -122,6 +124,9 @@ def test_f01_repository_contracts_import_without_sqlalchemy_runtime() -> None:
         "for name in sys.modules), sorted(sys.modules)\n"
     )
     result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(source_root)},
     )
     assert result.returncode == 0, result.stderr

@@ -1313,28 +1313,14 @@ def test_node_is_human_curated_treats_null_as_false():
     up a real Kùzu database in this unit test.
     """
     from okto_pulse.core.kg.primitives import _node_is_human_curated
-
-    class _StubResult:
-        def __init__(self, value):
-            self._value = value
-            self._consumed = False
-
-        def has_next(self):
-            return not self._consumed
-
-        def get_next(self):
-            self._consumed = True
-            return [self._value]
-
-        def close(self):
-            pass
+    from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 
     class _StubConn:
         def __init__(self, value):
             self._value = value
 
         def execute(self, _cypher, _params):
-            return _StubResult(self._value)
+            return GraphStatementResult.from_rows([[self._value]])
 
     # NULL → False (legacy retrocompat)
     assert _node_is_human_curated(_StubConn(None), "Decision", "decision_x") is False
@@ -1349,7 +1335,7 @@ def test_node_is_human_curated_treats_null_as_false():
 def test_update_branch_preserves_curated_node_without_override(caplog):
     """TS7 (control flow): UPDATE hint with curated target + no override → NOOP.
 
-    Inspects the source of _do_kuzu_commit to verify the preservation
+    Inspects the source of _do_graph_commit to verify the preservation
     branch is in place: it must read human_curated, check confidence as
     the override proxy, emit kg.consolidation.manual_edit_preserved on
     skip and kg.consolidation.reset_manual_flag when the override fires.
@@ -1358,7 +1344,7 @@ def test_update_branch_preserves_curated_node_without_override(caplog):
     import inspect
     from okto_pulse.core.kg import primitives
 
-    src = inspect.getsource(primitives._do_kuzu_commit)
+    src = inspect.getsource(primitives._do_graph_commit)
     assert "_node_is_human_curated" in src
     assert "manual_edit_preserved" in src
     assert "reset_manual_flag" in src

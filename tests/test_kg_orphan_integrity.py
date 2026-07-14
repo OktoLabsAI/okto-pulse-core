@@ -24,12 +24,12 @@ from okto_pulse.core.kg.orphan_integrity import (
     schema_node_types_for_orphan_scanner,
     schema_relationship_pairs_for_orphan_scanner,
 )
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from kg_schema_testing import (
     MULTI_REL_TYPES,
     NODE_TYPES,
     REL_TYPES,
-    open_board_connection,
+    open_materialized_board_connection as open_board_connection,
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
 from kg_registry_testing import (
@@ -54,7 +54,7 @@ def _seed_node(
     title: str | None = None,
     content: str | None = None,
 ) -> None:
-    _apply_kuzu_node_create_with_timestamp(
+    _apply_graph_node_create(
         orch,
         node_type,
         node_id,
@@ -100,8 +100,8 @@ def test_scanner_detects_only_zero_degree_learning_with_safe_samples() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -170,8 +170,8 @@ def test_scanner_does_not_report_allowlisted_board_root_entity() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"bootstrap_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -202,8 +202,8 @@ def test_scanner_allowlists_final_report_root_from_kg_session_id() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"kgses_{uuid.uuid4().hex[:16]}",
             board_id=board_id,
         )
@@ -243,11 +243,8 @@ def _edge_count(
             "WHERE a.id = $from_id AND b.id = $to_id RETURN count(r)",
             {"from_id": from_id, "to_id": to_id},
         )
-        try:
-            if result.has_next():
-                return int(result.get_next()[0])
-        finally:
-            result.close()
+        if result.rows:
+            return int(result.rows[0][0])
     return 0
 
 
@@ -257,11 +254,8 @@ def _node_exists(board_id: str, node_type: str, node_id: str) -> bool:
             f"MATCH (n:{node_type}) WHERE n.id = $node_id RETURN count(n)",
             {"node_id": node_id},
         )
-        try:
-            if result.has_next():
-                return int(result.get_next()[0]) == 1
-        finally:
-            result.close()
+        if result.rows:
+            return int(result.rows[0][0]) == 1
     return False
 
 
@@ -279,11 +273,8 @@ def _edge_count_with_connection(
         "WHERE a.id = $from_id AND b.id = $to_id RETURN count(r)",
         {"from_id": from_id, "to_id": to_id},
     )
-    try:
-        if result.has_next():
-            return int(result.get_next()[0])
-    finally:
-        result.close()
+    if result.rows:
+        return int(result.rows[0][0])
     return 0
 
 
@@ -295,8 +286,8 @@ def test_backfill_creates_one_provenance_edge_and_rerun_noop() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -359,8 +350,8 @@ def test_bug_derived_learning_backfill_validates_resolved_bug() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -408,8 +399,8 @@ def test_backfill_preserves_ambiguous_orphan_without_fabricated_edge() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -452,8 +443,8 @@ def test_backfill_keeps_fuzzy_or_prose_only_learning_semantic_pending() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -509,8 +500,8 @@ def test_backfill_metrics_and_audit_use_safe_fields_only() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -582,8 +573,8 @@ def test_scanner_audit_uses_safe_fields_only() -> None:
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -635,8 +626,8 @@ def test_backfill_metrics_cover_connected_noop_and_unresolved_safe_labels() -> N
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -714,8 +705,8 @@ def test_scan_and_backfill_audit_records_cover_outcomes_with_safe_fields_only() 
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -856,8 +847,8 @@ def test_mcp_orphan_report_returns_bounded_safe_samples_behavioral(monkeypatch) 
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )

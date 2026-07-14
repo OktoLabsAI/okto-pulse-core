@@ -1,141 +1,199 @@
-"""Public relational runtime facade for edition-owned SQLAlchemy adapters.
+"""Relational runtime port owned by the application core.
 
-The concrete engine/session construction remains outside core. This module only
-delegates to the transitional runtime registry already owned by
-``core.infra.database`` and exposes a narrow public surface for edition adapters.
+Concrete engine, session factory, pool and lifecycle behavior belongs to an
+edition adapter. Core requires only an opaque transactional work scope. Legacy
+facades remain callable for installed integrations, but they are not members of
+the port and a new edition does not have to implement them.
 """
 
 from __future__ import annotations
 
-import importlib
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncContextManager, Protocol, runtime_checkable
 
-_DATABASE_MODULE = "okto_pulse.core.infra.database"
-_BASE_EXPORT = "Base"
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
+
+_RELATIONAL_RUNTIME_KEY = "ports.relational_runtime"
 
 
 class RelationalDatabasePathUnavailable(RuntimeError):
-    """Raised when the active relational runtime has no local SQLite file path."""
+    """Raised when the active runtime has no local database file path."""
 
 
-def _database_module() -> Any:
-    return importlib.import_module(_DATABASE_MODULE)
+@runtime_checkable
+class RelationalRuntime(Protocol):
+    """Edition-owned transactional work-scope behavior."""
+
+    def transactional_session(self) -> AsyncContextManager[Any]:
+        """Return a commit/rollback/close managed session scope."""
 
 
-def __getattr__(name: str) -> Any:
-    if name != _BASE_EXPORT:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(_database_module(), name)
-    globals()[name] = value
-    return value
 
+def configure_database_runtime(*, runtime: RelationalRuntime) -> None:
+    """Register the edition-owned relational runtime."""
 
-def configure_database_runtime(*, engine: Any, session_factory: Any) -> None:
-    """Register the edition-owned relational engine and session factory."""
-
-    _database_module().configure_database_runtime(
-        engine=engine,
-        session_factory=session_factory,
-    )
+    if runtime is None:
+        raise ValueError("runtime is required")
+    register_runtime_value(_RELATIONAL_RUNTIME_KEY, runtime)
 
 
 def reset_database_runtime_for_tests() -> None:
-    """Reset registered relational runtime handles for isolated tests."""
+    """Drop the registered runtime for isolated tests."""
 
-    _database_module().reset_database_runtime_for_tests()
+    reset_runtime_values(_RELATIONAL_RUNTIME_KEY)
 
 
 def is_database_runtime_configured() -> bool:
-    """Return whether both engine and session factory are registered."""
+    """Return whether an edition relational runtime is registered."""
 
-    return bool(_database_module().is_database_runtime_configured())
+    return resolve_runtime_value(_RELATIONAL_RUNTIME_KEY) is not None
+
+
+def resolve_database_runtime() -> RelationalRuntime:
+    """Resolve the active runtime, failing closed before edition composition."""
+
+    runtime = resolve_runtime_value(_RELATIONAL_RUNTIME_KEY)
+    if runtime is None:
+        raise RuntimeError(
+            "Database runtime not initialised. The edition composition root must "
+            "call configure_database_runtime(runtime=...) first."
+        )
+    return runtime
 
 
 def get_engine() -> Any:
-    """Return the registered relational engine."""
+    """Return the opaque engine handle for compatibility consumers."""
 
-    return _database_module().get_engine()
+    engine = getattr(resolve_database_runtime(), "engine", None)
+    if engine is None:
+        raise RuntimeError("active edition does not expose a native engine")
+    return engine
 
 
-def get_session_factory() -> Any:
-    """Return the registered relational session factory."""
+def get_session_factory() -> Callable[[], Any]:
+    """Return the opaque session factory for compatibility consumers."""
 
-    return _database_module().get_session_factory()
+    factory = getattr(resolve_database_runtime(), "session_factory", None)
+    if factory is None:
+        raise RuntimeError("active edition does not expose a session factory")
+    return factory
 
 
 async def init_db() -> None:
-    """Initialize the registered relational schema lifecycle."""
+    """Initialize tables through the registered schema lifecycle port."""
 
-    await _database_module().init_db()
+    from okto_pulse.core.ports.schema_lifecycle import (
+        resolve_relational_schema_lifecycle_orchestrator,
+    )
+
+    orchestrator = resolve_relational_schema_lifecycle_orchestrator()
+    if orchestrator is None:
+        raise RuntimeError(
+            "Relational schema lifecycle orchestrator not registered. The edition "
+            "composition root must register one before calling init_db()."
+        )
+    await orchestrator.initialize_schema()
 
 
 async def close_db() -> None:
-    """Close the registered relational runtime."""
+    """Close the registered edition runtime."""
 
-    await _database_module().close_db()
+    close = getattr(resolve_database_runtime(), "close", None)
+    if not callable(close):
+        raise RuntimeError("active edition does not expose database lifecycle")
+    await close()
+
+
+def get_pool_status() -> str:
+    """Return pool diagnostics without exposing backend operations in Core."""
+
+    status = getattr(resolve_database_runtime(), "pool_status", None)
+    if not callable(status):
+        raise RuntimeError("active edition does not expose pool diagnostics")
+    return str(status())
+
+
+@asynccontextmanager
+async def cancel_safe_session_scope(
+    session_factory: Callable[[], Any],
+) -> AsyncIterator[Any]:
+    """Delegate cancellation-safe cleanup to the edition adapter."""
+
+    scope = getattr(resolve_database_runtime(), "cancel_safe_session_scope", None)
+    if not callable(scope):
+        raise RuntimeError("active edition does not expose cancellation-safe sessions")
+    async with scope(session_factory) as session:
+        yield session
+
+
+@asynccontextmanager
+async def cancel_safe_session() -> AsyncIterator[Any]:
+    """Open an edition session whose cleanup survives cancellation."""
+
+    scope = getattr(resolve_database_runtime(), "cancel_safe_session_scope", None)
+    if not callable(scope):
+        raise RuntimeError("active edition does not expose cancellation-safe sessions")
+    async with scope() as session:
+        yield session
+
+
+@asynccontextmanager
+async def get_db_session() -> AsyncIterator[Any]:
+    """Open a transactional session using edition-owned lifecycle semantics."""
+
+    async with resolve_database_runtime().transactional_session() as session:
+        yield session
+
+
+async def get_db() -> AsyncGenerator[Any, None]:
+    """FastAPI-compatible dependency backed by the runtime port."""
+
+    async with resolve_database_runtime().transactional_session() as session:
+        yield session
 
 
 def resolve_sqlite_database_path() -> Path:
-    """Return the local SQLite file path for the registered runtime.
-
-    The resolver is intentionally fail-closed: absent runtime, non-SQLite URLs,
-    in-memory SQLite URLs and URLs without a file database all raise
-    :class:`RelationalDatabasePathUnavailable`.
-    """
+    """Return the active local database file path, failing closed otherwise."""
 
     try:
-        url = get_engine().url
+        resolver = getattr(resolve_database_runtime(), "local_database_path", None)
+        if not callable(resolver):
+            raise RelationalDatabasePathUnavailable(
+                "database runtime has no local database file path"
+            )
+        path = resolver()
     except Exception as exc:
         raise RelationalDatabasePathUnavailable(
-            "database runtime is not configured"
+            "database runtime has no local database file path"
         ) from exc
-
-    backend = _backend_name(url)
-    if backend != "sqlite":
+    if path is None:
         raise RelationalDatabasePathUnavailable(
-            f"database runtime backend {backend!r} is not local SQLite"
+            "database runtime has no local database file path"
         )
-
-    database = _database_name(url)
-    if not database or database in {":memory:", "file::memory:"}:
-        raise RelationalDatabasePathUnavailable(
-            "database runtime SQLite URL does not point to a file"
-        )
-
-    return Path(database)
-
-
-def _backend_name(url: Any) -> str:
-    get_backend_name = getattr(url, "get_backend_name", None)
-    if callable(get_backend_name):
-        return str(get_backend_name())
-    raw = str(url)
-    return raw.split(":", 1)[0].split("+", 1)[0]
-
-
-def _database_name(url: Any) -> str:
-    database = getattr(url, "database", None)
-    if database is not None:
-        return str(database)
-
-    raw = str(url)
-    marker = ":///"
-    idx = raw.rfind(marker)
-    if idx < 0:
-        return ""
-    return raw[idx + len(marker) :].split("?", 1)[0]
+    return Path(path)
 
 
 __all__ = [
-    "Base",
     "RelationalDatabasePathUnavailable",
+    "RelationalRuntime",
+    "cancel_safe_session",
+    "cancel_safe_session_scope",
     "close_db",
     "configure_database_runtime",
+    "get_db",
+    "get_db_session",
     "get_engine",
+    "get_pool_status",
     "get_session_factory",
     "init_db",
     "is_database_runtime_configured",
     "reset_database_runtime_for_tests",
+    "resolve_database_runtime",
     "resolve_sqlite_database_path",
 ]

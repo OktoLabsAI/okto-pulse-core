@@ -23,15 +23,19 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 # ---------------------------------------------------------------------------
 # or_a921cc64 — kg_global_discovery_missing_embedding_skipped_total
 # ---------------------------------------------------------------------------
 
 _MISSING_EMBEDDING_LABELS = ("board_id", "node_type")
-_missing_embedding_samples = BoundedCounterSampleBuffer(_MISSING_EMBEDDING_LABELS)
-_missing_embedding_lock = threading.Lock()
+_missing_embedding_samples = runtime_counter_sample_buffer(
+    "kg.global_discovery.missing_embedding",
+    _MISSING_EMBEDDING_LABELS,
+)
+_missing_embedding_lock = runtime_lock("kg.global_discovery.missing_embedding.samples")
 
 
 def emit_missing_embedding_skipped(*, board_id: str, node_type: str) -> None:
@@ -73,8 +77,11 @@ DIGEST_UPSERT_CREATED = "created"
 DIGEST_UPSERT_UPDATED = "updated"
 
 _DIGEST_UPSERT_LABELS = ("board_id", "node_type", "outcome")
-_digest_upsert_samples = BoundedCounterSampleBuffer(_DIGEST_UPSERT_LABELS)
-_digest_upsert_lock = threading.Lock()
+_digest_upsert_samples = runtime_counter_sample_buffer(
+    "kg.global_discovery.digest_upsert",
+    _DIGEST_UPSERT_LABELS,
+)
+_digest_upsert_lock = runtime_lock("kg.global_discovery.digest_upsert.samples")
 
 
 def emit_digest_upsert(*, board_id: str, node_type: str, outcome: str) -> None:
@@ -124,10 +131,13 @@ def reset_digest_upsert_counter() -> None:
 # above) + reason_code (closed R7 vocab). A clean board emits nothing.
 
 _CANONICAL_INCOMPLETE_EXCLUDED_LABELS = ("board_id", "reason_code")
-_canonical_incomplete_excluded_samples = BoundedCounterSampleBuffer(
-    _CANONICAL_INCOMPLETE_EXCLUDED_LABELS
+_canonical_incomplete_excluded_samples = runtime_counter_sample_buffer(
+    "kg.global_discovery.canonical_incomplete_excluded",
+    _CANONICAL_INCOMPLETE_EXCLUDED_LABELS,
 )
-_canonical_incomplete_excluded_lock = threading.Lock()
+_canonical_incomplete_excluded_lock = runtime_lock(
+    "kg.global_discovery.canonical_incomplete_excluded.samples"
+)
 
 
 def emit_canonical_incomplete_excluded(*, board_id: str, reason_code: str) -> None:
@@ -176,10 +186,13 @@ def reset_canonical_incomplete_excluded_counter() -> None:
 # (closed layer vocab canonical|working|legacy_unknown|none); no node ids.
 
 _DIGEST_LAYER_MISMATCH_LABELS = ("board_id", "expected_layer", "actual_layer")
-_digest_layer_mismatch_samples = BoundedCounterSampleBuffer(
-    _DIGEST_LAYER_MISMATCH_LABELS
+_digest_layer_mismatch_samples = runtime_counter_sample_buffer(
+    "kg.global_discovery.digest_layer_mismatch",
+    _DIGEST_LAYER_MISMATCH_LABELS,
 )
-_digest_layer_mismatch_lock = threading.Lock()
+_digest_layer_mismatch_lock = runtime_lock(
+    "kg.global_discovery.digest_layer_mismatch.samples"
+)
 
 
 def emit_digest_layer_mismatch(

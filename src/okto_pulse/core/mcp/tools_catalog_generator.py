@@ -33,7 +33,7 @@ HEADER = (
     "`python -m okto_pulse.core.mcp.tools_catalog_generator`\n"
     "(guarded by tests/test_mcp_tools_catalog_drift.py).\n\n"
     "Tool schemas arrive lazily via MCP `tools/list`. Each section links its\n"
-    "long-form docs (args/returns/examples): `okto-pulse://reference/tool-docs/{family}`.\n"
+    "concrete family docs with args, returns and examples.\n"
     "Required filters for the consolidated `list_*` tools:\n"
     "`okto-pulse://reference/list_tools`.\n"
 )

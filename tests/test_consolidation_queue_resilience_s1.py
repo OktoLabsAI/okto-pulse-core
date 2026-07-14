@@ -13,7 +13,8 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sa_text
 
-from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
+from okto_pulse.community.config import CommunitySettings
+from okto_pulse.core.infra.config import configure_settings, get_settings
 from okto_pulse.core.infra.database import get_session_factory
 from sqlalchemy_test_models import (
     ConsolidationDeadLetter,
@@ -131,7 +132,7 @@ def test_impl1_consolidation_dead_letter_table_exists():
 @pytest.mark.asyncio
 async def test_ac6_put_graph_db_field_triggers_restart_required(settings_client):
     """AC6: PUT em campo Graph DB → restart_required=true."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     await settings_client.get("/api/v1/settings/runtime")  # boot snapshot
 
     resp = await settings_client.put(
@@ -148,7 +149,7 @@ async def test_ac6_put_graph_db_field_triggers_restart_required(settings_client)
 @pytest.mark.asyncio
 async def test_ac6_complement_put_event_queue_field_does_not_trigger_restart(settings_client):
     """Complemento AC6: PUT em campo Event Queue → restart_required=false."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     await settings_client.get("/api/v1/settings/runtime")
 
     resp = await settings_client.put(
@@ -216,7 +217,7 @@ def test_ac8_legacy_env_yields_to_canonical(monkeypatch):
 async def test_ac14_put_max_workers_out_of_range_returns_422(settings_client):
     """AC14: PUT body={kg_queue_max_concurrent_workers: 99} → 422 (Pydantic
     range violation), nada persistido."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
 
     before = await settings_client.get("/api/v1/settings/runtime")
     baseline = before.json()["kg_queue_max_concurrent_workers"]

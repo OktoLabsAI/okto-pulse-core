@@ -26,12 +26,12 @@ Reproduce:
 
 from __future__ import annotations
 
-import contextlib
 import json
 import uuid
 from types import SimpleNamespace
 
 import pytest
+from mcp_runtime_testing import register_mcp_test_runtime
 
 from okto_pulse.core.kg.canonical_partition_integrity import (
     CLASSIFICATION_CANONICAL_LEARNING_RESOLVED,
@@ -46,7 +46,7 @@ from okto_pulse.core.kg.canonical_partition_integrity import (
     list_canonical_partition_integrity,
 )
 from okto_pulse.core.kg.cognitive_policy import LEARNING_RELATES_TO_TARGETS
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
@@ -102,16 +102,16 @@ def _seed_learning(
     learning_id = f"skg02l_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _node_attrs(source_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE),
         )
         for _ in range(canonical_bugs):
             bug_id = f"skg02cb_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, "Bug", bug_id,
                 _node_attrs(f"bug:{bug_id}", GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE),
             )
@@ -119,7 +119,7 @@ def _seed_learning(
                              attrs={"confidence": 1.0}, from_type="Learning", to_type="Bug")
         for _ in range(working_bugs):
             bug_id = f"skg02wb_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, "Bug", bug_id,
                 _node_attrs(f"bug:{bug_id}", GRAPH_LAYER_WORKING, MATURITY_WORKING_IMMATURE),
             )
@@ -131,7 +131,7 @@ def _seed_learning(
                 else MATURITY_WORKING_IMMATURE
             )
             endpoint_id = f"skg02ep_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, endpoint_type, endpoint_id,
                 _node_attrs(f"{endpoint_type.lower()}:{endpoint_id}", layer, maturity),
             )
@@ -147,19 +147,14 @@ def _mcp(monkeypatch, db_factory):
     import okto_pulse.core.mcp.server as mcp_server
 
     async def _fake_ctx(_board_id):
-        return SimpleNamespace(agent_id="mcp-agent", permissions=["*"])
+        return SimpleNamespace(
+            agent_id="mcp-agent",
+            agent_name="mcp-agent",
+            permissions=["*"],
+        )
 
-    @contextlib.asynccontextmanager
-    async def _fake_db():
-        async with db_factory() as db:
-            yield db
-
+    register_mcp_test_runtime(db_factory)
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", _fake_db)
-    # MCP-FU5: the migrated partition-integrity tool resolves its session through
-    # get_unit_of_work_factory_for_mcp() over _mcp_session_factory (not the raw
-    # get_db_for_mcp patched above); point that at the test factory too.
-    monkeypatch.setattr(mcp_server, "_mcp_session_factory", db_factory)
     return mcp_server
 
 

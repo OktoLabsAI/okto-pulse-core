@@ -77,6 +77,17 @@ class ConsolidationPersistencePort(Protocol):
 
     async def delete_queue_entry(self, context: Any, *, entry_id: str) -> None: ...
 
+    async def discard_artifact_work(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+    ) -> None:
+        """Discard transient/terminal KG work for an intentionally deleted artifact."""
+        ...
+
     async def board_exists(self, context: Any, *, board_id: str) -> bool: ...
 
     async def list_dlq_auto_drain_board_ids(

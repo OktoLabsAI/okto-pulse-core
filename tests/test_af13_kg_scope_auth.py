@@ -12,6 +12,7 @@ import pytest
 
 from okto_pulse.core.application.scope import ActorScope
 from okto_pulse.core.application.use_cases import ActorContext
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
 
 CORE_ROOT = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
@@ -48,12 +49,15 @@ def _kg_tool_policy_violations(source: str) -> list[str]:
 
 def test_core_kg_surfaces_do_not_hardcode_local_user() -> None:
     for relative in (
-        "api/kg_routes.py",
         "kg/governance.py",
         "mcp/kg_query_tools.py",
         "mcp/server.py",
     ):
         assert "local-user" not in _source(relative), relative
+
+    from okto_pulse.community.api import kg_routes
+
+    assert "local-user" not in Path(kg_routes.__file__).read_text(encoding="utf-8")
 
 
 def test_actor_scope_preserves_non_mapping_permission_objects() -> None:
@@ -62,7 +66,9 @@ def test_actor_scope_preserves_non_mapping_permission_objects() -> None:
             return None
 
     permissions = PermissionLike()
-    actor = ActorContext("agent-af13", "mcp", permissions=permissions)
+    actor = ActorContext(
+        "agent-af13", "mcp", realm_id=LOCAL_REALM_ID, permissions=permissions
+    )
     scope = ActorScope.from_context(actor)
 
     assert scope.permissions is permissions
@@ -91,10 +97,13 @@ def test_rest_kg_board_routes_require_board_actor_dependency() -> None:
         assert (
             kg_routes.require_kg_board_actor in deps
             or kg_routes.require_kg_admin_board_actor in deps
+            or kg_routes.require_kg_stream_board_actor in deps
         ), path
 
     migrate_deps = route_dependencies["post_migrate_schema"]
     assert kg_routes.require_kg_admin_board_actor in migrate_deps
+    stream_deps = route_dependencies["stream_kg_events"]
+    assert kg_routes.require_kg_stream_board_actor in stream_deps
 
 
 @pytest.mark.asyncio
@@ -125,13 +134,23 @@ async def test_global_search_passes_only_actor_visible_boards(monkeypatch) -> No
     async with get_session_factory()() as db:
         db.add_all(
             [
-                Board(id=allowed_board, name="allowed", owner_id=owner_id),
-                Board(id=forbidden_board, name="forbidden", owner_id="other-user"),
+                Board(
+                    id=allowed_board,
+                    name="allowed",
+                    owner_id=owner_id,
+                    realm_id=LOCAL_REALM_ID,
+                ),
+                Board(
+                    id=forbidden_board,
+                    name="forbidden",
+                    owner_id="other-user",
+                    realm_id=LOCAL_REALM_ID,
+                ),
             ]
         )
         await db.commit()
 
-    actor = ActorContext(owner_id, "rest")
+    actor = ActorContext(owner_id, "rest", realm_id=LOCAL_REALM_ID)
     async with get_session_factory()() as db:
         result = await GlobalSearchUseCase().execute(
             GlobalSearchCommand(
@@ -176,10 +195,17 @@ async def test_global_search_with_zero_visible_boards_never_falls_back_to_all(
     monkeypatch.setattr(application_kg, "query_global", _fake_query_global)
 
     async with get_session_factory()() as db:
-        db.add(Board(id=forbidden_board, name="hidden", owner_id="other-user"))
+        db.add(
+            Board(
+                id=forbidden_board,
+                name="hidden",
+                owner_id="other-user",
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
 
-    actor = ActorContext(actor_id, "rest")
+    actor = ActorContext(actor_id, "rest", realm_id=LOCAL_REALM_ID)
     async with get_session_factory()() as db:
         result = await GlobalSearchUseCase().execute(
             GlobalSearchCommand(
@@ -243,10 +269,17 @@ async def test_kg_boost_audit_uses_non_default_actor(monkeypatch) -> None:
     monkeypatch.setattr(application_kg, "boost_node", _fake_boost_node)
 
     async with get_session_factory()() as db:
-        db.add(Board(id=board_id, name="AF13 audit", owner_id=actor_id))
+        db.add(
+            Board(
+                id=board_id,
+                name="AF13 audit",
+                owner_id=actor_id,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
 
-    actor = ActorContext(actor_id, "mcp")
+    actor = ActorContext(actor_id, "mcp", realm_id=LOCAL_REALM_ID)
     async with SQLAlchemyUnitOfWorkFactory(get_session_factory())(actor=actor) as uow:
         result = await BoostNodeUseCase().execute(
             BoostNodeCommand(board_id, node_id),
@@ -308,11 +341,13 @@ async def test_mcp_migrate_all_boards_denies_non_admin_before_listing(monkeypatc
     async def _ctx():
         return _Ctx()
 
-    def _db_forbidden():
+    def _uow_forbidden():
         raise AssertionError("all_boards must not list boards before admin gate")
 
     monkeypatch.setattr(mcp_server, "_get_global_agent_ctx", _ctx)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", _db_forbidden)
+    monkeypatch.setattr(
+        mcp_server, "get_unit_of_work_factory_for_mcp", _uow_forbidden
+    )
 
     payload = json.loads(
         await mcp_server.okto_pulse_kg_migrate_schema.fn(all_boards=True)

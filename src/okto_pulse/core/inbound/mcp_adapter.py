@@ -38,7 +38,7 @@ class MCPAdapterContract:
             "mcp",
             actor_name=getattr(ctx, "agent_name", None),
             board_id=board_id,
-            realm_id=realm_id,
+            realm_id=realm_id or getattr(ctx, "realm_id", None),
             permissions=getattr(ctx, "permissions", None),
         )
 

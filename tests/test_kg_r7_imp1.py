@@ -30,7 +30,7 @@ from okto_pulse.core.kg.connectivity_guard import (
 )
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     add_node_candidate,
     begin_consolidation,
@@ -106,7 +106,7 @@ def _seed_node(
         attrs["graph_layer"] = graph_layer
     if maturity_status is not None:
         attrs["maturity_status"] = maturity_status
-    _apply_kuzu_node_create_with_timestamp(orch, node_type, node_id, attrs)
+    _apply_graph_node_create(orch, node_type, node_id, attrs)
 
 
 def _seed_bug(board_id: str, *, graph_layer: str) -> str:
@@ -121,8 +121,8 @@ def _seed_bug(board_id: str, *, graph_layer: str) -> str:
     )
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -153,8 +153,8 @@ def _seed_connected_learning(board_id: str, source_ref: str) -> None:
     entity_id = f"r7ent_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -449,7 +449,9 @@ async def test_ts4_provenance_only_learning_not_bug_derived_passes(
             candidate=NodeCandidate(
                 candidate_id="r7_ts4_learning",
                 node_type=KGNodeType.LEARNING,
-                title="R7 provenance learning",
+                # Keep identity stable so this R7 test does not also trigger the
+                # MKG-D identity-change supersedence trail.
+                title="R7 seed Learning",
                 source_artifact_ref=source_ref,
                 source_confidence=0.95,
             ),
@@ -535,12 +537,17 @@ async def test_working_only_hold_persists_real_payload_to_store(
     assert item.artifact_type == "bug"
 
 
-def test_mcp_commit_dispatch_persists_hold(monkeypatch, tmp_path):
+def test_mcp_commit_dispatch_persists_hold(tmp_path):
     """The MCP commit tool's catch hook routes an R7 hold KGPrimitiveError into
     the cognitive pending ledger (never CanonicalDebt/DLQ)."""
     from okto_pulse.core.mcp import kg_tools
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.community.adapters.rebuild_audit_storage import (
+        CommunityFileSystemRebuildAuditArtifactStore,
+    )
 
-    monkeypatch.setenv("OKTO_PULSE_REBUILD_BASE_DIR", str(tmp_path))
+    artifact_store = CommunityFileSystemRebuildAuditArtifactStore(tmp_path)
+    configure_test_kg_registry(rebuild_audit_artifact_store=artifact_store)
     source_ref = f"card:bug:{uuid.uuid4().hex[:10]}:learning:{uuid.uuid4()}"
     error = KGPrimitiveError(
         "kg_node_connectivity_violation",
@@ -564,7 +571,7 @@ def test_mcp_commit_dispatch_persists_hold(monkeypatch, tmp_path):
         board_id="board-r7", error=error, actor_id="claude-coder"
     )
 
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(artifact_store=artifact_store)
     gen = store.latest_generation("board-r7")
     assert gen is not None
     items = store.list_items("board-r7", gen)

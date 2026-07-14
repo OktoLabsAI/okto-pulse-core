@@ -34,7 +34,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.router import api_router
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.kg.candidate_decision_store import (
     CandidateDecisionAction,
@@ -123,6 +123,7 @@ async def _client_and_entities():
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
 
     client = TestClient(app)
     store = CandidateDecisionStore(artifact_store=artifact_store)

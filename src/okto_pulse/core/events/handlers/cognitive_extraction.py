@@ -19,11 +19,11 @@ Design — Decision D1 (umbrella refinement a647d21a):
     - LLM dependency for Learning is **opt-in** via
       ``Board.settings.cognitive_llm_config`` (D5). Absent → log info + skip
       Learning. Regex extractors (Alternative + Assumption) always run.
-    - Idempotency (D3 / FR5): query Kuzu for the equivalent node before
+    - Idempotency (D3 / FR5): query graph backend for the equivalent node before
       invoking each extractor. v1 skip silently if already exists; never
       supersede.
 
-This handler intentionally **does not** push candidates into the Kuzu
+This handler intentionally **does not** push candidates into the graph backend
 store directly — that is not safe inside an event drain transaction. It
 emits a structured ``cognitive.extraction.*.candidate`` log line per
 candidate AND (RKG-03) opens DURABLE cognitive-closeout work in the
@@ -77,8 +77,18 @@ class CognitiveExtractionHandler:
         # Ledger-only open here (safe in the drain); the worker persists later.
         if isinstance(event, SpecMoved):
             if event.to_status == "done":
+                spec = None
+                if session is not None:
+                    spec = await get_domain_event_fact_reader().load_cognitive_spec_facts(
+                        session,
+                        spec_id=event.spec_id,
+                    )
                 self._open_closeout_pending(
-                    event.board_id, f"spec:{event.spec_id}", "spec")
+                    event.board_id,
+                    f"spec:{event.spec_id}",
+                    "spec",
+                    content_hash=getattr(spec, "content_hash", None),
+                )
             return
 
         # BR1: only react to terminal-state transitions.
@@ -112,7 +122,10 @@ class CognitiveExtractionHandler:
             # write here — safe in the drain). The dedicated cognitive worker
             # drains it and persists outside this transaction.
             self._open_closeout_pending(
-                event.board_id, f"bug:{card.card_id}", "bug"
+                event.board_id,
+                f"bug:{card.card_id}",
+                "bug",
+                content_hash=card.content_hash,
             )
 
         # Spec branch → Alternative + Assumption candidate logs (legacy behaviour).
@@ -128,7 +141,13 @@ class CognitiveExtractionHandler:
                 self._extract_assumptions(spec, event)
 
     @staticmethod
-    def _open_closeout_pending(board_id: str, source_ref: str, artifact_type: str) -> None:
+    def _open_closeout_pending(
+        board_id: str,
+        source_ref: str,
+        artifact_type: str,
+        *,
+        content_hash: str | None = None,
+    ) -> None:
         """Ledger-only (RKG-03 / FR2): open pending cognitive closeout work the
         dedicated worker will drain. Best-effort — never fails the event drain."""
         try:
@@ -139,7 +158,10 @@ class CognitiveExtractionHandler:
             # Store + generation resolved inside (production default base_dir,
             # latest_generation or a stable id) — no no-arg store, no per-item gen.
             open_cognitive_closeout_pending(
-                board_id=board_id, source_ref=source_ref, artifact_type=artifact_type,
+                board_id=board_id,
+                source_ref=source_ref,
+                artifact_type=artifact_type,
+                content_hash=content_hash,
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug(
@@ -165,7 +187,7 @@ class CognitiveExtractionHandler:
 
         bug_node_id = _bug_node_id(card.card_id)
 
-        # BR5 / D3: idempotency check via Kuzu MATCH. Skip silently if a
+        # BR5 / D3: idempotency check via graph backend MATCH. Skip silently if a
         # Learning is already linked to this Bug. Errors during the probe
         # do not abort extraction — we degrade to "best effort" so the
         # event drain is never blocked by a transient KG read failure.
@@ -355,7 +377,7 @@ def _card_type_value(value: Any) -> str:
 
 
 def _bug_node_id(card_id: str) -> str:
-    """Build the deterministic Kuzu Bug node id used in :validates edges.
+    """Build the deterministic graph backend Bug node id used in :validates edges.
 
     Mirrors the worker convention of ``bug_<short_card_id>``. Kept inline so
     the handler does not import the deterministic worker (private API).
@@ -366,7 +388,7 @@ def _bug_node_id(card_id: str) -> str:
 def _learning_already_exists(board_id: str, bug_node_id: str) -> bool:
     """BR5 / D3 idempotency probe — does this Bug already have a Learning?
 
-    Best-effort: any exception (graph not yet bootstrapped, Kùzu not
+    Best-effort: any exception (graph not yet bootstrapped, graph backend not
     installed in tests, schema drift) returns False so the handler proceeds
     and the rest of the pipeline (or its own dedup) catches the duplicate.
     """
@@ -389,7 +411,7 @@ def _learning_already_exists(board_id: str, bug_node_id: str) -> bool:
 def _node_with_source_ref_exists(board_id: str, node_type: str, source_ref: str) -> bool:
     """BR5 / D3 idempotency probe for Alternative/Assumption.
 
-    Returns True iff Kùzu has at least one ``node_type`` with a matching
+    Returns True iff graph backend has at least one ``node_type`` with a matching
     ``source_artifact_ref``. Defensive against missing column / table.
     """
     from okto_pulse.core.kg.interfaces import get_kg_registry

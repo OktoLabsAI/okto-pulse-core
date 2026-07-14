@@ -2,12 +2,13 @@
 
 from typing import Any, Sequence
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from sqlalchemy_test_models import (
-    AmendmentHotfixRevision, Board, Card, ConsolidationDeadLetter,
-    ConsolidationQueue, Ideation, Refinement, Spec, Sprint, Story,
+    AmendmentHotfixRevision, Board, CanonicalDebt, Card,
+    ConsolidationDeadLetter, ConsolidationQueue, Ideation, Refinement, Spec,
+    Sprint, Story,
 )
 from okto_pulse.core.ports.consolidation import (
     ConsolidationPoisonRow,
@@ -155,6 +156,24 @@ class TestSqlAlchemyConsolidationPersistence:
         if row is not None:
             await context.delete(row)
             await context.flush()
+
+    async def discard_artifact_work(
+        self,
+        context,
+        *,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+    ) -> None:
+        for model in (ConsolidationQueue, ConsolidationDeadLetter, CanonicalDebt):
+            await context.execute(
+                delete(model).where(
+                    model.board_id == board_id,
+                    model.artifact_type == artifact_type,
+                    model.artifact_id == artifact_id,
+                )
+            )
+        await context.flush()
 
     async def board_exists(self, context, *, board_id: str) -> bool:
         return await context.get(Board, board_id) is not None

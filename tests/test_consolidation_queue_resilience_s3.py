@@ -16,9 +16,9 @@ from sqlalchemy import select
 
 from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
 from okto_pulse.core.kg.commit_coordinator import (
-    kuzu_lock_retries_5m,
-    record_kuzu_lock_retry,
-    reset_kuzu_lock_retries_for_tests,
+    graph_lock_retries_5m,
+    record_graph_lock_retry,
+    reset_commit_coordinator_for_tests,
 )
 from sqlalchemy_test_models import (
     Board,
@@ -46,10 +46,10 @@ def _restore_settings():
 @pytest.fixture(autouse=True)
 def _reset_counters():
     reset_claim_counters_for_tests()
-    reset_kuzu_lock_retries_for_tests()
+    reset_commit_coordinator_for_tests()
     yield
     reset_claim_counters_for_tests()
-    reset_kuzu_lock_retries_for_tests()
+    reset_commit_coordinator_for_tests()
 
 
 @pytest_asyncio.fixture
@@ -209,25 +209,25 @@ async def test_alert_active_toggles_with_depth(
 
 
 # ----------------------------------------------------------------------
-# kuzu_lock_retries_5m sliding-window counter
+# graph_lock_retries_5m sliding-window counter
 # ----------------------------------------------------------------------
 
 
-def test_kuzu_lock_retries_5m_counter_records_and_prunes():
+def test_graph_lock_retries_5m_counter_records_and_prunes():
     """Records are appended chronologically (real callers always pass
     monotonically-increasing now()). The counter prunes entries that fall
     outside the 5min window when a fresh observation arrives."""
     base = datetime.now(timezone.utc)
     # 3 retries 100s ago — all inside the 5min window.
     for offset in (-120, -110, -100):
-        record_kuzu_lock_retry(now=base + timedelta(seconds=offset))
-    assert kuzu_lock_retries_5m(now=base) == 3
+        record_graph_lock_retry(now=base + timedelta(seconds=offset))
+    assert graph_lock_retries_5m(now=base) == 3
 
     # Reading 5min later: all 3 originals fall outside the window and get
     # pruned. A fresh retry at the new "now" remains visible.
     later = base + timedelta(seconds=400)
-    record_kuzu_lock_retry(now=later)
-    assert kuzu_lock_retries_5m(now=later) == 1
+    record_graph_lock_retry(now=later)
+    assert graph_lock_retries_5m(now=later) == 1
 
 
 # ----------------------------------------------------------------------
@@ -399,7 +399,7 @@ def test_ac18_snapshot_pool_reports_steady_state():
     """Pool state belongs to the edition runner, not the Core processor."""
     from okto_pulse.core.application.processors import ConsolidationProcessor
 
-    processor = ConsolidationProcessor(session_factory=lambda: None)
+    processor = ConsolidationProcessor(relational_scope_factory=lambda: None)
     assert not hasattr(processor, "snapshot_pool")
     assert not hasattr(processor, "is_running")
     assert not hasattr(processor, "_task")

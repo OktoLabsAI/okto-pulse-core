@@ -284,12 +284,12 @@ class StoryLinkedToIdeation(DomainEvent):
 
 
 class KGHitFlushed(DomainEvent):
-    """Fired when KGService._flush_hits persists a batch of query_hits to Kùzu.
+    """Fired when KGService._flush_hits persists a batch of query_hits to graph backend.
 
     The handler reacts by recomputing the node's relevance_score so the
     refreshed hit count immediately participates in ranking. Decoupling
     via DomainEvent (vs sync recompute on the read path) keeps the search
-    hot path free of Kùzu MATCH/COUNT pressure — see dec_3a6eb8ad.
+    hot path free of graph backend MATCH/COUNT pressure — see dec_3a6eb8ad.
     """
 
     event_type: ClassVar[str] = "kg.hit_flushed"

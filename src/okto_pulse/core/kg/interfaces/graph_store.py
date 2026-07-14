@@ -23,6 +23,13 @@ class QueryFilters:
     include_superseded: bool = False
 
 
+@dataclass(frozen=True)
+class GraphCapabilities:
+    indexed_similarity: bool = False
+    schema_introspection: bool = False
+    mutable_indexed_attributes: bool = True
+
+
 @runtime_checkable
 class SemanticGraphStore(Protocol):
     # --- Read operations (tier primario) ---
@@ -50,6 +57,8 @@ class SemanticGraphStore(Protocol):
     def vector_search(
         self, board_id: str, node_type: str, query_vec: list[float],
         top_k: int, min_similarity: float,
+        *,
+        include_superseded: bool = False,
     ) -> list[dict]: ...
 
     def get_constraint_detail(
@@ -68,6 +77,16 @@ class SemanticGraphStore(Protocol):
 
     def get_schema_info(self, board_id: str, *, include_internal: bool = False) -> dict: ...
 
+    def list_schema_objects(self, board_id: str) -> tuple[str, ...]: ...
+
+    def list_node_properties(
+        self,
+        board_id: str,
+        node_type: str,
+    ) -> tuple[str, ...]: ...
+
+    def capabilities(self) -> GraphCapabilities: ...
+
     # --- Write operations (TransactionOrchestrator / bootstrap) ---
 
     def create_node(
@@ -80,6 +99,46 @@ class SemanticGraphStore(Protocol):
         *,
         from_type: str | None = None,
         to_type: str | None = None,
+    ) -> None: ...
+
+    def update_node(
+        self,
+        board_id: str,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+    ) -> None: ...
+
+    def mark_superseded(
+        self,
+        board_id: str,
+        node_type: str,
+        node_id: str,
+        *,
+        superseded_by: str,
+        superseded_at: str,
+        revocation_reason: str,
+    ) -> None: ...
+
+    def edge_exists(
+        self,
+        board_id: str,
+        edge_type: str,
+        from_type: str,
+        to_type: str,
+        from_id: str,
+        to_id: str,
+    ) -> bool: ...
+
+    def find_node_types(self, board_id: str, node_id: str) -> tuple[str, ...]: ...
+
+    def increment_attestation(
+        self,
+        board_id: str,
+        node_type: str,
+        node_id: str,
+        *,
+        attested_at: str,
     ) -> None: ...
 
     def delete_nodes_by_session(self, board_id: str, session_id: str) -> int: ...

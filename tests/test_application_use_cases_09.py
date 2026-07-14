@@ -168,7 +168,7 @@ async def test_create_board_use_case_persists_and_shapes(db_factory):
         assert board.owner_id == ACTOR
         # Same post-processing as api/boards.py:create_board.
         assert board.agents == []
-        assert board.__dict__["settings"] is not None
+        assert board.values["settings"] is not None
 
 
 @pytest.mark.asyncio

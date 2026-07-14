@@ -13,7 +13,7 @@ Isolation: handlers rodam em transação SQL própria pelo dispatcher — falha
 aqui não afeta o ConsolidationEnqueuer que também observa os mesmos eventos.
 
 Storage boundary: writes go through the GraphTransaction port. The embedded
-adapter still uses the synchronous Kùzu driver internally, but this handler no
+adapter still uses the synchronous graph backend driver internally, but this handler no
 longer opens board graph connections directly.
 """
 
@@ -38,12 +38,12 @@ REVOCATION_REASON = "source_cancelled"
 async def _apply_decay(board_id: str, card_id: str) -> int:
     """Apply decay through the GraphTransaction port. Returns nodes affected.
 
-    Runs one UPDATE per node type. Kùzu v0.6 has no polymorphic MATCH, so
+    Runs one UPDATE per node type. graph backend v0.6 has no polymorphic MATCH, so
     iterating NODE_TYPES is the portable way. Skip rows that already carry
     the decay marker (idempotency). The embedded GraphTransaction adapter owns
     the connection lifecycle and releases Windows file handles on scope exit.
 
-    Short-circuits to 0 if the board has no Kùzu graph yet (card cancelled
+    Short-circuits to 0 if the board has no graph backend graph yet (card cancelled
     before it was ever consolidated). Avoids the ~1-2s bootstrap cost and
     keeps handler latency negligible for that common case.
     """
@@ -78,13 +78,7 @@ async def _apply_decay(board_id: str, card_id: str) -> int:
                     "now": now,
                 },
             )
-            try:
-                while result.has_next():
-                    result.get_next()
-                    total += 1
-            finally:
-                if hasattr(result, "close"):
-                    result.close()
+            total += len(result.rows)
     return total
 
 
@@ -94,7 +88,7 @@ async def _revert_decay(board_id: str, card_id: str) -> int:
     Restores only nodes whose revocation_reason matches this module's marker
     so that future supersedence causes ('auto_superseded', 'source_deleted')
     stay untouched when a card is restored. Short-circuits when the board has
-    no Kùzu graph yet.
+    no graph backend graph yet.
     """
     registry = get_kg_registry()
     if not registry.graph_runtime_store.exists(board_id):
@@ -121,13 +115,7 @@ async def _revert_decay(board_id: str, card_id: str) -> int:
                     "penalty": DECAY_PENALTY,
                 },
             )
-            try:
-                while result.has_next():
-                    result.get_next()
-                    total += 1
-            finally:
-                if hasattr(result, "close"):
-                    result.close()
+            total += len(result.rows)
     return total
 
 
@@ -137,7 +125,7 @@ class CancellationDecayHandler:
 
     async def handle(self, event: CardCancelled, session: object) -> None:
         # `session` is the SQL async session provided by the dispatcher; we
-        # do NOT write SQL state here — all mutation is on the Kùzu graph.
+        # do NOT write SQL state here — all mutation is on the graph backend graph.
         nodes_affected = await _apply_decay(event.board_id, event.card_id)
         logger.info(
             "kg.cancellation_decay.applied",

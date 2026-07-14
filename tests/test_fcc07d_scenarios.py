@@ -61,8 +61,8 @@ def _production_composition_with_test_only_event_bus() -> RuntimeComposition:
         settings_provider=_ProductionSettings(),
         auth_provider=_ProductionSettings(),
         storage_provider=_ProductionSettings(),
-        session_factory=_ProductionSettings(),
         event_bus=InMemoryEventBus(),
+        uow_factory=_ProductionSettings(),
     )
 
 

@@ -17,7 +17,6 @@ import pytest
 
 from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.ports.telemetry import TelemetryPort
-from okto_pulse.core.telemetry import telemetry_port_registry as registry
 from okto_pulse.core.telemetry.telemetry_port_registry import (
     get_telemetry_port,
     register_telemetry_port_factory,
@@ -44,7 +43,6 @@ def _settings(tmp_path: Path) -> CoreSettings:
 def test_get_telemetry_port_without_factory_raises_runtime_error(tmp_path, caplog):
     """R10-E Pass 2: no factory → RuntimeError + structured error signal (fail-closed)."""
     reset_telemetry_port_factory_for_tests()
-    assert registry._telemetry_port_factory is None
     caplog.set_level("ERROR", logger="okto_pulse.telemetry.port_registry")
 
     with pytest.raises(RuntimeError, match="No TelemetryPort factory registered"):
@@ -100,6 +98,10 @@ def test_factory_conformance_isinstance_and_exercise(tmp_path):
         register_product_aggregator_factory,
         reset_product_aggregator_factory_for_tests,
     )
+    from okto_pulse.core.telemetry.publish_health_source_registry import (
+        register_external_source_provider,
+        reset_external_source_provider_for_tests,
+    )
     from okto_pulse.core.telemetry.service import TelemetryService
     from okto_pulse.core.ports.telemetry import ProductState, PRODUCT_METRIC_KEYS
 
@@ -134,6 +136,12 @@ def test_factory_conformance_isinstance_and_exercise(tmp_path):
     reset_product_aggregator_factory_for_tests()
     register_telemetry_event_store_factory(lambda base, ret: _NullStore())
     register_product_aggregator_factory(_NullAgg)
+    register_external_source_provider(
+        lambda _settings: (
+            {"availability": "gap"},
+            {"availability": "gap"},
+        )
+    )
     # Compose TelemetryService as the registered facade.
     register_telemetry_port_factory(lambda settings: TelemetryService(settings))
     try:
@@ -151,6 +159,7 @@ def test_factory_conformance_isinstance_and_exercise(tmp_path):
     finally:
         reset_telemetry_event_store_factory_for_tests()
         reset_product_aggregator_factory_for_tests()
+        reset_external_source_provider_for_tests()
 
 
 # ===========================================================================

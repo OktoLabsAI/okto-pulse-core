@@ -16,7 +16,6 @@ COMMUNITY_ROOT = REPO_ROOT.parent / "okto_labs_pulse_community"
 COMMUNITY_ADAPTERS = COMMUNITY_ROOT / "src" / "okto_pulse" / "community" / "adapters"
 
 
-CORE_API_EXCLUSIONS = frozenset({"__init__.py", "deps.py", "router.py"})
 CORE_README_COUNTERS = (
     "SQLAlchemy models",
     "service classes",
@@ -61,12 +60,6 @@ def _markdown_section(text: str, heading: str) -> str:
     return match.group("section")
 
 
-def _release_notes(text: str) -> str:
-    pattern = re.compile(r"^## Release Notes\s*$(?P<section>.*)", flags=re.MULTILINE | re.DOTALL)
-    match = pattern.search(text)
-    return match.group("section") if match else ""
-
-
 def _extract_counter(section: str, label: str) -> int:
     match = re.search(rf"\*\*(\d+)\s+{re.escape(label)}\*\*", section)
     assert match is not None, f"live README section is missing counter {label!r}"
@@ -85,26 +78,33 @@ def _service_classes() -> list[tuple[str, str]]:
 
 def _sqlalchemy_model_classes() -> list[str]:
     models: list[str] = []
-    tree = ast.parse((CORE_SRC / "models" / "db.py").read_text(encoding="utf-8"))
-    for node in tree.body:
-        if not isinstance(node, ast.ClassDef):
-            continue
-        has_tablename = any(
-            isinstance(stmt, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "__tablename__" for target in stmt.targets)
-            for stmt in node.body
-        )
-        if has_tablename:
-            models.append(node.name)
+    for path in sorted(CORE_SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            has_tablename = any(
+                (
+                    isinstance(stmt, ast.Assign)
+                    and any(
+                        isinstance(target, ast.Name) and target.id == "__tablename__"
+                        for target in stmt.targets
+                    )
+                )
+                or (
+                    isinstance(stmt, ast.AnnAssign)
+                    and isinstance(stmt.target, ast.Name)
+                    and stmt.target.id == "__tablename__"
+                )
+                for stmt in node.body
+            )
+            if has_tablename:
+                models.append(f"{path.relative_to(CORE_SRC).as_posix()}:{node.name}")
     return models
 
 
 def _api_route_modules() -> list[Path]:
-    return [
-        path
-        for path in sorted((CORE_SRC / "api").glob("*.py"))
-        if path.name not in CORE_API_EXCLUSIONS
-    ]
+    return sorted((CORE_SRC / "api").glob("*.py"))
 
 
 async def _mcp_tool_count() -> int:
@@ -126,10 +126,9 @@ def _assert_core_readme_live_counters(readme: str) -> None:
     assert f"Community runtime exposure: {mcp_tool_count} core MCP tools" in live
 
     for source in (
-        "Base.registry.mappers",
-        "`core/models/db.py`",
+        "`__tablename__` assignments anywhere under `core/`",
         "classes ending in `Service`",
-        "`core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`",
+        "`core/api/*.py`",
         "transport-neutral Core catalog",
         "`len(KGEdgeType)`",
     ):
@@ -163,32 +162,28 @@ def test_api_route_module_counter_documents_infrastructure_exclusions() -> None:
     live = _markdown_section(readme, "What's inside")
     api_py = sorted((CORE_SRC / "api").glob("*.py"))
 
-    assert len(api_py) == 48
-    assert len([path for path in api_py if path.name != "__init__.py"]) == 47
-    assert len(_api_route_modules()) == 45
-    assert "`deps.py`" in live
-    assert "`router.py`" in live
+    assert api_py == []
+    assert _api_route_modules() == []
+    assert "Community owns the REST adapter and route modules" in live
 
-    mutated_readme = readme.replace("`deps.py` and `router.py`", "`deps.py`")
+    mutated_readme = readme.replace("**0 API route modules**", "**1 API route modules**")
     with pytest.raises(AssertionError):
         _assert_core_readme_live_counters(mutated_readme)
 
 
-def test_changelog_counters_are_anchor_protected() -> None:
+def test_historical_counters_do_not_drive_live_counters() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    history = _release_notes(readme)
 
-    assert "52 models / 28 services / 33 API modules / 215 MCP tools" in history
-    assert "26+1 SQLAlchemy models" in history
+    assert "26+1 SQLAlchemy models" in readme
 
-    mutated_history_readme = readme.replace("52 models / 28 services", "999 models / 28 services")
+    mutated_history_readme = readme.replace("26+1 SQLAlchemy models", "999+1 SQLAlchemy models")
     _assert_core_readme_live_counters(mutated_history_readme)
 
 
 def test_guard_requires_live_section_not_historical_counters() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
-    mutated_readme = readme.replace("**59 SQLAlchemy models**", "**58 SQLAlchemy models**")
+    mutated_readme = readme.replace("**0 SQLAlchemy models**", "**1 SQLAlchemy models**")
     with pytest.raises(AssertionError):
         _assert_core_readme_live_counters(mutated_readme)
 
@@ -203,10 +198,9 @@ def test_core_architecture_documents_live_counter_maintenance_sources() -> None:
     overview = _markdown_section(architecture, "Live Documentation Counters")
 
     for marker in (
-        "Base.registry.mappers",
-        "`core/models/db.py`",
+        "`__tablename__` assignments anywhere under `core/`",
         "classes ending in `Service`",
-        "`core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`",
+        "Python modules under `core/api`",
         "transport-neutral Core command catalog",
         "`len(KGEdgeType)`",
         "Community adapter source map",
@@ -228,10 +222,13 @@ def test_community_readme_live_mcp_count_and_source_map_match_filesystem() -> No
     for entry in COMMUNITY_SOURCE_MAP_ENTRIES:
         assert entry in adapters, f"{entry} missing from Community live source map"
 
+    wildcard_prefixes = {
+        entry[:-1]
+        for entry in re.findall(r"`(community/adapters/[^`]*\*)`", adapters)
+    }
     for adapter_file in adapter_files:
-        documented = adapter_file in adapters or (
-            adapter_file.startswith("community/adapters/kuzu_")
-            and "community/adapters/kuzu_*" in adapters
+        documented = adapter_file in adapters or any(
+            adapter_file.startswith(prefix) for prefix in wildcard_prefixes
         )
         assert documented, f"{adapter_file} is missing from Community live source map"
 
@@ -274,6 +271,6 @@ def test_af41_readmes_pin_mcp_runtime_ownership_and_provider_preservation() -> N
         "`CommunityCapabilityDescriptorSource`",
         "`build_mcp_trace_sink_from_env`",
         "`JsonlMcpTraceSink`",
-        "`core.ports.McpTraceSink`",
+        "`okto_pulse.core.ports.McpTraceSink`",
     ):
         assert marker in community_readme

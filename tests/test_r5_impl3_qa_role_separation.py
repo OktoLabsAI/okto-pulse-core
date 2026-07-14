@@ -16,6 +16,8 @@ NOTE: Tests exercise REAL service-layer calls (not source inspection).
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from types import SimpleNamespace
@@ -24,6 +26,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 import pytest
 from sqlalchemy import select
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
 pytestmark = pytest.mark.asyncio
 
@@ -644,12 +647,12 @@ async def test_rest_card_qa_answer_returns_typed_self_answering_denial(db_factor
 
     async with db_factory() as db:
         with pytest.raises(HTTPException) as exc_info:
-            await answer_card_question(
-                qa_id,
-                QAAnswer(answer="not allowed"),
-                user_id=USER_ASKER,
-                db=db,
-            )
+                await answer_card_question(
+                    qa_id,
+                    QAAnswer(answer="not allowed"),
+                    user_id=USER_ASKER,
+                    db=resolve_unit_of_work_factory().wrap(db),
+                )
         assert exc_info.value.status_code == 403
         assert exc_info.value.detail["reason"] == "self_answering_not_allowed"
 
@@ -689,7 +692,7 @@ async def test_mcp_card_qa_answer_returns_typed_self_answering_denial(db_factory
         await db.commit()
         qa_id = qa.id
 
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     ctx = SimpleNamespace(
         agent_id=USER_ASKER,
         agent_name="self-answering-test-agent",

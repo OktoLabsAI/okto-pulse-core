@@ -11,12 +11,21 @@ Reproduce:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 
 import pytest
+import pytest_asyncio
+from sqlalchemy import delete
 
 from okto_pulse.core.mcp import server as mcp_server
+from sqlalchemy_test_models import (
+    Board,
+    DefaultBoardConfiguration,
+    DefaultBoardConfigurationAudit,
+)
 from okto_pulse.core.models.schemas import BoardCreate, BoardSettings
 from okto_pulse.core.services.default_board_config_api import DefaultBoardConfigApiService
 from okto_pulse.core.services.default_board_configuration import (
@@ -33,6 +42,29 @@ USER_ID = "dbc-api-user"
 class _Ctx:
     agent_id = USER_ID
     permissions: list = []
+    realm_id = "local"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolate_committed_global_templates(db_factory):
+    async def clear() -> None:
+        async with db_factory() as db:
+            await db.execute(
+                delete(DefaultBoardConfigurationAudit).where(
+                    DefaultBoardConfigurationAudit.scope == "global"
+                )
+            )
+            await db.execute(
+                delete(DefaultBoardConfiguration).where(
+                    DefaultBoardConfiguration.scope == "global"
+                )
+            )
+            await db.execute(delete(Board).where(Board.owner_id == USER_ID))
+            await db.commit()
+
+    await clear()
+    yield
+    await clear()
 
 
 async def _call(name: str, **kwargs) -> dict:
@@ -40,7 +72,7 @@ async def _call(name: str, **kwargs) -> dict:
 
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)

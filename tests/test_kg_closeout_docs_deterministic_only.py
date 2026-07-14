@@ -153,9 +153,13 @@ def test_ts_9806021d_tool_docs_document_deterministic_references():
     assert _DETERMINISTIC.search(add_node)
     assert "source_type_not_supported" in add_node
     assert "writer_not_connectivity_owner" in add_node
-    # ...without disturbing the benign explain_constraint `constraint_id` param elsewhere.
+    # The condensed section delegates parameters to the live description; the
+    # canonical workflow still documents the benign constraint_id argument.
     explain = _section(text, "okto_pulse_kg_explain_constraint")
-    assert "constraint_id" in explain  # benign, untouched
+    assert "live tool description" in explain
+    assert "okto_pulse_kg_explain_constraint(board_id, constraint_id=" in (
+        WORKFLOW_KG.read_text(encoding="utf-8")
+    )
 
 
 def test_agent_instructions_introduce_no_conflicting_cognitive_list():

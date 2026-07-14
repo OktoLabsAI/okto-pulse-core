@@ -19,6 +19,8 @@ Each per-type tool has a different name for the "intermediate" id parameter:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -245,7 +247,7 @@ async def test_fr_target_persists_direct_traceability_without_closing_fr_coverag
             "permissions": ["card.entity.update"],
         },
     )()
-    server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
          patch.object(server, "check_permission", return_value=None):
         result = json.loads(await server.okto_pulse_link_task.fn(
@@ -350,7 +352,7 @@ async def test_locked_spec_allows_traceability_only_links_for_fr_tr_decision(
             "permissions": ["card.entity.update"],
         },
     )()
-    server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
          patch.object(server, "check_permission", return_value=None):
         result = json.loads(await server.okto_pulse_link_task.fn(

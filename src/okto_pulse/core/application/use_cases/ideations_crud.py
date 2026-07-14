@@ -304,6 +304,10 @@ class EvaluateComplexityUseCase:
 
         ideation.scope_assessment = scope
         mark_mutable_field_modified(ideation, "scope_assessment")
+        # evaluate_complexity reads the ideation again through the persistence
+        # port. Flush the detached-record delta first so REST and MCP classify the
+        # same submitted scope values within this transaction.
+        await uow.synchronize()
 
         ideation = await service.evaluate_complexity(command.ideation_id, actor.actor_id)
         if not ideation:

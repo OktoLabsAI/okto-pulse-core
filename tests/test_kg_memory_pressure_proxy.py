@@ -1,9 +1,8 @@
-"""Behavioral tests for the memory-pressure PROXY implementation (Spec R2c, FR2/FR3).
+"""Behavioral tests for the memory-pressure runtime projection (Spec R2c).
 
-These tests validate the *proxy* layer — the code that reads real on-disk
-file sizes and records real FailureEvents — NOT the correlator internals
-(which are covered by test_kg_memory_pressure_collector.py and
-test_kg_health_state.py).
+Core consumes a backend-neutral ``GraphRuntimeStore`` footprint and correlates
+it with failure events. Filesystem sizing belongs to the Community adapter and
+is covered in ``test_af17_graph_runtime_store_adapter.py``.
 
 Coverage map (NC-9 evidence):
   test_hwm_pct_from_real_file_sizes        -> AC3
@@ -18,7 +17,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -36,6 +34,8 @@ from okto_pulse.core.kg.memory_pressure_collector import (
     record_failure,
 )
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+from okto_pulse.core.kg.interfaces.graph_runtime_store import GraphStorageFootprint
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 from sqlalchemy_test_models import Board
 
 # ---------------------------------------------------------------------------
@@ -51,9 +51,7 @@ _MAX_DB_SIZE_GB = 2
 # Using 1.65 GiB primary + 0.20 GiB WAL = 1.85 GiB out of 2 GiB = ~92.5%.
 # (1.6 + 0.2 GiB = 1.8 GiB gives ~89.999% which is BELOW the strict > 90
 # threshold used by the correlator; 1.65 + 0.20 gives ~92.5% which passes.)
-_PRIMARY_GiB = int(1.65 * 1024 ** 3)
-_WAL_GiB = int(0.20 * 1024 ** 3)
-_EXPECTED_PCT = (_PRIMARY_GiB + _WAL_GiB) / (_MAX_DB_SIZE_GB * 1024 ** 3) * 100
+_EXPECTED_PCT = 92.5
 # ~92.5; strictly > 90 so the correlator threshold (high_water_mark_pct > 90)
 # is satisfied.
 
@@ -62,32 +60,22 @@ _EXPECTED_PCT = (_PRIMARY_GiB + _WAL_GiB) / (_MAX_DB_SIZE_GB * 1024 ** 3) * 100
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_fake_stat(size: int):
-    """Return a mock stat_result whose st_size is ``size``."""
-    s = MagicMock()
-    s.st_size = size
-    return s
-
-
-def _fake_settings(max_db_size_gb: int = _MAX_DB_SIZE_GB):
-    return SimpleNamespace(kg_kuzu_max_db_size_gb=max_db_size_gb)
-
-
-def _build_stat_patcher(stat_map: dict[str, int]):
-    """Return a function that patches Path.stat to return per-path sizes.
-
-    Paths not in stat_map fall through to the original Path.stat so that
-    other file operations (exists, glob siblings, etc.) work correctly.
-    """
-    original_stat = Path.stat
-
-    def _patched_stat(self, *args, **kwargs):
-        key = str(self)
-        if key in stat_map:
-            return _make_fake_stat(stat_map[key])
-        return original_stat(self, *args, **kwargs)
-
-    return _patched_stat
+def _footprint(
+    board_id: str,
+    *,
+    status: str = "available",
+    percentage: float | None = _EXPECTED_PCT,
+    unavailable_reason: str | None = None,
+) -> GraphStorageFootprint:
+    return GraphStorageFootprint(
+        board_id=board_id,
+        storage_ref=StorageRef(f"test:{board_id}"),
+        status=status,
+        source="test_runtime_capability",
+        configured_max_bytes=_MAX_DB_SIZE_GB * 1024 ** 3,
+        percentage=percentage,
+        unavailable_reason=unavailable_reason,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -135,46 +123,16 @@ async def e2e_board(db_factory):
 # verifies that the PROXY produces the pct FROM FILE SIZES.
 # ---------------------------------------------------------------------------
 
-def test_hwm_pct_from_real_file_sizes(tmp_path, monkeypatch):
-    """AC3: proxy computes pct from real on-disk byte totals.
-
-    Creates a real (but empty) graph.lbug + sibling .wal under tmp_path.
-    Monkeypatches Path.stat to report per-file sizes summing to ~1.85 GiB
-    (92.5% of the 2 GiB limit) without consuming real disk space.
-    Asserts high_water_mark_pct ≈ _EXPECTED_PCT (±0.1), which is >90.
-
-    Critically, this test exercises _compute_board_graph_high_water_mark_pct
-    via real Path objects and monkeypatched stat() — NOT via injecting a
-    sample directly into the collector ring-buffer.
-    """
+def test_hwm_pct_from_runtime_footprint(monkeypatch):
+    """AC3: Core projects the percentage supplied by the graph runtime port."""
     from okto_pulse.core.services.kg_health_service import (
         _compute_board_graph_high_water_mark_pct,
     )
 
-    # Set up a real directory structure under tmp_path
-    board_dir = tmp_path / "boards" / _BOARD_ID
-    board_dir.mkdir(parents=True)
-    graph_path = board_dir / "graph.lbug"
-    wal_path = board_dir / "graph.lbug.wal"
-
-    # Create the files (empty; stat returns per-path sizes via monkeypatch)
-    graph_path.touch()
-    wal_path.touch()
-
-    _stat_map: dict[str, int] = {
-        str(graph_path): _PRIMARY_GiB,
-        str(wal_path): _WAL_GiB,
-    }
-
-    monkeypatch.setattr(Path, "stat", _build_stat_patcher(_stat_map))
     monkeypatch.setattr(
-        get_kg_registry().graph_path_resolver,
-        "board_graph_path",
-        lambda _board_id: graph_path,
-    )
-    monkeypatch.setattr(
-        "okto_pulse.core.services.kg_health_service.get_settings",
-        lambda: _fake_settings(_MAX_DB_SIZE_GB),
+        get_kg_registry().graph_runtime_store,
+        "footprint",
+        lambda board_id: _footprint(board_id),
     )
 
     pct = _compute_board_graph_high_water_mark_pct(_BOARD_ID)
@@ -193,7 +151,7 @@ def test_hwm_pct_from_real_file_sizes(tmp_path, monkeypatch):
 # AC4: graph.lbug absent -> high_water_mark_pct None (not 0.0)
 # ---------------------------------------------------------------------------
 
-def test_hwm_pct_none_when_graph_absent(tmp_path, monkeypatch):
+def test_hwm_pct_none_when_graph_absent(monkeypatch):
     """AC4: when graph.lbug does not exist, the proxy returns None (not 0.0).
 
     This distinguishes "no graph yet" from "graph is at 0% utilisation"
@@ -204,14 +162,15 @@ def test_hwm_pct_none_when_graph_absent(tmp_path, monkeypatch):
         _compute_board_graph_high_water_mark_pct,
     )
 
-    # Point board_kuzu_path at a path that does NOT exist
-    nonexistent = tmp_path / "boards" / "absent-board" / "graph.lbug"
-    # deliberately do NOT create it
-
     monkeypatch.setattr(
-        get_kg_registry().graph_path_resolver,
-        "board_graph_path",
-        lambda _board_id: nonexistent,
+        get_kg_registry().graph_runtime_store,
+        "footprint",
+        lambda board_id: _footprint(
+            board_id,
+            status="unavailable",
+            percentage=None,
+            unavailable_reason="graph_absent",
+        ),
     )
 
     pct = _compute_board_graph_high_water_mark_pct("absent-board")
@@ -223,9 +182,8 @@ def test_hwm_pct_none_when_graph_absent(tmp_path, monkeypatch):
 # AC5: Path.stat raises OSError -> None, does not propagate
 # ---------------------------------------------------------------------------
 
-def test_hwm_pct_none_on_stat_oserror(tmp_path, monkeypatch):
-    """AC5: when Path.stat() raises OSError, the proxy returns None and does
-    NOT let the exception propagate to the caller.
+def test_hwm_pct_none_on_runtime_error(monkeypatch):
+    """AC5: adapter failures return None and do not escape the health reader.
 
     Confirms TR2: the health endpoint must never 500 on an IO failure when
     reading telemetry data.
@@ -240,23 +198,13 @@ def test_hwm_pct_none_on_stat_oserror(tmp_path, monkeypatch):
         _compute_board_graph_high_water_mark_pct,
     )
 
-    # Build a mock Path that reports existence but raises on stat()
-    mock_graph_path = MagicMock(spec=Path)
-    mock_graph_path.exists.return_value = True
-    mock_graph_path.stat.side_effect = OSError("simulated permission error")
-    mock_graph_path.name = "graph.lbug"
-    mock_graph_path.parent = MagicMock(spec=Path)
-    # glob returns no siblings — stat failure is on the primary file only
-    mock_graph_path.parent.glob.return_value = []
+    def _raise(_board_id: str):
+        raise OSError("simulated adapter error")
 
     monkeypatch.setattr(
-        get_kg_registry().graph_path_resolver,
-        "board_graph_path",
-        lambda _board_id: mock_graph_path,
-    )
-    monkeypatch.setattr(
-        "okto_pulse.core.services.kg_health_service.get_settings",
-        lambda: _fake_settings(_MAX_DB_SIZE_GB),
+        get_kg_registry().graph_runtime_store,
+        "footprint",
+        _raise,
     )
 
     # This must NOT raise; it must return None
@@ -301,6 +249,7 @@ async def test_mark_failed_dlq_records_commit_fail(monkeypatch):
         worker_id=None,
         claimed_at=None,
         claimed_by_session_id=None,
+        triggered_at=datetime.now(timezone.utc),
     )
 
     # Fake async DB session — we don't need DB for this test
@@ -320,7 +269,7 @@ async def test_mark_failed_dlq_records_commit_fail(monkeypatch):
     async def _fake_dlq(db, entry, *, error_text):
         pass  # DLQ routing side-effect not needed for this test
 
-    worker = ConsolidationProcessor(session_factory=lambda: None)
+    worker = ConsolidationProcessor(relational_scope_factory=lambda: None)
 
     monkeypatch.setattr(
         "okto_pulse.core.application.processors.consolidation.route_to_dead_letter",
@@ -422,7 +371,7 @@ def test_lifecycle_error_records_wal_fail():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_proxy_drives_correlation_e2e(tmp_path, db_factory, e2e_board, monkeypatch):
+async def test_proxy_drives_correlation_e2e(db_factory, e2e_board, monkeypatch):
     """E2E: proxy reads real file sizes -> records samples -> correlator confirms.
 
     This is the key end-to-end test demanded by the validator: it proves
@@ -453,28 +402,10 @@ async def test_proxy_drives_correlation_e2e(tmp_path, db_factory, e2e_board, mon
 
     board_id = e2e_board
 
-    # Build real (empty) files in tmp_path so .exists() passes
-    board_dir = tmp_path / "boards" / board_id
-    board_dir.mkdir(parents=True)
-    graph_path = board_dir / "graph.lbug"
-    wal_path = board_dir / "graph.lbug.wal"
-    graph_path.touch()
-    wal_path.touch()
-
-    _stat_map: dict[str, int] = {
-        str(graph_path): _PRIMARY_GiB,
-        str(wal_path): _WAL_GiB,
-    }
-
-    monkeypatch.setattr(Path, "stat", _build_stat_patcher(_stat_map))
     monkeypatch.setattr(
-        get_kg_registry().graph_path_resolver,
-        "board_graph_path",
-        lambda _board_id: graph_path,
-    )
-    monkeypatch.setattr(
-        "okto_pulse.core.services.kg_health_service.get_settings",
-        lambda: _fake_settings(_MAX_DB_SIZE_GB),
+        get_kg_registry().graph_runtime_store,
+        "footprint",
+        lambda observed_board_id: _footprint(observed_board_id),
     )
 
     # Step 2: call the proxy 3 times, feeding the ring-buffer each time.

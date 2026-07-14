@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -291,7 +293,7 @@ async def test_add_integration_requirement_accepts_external_service_mcp(db_facto
         (),
         {"agent_id": actor_id, "agent_name": actor_id, "permissions": None},
     )()
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
         raw = await mcp_server.okto_pulse_add_integration_requirement.fn(
             board_id=board_id,
@@ -336,7 +338,7 @@ async def test_add_integration_requirement_accepts_mcp_tool_type(db_factory):
         (),
         {"agent_id": actor_id, "agent_name": actor_id, "permissions": None},
     )()
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
         raw = await mcp_server.okto_pulse_add_integration_requirement.fn(
             board_id=board_id,

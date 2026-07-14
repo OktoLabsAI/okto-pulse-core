@@ -18,6 +18,9 @@ class InMemoryGlobalDiscoveryRuntime:
         self._exists = False
         self.closed = True
         self.purged_reasons: list[str] = []
+        self.boards: dict[str, dict] = {}
+        self.digests: dict[str, dict] = {}
+        self.links: set[tuple[str, str]] = set()
 
     @staticmethod
     def _storage_ref() -> StorageRef:
@@ -53,6 +56,39 @@ class InMemoryGlobalDiscoveryRuntime:
         if not self._exists:
             raise RuntimeError("global_graph_absent")
         return GraphStatementResult()
+
+    def search_decision_digests(
+        self,
+        query_vector: list[float],
+        *,
+        board_ids: tuple[str, ...],
+        graph_layer: str,
+        top_k: int,
+        min_similarity: float,
+        exhaustive: bool = False,
+    ) -> list[dict]:
+        del query_vector, board_ids, graph_layer, top_k, min_similarity, exhaustive
+        return []
+
+    def list_schema_objects(self) -> tuple[str, ...]:
+        return ("DecisionDigest",) if self._exists else ()
+
+    def upsert_board_summary(self, **values) -> None:
+        board_id = str(values["board_id"])
+        current = self.boards.setdefault(board_id, {})
+        current.update(values)
+        current["decision_count"] = int(current.get("decision_count") or 0) + int(
+            values["decision_delta"]
+        )
+
+    def upsert_decision_digest(self, **values) -> str:
+        digest_id = str(values["digest_id"])
+        outcome = "updated" if digest_id in self.digests else "created"
+        self.digests[digest_id] = dict(values)
+        return outcome
+
+    def link_board_digest(self, *, board_id: str, digest_id: str) -> None:
+        self.links.add((board_id, digest_id))
 
     def flush_after_write_batch(self) -> None:
         self.close()

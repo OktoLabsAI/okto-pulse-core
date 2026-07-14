@@ -19,6 +19,8 @@ factory exposed by conftest.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -82,7 +84,7 @@ async def _seed_card():
 
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     raw = await tool.fn(**kwargs)
     return json.loads(raw)

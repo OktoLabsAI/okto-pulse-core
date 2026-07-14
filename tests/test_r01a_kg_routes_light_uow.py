@@ -30,6 +30,7 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api import kg_routes as kg_routes_api
 from okto_pulse.community.api.kg_routes import router as kg_router
 from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.community.api.auth_deps import get_current_user, get_realm_id, require_user
 
@@ -67,7 +68,7 @@ def client():
         return ACTOR
 
     async def _override_realm():
-        return None
+        return LOCAL_REALM_ID
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = _override_user
@@ -81,7 +82,14 @@ async def _seed_board(name: str = "fu5s2") -> str:
 
     bid = f"board-fu5s2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name=name, owner_id=ACTOR))
+        db.add(
+            Board(
+                id=bid,
+                name=name,
+                owner_id=ACTOR,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
         return bid
 
@@ -91,7 +99,14 @@ async def _seed_board_with_done_spec() -> str:
 
     bid = f"board-fu5s2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name="fu5s2", owner_id=ACTOR))
+        db.add(
+            Board(
+                id=bid,
+                name="fu5s2",
+                owner_id=ACTOR,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         db.add(Spec(
             id=str(uuid.uuid4()),
             board_id=bid,
@@ -276,7 +291,7 @@ async def test_list_audit_use_case_runs_over_unit_of_work() -> None:
     session_id = await _seed_audit_row(board_id)
 
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(ACTOR, "rest")
+    actor = ActorContext(ACTOR, "rest", realm_id=LOCAL_REALM_ID)
     async with uowf(actor=actor) as uow:
         result = await ListAuditUseCase().execute(
             ListAuditCommand(board_id, limit=50), actor=actor, uow=uow

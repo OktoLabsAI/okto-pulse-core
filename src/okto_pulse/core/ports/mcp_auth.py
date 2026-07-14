@@ -25,6 +25,7 @@ SQLAlchemy, ``AgentService``, ``Agent``, ``Request``, ``ContextVar``,
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
 from .authentication import Principal
@@ -98,12 +99,20 @@ class McpCredential:
 
 @runtime_checkable
 class AuthSession(Protocol):
-    """Structural shape of a resolved auth session. Carries identity only —
-    NEVER the api_key. The concrete DTO is :class:`AgentAuthSession`."""
+    """Structural shape of a resolved auth session.
+
+    It carries the secret-free profile required by global MCP profile tools,
+    but NEVER the api_key. The concrete DTO is :class:`AgentAuthSession`.
+    """
 
     agent_id: str
     agent_name: str
     is_active: bool
+    description: str | None
+    objective: str | None
+    permissions: Any
+    created_at: datetime | None
+    last_used_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -116,6 +125,11 @@ class AgentAuthSession:
     agent_name: str
     is_active: bool
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    description: str | None = None
+    objective: str | None = None
+    permissions: Any = None
+    created_at: datetime | None = None
+    last_used_at: datetime | None = None
 
 
 @runtime_checkable

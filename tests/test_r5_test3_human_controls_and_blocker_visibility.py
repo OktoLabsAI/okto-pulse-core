@@ -15,6 +15,8 @@ drive the REAL MCP evaluate/list tools over a seeded skip + open debt / DLQ.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import os
 import sys
@@ -44,6 +46,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     compute_cognitive_item_id,
     require_rebuild_audit_artifact_store,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
     ActivityLog,
@@ -81,7 +84,7 @@ class _Ctx:
 async def _mcp(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -110,12 +113,14 @@ def _seed_item(store, board, source_ref, status):
               "pending_refs": [source_ref] if status == CognitiveItemStatus.PENDING.value else [],
               "status": "pending" if status == CognitiveItemStatus.PENDING.value else "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    if store.artifact_store is not None:
-        store.artifact_store.write_json_atomic(store._record_key(board, GEN), record)
-        return
-    path = store._record_path(board, GEN)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=GEN,
+        ),
+        record,
+    )
 
 
 # ===========================================================================

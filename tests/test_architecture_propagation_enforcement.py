@@ -22,6 +22,8 @@ Resource Gate backstop for a controlled skip is not yet active.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import uuid
 
 import pytest
@@ -364,7 +366,7 @@ async def test_ts_b2_rest_copy_returns_canonical_error(db_factory):
     from fastapi.testclient import TestClient
 
     from okto_pulse.community.api.architecture import router as architecture_router
-    from okto_pulse.core.infra import auth as _auth_mod
+    from okto_pulse.community.api import auth_deps as _auth_mod
     from okto_pulse.core.infra.database import get_db
 
     board_id, spec_id, card_id = await _seed_spec_card(db_factory)
@@ -381,6 +383,7 @@ async def test_ts_b2_rest_copy_returns_canonical_error(db_factory):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     client = TestClient(app)
 
     resp = client.post(f"/api/v1/cards/{card_id}/copy-architecture-from-spec/{spec_id}")
@@ -410,7 +413,7 @@ async def test_ts_b2_mcp_copy_returns_canonical_error(db_factory):
         "agent_id": USER_ID, "agent_name": "enforcement-agent", "board_id": board_id,
         "permissions": ["board:read", "cards:update", "specs:update"],
     })()
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool("okto_pulse_copy_architecture_to_card")

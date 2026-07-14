@@ -7,11 +7,11 @@ Spec bdcda842 (FR9, TR13). Combines:
       ``claims_per_min_5m`` populated by the consolidation worker.
     * Worker pool snapshot (active/idle/draining counts) populated by the
       worker singleton.
-    * Cross-process Kùzu file-lock retry counter exposed by
-      ``commit_coordinator.kuzu_lock_retries_5m``.
+    * Cross-process graph backend file-lock retry counter exposed by
+      ``commit_coordinator.graph_lock_retries_5m``.
 
 The endpoint is read-only: it touches SQLite for queue stats but does not
-hit Kùzu (alert_active is computed on-read from queue_depth + alert_threshold).
+hit graph backend (alert_active is computed on-read from queue_depth + alert_threshold).
 """
 
 from __future__ import annotations
@@ -21,7 +21,13 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+    runtime_lock,
+    runtime_state,
+)
 
 from okto_pulse.core.domain.queue_health import (
     active_queue_next_action as _active_queue_next_action,
@@ -29,17 +35,17 @@ from okto_pulse.core.domain.queue_health import (
     classify_active_queue,
     worst_active_queue_classification,
 )
-from okto_pulse.core.kg.commit_coordinator import kuzu_lock_retries_5m
+from okto_pulse.core.kg.commit_coordinator import graph_lock_retries_5m
 from okto_pulse.core.ports.queue_health import (
     get_queue_health_read_port,
 )
 
 
 _CLAIMS_WINDOW_S = 300  # keep enough history for both 1m and 5m views
-_CLAIM_TIMESTAMPS: deque[datetime] = deque()
-_CLAIM_LOCK = threading.Lock()
+_CLAIM_TIMESTAMPS = runtime_state("services.queue_health.claim_timestamps", deque)
+_CLAIM_LOCK = runtime_lock("services.queue_health.claim_timestamps")
 
-_ALERT_FIRED_LOCK = threading.Lock()
+_ALERT_FIRED_LOCK = runtime_lock("services.queue_health.alert_fired")
 _ALERT_FIRED_KEY = "services.queue_health.alert_fired_total"
 
 
@@ -155,7 +161,7 @@ async def get_queue_health(db: object) -> dict[str, Any]:
         "workers_active": workers_active,
         "workers_idle": workers_idle,
         "workers_draining_count": workers_draining_count,
-        "kuzu_lock_retries_5m": kuzu_lock_retries_5m(now=now),
+        "graph_lock_retries_5m": graph_lock_retries_5m(now=now),
     }
 
 

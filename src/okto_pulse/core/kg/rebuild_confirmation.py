@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import secrets
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -119,8 +120,8 @@ class ConfirmationResult:
 # caller; the raw actor_id is NEVER in labels.
 
 _CONF_LABELS = ("board_id", "operation", "outcome", "reason", "actor_type")
-_conf_counter: dict[tuple[str, str, str, str, str], int] = {}
-_conf_counter_lock = threading.Lock()
+_conf_counter = runtime_state("kg.rebuild_confirmation.counter", dict)
+_conf_counter_lock = runtime_lock("kg.rebuild_confirmation.counter")
 
 
 def _bump_conf(

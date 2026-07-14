@@ -45,6 +45,7 @@ from okto_pulse.core.kg.scoring import (
     _resolve_severity_boost,
     reset_contradict_warn_counters,
 )
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 from okto_pulse.core.application.processors.consolidation import _card_to_dict
 from sqlalchemy_test_models import (
     Board,
@@ -154,18 +155,7 @@ class _RecordingConn:
 
     def execute(self, cypher: str, params: dict | None = None):
         self.calls.append((cypher, params or {}))
-
-        class _R:
-            def has_next(self):
-                return False
-
-            def get_next(self):
-                return []
-
-            def close(self):
-                pass
-
-        return _R()
+        return GraphStatementResult()
 
 
 def test_ts30_persist_score_sets_both_columns_with_default_now():
@@ -210,53 +200,19 @@ class _BatchStubConn:
         # The fetch query is the long MATCH with OPTIONAL MATCH clauses.
         if "OPTIONAL MATCH" in cypher and "SUM(COALESCE" in cypher:
             self.fetch_calls += 1
-
-            class _Result:
-                def __init__(self):
-                    self._consumed = False
-
-                def has_next(self):
-                    return not self._consumed
-
-                def get_next(self):
-                    self._consumed = True
-                    # source_conf, out_deg, in_deg, query_hits,
-                    # last_queried_at, score_before, raw_penalty, priority_boost
-                    return [1.0, 0, 0, 0, None, 0.5, 0.0, 0.0]
-
-                def close(self):
-                    pass
-
-            return _Result()
+            # source_conf, out_deg, in_deg, query_hits, last_queried_at,
+            # score_before, raw_penalty, priority_boost
+            return GraphStatementResult.from_rows(
+                [[1.0, 0, 0, 0, None, 0.5, 0.0, 0.0]]
+            )
 
         # The batch UPDATE is the UNWIND path.
         if cypher.startswith("UNWIND"):
             self.unwind_calls.append((cypher, params or {}))
-
-            class _Empty:
-                def has_next(self):
-                    return False
-
-                def get_next(self):
-                    return []
-
-                def close(self):
-                    pass
-
-            return _Empty()
+            return GraphStatementResult()
 
         # Any other command (single-node UPDATE etc.) — accept silently.
-        class _Noop:
-            def has_next(self):
-                return False
-
-            def get_next(self):
-                return []
-
-            def close(self):
-                pass
-
-        return _Noop()
+        return GraphStatementResult()
 
 
 def test_ts31_recompute_batch_unwind_persists_last_recomputed_at():
@@ -530,7 +486,7 @@ def test_ts36_mcp_tool_kg_health_does_not_redeclare_response_shape():
     assert "okto_pulse_kg_health" in src
     # The MCP tool calls get_kg_health and serialises with json.dumps —
     # any new field added to the service dict propagates automatically.
-    assert "get_kg_health(" in src
+    assert "GetKgHealthUseCase().execute(" in src
     assert "json.dumps(" in src
 
 
@@ -1182,6 +1138,7 @@ async def test_impl_d_persist_tick_run_inserts_row(db_factory):
             duration_ms=1234.5,
             boards_processed=3,
         )
+        await session.commit()
 
     async with db_factory() as session:
         row = await session.scalar(
@@ -1220,6 +1177,7 @@ async def test_impl_d_run_daily_tick_emits_log_and_persists(
             session=session,
             board_id=kg_rel_board,
         )
+        await session.commit()
 
     assert summary["tick_id"] == "tick-impl-d-002"
     assert summary["nodes_recomputed"] >= 0
@@ -1255,6 +1213,7 @@ async def test_impl_d_kg_health_reflects_tick_run_after_handler(
             session=session,
             board_id=kg_rel_board,
         )
+        await session.commit()
 
     async with db_factory() as session:
         health = await get_kg_health(kg_rel_board, session)
@@ -1463,9 +1422,9 @@ def test_doc_g_drift_review_invariants_preserved():
         f"ORDER BY <var>.relevance_score DESC (got {len(matches)})."
     )
 
-    # (2) _apply_decay_reorder is still invoked by the kuzu_graph_store path.
+    # (2) the public decay reorder policy is invoked by the graph adapter path.
     src_store = inspect.getsource(kuzu_graph_store)
-    assert "_apply_decay_reorder" in src_store
+    assert "apply_decay_reorder" in src_store
 
     # (3) Tick handler updates last_recomputed_at, NOT last_queried_at.
     from okto_pulse.core.events.handlers import kg_decay_tick
@@ -1481,7 +1440,7 @@ def test_doc_g_drift_review_invariants_preserved():
 
     svc_src = inspect.getsource(kg_service)
     # Reads (RETURN ... n.last_queried_at) are fine; the assignment shape
-    # `n.last_queried_at = $ts` only appears inside the _flush_to_kuzu
+    # `n.last_queried_at = $ts` only appears inside the _flush_to_graph
     # SET clause. Multi-line f-strings break a SET-anchored regex, so we
     # match the assignment snippet directly.
     write_matches = _re.findall(

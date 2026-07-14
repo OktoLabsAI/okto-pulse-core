@@ -4,7 +4,8 @@ The MCP handler was instantiating SpecService and calling .list_knowledge
 on it, but list_knowledge actually lives on SpecKnowledgeService. Symptom:
 ``'SpecService' object has no attribute 'list_knowledge'`` 100% of calls.
 
-Fix: handler now uses SpecKnowledgeService(db).list_knowledge(spec_id).
+Fix: the MCP use case now resolves the spec-knowledge application service from
+the UnitOfWork catalog and calls ``spec_knowledge.list_knowledge(spec_id)``.
 
 These tests pin the contract (class layout) AND exercise the actual handler
 end-to-end with a real DB so the bug cannot regress silently.
@@ -21,10 +22,10 @@ import pytest_asyncio
 from sqlalchemy_test_models import (
     Board,
     Spec,
-    SpecKnowledgeBase,
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import SpecKnowledgeCreate
+from okto_pulse.core.ports.application_persistence import ApplicationRecord
 from okto_pulse.core.services.main import SpecKnowledgeService, SpecService
 
 
@@ -76,21 +77,21 @@ def _use_case_source() -> str:
 
 
 def test_handler_source_uses_spec_knowledge_service():
-    """The MCP copy path must call SpecKnowledgeService — not SpecService.
+    """The MCP copy path must use the spec-knowledge port, not SpecService.
 
     MCP-FU6 strangler: the handler now delegates to ``McpCopyKnowledgeToCardUseCase``
-    over the MCP UoW, so the ``SpecKnowledgeService`` instantiation moved to that
-    use case. The regression guard follows the logic to its new home (intent
-    unchanged: the buggy ``spec_service.list_knowledge`` must exist nowhere).
+    over the MCP UoW. The concrete ``SpecKnowledgeService`` belongs in the
+    relational adapter catalog; the use case consumes ``uow.services.spec_knowledge``.
     """
     block = _handler_block("okto_pulse_copy_knowledge_to_card")
     assert "McpCopyKnowledgeToCardUseCase" in block, (
         "handler must delegate to McpCopyKnowledgeToCardUseCase"
     )
     uc_src = _use_case_source()
-    assert "SpecKnowledgeService" in uc_src, (
-        "McpCopyKnowledgeToCardUseCase must instantiate SpecKnowledgeService"
+    assert "uow.services.spec_knowledge.list_knowledge" in uc_src, (
+        "McpCopyKnowledgeToCardUseCase must use the spec-knowledge service port"
     )
+    assert "SpecKnowledgeService" not in uc_src
     assert "spec_service.list_knowledge" not in block
     assert "spec_service.list_knowledge" not in uc_src
 
@@ -169,4 +170,5 @@ async def test_spec_knowledge_service_list_returns_seeded_kb(_seed_spec_with_kb)
     assert len(kbs) == 1
     assert kbs[0].id == kb_id
     assert kbs[0].title == "Test KB"
-    assert isinstance(kbs[0], SpecKnowledgeBase)
+    assert isinstance(kbs[0], ApplicationRecord)
+    assert kbs[0].entity == "spec_knowledge_base"

@@ -1,22 +1,19 @@
-"""Transitional ORM/Base debt ledger for the relational strangler (spec #04,
-tr_cd0631cf / fr_802078e4).
+"""Terminal ORM-return policy and retired strangler history.
 
-Records the baseline of ORM Base classes and the repositories that are ALLOWED
-to return ORM models during the transition — each with owner, deadline,
-affected aggregate and a withdrawal criterion. A repository may return an ORM
-type ONLY if it is registered here; the RelationalBoundaryGate (spec #04 card
-b37786d9) consumes ``is_orm_return_excepted`` to block any new, unregistered ORM
-return in a migrated use case.
+Core no longer owns SQLAlchemy mappings and no Core repository is allowed to
+return an edition-owned ORM type. The historical entries remain as audit data;
+only ``ORM_RETURN_DEBT`` is consulted by active boundary gates.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-#: Base-derived ORM classes in ``core/models/db.py`` at the start of the
-#: strangler. Verified on `main` (== spec #04 ac_cddd871d baseline). This is a
-#: debt baseline to draw down, NOT a blind total-removal target this phase.
-ORM_BASE_CLASS_BASELINE = 59
+#: Verified starting point of the relational strangler. Historical only.
+HISTORICAL_ORM_BASE_CLASS_BASELINE = 59
+
+#: Terminal active budget: mappings are edition-owned, never Core-owned.
+ORM_BASE_CLASS_BASELINE = 0
 
 
 @dataclass(frozen=True)
@@ -30,10 +27,8 @@ class OrmReturnDebt:
     deadline: str
     withdrawal_criterion: str
 
-#: Repositories permitted to return the existing ORM models during the
-#: transition (the first-cut aggregates). New ORM returns NOT listed here are
-#: blocked by the RelationalBoundaryGate.
-ORM_RETURN_DEBT: tuple[OrmReturnDebt, ...] = (
+#: Retired first-cut exceptions retained only for architecture history.
+HISTORICAL_ORM_RETURN_DEBT: tuple[OrmReturnDebt, ...] = (
     OrmReturnDebt(
         aggregate="board",
         repository="okto_pulse.core.repositories.interfaces.repositories.BoardRepository",
@@ -59,6 +54,10 @@ ORM_RETURN_DEBT: tuple[OrmReturnDebt, ...] = (
         withdrawal_criterion="Core ORM mappings and all mapped consumers are removed",
     ),
 )
+
+#: Active exceptions. Terminal by design: Core ports return neutral records or
+#: domain entities, and Community maps those contracts to SQLAlchemy.
+ORM_RETURN_DEBT: tuple[OrmReturnDebt, ...] = ()
 
 _EXCEPTED_ORM_TYPES = frozenset(entry.orm_type for entry in ORM_RETURN_DEBT)
 _EXCEPTED_ORM_PAIRS = frozenset(

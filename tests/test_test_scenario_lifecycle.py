@@ -26,7 +26,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db
 from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.models.schemas import CardMove, SpecUpdate
@@ -586,6 +586,7 @@ async def rest_client(db_factory):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app), approved_id, validated_id
 
 

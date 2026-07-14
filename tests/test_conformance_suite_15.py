@@ -147,9 +147,9 @@ async def test_apply_runtime_effects_noop_without_interval() -> None:
 # --------------------------------------------------------------------------- #
 # AntiSingletonGate — ac_d5c5864f / ac_1e9c0475
 # --------------------------------------------------------------------------- #
-def test_anti_singleton_clean_tree_is_baseline() -> None:
+def test_anti_singleton_clean_tree_passes() -> None:
     report = AntiSingletonGate().run()
-    assert report.status == "baseline"
+    assert report.status == "passed"
     assert report.evidence["new_singletons"] == []
     assert set(report.evidence["ledger"]) == set(SINGLETON_LEDGER)
 
@@ -162,11 +162,7 @@ def test_anti_singleton_ledger_carries_register_before_remove_metadata() -> None
         assert meta["target_provider"], name
         assert meta["expected_adapter"], name
         assert meta["retirement_criterion"], name
-    required_legacy_singletons = {
-        "_mcp_session_factory",
-        "_permission_cache",
-    }
-    assert required_legacy_singletons <= set(SINGLETON_LEDGER)
+    assert SINGLETON_LEDGER == {}
 
 
 def test_anti_singleton_new_global_singleton_blocks(tmp_path) -> None:
@@ -196,7 +192,7 @@ def test_anti_singleton_module_constants_are_not_flagged(tmp_path) -> None:
         encoding="utf-8",
     )
     report = AntiSingletonGate().run(AntiSingletonGateInput(source_root=tmp_path))
-    assert report.status == "baseline"
+    assert report.status == "passed"
     assert report.evidence["new_singletons"] == []
 
 
@@ -247,7 +243,7 @@ def test_anti_singleton_provider_bridge_namespace_constant_is_not_flagged(tmp_pa
 
     report = AntiSingletonGate().run(AntiSingletonGateInput(source_root=tmp_path))
 
-    assert report.status == "baseline"
+    assert report.status == "passed"
     assert report.evidence["new_singletons"] == []
 
 
@@ -320,7 +316,7 @@ def test_conformance_suite_reports_per_axis() -> None:
     for axis, r in report["axes"].items():
         assert r["status"] in allowed, axis
         assert r["owner"], axis
-    assert report["axes"]["singleton"]["status"] == "baseline"
+    assert report["axes"]["singleton"]["status"] == "passed"
     assert report["axes"]["port_conformance"]["status"] == "passed"
     assert report["axes"]["scheduler_control_symbol"]["status"] == "passed"
     assert report["axes"]["lifecycle_fallback"]["status"] == "passed"

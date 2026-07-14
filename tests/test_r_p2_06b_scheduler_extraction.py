@@ -149,8 +149,8 @@ def test_create_app_preserves_composition_on_app_state(monkeypatch):
         settings_provider=object(),
         auth_provider=object(),
         storage_provider=object(),
-        session_factory=object(),
         event_bus=object(),
+        uow_factory=object(),
         scheduler_control=_FakeScheduler(),
     )
     original_settings = get_settings()

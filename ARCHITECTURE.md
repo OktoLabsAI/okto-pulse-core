@@ -26,10 +26,11 @@ not release-history claims. Update the README and
 `tests/test_readme_live_counters_guard.py` together whenever one of these
 sources changes:
 
-- SQLAlchemy models: classes with `__tablename__` in `core/models/db.py`,
-  checked against `Base.registry.mappers`.
+- SQLAlchemy models: `__tablename__` assignments anywhere under `core/`; the
+  terminal expected count is zero because concrete mappings are edition-owned.
 - Service classes: classes ending in `Service` under `core/services`.
-- API route modules: `core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`; infrastructure modules are intentionally not counted as route modules.
+- API route modules: Python modules under `core/api`; the terminal expected
+  count is zero because concrete REST routes are edition-owned.
 - MCP tools: the transport-neutral Core command catalog after importing
   `okto_pulse.core.mcp.server`.
 - Knowledge Graph relationship types: `len(KGEdgeType)` from

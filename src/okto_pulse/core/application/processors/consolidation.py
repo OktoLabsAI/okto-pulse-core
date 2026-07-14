@@ -8,7 +8,7 @@ For each pending queue entry the worker:
     3. Drives the primitives pipeline: begin → propose_reconciliation →
        commit. The session uses `agent_id="system:historical_consolidation"`
        so the layer-ownership BR allows deterministic edges through.
-    4. Runs the LadybugDB safe-write lifecycle before the queue row is
+    4. Runs the embedded graph backend safe-write lifecycle before the queue row is
        acknowledged, proving the graph is readable from disk after
        close/reopen.
     5. Marks the queue entry as `done` (or `failed`).
@@ -213,7 +213,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     then deleted the queue row. Field evidence showed the graph could be
     readable through the process handle while reopening after restart
     produced an empty/corrupt graph. This wrapper makes the ACK depend on
-    the same LadybugDB lifecycle used by explicit rebuild recovery.
+    the same embedded graph backend lifecycle used by explicit rebuild recovery.
     """
 
     owner_token = f"consolidation-worker:{entry.id}:{uuid.uuid4().hex}"
@@ -250,7 +250,7 @@ async def _process_queue_entry_serialized(
 
     The queue claim contract prevents duplicate rows, but reprocess tools,
     background workers and rebuild waiters can instantiate more than one
-    worker object in the same server process. LadybugDB allows only one
+    worker object in the same server process. embedded graph backend allows only one
     write transaction per graph. Without this guard, two workers can claim
     different rows for the same board and collide at commit time.
     """
@@ -1119,7 +1119,7 @@ async def _process_queue_entry(
     )
 
     # 4. commit + safe lifecycle. The queue row is only acknowledged after
-    # graph.lbug survives close/reopen from disk.
+    # board graph survives close/reopen from disk.
     commit_resp = await _commit_consolidation_with_board_graph_lifecycle(
         entry=entry,
         session_id=session_id,
@@ -1272,7 +1272,7 @@ class ConsolidationProcessor:
 
     def __init__(
         self,
-        session_factory,
+        relational_scope_factory=None,
         heartbeat_seconds: int = 30,
         batch_size: int = 5,
         stale_claim_minutes: int | None = None,
@@ -1280,7 +1280,11 @@ class ConsolidationProcessor:
         clock: WorkerClockPort | None = None,
         blocking_execution: BlockingExecutionPort | None = None,
     ):
-        self.session_factory = session_factory
+        if relational_scope_factory is None:
+            from okto_pulse.core.ports.relational_runtime import get_db_session
+
+            relational_scope_factory = get_db_session
+        self.relational_scope_factory = relational_scope_factory
         self.heartbeat_seconds = heartbeat_seconds
         self.batch_size = batch_size
         self._stale_claim_minutes = stale_claim_minutes or self.STALE_CLAIM_MINUTES
@@ -1329,7 +1333,7 @@ class ConsolidationProcessor:
         """
         now = self._now()
         legacy_cutoff = now - timedelta(minutes=self._stale_claim_minutes)
-        async with self.session_factory() as db:
+        async with self.relational_scope_factory() as db:
             store = get_consolidation_persistence_port()
             stale = list(
                 await store.list_stale_claims(
@@ -1365,7 +1369,7 @@ class ConsolidationProcessor:
             * **Claim board-aware** — prefer items whose board_id is NOT
               already claimed by another worker (so distinct boards process
               in parallel; same-board items still serialise on the per-board
-              Kùzu file lock via commit_coordinator).
+              graph backend file lock via commit_coordinator).
             * **Backoff-aware claim** — skip items where ``next_retry_at``
               hasn't elapsed yet (BR Dead-letter / exp backoff).
             * **DELETE-on-ack** — successful processing removes the row from
@@ -1388,7 +1392,7 @@ class ConsolidationProcessor:
         claim_timeout_s = settings.kg_queue_claim_timeout_s
 
         # Step 1: Claim entries (fast DB update, single session).
-        async with self.session_factory() as db:
+        async with self.relational_scope_factory() as db:
             store = get_consolidation_persistence_port()
             pending_depth = await store.count_pending(db)
 
@@ -1456,7 +1460,7 @@ class ConsolidationProcessor:
         max_attempts = settings.kg_queue_max_attempts
         for entry in entries:
             try:
-                async with self.session_factory() as db:
+                async with self.relational_scope_factory() as db:
                     store = get_consolidation_persistence_port()
                     success = await _process_queue_entry_serialized(
                         db,
@@ -1497,7 +1501,7 @@ class ConsolidationProcessor:
                     exc_info=True,
                 )
                 try:
-                    async with self.session_factory() as db:
+                    async with self.relational_scope_factory() as db:
                         store = get_consolidation_persistence_port()
                         fresh = await store.get_queue_entry(db, entry_id=entry.id)
                         if fresh:
@@ -1708,7 +1712,7 @@ class ConsolidationProcessor:
         now = self._now()
 
         try:
-            async with self.session_factory() as db:
+            async with self.relational_scope_factory() as db:
                 enabled_board_ids = (
                     await get_consolidation_persistence_port().list_dlq_auto_drain_board_ids(
                         db
@@ -1725,7 +1729,7 @@ class ConsolidationProcessor:
                         continue  # AC11: still within backoff window
 
                 # Check if the board actually has DLQ rows
-                async with self.session_factory() as db:
+                async with self.relational_scope_factory() as db:
                     dlq_count = await get_consolidation_persistence_port().count_dead_letters(
                         db,
                         board_id=board_id,
@@ -1738,7 +1742,7 @@ class ConsolidationProcessor:
                 # before passing them to the requeue path (so they don't just
                 # cycle back to DLQ again immediately).
                 skipped_poison: list[str] = []
-                async with self.session_factory() as db:
+                async with self.relational_scope_factory() as db:
                     store = get_consolidation_persistence_port()
                     poison_rows = await store.delete_poison_dead_letters(
                         db,
@@ -1763,7 +1767,7 @@ class ConsolidationProcessor:
                         await store.commit(db)
 
                 # Reprocess the remaining (non-poison) rows
-                async with self.session_factory() as db:
+                async with self.relational_scope_factory() as db:
                     result = await reprocess_dead_letter_rows(db, board_id, limit=50)
                     await get_consolidation_persistence_port().commit(db)
 

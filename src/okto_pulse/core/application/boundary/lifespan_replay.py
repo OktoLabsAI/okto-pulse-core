@@ -37,7 +37,7 @@ REQUIRED_LIFECYCLE_EVENTS: tuple[str, ...] = (
     "outbox_worker",
     "settings_service",
     "scheduler",
-    "mcp_session_factory",
+    "mcp_runtime",
     "frontend_served",
     "_metrics_beacon_loop",
     "close_db",
@@ -126,7 +126,7 @@ class LifecycleReplayReport:
     shutdown_events: list[str]
     workers: list[str]
     scheduler: str
-    mcp_session_factory: str
+    mcp_runtime: str
     frontend: str
     default_only_exclusions: list[str]
     unexpected_deltas: list[LifecycleDelta] = field(default_factory=list)
@@ -140,7 +140,7 @@ class LifecycleReplayReport:
             "shutdown_events": self.shutdown_events,
             "workers": self.workers,
             "scheduler": self.scheduler,
-            "mcp_session_factory": self.mcp_session_factory,
+            "mcp_runtime": self.mcp_runtime,
             "frontend": self.frontend,
             "default_only_exclusions": self.default_only_exclusions,
             "unexpected_deltas": [d.as_dict() for d in self.unexpected_deltas],
@@ -225,7 +225,7 @@ class CommunityLifespanReplay:
             shutdown_events=shutdown_events,
             workers=sorted(observed & WORKER_EVENTS),
             scheduler="running" if "scheduler" in observed else "missing",
-            mcp_session_factory="registered" if "mcp_session_factory" in observed else "missing",
+            mcp_runtime="registered" if "mcp_runtime" in observed else "missing",
             frontend=(
                 "served"
                 if gate_input.include_frontend and "frontend_served" in observed
@@ -248,7 +248,7 @@ class CommunityLifespanReplay:
             shutdown_events=shutdown_events,
             workers=[],
             scheduler="missing",
-            mcp_session_factory="missing",
+            mcp_runtime="missing",
             frontend="not_applicable",
             default_only_exclusions=[],
             unexpected_deltas=[],

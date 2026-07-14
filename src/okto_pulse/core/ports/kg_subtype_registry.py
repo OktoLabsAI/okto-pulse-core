@@ -19,7 +19,12 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from okto_pulse.core.kg.schema_contract import NODE_TYPES
+from okto_pulse.core.domain.kg_ontology import NODE_TYPES
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
 
 __all__ = [
     "NodeSubtypeRegistry",
@@ -159,20 +164,20 @@ class NodeSubtypeRegistry(Protocol):
         ...
 
 
-_node_subtype_registry: NodeSubtypeRegistry | None = None
+_RUNTIME_KEY = "ports.kg.node_subtype_registry"
 
 
 def register_node_subtype_registry(registry: NodeSubtypeRegistry) -> None:
-    global _node_subtype_registry
-    _node_subtype_registry = registry
+    register_runtime_value(_RUNTIME_KEY, registry)
 
 
 def resolve_node_subtype_registry() -> NodeSubtypeRegistry | None:
-    return _node_subtype_registry
+    return resolve_runtime_value(_RUNTIME_KEY)
 
 
 def require_node_subtype_registry() -> NodeSubtypeRegistry:
-    if _node_subtype_registry is None:
+    registry = resolve_node_subtype_registry()
+    if registry is None:
         raise SubtypeRegistryError(
             "kg_subtype_registry_unavailable",
             remediation=(
@@ -181,9 +186,8 @@ def require_node_subtype_registry() -> NodeSubtypeRegistry:
                 "committing kind_of-bearing candidates."
             ),
         )
-    return _node_subtype_registry
+    return registry
 
 
 def reset_node_subtype_registry_for_tests() -> None:
-    global _node_subtype_registry
-    _node_subtype_registry = None
+    reset_runtime_values(_RUNTIME_KEY)

@@ -266,20 +266,21 @@ class TestArtifactDistributionContract:
         assert breach[0].severity == "blocking"
         assert all(w.diagnostic_code != "stale_removed_in_wheel" for w in report.warnings)
 
-    def test_core_wheel_includes_untracked_refactor_modules(self, core_wheel: BuiltWheel) -> None:
-        # EMPIRICAL (NO-COMMIT): the untracked R05-E refactor is included; a
-        # self-consistent, runnable wheel needs the boundary auditor module itself.
+    def test_core_wheel_includes_cleanup_modules(self, core_wheel: BuiltWheel) -> None:
+        # A self-consistent wheel includes both the boundary auditors and the
+        # runtime-neutral ports introduced by the Core cleanup.
         names = _wheel_namelist(core_wheel.wheel_path)
         required = [
             "okto_pulse/core/application/boundary/__init__.py",
             "okto_pulse/core/application/boundary/dependency_conformance.py",
             "okto_pulse/core/application/boundary/dependency_ledger.py",
             "okto_pulse/core/composition.py",
-            "okto_pulse/core/app.py",
+            "okto_pulse/core/ports/relational_runtime.py",
+            "okto_pulse/core/ports/schema_lifecycle.py",
             "okto_pulse/core/mcp/server.py",
         ]
         missing = [m for m in required if m not in names]
-        assert missing == [], f"core wheel missing refactor modules (untracked-exclusion?): {missing}"
+        assert missing == [], f"core wheel missing cleanup modules: {missing}"
         boundary_files = [n for n in names if "/core/application/boundary/" in n and n.endswith(".py")]
         assert len(boundary_files) >= 10, (
             f"boundary package truncated in the wheel ({len(boundary_files)} files) — "
@@ -316,8 +317,9 @@ class TestArtifactDistributionContract:
             "import importlib.util as u\n"
             "from okto_pulse.core.application.boundary.dependency_conformance import audit_dependency_conformance\n"
             "from okto_pulse.core import composition  # noqa\n"
-            "from okto_pulse.community.app import create_app  # noqa\n"
+            "from okto_pulse.core.ports import relational_runtime, schema_lifecycle  # noqa\n"
             "from okto_pulse.core.mcp.server import build_mcp_asgi_app  # noqa\n"
+            "assert u.find_spec('okto_pulse.community') is None, 'Community leaked into the Core wheel'\n"
             "assert u.find_spec('asyncpg') is None, 'asyncpg installed into the clean venv'\n"
             "rep = audit_dependency_conformance(audit_wheel=True)\n"
             "assert rep.ok, [v.as_dict() for v in rep.violations]\n"

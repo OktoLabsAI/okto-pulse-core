@@ -413,7 +413,6 @@ def test_ac9_historical_closure_checklist_enforces_path_b_without_bypass() -> No
 # ---------------------------------------------------------------------------
 
 MISC_CARD_DOC = RESOURCES_DIR / "reference" / "tool-docs" / "misc.md"
-API_AMENDMENT_REVISIONS = CORE_DIR / "api" / "amendment_revisions.py"
 
 _CONFIRM_HEADING = "## `okto_pulse_confirm_amendment_coverage`"
 
@@ -454,13 +453,13 @@ def test_bug03_confirm_contract_served_carries_consumability_preflight() -> None
     assert card_confirm, "served card.md missing confirm_amendment_coverage section"
     assert _confirm_contract_reconciled(card_confirm)
 
-    # misc.md ALSO documents confirm; if it is a served resource it must NOT
-    # diverge (stale bug_id arg / no preflight).
+    # misc.md intentionally points to the canonical card tool-doc instead of
+    # duplicating the amendment contract.
     misc_rel = registry.get("okto-pulse://reference/tool-docs/misc")
     if misc_rel:
-        misc_confirm = _confirm_section(_srv._load_resource_file(misc_rel))
-        assert misc_confirm, "served misc.md missing confirm_amendment_coverage section"
-        assert _confirm_contract_reconciled(misc_confirm)
+        misc_served = _srv._load_resource_file(misc_rel)
+        assert not _confirm_section(misc_served)
+        assert "okto-pulse://reference/tool-docs/card" in misc_served
 
     # The served errors + workflow surfaces mention the new error and the preflight.
     errors_low = _srv._load_resource_file(registry["okto-pulse://reference/errors"]).lower()
@@ -485,7 +484,9 @@ def test_bug03_no_rest_twin_of_confirm_coverage() -> None:
     # lifecycle ONLY — there is NO REST endpoint for coverage confirmation, so
     # MCP/tool-docs are the canonical (and only) surface. A future REST twin would
     # add a route whose path contains "coverage" or "confirm"; assert none exists.
-    api = _read(API_AMENDMENT_REVISIONS)
+    import okto_pulse.community.api.amendment_revisions as amendment_api
+
+    api = _read(Path(amendment_api.__file__))
     route_lines = [ln for ln in api.splitlines() if "@router." in ln]
     assert route_lines, "expected FastAPI routes in api/amendment_revisions.py"
     for ln in route_lines:

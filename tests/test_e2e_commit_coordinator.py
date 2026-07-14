@@ -45,12 +45,12 @@ async def test_e2e_parallel_commits_on_real_kuzu():
     surviving the retry ladder.
     """
     from okto_pulse.core.kg.commit_coordinator import (
-        reset_commit_locks_for_tests,
+        reset_commit_coordinator_for_tests,
         run_with_commit_lock_and_retry,
     )
     from kg_schema_testing import _open_kuzu_db
 
-    reset_commit_locks_for_tests()
+    reset_commit_coordinator_for_tests()
 
     parallelism = 10
     errors: list[BaseException] = []
@@ -120,12 +120,12 @@ async def test_e2e_mixed_board_parallelism():
     """Two real boards hit in parallel: distinct locks must let them run
     concurrently. Same board × 3 inside each group must serialise."""
     from okto_pulse.core.kg.commit_coordinator import (
-        reset_commit_locks_for_tests,
+        reset_commit_coordinator_for_tests,
         run_with_commit_lock_and_retry,
     )
     from kg_schema_testing import _open_kuzu_db
 
-    reset_commit_locks_for_tests()
+    reset_commit_coordinator_for_tests()
 
     # E2E board + Okto Pulse Evolution board — both real.
     other_board_id = "82c1bfef-af0c-4ffc-aa9c-64a1f7e0f2fa"

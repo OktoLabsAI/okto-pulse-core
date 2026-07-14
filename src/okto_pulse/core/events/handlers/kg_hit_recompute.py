@@ -11,7 +11,7 @@ same inputs, producing the same result and a no-op SET clause when the
 score is unchanged. The dispatcher's natural retry/dead-letter from the
 Ideação #1 infra applies — failures don't roll back the underlying flush.
 
-Async-safety: Kùzu v0.6 is synchronous, so we wrap the connection work in
+Async-safety: graph backend v0.6 is synchronous, so we wrap the connection work in
 ``asyncio.to_thread`` to keep the dispatcher's event loop responsive.
 """
 

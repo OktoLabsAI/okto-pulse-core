@@ -439,7 +439,9 @@ def test_counter_requested_count_bucket_is_bounded(
 
 
 def test_badge_endpoint_route_is_registered() -> None:
-    paths = {route.path for route in api_router.routes}
+    app = FastAPI()
+    app.include_router(api_router)
+    paths = set(app.openapi()["paths"])
     assert "/api/v1/kg/cognitive-pending/badges" in paths
 
 
@@ -608,7 +610,9 @@ def test_endpoint_derives_entity_type_from_source_ref_prefix(
 def test_existing_kg_routes_still_registered() -> None:
     """AC11 regression — adding KG-03.6 does not unwire KG-02/03 surfaces."""
 
-    paths = {route.path for route in api_router.routes}
+    app = FastAPI()
+    app.include_router(api_router)
+    paths = set(app.openapi()["paths"])
     for required in (
         "/api/v1/kg/rebuild/preflight",
         "/api/v1/kg/rebuild/confirm",

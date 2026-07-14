@@ -83,7 +83,7 @@ def _stable_content_hash(source_ref: str, node_id: str) -> str:
     return f"clp_{digest}"
 
 
-def _scan_partition(kconn) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+def _scan_partition(graph_scope) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     """Scan the board graph for canonical bug-derived Learnings.
 
     Returns ``(violating, satisfied)`` where each item is ``(node_id, source_ref)``:
@@ -91,45 +91,32 @@ def _scan_partition(kconn) -> tuple[list[tuple[str, str]], list[tuple[str, str]]
       Bug edge (NULL/working Bug is fail-closed, never counts).
     - satisfied: canonical bug-derived Learning WITH at least one validates ->
       canonical Bug edge.
-    Uses two simple MATCH queries (no EXISTS-subquery) for LadybugDB safety.
+    Uses two simple MATCH queries (no EXISTS-subquery) for embedded graph backend safety.
     """
     all_learnings: list[tuple[str, str]] = []
     try:
-        res = kconn.execute(
+        res = graph_scope.execute(
             "MATCH (l:Learning) WHERE l.graph_layer = 'canonical' "
             "RETURN l.id, l.source_artifact_ref"
         )
-        try:
-            while res.has_next():
-                row = res.get_next()
-                node_id = str(row[0])
-                source_ref = str(row[1] or "")
-                if node_id and _is_bug_derived_ref(source_ref):
-                    all_learnings.append((node_id, source_ref))
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+        for row in res.rows:
+            node_id = str(row[0])
+            source_ref = str(row[1] or "")
+            if node_id and _is_bug_derived_ref(source_ref):
+                all_learnings.append((node_id, source_ref))
     except Exception as exc:  # pragma: no cover - defensive (degraded graph)
         logger.warning("kg.clp.scan_learnings_failed err=%s", exc)
         return [], []
 
     satisfied_ids: set[str] = set()
     try:
-        res = kconn.execute(
+        res = graph_scope.execute(
             "MATCH (l:Learning)-[r:validates]->(b:Bug) "
             "WHERE l.graph_layer = 'canonical' AND b.graph_layer = 'canonical' "
             "RETURN l.id"
         )
-        try:
-            while res.has_next():
-                satisfied_ids.add(str(res.get_next()[0]))
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+        for row in res.rows:
+            satisfied_ids.add(str(row[0]))
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("kg.clp.scan_satisfied_failed err=%s", exc)
 

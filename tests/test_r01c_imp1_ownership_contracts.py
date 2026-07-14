@@ -132,7 +132,7 @@ def test_real_schema_round_trips_enum_to_frozen_value():
 
 @pytest.fixture(autouse=True)
 def _reset_orchestrator():
-    from okto_pulse.core.infra import schema_lifecycle as sl
+    from okto_pulse.core.ports import schema_lifecycle as sl
 
     sl.reset_relational_schema_lifecycle_orchestrator()
     yield
@@ -140,7 +140,7 @@ def _reset_orchestrator():
 
 
 def test_resolve_is_none_when_unregistered():
-    from okto_pulse.core.infra import schema_lifecycle as sl
+    from okto_pulse.core.ports import schema_lifecycle as sl
 
     assert sl.resolve_relational_schema_lifecycle_orchestrator() is None
 
@@ -154,7 +154,7 @@ async def test_init_db_fails_closed_when_unregistered():
 
 async def test_init_db_delegates_to_registered_orchestrator():
     from okto_pulse.core.infra import database
-    from okto_pulse.core.infra import schema_lifecycle as sl
+    from okto_pulse.core.ports import schema_lifecycle as sl
 
     calls: list[str] = []
 

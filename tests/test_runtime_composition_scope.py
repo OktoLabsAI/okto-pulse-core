@@ -18,7 +18,6 @@ from okto_pulse.core.composition import (
 )
 from okto_pulse.core.infra.auth import get_auth_provider
 from okto_pulse.core.infra.config import get_settings
-from okto_pulse.core.infra.database import get_engine, get_session_factory
 from okto_pulse.core.infra.storage import get_storage_provider
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
@@ -28,10 +27,8 @@ def _composition(name: str) -> RuntimeComposition:
         settings_provider=f"settings:{name}",
         auth_provider=f"auth:{name}",
         storage_provider=f"storage:{name}",
-        session_factory=f"session:{name}",
         event_bus=f"events:{name}",
         uow_factory=f"uow:{name}",
-        relational_engine=f"engine:{name}",
     )
 
 
@@ -40,8 +37,8 @@ def test_composition_is_frozen_and_normalizes_hooks_to_tuple() -> None:
         settings_provider=object(),
         auth_provider=object(),
         storage_provider=object(),
-        session_factory=object(),
         event_bus=object(),
+        uow_factory=object(),
         lifecycle_hooks=[],
     )
     assert composition.lifecycle_hooks == ()
@@ -70,8 +67,6 @@ def test_concurrent_scopes_resolve_independent_providers_without_fallbacks() -> 
                 get_settings(),
                 get_auth_provider(),
                 get_storage_provider(),
-                get_session_factory(),
-                get_engine(),
                 resolve_unit_of_work_factory(),
                 current_runtime_composition(),
             )
@@ -86,20 +81,37 @@ def test_concurrent_scopes_resolve_independent_providers_without_fallbacks() -> 
         "settings:a",
         "auth:a",
         "storage:a",
-        "session:a",
-        "engine:a",
         "uow:a",
     )
     assert second[:-1] == (
         "settings:b",
         "auth:b",
         "storage:b",
-        "session:b",
-        "engine:b",
         "uow:b",
     )
     assert first[-1] is not second[-1]
     assert runtime_bridge_usage_snapshot() == {}
+
+
+def test_runtime_compositions_do_not_share_mcp_catalog_mutations() -> None:
+    from okto_pulse.core.mcp.server import mcp
+
+    first = _composition("mcp-first")
+    second = _composition("mcp-second")
+
+    with runtime_composition_scope(first):
+        first_catalog = mcp.resolve()
+        first_tools = set(first_catalog._tool_manager._tools)
+        assert first_tools
+        first_catalog.instructions = "first-only"
+
+    with runtime_composition_scope(second):
+        second_catalog = mcp.resolve()
+        assert set(second_catalog._tool_manager._tools) == first_tools
+        assert second_catalog.instructions != "first-only"
+
+    assert first_catalog is not second_catalog
+    assert first_catalog._tool_manager._tools is not second_catalog._tool_manager._tools
 
 
 def test_two_apps_resolve_their_own_composition_after_last_global_write() -> None:
@@ -124,8 +136,8 @@ def test_two_apps_resolve_their_own_composition_after_last_global_write() -> Non
             settings_provider=settings,
             auth_provider=auth,
             storage_provider=storage,
-            session_factory=object(),
             event_bus=object(),
+            uow_factory=object(),
             lifecycle_hooks=(Hook(),),
         )
         app = create_app(

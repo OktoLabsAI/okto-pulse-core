@@ -189,24 +189,7 @@ def test_get_related_context_accepts_typed_uuid_refs(monkeypatch):
 # ===========================================================================
 
 
-class _FakeResult:
-    """Minimal Kùzu QueryResult double."""
-
-    def __init__(self, rows):
-        self._rows = list(rows)
-
-    def has_next(self):
-        return bool(self._rows)
-
-    def get_next(self):
-        return self._rows.pop(0)
-
-    def close(self):
-        pass
-
-
 def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
-    from okto_pulse.core.kg.embedding import get_embedding_provider
     from okto_pulse.core.kg import global_discovery as _gd  # noqa: F401
     from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.kg_service import get_kg_service
@@ -215,7 +198,6 @@ def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
     qtext = "teeth fallback query"
     board_id = f"teeth-{uuid.uuid4().hex[:10]}"
     bootstrap_board_graph(board_id)
-    emb = get_embedding_provider().encode(qtext)
     # Real board source nodes so _filter_global_results_to_existing_nodes (NOT
     # stubbed — kept intact) confirms BOTH digests' sources exist.
     with open_board_connection(board_id) as (_db, conn):
@@ -228,28 +210,44 @@ def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
 
     # HNSW returns an INCOMPLETE page for the board: only the canonical digest
     # (1 row < top_k) — simulating the global top-k crowded by other boards.
-    canon_hnsw = [board_id, "dd_canon", "canon_src", "canonical digest",
-                  qtext, "Decision", "canonical", 0.0]
+    canon_hnsw = {
+        "board_id": board_id,
+        "digest_id": "dd_canon",
+        "id": "canon_src",
+        "title": "canonical digest",
+        "summary": qtext,
+        "node_type": "Decision",
+        "graph_layer": "canonical",
+        "similarity": 1.0,
+    }
     # The board+layer-scoped LINEAR fallback returns BOTH layers (complete).
-    canon_lin = [board_id, "dd_canon", "canon_src", "canonical digest",
-                 qtext, "Decision", "canonical", emb]
-    work_lin = [board_id, "dd_work", "work_src", "working digest",
-                qtext, "Decision", "working", emb]
+    canon_lin = dict(canon_hnsw)
+    work_lin = {
+        **canon_hnsw,
+        "digest_id": "dd_work",
+        "id": "work_src",
+        "title": "working digest",
+        "graph_layer": "working",
+    }
 
-    class _FakeGlobalConn:
-        def execute(self, cypher, params=None):
-            if "QUERY_VECTOR_INDEX" in cypher:        # HNSW page (incomplete)
-                return _FakeResult([canon_hnsw])
-            if "DecisionDigest" in cypher:            # linear fallback (complete)
-                return _FakeResult([canon_lin, work_lin])
-            return _FakeResult([])
-
-        def close(self):
-            pass
+    def _search(
+        query_vector,
+        *,
+        board_ids,
+        graph_layer,
+        top_k,
+        min_similarity,
+        exhaustive=False,
+    ):
+        assert query_vector
+        assert board_ids == (board_id,)
+        assert graph_layer == "all"
+        assert top_k >= 10
+        assert min_similarity == 0.1
+        return [canon_lin, work_lin] if exhaustive else [canon_hnsw]
 
     runtime = get_kg_registry().global_discovery_runtime
-    monkeypatch.setattr(runtime, "open_connection",
-                        lambda: (object(), _FakeGlobalConn()))
+    monkeypatch.setattr(runtime, "search_decision_digests", _search)
     monkeypatch.setattr(runtime, "ensure_layer_schema", lambda: [])
 
     rows = get_kg_service().query_global(

@@ -27,6 +27,8 @@ import threading
 from collections import deque
 from typing import TYPE_CHECKING
 
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
+
 if TYPE_CHECKING:
     from okto_pulse.core.kg.memory_pressure import FailureEvent, HighWaterMarkSample
 
@@ -34,13 +36,13 @@ if TYPE_CHECKING:
 # Module-level state (singletons)
 # ---------------------------------------------------------------------------
 
-_lock = threading.Lock()
+_lock = runtime_lock("kg.memory_pressure_collector")
 
 # board_id -> deque[HighWaterMarkSample] (maxlen 200)
-_samples: dict[str, deque["HighWaterMarkSample"]] = {}
+_samples = runtime_state("kg.memory_pressure_collector.samples", dict)
 
 # board_id -> deque[FailureEvent] (maxlen 50)
-_failures: dict[str, deque["FailureEvent"]] = {}
+_failures = runtime_state("kg.memory_pressure_collector.failures", dict)
 
 _SAMPLES_MAXLEN = 200
 _FAILURES_MAXLEN = 50

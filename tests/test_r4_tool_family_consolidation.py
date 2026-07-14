@@ -12,6 +12,8 @@ the six heterogeneous families are kept separate with a rejected_reason.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import logging
 import uuid
@@ -57,7 +59,7 @@ def _stub_ctx(board_id: str, permissions=None):
 
 
 async def _call(name: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     return json.loads(await tool.fn(**kwargs))
 

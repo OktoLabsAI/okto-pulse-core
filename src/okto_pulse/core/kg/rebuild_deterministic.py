@@ -34,7 +34,7 @@ Counters (OR or_c67ee067 + or_a938f80b):
 This module ships the ``DeterministicStructuralRebuilder`` class that
 can be wired as the ``rebuild_step_adapter`` of ``KGRebuildService``.
 The KG-02.5 rebuilder is materialisation-only — it does NOT mutate
-graph.lbug; KG-02.5 ships the boundary while KG-02.7 hooks the audit
+board graph; KG-02.5 ships the boundary while KG-02.7 hooks the audit
 event around it.
 """
 
@@ -44,6 +44,7 @@ import hashlib
 import json
 import logging
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -71,7 +72,7 @@ DETERMINISTIC_REBUILD_ARTIFACT_TYPES: frozenset[str] = frozenset({
 
 # Schema version pinned in the hash so a schema migration trips the
 # mismatch path and blocks promotion. The module imports the constant
-# lazily so test fakes (and Ladybug schema migrations) can patch it.
+# lazily so test fakes (and embedded graph backend schema migrations) can patch it.
 def _current_schema_version() -> str:
     try:
         from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
@@ -176,8 +177,8 @@ class StructuralRebuildResult:
 # --- Counters ----------------------------------------------------------------
 
 _HASH_LABELS = ("board_id", "status", "deterministic")
-_hash_counter: dict[tuple[str, str, str], int] = {}
-_hash_counter_lock = threading.Lock()
+_hash_counter = runtime_state("kg.rebuild_deterministic.hash_counter", dict)
+_hash_counter_lock = runtime_lock("kg.rebuild_deterministic.hash_counter")
 
 
 def _bump_hash(*, board_id: str, status: str, deterministic: bool) -> None:
@@ -230,8 +231,8 @@ def reset_structural_hash_counter() -> None:
 
 
 _MISMATCH_LABELS = ("board_id", "reason")
-_mismatch_counter: dict[tuple[str, str], int] = {}
-_mismatch_counter_lock = threading.Lock()
+_mismatch_counter = runtime_state("kg.rebuild_deterministic.mismatch_counter", dict)
+_mismatch_counter_lock = runtime_lock("kg.rebuild_deterministic.mismatch_counter")
 
 
 def _bump_mismatch(*, board_id: str, reason: str) -> None:
@@ -528,7 +529,7 @@ def compare_structural_hashes(
 # A materialiser callable that turns a manifest source row sequence into
 # the in-memory node/edge tuple expected by the structural hash. KG-02.5
 # ships a default identity materialiser (one node per source row); KG-02
-# follow-ups can swap this for the real Ladybug-aware materialiser.
+# follow-ups can swap this for the real embedded graph backend-aware materialiser.
 SourceMaterialiser = Callable[
     [Sequence[Mapping[str, Any]]],
     tuple[

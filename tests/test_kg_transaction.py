@@ -78,6 +78,28 @@ class _FakeConnection:
             return self.results.pop(0)
         return _FakeResult(has_row=False)
 
+    def create_node(self, *args, **kwargs):
+        self.statements.append(("create_node", {"args": args, "kwargs": kwargs}))
+
+    def edge_exists(self, *args):
+        self.statements.append(("edge_exists", {"args": args}))
+        result = self.results.pop(0) if self.results else _FakeResult(False)
+        try:
+            return result.has_next()
+        finally:
+            result.close()
+
+    def create_edge(self, *args):
+        self.statements.append(("create_edge", {"args": args}))
+        result = self.results.pop(0) if self.results else _FakeResult(False)
+        try:
+            return result.has_next()
+        finally:
+            result.close()
+
+    def find_node_types(self, _node_id):
+        return ()
+
 
 def test_create_edge_requires_materialized_relationship():
     exists_result = _FakeResult(has_row=False)
@@ -85,20 +107,25 @@ def test_create_edge_requires_materialized_relationship():
     conn = _FakeConnection(exists_result, create_result)
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
 
     with pytest.raises(ValueError, match="endpoint nodes were not matched"):
-        orch.create_edge("supersedes", "missing-source", "missing-target")
+        orch.create_edge(
+            "supersedes",
+            "missing-source",
+            "missing-target",
+            from_type="Decision",
+            to_type="Decision",
+        )
 
     assert orch.counters.edges_added == 0
     assert orch.records == []
     assert exists_result.closed is True
     assert create_result.closed is True
-    assert "RETURN r.created_by_session_id LIMIT 1" in conn.statements[0][0]
-    assert "RETURN r.created_by_session_id" in conn.statements[1][0]
+    assert [item[0] for item in conn.statements] == ["edge_exists", "create_edge"]
 
 
 def test_create_edge_counts_only_confirmed_relationship():
@@ -107,12 +134,18 @@ def test_create_edge_counts_only_confirmed_relationship():
     conn = _FakeConnection(exists_result, create_result)
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
 
-    orch.create_edge("supersedes", "decision-new", "decision-old")
+    orch.create_edge(
+        "supersedes",
+        "decision-new",
+        "decision-old",
+        from_type="Decision",
+        to_type="Decision",
+    )
 
     assert orch.counters.edges_added == 1
     assert len(orch.records) == 1
@@ -124,7 +157,7 @@ def test_create_edge_ambiguous_relationship_requires_endpoint_hints():
     conn = _FakeConnection()
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
@@ -142,7 +175,7 @@ def test_create_edge_implements_constraint_honors_endpoint_hints():
     conn = _FakeConnection(exists_result, create_result)
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
@@ -155,14 +188,7 @@ def test_create_edge_implements_constraint_honors_endpoint_hints():
         to_type="Constraint",
     )
 
-    assert (
-        "MATCH (a:APIContract {id: $from_id})-[r:implements]->"
-        "(b:Constraint {id: $to_id})"
-    ) in conn.statements[0][0]
-    assert (
-        "MATCH (a:APIContract {id: $from_id}), "
-        "(b:Constraint {id: $to_id})"
-    ) in conn.statements[1][0]
+    assert [item[0] for item in conn.statements] == ["edge_exists", "create_edge"]
     assert orch.counters.edges_added == 1
 
 
@@ -171,12 +197,18 @@ def test_create_edge_skips_existing_relationship():
     conn = _FakeConnection(exists_result)
     orch = TransactionOrchestrator(
         conn,
-        sqlite_session=None,  # type: ignore[arg-type]
+          # type: ignore[arg-type]
         session_id="sess-edge",
         board_id="board-edge",
     )
 
-    orch.create_edge("supersedes", "decision-new", "decision-old")
+    orch.create_edge(
+        "supersedes",
+        "decision-new",
+        "decision-old",
+        from_type="Decision",
+        to_type="Decision",
+    )
 
     assert orch.counters.edges_added == 0
     assert orch.records == []

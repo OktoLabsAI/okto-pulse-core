@@ -42,6 +42,7 @@ from okto_pulse.community.api.kg_routes import router as kg_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.auth_deps import get_current_user, get_realm_id, require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
 PREFIX = "/api/v1"
 ACTOR = "local-user"
@@ -101,7 +102,14 @@ async def _seed_board(name: str = "fu5s4") -> str:
 
     bid = f"board-fu5s4-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name=name, owner_id=ACTOR))
+        db.add(
+            Board(
+                id=bid,
+                name=name,
+                owner_id=ACTOR,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
         return bid
 
@@ -250,7 +258,7 @@ async def test_boost_use_case_runs_over_unit_of_work() -> None:
     _seed_kg_node(board_id, node_id, relevance_score=0.4)
 
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(ACTOR, "rest")
+    actor = ActorContext(ACTOR, "rest", realm_id=LOCAL_REALM_ID)
     async with uowf(actor=actor) as uow:
         result = await BoostNodeUseCase().execute(
             BoostNodeCommand(board_id, node_id), actor=actor, uow=uow
@@ -286,7 +294,7 @@ async def test_boost_use_case_raises_not_found_for_missing_node() -> None:
     _bootstrap_empty_graph(board_id)
 
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(ACTOR, "rest")
+    actor = ActorContext(ACTOR, "rest", realm_id=LOCAL_REALM_ID)
     with pytest.raises(EntityNotFoundError):
         async with uowf(actor=actor) as uow:
             await BoostNodeUseCase().execute(
@@ -414,7 +422,7 @@ async def test_boost_persist_error_maps_to_legacy_500(client, monkeypatch) -> No
     from okto_pulse.core.kg.governance import BoostPersistError
 
     async with get_session_factory()() as db:
-        db.add(Board(id="board-x", name="boom", owner_id=ACTOR))
+        db.add(Board(id="board-x", name="boom", owner_id=ACTOR, realm_id=LOCAL_REALM_ID))
         await db.commit()
 
     class _BoomUseCase:

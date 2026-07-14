@@ -54,7 +54,7 @@ def stub_conn():
     _reset_hit_state_for_tests()
     conn = _StubBoardConnection()
     with patch(
-        "okto_pulse.core.kg.kg_service._flush_to_kuzu",
+        "okto_pulse.core.kg.kg_service._flush_to_graph",
         side_effect=lambda _board_id, _node_type, node_id, delta, _now_iso: conn.execute(
             "SET n.query_hits = COALESCE(n.query_hits, 0) + $delta",
             {"nid": node_id, "delta": delta},

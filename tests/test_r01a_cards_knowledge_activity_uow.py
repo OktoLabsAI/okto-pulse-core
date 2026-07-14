@@ -130,7 +130,9 @@ async def _seed_activity(board_id: str, card_id: str, action: str, *, created_at
     return log_id
 
 
-async def _seed_comment_and_seen(card_id: str) -> tuple[str, str, str]:
+async def _seed_comment_and_seen(
+    board_id: str, card_id: str
+) -> tuple[str, str, str]:
     """Seed a comment on the card + an agent that has seen it. Returns
     (comment_id, agent_id, agent_name)."""
     from sqlalchemy_test_models import Agent, AgentSeenItem, Comment
@@ -152,6 +154,7 @@ async def _seed_comment_and_seen(card_id: str) -> tuple[str, str, str]:
         db.add(
             AgentSeenItem(
                 id=f"seen-{uuid.uuid4().hex[:8]}",
+                board_id=board_id,
                 agent_id=agent_id,
                 item_type="comment",
                 item_id=comment_id,
@@ -207,8 +210,10 @@ async def test_activity_limit_is_honored(client) -> None:
 
 @pytest.mark.asyncio
 async def test_seen_200_grouped_by_item(client) -> None:
-    _, card_id = await _seed_card()
-    comment_id, agent_id, agent_name = await _seed_comment_and_seen(card_id)
+    board_id, card_id = await _seed_card()
+    comment_id, agent_id, agent_name = await _seed_comment_and_seen(
+        board_id, card_id
+    )
     resp = client.get(f"{PREFIX}/{card_id}/seen")
     assert resp.status_code == 200, resp.text
     body = resp.json()

@@ -17,6 +17,8 @@ Scenarios:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from pathlib import Path
@@ -28,10 +30,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from okto_pulse.community.app import install_request_validation_handler
-from okto_pulse.core.infra import auth as _auth_mod
-from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.community.api import auth_deps as _auth_mod
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.inbound.enum_error_envelope import canonical_enum_error
 from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from sqlalchemy_test_models import (
     Board,
     Spec,
@@ -85,7 +89,14 @@ async def _seed(db_factory):
     sprint_hotfix_id = _id("lane-sprint-hotfix")
 
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Lane Type Board", owner_id=USER_ID))
+        db.add(
+            Board(
+                id=board_id,
+                name="Lane Type Board",
+                owner_id=USER_ID,
+                realm_id="local",
+            )
+        )
         db.add(_spec(spec_normal_id, board_id, SpecStatus.IN_PROGRESS))
         db.add(_spec(spec_done_id, board_id, SpecStatus.DONE))
         db.add(Sprint(
@@ -145,12 +156,18 @@ async def rest_ctx(db_factory):
     install_request_validation_handler(app)
     app.include_router(sprints_router)
 
-    async def _override_db():
+    async def _override_uow():
         async with db_factory() as session:
-            yield session
+            try:
+                yield resolve_unit_of_work_factory().wrap(session)
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
 
-    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
 
     return TestClient(app), ids
 
@@ -257,7 +274,7 @@ def _stub_ctx(board_id: str):
 
 async def _call(name: str, **kwargs) -> str:
     """Invoke an MCP tool's underlying function and return the RAW json string."""
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     return await tool.fn(**kwargs)
 

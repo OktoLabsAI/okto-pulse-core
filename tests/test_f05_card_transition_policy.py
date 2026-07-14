@@ -88,3 +88,17 @@ def test_f05_bug_gate_respects_board_severity_threshold() -> None:
         )
     )
     assert decision.allowed is True
+
+
+def test_f05_cancellation_does_not_start_execution() -> None:
+    decision = evaluate_card_transition(
+        _facts(
+            new_status=CardStatus.CANCELLED,
+            spec_status=SpecStatus.APPROVED,
+            sprint_count=1,
+            sprint_id=None,
+            card_type=CardType.BUG,
+            has_regression_test_evidence=False,
+        )
+    )
+    assert decision.allowed is True

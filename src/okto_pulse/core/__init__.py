@@ -35,19 +35,26 @@ _LAZY_EXPORTS: dict[str, str] = {
     "configure_settings": "okto_pulse.core.infra.config",
     "register_package_version_provider": "okto_pulse.core.infra.config",
     "reset_package_version_provider_for_tests": "okto_pulse.core.infra.config",
-    # infra.database
-    "get_db": "okto_pulse.core.infra.database",
-    "get_db_session": "okto_pulse.core.infra.database",
-    "init_db": "okto_pulse.core.infra.database",
-    "close_db": "okto_pulse.core.infra.database",
+    # relational runtime port
+    "get_db": "okto_pulse.core.ports.relational_runtime",
+    "get_db_session": "okto_pulse.core.ports.relational_runtime",
+    "init_db": "okto_pulse.core.ports.relational_runtime",
+    "close_db": "okto_pulse.core.ports.relational_runtime",
     # infra.permissions
     "Permissions": "okto_pulse.core.infra.permissions",
     "check_permission": "okto_pulse.core.infra.permissions",
     "has_permission": "okto_pulse.core.infra.permissions",
     # infra.storage
+    "DEFAULT_STREAM_CHUNK_SIZE": "okto_pulse.core.infra.storage",
     "StorageProvider": "okto_pulse.core.infra.storage",
+    "StorageObjectStat": "okto_pulse.core.infra.storage",
     "configure_storage": "okto_pulse.core.infra.storage",
     "get_storage_provider": "okto_pulse.core.infra.storage",
+    # relational schema lifecycle port
+    "RelationalSchemaLifecycleOrchestrator": "okto_pulse.core.ports.schema_lifecycle",
+    "register_relational_schema_lifecycle_orchestrator": "okto_pulse.core.ports.schema_lifecycle",
+    "resolve_relational_schema_lifecycle_orchestrator": "okto_pulse.core.ports.schema_lifecycle",
+    "reset_relational_schema_lifecycle_orchestrator": "okto_pulse.core.ports.schema_lifecycle",
 }
 
 __all__ = ["__version__", *_LAZY_EXPORTS]
@@ -75,7 +82,7 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         register_package_version_provider,
         reset_package_version_provider_for_tests,
     )
-    from okto_pulse.core.infra.database import (
+    from okto_pulse.core.ports.relational_runtime import (
         close_db,
         get_db,
         get_db_session,
@@ -87,9 +94,17 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         has_permission,
     )
     from okto_pulse.core.infra.storage import (
+        DEFAULT_STREAM_CHUNK_SIZE,
         StorageProvider,
+        StorageObjectStat,
         configure_storage,
         get_storage_provider,
+    )
+    from okto_pulse.core.ports.schema_lifecycle import (
+        RelationalSchemaLifecycleOrchestrator,
+        register_relational_schema_lifecycle_orchestrator,
+        reset_relational_schema_lifecycle_orchestrator,
+        resolve_relational_schema_lifecycle_orchestrator,
     )
 
 

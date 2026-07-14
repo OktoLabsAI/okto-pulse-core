@@ -15,7 +15,6 @@ twin compartilham este core):
 
 from __future__ import annotations
 
-import contextlib
 import json
 from types import SimpleNamespace
 
@@ -230,13 +229,7 @@ async def test_ts494731f9_mcp_skip_fail_closes_before_writepath(tmp_path, db_fac
     async def _fake_ctx(board_id: str):
         return SimpleNamespace(agent_id="mcp-agent")
 
-    @contextlib.asynccontextmanager
-    async def _fake_db():
-        async with db_factory() as db:
-            yield db
-
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", _fake_db)
 
     tool = await mcp_server.mcp.get_tool("okto_pulse_kg_evaluate_bug_cognitive_closure")
 

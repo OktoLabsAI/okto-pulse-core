@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any, AsyncContextManager
+from typing import Any
 
 from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.ports.kg_operational import get_kg_operational_read_model_port
@@ -13,7 +13,6 @@ from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.repositories import PulseUnitOfWork
 
 logger = logging.getLogger("okto_pulse.application.kg_tick")
-SessionScopeFactory = Callable[[], AsyncContextManager[Any]]
 HealthProbe = Callable[..., Awaitable[dict[str, Any]]]
 
 
@@ -66,45 +65,29 @@ async def dispatch_manual_tick(
     tick_id: str,
     board_id: str | None,
     force_full_rebuild: bool,
-    session: Any | None = None,
-    session_scope_factory: SessionScopeFactory | None = None,
+    relational_context: object,
 ) -> None:
     """Persist manual tick events through the same path as the scheduled tick."""
 
     from okto_pulse.core.events.handlers.kg_decay_tick import publish_tick_events
 
     scheduled_at = datetime.now(timezone.utc).isoformat()
-    if session is not None:
-        if force_full_rebuild:
-            await reset_last_recomputed_at(board_id, session=session)
-        await publish_tick_events(
-            session,
-            board_id=board_id,
-            actor_id="manual-trigger",
-            actor_type="user",
-            scheduled_at=scheduled_at,
+    if force_full_rebuild:
+        await reset_last_recomputed_at(
+            board_id,
+            relational_context=relational_context,
         )
-        return
-    if session_scope_factory is None:
-        raise RuntimeError(
-            "session_scope_factory is required when dispatch_manual_tick is "
-            "called without an explicit session"
-        )
-    async with session_scope_factory() as owned_session:
-        if force_full_rebuild:
-            await reset_last_recomputed_at(board_id, session=owned_session)
-        await publish_tick_events(
-            owned_session,
-            board_id=board_id,
-            actor_id="manual-trigger",
-            actor_type="user",
-            scheduled_at=scheduled_at,
-        )
-        await owned_session.commit()
+    await publish_tick_events(
+        relational_context,
+        board_id=board_id,
+        actor_id="manual-trigger",
+        actor_type="user",
+        scheduled_at=scheduled_at,
+    )
 
 
 async def reset_last_recomputed_at(
-    board_id: str | None, *, session: Any | None = None
+    board_id: str | None, *, relational_context: object | None = None
 ) -> None:
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
     from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
@@ -113,13 +96,13 @@ async def reset_last_recomputed_at(
     if board_id:
         board_ids = [board_id]
     else:
-        if session is None:
+        if relational_context is None:
             raise RuntimeError(
-                "session is required to reset all boards for force_full_rebuild"
+                "relational context is required to reset all boards"
             )
         board_ids = list(
             await get_kg_operational_read_model_port().list_all_board_ids(
-                session,
+                relational_context,
                 limit=10_000,
             )
         )
@@ -149,7 +132,6 @@ async def reset_last_recomputed_at(
 
 
 __all__ = [
-    "SessionScopeFactory",
     "HealthProbe",
     "dispatch_manual_tick",
     "get_kg_health",

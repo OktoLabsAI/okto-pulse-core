@@ -17,7 +17,12 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
-from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+    runtime_lock,
+)
 
 from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
 from okto_pulse.core.kg.interfaces.board_source_reader import BoardSourceReader
@@ -122,6 +127,9 @@ class KGProviderRegistry:
     def require_embedding_provider(self) -> EmbeddingProvider:
         return self._require_provider("embedding_provider")
 
+    def require_graph_schema_manager(self) -> GraphSchemaManager:
+        return self._require_provider("graph_schema_manager")
+
     def require_global_discovery_runtime(self) -> GlobalDiscoveryRuntime:
         return self._require_provider("global_discovery_runtime")
 
@@ -149,7 +157,7 @@ class KGProviderRegistry:
         return self._require_provider("graph_recovery")
 
 
-_lock = threading.Lock()
+_lock = runtime_lock("kg.interfaces.registry")
 _RUNTIME_KEY = "kg.provider_registry"
 
 
@@ -164,7 +172,6 @@ def _build_graph_defaults() -> dict[str, Any]:
 
 def configure_kg_registry(
     *,
-    session_factory: Any | None = None,
     base_registry: "KGProviderRegistry | None" = None,
     defaults_factory: Any | None = None,
     **overrides: Any,
@@ -174,14 +181,11 @@ def configure_kg_registry(
     Called once at bootstrap. Thread-safe.
 
     Args:
-        session_factory: Deprecated compatibility argument. R-P2-02 removed
-            relational auto-wire from core; passing this no longer creates
-            audit_repo/event_bus.
         base_registry: (R05-B) a pre-built ``KGProviderRegistry`` whose Onda A
             slots (cache_backend / rate_limiter / session_store /
             embedding_provider) are supplied by the edition (e.g. the Community
             adapters) so the core's embedded Onda A are NOT instantiated. The
-            core-owned graph slots it leaves ``None`` (Kùzu/graph) are filled by
+            core-owned graph slots it leaves ``None`` (graph backend/graph) are filled by
             ``_build_graph_defaults`` here. R-P2-03D: ``config`` is NO LONGER a
             graph default — the composition MUST supply it (``configure`` fails
             closed otherwise). audit_repo / event_bus auto-wire from
@@ -239,7 +243,7 @@ def configure_kg_registry(
         # R-P2-02 / R-P2-03D / R-P2-05: ``config`` (KGConfig), ``event_bus``
         # (EventBus), ``audit_repo`` (AuditRepository), and graph providers are
         # REQUIRED composition-supplied slots — the core no longer fills any of
-        # them with an implicit/relational/Kùzu fallback.
+        # them with an implicit/relational/graph backend fallback.
         # A real composed runtime that omits one fails closed HERE with an actionable
         # error (never a late AttributeError when a consumer reads the slot). The
         # Community edition supplies all three explicitly via

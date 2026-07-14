@@ -6,7 +6,7 @@ Orchestrates the three stages of the hybrid pipeline:
        intent. Per-type results merged and ordered by similarity.
     2. **Graph expand** — from each seed, walk up to `max_hops` along the
        intent's `expand_edges`. The implementation is parametrised via an
-       injected `GraphExpander` so tests don't need a live Kùzu handle.
+       injected `GraphExpander` so tests don't need a live graph backend handle.
     3. **Hybrid ranking** — linear blend of vector_sim + graph_proximity_inv
        + edge_confidence + recency_decay, weighted per-intent.
 
@@ -141,7 +141,7 @@ class VectorSeedProvider(Protocol):
 
 
 class GraphExpander(Protocol):
-    """Runs the per-intent Kùzu path query."""
+    """Runs the per-intent graph backend path query."""
 
     def expand(
         self,

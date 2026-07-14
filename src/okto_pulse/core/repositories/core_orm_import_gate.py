@@ -3,21 +3,16 @@
 A *delta-aware* AST gate over the ENTIRE core runtime tree (``src/okto_pulse/core``)
 that FAILS when a file imports or uses a relational ORM-DEFINITION primitive —
 ``declarative_base``, ``TypeDecorator``, the declarative ``Base``, or a concrete
-ORM model class from ``core.models.db`` — UNLESS that file is registered in the
-temporary allowlist :data:`CORE_ORM_IMPORT_ALLOWLIST` with an owner and a
-removal date (register-before-remove governance, the same ledger pattern as the
-``AntiSingletonGate`` ``SINGLETON_LEDGER`` and the R01B runtime seams).
+ORM model class from the retired ``core.models.db`` surface. The active allowlist
+is terminally empty, so every occurrence is blocking.
 
 This is deliberately NOT :mod:`relational_boundary_gate` (which guards the
 migrated ``application/use_cases`` slice for session/``select`` coupling) and NOT
 the core-wide *debt baseline* (``relational_baseline_report``). It is a distinct,
 delta-aware enforcement (negative scenario ``ts_d1ddd3c9`` forbids reusing those
-as a substitute): the allowlist is a FROZEN STATIC literal capturing the CURRENT
-set of legitimate ORM-definition consumers; any NEW core-runtime consumer that is
-absent from the allowlist is blocking. The allowlist may only SHRINK as consumers
-migrate behind ports/DTOs (ratchet — :func:`core_orm_allowlist_only_shrinks`),
-proving relational ORM ownership is moving to Community (R01C) without new
-coupling leaking back into the core.
+as a substitute). :data:`RETIRED_CORE_ORM_IMPORT_ALLOWLIST` and
+:data:`RETIRED_ALLOWLIST_CLUSTERS` retain the migration audit trail, while the
+active register stays empty and cannot normalize a regression.
 
 Crucially the gate does NOT flag the agnostic enums that ``core.models.db``
 re-exports from ``core.domain.enums`` (``CardStatus``, ``BugSeverity`` …) —
@@ -34,9 +29,6 @@ import ast
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from okto_pulse.core.repositories.debt import (
-    ORM_RETURN_DEBT,
-)
 from okto_pulse.core.repositories.relational_boundary_gate import default_core_path
 
 # --- source modules that own / re-export the ORM-definition primitives ---------
@@ -60,15 +52,10 @@ AXIS_DOMAIN_ORM_SEPARATION = "domain_orm_separation_axis"
 AXIS_IMP4_COMMUNITY_ADAPTER = "imp4_community_adapter_ownership"
 BLOCKED_BY_AXES = frozenset({AXIS_DOMAIN_ORM_SEPARATION, AXIS_IMP4_COMMUNITY_ADAPTER})
 
-#: Debt-ledger anchors a cluster's ``debt_ref`` may point at. Each key resolves to
-#: a REAL, live entry in :mod:`okto_pulse.core.repositories.debt` (imported above),
-#: so the allowlist governance is UNIFIED with the registered transitional debt —
-#: a cluster cannot cite a withdrawal blocker that the debt ledger does not record.
-#: ``debt_ref=None`` is reserved for the ``definition`` cluster, whose removal is a
-#: card-tracked physical re-home (IMP4), not a port/session debt.
-_RESOLVABLE_DEBT_REFS: dict[str, object] = {
-    "orm_return_debt": ORM_RETURN_DEBT,
-}
+#: Live debt-ledger anchors available to active allowlist clusters. F01 withdrew
+#: the ORM-return debt, so this register is intentionally empty. Historical
+#: references survive only in :data:`RETIRED_ALLOWLIST_CLUSTERS`.
+_RESOLVABLE_DEBT_REFS: dict[str, object] = {}
 
 #: Required register-before-remove metadata fields on every allowlist cluster.
 #: R01C IMP3 extends the contract: beyond (owner, removal_date, reason) every
@@ -83,16 +70,9 @@ REQUIRED_ALLOWLIST_FIELDS = (
     "blocked_by",
 )
 
-#: Register-before-remove metadata, shared per migration cluster. Every
-#: allowlisted file resolves its governance (owner, removal_date, reason,
-#: withdrawal_criterion, blocked_by axis, debt_ref) through its cluster — so the
-#: full governance contract holds per file without repeating the prose 65 times.
-#: ``removal_date`` is the owner-assigned R01C migration target (revisable as the
-#: track replans); the allowlist ratchets (shrinks) as files migrate, never grows.
-#: ``withdrawal_criterion`` is the OBJECTIVE condition that lets the cluster leave
-#: the allowlist; ``blocked_by`` is the axis (closed vocab) that gates it;
-#: ``debt_ref`` links to the live debt-ledger entry that records the blocker.
-_ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {
+#: Historical register-before-remove metadata retained as migration evidence.
+#: It is deliberately disconnected from active validation and debt resolution.
+RETIRED_ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {
     "definition": {
         "owner": "okto-pulse-core/relational-ownership",
         "removal_date": "2026-12-31",
@@ -206,6 +186,9 @@ _ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {
         "debt_ref": "orm_return_debt",
     },
 }
+
+# Final F01 state: there are no active ORM exceptions or migration blockers.
+_ALLOWLIST_CLUSTERS: dict[str, dict[str, object]] = {}
 
 #: FROZEN file -> cluster ratchet set (the delta-aware teeth). This is a STATIC
 #: literal captured at R01C IMP2 time — NOT a live scan — so a NEW core file with
@@ -340,13 +323,11 @@ def allowlist_entry(file_label: str) -> dict[str, object] | None:
 
 
 def resolve_debt_ref(debt_ref: object) -> object | None:
-    """Resolve a cluster ``debt_ref`` to its live debt-ledger entry, or None.
+    """Resolve an active cluster ``debt_ref`` to its live ledger entry, or None.
 
-    ``None`` (the ``definition`` cluster's card-tracked re-home) resolves to None;
-    any other value must be a key registered in :data:`_RESOLVABLE_DEBT_REFS` —
-    unifying the allowlist governance with the real
-    :mod:`okto_pulse.core.repositories.debt` ledger (an unknown ref is a
-    governance error caught by :func:`validate_allowlist_metadata`).
+    ``None`` resolves to None. Any other value must be registered in
+    :data:`_RESOLVABLE_DEBT_REFS`; the terminal F01 register is empty, so a new
+    debt reference is a governance error until a real live ledger entry exists.
     """
     if debt_ref is None:
         return None

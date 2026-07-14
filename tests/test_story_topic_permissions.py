@@ -11,7 +11,6 @@ from okto_pulse.community.api import stories as stories_api
 from okto_pulse.core.application.use_cases import PermissionDeniedError
 from okto_pulse.core.application.use_cases import stories_crud
 from okto_pulse.core.infra.permissions import PermissionSet
-from okto_pulse.core.services import main as services_main
 from sqlalchemy_test_models import StoryStatus
 from okto_pulse.core.mcp.server import (
     _mcp_check_story_state_permission,
@@ -134,17 +133,18 @@ def test_mcp_permission_error_response_preserves_structured_payload() -> None:
 # contract spans the transport-free guard (stories_crud._require_permissions
 # raises PermissionDeniedError carrying the JSON payload) plus the adapter
 # mapping (stories_api._raise_permission_denied json-decodes it into the 403
-# detail). resolve_user_permissions is imported at call time inside the guard,
-# so the patch targets the services.main module attribute.
+# detail). Permission resolution is supplied through the application service
+# catalog, keeping the use case independent from the persistence adapter.
 @pytest.mark.asyncio
-async def test_api_require_permissions_reports_story_create_context(monkeypatch) -> None:
-    async def fake_permissions(_db, _user_id, _board_id):
-        return PermissionSet({"story": {"entity": {"create": False}}})
-
-    monkeypatch.setattr(services_main, "resolve_user_permissions", fake_permissions)
+async def test_api_require_permissions_reports_story_create_context() -> None:
+    class _Services:
+        async def resolve_user_permissions(self, _user_id, _board_id):
+            return PermissionSet({"story": {"entity": {"create": False}}})
 
     with pytest.raises(PermissionDeniedError) as denied:
-        await stories_crud._require_permissions(None, "user-1", "board-1", "story.entity.create")
+        await stories_crud._require_permissions(
+            _Services(), "user-1", "board-1", "story.entity.create"
+        )
 
     with pytest.raises(HTTPException) as excinfo:
         stories_api._raise_permission_denied(denied.value.message)
@@ -155,14 +155,17 @@ async def test_api_require_permissions_reports_story_create_context(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_api_require_permissions_reports_topic_sensitive_context(monkeypatch) -> None:
-    async def fake_permissions(_db, _user_id, _board_id):
-        return PermissionSet({"topic": {"entity": {"merge": False, "delete": False}}})
-
-    monkeypatch.setattr(services_main, "resolve_user_permissions", fake_permissions)
+async def test_api_require_permissions_reports_topic_sensitive_context() -> None:
+    class _Services:
+        async def resolve_user_permissions(self, _user_id, _board_id):
+            return PermissionSet(
+                {"topic": {"entity": {"merge": False, "delete": False}}}
+            )
 
     with pytest.raises(PermissionDeniedError) as denied:
-        await stories_crud._require_permissions(None, "user-1", "board-1", "topic.entity.merge")
+        await stories_crud._require_permissions(
+            _Services(), "user-1", "board-1", "topic.entity.merge"
+        )
 
     with pytest.raises(HTTPException) as excinfo:
         stories_api._raise_permission_denied(denied.value.message)

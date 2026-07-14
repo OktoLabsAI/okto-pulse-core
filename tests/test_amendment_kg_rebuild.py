@@ -186,7 +186,7 @@ def test_expected_layers_counts_amendment_canonical():
 def _temp_pulse_db(tmp_path):
     """A self-contained sync SQLite pulse.db with the full schema (create_all)."""
     from sqlalchemy import create_engine
-    from okto_pulse.core.infra.database import Base
+    from sqlalchemy_test_models import Base
     import sqlalchemy_test_models  # noqa: F401 - register all tables
 
     db_file = tmp_path / "pulse.db"

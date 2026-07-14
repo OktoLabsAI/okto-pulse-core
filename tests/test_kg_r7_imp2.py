@@ -32,7 +32,7 @@ from okto_pulse.core.kg.canonical_learning_partition import (
     detect_historical_canonical_learning_debt,
     reconcile_canonical_learning_partition_debt,
 )
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
@@ -76,7 +76,7 @@ def _seed_node(
     graph_layer: str,
     maturity_status: str,
 ) -> None:
-    _apply_kuzu_node_create_with_timestamp(
+    _apply_graph_node_create(
         orch,
         node_type,
         node_id,
@@ -117,8 +117,8 @@ def _seed_learning_validating_bug(
     )
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -150,8 +150,8 @@ def _add_canonical_bug_validates(board_id: str, learning_id: str) -> str:
     bug_id = f"r7cb_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -180,8 +180,8 @@ def _seed_provenance_learning(board_id: str, source_ref: str) -> str:
     entity_id = f"r7pe_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )

@@ -6,6 +6,8 @@ implementation changes the service/use-case contract away from raw owner_id.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import json
 import uuid
@@ -17,10 +19,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api import default_board_config as default_board_config_api
+from okto_pulse.community.api import guidelines as guidelines_api
 from okto_pulse.community.api.default_board_config import router as default_board_config_router
 from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.core.application.scope import QueryScope
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.models.schemas import GuidelineUpdate
 
@@ -30,12 +35,12 @@ PREFIX = "/api/v1"
 CORE_SRC_PATH = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
 MCP_SERVER_PATH = CORE_SRC_PATH / "mcp" / "server.py"
 GUIDELINE_SERVICE_PATH = CORE_SRC_PATH / "services" / "main.py"
-GUIDELINES_REST_PATH = CORE_SRC_PATH / "api" / "guidelines.py"
+GUIDELINES_REST_PATH = Path(guidelines_api.__file__)
 GUIDELINES_USE_CASE_PATH = CORE_SRC_PATH / "application" / "use_cases" / "guidelines_crud.py"
 MCP_BOARD_USE_CASE_PATH = CORE_SRC_PATH / "application" / "use_cases" / "mcp_board_crud.py"
 DEFAULT_CONFIG_SERVICE_PATH = CORE_SRC_PATH / "services" / "default_board_configuration.py"
 DEFAULT_CONFIG_API_SERVICE_PATH = CORE_SRC_PATH / "services" / "default_board_config_api.py"
-DEFAULT_CONFIG_REST_PATH = CORE_SRC_PATH / "api" / "default_board_config.py"
+DEFAULT_CONFIG_REST_PATH = Path(default_board_config_api.__file__)
 
 
 @pytest.fixture
@@ -51,6 +56,7 @@ def client() -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -59,7 +65,14 @@ async def _seed_board(owner: str) -> str:
 
     board_id = f"af23-board-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=board_id, name=board_id, owner_id=owner))
+        db.add(
+            Board(
+                id=board_id,
+                name=board_id,
+                owner_id=owner,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
     return board_id
 
@@ -158,7 +171,9 @@ async def test_ts2_query_scope_actor_is_authoritative_when_present() -> None:
 
     owner_guideline = await _seed_guideline(USER)
     other_guideline = await _seed_guideline(OTHER)
-    query_scope = QueryScope(actor_id=USER, source="test")
+    query_scope = QueryScope(
+        actor_id=USER, source="test", realm_id=LOCAL_REALM_ID
+    )
 
     async with get_session_factory()() as db:
         service = GuidelineService(db)
@@ -211,8 +226,9 @@ async def _call_mcp_tool(tool_name: str, **kwargs) -> dict:
         agent_name="AF23 scoped actor",
         board_id=kwargs.get("board_id", ""),
         permissions=None,
+        realm_id=LOCAL_REALM_ID,
     )
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
         return json.loads(await getattr(mcp_server, tool_name).fn(**kwargs))
 
@@ -336,7 +352,7 @@ def test_ts4_mcp_default_guideline_tools_pass_query_scope() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ts5_mcp_cross_scope_priority_update_is_denied() -> None:
+async def test_ts5_mcp_priority_update_without_board_grant_is_denied() -> None:
     from sqlalchemy import select
 
     from sqlalchemy_test_models import BoardGuideline
@@ -345,14 +361,19 @@ async def test_ts5_mcp_cross_scope_priority_update_is_denied() -> None:
     guideline_id = await _seed_guideline(OTHER)
     await _link_guideline(board_id, guideline_id, priority=1)
 
-    response = await _call_mcp_tool(
-        "okto_pulse_update_board_guideline_priority",
-        board_id=board_id,
-        guideline_id=guideline_id,
-        priority="9",
-    )
+    from okto_pulse.core.mcp import server as mcp_server
 
-    assert response == {"error": "Link not found"}
+    register_mcp_test_runtime(get_session_factory())
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=None)):
+        response = json.loads(
+            await mcp_server.okto_pulse_update_board_guideline_priority.fn(
+                board_id=board_id,
+                guideline_id=guideline_id,
+                priority="9",
+            )
+        )
+
+    assert response == {"error": "Authentication failed or board access denied"}
     async with get_session_factory()() as db:
         persisted = (
             await db.execute(
@@ -364,6 +385,44 @@ async def test_ts5_mcp_cross_scope_priority_update_is_denied() -> None:
         ).scalar_one()
         assert persisted is not None
         assert persisted.priority == 1
+
+
+@pytest.mark.asyncio
+async def test_ts5_mcp_same_scope_priority_update_and_unlink_succeed() -> None:
+    from sqlalchemy import select
+
+    from sqlalchemy_test_models import BoardGuideline
+
+    board_id = await _seed_board(USER)
+    guideline_id = await _seed_guideline(USER)
+    await _link_guideline(board_id, guideline_id, priority=1)
+
+    updated = await _call_mcp_tool(
+        "okto_pulse_update_board_guideline_priority",
+        board_id=board_id,
+        guideline_id=guideline_id,
+        priority="9",
+    )
+    assert updated["success"] is True
+    assert updated["priority"] == 9
+
+    unlinked = await _call_mcp_tool(
+        "okto_pulse_unlink_guideline_from_board",
+        board_id=board_id,
+        guideline_id=guideline_id,
+    )
+    assert unlinked == {"success": True}
+
+    async with get_session_factory()() as db:
+        persisted = (
+            await db.execute(
+                select(BoardGuideline).where(
+                    BoardGuideline.board_id == board_id,
+                    BoardGuideline.guideline_id == guideline_id,
+                )
+            )
+        ).scalar_one_or_none()
+        assert persisted is None
 
 
 def test_ts5_guidelines_scope_gate_blocks_raw_owner_auth_and_boardshare_drift() -> None:

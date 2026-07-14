@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 import pytest
 
 from okto_pulse.community.api.boards import get_board_columns
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_session_factory
 from sqlalchemy_test_models import (
     Board,
@@ -62,7 +63,7 @@ async def test_ideation_open_qa_count_counts_only_unanswered_and_exposes_scope()
     board_id, ideation_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="QA Badge Board", owner_id=USER))
+        db.add(Board(id=board_id, name="QA Badge Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
         db.add(
             Ideation(
                 id=ideation_id,
@@ -130,7 +131,7 @@ async def test_ideation_summary_scope_absent_and_zero_count_when_clean():
     board_id, ideation_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Clean Board", owner_id=USER))
+        db.add(Board(id=board_id, name="Clean Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
         db.add(
             Ideation(
                 id=ideation_id,
@@ -156,7 +157,7 @@ async def test_spec_open_qa_count():
     board_id, spec_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Spec QA Board", owner_id=USER))
+        db.add(Board(id=board_id, name="Spec QA Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
         db.add(
             Spec(
                 id=spec_id,
@@ -209,7 +210,7 @@ async def test_card_columns_open_qa_count():
     board_id, card_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Card QA Board", owner_id=USER))
+        db.add(Board(id=board_id, name="Card QA Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
         db.add(
             Card(
                 id=card_id,
@@ -237,7 +238,7 @@ async def test_card_columns_open_qa_count():
         payload = await get_board_columns(
             board_id,
             user_id=USER,
-            realm_id=None,
+            realm_id=LOCAL_REALM_ID,
             uow=SQLAlchemyUnitOfWork(db),
         )
 
@@ -258,12 +259,15 @@ async def test_inherited_answered_qa_does_not_inflate_open_qa_count():
         RefinementStatus,
     )
     from okto_pulse.core.services.main import propagate_artifacts
+    from okto_pulse.core.ports.application_persistence import (
+        get_application_persistence_port,
+    )
     from sqlalchemy import select
 
     board_id, ideation_id, refinement_id = _id(), _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="QA Inherit Board", owner_id=USER))
+        db.add(Board(id=board_id, name="QA Inherit Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
         db.add(
             Ideation(
                 id=ideation_id,
@@ -311,14 +315,20 @@ async def test_inherited_answered_qa_does_not_inflate_open_qa_count():
         )
         db.add(refinement)
         await db.flush()
+        target_record = await get_application_persistence_port().get(
+            db,
+            entity="refinement",
+            record_id=refinement_id,
+        )
+        assert target_record is not None
 
         await propagate_artifacts(
             db,
             source_mockups=None,
             source_qa_items=[answered_text, answered_choice, open_qa],
             source_knowledge_bases=None,
-            target_entity=refinement,
-            target_kb_class=None,
+            target_entity=target_record,
+            target_kb_entity=None,
             user_id=USER,
         )
         await db.commit()
@@ -351,7 +361,7 @@ async def test_backfill_qa_answered_at_stamps_only_answered_rows():
     board_id, spec_id = _id(), _id()
     db_factory = get_session_factory()
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="QA Backfill Board", owner_id=USER))
+        db.add(Board(id=board_id, name="QA Backfill Board", owner_id=USER, realm_id=LOCAL_REALM_ID))
         db.add(
             Spec(
                 id=spec_id,

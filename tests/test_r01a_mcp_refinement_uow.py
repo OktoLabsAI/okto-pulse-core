@@ -16,6 +16,8 @@ Consolidated proofs:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import json
 from pathlib import Path
@@ -30,6 +32,8 @@ from sqlalchemy_test_models import (
     IdeationStatus,
     Refinement,
     RefinementStatus,
+    Spec,
+    SpecStatus,
 )
 
 BOARD_ID = "r01a-mcprefinement"
@@ -148,7 +152,7 @@ async def _seed():
 async def _call(tool: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     t = await mcp_server.mcp.get_tool(tool)
     return json.loads(await t.fn(**kwargs))
 
@@ -174,6 +178,36 @@ async def test_get_update_move_delete_roundtrip(_seed):
         "okto_pulse_delete_refinement", board_id=BOARD_ID, refinement_id=_seed
     )
     assert deleted == {"success": True}
+
+
+@pytest.mark.asyncio
+async def test_delete_refinement_cascades_derived_specs(_seed):
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        refinement = await db.get(Refinement, _seed)
+        spec = Spec(
+            board_id=BOARD_ID,
+            ideation_id=refinement.ideation_id,
+            refinement_id=_seed,
+            title="Cascade child",
+            status=SpecStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        db.add(spec)
+        await db.flush()
+        spec_id = spec.id
+        await db.commit()
+
+    deleted = await _call(
+        "okto_pulse_delete_refinement", board_id=BOARD_ID, refinement_id=_seed
+    )
+
+    assert deleted == {"success": True}
+    async with factory() as db:
+        assert await db.get(Refinement, _seed) is None
+        assert await db.get(Spec, spec_id) is None
 
 
 @pytest.mark.asyncio

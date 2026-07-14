@@ -47,20 +47,20 @@ _SHUTIL_IO_FUNCS = frozenset({"copyfile", "copy", "copy2", "copyfileobj", "move"
 STORAGE_BYPASS_ALLOWLIST: dict[str, str] = {}
 STORAGE_BYPASS_OCCURRENCE_ALLOWLIST: dict[str, dict[str, str]] = {
     # Fingerprints are content-anchored. Line numbers are diagnostics only.
-    "30f70245ba408cbc03a4f98a2a8efe45f470bd26ebcc1cce8209d75ac4324900": {
+    "bcd23192d6e0146d86eca31dd34c7889ad8637ca367219625a7d3e25d4b76b10": {
         "owner": "core-mcp",
-        "reason": "MCP bundled prompt load; not user-supplied content ingestion.",
-        "removal_criteria": "Remove when MCP instructions are provided through an injected resource provider.",
+        "reason": "MCP bundled package-resource load; not user-supplied content ingestion.",
+        "removal_criteria": "Remove when MCP bundled resources are provided through an injected catalog provider.",
     },
-    "276d7bbdeaa4e4bbdbbd39ffc261377173a71d29d091cade4e3c900160e25623": {
-        "owner": "core-mcp",
-        "reason": "MCP bundled resource load; not user-supplied content ingestion.",
-        "removal_criteria": "Remove when MCP resources are provided through an injected resource provider.",
+    "bfab1ddeaa135d455c0b79402c28f73af3c164e6b96ca5de09fc0559d2a9cbb5": {
+        "owner": "core-mcp-tooling",
+        "reason": "Build-time generated catalog writer; not runtime content ingestion.",
+        "removal_criteria": "Move catalog regeneration to an external build command.",
     },
     "e2284ae9a3a01e9b63b0c314c1e948ba535aa7d7f2f8b456ff907845045311fe": {
         "owner": "core-mcp",
-        "reason": "Explicit local manifest inspection utility, not runtime attachment/content ingestion.",
-        "removal_criteria": "Remove when payload budget profiles are loaded through a resource provider.",
+        "reason": "Bundled payload-budget profile reader; not user content ingestion.",
+        "removal_criteria": "Inject immutable payload-budget profiles through MCP composition.",
     },
 }
 

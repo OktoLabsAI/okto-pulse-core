@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import textwrap
 
 import pytest
@@ -89,7 +91,7 @@ async def test_af14_mcp_query_header_and_bearer_authenticate_by_hash():
     from okto_pulse.core.mcp import server as mcp_server
 
     session_factory = get_session_factory()
-    mcp_server.register_session_factory(
+    register_mcp_test_runtime(
         session_factory,
         mcp_authenticator=_HarnessMcpAuthenticator(session_factory),
     )
@@ -163,7 +165,7 @@ def test_af14_rest_create_list_get_and_regenerate_are_secret_free_except_reveal_
 def test_af14_secret_surface_gate_green_on_real_core():
     report = run_agent_secret_surface_gate()
     assert report.ok, [o.as_dict() for o in report.occurrences]
-    assert report.scanned_files == 4
+    assert report.scanned_files == 2
 
 
 def test_af14_secret_surface_gate_flags_response_and_plaintext_persistence(tmp_path):

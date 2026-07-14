@@ -110,8 +110,7 @@ async def detect_digest_layer_mismatches(
             "coalesce(d.graph_layer, 'legacy_unknown')",
             {"bid": board_id},
         )
-        while res.has_next():
-            row = res.get_next()
+        for row in res.rows:
             oid = str(row[1]) if row[1] is not None else ""
             if not oid:
                 continue

@@ -16,7 +16,7 @@ Contract (FR1 of spec c48a5c33):
     # result.missing_link_candidates: list[MissingLinkCandidate]
     # result.content_hash: str  (SHA256 used by idempotent commit BR)
 
-The worker is pure — it never touches Kùzu directly. The caller hands the
+The worker is pure — it never touches graph backend directly. The caller hands the
 output to the transaction orchestrator / primitives for actual persistence.
 Making the worker pure is what lets the CLI `--dry-run` mode work without
 partial writes (BR `CLI dry-run reporta diff sem escrever`).
@@ -58,7 +58,7 @@ LAYER = "deterministic"
 
 @dataclass
 class EmittedNode:
-    """One node scheduled for Kùzu insertion by the Layer 1 worker."""
+    """One node scheduled for graph backend insertion by the Layer 1 worker."""
 
     candidate_id: str
     node_type: str  # matches schema.NODE_TYPES
@@ -77,7 +77,7 @@ class EmittedNode:
 
 @dataclass
 class EmittedEdge:
-    """One edge scheduled for Kùzu insertion, carrying full v0.2.0 metadata."""
+    """One edge scheduled for graph backend insertion, carrying full v0.2.0 metadata."""
 
     candidate_id: str
     edge_type: str  # matches schema.REL_TYPES
@@ -471,7 +471,7 @@ def _append_architecture_designs(
 ) -> None:
     """Project Architecture Design into existing KG node types.
 
-    v1 intentionally avoids a new Kuzu schema. Architecture designs and their
+    v1 intentionally avoids a new graph backend schema. Architecture designs and their
     entities become Entity nodes; interfaces/contracts become APIContract
     nodes. The parent artifact owns all nodes through belongs_to edges.
     """
@@ -968,7 +968,7 @@ class DeterministicWorker:
             ))
             _add_belongs_to(or_cid, "or", i)
 
-        # 7b. Architecture Design light KG projection. No new Kuzu types are
+        # 7b. Architecture Design light KG projection. No new graph backend types are
         # needed: architecture envelope/entities map to Entity, while
         # interfaces/contracts map to APIContract.
         _append_architecture_designs(

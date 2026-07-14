@@ -266,7 +266,7 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
             global_discovery_runtime=object(),
             board_source_reader=object(),
         )
-        configure_kg_registry(session_factory=sf, base_registry=base)
+        configure_kg_registry(base_registry=base)
         r = reg_mod.get_kg_registry()
         # prefer-provided: the composition's slots are NOT replaced by the
         # session_factory auto-wire.
@@ -298,7 +298,7 @@ def test_tr3_non_composed_call_fails_closed():
         # The bare configure_kg_registry (no base / factory) fails closed BEFORE
         # it mutates the singleton.
         with pytest.raises(RuntimeError):
-            configure_kg_registry(session_factory=_SF())  # NO base / factory
+            configure_kg_registry()  # NO base / factory
         # With no successful composition, an unconfigured registry also fails
         # closed on consumption (no implicit Onda A lazy-init).
         reset_registry_for_tests()

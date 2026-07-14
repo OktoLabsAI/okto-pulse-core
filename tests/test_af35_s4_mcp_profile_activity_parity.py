@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from datetime import datetime, timezone
@@ -146,7 +148,7 @@ async def test_profile_activity_success_envelopes_are_compatible(db_factory) -> 
     ids = await _seed_profile_activity_fixture(db_factory)
     board_id = ids["board_id"]
     agent_id = ids["agent_id"]
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
 
     with (
         patch.object(
@@ -233,7 +235,7 @@ async def test_profile_activity_success_envelopes_are_compatible(db_factory) -> 
 
 @pytest.mark.asyncio
 async def test_update_my_profile_missing_agent_envelope_is_preserved(db_factory) -> None:
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(
         mcp_server,
         "_get_authenticated_agent",
@@ -250,7 +252,7 @@ async def test_update_my_profile_missing_agent_envelope_is_preserved(db_factory)
 
 @pytest.mark.asyncio
 async def test_auth_and_permission_denial_envelopes_are_preserved(db_factory) -> None:
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(
         mcp_server, "_get_authenticated_agent", AsyncMock(return_value=None)
     ):
@@ -298,7 +300,7 @@ async def test_auth_and_permission_denial_envelopes_are_preserved(db_factory) ->
 
 @pytest.mark.asyncio
 async def test_mark_as_seen_validation_envelopes_are_preserved(db_factory) -> None:
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(
         mcp_server,
         "_get_agent_ctx",

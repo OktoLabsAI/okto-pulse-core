@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -248,11 +247,6 @@ def resolve_telemetry_config(
     if raw_mode is not None:
         mode, normalized_from = _normalize_effective_mode(raw_mode, source="cli_flag")
         source = "cli_flag"
-    if mode is None:
-        raw_mode = coerce_mode(os.environ.get("OKTO_PULSE_METRICS_MODE"))
-        if raw_mode is not None:
-            mode, normalized_from = _normalize_effective_mode(raw_mode, source="env")
-            source = "env"
     if mode is None:
         raw_mode = coerce_mode(getattr(settings, "metrics_mode", ""))
         if raw_mode is not None:

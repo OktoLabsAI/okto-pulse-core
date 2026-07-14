@@ -10,7 +10,6 @@ functional cluster families (REST/MCP/service/worker), is reproducible
 from __future__ import annotations
 
 from okto_pulse.core.repositories.relational_boundary_gate import (
-    RELATIONAL_BASELINE,
     default_core_path,
     run_relational_boundary_gate,
 )
@@ -21,7 +20,13 @@ from okto_pulse.core.repositories.relational_consumer_inventory import (
 )
 
 # Symbols FR1 names explicitly.
-_EXPECTED_SYMBOL_ROOTS = {"AsyncSession", "select", "get_db", "get_db_for_mcp"}
+_EXPECTED_SYMBOL_ROOTS = {
+    "AsyncSession",
+    "get_db",
+    "get_db_for_mcp",
+    "orm",
+    "select",
+}
 _REQUIRED_FIELDS = ("file", "line", "symbol", "surface", "cluster", "owner", "status")
 _CLUSTER_FAMILIES = {"rest", "mcp", "service", "worker"}
 
@@ -30,9 +35,39 @@ def _inv():
     return build_relational_consumer_inventory()
 
 
-def test_every_record_carries_all_ac1_fields() -> None:
+def _synthetic_inv(tmp_path):
+    root = tmp_path / "core"
+    fixtures = {
+        "api/rest.py": (
+            "from fastapi import Depends\n"
+            "from okto_pulse.core.infra.database import get_db\n"
+            "def route(db=Depends(get_db)):\n"
+            "    return db\n"
+        ),
+        "mcp/tool.py": (
+            "from okto_pulse.core.infra.database import get_db_for_mcp\n"
+            "x = get_db_for_mcp\n"
+        ),
+        "services/flow.py": (
+            "from sqlalchemy import select\n"
+            "from okto_pulse.core.models.db import Board\n"
+            "x = (select, Board)\n"
+        ),
+        "kg/workers/job.py": (
+            "from sqlalchemy.ext.asyncio import AsyncSession\n"
+            "x = AsyncSession\n"
+        ),
+    }
+    for relative, source in fixtures.items():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source, encoding="utf-8")
+    return build_relational_consumer_inventory(root)
+
+
+def test_every_record_carries_all_ac1_fields(tmp_path) -> None:
     """AC1: file, line, symbol, surface, cluster, owner, status for every item."""
-    inv = _inv()
+    inv = _synthetic_inv(tmp_path)
     assert inv.total > 0
     for c in inv.consumers:
         record = c.as_dict()
@@ -48,10 +83,10 @@ def test_every_record_carries_all_ac1_fields() -> None:
         assert record["status"] == STATUS_BASELINE  # fresh scan = nothing migrated
 
 
-def test_covers_the_four_functional_cluster_families() -> None:
+def test_covers_the_four_functional_cluster_families(tmp_path) -> None:
     """FR1/FR3: REST routers, MCP families, service flows and workers are all
     inventoried as distinct cluster families."""
-    inv = _inv()
+    inv = _synthetic_inv(tmp_path)
     families = {c.cluster.split(":", 1)[0] for c in inv.consumers}
     assert _CLUSTER_FAMILIES <= families, families
     # roll-ups agree with the per-record families
@@ -59,9 +94,9 @@ def test_covers_the_four_functional_cluster_families() -> None:
         assert inv.by_cluster.get(fam, 0) > 0, fam
 
 
-def test_detects_every_fr1_symbol() -> None:
+def test_detects_every_fr1_symbol(tmp_path) -> None:
     """FR1 names Depends(get_db), get_db_for_mcp, AsyncSession, select and ORM."""
-    inv = _inv()
+    inv = _synthetic_inv(tmp_path)
     roots = {c.symbol.split("(")[0].split(":")[0] for c in inv.consumers}
     assert _EXPECTED_SYMBOL_ROOTS <= roots, roots
     # Depends(get_db)/Depends(get_db_for_mcp) call-sites are captured
@@ -70,10 +105,9 @@ def test_detects_every_fr1_symbol() -> None:
     assert any(c.symbol.startswith("orm:") for c in inv.consumers)
 
 
-def test_both_transport_surfaces_present() -> None:
-    """The MCP surface must NOT escape the inventory (validator's key finding):
-    both REST (get_db) and MCP (get_db_for_mcp) call-sites are listed."""
-    inv = _inv()
+def test_both_transport_surfaces_are_detected_in_negative_fixture(tmp_path) -> None:
+    """The scanner must still catch REST and MCP direct-session regressions."""
+    inv = _synthetic_inv(tmp_path)
     assert inv.by_surface.get("rest", 0) > 0
     assert inv.by_surface.get("mcp", 0) > 0
     assert any(c.symbol == "get_db_for_mcp" or c.symbol == "Depends(get_db_for_mcp)"
@@ -114,15 +148,14 @@ def test_inventory_is_exactly_the_gate_detection() -> None:
     assert inv.by_surface == dict(report.violations_by_surface)
 
 
-def test_inventory_no_smaller_than_documented_baseline() -> None:
-    """Secondary sanity: the per-call-site inventory is at least as large as the
-    documented core-wide relational baseline (it is finer-grained)."""
+def test_real_core_inventory_is_fully_drained() -> None:
+    """Final ratchet: historical debt is evidence, never a required floor."""
     inv = _inv()
-    baseline_floor = (
-        RELATIONAL_BASELINE["depends_get_db"]
-        + RELATIONAL_BASELINE["get_db_for_mcp"]
-    )
-    assert inv.total >= baseline_floor
+    assert inv.total == 0
+    assert inv.consumers == []
+    assert inv.by_surface == {}
+    assert inv.by_cluster == {}
+    assert inv.by_status == {}
 
 
 def test_inventory_is_versioned_and_deterministic() -> None:

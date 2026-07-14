@@ -25,7 +25,7 @@ import pytest
 
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_node_candidate,
     begin_consolidation,
     commit_consolidation,
@@ -57,12 +57,12 @@ def _seed_entity_root(board_id: str, source_ref: str) -> str:
     root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch,
             "Entity",
             root_id,

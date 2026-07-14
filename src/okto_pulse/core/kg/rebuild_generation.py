@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -126,8 +127,8 @@ class PromotionEvaluation:
 # --- Counter (diagnostic; OR or_56ec0300 surface is in rebuild_report) ------
 
 _PROMOTION_LABELS = ("board_id", "status", "outcome")
-_promotion_counter: dict[tuple[str, str, str], int] = {}
-_promotion_counter_lock = threading.Lock()
+_promotion_counter = runtime_state("kg.rebuild_generation.promotion_counter", dict)
+_promotion_counter_lock = runtime_lock("kg.rebuild_generation.promotion_counter")
 
 
 def _bump_promotion(*, board_id: str, status: str, outcome: str) -> None:

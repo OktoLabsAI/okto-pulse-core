@@ -169,8 +169,7 @@ async def _scan_and_demote(
                 )
                 continue
             rows: list[tuple[str, str, str, str]] = []
-            while res.has_next():
-                row = res.get_next()
+            for row in res.rows:
                 rows.append((
                     str(row[0]),
                     str(row[1] or ""),

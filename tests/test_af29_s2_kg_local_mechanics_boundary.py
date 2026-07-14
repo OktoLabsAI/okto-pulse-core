@@ -27,10 +27,10 @@ def test_af29_s2_core_kg_runtime_has_no_local_lock_or_quarantine_mechanics():
                 f"{path.relative_to(CORE_ROOT)} constructs KGSingleWriterLock(base_dir=...)"
             )
 
-    for path in (
-        CORE_ROOT / "api" / "kg_rebuild.py",
-        CORE_ROOT / "mcp" / "server.py",
-    ):
+    migrated_rest = CORE_ROOT / "api" / "kg_rebuild.py"
+    assert not migrated_rest.exists()
+
+    for path in (CORE_ROOT / "mcp" / "server.py",):
         text = path.read_text(encoding="utf-8")
         if direct_lock_constructor.search(text):
             offenders.append(

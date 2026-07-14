@@ -10,6 +10,8 @@ new tools (a harness staleness artifact; the server DOES register them).
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -71,7 +73,7 @@ async def _seed(*, status=SpecStatus.IN_PROGRESS, scenarios=None, locked=False,
 
 
 async def _call(tool_name: str, board_id: str, **kw) -> dict:
-    mcp_server.register_session_factory(db_factory_ref[0])
+    register_mcp_test_runtime(db_factory_ref[0])
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_ctx(board_id))), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(tool_name)

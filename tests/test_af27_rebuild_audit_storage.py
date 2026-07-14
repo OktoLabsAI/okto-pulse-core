@@ -8,7 +8,7 @@ from okto_pulse.core.application.boundary.rebuild_audit_storage_gate import (
     run_rebuild_audit_storage_gate,
 )
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
-from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+from memory_rebuild_audit_storage import (
     InMemoryRebuildAuditArtifactStore,
 )
 from okto_pulse.core.kg.rebuild_audit import (

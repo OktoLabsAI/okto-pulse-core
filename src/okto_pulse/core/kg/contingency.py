@@ -4,7 +4,7 @@ Plan B: when corruption persists AFTER the hardening primitives are
 proven (KG-01.1–KG-01.6), this service packages the auditable evidence
 needed to:
 
-* file an upstream LadybugDB issue with a reproducible timeline;
+* file an upstream embedded graph backend issue with a reproducible timeline;
 * feed an eventual backend hot-swap evaluation through the KG storage
   port — WITHOUT importing or depending on any alternate backend in
   this spec (TR16). The decision input is what we produce; the
@@ -40,6 +40,7 @@ from __future__ import annotations
 import logging
 import secrets
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -99,8 +100,8 @@ _CONTINGENCY_LABELS = (
     "ready_for_hot_swap_decision",
 )
 
-_contingency_counter: dict[tuple[str, str, str, str], int] = {}
-_contingency_counter_lock = threading.Lock()
+_contingency_counter = runtime_state("kg.contingency.counter", dict)
+_contingency_counter_lock = runtime_lock("kg.contingency.counter")
 
 
 def _bump_contingency(

@@ -19,7 +19,7 @@ Cursor-pagination follow-up: pass ``cursor`` (opaque base64 from a prior
 ``next_cursor``) for O(1) keyset pagination independent of page depth.
 Pass ``envelope=true`` to receive ``{items, next_cursor}`` instead of a
 raw list (default keeps Story 3 list shape — backward compat). Legacy
-``offset`` is silently ignored unless ``OKTO_PULSE_LEGACY_OFFSET=1``.
+``offset`` is silently ignored unless the edition enables ``mcp_legacy_offset``.
 
 Args:
     board_id: Board ID
@@ -28,7 +28,8 @@ Args:
         Empty string = first page. Invalid cursor returns a structured error.
     envelope: When true, response is ``{items: [...], next_cursor: str|null}``.
         Default false returns raw list (preserves Story 3 contract).
-    offset: DEPRECATED — silently ignored unless OKTO_PULSE_LEGACY_OFFSET=1.
+    offset: DEPRECATED — silently ignored unless the edition enables
+        mcp_legacy_offset.
     action: Filter by action type (optional) — e.g. card_created, card_moved, spec_updated
     card_id: Filter by card ID (optional) — only activities for this card
     include_details: When true, include the full `details` object on each row.

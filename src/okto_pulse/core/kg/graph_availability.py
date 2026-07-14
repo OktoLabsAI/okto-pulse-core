@@ -10,7 +10,7 @@ two divergent read paths surface the SAME structured error:
   ``search.find_similar_nodes_by_type``) which today swallows the open failure
   into a silent ``[]``, and
 * the Cypher family (routed through ``KGService._cached_call``) which today
-  flattens it into a generic ``kuzu_error``.
+  flattens it into a generic ``graph_error``.
 
 Scope guard (FR9/TR3): this module only CLASSIFIES an already-raised error. It
 never opens, bootstraps, purges, repairs, or weakens the graph-open guard
@@ -40,35 +40,12 @@ from okto_pulse.core.kg.health_state import HealthState
 if TYPE_CHECKING:  # avoid an import cycle with kg_service at module load
     from okto_pulse.core.kg.kg_service import KGToolError
 
-# Lowercased substrings of the fail-closed RuntimeError raised by
-# ``schema._raise_existing_graph_open_failed`` ("Existing LadybugDB graph could
-# not be opened during <operation>; refusing to auto-bootstrap or purge it.").
-# Both substrings are LITERAL (not interpolated) in that f-string, so they are
-# always present for BOTH operation values (the ``bootstrap_probe`` read-path
-# probe and ``schema_migration_open``); matching either classifies the error.
-# We deliberately do NOT match the interpolated ``operation`` token itself
-# (e.g. ``bootstrap_probe``): it adds no detection the two literals miss and
-# would misclassify an unrelated error whose text merely mentions that token
-# (narrowness, TR3). Mirrors the established narrow-detection idiom in
-# ``global_discovery.outbox_worker.BOARD_READ_ERROR_MARKERS``.
-_GRAPH_UNAVAILABLE_MARKERS: tuple[str, ...] = (
-    "existing ladybugdb graph could not be opened",
-    "refusing to auto-bootstrap",
-)
-
-
 def is_graph_unavailable_error(exc: BaseException) -> bool:
-    """Return True only for the fail-closed graph-open ``RuntimeError`` (TR3).
+    """Return whether an edition adapter reported graph unavailability."""
 
-    Narrow by design: only a ``RuntimeError`` whose message matches the guard's
-    fixed signature qualifies. Lock contention, a missing vector index, or a
-    malformed query do NOT match -- they remain ``[]`` (vector path) or
-    ``kuzu_error`` (Cypher path) at the call site.
-    """
-    if not isinstance(exc, RuntimeError):
-        return False
-    msg = str(exc).lower()
-    return any(marker in msg for marker in _GRAPH_UNAVAILABLE_MARKERS)
+    from okto_pulse.core.kg.interfaces.graph_errors import GraphUnavailable
+
+    return isinstance(exc, GraphUnavailable)
 
 
 def derive_graph_state(candidate: str | None = None) -> str:
@@ -121,7 +98,7 @@ def open_or_classify(read: Callable[[], Any], *, board_id: str) -> Any:
     ``read()`` raises the fail-closed graph-open ``RuntimeError``, raises the
     typed ``graph_unavailable`` ``KGToolError``; any other exception propagates
     unchanged so the caller's existing handling (``[]`` for the vector path,
-    ``kuzu_error`` for the Cypher path) is preserved (FR5/FR6).
+    ``graph_error`` for the Cypher path) is preserved (FR5/FR6).
     """
     try:
         return read()

@@ -156,21 +156,29 @@ class McpAskQuestionUseCase:
                 action = "ideation_question_added"
                 not_found = "Ideation not found"
                 key = "ideation_id"
+                qa_service = uow.services.ideation_qa
             elif command.target_type == "refinement":
 
                 action = "refinement_question_added"
                 not_found = "Refinement not found"
                 key = "refinement_id"
+                qa_service = uow.services.refinement_qa
             else:
 
                 action = "spec_question_added"
                 not_found = "Spec not found"
                 key = "spec_id"
+                qa_service = uow.services.spec_qa
 
-            qa = await uow.services.qa.create_question(
+            qa = await qa_service.create_question(
                 command.parent_id,
                 actor.actor_id,
-                payload(question=command.question),
+                payload(
+                    question=command.question,
+                    question_type="text",
+                    choices=None,
+                    allow_free_text=False,
+                ),
             )
             if not qa:
                 return McpPayloadResult({"error": not_found})
@@ -295,7 +303,12 @@ class McpAddCommentUseCase:
         comment = await uow.services.comments.create_comment(
             command.card_id,
             actor.actor_id,
-            payload(content=command.content),
+            payload(
+                content=command.content,
+                comment_type="text",
+                choices=None,
+                allow_free_text=False,
+            ),
         )
         if not comment:
             return McpPayloadResult({"error": "Failed to create comment (card not found)"})

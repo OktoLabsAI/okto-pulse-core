@@ -14,6 +14,8 @@ the default-board-config read.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import json
 import uuid
@@ -23,6 +25,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import delete
 
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
     Board,
@@ -47,6 +50,7 @@ _TOOL_USE_CASE = {
     "get_board_guidelines": "McpGetBoardGuidelinesUseCase",
     "link_guideline_to_board": "McpLinkGuidelineToBoardUseCase",
     "unlink_guideline_from_board": "McpUnlinkGuidelineFromBoardUseCase",
+    "update_board_guideline_priority": "McpUpdateBoardGuidelinePriorityUseCase",
     "link_board_design_system": "McpLinkBoardDesignSystemUseCase",
     "unlink_board_design_system": "McpUnlinkBoardDesignSystemUseCase",
     "get_board_design_system": "McpGetBoardDesignSystemUseCase",
@@ -114,7 +118,12 @@ def _stub_ctx():
     return type(
         "Ctx",
         (),
-        {"agent_id": USER_ID, "agent_name": "mcp-board-test", "permissions": ["*"]},
+        {
+            "agent_id": USER_ID,
+            "agent_name": "mcp-board-test",
+            "permissions": ["*"],
+            "realm_id": LOCAL_REALM_ID,
+        },
     )()
 
 
@@ -133,7 +142,14 @@ async def _seed():
     factory = get_session_factory()
     async with factory() as db:
         if await db.get(Board, BOARD_ID) is None:
-            db.add(Board(id=BOARD_ID, name="MCP Board", owner_id=USER_ID))
+            db.add(
+                Board(
+                    id=BOARD_ID,
+                    name="MCP Board",
+                    owner_id=USER_ID,
+                    realm_id=LOCAL_REALM_ID,
+                )
+            )
         await db.commit()
     return BOARD_ID
 
@@ -141,7 +157,7 @@ async def _seed():
 async def _call(tool: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     t = await mcp_server.mcp.get_tool(tool)
     return json.loads(await t.fn(**kwargs))
 
@@ -237,7 +253,14 @@ async def test_get_board_guidelines_honors_mcp_board_grant_for_non_owner_board()
 
     factory = get_session_factory()
     async with factory() as db:
-        db.add(Board(id=board_id, name="MCP granted guidelines", owner_id=owner_id))
+        db.add(
+            Board(
+                id=board_id,
+                name="MCP granted guidelines",
+                owner_id=owner_id,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         db.add_all(
             [
                 Guideline(
@@ -279,6 +302,72 @@ async def test_get_board_guidelines_honors_mcp_board_grant_for_non_owner_board()
 
 
 @pytest.mark.asyncio
+async def test_update_board_guideline_priority_honors_non_owner_mcp_board_grant():
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy import select
+
+    owner_id = "r01a-human-board-owner"
+    board_id = f"r01a-mcp-priority-{uuid.uuid4().hex[:8]}"
+    guideline_id = f"r01a-priority-guideline-{uuid.uuid4().hex[:8]}"
+
+    factory = get_session_factory()
+    async with factory() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name="MCP granted priority update",
+                owner_id=owner_id,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
+        db.add(
+            Guideline(
+                id=guideline_id,
+                title="Priority rule",
+                content="Agents granted to the board may reprioritize this rule.",
+                tags=["r01a"],
+                scope="global",
+                owner_id=owner_id,
+            )
+        )
+        await db.flush()
+        db.add(BoardGuideline(board_id=board_id, guideline_id=guideline_id, priority=5))
+        await db.commit()
+
+    try:
+        payload = await _call(
+            "okto_pulse_update_board_guideline_priority",
+            board_id=board_id,
+            guideline_id=guideline_id,
+            priority="30",
+        )
+
+        assert payload == {
+            "success": True,
+            "board_id": board_id,
+            "guideline_id": guideline_id,
+            "priority": 30,
+        }
+        async with factory() as db:
+            link = (
+                await db.execute(
+                    select(BoardGuideline).where(
+                        BoardGuideline.board_id == board_id,
+                        BoardGuideline.guideline_id == guideline_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            assert link is not None
+            assert link.priority == 30
+    finally:
+        async with factory() as db:
+            await db.execute(delete(BoardGuideline).where(BoardGuideline.board_id == board_id))
+            await db.execute(delete(Guideline).where(Guideline.id == guideline_id))
+            await db.execute(delete(Board).where(Board.id == board_id))
+            await db.commit()
+
+
+@pytest.mark.asyncio
 async def test_get_board_design_system_honors_mcp_board_grant_for_non_owner_board():
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.services.design_system import DesignSystemService
@@ -289,7 +378,14 @@ async def test_get_board_design_system_honors_mcp_board_grant_for_non_owner_boar
 
     factory = get_session_factory()
     async with factory() as db:
-        db.add(Board(id=board_id, name="MCP granted design system", owner_id=owner_id))
+        db.add(
+            Board(
+                id=board_id,
+                name="MCP granted design system",
+                owner_id=owner_id,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.flush()
         service = DesignSystemService(db)
         ds = await service.create_design_system(

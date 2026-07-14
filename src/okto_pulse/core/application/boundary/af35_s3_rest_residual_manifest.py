@@ -67,56 +67,9 @@ STATUS_CLASSIFIED = "classified"
 STATUS_UNCLASSIFIED = "unclassified"
 STATUS_EXCEEDED_MANIFEST_COUNT = "exceeded_manifest_count"
 
-AF35_S3_CLEAN_REST_TARGET_FILES: tuple[str, ...] = (
-    "api/__init__.py",
-    "api/agents.py",
-    "api/allowed_transitions.py",
-    "api/analytics.py",
-    "api/amendment_revisions.py",
-    "api/architecture.py",
-    "api/attachments.py",
-    "api/auth_deps.py",
-    "api/boards.py",
-    "api/bug_cognitive_closure.py",
-    "api/cards.py",
-    "api/cognitive_action_center.py",
-    "api/comments.py",
-    "api/dead_letter.py",
-    "api/default_board_config.py",
-    "api/deps.py",
-    "api/design_systems.py",
-    "api/discovery.py",
-    "api/guidelines.py",
-    "api/ideations.py",
-    "api/kg_canonical_debt.py",
-    "api/kg_canonical_partition_integrity.py",
-    "api/kg_cognitive_badges.py",
-    "api/kg_cognitive_candidates.py",
-    "api/kg_cognitive_candidate_commands.py",
-    "api/kg_cognitive_pending.py",
-    "api/kg_digest_layer_mismatch.py",
-    "api/kg_events_hub.py",
-    "api/kg_health.py",
-    "api/kg_orphan_integrity.py",
-    "api/kg_rebuild.py",
-    "api/kg_routes.py",
-    "api/kg_stale_canonical_parity.py",
-    "api/kg_tick.py",
-    "api/me.py",
-    "api/metrics.py",
-    "api/presets.py",
-    "api/qa.py",
-    "api/queue_health.py",
-    "api/refinements.py",
-    "api/resource_gate.py",
-    "api/router.py",
-    "api/screen_mockups.py",
-    "api/settings.py",
-    "api/specs.py",
-    "api/sprints.py",
-    "api/stories.py",
-    "api/traceability.py",
-)
+# Terminal state: the HTTP adapter tree belongs to Community. Keeping historical
+# zero-count rows here would falsely describe files that are no longer in Core.
+AF35_S3_CLEAN_REST_TARGET_FILES: tuple[str, ...] = ()
 
 _C2_COLLABORATION_OWNER = "af35-s3/c2-collaboration-rest-use-cases"
 _C3_ADMIN_CATALOG_OWNER = "af35-s3/c3-admin-catalog-rest-use-cases"

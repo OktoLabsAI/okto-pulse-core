@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Iterable, Protocol, runtime_checkable
 
 
@@ -13,7 +13,6 @@ class GraphStatementResult:
     rows: tuple[tuple[Any, ...], ...] = ()
     columns: tuple[str, ...] = ()
     affected_count: int | None = None
-    _position: int = field(default=0, init=False, repr=False)
 
     @classmethod
     def from_rows(
@@ -29,22 +28,6 @@ class GraphStatementResult:
             affected_count=affected_count,
         )
 
-    def has_next(self) -> bool:
-        return self._position < len(self.rows)
-
-    def get_next(self) -> list[Any]:
-        if not self.has_next():
-            raise StopIteration
-        row = list(self.rows[self._position])
-        self._position += 1
-        return row
-
-    def get_column_names(self) -> list[str]:
-        return list(self.columns)
-
-    def close(self) -> None:
-        self._position = len(self.rows)
-
     def __iter__(self):
         return (list(row) for row in self.rows)
 
@@ -58,6 +41,69 @@ class GraphTransactionScope(Protocol):
     ) -> GraphStatementResult:
         """Run a statement and return materialized rows."""
         ...
+
+    def create_node(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+        *,
+        source_session_id: str,
+    ) -> None: ...
+
+    def update_node(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+    ) -> None: ...
+
+    def mark_superseded(
+        self,
+        node_type: str,
+        node_id: str,
+        *,
+        superseded_by: str,
+        superseded_at: str,
+        revocation_reason: str,
+    ) -> None: ...
+
+    def edge_exists(
+        self,
+        edge_type: str,
+        from_type: str,
+        to_type: str,
+        from_id: str,
+        to_id: str,
+    ) -> bool: ...
+
+    def create_edge(
+        self,
+        edge_type: str,
+        from_type: str,
+        to_type: str,
+        from_id: str,
+        to_id: str,
+        attrs: dict[str, Any],
+    ) -> bool: ...
+
+    def find_node_types(self, node_id: str) -> tuple[str, ...]: ...
+
+    def delete_edges_by_session(self, session_id: str) -> None: ...
+
+    def delete_nodes_by_session(
+        self,
+        session_id: str,
+        node_types: tuple[str, ...],
+    ) -> tuple[str, ...]: ...
+
+    def increment_attestation(
+        self,
+        node_type: str,
+        node_id: str,
+        *,
+        attested_at: str,
+    ) -> None: ...
 
     async def commit(self) -> None:
         """Finalize the scope."""

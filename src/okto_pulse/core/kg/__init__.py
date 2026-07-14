@@ -1,4 +1,4 @@
-"""Knowledge Graph layer — Kùzu per-board graph + embedding provider (MVP Fase 0)."""
+"""Knowledge Graph layer — graph backend per-board graph + embedding provider (MVP Fase 0)."""
 
 from okto_pulse.core.kg.backpressure import (
     BackpressureConfig,
@@ -75,6 +75,7 @@ from okto_pulse.core.kg.config_guard import (
     ConfigChangeDecision,
     ConfigGuardError,
     ConfigGuardErrorCode,
+    GraphSettingPolicy,
     KGConfigChangeGuard,
     RestartPolicy,
     SETTING_GROUP_BUFFER,
@@ -404,6 +405,7 @@ __all__ = [
     "ConfigChangeDecision",
     "ConfigGuardError",
     "ConfigGuardErrorCode",
+    "GraphSettingPolicy",
     "KGConfigChangeGuard",
     "RestartPolicy",
     "SETTING_GROUP_BUFFER",

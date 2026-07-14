@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import uuid
 from datetime import datetime, timezone
@@ -99,7 +101,7 @@ def test_auth_bootstrap_helpers_do_not_open_direct_mcp_db_sessions() -> None:
 
 
 @pytest.mark.asyncio
-async def test_authenticate_mcp_credential_uses_registered_authenticator(monkeypatch) -> None:
+async def test_authenticate_mcp_credential_uses_registered_authenticator() -> None:
     secret = "fcc01d-secret"
     authenticator = _StaticMcpAuthenticator(
         {
@@ -107,6 +109,10 @@ async def test_authenticate_mcp_credential_uses_registered_authenticator(monkeyp
                 agent_id="agent-fcc01d",
                 agent_name="FCC01D Agent",
                 is_active=True,
+                description="Auth regression agent",
+                objective="Preserve the MCP profile contract",
+                permissions=[Permissions.BOARD_READ],
+                created_at=datetime(2026, 7, 13, tzinfo=timezone.utc),
                 metadata={"credential_source": "query_param"},
             ),
             "inactive": AgentAuthSession(
@@ -116,7 +122,7 @@ async def test_authenticate_mcp_credential_uses_registered_authenticator(monkeyp
             ),
         }
     )
-    monkeypatch.setattr(mcp_server, "_mcp_authenticator", authenticator)
+    mcp_server.register_mcp_authenticator(authenticator)
 
     resolved = await mcp_server._authenticate_mcp_credential(
         McpCredential(source="query_param", value=secret)
@@ -125,6 +131,10 @@ async def test_authenticate_mcp_credential_uses_registered_authenticator(monkeyp
     assert resolved is not None
     assert resolved.id == "agent-fcc01d"
     assert resolved.name == "FCC01D Agent"
+    assert resolved.description == "Auth regression agent"
+    assert resolved.objective == "Preserve the MCP profile contract"
+    assert resolved.permissions == [Permissions.BOARD_READ]
+    assert resolved.created_at == datetime(2026, 7, 13, tzinfo=timezone.utc)
     assert resolved.api_key != secret
     assert secret not in repr(resolved)
     assert secret not in str(resolved.metadata)
@@ -256,15 +266,10 @@ async def test_agent_context_board_and_global_parity(
             ),
         }
     )
-    mcp_server.register_session_factory(
+    register_mcp_test_runtime(
         db_factory,
         mcp_authenticator=authenticator,
     )
-
-    def _unexpected_db_fallback():
-        raise AssertionError("auth_bootstrap helpers must not call get_db_for_mcp")
-
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", _unexpected_db_fallback)
 
     board_id = ids["board_id"]
     legacy_credential = McpCredential(source="query_param", value="legacy-key")

@@ -138,7 +138,7 @@ def test_af03_inventoried_bridges_have_no_local_cache_and_keep_reset_wrapper():
         AntiSingletonGateInput(only_files=tuple(rel_files))
     )
 
-    assert report.status == "baseline"
+    assert report.status == "passed"
     assert report.evidence["new_singletons"] == []
 
 
@@ -167,13 +167,9 @@ def test_af03_bridge_wrappers_reset_only_their_namespace():
     assert make_hop_llm_fn(provider, board_id="b1") is not hop_1
 
 
-def test_af03_bridge_cache_registry_is_registered_in_singleton_ledger():
-    ledger_name = "_bridge_cache_registry"
-    baseline_key = "okto_pulse/core/kg/llm_provider_bridge_cache.py::_bridge_cache_registry"
-
-    assert ledger_name in SINGLETON_LEDGER
-    assert baseline_key in BASELINE_SINGLETONS
-    assert SINGLETON_LEDGER[ledger_name]["target_provider"] == "llm_provider_bridge_cache"
+def test_af03_bridge_cache_registry_needs_no_singleton_exception():
+    assert SINGLETON_LEDGER == {}
+    assert BASELINE_SINGLETONS == frozenset()
 
     report = AntiSingletonGate().run(
         AntiSingletonGateInput(
@@ -181,5 +177,5 @@ def test_af03_bridge_cache_registry_is_registered_in_singleton_ledger():
         )
     )
 
-    assert report.status == "baseline"
+    assert report.status == "passed"
     assert report.evidence["new_singletons"] == []

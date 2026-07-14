@@ -1,6 +1,6 @@
 """Global discovery reindex visibility (KG-02.6).
 
-KG-02.6 ships two primitives that make sure ``discovery.lbug`` is
+KG-02.6 ships two primitives that make sure ``global graph`` is
 never silently stale after a board rebuild (BR br_1dd21e39 + IR
 ir_f98042ee):
 
@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -115,8 +116,8 @@ class ReindexRecordResult:
 # --- Counters ----------------------------------------------------------------
 
 _REINDEX_LABELS = ("board_id", "reason", "status")
-_reindex_counter: dict[tuple[str, str, str], int] = {}
-_reindex_counter_lock = threading.Lock()
+_reindex_counter = runtime_state("kg.global_discovery_reindex.counter", dict)
+_reindex_counter_lock = runtime_lock("kg.global_discovery_reindex.counter")
 
 
 def _bump_reindex(*, board_id: str, reason: str, status: str) -> None:
@@ -212,7 +213,7 @@ def _default_reindex_adapter(
     _affected_refs: tuple[str, ...],
 ) -> ReindexAttempt:
     """Default adapter — marks the reindex as pending without touching
-    discovery.lbug. Production wires the real reindexer; until then the
+    global graph. Production wires the real reindexer; until then the
     operator sees ``reindex_pending`` and a deterministic ``job_ref``
     pointing at the manual recovery path."""
 
@@ -382,7 +383,7 @@ class GlobalDiscoveryReindexer:
 
     The reindexer is the ONLY documented path that publishes a visible
     discovery reindex outcome. Production wires a real
-    ``reindex_adapter`` that talks to discovery.lbug; until that's
+    ``reindex_adapter`` that talks to global graph; until that's
     available the default adapter marks pending so the operator sees
     the gap.
     """

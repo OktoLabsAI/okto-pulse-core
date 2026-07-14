@@ -1,47 +1,20 @@
-"""Settings-backed ``KGConfig`` fake for explicit test compositions."""
+"""Static ``KGConfig`` fake for explicit test compositions."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 
+@dataclass(frozen=True, slots=True)
 class SettingsKGConfig:
-    """Expose configured Core settings through the ``KGConfig`` test contract."""
+    """Deterministic contract fake with no edition or process configuration."""
 
-    def __init__(self) -> None:
-        pass
-
-    @staticmethod
-    def _settings():
-        from okto_pulse.core.infra.config import get_settings
-
-        return get_settings()
-
-    @property
-    def kg_base_dir(self) -> str:
-        return self._settings().kg_base_dir
-
-    @property
-    def kg_embedding_mode(self) -> str:
-        return self._settings().kg_embedding_mode
-
-    @property
-    def kg_embedding_model(self) -> str:
-        return self._settings().kg_embedding_model
-
-    @property
-    def kg_embedding_dim(self) -> int:
-        return self._settings().kg_embedding_dim
-
-    @property
-    def kg_session_ttl_seconds(self) -> int:
-        return self._settings().kg_session_ttl_seconds
-
-    @property
-    def kg_cleanup_interval_seconds(self) -> int:
-        return self._settings().kg_cleanup_interval_seconds
-
-    @property
-    def kg_cleanup_enabled(self) -> bool:
-        return self._settings().kg_cleanup_enabled
+    kg_base_dir: str = "memory://okto-pulse-tests"
+    kg_embedding_mode: str = "stub"
+    kg_embedding_model: str = "stub"
+    kg_embedding_dim: int = 384
+    kg_session_ttl_seconds: int = 3600
+    kg_cleanup_interval_seconds: int = 60
+    kg_cleanup_enabled: bool = True
 
 
 __all__ = ["SettingsKGConfig"]

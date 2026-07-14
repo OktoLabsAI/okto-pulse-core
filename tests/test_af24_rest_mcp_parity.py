@@ -10,6 +10,8 @@ The scenarios in this file cover AF24 TS1..TS4:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import inspect
 import json
@@ -246,7 +248,7 @@ async def _call_mcp_link(
     scenario_id: str,
     card_id: str,
 ) -> dict:
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_ctx(board_id))), patch.object(
         mcp_server, "check_permission", return_value=None
     ):

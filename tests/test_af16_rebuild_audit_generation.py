@@ -8,7 +8,7 @@ import pytest
 
 from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
-from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+from memory_rebuild_audit_storage import (
     InMemoryRebuildAuditArtifactStore,
 )
 from okto_pulse.core.kg.rebuild_generation import (

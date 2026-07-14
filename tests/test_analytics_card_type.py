@@ -142,13 +142,14 @@ def test_totals_on_mixed_set_match_expected_enum_counts():
 
 
 def test_audit_no_endswith_pattern_in_analytics_sources():
+    import okto_pulse.community.api.analytics as analytics_api
+    import okto_pulse.core.services.analytics_service as analytics_service
     import re
     from pathlib import Path
 
-    root = Path(__file__).parent.parent / "src" / "okto_pulse" / "core"
     files = [
-        root / "api" / "analytics.py",
-        root / "services" / "analytics_service.py",
+        Path(analytics_api.__file__),
+        Path(analytics_service.__file__),
     ]
     for f in files:
         content = f.read_text(encoding="utf-8")

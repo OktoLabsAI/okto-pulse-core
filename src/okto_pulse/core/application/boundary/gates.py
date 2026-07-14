@@ -38,8 +38,8 @@ from .layer_resolver import (
 )
 from .report import GateException, GateReport, GateStatus, enforce_exception_policy
 
-#: Canonical baseline (LOC) of ``src/okto_pulse/tools`` (KB CORRECAO #12).
-TOOLS_LOC_BASELINE = 146
+#: ``okto_pulse.tools`` is edition-owned and must not ship in the Core package.
+TOOLS_LOC_BASELINE = 0
 
 #: Versioned default dependency policy for the core-pure target (api_591b0aeb).
 #: ``forbidden`` are transport/persistence/scheduler frameworks the core-pure
@@ -169,7 +169,7 @@ class ImportBoundaryGate:
             violations = [self._bootstrap_downgrade(v) for v in violations]
         statuses = [v.status for v in violations]
         if unclassified:
-            statuses.append("xfail_advisory")
+            statuses.append("blocking")
         status = _worst(statuses)
         evidence = {
             "violations": [self._violation_dict(v) for v in violations],
@@ -184,7 +184,7 @@ class ImportBoundaryGate:
             subject="core import boundary matrix",
             status=status,
             severity="high" if status in ("blocking", "reject") else "medium",
-            owner="okto-pulse-core/architecture" if violations or unclassified else None,
+            owner="okto-pulse-core/architecture",
             evidence=evidence,
             promotion_criteria=(
                 "Resolve every blocking import-matrix violation and classify all "
@@ -192,7 +192,10 @@ class ImportBoundaryGate:
             )
             if status != "passed"
             else None,
-            observed_value=len([v for v in violations if v.status == "blocking"]),
+            observed_value=(
+                len([v for v in violations if v.status == "blocking"])
+                + len(unclassified)
+            ),
             expected_value=0,
             remediation_hint=(
                 "Move framework/persistence imports out of pure layers; depend on "
@@ -408,7 +411,7 @@ class PackageManifestGateInput:
 
 
 class PackageManifestGate:
-    """Audits the wheel/build manifest and the tools/ LOC baseline (api_8c46772c)."""
+    """Audits the wheel/build manifest and keeps edition tools out of Core."""
 
     gate_id = "package_manifest"
 
@@ -489,19 +492,19 @@ class PackageManifestGate:
         if observed_loc != expected:
             report = GateReport(
                 gate_id=self.gate_id,
-                subject="src/okto_pulse/tools LOC baseline",
+                subject="edition-owned tools present in Core",
                 status="blocking",
                 severity="medium",
                 owner="okto-pulse-core/architecture",
                 evidence={**evidence, "error": "tools_loc_drift"},
                 exception=gate_input.exception,
                 promotion_criteria=(
-                    "Re-baseline tools/ with justification or supply a valid temporary "
+                    "Remove edition-owned tools from Core or supply a valid temporary "
                     "exception (owner/deadline/promotion_criteria)."
                 ),
                 observed_value=observed_loc,
                 expected_value=expected,
-                remediation_hint="baseline_rebaseline_required",
+                remediation_hint="move_tools_to_edition_adapter",
             )
             return enforce_exception_policy(report, today=gate_input.today or date.today())
         return GateReport(
@@ -509,6 +512,7 @@ class PackageManifestGate:
             subject="core wheel/build manifest",
             status="passed",
             severity="low",
+            owner="okto-pulse-core/architecture",
             evidence=evidence,
             observed_value=observed_loc,
             expected_value=expected,

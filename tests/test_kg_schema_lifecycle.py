@@ -14,6 +14,7 @@ from __future__ import annotations
 import gc
 import os
 import threading
+from contextvars import copy_context
 
 import pytest
 
@@ -190,7 +191,10 @@ def test_pool_concurrent_acquire_is_safe(fresh_boards):
             errors.append(exc)
 
     threads = [
-        threading.Thread(target=worker, args=(fresh_boards[i],))
+        threading.Thread(
+            target=copy_context().run,
+            args=(worker, fresh_boards[i]),
+        )
         for i in range(4)
     ]
     for t in threads:

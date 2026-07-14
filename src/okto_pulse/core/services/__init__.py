@@ -110,6 +110,7 @@ from okto_pulse.core.services.main import (
     SpecQAService,
     SpecService,
     StoryService,
+    TopicOperationError,
 )
 from okto_pulse.core.services.resource_gate import (
     ResourceGateError,
@@ -233,6 +234,7 @@ __all__ = [
     "SpecQAService",
     "SpecService",
     "StoryService",
+    "TopicOperationError",
     "ResourceGateError",
     "ResourceGateJustificationRequired",
     "ResourceGateNotFound",

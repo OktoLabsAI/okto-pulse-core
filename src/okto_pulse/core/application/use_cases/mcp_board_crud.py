@@ -425,6 +425,39 @@ class McpUnlinkGuidelineFromBoardUseCase:
         return _DataResult(unlinked)
 
 
+class McpUpdateBoardGuidelinePriorityCommand:
+    __slots__ = ("board_id", "guideline_id", "priority")
+
+    def __init__(self, board_id: str, guideline_id: str, priority: int) -> None:
+        self.board_id = board_id
+        self.guideline_id = guideline_id
+        self.priority = priority
+
+
+class McpUpdateBoardGuidelinePriorityUseCase:
+    """Update a board guideline through an MCP-authorized board grant."""
+
+    async def execute(
+        self,
+        command: McpUpdateBoardGuidelinePriorityCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> _DataResult:
+        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
+        updated = await uow.services.guidelines.update_priority(
+            command.board_id,
+            command.guideline_id,
+            command.priority,
+            owner_id=actor.actor_id,
+            query_scope=query_scope,
+        )
+        if not updated:
+            raise EntityNotFoundError("guideline_link", command.guideline_id)
+        await commit(uow)
+        return _DataResult(updated)
+
+
 # --- board ↔ design-system links (DesignSystemService) ----------------------
 
 

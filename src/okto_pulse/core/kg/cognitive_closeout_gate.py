@@ -22,7 +22,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
     CognitiveConsolidationItemStore,
 )
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 
 ELIGIBLE_CLOSEOUT_ENTITY_TYPES: frozenset[str] = frozenset(
@@ -141,8 +142,11 @@ _CLOSEOUT_LABELS = (
     "skip_enabled",
     "blocking_count_bucket",
 )
-_closeout_samples = BoundedCounterSampleBuffer(_CLOSEOUT_LABELS)
-_closeout_samples_lock = threading.Lock()
+_closeout_samples = runtime_counter_sample_buffer(
+    "kg.cognitive_closeout_gate",
+    _CLOSEOUT_LABELS,
+)
+_closeout_samples_lock = runtime_lock("kg.cognitive_closeout_gate.samples")
 
 
 def _board_id_hash(board_id: str) -> str:

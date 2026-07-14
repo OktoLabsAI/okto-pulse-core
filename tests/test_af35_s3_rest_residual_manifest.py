@@ -46,7 +46,7 @@ def test_real_rest_manifest_classifies_current_productive_residue() -> None:
     payload = report.as_dict()
 
     assert report.ok, payload
-    assert report.scanned_files == 47
+    assert report.scanned_files == 0
     assert report.findings == ()
     assert payload["by_classification"] == {}
     assert payload["by_pattern"] == {}
@@ -90,8 +90,7 @@ def test_s5_rows_are_machine_consumable_and_exact_for_non_clean_entries() -> Non
     report = run_af35_s3_rest_residual_gate()
     rows = report.s5_ledger_rows()
 
-    assert rows
-    assert all(row["schema_version"] == AF35_S3_REST_MANIFEST_SCHEMA_VERSION for row in rows)
+    assert rows == []
     non_clean = [
         row for row in rows if row["classification"] != CLASS_MIGRATED_CLEAN_TARGET
     ]

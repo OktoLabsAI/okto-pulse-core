@@ -24,7 +24,7 @@ def test_af31_s2_config_import_does_not_read_pyproject(monkeypatch):
         config_mod = importlib.import_module("okto_pulse.core.infra.config")
         settings = config_mod.CoreSettings()
         assert settings.app_version
-        assert settings.mcp_server_version == settings.app_version
+        assert "mcp_server_version" not in settings.__class__.model_fields
         assert touched == []
     finally:
         if previous is not None:
@@ -41,7 +41,7 @@ def test_af31_s2_core_version_provider_supplies_runtime_version():
     try:
         settings = config_mod.CoreSettings()
         assert settings.app_version == "9.8.7-test"
-        assert settings.mcp_server_version == "9.8.7-test"
+        assert "mcp_server_version" not in settings.__class__.model_fields
     finally:
         config_mod.reset_package_version_provider_for_tests()
 

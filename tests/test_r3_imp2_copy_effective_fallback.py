@@ -13,6 +13,8 @@ error.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -74,7 +76,7 @@ def test_architecture_fallback_refs_dedupe_by_source_design_identity():
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_architecture_copy_permission", return_value=None):

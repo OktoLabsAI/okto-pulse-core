@@ -5,16 +5,16 @@ JSON payload describing the live state of a board's knowledge graph:
 
     * SQL aggregations against ConsolidationQueue + ConsolidationDeadLetter
       for queue depth, oldest pending age, and dead letter count.
-    * Kùzu aggregations across all node tables for total_nodes, the count
+    * graph backend aggregations across all node tables for total_nodes, the count
       of nodes whose relevance_score is in the [0.45, 0.55] "default"
       band (sintoma de inflation), and avg_relevance.
     * In-process counter from scoring.get_contradict_warn_count for
       contradict_warn_count.
     * schema_version is a fixed string ("1.0") versioning the response
-      payload independently of the Kùzu schema.
+      payload independently of the graph backend schema.
 
-When Kùzu hasn't been bootstrapped for the board (or any aggregation
-fails), Kùzu-derived fields gracefully degrade to zero and the response
+When graph backend hasn't been bootstrapped for the board (or any aggregation
+fails), graph backend-derived fields gracefully degrade to zero and the response
 still ships. The endpoint must never 500 on a healthy app DB.
 """
 
@@ -50,6 +50,7 @@ from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.kg.scoring import get_contradict_warn_count
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.ports.kg_health import get_kg_health_read_port
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
 
 # KG-01 contract api_3ed9037f: REST surface restricts metric_status to
@@ -89,7 +90,7 @@ DEFAULT_SCORE_BAND_HIGH = 0.55
 DEFAULT_SCORE_RATIO_ALARM_THRESHOLD = 0.7
 
 _SENSITIVE_ERROR_RE = re.compile(
-    r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.lbug|\.py\b)",
+    r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.py\b)",
     re.IGNORECASE,
 )
 
@@ -377,8 +378,8 @@ def _build_health_diagnostics(
             "severity": "critical",
             "reason": "graph:empty_after_materialized_history",
             "description": (
-                "SQLite audit/ref history shows prior KG materialization but "
-                "LadybugDB currently returns zero nodes."
+                "Relational audit/ref history shows prior KG materialization "
+                "but the graph adapter currently returns zero nodes."
             ),
             "operator_action": "run_explicit_rebuild",
         })
@@ -481,7 +482,7 @@ def _build_health_diagnostics(
 
 
 # Cache TTL do orphan scan: o scan conta o grau de CADA node por tipo de
-# relação (O(nodes × rel_types) queries Kùzu) — em campo (3927 nodes) uma
+# relação (O(nodes × rel_types) queries graph backend) — em campo (3927 nodes) uma
 # única execução leva minutos e rodava NO EVENT LOOP a cada GET /kg/health
 # (py-spy 2026-06-10: 28/30 dumps presos em _node_degree). A projeção é
 # aditiva/observacional: minutos de defasagem são inofensivos.
@@ -493,10 +494,15 @@ def _build_health_diagnostics(
 # fail-open. Agora: 1 scan por board por vez; quem chega durante um scan
 # recebe o último resultado cacheado mesmo expirado (stale-while-
 # revalidate) ou a projeção indisponível quando nunca houve scan.
-_ORPHAN_PROJECTION_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_ORPHAN_PROJECTION_CACHE = runtime_state(
+    "services.kg_health.orphan_projection_cache",
+    dict,
+)
 _ORPHAN_PROJECTION_TTL_S = 300.0
 _ORPHAN_SCAN_INFLIGHT: set[str] = set()
-_ORPHAN_SCAN_INFLIGHT_LOCK = threading.Lock()
+_ORPHAN_SCAN_INFLIGHT_LOCK = runtime_lock(
+    "services.kg_health.orphan_scan_inflight"
+)
 
 
 def reset_orphan_projection_cache_for_tests(board_id: str | None = None) -> None:
@@ -625,7 +631,7 @@ def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
         "status": "unavailable",
         "percentage": None,
         "high_water_mark_pct": None,
-        "graph_lbug_bytes": None,
+        "graph_primary_bytes": None,
         "primary_bytes": None,
         "sidecar_bytes": None,
         "total_bytes": None,
@@ -656,9 +662,7 @@ def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
         "status": footprint.status,
         "percentage": footprint.percentage,
         "high_water_mark_pct": footprint.percentage,
-        # Deprecated compatibility key: mirrors primary_bytes without naming it
-        # in the runtime contract.
-        "graph_lbug_bytes": footprint.primary_bytes,
+        "graph_primary_bytes": footprint.primary_bytes,
         "primary_bytes": footprint.primary_bytes,
         "sidecar_bytes": footprint.sidecar_bytes,
         "total_bytes": footprint.total_bytes,
@@ -680,7 +684,7 @@ def _probe_board_graph_telemetry(
 
     FR2 (spec R2c): when the graph exists (schema version known or nodes
     present), this probe now computes the REAL high-water-mark percentage
-    from on-disk file sizes (graph.lbug + siblings) and records a
+    from on-disk file sizes (board graph + siblings) and records a
     HighWaterMarkSample via the collector so the MemoryPressureCorrelator
     receives real observations.  IO errors are swallowed with a DEBUG log
     and degrade to ``high_water_mark_pct=None`` (TR2: health never 500s).
@@ -758,9 +762,7 @@ def _probe_global_discovery_telemetry() -> GraphTelemetry:
         return _telemetry_unavailable("discovery")
 
     try:
-        res = runtime.execute("CALL SHOW_TABLES() RETURN name")
-        if res.has_next():
-            res.get_next()
+        runtime.list_schema_objects()
         return _telemetry_ok("discovery")
     except Exception as exc:
         logger.warning(
@@ -783,8 +785,8 @@ async def get_kg_health(
     """Compose the /api/v1/kg/health payload for ``board_id``.
 
     Raises ``BoardNotFoundError`` when the board is not found in the
-    SQLite app DB. All Kùzu-derived metrics degrade to zero on lookup
-    errors — the endpoint never 500s for a transient Kùzu issue.
+    SQLite app DB. All graph backend-derived metrics degrade to zero on lookup
+    errors — the endpoint never 500s for a transient graph backend issue.
     """
     relational = await get_kg_health_read_port().queue_snapshot(
         db,
@@ -839,16 +841,16 @@ async def get_kg_health(
         last_tick_status = None
         last_tick_error = None
 
-    # to_thread: ambos abrem conexões Kùzu e executam queries SÍNCRONAS —
+    # to_thread: ambos abrem conexões graph backend e executam queries SÍNCRONAS —
     # rodando no event loop, qualquer board grande/lento congela o servidor
     # inteiro (py-spy 2026-06-10).
-    kuzu_metrics = await asyncio.to_thread(_aggregate_kuzu_metrics, board_id)
+    graph_metrics = await asyncio.to_thread(_aggregate_graph_metrics, board_id)
     graph_schema_version = await asyncio.to_thread(
         _get_graph_schema_version, board_id
     )
 
-    default_score_count = kuzu_metrics["default_score_count"]
-    total_nodes = kuzu_metrics["total_nodes"]
+    default_score_count = graph_metrics["default_score_count"]
+    total_nodes = graph_metrics["total_nodes"]
     default_score_ratio = (
         default_score_count / total_nodes if total_nodes > 0 else 0.0
     )
@@ -895,7 +897,7 @@ async def get_kg_health(
 
     # KG-01 FR1+FR2+FR3 (contract api_3ed9037f): per-graph classification
     # for board_graph and global_discovery, deterministic memory-pressure
-    # correlator, and contract-shaped REST payload. Low-level Ladybug buffer
+    # correlator, and contract-shaped REST payload. Low-level embedded graph backend buffer
     # high-water metrics are not exposed by the current Python API, but the
     # Health surface must still distinguish "telemetry missing" from "current
     # graph opens and is readable" and from "existing graph failed to open".
@@ -1090,7 +1092,7 @@ async def get_kg_health(
     checked_at = now.isoformat()
     storage_footprint_proxy = _build_storage_footprint_proxy(board_id)
     # to_thread + cache TTL: o scan de órfãos é O(nodes × rel_types) em
-    # queries Kùzu síncronas — era o bloqueador dominante do event loop.
+    # queries graph backend síncronas — era o bloqueador dominante do event loop.
     orphan_integrity = await asyncio.to_thread(
         _build_orphan_integrity_for_health,
         board_id=board_id,
@@ -1429,7 +1431,7 @@ async def get_kg_health(
             "description": (
                 f"{int(orphan_integrity.get('orphan_count') or 0)} "
                 "non-allowlisted orphan KG node(s) remain. This is graph "
-                "integrity debt, not by itself a LadybugDB recovery signal."
+                "integrity debt, not by itself a graph recovery signal."
             ),
             "operator_action": "inspect_orphan_integrity_report",
         })
@@ -1562,7 +1564,7 @@ async def get_kg_health(
         "total_nodes": total_nodes,
         "default_score_count": default_score_count,
         "default_score_ratio": round(default_score_ratio, 4),
-        "avg_relevance": kuzu_metrics["avg_relevance"],
+        "avg_relevance": graph_metrics["avg_relevance"],
         "schema_version": HEALTH_SCHEMA_VERSION,
         "health_schema_version": HEALTH_SCHEMA_VERSION,
         "graph_schema_version": graph_schema_version,
@@ -1623,7 +1625,7 @@ def _get_graph_schema_version(board_id: str) -> str | None:
 async def _has_materialized_kg_history(db: Any, board_id: str) -> bool:
     """Return True when SQLite says the board had materialized KG content.
 
-    If LadybugDB reports zero nodes while KuzuNodeRef/audit rows still show
+    If embedded graph backend reports zero nodes while graph reference/audit rows still show
     previous commits, the graph is not merely "empty"; it has lost visibility
     into previously materialized content and should be classified as recovery
     needed.
@@ -1676,7 +1678,7 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
 
     Returns bounded source counts + an ``enumeration_failure`` flag. Reuses the
     SAME ``RebuildSourceEnumerator`` the formal preflight uses, so the count is
-    the reexecutable source set (NOT the materialized KuzuNodeRef count). Never
+    the reexecutable source set (NOT the materialized graph reference count). Never
     raises, never rebuilds.
     """
     try:
@@ -1820,11 +1822,11 @@ def _build_kg_root_cause(
     }
 
 
-def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
-    """Pull node-level aggregates from Kùzu for ``board_id``.
+def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
+    """Pull node-level aggregates from graph backend for ``board_id``.
 
     Returns a dict with total_nodes, default_score_count and avg_relevance.
-    On any Kùzu error (board not bootstrapped, schema drift, lock contention)
+    On any graph backend error (board not bootstrapped, schema drift, lock contention)
     returns zeroed defaults so the health endpoint stays available.
     """
     try:
@@ -1832,10 +1834,10 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
         from okto_pulse.core.kg.schema_contract import NODE_TYPES
     except Exception as exc:
         logger.warning(
-            "kg.health.kuzu_import_failed board=%s err=%s",
+            "kg.health.graph_import_failed board=%s err=%s",
             board_id, exc,
         )
-        return _zero_kuzu_metrics()
+        return _zero_graph_metrics()
 
     total_nodes = 0
     default_score_count = 0
@@ -1854,7 +1856,7 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
                 )
             except Exception as exc:
                 logger.debug(
-                    "kg.health.kuzu_query_failed board=%s type=%s err=%s",
+                    "kg.health.graph_query_failed board=%s type=%s err=%s",
                     board_id, node_type, exc,
                 )
                 continue
@@ -1869,10 +1871,10 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
                         default_score_count += 1
     except Exception as exc:
         logger.warning(
-            "kg.health.kuzu_open_failed board=%s err=%s",
+            "kg.health.graph_open_failed board=%s err=%s",
             board_id, exc,
         )
-        return _zero_kuzu_metrics()
+        return _zero_graph_metrics()
 
     avg_relevance = (
         round(relevance_sum / relevance_n, 4) if relevance_n > 0 else 0.0
@@ -1885,7 +1887,7 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
     }
 
 
-def _zero_kuzu_metrics() -> dict[str, Any]:
+def _zero_graph_metrics() -> dict[str, Any]:
     return {
         "total_nodes": 0,
         "default_score_count": 0,
@@ -1896,7 +1898,7 @@ def _zero_kuzu_metrics() -> dict[str, Any]:
 def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
     """Count nodes by graph_layer and maturity_status.
 
-    This is additive diagnostic telemetry. Any Kuzu/schema error degrades to an
+    This is additive diagnostic telemetry. Any graph backend/schema error degrades to an
     unavailable projection and must not affect the health state machine.
     """
 
@@ -1956,7 +1958,7 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
             "status": "unavailable",
             "by_layer": counts,
             "by_maturity_status": maturity_counts,
-            "reason": "kuzu_open_failed",
+            "reason": "graph_open_failed",
         }
     if successful_node_types == 0 and failed_node_types > 0:
         return {

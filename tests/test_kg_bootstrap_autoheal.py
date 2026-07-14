@@ -213,8 +213,10 @@ def test_concurrent_opens_serialize_bootstrap(fresh_board):
         except BaseException as exc:  # pragma: no cover — recorded for assert
             errors.append(exc)
 
-    t1 = threading.Thread(target=_worker)
-    t2 = threading.Thread(target=_worker)
+    from contextvars import copy_context
+
+    t1 = threading.Thread(target=copy_context().run, args=(_worker,))
+    t2 = threading.Thread(target=copy_context().run, args=(_worker,))
     t1.start()
     t2.start()
     t1.join(timeout=15)

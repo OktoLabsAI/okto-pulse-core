@@ -159,20 +159,21 @@ def test_occurrence_allowlist_survives_line_shift(tmp_path):
         tmp_path,
         "src/okto_pulse/core/mcp/server.py",
         """
-        def _load_instructions():
+        def _load_bundled_text(relative_path):
             # Line shifts and comments are diagnostics only.
             # The semantic call below remains the same authorized occurrence.
-            for candidate in []:
-                if candidate.exists():
-                    return candidate.read_text(encoding="utf-8")
+            resource = relative_path
+            return resource.read_text(encoding="utf-8")
         """,
     ).parents[1]
 
     report = run_storage_bypass_gate(root)
 
     assert report.ok, [v.as_dict() for v in report.violations]
-    occurrence = next(o for o in report.occurrences if o.enclosing_qualname == "_load_instructions")
-    assert occurrence.line != 167
+    occurrence = next(
+        o for o in report.occurrences if o.enclosing_qualname == "_load_bundled_text"
+    )
+    assert occurrence.line != 184
     assert occurrence.key() in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
 
 
@@ -181,17 +182,18 @@ def test_occurrence_allowlist_rejects_semantic_call_change(tmp_path):
         tmp_path,
         "src/okto_pulse/core/mcp/server.py",
         """
-        def _load_instructions():
-            for candidate in []:
-                if candidate.exists():
-                    return candidate.read_text(encoding="latin-1")
+        def _load_bundled_text(relative_path):
+            resource = relative_path
+            return resource.read_text(encoding="latin-1")
         """,
     ).parents[1]
 
     report = run_storage_bypass_gate(root)
 
     assert not report.ok
-    violation = next(v for v in report.violations if v.enclosing_qualname == "_load_instructions")
+    violation = next(
+        v for v in report.violations if v.enclosing_qualname == "_load_bundled_text"
+    )
     assert violation.file == "src/okto_pulse/core/mcp/server.py"
     assert violation.line > 0
     assert violation.key() not in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
@@ -202,31 +204,33 @@ def test_occurrence_fingerprint_distinguishes_identical_calls_by_scope(tmp_path)
         tmp_path,
         "src/okto_pulse/core/mcp/server.py",
         """
-        def _load_instructions():
-            for candidate in []:
-                if candidate.exists():
-                    return candidate.read_text(encoding="utf-8")
+        def _load_bundled_text(relative_path):
+            resource = relative_path
+            return resource.read_text(encoding="utf-8")
 
         def _load_resource_file(relative_path):
-            candidate = relative_path
-            if candidate.exists():
-                return candidate.read_text(encoding="utf-8")
-            return ""
+            resource = relative_path
+            return resource.read_text(encoding="utf-8")
         """,
     ).parents[1]
 
     report = run_storage_bypass_gate(root)
 
-    assert report.ok, [v.as_dict() for v in report.violations]
+    assert not report.ok
     by_scope = {o.enclosing_qualname: o for o in report.occurrences}
     assert {
-        "_load_instructions",
+        "_load_bundled_text",
         "_load_resource_file",
     } <= set(by_scope)
-    assert by_scope["_load_instructions"].normalized_call_ast == (
+    assert by_scope["_load_bundled_text"].normalized_call_ast == (
         by_scope["_load_resource_file"].normalized_call_ast
     )
-    assert by_scope["_load_instructions"].fingerprint != by_scope["_load_resource_file"].fingerprint
+    assert by_scope["_load_bundled_text"].fingerprint != (
+        by_scope["_load_resource_file"].fingerprint
+    )
+    assert by_scope["_load_bundled_text"].key() in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
+    assert by_scope["_load_resource_file"].key() not in STORAGE_BYPASS_OCCURRENCE_ALLOWLIST
+    assert {v.enclosing_qualname for v in report.violations} == {"_load_resource_file"}
 
 
 def test_occurrence_allowlist_ratchet_only_shrinks():

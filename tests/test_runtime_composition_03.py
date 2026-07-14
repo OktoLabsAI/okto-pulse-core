@@ -32,8 +32,8 @@ def _full_composition(**overrides) -> RuntimeComposition:
         settings_provider=object(),
         auth_provider=object(),
         storage_provider=object(),
-        session_factory=object(),
         event_bus=object(),
+        uow_factory=object(),
     )
     base.update(overrides)
     return RuntimeComposition(**base)
@@ -50,7 +50,7 @@ class _NoopHook:
 def test_required_owned_providers_set() -> None:
     assert set(REQUIRED_OWNED_PROVIDERS) == {
         "settings_provider", "auth_provider", "storage_provider",
-        "session_factory", "event_bus",
+        "event_bus", "uow_factory",
     }
     # kg_registry is deferred to #05, NOT required here
     assert "kg_registry" not in REQUIRED_OWNED_PROVIDERS
@@ -121,10 +121,10 @@ def test_create_app_strict_runtime_without_composition_fails_fast() -> None:
 def test_create_app_strict_runtime_with_incomplete_composition_fails_fast() -> None:
     from okto_pulse.community.app import create_app
 
-    incomplete = _full_composition(session_factory=None)
+    incomplete = _full_composition(uow_factory=None)
     with pytest.raises(RuntimeProviderMissing) as exc:
         create_app(object(), object(), object(), strict_runtime=True, composition=incomplete)
-    assert "session_factory" in exc.value.missing
+    assert "uow_factory" in exc.value.missing
 
 
 def test_create_app_strict_runtime_empty_lifecycle_hooks_fails_before_database(

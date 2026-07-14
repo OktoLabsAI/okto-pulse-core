@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -154,8 +155,8 @@ _QUARANTINE_COUNTER_LABELS = (
 )
 
 _QuarantineCounterKey = tuple[str, str, str, str]
-_quarantine_counter: dict[_QuarantineCounterKey, int] = {}
-_quarantine_counter_lock = threading.Lock()
+_quarantine_counter = runtime_state("kg.quarantine.counter", dict)
+_quarantine_counter_lock = runtime_lock("kg.quarantine.counter")
 
 
 def _bump_quarantine_counter(

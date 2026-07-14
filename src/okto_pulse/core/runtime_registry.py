@@ -138,13 +138,11 @@ def resolve_content_ingestion_resolver(*, preferred: Any = None) -> Any | None:
 # ---------------------------------------------------------------------------
 
 def register_relational_runtime_factory(factory: Any) -> None:
-    """Register an edition/test factory able to build relational runtime handles.
+    """Register an edition/test factory that builds a relational runtime port.
 
-    The factory is called as ``factory(url, echo=False)`` and must return either
-    ``(engine, session_factory)`` or an object exposing ``engine`` and
-    ``session_factory``. It is a compatibility seam for callers that still enter
-    through ``core.infra.database.create_database``; production Community startup
-    configures the runtime directly from its adapter.
+    The factory is called as ``factory(url, echo=False)`` and returns an object
+    implementing ``RelationalRuntime``. It supports compatibility callers that
+    still enter through ``core.infra.database.create_database``.
     """
     register_runtime_value(_RELATIONAL_KEY, factory)
 
@@ -173,7 +171,7 @@ def resolve_relational_runtime_factory(*, preferred: Any = None) -> Any:
     if factory is None:
         raise RuntimeError(
             "No relational runtime factory is registered. The edition adapter must "
-            "build the engine/session and call configure_database_runtime(), or "
+            "build and register a RelationalRuntime, or "
             "register a compatibility factory explicitly."
         )
     return factory

@@ -27,7 +27,7 @@ from okto_pulse.core.infra.relational_lifecycle_decomposition import (
     startup_parity_errors,
 )
 
-_DB = pathlib.Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core" / "infra" / "database.py"
+_DB = pathlib.Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core" / "ports" / "relational_runtime.py"
 _RR = pathlib.Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core" / "runtime_registry.py"
 
 
@@ -59,7 +59,7 @@ def test_provider_and_lifecycle_are_disjoint():
 
 def test_representative_classifications():
     assert classify_function("configure_database_runtime") == "r01b"
-    assert classify_function("create_database") == "r01b"
+    assert classify_function("create_database") is None
     assert classify_function("get_engine") == "r01b"
     assert classify_function("close_db") == "r01b"
     assert classify_function("init_db") == "r01c"

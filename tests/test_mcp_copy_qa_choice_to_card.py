@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -76,7 +78,7 @@ async def test_copy_qa_to_card_treats_choice_selection_as_answered(db_factory):
         (),
         {"agent_id": agent_id, "agent_name": agent_id, "permissions": None},
     )()
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
         raw = await mcp_server.okto_pulse_copy_qa_to_card.fn(
             board_id=board_id,

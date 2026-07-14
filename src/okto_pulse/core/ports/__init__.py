@@ -159,6 +159,7 @@ from .kg_subtype_registry import (
 )
 from .relational_runtime import (
     RelationalDatabasePathUnavailable,
+    RelationalRuntime,
     close_db,
     configure_database_runtime,
     get_engine,
@@ -167,6 +168,12 @@ from .relational_runtime import (
     is_database_runtime_configured,
     reset_database_runtime_for_tests,
     resolve_sqlite_database_path,
+)
+from .schema_lifecycle import (
+    RelationalSchemaLifecycleOrchestrator,
+    register_relational_schema_lifecycle_orchestrator,
+    reset_relational_schema_lifecycle_orchestrator,
+    resolve_relational_schema_lifecycle_orchestrator,
 )
 from .relational_application import (
     AgentAuthenticationGateway,
@@ -255,7 +262,6 @@ from .telemetry import (
 )
 
 __all__ = [
-    "Base",
     "HEALTH_REPORT_FIELDS",
     "PRODUCT_AGGREGATE_FAMILIES",
     "PRODUCT_METRIC_KEYS",
@@ -376,6 +382,8 @@ __all__ = [
     "RelationalApplicationAdapter",
     "RelationalApplicationAdapterMissing",
     "RelationalDatabasePathUnavailable",
+    "RelationalRuntime",
+    "RelationalSchemaLifecycleOrchestrator",
     "RelationalSchemaMigrator",
     "RelationalEffectsPort",
     "RelationalEffectsProviderMissing",
@@ -445,6 +453,7 @@ __all__ = [
     "register_kg_events_reader_port",
     "register_relational_effects_port",
     "register_relational_application_adapter",
+    "register_relational_schema_lifecycle_orchestrator",
     "reset_coordination_providers_for_tests",
     "reset_database_runtime_for_tests",
     "reset_kg_operational_ports_for_tests",
@@ -452,15 +461,15 @@ __all__ = [
     "reset_kg_events_reader_port_for_tests",
     "reset_relational_effects_port_for_tests",
     "reset_relational_application_adapter_for_tests",
+    "reset_relational_schema_lifecycle_orchestrator",
+    "resolve_relational_schema_lifecycle_orchestrator",
     "resolve_sqlite_database_path",
     "sanitize_message",
     "set_permission_flag",
     "HISTORICAL_PROGRESS_SETTINGS_KEY",
 ]
 
-_LAZY_EXPORTS = {
-    "Base": "okto_pulse.core.ports.relational_runtime",
-}
+_LAZY_EXPORTS = {}
 
 
 def __getattr__(name: str):

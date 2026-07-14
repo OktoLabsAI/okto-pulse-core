@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -209,7 +211,7 @@ async def _seed_spec_card():
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     raw = await tool.fn(**kwargs)
     return json.loads(raw)
@@ -373,7 +375,7 @@ async def test_rest_and_mcp_save_acknowledgement_required_payloads_match_semanti
     from fastapi.testclient import TestClient
 
     from okto_pulse.community.api.architecture import router as architecture_router
-    from okto_pulse.core.infra import auth as _auth_mod
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     board_id, spec_id, _ = _seed_spec_card
@@ -409,7 +411,7 @@ async def test_rest_and_mcp_save_acknowledgement_required_payloads_match_semanti
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[require_user] = lambda: USER_ID
 
     rest_response = TestClient(app).post(f"/api/v1/specs/{spec_id}/architecture", json=payload)
     assert rest_response.status_code == 409, rest_response.text
@@ -676,7 +678,7 @@ async def test_rest_and_mcp_validate_architecture_payload_return_identical_warni
     from fastapi.testclient import TestClient
 
     from okto_pulse.community.api.architecture import router as architecture_router
-    from okto_pulse.core.infra import auth as _auth_mod
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     board_id, spec_id, _ = _seed_spec_card
@@ -713,7 +715,7 @@ async def test_rest_and_mcp_validate_architecture_payload_return_identical_warni
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[require_user] = lambda: USER_ID
 
     rest_response = TestClient(app).post("/api/v1/architecture/validate", json=payload)
     rest_response.raise_for_status()

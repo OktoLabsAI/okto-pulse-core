@@ -5,11 +5,11 @@ backpressure, quarantine) and persists release-grade evidence so the
 spec-validation gate can confirm zero corruption survives the hardening.
 
 The runner is intentionally backend-agnostic: it does NOT call
-LadybugDB directly. Each chaos mode is a deterministic, seeded
+embedded graph backend directly. Each chaos mode is a deterministic, seeded
 simulator that exercises the primitives via a pluggable
 ``ChaosExecutor`` callable. The default executor uses
 ``unittest.mock``-style fakes; production CI wires a real executor
-that hooks the primitives into ladybug's actual write paths.
+that hooks the primitives into graph backend's actual write paths.
 
 TR10: CI pass requires every corruption counter == 0 across all
 iterations. The runner refuses to mark ``passed=True`` otherwise.
@@ -27,6 +27,7 @@ import logging
 import random
 import secrets
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -177,9 +178,9 @@ _default_executor._is_default_chaos_executor = True  # type: ignore[attr-defined
 _STRESS_CORRUPTION_LABELS = ("profile", "chaos_mode", "counter")
 _STRESS_EVIDENCE_LABELS = ("profile", "outcome")
 
-_corruption_counter: dict[tuple[str, str, str], int] = {}
-_evidence_counter: dict[tuple[str, str], int] = {}
-_stress_counter_lock = threading.Lock()
+_corruption_counter = runtime_state("kg.stress_runner.corruption_counter", dict)
+_evidence_counter = runtime_state("kg.stress_runner.evidence_counter", dict)
+_stress_counter_lock = runtime_lock("kg.stress_runner.counters")
 
 
 def _bump_corruption(profile: str, chaos_mode: str, counter: str) -> None:
@@ -273,7 +274,7 @@ class KGStressProfileRunner:
 
     The runner is pure orchestration: it dispatches iterations to the
     supplied ``executor`` (a callable plugged by tests or by the CI
-    runner that wires the primitives into the LadybugDB write paths),
+    runner that wires the primitives into the embedded graph backend write paths),
     aggregates outcomes into counters, and writes a single
     ``evidence.json`` per run. No graph storage is touched directly.
     """

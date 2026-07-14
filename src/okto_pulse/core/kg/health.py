@@ -4,13 +4,13 @@ The pipeline runs in five stages, mirrored by five checks:
 
 1. ``consolidation_queue`` — SQLite row per pending artifact. Healthy when
    ``status='pending' | 'claimed'`` count is zero (worker drained everything).
-2. ``kuzu`` — per-board Kùzu graph. Healthy when at least one node exists
+2. ``graph`` — per-board graph backend graph. Healthy when at least one node exists
    across the 11 node types (otherwise "unpopulated").
-3. ``kuzu_node_refs`` — SQLite mirror of the Kùzu writes. Healthy when the
-   mirror count matches the Kùzu node count (detects partial/aborted writes).
+3. ``graph_node_refs`` — SQLite mirror of the graph backend writes. Healthy when the
+   mirror count matches the graph backend node count (detects partial/aborted writes).
 4. ``global_update_outbox`` — SQLite transactional outbox feeding the global
    discovery meta-graph. Healthy when ``pending`` == 0 and ``dead_letter`` == 0.
-5. ``global_discovery`` — global Kùzu meta-graph. Healthy when
+5. ``global_discovery`` — global graph backend meta-graph. Healthy when
    ``DecisionDigest`` count for the given board matches the per-board
    digestable-nodes count (the types listed in
    :data:`okto_pulse.core.application.processors.global_outbox.DIGESTED_NODE_TYPES`).
@@ -49,7 +49,7 @@ class LayerHealth:
 
     Attributes:
         layer: stable identifier — one of
-            ``queue`` | ``kuzu`` | ``kuzu_node_refs`` | ``outbox`` | ``global``.
+            ``queue`` | ``graph`` | ``graph_node_refs`` | ``outbox`` | ``global``.
         healthy: boolean summary. The CLI renders a green/red glyph from this.
         counts: layer-specific integer buckets (e.g. ``{"pending": 0, "claimed": 0}``).
             Always populated so the CLI table does not have to special-case empties.
@@ -101,15 +101,15 @@ async def check_queue(context: Any, board_id: str) -> LayerHealth:
     )
 
 
-def check_kuzu(board_id: str) -> LayerHealth:
-    """Open the per-board Kùzu graph and count nodes per type.
+def check_graph(board_id: str) -> LayerHealth:
+    """Open the per-board graph backend graph and count nodes per type.
 
     Healthy when at least one node exists across all node types — a
     bootstrapped-but-empty graph returns ``healthy=False`` with
     ``details="no nodes committed yet"`` so the operator can distinguish an
     un-consolidated board from a broken one.
 
-    When the ``.kuzu`` directory does not exist yet the layer is reported
+    When the ``.graph`` directory does not exist yet the layer is reported
     unhealthy with a distinct ``details`` string — the CLI uses this branch
     to advise running ``okto-pulse init`` / waiting for the first
     consolidation before the check is meaningful.
@@ -117,7 +117,7 @@ def check_kuzu(board_id: str) -> LayerHealth:
     state = get_kg_registry().graph_runtime_store.graph_state(board_id)
     if not state.exists:
         return LayerHealth(
-            layer="kuzu",
+            layer="graph",
             healthy=False,
             counts={"total": 0},
             details=f"graph not bootstrapped ({state.status})",
@@ -143,13 +143,13 @@ def check_kuzu(board_id: str) -> LayerHealth:
                 total += int(value)
             except Exception as exc:
                 logger.warning(
-                    "health.kuzu.count_failed board=%s type=%s err=%s",
+                    "health.graph.count_failed board=%s type=%s err=%s",
                     board_id, node_type, exc,
-                    extra={"event": "health.kuzu.count_failed", "board_id": board_id},
+                    extra={"event": "health.graph.count_failed", "board_id": board_id},
                 )
     except Exception as exc:
         return LayerHealth(
-            layer="kuzu",
+            layer="graph",
             healthy=False,
             counts={"total": 0},
             details=f"failed to open graph: {exc}",
@@ -158,7 +158,7 @@ def check_kuzu(board_id: str) -> LayerHealth:
     counts["total"] = total
     if total == 0:
         return LayerHealth(
-            layer="kuzu",
+            layer="graph",
             healthy=False,
             counts=counts,
             details="no nodes committed yet",
@@ -166,25 +166,24 @@ def check_kuzu(board_id: str) -> LayerHealth:
 
     populated_types = [f"{t}={c}" for t, c in counts.items() if t != "total" and c > 0]
     return LayerHealth(
-        layer="kuzu",
+        layer="graph",
         healthy=True,
         counts=counts,
         details=f"{total} nodes ({', '.join(populated_types) or 'none'})",
     )
 
 
-async def check_kuzu_node_refs(
+async def check_graph_node_refs(
     context: Any,
     board_id: str,
-    kuzu_total: int | None = None,
+    graph_total: int | None = None,
 ) -> LayerHealth:
-    """Count rows in ``kuzu_node_refs`` for a board and compare to the
-    per-board Kùzu count.
+    """Count persisted graph references and compare to the graph node count.
 
     The mirror is written in the same SQLite transaction as the audit row at
     commit_consolidation, so a mismatch points to a partial write or a
-    silently-aborted session. Pass ``kuzu_total`` to avoid a second Kùzu
-    scan when :func:`check_kuzu` already ran.
+    silently-aborted session. Pass ``graph_total`` to avoid a second graph backend
+    scan when :func:`check_graph` already ran.
     """
     by_op: dict[str, int] = {"add": 0, "update": 0, "supersede": 0}
     rows = await get_kg_operational_read_model_port().graph_node_ref_operation_counts(
@@ -193,27 +192,27 @@ async def check_kuzu_node_refs(
     )
     for op, count in rows.items():
         by_op[op] = int(count)
-    # Kùzu node count = add+update net of supersede (supersede replaces, not deletes).
+    # graph backend node count = add+update net of supersede (supersede replaces, not deletes).
     # The mirror is append-only so we compare against total rows.
     total_rows = sum(by_op.values())
 
     counts = dict(by_op)
     counts["total"] = total_rows
 
-    if kuzu_total is None:
+    if graph_total is None:
         healthy = True
         details = f"{total_rows} ref rows (add={by_op['add']} update={by_op['update']} supersede={by_op['supersede']})"
     else:
-        # add - supersede ≈ Kùzu live nodes; allow equality when supersede is 0.
+        # add - supersede ≈ graph backend live nodes; allow equality when supersede is 0.
         expected = by_op["add"] - by_op["supersede"]
-        healthy = expected == kuzu_total
+        healthy = expected == graph_total
         details = (
-            f"{total_rows} ref rows, expected_live={expected}, kuzu_live={kuzu_total} "
+            f"{total_rows} ref rows, expected_live={expected}, graph_live={graph_total} "
             f"{'ok' if healthy else 'MISMATCH'}"
         )
 
     return LayerHealth(
-        layer="kuzu_node_refs",
+        layer="graph_node_refs",
         healthy=healthy,
         counts=counts,
         details=details,
@@ -265,8 +264,8 @@ async def check_outbox(context: Any, board_id: str) -> LayerHealth:
 def check_global(board_id: str) -> LayerHealth:
     """Count ``DecisionDigest`` rows in the global meta-graph for this board.
 
-    Healthy when the count is > 0 and the global Kùzu file is openable. Does
-    NOT compare against the per-board Kùzu count — the outbox may legitimately
+    Healthy when the count is > 0 and the global graph backend file is openable. Does
+    NOT compare against the per-board graph backend count — the outbox may legitimately
     lag the per-board writes briefly. For strict equality checks use
     :func:`check_outbox` (pending=0) combined with this.
     """
@@ -285,7 +284,7 @@ def check_global(board_id: str) -> LayerHealth:
             "MATCH (d:DecisionDigest {board_id: $bid}) RETURN count(d) AS c",
             {"bid": board_id},
         )
-        row = qr.get_next() if qr.has_next() else None
+        row = qr.rows[0] if qr.rows else None
         digests = int(row[0]) if row is not None else 0
     except Exception as exc:
         return LayerHealth(

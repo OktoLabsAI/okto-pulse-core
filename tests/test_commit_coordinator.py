@@ -17,19 +17,19 @@ import pytest
 from okto_pulse.core.kg.commit_coordinator import (
     JITTER_MAX_MS,
     RETRY_BACKOFFS_MS,
-    _is_kuzu_lock_error,
     acquire_commit_lock,
-    reset_commit_locks_for_tests,
+    reset_commit_coordinator_for_tests,
     run_with_commit_lock_and_retry,
 )
+from okto_pulse.core.kg.interfaces.graph_errors import GraphLockContention
 
 
 @pytest.fixture(autouse=True)
 def _fresh_lock_registry():
     """Isolate tests by resetting the module-level lock registry."""
-    reset_commit_locks_for_tests()
+    reset_commit_coordinator_for_tests()
     yield
-    reset_commit_locks_for_tests()
+    reset_commit_coordinator_for_tests()
 
 
 # ----------------------------------------------------------------------
@@ -63,9 +63,7 @@ async def test_retry_absorbs_two_transient_lock_errors(caplog):
     async def flaky_commit():
         attempts["count"] += 1
         if attempts["count"] <= 2:
-            raise RuntimeError(
-                "IO exception: Could not set lock on file : C:/tmp/x.kuzu"
-            )
+            raise GraphLockContention("writer busy")
         return {"status": "committed"}
 
     caplog.set_level(logging.WARNING, logger="okto_pulse.kg.commit_coordinator")
@@ -84,11 +82,11 @@ async def test_retry_exhausts_after_four_attempts(caplog):
 
     async def always_locked():
         attempts["count"] += 1
-        raise RuntimeError("IO exception: Could not set lock on file : X")
+        raise GraphLockContention("writer busy")
 
     caplog.set_level(logging.WARNING, logger="okto_pulse.kg.commit_coordinator")
 
-    with pytest.raises(RuntimeError, match="Could not set lock on file"):
+    with pytest.raises(GraphLockContention, match="writer busy"):
         await run_with_commit_lock_and_retry("board-A", always_locked)
 
     # 4 total attempts — len(RETRY_BACKOFFS_MS) + 1.
@@ -119,15 +117,6 @@ async def test_non_lock_exception_is_not_retried():
     assert attempts["count"] == 1
 
 
-def test_is_kuzu_lock_error_rejects_other_runtime_errors():
-    """Only lock-substring RuntimeError triggers retry — other RuntimeErrors propagate."""
-    assert _is_kuzu_lock_error(
-        RuntimeError("IO exception: Could not set lock on file : X")
-    )
-    assert not _is_kuzu_lock_error(RuntimeError("something else failed"))
-    assert not _is_kuzu_lock_error(ValueError("not a runtime error"))
-
-
 # ----------------------------------------------------------------------
 # AC8 — backoff timing observable (TS ts_5ffd0471)
 # ----------------------------------------------------------------------
@@ -139,9 +128,9 @@ async def test_backoff_timings_follow_schedule():
 
     async def always_locked():
         timestamps.append(time.perf_counter())
-        raise RuntimeError("IO exception: Could not set lock on file : X")
+        raise GraphLockContention("writer busy")
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(GraphLockContention):
         await run_with_commit_lock_and_retry("board-A", always_locked)
 
     # We recorded timestamps at the *start* of each attempt. Deltas between

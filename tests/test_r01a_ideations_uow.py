@@ -18,7 +18,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.ideations import router as ideations_router
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu6-s1-user"
@@ -37,6 +38,7 @@ def client():
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -49,7 +51,14 @@ async def _seed_board() -> str:
 
     bid = f"board-fu6s1-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name="fu6s1", owner_id=USER))
+        db.add(
+            Board(
+                id=bid,
+                name="fu6s1",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
     return bid
 

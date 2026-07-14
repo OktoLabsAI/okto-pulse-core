@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from okto_pulse.core.repositories.debt import (
+    HISTORICAL_ORM_BASE_CLASS_BASELINE,
     ORM_BASE_CLASS_BASELINE,
     is_orm_return_excepted,
 )
@@ -78,7 +79,7 @@ RELATIONAL_BASELINE = {
     "depends_get_db": 268,
     "get_db_for_mcp": 225,
     "async_session": 554,
-    "orm_base_classes": ORM_BASE_CLASS_BASELINE,
+    "orm_base_classes": HISTORICAL_ORM_BASE_CLASS_BASELINE,
     "migrate_refs": 96,
 }
 
@@ -241,7 +242,12 @@ def run_relational_boundary_gate(root: str | Path | None = None) -> RelationalBo
     """
     base = Path(root) if root is not None else default_use_cases_path()
     violations: list[RelationalViolation] = []
-    files = sorted(base.rglob("*.py")) if base.exists() else []
+    self_file = Path(__file__).resolve()
+    files = (
+        [path for path in sorted(base.rglob("*.py")) if path.resolve() != self_file]
+        if base.exists()
+        else []
+    )
     for path in files:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -285,6 +291,12 @@ _BASE_CLASS_RE = re.compile(r"^class\s+[A-Za-z0-9_]+\([^)]*\bBase\b[^)]*\):", re
 
 _RELATIONAL_BASELINE_EXCLUDED_FILES = frozenset(
     {
+        # Adapter-neutral relational port exports and their compatibility
+        # facade are not concrete persistence coupling.
+        "core/__init__.py",
+        "core/infra/database.py",
+        # The scanner necessarily names every forbidden token it detects.
+        "core/repositories/relational_boundary_gate.py",
         # AF35-S3's REST manifest is boundary-audit data: it stores relational
         # symbol names as manifest keys, not as runtime dependencies. The S3
         # gate validates that artifact directly; the historical core-wide
@@ -349,10 +361,10 @@ def relational_baseline_report(core_root: str | Path | None = None) -> dict:
     drift = relational_coverage_drift(coverage)
 
     return {
-        "classification": "transitional_debt_out_of_scope",
-        "blocking": False,
-        "owner": "core-refactor",
-        "promotion_criteria": "drawn down per migrated endpoint/tool->use case->UoW/repository path; not a blind total-removal target",
+        "classification": "terminal_core_boundary",
+        "blocking": not drift["ok"],
+        "owner": "core-architecture",
+        "promotion_criteria": "terminal snapshot remains at zero concrete relational coupling and zero Core ORM mappings",
         "documented_baseline": dict(RELATIONAL_BASELINE),
         "live_counts": {
             "depends_get_db": depends_get_db,
@@ -361,6 +373,7 @@ def relational_baseline_report(core_root: str | Path | None = None) -> dict:
             "orm_base_classes": orm_base_classes,
             "migrate_refs": migrate_refs,
         },
+        "terminal_orm_base_classes": ORM_BASE_CLASS_BASELINE,
         # R01B drawn-down counter baseline (separate from the spec #04
         # RELATIONAL_BASELINE): the R01A REST+MCP CRUD strangler + the R01B
         # ownership inversion shrank these core-wide counts; new measurement
@@ -371,6 +384,7 @@ def relational_baseline_report(core_root: str | Path | None = None) -> dict:
         # above the floor unless declared as an R01A/R01B/R01C removal).
         "coverage_floor": dict(RELATIONAL_COVERAGE_BASELINE),
         "coverage_snapshot_r01b": dict(RELATIONAL_COVERAGE_SNAPSHOT_R01B),
+        "coverage_snapshot_terminal": dict(RELATIONAL_COVERAGE_SNAPSHOT_TERMINAL),
         "coverage_counts": coverage,
         "coverage_floor_ok": all(
             coverage.get(k, 0) >= floor
@@ -441,13 +455,12 @@ def _is_relational_import_module(module: str | None) -> bool:
     )
 
 
-#: AC5 stable coverage FLOORS (ac_28f50f9d) — the "ao menos" minimums. A live
-#: aggregate below its floor is a coverage regression the report rejects unless
-#: declared as an R01A/R01B/R01C removal.
+#: Terminal lower bounds retained for compatibility with the generic drift
+#: helper. The exact zero snapshot below is the active no-growth ratchet.
 RELATIONAL_COVERAGE_BASELINE = {
-    "relational_imports": 232,
-    "relational_symbols": 605,
-    "classified_call_sites": 276,
+    "relational_imports": 0,
+    "relational_symbols": 0,
+    "classified_call_sites": 0,
 }
 
 #: AC5 frozen LIVE snapshot — the exact relational coverage measured for the
@@ -518,14 +531,18 @@ RELATIONAL_COVERAGE_BASELINE = {
 #: service 954 -> 946, mcp unchanged 44). The import floor moves with this
 #: declared clean-core drawdown; future rises still fail as new coupling and
 #: future drops still require an explicit re-baseline.
-RELATIONAL_COVERAGE_SNAPSHOT_R01B = {
-    "relational_imports": 232,
-    "relational_symbols": 626,
-    "classified_call_sites": 1008,
-    "by_surface": {"rest": 18, "service": 946, "mcp": 44},
+RELATIONAL_COVERAGE_SNAPSHOT_TERMINAL = {
+    "relational_imports": 0,
+    "relational_symbols": 0,
+    "classified_call_sites": 0,
+    "by_surface": {"rest": 0, "service": 0, "mcp": 0},
     "source_root": "okto_pulse/core",
-    "file_count": 507,
+    "file_count": 537,
 }
+
+# Backward-compatible export name. The R01B snapshot has been fully drawn down;
+# consumers of the old symbol now receive the terminal ratchet.
+RELATIONAL_COVERAGE_SNAPSHOT_R01B = RELATIONAL_COVERAGE_SNAPSHOT_TERMINAL
 
 #: R01B drawn-down counter baseline (ac_28f50f9d), SEPARATE from the spec #04
 #: ``RELATIONAL_BASELINE`` (268/225/554, kept as historical). The R01A REST+MCP

@@ -25,12 +25,14 @@ from okto_pulse.core.ports.scheduler import (
     SchedulerResult,
 )
 from okto_pulse.core.services.settings_service import (
-    GRAPH_DB_KEYS,
     RUNTIME_KEYS,
     SETTINGS_RUNTIME_EFFECT_PORTS,
     apply_tick_runtime_effects,
     get_runtime_settings,
     put_runtime_settings,
+)
+from okto_pulse.community.adapters.sqlalchemy_runtime_settings_service import (
+    GRAPH_DB_KEYS,
 )
 
 
@@ -102,7 +104,7 @@ def test_graph_db_key_only_change_triggers_no_effect_with_fake_available():
 # --- GRAPH_DB_KEYS persist through the guard with no effect (integration) -----
 def test_graph_db_key_change_persists_via_guard_without_runtime_effect():
     async def _run():
-        from okto_pulse.core.infra.config import GRAPH_DB_MAX_SIZE_GB_VALUES
+        from okto_pulse.community.config import GRAPH_DB_MAX_SIZE_GB_VALUES
         from okto_pulse.core.infra.database import get_session_factory
         from sqlalchemy_test_models import AppSetting
 

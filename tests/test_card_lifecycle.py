@@ -349,6 +349,7 @@ class TestCardStatusTransitions:  # noqa: F811
                     drift_justification="No deviation from plan",
                 ),
             )
+            await db.commit()
             await _mark_all_resources_na(db, "card", card.id)
             result = await svc.submit_task_validation(
                 card.id,
@@ -365,6 +366,7 @@ class TestCardStatusTransitions:  # noqa: F811
                     "recommendation": "approve",
                 },
             )
+            await db.commit()
 
             persisted = (await db.execute(
                 __import__("sqlalchemy").select(Card).where(Card.id == card.id)
@@ -629,6 +631,7 @@ class TestCardValidationReportGate:
                     drift_justification="No deviation from plan",
                 ),
             )
+            await db.commit()
             await _mark_all_resources_na(db, "card", card.id)
             result = await svc.submit_task_validation(
                 card.id,
@@ -645,6 +648,7 @@ class TestCardValidationReportGate:
                     "recommendation": "approve",
                 },
             )
+            await db.commit()
 
             persisted = (await db.execute(
                 __import__("sqlalchemy").select(Card).where(Card.id == card.id)
@@ -925,6 +929,7 @@ class TestCardDependencies:
                     drift_justification="No deviation",
                 ),
             )
+            await db.commit()
             await svc.submit_task_validation(
                 card_a.id,
                 "reviewer-1",
@@ -1195,6 +1200,7 @@ class TestBugCardCreation:
                     observed_behavior="Traceability is missing on the bug",
                 ),
             )
+            await db.commit()
 
             assert bug is not None
             assert bug.spec_id == spec_id
@@ -1552,6 +1558,7 @@ class TestActivityLog:
                     drift_justification="No deviation from plan",
                 ),
             )
+            await db.commit()
             await _mark_all_resources_na(db, "card", card.id)
             await db.execute(DomainEventRow.__table__.delete())
             result = await svc.submit_task_validation(

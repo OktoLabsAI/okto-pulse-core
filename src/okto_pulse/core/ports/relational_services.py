@@ -9,18 +9,59 @@ from __future__ import annotations
 
 from okto_pulse.core.runtime_context import register_runtime_value, require_runtime_value, reset_runtime_values
 
-from typing import Any
+from typing import Any, Protocol
 
 _RESOURCE_GATE_KEY = "ports.relational_services.resource_gate"
 _RUNTIME_SETTINGS_KEY = "ports.relational_services.runtime_settings"
 _TRACEABILITY_KEY = "ports.relational_services.traceability"
 
 
-def register_resource_gate_service_class(service_class: type[Any]) -> None:
-    register_runtime_value(_RESOURCE_GATE_KEY, service_class)
+class ResourceGateRelationalAdapter(Protocol):
+    async def load_entity_ref(self, board_id: str, entity_type: str, entity_id: str) -> Any: ...
+    async def load_parent_refs(self, board_id: str, root: Any) -> list[Any]: ...
+    async def collect_refs(self, ref: Any) -> dict[str, list[dict]]: ...
+    async def load_active_marks(self, board_id: str, entity_type: str, entity_id: str) -> dict[str, Any]: ...
+    def serialize_na_mark(self, mark: Any, *, effective: bool, source: Any | None = None) -> dict | None: ...
+    async def save_not_applicable(
+        self,
+        board_id: str,
+        entity_type: str,
+        entity_id: str,
+        resource_type: str,
+        actor_id: str,
+        *,
+        justification: str | None,
+        source_channel: str,
+    ) -> str: ...
+    async def clear_not_applicable(
+        self,
+        board_id: str,
+        entity_type: str,
+        entity_id: str,
+        resource_type: str,
+        actor_id: str,
+        *,
+        reason: str,
+    ) -> int: ...
+    async def hydrate_effective_resource(self, **request: Any) -> dict[str, Any] | None: ...
+    async def load_spec_task_cards(self, spec_id: str) -> list[Any]: ...
+    async def collect_task_resource_id_coverage(
+        self,
+        task_cards: list[Any],
+    ) -> dict[str, dict[str, set[str]]]: ...
 
 
-def resolve_resource_gate_service_class() -> type[Any]:
+class ResourceGateAdapterFactory(Protocol):
+    def __call__(self, relational_context: object) -> ResourceGateRelationalAdapter: ...
+
+
+def register_resource_gate_adapter_factory(
+    factory: ResourceGateAdapterFactory,
+) -> None:
+    register_runtime_value(_RESOURCE_GATE_KEY, factory)
+
+
+def resolve_resource_gate_adapter_factory() -> ResourceGateAdapterFactory:
     return require_runtime_value(_RESOURCE_GATE_KEY, "resource_gate_relational_adapter_not_configured")
 
 
@@ -45,11 +86,13 @@ def reset_relational_service_adapters_for_tests() -> None:
 
 
 __all__ = [
-    "register_resource_gate_service_class",
+    "ResourceGateAdapterFactory",
+    "ResourceGateRelationalAdapter",
+    "register_resource_gate_adapter_factory",
     "register_runtime_settings_adapter",
     "register_traceability_adapter",
     "reset_relational_service_adapters_for_tests",
-    "resolve_resource_gate_service_class",
+    "resolve_resource_gate_adapter_factory",
     "resolve_runtime_settings_adapter",
     "resolve_traceability_adapter",
 ]

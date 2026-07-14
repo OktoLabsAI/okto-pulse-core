@@ -264,23 +264,22 @@ def test_ac8_optional_extra_scoped_out_but_runtime_blocks(tmp_path):
 
 
 # ===========================================================================
-# TR5 — sqlalchemy / aiosqlite are core_common (NOT name-banned); the verdict
-# comes from the MatrixClassification, never the token spelling.
+# TR5 — the verdict comes from MatrixClassification, never token spelling.
+# SQLAlchemy remains governed by the relational boundary while aiosqlite is
+# explicitly Community-owned and therefore blocks in Core packaging.
 # ===========================================================================
-def test_tr5_sqlalchemy_aiosqlite_core_common_not_name_banned(tmp_path):
+def test_tr5_relational_dependencies_follow_matrix_classification(tmp_path):
     pyproject, src = _repo(
         tmp_path, dependencies=["sqlalchemy[asyncio]>=2.0", "aiosqlite>=0.19"]
     )
 
     report = _run(tmp_path, pyproject, src)
 
-    assert report.ok is True
+    assert report.ok is False
     rows = {r.symbol: r for r in report.rows}
-    assert rows["sqlalchemy"].classification == "core_common"
-    assert rows["sqlalchemy"].action == "core_common"
-    assert not rows["sqlalchemy"].blocking
-    assert rows["aiosqlite"].classification == "core_common"
-    assert not rows["aiosqlite"].blocking
+    assert "sqlalchemy" not in rows  # governed by the relational boundary gates
+    assert rows["aiosqlite"].classification == "community_owned"
+    assert rows["aiosqlite"].blocking
 
 
 # ===========================================================================

@@ -7,7 +7,6 @@ import functools
 import inspect
 import json
 import logging
-import os
 import re
 import warnings
 import uuid as _uuid
@@ -18,14 +17,16 @@ from typing import Annotated, Any, Callable
 
 from pydantic import Field
 
+from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
     reset_runtime_values,
     resolve_runtime_value,
+    runtime_state,
 )
 
 from okto_pulse.core.application.scope import ActorScope
-from okto_pulse.core.infra.config import get_mcp_settings, get_settings
+from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.catalog import CoreMcpCatalog
 from okto_pulse.core.mcp.helpers import (
@@ -204,7 +205,7 @@ def _instruction_providers_frozen() -> bool:
 
 
 def _refresh_catalog_instructions() -> None:
-    mcp.instructions = _load_instructions()
+    mcp.resolve().instructions = _load_instructions()
 
 
 def _load_instructions() -> str:
@@ -249,16 +250,26 @@ def reset_instruction_providers_for_tests() -> None:
     _refresh_catalog_instructions()
 
 
-# Initialize the transport-neutral command catalog.
-mcp = CoreMcpCatalog(
-    name=get_settings().mcp_server_name,
-    version=get_settings().mcp_server_version,
-    instructions=_load_instructions(),
-)
+_MCP_CATALOG_TEMPLATE: CoreMcpCatalog | None = None
 
-# Settings
-mcp_settings = get_mcp_settings()
-settings = get_settings()
+
+def _build_mcp_catalog() -> CoreMcpCatalog:
+    """Build one transport-neutral catalog for the active runtime context."""
+
+    if _MCP_CATALOG_TEMPLATE is not None:
+        catalog = _MCP_CATALOG_TEMPLATE.clone_for_runtime()
+        catalog.instructions = _load_instructions()
+        return catalog
+    return CoreMcpCatalog(
+        name="okto-pulse",
+        version=_CORE_PACKAGE_VERSION,
+        instructions=_load_instructions(),
+    )
+
+
+# The descriptor is immutable; concrete managers and mutable indexes are owned
+# by RuntimeValueRegistry and cloned when a RuntimeComposition is created.
+mcp = runtime_state("mcp.catalog", _build_mcp_catalog)
 
 # ============================================================================
 # MCP Resources — okto-pulse:// URI scheme
@@ -799,74 +810,8 @@ def active_api_key_credential():
 # ============================================================================
 
 
-# Session factory registration for MCP server
-_MCP_SESSION_FACTORY_KEY = "mcp.session_factory"
 _MCP_AUTHENTICATOR_KEY = "mcp.authenticator"
-
-
-class _McpSessionFactoryRuntime:
-    """Callable MCP session factory plus edition runtime ports.
-
-    The legacy MCP surface has one process-level composition hook,
-    ``_mcp_session_factory``. Keep that single hook callable for all existing
-    tools/tests while allowing request-less MCP tools to use edition-owned ports
-    that REST resolves from ``app.state.runtime_composition``.
-    """
-
-    def __init__(self, session_factory, *, scheduler_control=None):
-        self.session_factory = session_factory
-        self.scheduler_control = scheduler_control
-
-    def __call__(self, *args, **kwargs):
-        return self.session_factory(*args, **kwargs)
-
-
-class _PortBackedSessionFactoryAuthenticator:
-    """Compatibility authenticator backed by the composed relational port.
-
-    Productive Community composition supplies its own ``McpAuthenticator``.
-    This adapter only preserves legacy ``register_session_factory(factory)``
-    callers while keeping credential lookup behind the edition-owned relational
-    application adapter rather than importing ORM models into the MCP catalog.
-    """
-
-    def __init__(self, session_factory) -> None:
-        self._session_factory = session_factory
-
-    async def authenticate(self, credential):
-        if credential is None or not getattr(credential, "value", None):
-            return None
-        from okto_pulse.core.ports.relational_application import (
-            require_relational_application_adapter,
-        )
-
-        async with self._session_factory() as session:
-            gateway = require_relational_application_adapter().agent_authentication(
-                session
-            )
-            return await gateway.authenticate_agent_by_api_key(
-                credential.value,
-                credential_source=str(getattr(credential, "source", "mcp")),
-            )
-
-
-def register_session_factory(
-    factory,
-    *,
-    scheduler_control=None,
-    mcp_authenticator: McpAuthenticator | None = None,
-):
-    """Register the MCP session factory and optional edition runtime ports."""
-    register_runtime_value(
-        _MCP_SESSION_FACTORY_KEY,
-        _McpSessionFactoryRuntime(factory, scheduler_control=scheduler_control),
-    )
-    register_runtime_value(
-        _MCP_AUTHENTICATOR_KEY,
-        mcp_authenticator
-        if mcp_authenticator is not None
-        else _PortBackedSessionFactoryAuthenticator(factory),
-    )
+_MCP_SCHEDULER_KEY = "mcp.scheduler_control"
 
 
 def register_mcp_authenticator(authenticator: McpAuthenticator | None) -> None:
@@ -877,6 +822,15 @@ def register_mcp_authenticator(authenticator: McpAuthenticator | None) -> None:
         register_runtime_value(_MCP_AUTHENTICATOR_KEY, authenticator)
 
 
+def register_scheduler_control_for_mcp(scheduler_control: object | None) -> None:
+    """Register the edition-owned scheduler port for request-less MCP calls."""
+
+    if scheduler_control is None:
+        reset_runtime_values(_MCP_SCHEDULER_KEY)
+    else:
+        register_runtime_value(_MCP_SCHEDULER_KEY, scheduler_control)
+
+
 def get_mcp_authenticator_for_mcp() -> McpAuthenticator:
     """Return the registered MCP authenticator, failing closed when absent."""
     return require_authenticator(resolve_runtime_value(_MCP_AUTHENTICATOR_KEY))
@@ -884,10 +838,12 @@ def get_mcp_authenticator_for_mcp() -> McpAuthenticator:
 
 def get_scheduler_control_for_mcp():
     """Return the edition-owned scheduler port for request-less MCP tools."""
-    session_factory = resolve_runtime_value(_MCP_SESSION_FACTORY_KEY)
-    if session_factory is None:
-        return None
-    return getattr(session_factory, "scheduler_control", None)
+    from okto_pulse.core.composition import current_runtime_composition
+
+    composition = current_runtime_composition()
+    if composition is not None and composition.scheduler_control is not None:
+        return composition.scheduler_control
+    return resolve_runtime_value(_MCP_SCHEDULER_KEY)
 
 
 def get_unit_of_work_factory_for_mcp():
@@ -914,23 +870,27 @@ class AgentContext:
         agent_name: str,
         board_id: str,
         permissions,  # list[str] | PermissionSet | None
+        realm_id: str | None = None,
     ):
         self.agent_id = agent_id
         self.agent_name = agent_name
         self.board_id = board_id
         self.permissions = permissions
+        self.realm_id = realm_id
 
 
 # ---- Permission cache (TTL 60s) ----
-_permission_cache: dict[tuple[str, str], tuple[float, "AgentContext"]] = {}
+_permission_cache = runtime_state("mcp.permission_cache", dict)
 _PERMISSION_CACHE_TTL = 60.0
 
 
-def _cache_get(agent_id: str, board_id: str) -> "AgentContext | None":
+def _cache_get(
+    agent_id: str, board_id: str, realm_id: str | None
+) -> "AgentContext | None":
     """Get cached AgentContext if within TTL."""
     import time
 
-    key = (agent_id, board_id)
+    key = (realm_id, agent_id, board_id)
     entry = _permission_cache.get(key)
     if entry and (time.time() - entry[0]) < _PERMISSION_CACHE_TTL:
         return entry[1]
@@ -939,11 +899,16 @@ def _cache_get(agent_id: str, board_id: str) -> "AgentContext | None":
     return None
 
 
-def _cache_set(agent_id: str, board_id: str, ctx: "AgentContext") -> None:
+def _cache_set(
+    agent_id: str,
+    board_id: str,
+    realm_id: str | None,
+    ctx: "AgentContext",
+) -> None:
     """Cache AgentContext with current timestamp."""
     import time
 
-    _permission_cache[(agent_id, board_id)] = (time.time(), ctx)
+    _permission_cache[(realm_id, agent_id, board_id)] = (time.time(), ctx)
 
 
 def invalidate_agent_cache(agent_id: str) -> None:
@@ -953,7 +918,7 @@ def invalidate_agent_cache(agent_id: str) -> None:
     update, board grant/revoke, board overrides change). Without this,
     agents see stale permissions for up to _PERMISSION_CACHE_TTL seconds.
     """
-    keys_to_drop = [k for k in _permission_cache if k[0] == agent_id]
+    keys_to_drop = [k for k in _permission_cache if k[1] == agent_id]
     for k in keys_to_drop:
         del _permission_cache[k]
 
@@ -989,7 +954,11 @@ class _AuthenticatedMcpAgent:
         self.is_active = session.is_active
         self.api_key = "<redacted>"
         self.api_key_hash = None
-        self.permissions = None
+        self.description = getattr(session, "description", None)
+        self.objective = getattr(session, "objective", None)
+        self.permissions = getattr(session, "permissions", None)
+        self.created_at = getattr(session, "created_at", None)
+        self.last_used_at = getattr(session, "last_used_at", None)
         self.metadata = dict(getattr(session, "metadata", {}) or {})
 
     def __repr__(self) -> str:
@@ -1044,7 +1013,7 @@ async def _get_agent_ctx_for_credential(
             await uow.commit()
             return None
 
-        cached = _cache_get(auth_session.agent_id, board_id)
+        cached = _cache_get(auth_session.agent_id, board_id, actor.realm_id)
         if cached:
             await uow.commit()
             return cached
@@ -1062,8 +1031,9 @@ async def _get_agent_ctx_for_credential(
             agent_name=resolved.agent_name,
             board_id=board_id,
             permissions=resolved.permissions,
+            realm_id=actor.realm_id,
         )
-        _cache_set(auth_session.agent_id, board_id, ctx)
+        _cache_set(auth_session.agent_id, board_id, actor.realm_id, ctx)
         return ctx
 
 
@@ -1104,6 +1074,7 @@ async def _get_global_agent_ctx() -> AgentContext | None:
             agent_name=resolved.agent_name,
             board_id="",
             permissions=resolved.permissions,
+            realm_id=actor.realm_id,
         )
 
 
@@ -1418,11 +1389,8 @@ def _mcp_spec_coverage_summary(spec: Any) -> dict[str, Any]:
     }
 
 
-_LEGACY_COVERAGE_ENV = "OKTO_PULSE_LEGACY_COVERAGE"
-
-
 def _legacy_coverage_default() -> bool:
-    return os.environ.get(_LEGACY_COVERAGE_ENV, "").lower() in ("1", "true", "yes")
+    return bool(getattr(get_settings(), "mcp_legacy_coverage", False))
 
 
 def _saturation_or_coverage(coverage_dict: dict[str, Any]) -> dict[str, Any]:
@@ -1676,8 +1644,6 @@ def __getattr__(name: str) -> Any:
         return resource_registry_projection()
     if name == "_XML_SAFETY_DECORATED_COUNT":
         return int(resolve_runtime_value(_XML_SAFETY_COUNT_KEY) or 0)
-    if name == "_mcp_session_factory":
-        return resolve_runtime_value(_MCP_SESSION_FACTORY_KEY)
     if name == "_mcp_authenticator":
         return resolve_runtime_value(_MCP_AUTHENTICATOR_KEY)
     raise AttributeError(name)
@@ -1691,10 +1657,11 @@ def _patch_mcp_tool_for_xml_safety() -> None:
     receives a catalog tool whose ``.fn`` retains the original signature via
     ``functools.wraps``.
     """
-    if getattr(mcp.tool, "_xml_safety_patched", False):
+    catalog = mcp.resolve()
+    if getattr(catalog.tool, "_xml_safety_patched", False):
         return
 
-    _original_mcp_tool = mcp.tool
+    _original_mcp_tool = catalog.tool
 
     def _patched_mcp_tool(*args, **kwargs):
         # ``@mcp.tool`` (no parens) — first positional arg is the function.
@@ -1714,7 +1681,7 @@ def _patch_mcp_tool_for_xml_safety() -> None:
         return _wrap
 
     _patched_mcp_tool._xml_safety_patched = True  # type: ignore[attr-defined]
-    mcp.tool = _patched_mcp_tool  # type: ignore[assignment]
+    catalog.tool = _patched_mcp_tool  # type: ignore[assignment]
 
 
 _patch_mcp_tool_for_xml_safety()
@@ -1745,7 +1712,7 @@ async def okto_pulse_get_my_profile() -> str:
             "is_active": agent.is_active,
             "permissions": agent.permissions,
             "role_summary": generate_role_summary(agent.permissions),
-            "created_at": agent.created_at.isoformat(),
+            "created_at": agent.created_at.isoformat() if agent.created_at else None,
             "last_used_at": (
                 agent.last_used_at.isoformat() if agent.last_used_at else None
             ),
@@ -2338,8 +2305,8 @@ async def okto_pulse_get_activity_log(
     include_details=true for the full nested details object (legacy shape).
     Pass `cursor` (opaque base64 from a prior next_cursor) for O(1) keyset
     pagination, and envelope=true to receive {items, next_cursor} instead of a
-    raw list. Legacy `offset` is silently ignored unless
-    OKTO_PULSE_LEGACY_OFFSET=1.
+    raw list. Legacy `offset` is silently ignored unless the edition-supplied
+    `mcp_legacy_offset` setting is enabled.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -2360,7 +2327,7 @@ async def okto_pulse_get_activity_log(
                 {"error": "Invalid cursor", "error_code": "invalid_cursor"}
             )
 
-    legacy_offset = os.getenv("OKTO_PULSE_LEGACY_OFFSET") == "1"
+    legacy_offset = bool(getattr(get_settings(), "mcp_legacy_offset", False))
     effective_offset = offset if (legacy_offset and not cursor_pair) else 0
 
     from okto_pulse.core.application.use_cases.mcp_profile_activity import (
@@ -2527,11 +2494,11 @@ async def okto_pulse_create_card(
         try:
             scenario_ids_list = coerce_to_list_str(test_scenario_ids) or None
         except ValueError as e:
-            return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
         try:
             _labels_list = coerce_to_list_str(labels) or None
         except ValueError as e:
-            return json.dumps({"error": f"Invalid labels: {e}"})
+            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
         card_create = CardCreate(
             title=title,
@@ -3202,12 +3169,12 @@ async def okto_pulse_update_card(
             try:
                 update_data["labels"] = coerce_to_list_str(labels)
             except ValueError as e:
-                return json.dumps({"error": f"Invalid labels: {e}"})
+                return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
         if test_scenario_ids:
             try:
                 update_data["test_scenario_ids"] = coerce_to_list_str(test_scenario_ids)
             except ValueError as e:
-                return json.dumps({"error": f"Invalid test_scenario_ids: {e}"})
+                return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
         if severity:
             _sev = severity.strip().lower()
             try:
@@ -3233,7 +3200,7 @@ async def okto_pulse_update_card(
                     linked_test_task_ids
                 )
             except ValueError as e:
-                return json.dumps({"error": f"Invalid linked_test_task_ids: {e}"})
+                return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
         card_update = CardUpdate(**update_data)
         try:
@@ -12412,8 +12379,8 @@ async def okto_pulse_update_board_guideline_priority(
         return _perm_error(perm_err)
 
     from okto_pulse.core.application.use_cases import (
-        UpdateBoardGuidelinePriorityCommand,
-        UpdateBoardGuidelinePriorityUseCase,
+        McpUpdateBoardGuidelinePriorityCommand,
+        McpUpdateBoardGuidelinePriorityUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -12428,8 +12395,8 @@ async def okto_pulse_update_board_guideline_priority(
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            await UpdateBoardGuidelinePriorityUseCase().execute(
-                UpdateBoardGuidelinePriorityCommand(
+            await McpUpdateBoardGuidelinePriorityUseCase().execute(
+                McpUpdateBoardGuidelinePriorityCommand(
                     board_id,
                     guideline_id,
                     priority_value,
@@ -12768,7 +12735,7 @@ async def okto_pulse_get_spec_history(
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         entries = (
             await ListSpecHistoryUseCase().execute(
-                ListSpecHistoryCommand(spec_id, int(limit)), actor=actor, uow=uow
+                ListSpecHistoryCommand(spec_id, limit=int(limit)), actor=actor, uow=uow
             )
         ).history
 
@@ -15001,14 +14968,17 @@ async def okto_pulse_list_default_guideline_candidates(
 
 @mcp.tool()
 async def okto_pulse_update_default_guideline_refs(
-    board_id: str, template_id: str, guideline_default_refs: list | None = None
+    board_id: str,
+    template_id: str,
+    guideline_default_refs: list[dict[str, Any]] | None = None,
 ) -> str:
     """Update a template's guideline_default_refs using only global catalog guidelines
     (spec 8a2fad91 / FR1, admin write). REST twin: POST
     /default-board-configurations/{template_id}/guidelines. Inline/missing/non-global
     refs are rejected fail-closed (structured error). An ACTIVE template is
     copy-on-write (a new version is created + activated); a draft mutates in-place.
-    Returns the EFFECTIVE template. Perm: SPECS_UPDATE."""
+    Each ref is ``{"guideline_id": "...", "priority": 0}``. Returns the
+    EFFECTIVE template. Perm: SPECS_UPDATE."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -17749,7 +17719,7 @@ async def okto_pulse_kg_quarantine_restore(
         )
 
     # KGD-01: o handler no core fala só com a PORTA QuarantineRestore; o
-    # adapter concreto (filesystem/Ladybug) é injetado pela composition do
+    # adapter concreto (filesystem/embedded graph backend) é injetado pela composition do
     # Community (hexagonal — TR1).
     try:
         plan = await asyncio.to_thread(restore.plan, quarantine_id)
@@ -17822,7 +17792,8 @@ async def okto_pulse_list_by_board(
     status, labels, derivation_pending; sprint: spec_id (required), status;
     story: status, topic_id, linked, converted, include_archived; topic:
     include_archived. derivation_pending (bool) — triage for done
-    ideations/refinements still lacking a derived child; follow with
+    ideations/refinements still lacking a derived child; example:
+    {"derivation_pending": true}. Follow with
     derive_spec_from_ideation / derive_spec_from_refinement.
     Errors: invalid_filter (unknown keys; returns allowed keys),
     missing_required_filter. Docs: okto-pulse://reference/list_tools
@@ -18312,6 +18283,12 @@ async def okto_pulse_list_snapshots(
             uow=uow,
         )
     return json.dumps(result.payload, default=str)
+
+
+# Decorators above populate the catalog resolved in the import context.  Keep
+# an immutable source snapshot so every later RuntimeComposition starts with
+# the complete command/resource inventory and receives isolated mutable indexes.
+_MCP_CATALOG_TEMPLATE = mcp.resolve().clone_for_runtime()
 
 
 # ============================================================================

@@ -37,6 +37,11 @@ from okto_pulse.core.repositories.orm_consumer_split_inventory import (
 _REST_FILE = "src/okto_pulse/core/api/qa.py"
 _SERVICE_FILE = "src/okto_pulse/core/services/board_governance.py"
 _WORKER_FILE = "src/okto_pulse/core/kg/health.py"
+_HISTORICAL_ALLOWLIST = {
+    _REST_FILE: "rest",
+    _SERVICE_FILE: "service",
+    _WORKER_FILE: "worker",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -46,15 +51,13 @@ _WORKER_FILE = "src/okto_pulse/core/kg/health.py"
 def test_inventory_is_consistent_on_real_tree():
     inv = build_orm_consumer_inventory()
     assert inventory_consistency_errors(inv) == []
-    # every orm_definition record is a registered temporary_exception (no unclassified)
-    assert inv.by_category.get(CATEGORY_ORM_DEFINITION, 0) > 0
-    assert inv.by_status.get(STATUS_TEMPORARY_EXCEPTION, 0) == inv.by_category[CATEGORY_ORM_DEFINITION]
+    assert inv.by_category.get(CATEGORY_ORM_DEFINITION, 0) == 0
+    assert inv.by_status.get(STATUS_TEMPORARY_EXCEPTION, 0) == 0
 
 
 def test_inventory_keeps_provider_distinct_from_removal_target():
     inv = build_orm_consumer_inventory()
-    assert inv.by_category.get(CATEGORY_DB_PROVIDER, 0) > 0
-    # provider couplings are the preserved-R01B surface, never a removal target
+    assert inv.by_category.get(CATEGORY_DB_PROVIDER, 0) == 0
     provider = [r for r in inv.records if r.category == CATEGORY_DB_PROVIDER]
     assert all(r.status == STATUS_PRESERVED_R01B for r in provider)
     assert all(r.group_id == "db_provider:r01b" for r in provider)
@@ -62,9 +65,8 @@ def test_inventory_keeps_provider_distinct_from_removal_target():
 
 def test_inventory_spans_multiple_surfaces():
     inv = build_orm_consumer_inventory()
-    # the cut touches REST, MCP, services and workers (not a single surface)
-    for surface in ("rest", "mcp", "service", "worker"):
-        assert inv.by_surface.get(surface, 0) > 0, surface
+    assert inv.records == []
+    assert inv.by_surface == {}
 
 
 _PROVIDER_FORMS = [
@@ -94,7 +96,9 @@ def test_guard_fails_heterogeneous_unowned_batch():
             before_count=None, after_count=None, register_before_remove=False,
         ),
     ))
-    rep = guard_orm_batch_removal(bad)
+    rep = guard_orm_batch_removal(
+        bad, registered_allowlist=_HISTORICAL_ALLOWLIST
+    )
     assert not rep.ok
     joined = " | ".join(rep.failures)
     assert "missing group_id" in joined
@@ -115,7 +119,9 @@ def test_guard_passes_clean_per_cluster_batch():
             before_count=29, after_count=28, register_before_remove=True,
         ),
     ))
-    rep = guard_orm_batch_removal(clean)
+    rep = guard_orm_batch_removal(
+        clean, registered_allowlist=_HISTORICAL_ALLOWLIST
+    )
     assert rep.ok, rep.failures
 
 
@@ -125,21 +131,36 @@ def test_guard_individual_failure_modes():
         OrmRemovalGroup(group_id="g", owner="o", files=("src/okto_pulse/core/api/_never_registered.py",),
                         before_count=2, after_count=1, register_before_remove=True),
     ))
-    assert any("register-before-remove violated" in f for f in guard_orm_batch_removal(unreg).failures)
+    assert any(
+        "register-before-remove violated" in f
+        for f in guard_orm_batch_removal(
+            unreg, registered_allowlist=_HISTORICAL_ALLOWLIST
+        ).failures
+    )
 
     # before/after must actually reduce coupling.
     noreduce = OrmBatchRemovalDeclaration(groups=(
         OrmRemovalGroup(group_id="g", owner="o", files=(_REST_FILE,),
                         before_count=5, after_count=5, register_before_remove=True),
     ))
-    assert any("does not reduce" in f for f in guard_orm_batch_removal(noreduce).failures)
+    assert any(
+        "does not reduce" in f
+        for f in guard_orm_batch_removal(
+            noreduce, registered_allowlist=_HISTORICAL_ALLOWLIST
+        ).failures
+    )
 
     # duplicate group ids are rejected.
     dup = OrmBatchRemovalDeclaration(groups=(
         OrmRemovalGroup(group_id="g", owner="o", files=(_REST_FILE,), before_count=2, after_count=1, register_before_remove=True),
         OrmRemovalGroup(group_id="g", owner="o", files=(_SERVICE_FILE,), before_count=2, after_count=1, register_before_remove=True),
     ))
-    assert any("duplicate group_id" in f for f in guard_orm_batch_removal(dup).failures)
+    assert any(
+        "duplicate group_id" in f
+        for f in guard_orm_batch_removal(
+            dup, registered_allowlist=_HISTORICAL_ALLOWLIST
+        ).failures
+    )
 
     # empty batch is rejected.
     assert any("empty batch" in f for f in guard_orm_batch_removal(OrmBatchRemovalDeclaration(groups=())).failures)

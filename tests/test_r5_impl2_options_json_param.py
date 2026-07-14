@@ -45,6 +45,8 @@ AC cross-reference
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import re
 from pathlib import Path
 
@@ -255,7 +257,7 @@ async def test_ac3_handler_options_json_wins_over_options_behavioral():
         "permissions": ["comment.create"],
     })()
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
          patch.object(mcp_server, "check_permission", return_value=None):
         raw = await mcp_server.okto_pulse_add_choice_comment.fn(

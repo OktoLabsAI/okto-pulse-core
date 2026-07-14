@@ -1,5 +1,8 @@
 """Test-owned access to the Community local graph runtime."""
 
+from contextlib import contextmanager
+from typing import Any
+
 from okto_pulse.community.adapters.graph_ddl import (
     COMMON_NODE_ATTRIBUTES as _COMMON_NODE_ATTRS,
     build_multi_rel_ddl as _build_multi_rel_ddl,
@@ -27,6 +30,7 @@ from okto_pulse.community.adapters.kg_runtime import (
     purge_board_graph_storage,
     reset_bootstrap_cache_for_tests,
 )
+from okto_pulse.community.adapters.kuzu_graph_transaction import _materialize
 from okto_pulse.core.kg.schema_contract import (
     EDGE_LAYERS,
     EDGE_METADATA_COLUMNS,
@@ -48,3 +52,26 @@ from okto_pulse.core.kg.schema_contract import (
     vector_index_name,
 )
 
+
+class _MaterializedGraphConnection:
+    """Expose the Core graph result contract over a native test connection."""
+
+    def __init__(self, native_connection: Any) -> None:
+        self._native_connection = native_connection
+
+    def execute(self, statement: str, params: dict[str, Any] | None = None):
+        native_result = (
+            self._native_connection.execute(statement, params)
+            if params
+            else self._native_connection.execute(statement)
+        )
+        return _materialize(native_result)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._native_connection, name)
+
+
+@contextmanager
+def open_materialized_board_connection(board_id: str):
+    with open_board_connection(board_id) as (database, native_connection):
+        yield database, _MaterializedGraphConnection(native_connection)

@@ -1,14 +1,15 @@
-"""Core application configuration using pydantic-settings."""
+"""Pure, pre-materialized application configuration for Core policies.
 
-from functools import lru_cache
+Environment and ``.env`` loading are edition responsibilities.  Core accepts a
+validated settings snapshot through composition and never reads process state.
+"""
 
 from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
 from okto_pulse.core.ports.package_version import (
     ImportlibMetadataVersionProvider,
     PackageVersionProvider,
 )
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
@@ -42,30 +43,11 @@ def _default_core_version() -> str:
     return _resolve_version("okto-pulse-core", fallback=_CORE_PACKAGE_VERSION)
 
 
-GRAPH_DB_MAX_SIZE_GB_VALUES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
-DEFAULT_METRICS_BEACON_URL = ""
+class CoreSettings(BaseModel):
+    """Validated settings snapshot supplied by an edition composition root."""
 
-
-def validate_graph_db_max_size_gb(value: int) -> int:
-    """Ensure Ladybug receives a max_db_size that is a power of two in bytes."""
-    if value not in GRAPH_DB_MAX_SIZE_GB_VALUES:
-        allowed = ", ".join(str(v) for v in GRAPH_DB_MAX_SIZE_GB_VALUES)
-        raise ValueError(
-            "kg_kuzu_max_db_size_gb must be one of "
-            f"{allowed} GB. Ladybug requires max_db_size to be a power of 2 "
-            "in bytes; even values such as 6 GB are still invalid."
-        )
-    return value
-
-
-class CoreSettings(BaseSettings):
-    """Core application settings loaded from environment variables."""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
+    model_config = ConfigDict(
+        extra="allow",
     )
 
     # Application — single source of truth via importlib.metadata
@@ -73,44 +55,16 @@ class CoreSettings(BaseSettings):
     # the installed wheel without manual sync (NC-2 fix).
     app_name: str = "Okto Pulse"
     app_version: str = Field(default_factory=_default_core_version)
-    debug: bool = False
-    environment: str = "development"
-
-    # Server
-    host: str = "127.0.0.1"
-    port: int = 8100
-
-    # Database
-    database_url: str = ""
-
-    # Storage
-    upload_dir: str = ""
-    max_upload_size: int = 10 * 1024 * 1024  # 10MB
-
-    # Local-first telemetry (v0.2.1). Empty values mean "not explicitly set"
-    # so the resolver can still let persisted consent win over defaults.
+    # Telemetry policy. Delivery endpoints and local paths are edition-owned.
     metrics_mode: str = ""
-    metrics_dir: str = ""
     metrics_retention_days: int = Field(30, ge=1, le=400)
-    metrics_beacon_url: str = DEFAULT_METRICS_BEACON_URL
     metrics_policy_version: str = "2026-05-11"
     metrics_schema_version: str = "1.1.0"
     metrics_opt_in_prompt_interval_days: int = Field(30, ge=1, le=365)
     metrics_token_refresh_margin_hours: int = Field(24, ge=0, le=168)
 
-    # MCP Server
-    mcp_server_name: str = "okto-pulse"
-    mcp_server_version: str = Field(default_factory=_default_core_version)
-    mcp_port: int = 8101
-
-    # CORS
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
-
-    # Knowledge Graph (MVP Fase 0)
-    kg_base_dir: str = "~/.okto-pulse"
-    kg_embedding_mode: str = "stub"  # core default; editions may override
-    kg_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    kg_embedding_dim: int = 384
+    # Knowledge-graph application policy. Physical storage and providers are
+    # supplied through KG ports by the edition.
     kg_session_ttl_seconds: int = 3600
     kg_cleanup_interval_seconds: int = 60
     kg_cleanup_enabled: bool = True
@@ -118,34 +72,6 @@ class CoreSettings(BaseSettings):
     # until v0.5.0; the settings_service maps the legacy value into
     # kg_queue_alert_threshold and emits a DeprecationWarning at startup.
     kg_max_queue_depth: int = Field(200, ge=10, le=10000)
-
-    # Kùzu runtime tuning (0.1.4) — defaults avoid Ladybug 0.16 HNSW buffer
-    # exhaustion while keeping max_db_size in the supported power-of-two set.
-    # Kùzu's own defaults (buffer_pool_size=0 → ~80% system RAM, max_db_size=1<<43=8TB VA)
-    # caused 128GB RSS with 3 instances in field reports.
-    kg_kuzu_buffer_pool_mb: int = Field(512, ge=128, le=512)
-    kg_kuzu_max_db_size_gb: int = Field(2, ge=2, le=64)
-    kg_connection_pool_size: int = Field(8, ge=1, le=32)
-    # KGD-01 (FR1/TR3) — habilita o salvage nativo de WAL do LadybugDB na
-    # fábrica única de opens do adapter da edição (retry com
-    # throw_on_wal_replay_failure=False após falha de open com marcador de
-    # corrupção). Default true: rasgos triviais de cauda do WAL deixam de ser
-    # board-death. Restart-required (mesmo contrato das demais GRAPH_DB_KEYS).
-    kg_wal_salvage_enabled: bool = True
-    # KGD-01 (FR3/BR2) — degrau 2 da escada de recovery (salvage → wal-only →
-    # restore/operador): quando o open falha com marcador de corrupção e o
-    # salvage (degrau 1) falhou ou está desligado/indisponível, o adapter da
-    # edição quarentena SOMENTE graph.lbug.wal + sidecars (.shadow /
-    # .wal.checkpoint) com manifest completo e re-tenta o open UMA vez. O main
-    # graph.lbug NUNCA é movido/alterado por caminho automático (BR2). Default
-    # true: perder commits pós-checkpoint (preservados na quarentena) é melhor
-    # que board-death. Restart-required (mesmo contrato das GRAPH_DB_KEYS).
-    kg_wal_only_recovery_enabled: bool = True
-
-    @field_validator("kg_kuzu_max_db_size_gb")
-    @classmethod
-    def _validate_graph_db_max_size_gb(cls, value: int) -> int:
-        return validate_graph_db_max_size_gb(value)
 
     # Consolidation queue runtime tuning (spec bdcda842, v0.2.0) — all
     # hot-reload (worker pool re-reads on every claim with 5s debounce).
@@ -190,35 +116,19 @@ class CoreSettings(BaseSettings):
     kg_decay_tick_staleness_days: int = Field(7, ge=1, le=365)
     kg_decay_tick_max_age_days: int = Field(0, ge=0, le=365)
 
-    @property
-    def cors_origins_list(self) -> list[str]:
-        """Parse CORS origins from comma-separated string."""
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-
-
-class MCPSettings(BaseSettings):
-    """MCP-specific settings for agent authentication."""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-        env_prefix="MCP_",
-    )
-
-    # MCP authentication
-    require_agent_key: bool = True
-    agent_keys_env: str = ""  # Comma-separated agent keys for validation
-
-
 def configure_settings(s: "CoreSettings") -> None:
     """Register a pre-built CoreSettings instance."""
     register_runtime_value(_SETTINGS_KEY, s)
 
 
+def reset_settings_for_tests() -> None:
+    """Remove the composed settings snapshot for isolated tests."""
+
+    reset_runtime_values(_SETTINGS_KEY)
+
+
 def get_settings() -> "CoreSettings":
-    """Get the active CoreSettings (lazy-creates a default if none registered)."""
+    """Get the composed settings snapshot, failing closed when absent."""
     from okto_pulse.core.composition import (
         current_runtime_composition,
     )
@@ -228,12 +138,8 @@ def get_settings() -> "CoreSettings":
         return composition.settings_provider
     settings = resolve_runtime_value(_SETTINGS_KEY)
     if settings is None:
-        settings = CoreSettings()
-        register_runtime_value(_SETTINGS_KEY, settings)
+        raise RuntimeError(
+            "Core settings are not configured. The edition composition root must "
+            "call configure_settings() before application work begins."
+        )
     return settings
-
-
-@lru_cache
-def get_mcp_settings() -> MCPSettings:
-    """Get cached MCP settings instance."""
-    return MCPSettings()

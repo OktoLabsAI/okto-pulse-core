@@ -41,6 +41,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "RELATIONAL_BASELINE_R01B": "okto_pulse.core.repositories.relational_boundary_gate",
     "RELATIONAL_COVERAGE_BASELINE": "okto_pulse.core.repositories.relational_boundary_gate",
     "RELATIONAL_COVERAGE_SNAPSHOT_R01B": "okto_pulse.core.repositories.relational_boundary_gate",
+    "RELATIONAL_COVERAGE_SNAPSHOT_TERMINAL": "okto_pulse.core.repositories.relational_boundary_gate",
     "METRIC_RELATIONAL_BOUNDARY_VIOLATIONS": "okto_pulse.core.repositories.relational_boundary_gate",
 }
 

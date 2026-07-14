@@ -123,22 +123,6 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             QuarantineErrorCode,
         )
 
-    def reference(self, key: RebuildAuditKey) -> str:
-        return key.to_ref()
-
-    def read_json_reference(self, reference: str) -> dict[str, Any] | None:
-        with self._lock:
-            for raw_key, payload in self._records.items():
-                key = RebuildAuditKey(
-                    namespace=raw_key[0],
-                    board_id=raw_key[1],
-                    kg_generation_id=raw_key[2],
-                    artifact_id=raw_key[3],
-                )
-                if key.to_ref() == reference:
-                    return copy.deepcopy(payload)
-        return None
-
         roots = [_testing_path_from_ref(ref) for ref in scope_storage_refs]
         resolved_paths = [_testing_path_from_ref(ref) for ref in affected_storage_refs]
         for path in resolved_paths:
@@ -217,6 +201,22 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             ],
             "manifest_ref": str(manifest_path),
         }
+
+    def reference(self, key: RebuildAuditKey) -> str:
+        return key.to_ref()
+
+    def read_json_reference(self, reference: str) -> dict[str, Any] | None:
+        with self._lock:
+            for raw_key, payload in self._records.items():
+                key = RebuildAuditKey(
+                    namespace=raw_key[0],
+                    board_id=raw_key[1],
+                    kg_generation_id=raw_key[2],
+                    artifact_id=raw_key[3],
+                )
+                if key.to_ref() == reference:
+                    return copy.deepcopy(payload)
+        return None
 
     def list_quarantine_manifests(
         self,

@@ -31,6 +31,7 @@ from okto_pulse.community.api import kg_routes as kg_routes_api
 from okto_pulse.community.api.kg_routes import router as kg_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.auth_deps import get_current_user, get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID, RealmScope
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 PREFIX = "/api/v1"
@@ -62,7 +63,7 @@ def client():
         return ACTOR
 
     async def _override_realm():
-        return None
+        return LOCAL_REALM_ID
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = _override_user
@@ -76,7 +77,14 @@ async def _seed_board(name: str = "fu5s3") -> str:
 
     bid = f"board-fu5s3-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name=name, owner_id=ACTOR))
+        db.add(
+            Board(
+                id=bid,
+                name=name,
+                owner_id=ACTOR,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
         return bid
 
@@ -122,7 +130,15 @@ async def _seed_chain() -> dict[str, str]:
         "card": f"c-fu5s3-{suffix}",
     }
     async with get_session_factory()() as db:
-        db.add(Board(id=ids["board"], name="b", description="", owner_id=ACTOR))
+        db.add(
+            Board(
+                id=ids["board"],
+                name="b",
+                description="",
+                owner_id=ACTOR,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.flush()
         db.add(Ideation(
             id=ids["ideation"], board_id=ids["board"], title="Idea",
@@ -354,7 +370,7 @@ async def test_pending_tree_use_case_runs_over_unit_of_work() -> None:
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     ids = await _seed_chain()
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(ACTOR, "rest")
+    actor = ActorContext(ACTOR, "rest", realm_scope=RealmScope.local())
     async with uowf(actor=actor) as uow:
         result = await ListPendingTreeUseCase().execute(
             ListPendingTreeCommand(ids["board"], depth=5), actor=actor, uow=uow
@@ -376,7 +392,7 @@ async def test_retry_use_case_raises_not_found_for_missing_entry() -> None:
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     board_id = await _seed_board()
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(ACTOR, "rest")
+    actor = ActorContext(ACTOR, "rest", realm_scope=RealmScope.local())
     with pytest.raises(EntityNotFoundError):
         async with uowf(actor=actor) as uow:
             await RetryPendingEntryUseCase().execute(

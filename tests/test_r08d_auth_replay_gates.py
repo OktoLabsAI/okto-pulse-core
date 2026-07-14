@@ -28,6 +28,8 @@ Scenario mapping:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import asyncio
 import os
 import tempfile
@@ -36,13 +38,14 @@ from pathlib import Path
 
 import httpx
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 import okto_pulse.community.app as _core_app  # noqa: F401  (register ORM models)
-import okto_pulse.core.infra.database as _db_mod
+import okto_pulse.community.adapters.sqlalchemy_database as _db_mod
 import okto_pulse.core.mcp.server as server
 from okto_pulse.core.services.main import AgentService
 
@@ -54,73 +57,72 @@ def _create_mcp_auth_factory():
     return bridge.create_mcp_auth_factory
 
 
-@pytest.fixture
-def _harness_env():
+@pytest_asyncio.fixture
+async def _harness_env():
     """Isolate settings / db engine+factory / registry / permission cache / env.
     The DB + ASGI requests are created INSIDE each test's single asyncio.run so the
     aiosqlite engine and the requests share one event loop."""
     import okto_pulse.core.infra.config as _config
     from okto_pulse.core.infra.config import CoreSettings
     from okto_pulse.core.kg.interfaces import registry as _reg
-    from okto_pulse.core import runtime_registry as _runtime_registry
-
-    saved = dict(
-        settings=_config._settings_instance,
-        engine=_db_mod._engine,
-        factory=_db_mod._session_factory,
-        reg=_reg.capture_registry_state_for_tests(),
-        mcp_sf=server._mcp_session_factory,
-        mcp_auth=server._mcp_authenticator,
-        uow_factory=_runtime_registry._unit_of_work_factory,
-        data=os.environ.get("DATA_DIR"),
+    from okto_pulse.core.runtime_context import (
+        capture_runtime_values_for_tests,
+        runtime_value_scope,
     )
-    cache_snapshot = dict(server._permission_cache)
+
+    runtime = capture_runtime_values_for_tests()
+    runtime.discard(
+        "infra.config.settings",
+        "ports.relational_runtime",
+        "runtime.unit_of_work_factory",
+        "mcp.authenticator",
+        "mcp.scheduler_control",
+        "runtime.state.mcp.permission_cache",
+    )
+    registry_state = _reg.capture_registry_state_for_tests()
+    saved_data = os.environ.get("DATA_DIR")
     tmp = tempfile.mkdtemp()
     os.environ["DATA_DIR"] = tmp
-    _config.configure_settings(CoreSettings())
-    _reg.reset_registry_for_tests()
-    server._permission_cache.clear()
-    try:
-        yield tmp
-    finally:
-        # Dispose the temp engine SYNCHRONOUSLY (no asyncio.run: it would leave
-        # the thread without a current event loop and break session-scoped
-        # pytest-asyncio tests that run afterwards). Restore the saved refs.
-        try:
-            if _db_mod._engine is not None:
-                _db_mod._engine.sync_engine.dispose()
-        except Exception:
-            pass
-        _config._settings_instance = saved["settings"]
-        _db_mod._engine = saved["engine"]
-        _db_mod._session_factory = saved["factory"]
-        _reg.restore_registry_state_for_tests(saved["reg"])
-        server._mcp_session_factory = saved["mcp_sf"]
-        server._mcp_authenticator = saved["mcp_auth"]
-        _runtime_registry._unit_of_work_factory = saved["uow_factory"]
+    with runtime_value_scope(runtime):
+        _config.configure_settings(CoreSettings())
+        _reg.reset_registry_for_tests()
         server._permission_cache.clear()
-        server._permission_cache.update(cache_snapshot)
-        if saved["data"] is None:
-            os.environ.pop("DATA_DIR", None)
-        else:
-            os.environ["DATA_DIR"] = saved["data"]
+        try:
+            yield tmp
+        finally:
+            try:
+                if _db_mod.is_database_runtime_configured():
+                    await _db_mod.close_db()
+            except Exception:
+                pass
+            _reg.restore_registry_state_for_tests(registry_state)
+    if saved_data is None:
+        os.environ.pop("DATA_DIR", None)
+    else:
+        os.environ["DATA_DIR"] = saved_data
 
 
 async def _seed(tmp: str) -> None:
     """Create the DB, register the MCP session factory, seed agents + boards, and
     register the AuthContext factory bound to the REAL server agent/db providers."""
+    from okto_pulse.community.adapters.relational_schema_lifecycle import (
+        register_community_relational_schema_lifecycle,
+    )
     from kg_registry_testing import configure_test_kg_registry
     from sqlalchemy_test_models import Agent, AgentBoard, Board
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.runtime_registry import register_unit_of_work_factory
 
-    _db_mod.create_database(f"sqlite+aiosqlite:///{Path(tmp) / 'r08d.db'}")
+    _db_mod.configure_community_database(
+        f"sqlite+aiosqlite:///{Path(tmp) / 'r08d.db'}"
+    )
+    register_community_relational_schema_lifecycle()
     await _db_mod.init_db()
     session_factory = _db_mod.get_session_factory()
     register_unit_of_work_factory(SQLAlchemyUnitOfWorkFactory(session_factory))
 
     bridge = pytest.importorskip("okto_pulse.community.adapters.mcp_auth")
-    server.register_session_factory(
+    register_mcp_test_runtime(
         session_factory,
         mcp_authenticator=bridge.make_community_mcp_authenticator(
             session_factory=session_factory
@@ -145,7 +147,8 @@ async def _seed(tmp: str) -> None:
     create_mcp_auth_factory = _create_mcp_auth_factory()
     configure_test_kg_registry(
         auth_context_factory=create_mcp_auth_factory(
-            server._get_authenticated_agent, server.get_db_for_mcp
+            server._get_authenticated_agent,
+            lambda: session_factory(),
         )
     )
 
@@ -179,9 +182,10 @@ def _build_app() -> object:
         board_id = request.path_params["board_id"]
         credential = server.request_scope_mcp_credential(request.scope)
         create_mcp_auth_factory = _create_mcp_auth_factory()
+        session_factory = _db_mod.get_session_factory()
         factory = create_mcp_auth_factory(
             lambda: server._authenticate_mcp_credential(credential),
-            server.get_db_for_mcp,
+            lambda: session_factory(),
         )
         auth = factory()
         agent_id = await auth.get_agent_id()

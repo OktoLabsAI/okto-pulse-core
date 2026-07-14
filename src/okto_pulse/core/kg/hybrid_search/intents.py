@@ -1,7 +1,7 @@
 """Closed catalog of hybrid search intents (BR `Intent Catalog Closure`).
 
 Free-text intents are rejected at the API boundary. Every supported intent
-carries its own vector seed shape, Kùzu expand template, and ranking
+carries its own vector seed shape, graph backend expand template, and ranking
 weights. Bumping SCHEMA_VERSION invalidates existing classifier
 heuristics — downstream tools must version-pin.
 """

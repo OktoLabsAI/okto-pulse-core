@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from okto_pulse.core.domain.kg_ontology import NODE_TYPES
 from okto_pulse.core.kg.cognitive_policy import (
     COGNITIVE_PROVENANCE_NODE_TYPES,
     LEARNING_RELATES_TO_TARGETS,
@@ -30,21 +31,6 @@ EDGE_METADATA_COLUMNS: tuple[tuple[str, str], ...] = (
     ("rule_id", "STRING"),
     ("created_by", "STRING"),
     ("fallback_reason", "STRING"),
-)
-
-# 11 node types listed in the MVP Fase 0 spec (FR-N nodes).
-NODE_TYPES: tuple[str, ...] = (
-    "Decision",
-    "Criterion",
-    "Constraint",
-    "Assumption",
-    "Requirement",
-    "Entity",
-    "APIContract",
-    "TestScenario",
-    "Bug",
-    "Learning",
-    "Alternative",
 )
 
 # Node types that get HNSW vector indexes for semantic search.

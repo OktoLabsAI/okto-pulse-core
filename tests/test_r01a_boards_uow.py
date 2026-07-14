@@ -25,6 +25,7 @@ from okto_pulse.community.api import boards as boards_api
 from okto_pulse.community.api.boards import router as boards_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu7-s1-user"
@@ -61,7 +62,7 @@ def client():
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
-    app.dependency_overrides[get_realm_id] = lambda: None
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -70,7 +71,14 @@ async def _seed_board(owner: str = USER, name: str = "fu7s1") -> str:
 
     bid = f"board-fu7s1-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name=name, owner_id=owner))
+        db.add(
+            Board(
+                id=bid,
+                name=name,
+                owner_id=owner,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
         return bid
 
@@ -84,7 +92,14 @@ async def _seed_board_spec_card() -> tuple[str, str, str]:
     sid = f"spec-fu7s1-{uuid.uuid4().hex[:8]}"
     cid = f"card-fu7s1-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name="fu7s1", owner_id=USER))
+        db.add(
+            Board(
+                id=bid,
+                name="fu7s1",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         db.add(Spec(id=sid, board_id=bid, title="fu7s1-spec", created_by=USER))
         db.add(Card(id=cid, board_id=bid, spec_id=sid, title="fu7s1-card", created_by=USER))
         await db.commit()
@@ -353,7 +368,7 @@ async def test_get_board_use_case_raises_for_missing_board() -> None:
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(USER, "rest")
+    actor = ActorContext(USER, "rest", realm_id=LOCAL_REALM_ID)
     with pytest.raises(EntityNotFoundError):
         async with uowf(actor=actor) as uow:
             await GetBoardUseCase().execute(

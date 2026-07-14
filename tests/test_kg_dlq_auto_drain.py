@@ -136,9 +136,9 @@ def _make_session_sequence(sessions: list[_SessionDB]):
     return _factory
 
 
-def _make_worker(session_factory) -> ConsolidationProcessor:
+def _make_worker(relational_scope_factory) -> ConsolidationProcessor:
     return ConsolidationProcessor(
-        session_factory=session_factory,
+        relational_scope_factory=relational_scope_factory,
         heartbeat_seconds=30,
         batch_size=1,
     )

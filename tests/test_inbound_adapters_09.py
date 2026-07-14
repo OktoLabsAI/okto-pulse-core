@@ -9,6 +9,8 @@ that the adapter contracts are thin (build ActorContext + map errors only).
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -68,7 +70,7 @@ def _stub_ctx():
 
 
 async def _call_tool(name: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     raw = await tool.fn(**kwargs)
     return json.loads(raw)

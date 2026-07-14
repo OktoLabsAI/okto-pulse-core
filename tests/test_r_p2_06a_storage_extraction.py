@@ -25,17 +25,23 @@ from okto_pulse.core.infra.storage import (
     StorageProvider,
     configure_storage,
     get_storage_provider,
+    reset_storage_provider_for_tests,
 )
 
 
 @pytest.fixture(autouse=True)
 def _reset_storage_registry():
-    saved = storage_mod._storage_provider
-    storage_mod._storage_provider = None
+    try:
+        saved = get_storage_provider()
+    except RuntimeError:
+        saved = None
+    reset_storage_provider_for_tests()
     try:
         yield
     finally:
-        storage_mod._storage_provider = saved
+        reset_storage_provider_for_tests()
+        if saved is not None:
+            configure_storage(saved)
 
 
 # --- import audit: no concrete filesystem provider in the core ----------------

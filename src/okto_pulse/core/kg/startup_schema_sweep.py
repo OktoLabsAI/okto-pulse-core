@@ -8,12 +8,12 @@ This module consumes logical graph runtime capabilities plus
 ``GraphSchemaManager`` and NEVER imports ``kg.schema`` directly:
 
   * ``graph_runtime_store.exists(board_id)`` decides skip-missing (replaces
-    ``kg.schema.board_kuzu_path(bid).exists()``).
+    ``kg.schema.board_graph_path(bid).exists()``).
   * ``graph_schema_manager.ensure_bootstrapped(board_id)`` performs the
     idempotent per-board migration (equivalent to the old
     ``open_board_connection(bid) + bc.close()`` open/close sweep).
 
-The #06 embedded adapter runs the synchronous Kùzu work under the async port, so
+The #06 embedded adapter runs the synchronous graph backend work under the async port, so
 each ensure is driven OFF the event loop (``asyncio.to_thread`` + ``asyncio.run``)
 to preserve the original non-blocking boot (opening a graph can stall on lock
 contention; running it on the loop froze the whole server at startup).
@@ -58,7 +58,7 @@ async def sweep_board_schemas(
       * skip a board whose graph file does not exist
         (``graph_runtime_store.exists`` — a runtime error is NOT caught here so
         it propagates to the caller's outer guard -> ``kg.schema.migration_skipped``,
-        exactly like the old ``board_kuzu_path(bid).exists()`` did);
+        exactly like the old ``board_graph_path(bid).exists()`` did);
       * ``graph_schema_manager.ensure_bootstrapped`` per existing board, run off
         the event loop;
       * soft-fail per board: log ``kg.schema.migration_failed`` and continue;
@@ -69,7 +69,7 @@ async def sweep_board_schemas(
     for board_id in board_ids:
         # NB: a resolver exception is intentionally NOT caught — it propagates to
         # the caller's outer try (-> kg.schema.migration_skipped), matching the
-        # old behaviour where board_kuzu_path(bid).exists() raising aborted the
+        # old behaviour where board_graph_path(bid).exists() raising aborted the
         # whole sweep rather than soft-failing one board.
         if graph_runtime_store is None:
             raise RuntimeError("graph_runtime_store is required for schema sweep")

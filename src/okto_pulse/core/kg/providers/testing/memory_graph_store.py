@@ -21,7 +21,7 @@ from okto_pulse.core.kg.interfaces.graph_runtime_store import (
     GraphStorageFootprint,
 )
 from okto_pulse.core.kg.interfaces.graph_schema_manager import SchemaValidationResult
-from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
+from okto_pulse.core.kg.interfaces.graph_store import GraphCapabilities, QueryFilters
 from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 from okto_pulse.core.kg.schema_contract import (
@@ -83,6 +83,73 @@ class InMemoryGraphStore:
         edge["_from_type"] = from_type
         edge["_to_type"] = to_type
         edges.append(edge)
+
+    def update_node(
+        self,
+        board_id: str,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+    ) -> None:
+        node = self._board_nodes(board_id).get(node_id)
+        if node is not None and node.get("_type") == node_type:
+            node.update(attrs)
+
+    def mark_superseded(
+        self,
+        board_id: str,
+        node_type: str,
+        node_id: str,
+        *,
+        superseded_by: str,
+        superseded_at: str,
+        revocation_reason: str,
+    ) -> None:
+        self.update_node(
+            board_id,
+            node_type,
+            node_id,
+            {
+                "superseded_by": superseded_by,
+                "superseded_at": superseded_at,
+                "revocation_reason": revocation_reason,
+            },
+        )
+
+    def edge_exists(
+        self,
+        board_id: str,
+        edge_type: str,
+        from_type: str,
+        to_type: str,
+        from_id: str,
+        to_id: str,
+    ) -> bool:
+        return any(
+            edge.get("_type") == edge_type
+            and edge.get("_from_type") == from_type
+            and edge.get("_to_type") == to_type
+            and edge.get("_from") == from_id
+            and edge.get("_to") == to_id
+            for edge in self._board_edges(board_id)
+        )
+
+    def find_node_types(self, board_id: str, node_id: str) -> tuple[str, ...]:
+        node = self._board_nodes(board_id).get(node_id)
+        return (str(node["_type"]),) if node and node.get("_type") else ()
+
+    def increment_attestation(
+        self,
+        board_id: str,
+        node_type: str,
+        node_id: str,
+        *,
+        attested_at: str,
+    ) -> None:
+        node = self._board_nodes(board_id).get(node_id)
+        if node is not None and node.get("_type") == node_type:
+            node["attestation_count"] = int(node.get("attestation_count") or 1) + 1
+            node["last_attested_at"] = attested_at
 
     def delete_nodes_by_session(self, board_id: str, session_id: str) -> int:
         nodes = self._board_nodes(board_id)
@@ -220,11 +287,15 @@ class InMemoryGraphStore:
     def vector_search(
         self, board_id: str, node_type: str, query_vec: list[float],
         top_k: int, min_similarity: float,
+        *,
+        include_superseded: bool = False,
     ) -> list[dict]:
         nodes = self._board_nodes(board_id)
         results = []
         for n in nodes.values():
             if n.get("_type") != node_type:
+                continue
+            if n.get("superseded_by") and not include_superseded:
                 continue
             emb = n.get("embedding")
             if emb is None:
@@ -298,6 +369,23 @@ class InMemoryGraphStore:
             result["internal_rel_types"] = []
         return result
 
+    def list_schema_objects(self, board_id: str) -> tuple[str, ...]:
+        return tuple(sorted(NODE_TYPES)) if board_id in self._bootstrapped else ()
+
+    def list_node_properties(self, board_id: str, node_type: str) -> tuple[str, ...]:
+        properties: set[str] = set()
+        for node in self._board_nodes(board_id).values():
+            if node.get("_type") == node_type:
+                properties.update(key for key in node if not key.startswith("_"))
+        return tuple(sorted(properties))
+
+    def capabilities(self) -> GraphCapabilities:
+        return GraphCapabilities(
+            indexed_similarity=False,
+            schema_introspection=True,
+            mutable_indexed_attributes=True,
+        )
+
     def clear(self) -> None:
         self._nodes.clear()
         self._edges.clear()
@@ -332,8 +420,9 @@ class InMemoryCypherExecutor:
 
 
 class _InMemoryGraphTransactionScope:
-    def __init__(self, board_id: str) -> None:
+    def __init__(self, board_id: str, store: InMemoryGraphStore) -> None:
         self.board_id = board_id
+        self.store = store
         self.statements: list[tuple[str, dict[str, Any] | None]] = []
         self.finished = False
         self.rolled_back = False
@@ -345,6 +434,118 @@ class _InMemoryGraphTransactionScope:
     ) -> GraphStatementResult:
         self.statements.append((cypher, params))
         return GraphStatementResult()
+
+    def create_node(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+        *,
+        source_session_id: str,
+    ) -> None:
+        self.store.create_node(
+            self.board_id,
+            node_type,
+            node_id,
+            {**attrs, "source_session_id": source_session_id},
+        )
+
+    def update_node(
+        self,
+        node_type: str,
+        node_id: str,
+        attrs: dict[str, Any],
+    ) -> None:
+        node = self.store._board_nodes(self.board_id).get(node_id)
+        if node is not None and node.get("_type") == node_type:
+            node.update(attrs)
+
+    def mark_superseded(
+        self,
+        node_type: str,
+        node_id: str,
+        *,
+        superseded_by: str,
+        superseded_at: str,
+        revocation_reason: str,
+    ) -> None:
+        self.update_node(
+            node_type,
+            node_id,
+            {
+                "superseded_by": superseded_by,
+                "superseded_at": superseded_at,
+                "revocation_reason": revocation_reason,
+            },
+        )
+
+    def edge_exists(
+        self,
+        edge_type: str,
+        from_type: str,
+        to_type: str,
+        from_id: str,
+        to_id: str,
+    ) -> bool:
+        return any(
+            edge.get("_type") == edge_type
+            and edge.get("_from_type") == from_type
+            and edge.get("_to_type") == to_type
+            and edge.get("_from") == from_id
+            and edge.get("_to") == to_id
+            for edge in self.store._board_edges(self.board_id)
+        )
+
+    def create_edge(
+        self,
+        edge_type: str,
+        from_type: str,
+        to_type: str,
+        from_id: str,
+        to_id: str,
+        attrs: dict[str, Any],
+    ) -> bool:
+        nodes = self.store._board_nodes(self.board_id)
+        if from_id not in nodes or to_id not in nodes:
+            return False
+        self.store.create_edge(
+            self.board_id,
+            edge_type,
+            from_id,
+            to_id,
+            attrs,
+            from_type=from_type,
+            to_type=to_type,
+        )
+        return True
+
+    def find_node_types(self, node_id: str) -> tuple[str, ...]:
+        node = self.store._board_nodes(self.board_id).get(node_id)
+        return (str(node["_type"]),) if node and node.get("_type") else ()
+
+    def delete_edges_by_session(self, session_id: str) -> None:
+        self.store.delete_edges_by_session(self.board_id, session_id)
+
+    def delete_nodes_by_session(
+        self,
+        session_id: str,
+        node_types: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        del node_types
+        self.store.delete_nodes_by_session(self.board_id, session_id)
+        return ()
+
+    def increment_attestation(
+        self,
+        node_type: str,
+        node_id: str,
+        *,
+        attested_at: str,
+    ) -> None:
+        node = self.store._board_nodes(self.board_id).get(node_id)
+        if node is not None and node.get("_type") == node_type:
+            node["attestation_count"] = int(node.get("attestation_count") or 1) + 1
+            node["last_attested_at"] = attested_at
 
     async def commit(self) -> None:
         self.finished = True
@@ -364,8 +565,11 @@ class _InMemoryGraphTransactionScope:
 
 
 class InMemoryGraphTransaction:
+    def __init__(self, store: InMemoryGraphStore | None = None) -> None:
+        self.store = store or InMemoryGraphStore()
+
     async def begin(self, board_id: str) -> _InMemoryGraphTransactionScope:
-        return _InMemoryGraphTransactionScope(board_id)
+        return _InMemoryGraphTransactionScope(board_id, self.store)
 
 
 class InMemoryGraphRuntimeStore:

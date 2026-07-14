@@ -8,7 +8,6 @@ Invoked the production way: mcp.get_tool(name).fn(...).
 
 from __future__ import annotations
 
-import contextlib
 import json
 import uuid
 from datetime import datetime, timezone
@@ -27,15 +26,13 @@ def _mcp(monkeypatch, db_factory):
     import okto_pulse.core.mcp.server as mcp_server
 
     async def _fake_ctx(_board_id):
-        return SimpleNamespace(agent_id="mcp-agent", permissions=["*"])
-
-    @contextlib.asynccontextmanager
-    async def _fake_db():
-        async with db_factory() as db:
-            yield db
+        return SimpleNamespace(
+            agent_id="mcp-agent",
+            permissions=["*"],
+            realm_id="local",
+        )
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", _fake_db)
     monkeypatch.setattr(mcp_server, "check_permission", lambda *a, **k: None)
     return mcp_server
 

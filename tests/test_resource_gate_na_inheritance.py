@@ -226,9 +226,11 @@ def test_ac6_machinery_unchanged_and_setting_not_renamed() -> None:
     assert '            return "provided"' in gate
     assert "if na_mark is not None:" in gate
     assert '            return "not_applicable"' in gate
-    # The parent-walk loaders are intact.
-    assert "async def _load_parent_refs(" in gate
-    assert "async def _load_active_marks(" in gate
+    # Parent traversal crosses the adapter through a public port method.
+    assert "async def load_parent_refs(" in gate
+    assert "async def _load_parent_refs(" not in gate
+    assert "async def load_active_marks(" in gate
+    assert "async def _load_active_marks(" not in gate
 
     prop = SPEC_PROP_PY.read_text(encoding="utf-8")
     assert "class SpecResourcePropagationService:" in prop

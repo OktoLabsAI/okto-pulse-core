@@ -47,7 +47,7 @@ def _decl(node_type="Entity", kind_of="security_control", **kw):
 # ---------------------------------------------------------------------------
 
 
-def test_s2_pure_rules():
+async def test_s2_pure_rules():
     validate_subtype_declaration(_decl())  # valid
 
     with pytest.raises(SubtypeRegistryError):
@@ -111,13 +111,8 @@ def registry_tempdir(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _restore_conftest_engine():
-    from okto_pulse.core.infra.database import create_database, get_engine
-
-    prior_url = str(get_engine().url)
+def _restore_conftest_engine(preserve_relational_runtime):
     yield
-    if str(get_engine().url) != prior_url:
-        create_database(prior_url, echo=False)
 
 
 async def test_s2_sqlalchemy_registry_contract(registry_tempdir):
@@ -142,7 +137,7 @@ async def test_s2_sqlalchemy_registry_contract(registry_tempdir):
     await _contract(CommunitySqlAlchemyNodeSubtypeRegistry(get_session_factory()))
 
 
-def test_s2_fail_closed_resolver_and_protocol():
+async def test_s2_fail_closed_resolver_and_protocol():
     with pytest.raises(SubtypeRegistryError) as excinfo:
         require_node_subtype_registry()
     assert excinfo.value.failure_reason == "kg_subtype_registry_unavailable"

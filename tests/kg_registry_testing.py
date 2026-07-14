@@ -14,28 +14,28 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from okto_pulse.core.kg.interfaces.registry import configure_kg_registry
-from okto_pulse.core.kg.providers.testing.registry import build_testing_kg_registry
+from testing_kg_registry import build_testing_kg_registry
 
-_GRAPH_PROVIDER_KEYS = {
-    "graph_store",
-    "cypher_executor",
-    "graph_transaction",
-    "graph_schema_manager",
-    "graph_lifecycle",
-    "graph_runtime_store",
-    "global_discovery_runtime",
-}
+
+def _test_relational_database_path():
+    """Resolve the SQLite path through the explicitly composed test runtime."""
+
+    from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
+
+    path = resolve_database_runtime().local_database_path()
+    if path is None:
+        raise RuntimeError("test relational runtime has no local SQLite path")
+    return path
 
 
 def _community_source_reader() -> dict[str, Any]:
     from okto_pulse.community.adapters.board_source_reader import (
         CommunityBoardSourceReader,
-        resolve_pulse_db_path,
     )
 
     return {
         "board_source_reader": CommunityBoardSourceReader(
-            db_path_provider=resolve_pulse_db_path
+            db_path_provider=_test_relational_database_path
         )
     }
 
@@ -44,11 +44,10 @@ def _community_rebuild_ingestion() -> dict[str, Any]:
     from okto_pulse.community.adapters.board_rebuild_ingestion import (
         CommunityBoardRebuildIngestionAdapter,
     )
-    from okto_pulse.community.adapters.board_source_reader import resolve_pulse_db_path
 
     return {
         "rebuild_ingestion_port": CommunityBoardRebuildIngestionAdapter(
-            db_path_provider=resolve_pulse_db_path
+            db_path_provider=_test_relational_database_path
         )
     }
 
@@ -67,8 +66,12 @@ def _community_rebuild_artifact_scope_resolver() -> dict[str, Any]:
 
 def _community_graph_providers() -> dict[str, Any]:
     from okto_pulse.community.adapters.kg import build_community_graph_providers
+    from okto_pulse.community.adapters.data import CommunityKGConfig
+    from okto_pulse.community.config import CommunitySettings
 
-    return build_community_graph_providers()
+    providers = build_community_graph_providers()
+    providers["config"] = CommunityKGConfig(CommunitySettings())
+    return providers
 
 
 def _skip_missing_community_integration(exc: ModuleNotFoundError) -> None:
@@ -117,8 +120,7 @@ relational fallback). The test-only ``_build_defaults`` does NOT supply them, so
         "audit_repo": InMemoryAuditRepository(),
     }
 
-    graph_overridden = bool(_GRAPH_PROVIDER_KEYS.intersection(overrides))
-    if graph_provider != "inmemory" and not graph_overridden:
+    if graph_provider != "inmemory":
         try:
             defaults.update(_community_graph_providers())
         except ModuleNotFoundError as exc:
@@ -146,6 +148,14 @@ relational fallback). The test-only ``_build_defaults`` does NOT supply them, so
 
     defaults.update(overrides)
     configure_kg_registry(defaults_factory=build_testing_kg_registry, **defaults)
+
+    from okto_pulse.core.services.application_kg import (
+        configure_commit_coordinator,
+        configure_write_barrier,
+    )
+
+    configure_commit_coordinator()
+    configure_write_barrier("soft")
 
     # Spec MKG-A-S1 (FR4): cognitive commits append to the durable
     # CognitiveSourceStore fail-closed. Register a fresh in-memory store per
@@ -341,6 +351,10 @@ def configure_real_graph_test_kg_registry(**overrides: Any) -> None:
     The default autouse test registry stays in-memory so pure unit tests keep
     isolation and speed.
     """
+    from okto_pulse.community.config import CommunitySettings
+    from okto_pulse.core.infra.config import configure_settings
+
+    configure_settings(CommunitySettings())
     configure_test_kg_registry(graph_provider="real", **overrides)
 
 
@@ -356,9 +370,13 @@ def configure_real_graph_and_data_test_kg_registry(
     """
     try:
         from okto_pulse.community.adapters.data import build_community_data_providers
+        from okto_pulse.community.config import CommunitySettings
     except ModuleNotFoundError as exc:
         _skip_missing_community_integration(exc)
 
+    from okto_pulse.core.infra.config import configure_settings
+
+    configure_settings(CommunitySettings())
     real_data = build_community_data_providers(session_factory)
     real_data.update(overrides)
     configure_test_kg_registry(
@@ -408,22 +426,23 @@ class RealBoardCypherExecutorForTests:
 
 class _RealBoardGraphTransactionScopeForTests:
     def __init__(self, board_id: str) -> None:
-        from okto_pulse.community.adapters.kg_runtime import open_board_connection
+        from okto_pulse.community.adapters.kuzu_graph_transaction import (
+            _KuzuTransactionScope,
+        )
 
-        self._connection = open_board_connection(board_id)
+        self._delegate = _KuzuTransactionScope(board_id)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
 
     def execute(self, cypher: str, params: dict[str, Any] | None = None) -> Any:
-        from okto_pulse.community.adapters.kuzu_graph_transaction import _materialize
-
-        if params:
-            return _materialize(self._connection.conn.execute(cypher, params))
-        return _materialize(self._connection.conn.execute(cypher))
+        return self._delegate.execute(cypher, params)
 
     async def commit(self) -> None:
-        self._connection.close()
+        await self._delegate.commit()
 
     async def rollback(self) -> None:
-        self._connection.close()
+        await self._delegate.rollback()
 
     async def __aenter__(self) -> "_RealBoardGraphTransactionScopeForTests":
         return self

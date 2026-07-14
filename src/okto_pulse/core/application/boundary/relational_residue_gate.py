@@ -26,6 +26,17 @@ COMMUNITY_TARGET_FILES: tuple[str, ...] = (
     "adapters/relational_schema_migrator.py",
 )
 
+_PRODUCTIVE_EXCLUDED_PREFIXES: tuple[str, ...] = (
+    "application/boundary/",
+    "testing/",
+    "kg/providers/testing/",
+)
+_RELATIONAL_NATIVE_ALLOWED: frozenset[str] = frozenset(
+    {
+        "ports/relational_runtime.py",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class RelationalResidueFinding:
@@ -195,6 +206,51 @@ class _CommunityResidueVisitor(ast.NodeVisitor):
         }
 
 
+class _RelationalRuntimeLeakVisitor(ast.NodeVisitor):
+    """Detect adapter-native relational concepts across productive Core."""
+
+    _NATIVE_NAMES = {"session_factory", "relational_engine", "sync_engine"}
+    _RAW_SCOPE_NAMES = {"session", "db", "sqlite_session"}
+
+    def __init__(self, file: str) -> None:
+        self.file = file
+        self.findings: list[RelationalResidueFinding] = []
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if node.id in self._NATIVE_NAMES:
+            self._add("relational_native_symbol", node.id, node.lineno)
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if node.attr in self._NATIVE_NAMES:
+            self._add("relational_native_symbol", node.attr, node.lineno)
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Attribute) and node.func.attr in {
+            "commit",
+            "rollback",
+        }:
+            receiver = node.func.value
+            if isinstance(receiver, ast.Name) and receiver.id in self._RAW_SCOPE_NAMES:
+                self._add(
+                    "raw_transaction_call",
+                    f"{receiver.id}.{node.func.attr}",
+                    node.lineno,
+                )
+        self.generic_visit(node)
+
+    def _add(self, category: str, symbol: str, line: int) -> None:
+        self.findings.append(
+            RelationalResidueFinding(
+                file=self.file,
+                category=category,
+                symbol=symbol,
+                line=line,
+            )
+        )
+
+
 def _safe_unparse(node: ast.AST) -> str:
     try:
         return ast.unparse(node)
@@ -279,6 +335,28 @@ def run_relational_residue_gate(
     findings: list[RelationalResidueFinding] = []
     for rel in CORE_TARGET_FILES:
         findings.extend(_scan_file(core / rel, rel))
+
+    for path in sorted(core.rglob("*.py")):
+        rel = path.relative_to(core).as_posix()
+        if rel in _RELATIONAL_NATIVE_ALLOWED or rel.startswith(
+            _PRODUCTIVE_EXCLUDED_PREFIXES
+        ):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            findings.append(
+                RelationalResidueFinding(
+                    file=rel,
+                    category="relational_scan_failed",
+                    symbol="unparseable_productive_source",
+                    line=1,
+                )
+            )
+            continue
+        visitor = _RelationalRuntimeLeakVisitor(rel)
+        visitor.visit(tree)
+        findings.extend(visitor.findings)
 
     if community_root is not None:
         community = Path(community_root)

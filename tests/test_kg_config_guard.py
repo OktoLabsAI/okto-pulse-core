@@ -15,6 +15,7 @@ from okto_pulse.core.kg.config_guard import (
     ConfigChangeDecision,
     ConfigGuardError,
     ConfigGuardErrorCode,
+    GraphSettingPolicy,
     KGConfigChangeGuard,
     RestartPolicy,
     SETTING_GROUP_BUFFER,
@@ -33,6 +34,32 @@ from okto_pulse.core.kg.config_guard import (
 )
 
 
+TEST_GRAPH_SETTING_POLICY = GraphSettingPolicy(
+    setting_groups={
+        "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
+        "kg_kuzu_max_db_size_gb": SETTING_GROUP_STORAGE,
+        "kg_connection_pool_size": SETTING_GROUP_CONNECTION_POOL,
+        "kg_kuzu_wal_mode": SETTING_GROUP_WAL,
+        "kg_kuzu_cache_threshold_pct": SETTING_GROUP_CACHE,
+        "kg_kuzu_index_rebuild_on_open": SETTING_GROUP_INDEX,
+        "ladybug_buffer_pool_mb": SETTING_GROUP_BUFFER,
+        "ladybug_max_db_size_gb": SETTING_GROUP_STORAGE,
+        "ladybug_wal_mode": SETTING_GROUP_WAL,
+    },
+    governed_prefixes=(
+        "kg_kuzu_",
+        "kg_ladybug_",
+        "kg_connection_",
+        "ladybug_",
+    ),
+    public_contract="legacy_runtime_settings_api",
+)
+
+
+def _guard(**kwargs) -> KGConfigChangeGuard:
+    return KGConfigChangeGuard(policy=TEST_GRAPH_SETTING_POLICY, **kwargs)
+
+
 @pytest.fixture(autouse=True)
 def _reset_counter():
     reset_config_block_counter()
@@ -44,7 +71,7 @@ def _reset_counter():
 
 
 def test_noop_change_is_allowed_with_value_not_changed_reason():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_buffer_pool_mb": 512},
@@ -58,7 +85,7 @@ def test_noop_change_is_allowed_with_value_not_changed_reason():
 
 
 def test_unrelated_setting_changes_are_ignored():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"random_app_flag": "off"},
@@ -73,7 +100,7 @@ def test_unrelated_setting_changes_are_ignored():
 def test_cache_setting_change_with_no_extras_is_allowed():
     """cache is not in migration-required nor restart-required groups,
     so a simple cache change with no migration plan / no restart is OK."""
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_cache_threshold_pct": 70},
@@ -86,8 +113,8 @@ def test_cache_setting_change_with_no_extras_is_allowed():
 
 
 def test_public_graph_runtime_knobs_have_groups_and_metadata():
-    groups = get_setting_groups()
-    metadata = get_graph_runtime_setting_metadata()
+    groups = get_setting_groups(TEST_GRAPH_SETTING_POLICY)
+    metadata = get_graph_runtime_setting_metadata(TEST_GRAPH_SETTING_POLICY)
 
     expected = {
         "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
@@ -100,12 +127,11 @@ def test_public_graph_runtime_knobs_have_groups_and_metadata():
             "setting_group": setting_group,
             "owner": "graph_runtime_capability",
             "public_contract": "legacy_runtime_settings_api",
-            "compatibility_path": "provider_neutral_graph_runtime_alias_required",
         }
 
 
 def test_buffer_change_with_restart_required_is_allowed_with_requires_restart():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_buffer_pool_mb": 512},
@@ -119,7 +145,7 @@ def test_buffer_change_with_restart_required_is_allowed_with_requires_restart():
 
 
 def test_connection_pool_change_requires_restart_and_is_allowed_with_policy():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_connection_pool_size": 8},
@@ -133,7 +159,7 @@ def test_connection_pool_change_requires_restart_and_is_allowed_with_policy():
 
 
 def test_storage_grow_with_migration_plan_and_restart_is_allowed():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_max_db_size_gb": 4},
@@ -151,7 +177,7 @@ def test_storage_grow_with_migration_plan_and_restart_is_allowed():
 
 
 def test_storage_shrink_below_current_is_blocked():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_max_db_size_gb": 8},
@@ -180,7 +206,7 @@ def test_storage_shrink_below_probe_footprint_is_blocked():
             return 12  # actual on-disk footprint
         return None
 
-    guard = KGConfigChangeGuard(current_footprint_probe=probe)
+    guard = _guard(current_footprint_probe=probe)
     decision = guard.validate(
         board_id="b1",
         current_settings={},
@@ -194,7 +220,7 @@ def test_storage_shrink_below_probe_footprint_is_blocked():
 
 
 def test_storage_change_without_migration_plan_is_blocked():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_max_db_size_gb": 4},
@@ -207,7 +233,7 @@ def test_storage_change_without_migration_plan_is_blocked():
 
 
 def test_wal_change_without_migration_plan_is_blocked():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_wal_mode": "default"},
@@ -221,7 +247,7 @@ def test_wal_change_without_migration_plan_is_blocked():
 
 def test_buffer_change_without_restart_policy_is_blocked():
     """Buffer pool size cannot be hot-changed — needs restart."""
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_buffer_pool_mb": 512},
@@ -234,7 +260,7 @@ def test_buffer_change_without_restart_policy_is_blocked():
 
 
 def test_connection_pool_change_without_restart_policy_is_blocked():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_connection_pool_size": 8},
@@ -254,7 +280,7 @@ def test_unsupported_kg_setting_raises():
     """A setting matching kg_/ladybug_ prefix but absent from the
     allow-list raises ``unsupported_ladybug_setting`` so callers can't
     sneak unknown keys past the guard."""
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     with pytest.raises(ConfigGuardError) as excinfo:
         guard.validate(
             board_id="b1",
@@ -262,12 +288,12 @@ def test_unsupported_kg_setting_raises():
             requested_settings={"kg_kuzu_dangerous_undocumented_flag": True},
             actor_id="actor-1",
         )
-    assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_LADYBUG_SETTING
+    assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_GRAPH_SETTING
     assert excinfo.value.retryable is False
 
 
 def test_unsupported_connection_setting_raises():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     with pytest.raises(ConfigGuardError) as excinfo:
         guard.validate(
             board_id="b1",
@@ -275,12 +301,12 @@ def test_unsupported_connection_setting_raises():
             requested_settings={"kg_connection_pool_backend": "direct"},
             actor_id="actor-1",
         )
-    assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_LADYBUG_SETTING
+    assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_GRAPH_SETTING
     assert excinfo.value.retryable is False
 
 
 def test_invalid_restart_policy_raises_unsupported():
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     with pytest.raises(ConfigGuardError) as excinfo:
         guard.validate(
             board_id="b1",
@@ -289,11 +315,11 @@ def test_invalid_restart_policy_raises_unsupported():
             actor_id="actor-1",
             restart_policy="bogus_value",
         )
-    assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_LADYBUG_SETTING
+    assert excinfo.value.code is ConfigGuardErrorCode.UNSUPPORTED_GRAPH_SETTING
 
 
 def test_atomic_validation_unavailable_raises():
-    guard = KGConfigChangeGuard(
+    guard = _guard(
         atomic_validation_available=lambda: False,
     )
     with pytest.raises(ConfigGuardError) as excinfo:
@@ -314,7 +340,7 @@ def test_atomic_validation_unavailable_raises():
 def test_counter_carries_required_or_labels():
     assert get_config_block_counter_labels() == ("setting_group", "reason")
 
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     # Migration-required block
     guard.validate(
         board_id="b1",
@@ -366,7 +392,7 @@ def test_audit_event_format_is_safe_and_bounded():
     """TR12: audit_event MUST NOT contain raw values or unbounded text.
     The format is `kg.config_change.<setting_group>.<outcome>` —
     setting_group is a bounded vocabulary."""
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     decision = guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_buffer_pool_mb": 512},
@@ -381,11 +407,11 @@ def test_audit_event_format_is_safe_and_bounded():
 
 
 def test_get_setting_groups_returns_copy():
-    groups = get_setting_groups()
+    groups = get_setting_groups(TEST_GRAPH_SETTING_POLICY)
     assert isinstance(groups, dict)
     # Mutating the returned dict must not affect the module state.
     groups["fake"] = "bogus"
-    again = get_setting_groups()
+    again = get_setting_groups(TEST_GRAPH_SETTING_POLICY)
     assert "fake" not in again
 
 
@@ -395,7 +421,7 @@ def test_get_setting_groups_returns_copy():
 def test_counter_never_includes_raw_values():
     """TR12 / safe observability: the requested/current values must
     never end up in the counter labels."""
-    guard = KGConfigChangeGuard()
+    guard = _guard()
     guard.validate(
         board_id="b1",
         current_settings={"kg_kuzu_buffer_pool_mb": 512},

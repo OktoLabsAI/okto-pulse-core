@@ -126,14 +126,14 @@ class EdgeCandidate(BaseModel):
     edge_type: KGEdgeType
     from_candidate_id: str = Field(
         ...,
-        description="candidate_id of source node (either this session OR existing kuzu_node_id prefix 'kg:')",
+        description="candidate_id of source node (either this session OR existing graph_node_id prefix 'kg:')",
     )
     to_candidate_id: str
     confidence: float = Field(0.7, ge=0.0, le=1.0)
     # v0.2.0 provenance metadata (spec c48a5c33). Optional so legacy callers
     # keep working — TransactionOrchestrator fills sensible defaults. When the
     # Layer 1 deterministic worker feeds candidates in, these fields carry the
-    # rule_id/layer up to Kùzu so /metrics can segment correctly.
+    # rule_id/layer up to graph backend so /metrics can segment correctly.
     layer: str | None = None
     rule_id: str | None = None
     created_by: str | None = None
@@ -148,7 +148,7 @@ class ReconciliationHint(BaseModel):
     candidate_id: str
     operation: ReconciliationOperation
     target_node_id: str | None = Field(
-        None, description="Existing kuzu node id when operation=UPDATE/SUPERSEDE"
+        None, description="Existing graph node id when operation=UPDATE/SUPERSEDE"
     )
     confidence: float = Field(..., ge=0.0, le=1.0)
     reason: str
@@ -157,7 +157,7 @@ class ReconciliationHint(BaseModel):
 class SimilarNode(BaseModel):
     """A node found via similarity search."""
 
-    kuzu_node_id: str
+    graph_node_id: str
     node_type: str
     title: str
     source_artifact_ref: str | None = None
@@ -288,7 +288,7 @@ class CommitConsolidationResponse(BaseModel):
     edges_added: int
     # Spec eca49df9 (FR5/FR6): counters are mutually exclusive per candidate
     # and processed_candidates closes as their sum. merge_audit_items carries
-    # the NC-8 dedup-reuse audit payload (no KuzuWriteRecord written).
+    # the NC-8 dedup-reuse audit payload (no GraphWriteRecord written).
     nodes_merged: int = 0
     nodes_noop: int = 0
     processed_candidates: int = 0

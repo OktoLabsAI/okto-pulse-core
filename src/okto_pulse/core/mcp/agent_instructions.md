@@ -25,7 +25,8 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Use the consolidated `list_*` tools | `okto-pulse://reference/list_tools` |
 | Look up a specific tool by name | `okto-pulse://reference/tools_catalog` |
 | Choose a response projection profile (summary/detail/full/legacy) | `okto-pulse://reference/projection-profiles` |
-| Use the polymorphic `okto_pulse_ask` / `okto_pulse_remove_spec_entity` families | `okto-pulse://reference/tool-families/{qa_ask,spec_entity_remove}` |
+| Use the polymorphic `okto_pulse_ask` family | `okto-pulse://reference/tool-families/qa_ask` |
+| Use the polymorphic `okto_pulse_remove_spec_entity` family | `okto-pulse://reference/tool-families/spec_entity_remove` |
 
 **Single sources of truth:** Session/card pre-flight sequence → `okto-pulse://workflows/preflight`; `get_*_context` before every move → `okto-pulse://workflows/preflight` § "Entity context pre-flight"; KG query/consolidation timing + cognitive closeout → `okto-pulse://workflows/kg`; error messages → `okto-pulse://reference/errors`.
 
@@ -39,7 +40,7 @@ Cache the resource within the session; re-fetch when you switch domains — reso
 
 ## Pre-Flight Checklist (READ FIRST)
 
-**Before any board work, `resources/read okto-pulse://workflows/preflight`.** It carries the five mandatory sequences: **session pre-flight**, **entity-context pre-flight** (`get_*_context` with `profile="full"` before any move/validation), **card-execution pre-flight** (never skip steps 1 and 5), **Resource Gate pre-flight**, and **Design System pre-flight** (blocking gate on `add`/`update_screen_mockup`). The full step-by-step lives in that resource; this pointer stays inline so the bootstrap survives even if the instructions blob is truncated.
+**Before any board work, `resources/read okto-pulse://workflows/preflight`.** It carries the five mandatory sequences: **session pre-flight**, **entity-context pre-flight** (`get_*_context` with `profile="full"` before any move/validation), **card-execution pre-flight** (never skip steps 1 and 3), **Resource Gate pre-flight**, and **Design System pre-flight** (blocking gate on `okto_pulse_add_screen_mockup`/`okto_pulse_update_screen_mockup`). The full step-by-step lives in that resource; this pointer stays inline so the bootstrap survives even if the instructions blob is truncated.
 
 ---
 
@@ -63,7 +64,7 @@ Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_decision`). Be
 
 ## Available Tools — Critical Categories
 
-Tool schemas are delivered via the MCP `tools/list` protocol (lazy). Full catalog grouped by domain: `okto-pulse://reference/tools_catalog`. Per-tool long-form docs (args/returns/examples): `okto-pulse://reference/tool-docs/{family}`.
+Tool schemas are delivered via the MCP `tools/list` protocol (lazy). Full catalog grouped by domain: `okto-pulse://reference/tools_catalog`. Each catalog section links its concrete family docs with args, returns, and examples.
 
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec,sprint}`, `submit_{task_validation,spec_validation,spec_evaluation,sprint_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
 
@@ -74,7 +75,7 @@ High-volume reads can be returned under a projection profile — see `okto-pulse
 
 ## KG health and operational signals (stop-rule)
 
-Before any KG mutation call `okto_pulse_kg_health(board_id=...)` — **read-only**. **Stop-rule:** `overall_state == quarantined` → STOP and surface; do not write. `recovery_needed` stops every mutation EXCEPT the rebuild family — `okto_pulse_kg_rebuild_preflight` → `_confirm` → `_run` is its prescribed exit (guard refuses only on `graph_state == quarantined`). `metric_status=unavailable` ≠ healthy — treat as `at_risk`. Full contract (incl. at_risk/backpressure must-not-dos): **`okto-pulse://reference/kg-health`**.
+Before any KG mutation call `okto_pulse_kg_health(board_id=...)` — **read-only**. **Stop-rule:** `overall_state == quarantined` → STOP and surface; do not write. `recovery_needed` stops every mutation EXCEPT the rebuild family — `okto_pulse_kg_rebuild_preflight` → `okto_pulse_kg_rebuild_confirm` → `okto_pulse_kg_rebuild_run` is its prescribed exit (guard refuses only on `graph_state == quarantined`). `metric_status=unavailable` ≠ healthy — treat as `at_risk`. Full contract (incl. at_risk/backpressure must-not-dos): **`okto-pulse://reference/kg-health`**.
 
 ---
 

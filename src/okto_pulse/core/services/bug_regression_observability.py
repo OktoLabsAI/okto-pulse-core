@@ -8,7 +8,8 @@ import threading
 from typing import Any, Mapping
 
 
-from okto_pulse.core.observability.sample_buffer import BoundedSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 from okto_pulse.core.events import publish as event_publish
 from okto_pulse.core.events.types import BugRegressionScenarioReuseDecision
 from okto_pulse.core.services.bug_regression_scenarios import (
@@ -92,8 +93,8 @@ _FORBIDDEN_LABEL_FRAGMENTS = (
     "when",
 )
 _MAX_LABEL_VALUE_CHARS = 128
-_METRIC_SAMPLES_LOCK = threading.Lock()
-_METRIC_SAMPLES = BoundedSampleBuffer()
+_METRIC_SAMPLES_LOCK = runtime_lock("services.bug_regression.samples")
+_METRIC_SAMPLES = runtime_sample_buffer("services.bug_regression")
 
 
 @dataclass(frozen=True)

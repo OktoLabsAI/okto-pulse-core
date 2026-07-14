@@ -59,7 +59,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     normalize_cognitive_artifact_id,
     require_rebuild_audit_artifact_store,
 )
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
@@ -215,10 +216,11 @@ _OPERATOR_ACTION = (
 # model is the single place that enumerates the partition); clean boards emit no
 # blocking samples. Mirrors the project's in-memory emit/get/reset metric shape.
 _PARTITION_INTEGRITY_METRIC_LABELS = ("reason_code", "graph_layer", "status", "board_id")
-_partition_integrity_samples = BoundedCounterSampleBuffer(
-    _PARTITION_INTEGRITY_METRIC_LABELS
+_partition_integrity_samples = runtime_counter_sample_buffer(
+    "kg.canonical_partition_integrity",
+    _PARTITION_INTEGRITY_METRIC_LABELS,
 )
-_partition_integrity_lock = threading.Lock()
+_partition_integrity_lock = runtime_lock("kg.canonical_partition_integrity.samples")
 
 
 def emit_canonical_partition_integrity_sample(

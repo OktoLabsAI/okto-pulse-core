@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
+from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 from okto_pulse.core.kg.scoring import (
     CONTRADICT_PENALTY_CAP,
     DECAY_REORDER_POOL_MULTIPLIER,
@@ -305,7 +306,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
     )
     monkeypatch.setattr(
         kg_health_service,
-        "_aggregate_kuzu_metrics",
+        "_aggregate_graph_metrics",
         lambda _board_id: {
             "total_nodes": 10,
             "default_score_count": 0,
@@ -510,7 +511,7 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
     """
     from okto_pulse.core.services import kg_health_service as svc
 
-    original_metrics = svc._aggregate_kuzu_metrics
+    original_metrics = svc._aggregate_graph_metrics
     original_schema_version = svc._get_graph_schema_version
 
     def _metrics(_board_id):
@@ -520,7 +521,7 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
             "avg_relevance": 0.61,
         }
 
-    svc._aggregate_kuzu_metrics = _metrics
+    svc._aggregate_graph_metrics = _metrics
     svc._get_graph_schema_version = lambda _board_id: "0.3.5"
     monkeypatch.setattr(
         svc,
@@ -536,7 +537,7 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
         async with db_factory() as session:
             result = await get_kg_health(kg_health_board, session)
     finally:
-        svc._aggregate_kuzu_metrics = original_metrics
+        svc._aggregate_graph_metrics = original_metrics
         svc._get_graph_schema_version = original_schema_version
 
     assert result["total_nodes"] == 7
@@ -579,7 +580,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
         )
         await session.commit()
 
-    original_metrics = svc._aggregate_kuzu_metrics
+    original_metrics = svc._aggregate_graph_metrics
     original_schema_version = svc._get_graph_schema_version
 
     def _metrics(_board_id):
@@ -589,7 +590,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
             "avg_relevance": 0.8,
         }
 
-    svc._aggregate_kuzu_metrics = _metrics
+    svc._aggregate_graph_metrics = _metrics
     svc._get_graph_schema_version = lambda _board_id: "0.3.5"
     monkeypatch.setattr(
         svc,
@@ -605,7 +606,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
         async with db_factory() as session:
             result = await get_kg_health(kg_health_board, session)
     finally:
-        svc._aggregate_kuzu_metrics = original_metrics
+        svc._aggregate_graph_metrics = original_metrics
         svc._get_graph_schema_version = original_schema_version
 
     assert result["dead_letter_count"] >= 1
@@ -630,7 +631,7 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
 
     monkeypatch.setattr(
         svc,
-        "_aggregate_kuzu_metrics",
+        "_aggregate_graph_metrics",
         lambda _board_id: {
             "total_nodes": 5,
             "default_score_count": 0,
@@ -999,39 +1000,26 @@ async def test_storage_footprint_proxy_payload_is_not_direct_memory_telemetry(
 def test_contradict_cap_preserves_floor_and_emits_log(caplog):
     """raw_sum=2.5 (5 contradicts × 0.5) is capped at 0.5 with a WARN log.
 
-    Uses a stub Kùzu connection so we don't need a real graph; exercises
+    Uses a stub graph transaction so we don't need a real graph; exercises
     the same code path as production (cap + counter + log + dict shape).
     """
     caplog.set_level(logging.WARNING, logger="okto_pulse.kg.scoring")
     reset_contradict_warn_counters()
 
-    class _StubResult:
-        def __init__(self, row):
-            self._row = row
-            self._consumed = False
-
-        def has_next(self):
-            return not self._consumed
-
-        def get_next(self):
-            self._consumed = True
-            return self._row
-
-        def close(self):
-            pass
-
     class _StubConn:
         def execute(self, _cypher, _params):
-            return _StubResult([
-                1.0,    # source_confidence
-                3,      # out_deg
-                2,      # in_deg
-                10,     # query_hits
-                None,   # last_queried_at
-                0.5,    # relevance_score
-                2.5,    # SUM(contradict_confidence) — way above cap
-                0.0,    # priority_boost
-            ])
+            return GraphStatementResult.from_rows(
+                [[
+                    1.0,    # source_confidence
+                    3,      # out_deg
+                    2,      # in_deg
+                    10,     # query_hits
+                    None,   # last_queried_at
+                    0.5,    # relevance_score
+                    2.5,    # SUM(contradict_confidence) — way above cap
+                    0.0,    # priority_boost
+                ]]
+            )
 
     inputs = _fetch_node_inputs(
         _StubConn(), "Decision", "decision_x", board_id=KG_HEALTH_BOARD_ID,
@@ -1057,20 +1045,11 @@ def test_contradict_warn_count_increments_on_cap_event():
     class _Stub:
         def __init__(self, penalty):
             self._penalty = penalty
-            self._consumed = False
 
         def execute(self, _c, _p):
-            return self
-
-        def has_next(self):
-            return not self._consumed
-
-        def get_next(self):
-            self._consumed = True
-            return [1.0, 2, 1, 5, None, 0.5, self._penalty, 0.0]
-
-        def close(self):
-            pass
+            return GraphStatementResult.from_rows(
+                [[1.0, 2, 1, 5, None, 0.5, self._penalty, 0.0]]
+            )
 
     # Three nodes that trigger the cap.
     for _ in range(3):
@@ -1154,15 +1133,15 @@ async def test_default_score_ratio_skew_emits_alarm_log(
 ):
     """When ratio > threshold, a structured WARN is emitted.
 
-    Without a populated Kùzu graph, total_nodes is 0 so the ratio path
+    Without a populated graph, total_nodes is 0 so the ratio path
     cannot trigger via aggregations alone. We assert the threshold + log
-    machinery by stubbing _aggregate_kuzu_metrics in the service module.
+    machinery by stubbing _aggregate_graph_metrics in the service module.
     """
     from okto_pulse.core.services import kg_health_service as svc
 
     caplog.set_level(logging.WARNING, logger="okto_pulse.services.kg_health")
 
-    original = svc._aggregate_kuzu_metrics
+    original = svc._aggregate_graph_metrics
 
     def _stub(_board_id):
         return {
@@ -1171,12 +1150,12 @@ async def test_default_score_ratio_skew_emits_alarm_log(
             "avg_relevance": 0.5,
         }
 
-    svc._aggregate_kuzu_metrics = _stub
+    svc._aggregate_graph_metrics = _stub
     try:
         async with db_factory() as session:
             data = await get_kg_health(kg_health_board, session)
     finally:
-        svc._aggregate_kuzu_metrics = original
+        svc._aggregate_graph_metrics = original
 
     assert data["default_score_count"] == 8
     assert data["default_score_ratio"] == 0.8

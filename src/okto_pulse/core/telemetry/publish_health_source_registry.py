@@ -10,10 +10,9 @@ descriptors ONLY through :func:`get_external_source_descriptors`; the PURE
 CRITICAL INVARIANT (carried from R5C / restated by R10-D): AWS / report health is
 NEVER inferred healthy from a local send. An absent / gap / stale / expired /
 unavailable descriptor is classified as a STRUCTURED non-healthy state
-(degraded / source_gap / unavailable) by the pure classifier. The
-register-before-remove FALLBACK is the core ``discover_external_sources``, whose
-default is an explicit observability GAP (``SRC_GAP`` -> degraded) — it can never
-mask the missing AWS/report visibility as healthy.
+(degraded / source_gap / unavailable) by the pure classifier. An uncomposed
+runtime fails closed instead of inventing descriptors, so missing AWS/report
+visibility can never be masked as healthy.
 """
 
 from __future__ import annotations
@@ -40,13 +39,10 @@ def register_external_source_provider(provider: ExternalSourceProvider) -> None:
 
 
 def get_external_source_descriptors(settings: Any) -> tuple[Any, Any]:
-    """Resolve the ``(aws_ingest, report_athena)`` descriptors via the registered
-    provider, or — register-before-remove — fall back to the core
-    ``discover_external_sources`` default (an explicit GAP, never healthy).
+    """Resolve descriptors through the registered edition provider.
 
-    The COMPOSED runtime uses the Community provider's PublishHealthSource signals;
-    the fallback (non-composed / retro-compat) is NOT silent — it emits a
-    structured signal — and still yields a GAP, so the invariant holds either way.
+    An uncomposed runtime emits a structured signal and fails closed; only the
+    edition adapter may claim visibility into external sources.
     """
     provider = resolve_runtime_value(_RUNTIME_KEY)
     if provider is not None:

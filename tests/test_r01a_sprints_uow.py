@@ -39,7 +39,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from okto_pulse.community.api import sprints as sprints_api
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.sprints import router as sprints_router
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu7-s2-user"
@@ -73,6 +74,7 @@ def client():
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -85,7 +87,14 @@ async def _seed_board() -> str:
 
     bid = f"board-fu7s2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name="fu7s2", owner_id=USER))
+        db.add(
+            Board(
+                id=bid,
+                name="fu7s2",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
         return bid
 
@@ -370,6 +379,22 @@ async def test_assign_tasks_card_ids_required_400(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_assign_tasks_missing_card_400(client) -> None:
+    bid = await _seed_board()
+    sid = await _seed_spec(bid)
+    sprint_id = await _create_sprint(bid, sid)
+
+    resp = client.post(
+        f"{PREFIX}/sprints/{sprint_id}/assign-tasks",
+        json={"card_ids": [_missing()]},
+    )
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "card_not_found"
+    assert detail["facts"]["card_id"]
+
+
+@pytest.mark.asyncio
 async def test_assign_tasks_cross_spec_400(client) -> None:
     bid = await _seed_board()
     sid = await _seed_spec(bid)
@@ -543,7 +568,7 @@ async def test_get_sprint_use_case_raises_for_missing_sprint() -> None:
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(USER, "rest")
+    actor = ActorContext(USER, "rest", realm_id=LOCAL_REALM_ID)
     with pytest.raises(EntityNotFoundError):
         async with uowf(actor=actor) as uow:
             await GetSprintUseCase().execute(

@@ -27,6 +27,7 @@ import logging
 from typing import Any, Iterable, Mapping
 
 from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.runtime_context import runtime_state
 from okto_pulse.core.ports.kg_equivalence_ledger import (
     resolve_equivalence_ledger,
 )
@@ -45,7 +46,7 @@ __all__ = [
 # Per-board member_id -> survivor_id mapping cache. Invalidated on every
 # ledger write (dedup append / unmerge revoke) — the marginalia reloads on
 # every query, acceptable only at N=1 (D5).
-_FOLD_CACHE: dict[str, Mapping[str, str]] = {}
+_FOLD_CACHE = runtime_state("kg.equivalence_fold.cache", dict)
 
 
 def invalidate_equivalence_fold_cache(board_id: str | None = None) -> None:

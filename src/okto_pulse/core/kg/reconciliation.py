@@ -3,7 +3,7 @@
 Decides ADD / UPDATE / SUPERSEDE / NOOP for each node candidate based on:
 
 1. Content hash of the full artifact → NOOP short-circuit for the whole session
-2. stable id match (ORN, kuzu_node_id prefix kg:, etc.) → UPDATE
+2. stable id match (ORN, graph_node_id prefix kg:, etc.) → UPDATE
 3. semantic similarity threshold → SUPERSEDE hint (agent confirms via override)
 4. otherwise → ADD
 
@@ -31,9 +31,9 @@ SIMILARITY_UPDATE_THRESHOLD = 0.95
 
 @dataclass
 class ExistingNodeSummary:
-    """Minimal info the engine needs about an existing kuzu node."""
+    """Minimal info the engine needs about an existing graph node."""
 
-    kuzu_node_id: str
+    graph_node_id: str
     node_type: str
     stable_id: str | None  # ORN or external id if present
     title: str
@@ -75,11 +75,11 @@ def reconcile_candidate(
                 return ReconciliationHint(
                     candidate_id=candidate.candidate_id,
                     operation=ReconciliationOperation.UPDATE,
-                    target_node_id=match.kuzu_node_id,
+                    target_node_id=match.graph_node_id,
                     confidence=0.95,
                     reason=(
                         f"stable id {candidate.source_artifact_ref!r} already "
-                        f"exists as {match.kuzu_node_id}"
+                        f"exists as {match.graph_node_id}"
                     ),
                 )
 
@@ -90,7 +90,7 @@ def reconcile_candidate(
             return ReconciliationHint(
                 candidate_id=candidate.candidate_id,
                 operation=ReconciliationOperation.UPDATE,
-                target_node_id=top.kuzu_node_id,
+                target_node_id=top.graph_node_id,
                 confidence=top.similarity,
                 reason=(
                     f"semantic match {top.similarity:.2f} ≥ "
@@ -101,7 +101,7 @@ def reconcile_candidate(
             return ReconciliationHint(
                 candidate_id=candidate.candidate_id,
                 operation=ReconciliationOperation.SUPERSEDE,
-                target_node_id=top.kuzu_node_id,
+                target_node_id=top.graph_node_id,
                 confidence=top.similarity,
                 reason=(
                     f"semantic match {top.similarity:.2f} in "

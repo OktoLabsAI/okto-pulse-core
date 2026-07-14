@@ -17,7 +17,7 @@ RebuildSourceResolver = Callable[[Any], Sequence[Mapping[str, Any]]]
 RebuildStepAdapter = Callable[[Any], Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SourceReadError(Exception):
     """Structured source-read failure raised by edition adapters."""
 

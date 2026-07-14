@@ -29,6 +29,14 @@ from okto_pulse.core.kg.interfaces.graph_lifecycle import (
     PurgeReport,
     RebuildReport,
 )
+from okto_pulse.core.kg.interfaces.graph_errors import (
+    GraphCapabilityUnavailable,
+    GraphCorruption,
+    GraphError,
+    GraphIndexUnavailable,
+    GraphLockContention,
+    GraphUnavailable,
+)
 from okto_pulse.core.kg.interfaces.graph_recovery import (
     GraphRecovery,
     WalRecoveryReport,
@@ -43,7 +51,11 @@ from okto_pulse.core.kg.interfaces.graph_schema_manager import (
     GraphSchemaManager,
     SchemaValidationResult,
 )
-from okto_pulse.core.kg.interfaces.graph_store import QueryFilters, SemanticGraphStore
+from okto_pulse.core.kg.interfaces.graph_store import (
+    GraphCapabilities,
+    QueryFilters,
+    SemanticGraphStore,
+)
 from okto_pulse.core.kg.interfaces.graph_transaction import (
     GraphStatementResult,
     GraphTransaction,
@@ -93,8 +105,14 @@ __all__ = [
     "EmbeddingProvider",
     "EventBus",
     "GraphHandle",
+    "GraphCapabilities",
+    "GraphCapabilityUnavailable",
+    "GraphCorruption",
+    "GraphError",
+    "GraphIndexUnavailable",
     "GraphLifecycle",
     "GraphLifecycleStepResult",
+    "GraphLockContention",
     "GraphRecovery",
     "GraphPurgeResult",
     "GraphRuntimeState",
@@ -104,6 +122,7 @@ __all__ = [
     "GraphStatementResult",
     "GraphTransaction",
     "GraphTransactionScope",
+    "GraphUnavailable",
     "GlobalDiscoveryRuntime",
     "InvalidArtifactTypeError",
     "PurgeReport",

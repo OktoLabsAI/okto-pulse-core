@@ -16,6 +16,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, runtime_checkable
 
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
+
 __all__ = [
     "CurationProposal",
     "CurationProposalError",
@@ -79,20 +85,20 @@ class CurationProposalStore(Protocol):
         ...
 
 
-_curation_proposal_store: CurationProposalStore | None = None
+_RUNTIME_KEY = "ports.kg.curation_proposal_store"
 
 
 def register_curation_proposal_store(store: CurationProposalStore) -> None:
-    global _curation_proposal_store
-    _curation_proposal_store = store
+    register_runtime_value(_RUNTIME_KEY, store)
 
 
 def resolve_curation_proposal_store() -> CurationProposalStore | None:
-    return _curation_proposal_store
+    return resolve_runtime_value(_RUNTIME_KEY)
 
 
 def require_curation_proposal_store() -> CurationProposalStore:
-    if _curation_proposal_store is None:
+    store = resolve_curation_proposal_store()
+    if store is None:
         raise CurationProposalError(
             "kg_curation_proposal_store_unavailable",
             remediation=(
@@ -101,9 +107,8 @@ def require_curation_proposal_store() -> CurationProposalStore:
                 "propose/approve lane."
             ),
         )
-    return _curation_proposal_store
+    return store
 
 
 def reset_curation_proposal_store_for_tests() -> None:
-    global _curation_proposal_store
-    _curation_proposal_store = None
+    reset_runtime_values(_RUNTIME_KEY)

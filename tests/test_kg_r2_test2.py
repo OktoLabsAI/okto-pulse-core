@@ -63,19 +63,23 @@ _board_rebuild_ingestion = pytest.importorskip(
 )
 BoardRebuildIngestionAdapter = _board_rebuild_ingestion.BoardRebuildIngestionAdapter
 
-_board_source_reader = pytest.importorskip(
-    "okto_pulse.community.adapters.board_source_reader",
-    reason="AF-04 Community integration test requires the Community board source reader.",
-)
-resolve_pulse_db_path = _board_source_reader.resolve_pulse_db_path
-
-
 @pytest.fixture(autouse=True)
-def _real_board_graph_registry(_kg_registry_test_fakes):
+def _real_board_graph_registry(_kg_registry_test_fakes, _tmp_rebuild_dir):
+    from okto_pulse.community.adapters.rebuild_audit_storage import (
+        CommunityFileSystemRebuildAuditArtifactStore,
+    )
+    from okto_pulse.community.adapters.quarantine_restore import (
+        CommunityQuarantineRestore,
+    )
+
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
         graph_transaction=RealBoardGraphTransactionForTests(),
         graph_lifecycle=RealBoardGraphLifecycleForTests(),
+        rebuild_audit_artifact_store=(
+            CommunityFileSystemRebuildAuditArtifactStore(_tmp_rebuild_dir)
+        ),
+        quarantine_restore=CommunityQuarantineRestore(),
     )
 
 
@@ -97,8 +101,12 @@ def _rebuild_req(board_id):
 def _empty_source_adapter():
     """Real adapter wired with an empty-source resolver (the validator-approved
     deterministic rebuild path). drain is instant because nothing is enqueued."""
+    from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
+
+    db_path = resolve_database_runtime().local_database_path()
+    assert db_path is not None
     adapter = BoardRebuildIngestionAdapter(
-        db_path=resolve_pulse_db_path(),
+        db_path=db_path,
         drain_timeout_seconds=5.0,
         drain_poll_interval_seconds=0.02,
         drain_final_grace_seconds=0.0,
@@ -257,7 +265,11 @@ def test_without_preservation_cognitive_node_is_lost():
     # A rebuild purge WITHOUT snapshot/restore genuinely loses the node — this is
     # what makes the preservation tests above non-theater.
     snap = snapshot_canonical_cognitive(board_id)  # captured but deliberately unused
-    adapter = BoardRebuildIngestionAdapter(db_path=resolve_pulse_db_path())
+    from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
+
+    db_path = resolve_database_runtime().local_database_path()
+    assert db_path is not None
+    adapter = BoardRebuildIngestionAdapter(db_path=db_path)
     adapter.prepare_board_graph_storage(board_id=board_id, reason="r2t2_teeth")
     bootstrap_board_graph(board_id)  # fresh graph, as the worker would
     assert count_canonical(board_id, "Learning") == 0, (

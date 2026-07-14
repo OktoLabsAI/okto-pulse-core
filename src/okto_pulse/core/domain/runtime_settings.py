@@ -4,13 +4,6 @@ from __future__ import annotations
 
 from typing import Final
 
-GRAPH_DB_KEYS: tuple[str, ...] = (
-    "kg_kuzu_buffer_pool_mb",
-    "kg_kuzu_max_db_size_gb",
-    "kg_connection_pool_size",
-    "kg_wal_salvage_enabled",
-    "kg_wal_only_recovery_enabled",
-)
 EVENT_QUEUE_KEYS: tuple[str, ...] = (
     "kg_queue_max_concurrent_workers",
     "kg_queue_min_interval_ms",
@@ -23,7 +16,7 @@ DECAY_TICK_KEYS: tuple[str, ...] = (
     "kg_decay_tick_staleness_days",
     "kg_decay_tick_max_age_days",
 )
-RUNTIME_KEYS: tuple[str, ...] = GRAPH_DB_KEYS + EVENT_QUEUE_KEYS + DECAY_TICK_KEYS
+RUNTIME_KEYS: tuple[str, ...] = EVENT_QUEUE_KEYS + DECAY_TICK_KEYS
 SETTINGS_RUNTIME_EFFECT_PORTS: Final[dict[str, str]] = {
     "kg_decay_tick_interval_minutes": "scheduler_control",
 }
@@ -48,7 +41,6 @@ class ConfigChangeBlocked(Exception):
 __all__ = [
     "DECAY_TICK_KEYS",
     "EVENT_QUEUE_KEYS",
-    "GRAPH_DB_KEYS",
     "RUNTIME_KEYS",
     "SETTINGS_RUNTIME_EFFECT_PORTS",
     "ConfigChangeBlocked",

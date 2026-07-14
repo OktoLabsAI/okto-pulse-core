@@ -19,6 +19,8 @@ still handles both fr_ids and indices on read.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -87,7 +89,7 @@ async def _seed(db_factory) -> tuple[str, str]:
 
 
 async def _call(tool_name: str, board_id: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(db_factory_ref[0])
+    register_mcp_test_runtime(db_factory_ref[0])
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
     ), patch.object(mcp_server, "check_permission", return_value=None):

@@ -20,6 +20,7 @@ import re
 import threading
 import unicodedata
 import uuid
+from contextvars import copy_context
 from typing import Any
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery.clustering")
@@ -42,8 +43,10 @@ def _run_async_blocking(coro):
         except BaseException as exc:  # pragma: no cover - re-raised below
             box["error"] = exc
 
+    context = copy_context()
     thread = threading.Thread(
-        target=_runner,
+        target=context.run,
+        args=(_runner,),
         name="kg-global-discovery-board-write",
         daemon=True,
     )
@@ -69,13 +72,9 @@ def _execute_board_write_sync(
 
 
 def _first_count(result: Any) -> int:
-    try:
-        if result is not None and hasattr(result, "has_next") and result.has_next():
-            row = result.get_next()
-            return int(row[0] or 0)
-    finally:
-        if result is not None and hasattr(result, "close"):
-            result.close()
+    rows = getattr(result, "rows", ()) if result is not None else ()
+    if rows:
+        return int(rows[0][0] or 0)
     return 0
 
 
@@ -124,7 +123,7 @@ def entity_combined_score(
 def board_delete_cascade(board_id: str) -> dict:
     """Remove a board and cascade-cleanup orphans from the global discovery.
 
-    Also wipes the per-board Kùzu graph (every node + edge) so that re-
+    Also wipes the per-board graph backend graph (every node + edge) so that re-
     running historical consolidation rebuilds from a clean slate. Without
     this step the global cleanup leaves orphan nodes from prior workers
     (e.g. legacy `FR-{n}` Requirement nodes) that nothing references —
@@ -133,7 +132,7 @@ def board_delete_cascade(board_id: str) -> dict:
     Returns counts of removed entities per type.
 
     KG-01.3.1 boundary: this is a destructive write path against both
-    graph.lbug and discovery.lbug. require_write_token() raises in STRICT
+    board graph and global graph. require_write_token() raises in STRICT
     mode if no safe-write guard is active; in SOFT mode logs + bumps
     kg_unguarded_write_total. Production wires the caller (admin tooling
     or rebuild service) to enter KGSafeWriteLifecycle under the admin
@@ -156,7 +155,7 @@ def board_delete_cascade(board_id: str) -> dict:
     # 0. Wipe per-board SQLite audit + outbox + queue rows. Without this the
     # next consolidation re-uses the stale `content_hash` from a prior commit
     # and `propose_reconciliation` short-circuits every candidate to NOOP —
-    # the queue worker reports "done" but Kùzu stays empty.
+    # the queue worker reports "done" but graph backend stays empty.
     try:
         from okto_pulse.core.ports.board_relational_cleanup import (
             get_board_relational_cleanup_port,
@@ -175,7 +174,7 @@ def board_delete_cascade(board_id: str) -> dict:
             board_id, exc,
         )
 
-    # 1. Wipe per-board Kùzu graph (skip BoardMeta singleton).
+    # 1. Wipe per-board graph backend graph (skip BoardMeta singleton).
     try:
         if get_kg_registry().graph_runtime_store.exists(board_id):
             for node_type in NODE_TYPES:
@@ -207,8 +206,8 @@ def board_delete_cascade(board_id: str) -> dict:
             "DETACH DELETE d RETURN count(d)",
             {"bid": board_id},
         )
-        if result.has_next():
-            counts["digests_removed"] = result.get_next()[0]
+        if result.rows:
+            counts["digests_removed"] = result.rows[0][0]
 
         # Delete Board node + edges
         global_runtime.execute(
@@ -271,7 +270,7 @@ def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
             "MATCH (t:Topic) WHERE NOT EXISTS { MATCH ()-[:HAS_TOPIC]->(t) } "
             "RETURN count(t)"
         )
-        orphan_topics = r.get_next()[0] if r.has_next() else 0
+        orphan_topics = r.rows[0][0] if r.rows else 0
         counts["topics_removed"] = orphan_topics
 
         r = global_runtime.execute(
@@ -279,7 +278,7 @@ def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
             "AND NOT EXISTS { MATCH ()-[:DECISION_MENTIONS_ENTITY]->(e) } "
             "RETURN count(e)"
         )
-        orphan_entities = r.get_next()[0] if r.has_next() else 0
+        orphan_entities = r.rows[0][0] if r.rows else 0
         counts["entities_removed"] = orphan_entities
 
         if not dry_run:
@@ -308,7 +307,7 @@ def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
 
     If board_ids is None, rebuilds for all boards with existing graph files.
 
-    KG-01.4 (val_b15ff42f rework): the drop of `discovery.lbug` and
+    KG-01.4 (val_b15ff42f rework): the drop of `global graph` and
     sidecars MUST go through ``purge_global_discovery_storage`` so the
     files are quarantined with a manifest before being moved out of the
     way. Direct ``unlink``/``rmtree`` is forbidden by FR7/AC10/IR

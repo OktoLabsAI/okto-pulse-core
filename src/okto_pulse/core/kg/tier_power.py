@@ -598,7 +598,7 @@ def execute_cypher_read_only(
 
 
 def _parse_iso_ts(value: str | None) -> Any:
-    """Parse an ISO-8601 timestamp into a Kùzu-ready datetime; ``None`` passes
+    """Parse an ISO-8601 timestamp into a graph backend-ready datetime; ``None`` passes
     through. Swallows invalid input so the caller can proceed unfiltered (a
     bad cursor shouldn't cause a 500 — the natural-query tool must remain
     best-effort)."""
@@ -1202,7 +1202,7 @@ def _batch_lookup_created_at(board_id: str, node_ids: list[str]) -> dict[str, An
                 ts = row[1]
                 if ts is None:
                     continue
-                # Kùzu returns a Python datetime; ensure tz-aware UTC
+                # graph backend returns a Python datetime; ensure tz-aware UTC
                 if hasattr(ts, "tzinfo") and ts.tzinfo is None:
                     ts = ts.replace(tzinfo=timezone.utc)
                 out[nid] = ts

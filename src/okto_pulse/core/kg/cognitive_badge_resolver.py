@@ -47,7 +47,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
 )
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 
 # ---------------------------------------------------------------------------
@@ -174,8 +175,11 @@ _BADGE_RESOLVE_LABELS = (
     "reason",
 )
 
-_RESOLVE_SAMPLES = BoundedCounterSampleBuffer(_BADGE_RESOLVE_LABELS)
-_RESOLVE_SAMPLES_LOCK = threading.Lock()
+_RESOLVE_SAMPLES = runtime_counter_sample_buffer(
+    "kg.cognitive_badge_resolver",
+    _BADGE_RESOLVE_LABELS,
+)
+_RESOLVE_SAMPLES_LOCK = runtime_lock("kg.cognitive_badge_resolver.samples")
 
 
 def _board_id_hash(board_id: str) -> str:

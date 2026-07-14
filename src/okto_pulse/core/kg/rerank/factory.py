@@ -17,14 +17,16 @@ import logging
 import threading
 from typing import Callable
 
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
+
 from .llm import LLMRankerFn, LLMReranker
 from .noop import NoopReranker
 from .token_overlap import TokenOverlapReranker
 
 logger = logging.getLogger("okto_pulse.kg.rerank")
 
-_cache: dict[str, object] = {}
-_cache_lock = threading.Lock()
+_cache = runtime_state("kg.rerank.factory_cache", dict)
+_cache_lock = runtime_lock("kg.rerank.factory_cache")
 
 #: (R05-B IMP3) Optional cross_encoder factory registered by the edition (e.g.
 #: the Community CrossEncoder adapter). A 1-entry dict holding
@@ -34,9 +36,8 @@ _cache_lock = threading.Lock()
 #: factory, or the factory raises ``ImportError`` because its optional dependency
 #: is absent, the core degrades to ``token_overlap``.
 #:
-#: It is a module CONSTANT mutated IN PLACE (never reassigned via ``global``), so
-#: the AntiSingletonGate does not classify it as a new module-global singleton.
-_cross_encoder_registry: "dict[str, Callable[[str | None], object]]" = {}
+#: The mutable registry is owned by the active runtime context.
+_cross_encoder_registry = runtime_state("kg.rerank.cross_encoder_registry", dict)
 
 
 def register_cross_encoder_factory(

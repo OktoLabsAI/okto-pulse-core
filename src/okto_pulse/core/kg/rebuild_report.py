@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -234,8 +235,8 @@ class TerminalGuardDecision:
 
 # OR or_56ec0300 — kg_rebuild_report_total (event: created|failed|opened)
 _REPORT_LABELS = ("board_id", "status", "event")
-_report_counter: dict[tuple[str, str, str], int] = {}
-_report_counter_lock = threading.Lock()
+_report_counter = runtime_state("kg.rebuild_report.report_counter", dict)
+_report_counter_lock = runtime_lock("kg.rebuild_report.report_counter")
 
 
 def _bump_report(*, board_id: str, status: str, event: str) -> None:
@@ -279,8 +280,8 @@ def reset_report_counter() -> None:
 
 # OR or_9b4a7726 — kg_rebuild_report_persist_total (outcome)
 _PERSIST_LABELS = ("board_id", "status", "outcome")
-_persist_counter: dict[tuple[str, str, str], int] = {}
-_persist_counter_lock = threading.Lock()
+_persist_counter = runtime_state("kg.rebuild_report.persist_counter", dict)
+_persist_counter_lock = runtime_lock("kg.rebuild_report.persist_counter")
 
 
 def _bump_persist(*, board_id: str, status: str, outcome: str) -> None:
@@ -329,8 +330,8 @@ _TERMINAL_LABELS = (
     "publishable_status",
     "with_report_ref",
 )
-_terminal_counter: dict[tuple[str, str, str, str], int] = {}
-_terminal_counter_lock = threading.Lock()
+_terminal_counter = runtime_state("kg.rebuild_report.terminal_counter", dict)
+_terminal_counter_lock = runtime_lock("kg.rebuild_report.terminal_counter")
 
 
 def _bump_terminal(

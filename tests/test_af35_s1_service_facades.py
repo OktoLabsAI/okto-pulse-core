@@ -23,12 +23,6 @@ SERVICE_MODULES = (
     ROOT / "src/okto_pulse/core/services/settings_service.py",
 )
 
-ADAPTER_ALLOWLIST = {
-    "src/okto_pulse/core/repositories/sqlalchemy/resource_gate_service.py",
-    "src/okto_pulse/core/repositories/sqlalchemy/runtime_settings_service.py",
-    "src/okto_pulse/core/repositories/sqlalchemy/traceability_read_model.py",
-}
-
 FORBIDDEN_NAMES = {"AsyncSession", "select", "flag_modified", "get_db"}
 FORBIDDEN_SNIPPETS = ("session.execute", "Depends(get_db)", "from sqlalchemy")
 
@@ -54,8 +48,8 @@ def test_af35_s1_service_facades_have_no_direct_relational_symbols() -> None:
 
 
 def test_af35_s1_relational_bodies_are_explicit_repository_adapters() -> None:
-    for adapter in ADAPTER_ALLOWLIST:
-        assert CORE_ORM_IMPORT_ALLOWLIST.get(adapter) == "repository"
+    assert CORE_ORM_IMPORT_ALLOWLIST == {}
+    assert not (ROOT / "src/okto_pulse/core/repositories/sqlalchemy").exists()
 
     for service in SERVICE_MODULES:
         rel = service.relative_to(ROOT).as_posix()

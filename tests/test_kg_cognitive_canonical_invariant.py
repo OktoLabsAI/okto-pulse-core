@@ -22,7 +22,7 @@ import pytest
 
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     _require_open_session,
     add_edge_candidate,
     add_node_candidate,
@@ -59,7 +59,7 @@ SYSTEM_WORKER = "system:layer1_worker"
 
 
 def _seed_node(kconn, orch, node_type: str, node_id: str, source_ref: str) -> None:
-    _apply_kuzu_node_create_with_timestamp(
+    _apply_graph_node_create(
         orch,
         node_type,
         node_id,
@@ -90,8 +90,8 @@ def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str
     decision_id = f"decision_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )

@@ -7,10 +7,16 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from okto_pulse.core.application.use_cases import ActorContext
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID, RealmScope
 
 
 def _actor(board_id: str) -> ActorContext:
-    return ActorContext("u", "rest", board_id=board_id)
+    return ActorContext(
+        "u",
+        "rest",
+        board_id=board_id,
+        realm_scope=RealmScope.local(),
+    )
 
 
 @pytest.mark.asyncio
@@ -83,7 +89,7 @@ async def test_retry_endpoint_404_when_entry_missing(db_factory):
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     factory = db_factory
     async with factory() as db:
-        db.add(Board(id="b", name="b", owner_id="u"))
+        db.add(Board(id="b", name="b", owner_id="u", realm_id=LOCAL_REALM_ID))
         await db.commit()
         with pytest.raises(HTTPException) as exc:
             await retry_pending_entry(
@@ -100,7 +106,14 @@ async def test_retry_endpoint_resets_failed_entry(db_factory):
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     factory = db_factory
     async with factory() as db:
-        db.add(Board(id="b_retry", name="b", owner_id="u"))
+        db.add(
+            Board(
+                id="b_retry",
+                name="b",
+                owner_id="u",
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         entry = ConsolidationQueue(
             board_id="b_retry",
             artifact_type="spec",
@@ -139,7 +152,13 @@ async def test_retry_endpoint_recursive_reopens_descendants(db_factory):
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
     factory = db_factory
     async with factory() as db:
-        board = Board(id="b_rec", name="n", description="", owner_id="u")
+        board = Board(
+            id="b_rec",
+            name="n",
+            description="",
+            owner_id="u",
+            realm_id=LOCAL_REALM_ID,
+        )
         spec = Spec(id="spec_rec", board_id="b_rec", title="t",
                     description="", created_by="u")
         sprint = Sprint(id="sprint_rec", board_id="b_rec",

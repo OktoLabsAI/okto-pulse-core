@@ -39,6 +39,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Mapping
 
 from okto_pulse.core.repositories.core_orm_import_gate import (
     _ALLOWLIST_CLUSTERS,
@@ -54,8 +55,8 @@ from okto_pulse.core.repositories.core_orm_import_gate import (
 from okto_pulse.core.repositories.debt import ORM_RETURN_DEBT
 from okto_pulse.core.repositories.relational_boundary_gate import default_core_path
 
-#: ORM types for which a repository PORT exists — derived from the live
-#: ``ORM_RETURN_DEBT`` ledger (the strangler's first-cut aggregates). A
+#: ORM types for which a repository PORT still returns ORM — derived from the
+#: active ``ORM_RETURN_DEBT`` ledger. The terminal F01 value is empty. A
 #: ``<session>.get(M, pk)`` call is *port-backed* (routable to ``uow.<agg>.get``)
 #: iff ``M`` ∈ this set. Tying it to the ledger makes the drainability rule
 #: deterministic AND falsifiable: adding a repository port means registering its
@@ -372,18 +373,22 @@ class SplitInventoryGuardReport:
         return {"ok": self.ok, "failures": list(self.failures)}
 
 
-def _group_clusters(files: tuple[str, ...]) -> set[str]:
+def _group_clusters(
+    files: tuple[str, ...], registered_allowlist: Mapping[str, str]
+) -> set[str]:
     """Distinct gate clusters the group's files belong to (a homogeneous group
     maps to exactly one)."""
     return {
-        CORE_ORM_IMPORT_ALLOWLIST[f]
+        registered_allowlist[f]
         for f in files
-        if f in CORE_ORM_IMPORT_ALLOWLIST
+        if f in registered_allowlist
     }
 
 
 def guard_orm_batch_removal(
     declaration: OrmBatchRemovalDeclaration,
+    *,
+    registered_allowlist: Mapping[str, str] | None = None,
 ) -> SplitInventoryGuardReport:
     """Validate a batch ORM-removal declaration. FAILS (before any move) when a
     group omits ``group_id``/``owner``, lumps heterogeneous clusters, lacks
@@ -393,6 +398,11 @@ def guard_orm_batch_removal(
     explicit register-before-remove order, and a before/after inventory that
     actually reduces coupling.
     """
+    registered = (
+        CORE_ORM_IMPORT_ALLOWLIST
+        if registered_allowlist is None
+        else registered_allowlist
+    )
     failures: list[str] = []
     if not declaration.groups:
         failures.append("empty batch: no removal groups declared")
@@ -412,7 +422,7 @@ def guard_orm_batch_removal(
             failures.append(f"{tag}: no files in group")
         # register-before-remove: every file must currently be registered in the
         # allowlist (you can only remove what was registered first).
-        unregistered = [f for f in group.files if f not in CORE_ORM_IMPORT_ALLOWLIST]
+        unregistered = [f for f in group.files if f not in registered]
         if unregistered:
             failures.append(
                 f"{tag}: register-before-remove violated — not registered: {unregistered}"
@@ -420,7 +430,7 @@ def guard_orm_batch_removal(
         if not group.register_before_remove:
             failures.append(f"{tag}: register_before_remove not asserted")
         # heterogeneous: a group must map to exactly one cluster.
-        clusters = _group_clusters(group.files)
+        clusters = _group_clusters(group.files, registered)
         if len(clusters) > 1:
             failures.append(
                 f"{tag}: heterogeneous group spans clusters {sorted(clusters)} — "
@@ -465,7 +475,7 @@ def drainability_classification(core_root: str | Path | None = None) -> dict:
     """Deterministic, re-executable classification of every ``<sess>.get(M, pk)``
     ORM get-by-id call-site in the core tree.
 
-    Formalized drainability rule (tied to the live ``ORM_RETURN_DEBT`` ledger):
+    Formalized drainability rule (tied to the active ``ORM_RETURN_DEBT`` ledger):
       * a site is ``port_backed`` iff ``M`` ∈ :data:`PORTED_AGGREGATE_ORM_TYPES`
         (a ``uow.<agg>.get(id)`` port exists — derived from the debt ledger);
       * it is ``import_drainable_now`` iff ``port_backed`` AND ``M``'s ONLY use in
@@ -550,7 +560,7 @@ def core_orm_governance_report(core_root: str | Path | None = None) -> dict:
         into port-backed vs no-port (blocked by axis), the count import-drainable
         now, and which files (if any) would fully vacate the allowlist now;
       * the 4 consumers this card DRAINED (re-proven coupling-free);
-      * the session-bridge debt with an objective reduction/justification;
+      * the terminal ORM-return-debt state;
       * the explicit temporary remainder by surface, with the unclassified count
         (a silent-bridge tripwire — must be 0).
     """
@@ -602,14 +612,12 @@ def core_orm_governance_report(core_root: str | Path | None = None) -> dict:
         "drainability": {
             "rule": (
                 "A <sess>.get(M, pk) site is port-backed iff M is a registered "
-                "ORM_RETURN_DEBT aggregate (a uow.<agg>.get port exists); "
-                "import-drainable-now iff port-backed AND M is used only as a .get "
-                "first-arg (routing to the port removes the core.models.db import). "
-                "The port still returns ORM (ORM_RETURN_DEBT not withdrawn), so the "
-                "runtime ORM handling is the deferred domain/ORM axis, not this card."
+                "ORM_RETURN_DEBT aggregate; import-drainable-now iff port-backed "
+                "and M is used only as a .get first argument. The terminal F01 "
+                "state has no ORM-return debt and no Core ORM consumers."
             ),
             "ported_aggregate_orm_types": sorted(PORTED_AGGREGATE_ORM_TYPES),
-            "ports_return_orm": True,
+            "ports_return_orm": bool(ORM_RETURN_DEBT),
             "orm_return_debt_withdrawal": [e.withdrawal_criterion for e in ORM_RETURN_DEBT],
             "get_by_id_sites": {
                 "total": len(sites),

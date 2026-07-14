@@ -102,8 +102,9 @@ a draft mutates in-place.
 Args:
     board_id: Board ID used for authentication.
     template_id: Default board-configuration template ID.
-    guideline_default_refs: List of global guideline refs to set (empty list
-        clears the defaults).
+    guideline_default_refs: List of objects shaped as
+        `{"guideline_id": "<global-guideline-id>", "priority": 0}`. Priority is
+        optional. An empty list clears the defaults.
 
 Returns:
     JSON with the EFFECTIVE template (including its default guideline refs).

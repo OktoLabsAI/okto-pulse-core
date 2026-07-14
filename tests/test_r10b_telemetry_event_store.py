@@ -33,7 +33,6 @@ import pytest
 
 from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.ports.telemetry import TelemetryEventStore, TelemetryStateStore
-from okto_pulse.core.telemetry import event_store_registry as registry
 from okto_pulse.core.telemetry.event_store_registry import (
     get_telemetry_event_store,
     register_telemetry_event_store_factory,
@@ -616,7 +615,6 @@ def test_ts08_redaction_and_closed_schema_before_store(tmp_path, _simple_store_f
 def test_ts09_registry_is_fail_closed(tmp_path, caplog):
     """R10-E Pass 2: no factory → RuntimeError + structured error signal (fail-closed)."""
     reset_telemetry_event_store_factory_for_tests()
-    assert registry._factory is None
     caplog.set_level("ERROR", logger="okto_pulse.telemetry.event_store")
 
     with pytest.raises(RuntimeError, match="No TelemetryEventStore factory registered"):

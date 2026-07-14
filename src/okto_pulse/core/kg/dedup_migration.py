@@ -1,4 +1,4 @@
-"""NC-8 — consolidate duplicate Kuzu nodes per (node_type, source_artifact_ref).
+"""NC-8 — consolidate duplicate graph backend nodes per (node_type, source_artifact_ref).
 
 Spec 7f23535f originally re-pointed every edge of the duplicates to the
 canonical node and `DETACH DELETE`d them. Spec MKG-C-S1 (BR1/D2) makes the
@@ -65,7 +65,7 @@ def _all_rel_pairs() -> list[tuple[str, str, str]]:
     return out
 
 
-def _fetch_groups(kconn, node_type: str) -> list[dict[str, Any]]:
+def _fetch_groups(graph_scope, node_type: str) -> list[dict[str, Any]]:
     """Return list of duplicate groups for a node type.
 
     Each group: `{source_artifact_ref, count, members: [{id, created_at,
@@ -75,7 +75,7 @@ def _fetch_groups(kconn, node_type: str) -> list[dict[str, Any]]:
     # MKG-C-S1: ACTIVE members only — a tombstoned duplicate must not
     # re-enter the group on the next run (idempotency of the reversible
     # default) nor be counted as a duplicate again.
-    res = kconn.execute(
+    res = graph_scope.execute(
         f"MATCH (n:{node_type}) "
         f"WHERE n.source_artifact_ref <> '' "
         f"AND n.superseded_by IS NULL "
@@ -83,21 +83,14 @@ def _fetch_groups(kconn, node_type: str) -> list[dict[str, Any]]:
         f"n.human_curated"
     )
     rows: dict[str, list[dict[str, Any]]] = {}
-    try:
-        while res.has_next():
-            row = res.get_next()
-            ref = row[0]
-            rows.setdefault(ref, []).append({
-                "id": row[1],
-                "created_at": row[2],
-                "title": row[3],
-                "human_curated": row[4],
-            })
-    finally:
-        try:
-            res.close()
-        except Exception:
-            pass
+    for row in res.rows:
+        ref = row[0]
+        rows.setdefault(ref, []).append({
+            "id": row[1],
+            "created_at": row[2],
+            "title": row[3],
+            "human_curated": row[4],
+        })
     groups: list[dict[str, Any]] = []
     for ref, members in rows.items():
         if len(members) <= 1:
@@ -112,7 +105,7 @@ def _fetch_groups(kconn, node_type: str) -> list[dict[str, Any]]:
 
 
 def _repoint_edges(
-    kconn,
+    graph_scope,
     rel_name: str,
     from_type: str,
     to_type: str,
@@ -124,48 +117,39 @@ def _repoint_edges(
     number of edges re-pointed (0 if none exist for this rel pair).
 
     Strategy: read all matching edges with their attrs, DELETE old, then
-    CREATE new with the same attrs against the canonical id. Kuzu has no
+    CREATE new with the same attrs against the canonical id. graph backend has no
     primitive REL UPDATE that swaps endpoints in place.
     """
     attr_cols = ", ".join(f"r.{name}" for name, _ in EDGE_METADATA_COLUMNS)
     # Outbound edges (duplicate is FROM endpoint)
     out_count = _repoint_outbound(
-        kconn, rel_name, from_type, to_type, duplicate_id, canonical_id, attr_cols
+        graph_scope, rel_name, from_type, to_type, duplicate_id, canonical_id, attr_cols
     )
     # Inbound edges (duplicate is TO endpoint)
     in_count = _repoint_inbound(
-        kconn, rel_name, from_type, to_type, duplicate_id, canonical_id, attr_cols
+        graph_scope, rel_name, from_type, to_type, duplicate_id, canonical_id, attr_cols
     )
     return out_count + in_count
 
 
-def _read_edge_rows(kconn, cypher: str, params: dict) -> list[tuple]:
-    res = kconn.execute(cypher, params)
-    out: list[tuple] = []
-    try:
-        while res.has_next():
-            out.append(tuple(res.get_next()))
-    finally:
-        try:
-            res.close()
-        except Exception:
-            pass
-    return out
+def _read_edge_rows(graph_scope, cypher: str, params: dict) -> list[tuple]:
+    res = graph_scope.execute(cypher, params)
+    return [tuple(row) for row in res.rows]
 
 
 def _repoint_outbound(
-    kconn, rel_name, from_type, to_type, dup_id, canonical_id, attr_cols
+    graph_scope, rel_name, from_type, to_type, dup_id, canonical_id, attr_cols
 ) -> int:
     cypher_read = (
         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
         f"WHERE a.id = $dup "
         f"RETURN b.id, r.confidence, {attr_cols}"
     )
-    rows = _read_edge_rows(kconn, cypher_read, {"dup": dup_id})
+    rows = _read_edge_rows(graph_scope, cypher_read, {"dup": dup_id})
     if not rows:
         return 0
-    # DELETE first to avoid Kuzu uniqueness when re-creating same edge
-    kconn.execute(
+    # DELETE first to avoid graph backend uniqueness when re-creating same edge
+    graph_scope.execute(
         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
         f"WHERE a.id = $dup DELETE r",
         {"dup": dup_id},
@@ -182,7 +166,7 @@ def _repoint_outbound(
             "created_by": created_by,
             "fallback_reason": fallback_reason,
         }
-        kconn.execute(
+        graph_scope.execute(
             f"MATCH (a:{from_type}) WHERE a.id = $src "
             f"MATCH (b:{to_type}) WHERE b.id = $tgt "
             f"CREATE (a)-[:{rel_name} {{confidence: $conf, layer: $layer, "
@@ -194,17 +178,17 @@ def _repoint_outbound(
 
 
 def _repoint_inbound(
-    kconn, rel_name, from_type, to_type, dup_id, canonical_id, attr_cols
+    graph_scope, rel_name, from_type, to_type, dup_id, canonical_id, attr_cols
 ) -> int:
     cypher_read = (
         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
         f"WHERE b.id = $dup "
         f"RETURN a.id, r.confidence, {attr_cols}"
     )
-    rows = _read_edge_rows(kconn, cypher_read, {"dup": dup_id})
+    rows = _read_edge_rows(graph_scope, cypher_read, {"dup": dup_id})
     if not rows:
         return 0
-    kconn.execute(
+    graph_scope.execute(
         f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
         f"WHERE b.id = $dup DELETE r",
         {"dup": dup_id},
@@ -221,7 +205,7 @@ def _repoint_inbound(
             "created_by": created_by,
             "fallback_reason": fallback_reason,
         }
-        kconn.execute(
+        graph_scope.execute(
             f"MATCH (a:{from_type}) WHERE a.id = $src "
             f"MATCH (b:{to_type}) WHERE b.id = $tgt "
             f"CREATE (a)-[:{rel_name} {{confidence: $conf, layer: $layer, "
@@ -232,15 +216,15 @@ def _repoint_inbound(
     return len(rows)
 
 
-def _delete_node(kconn, node_type: str, node_id: str) -> None:
-    kconn.execute(
+def _delete_node(graph_scope, node_type: str, node_id: str) -> None:
+    graph_scope.execute(
         f"MATCH (n:{node_type}) WHERE n.id = $id DETACH DELETE n",
         {"id": node_id},
     )
 
 
 def _snapshot_group(
-    kconn,
+    graph_scope,
     node_type: str,
     members: list[dict[str, Any]],
     rel_pairs: list[tuple[str, str, str]],
@@ -257,24 +241,18 @@ def _snapshot_group(
 
     nodes: list[dict[str, Any]] = []
     for member in members:
-        res = kconn.execute(
+        res = graph_scope.execute(
             f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n",
             {"id": member["id"]},
         )
-        try:
-            if res.has_next():
-                raw = res.get_next()[0]
-                attrs = {
-                    k: v
-                    for k, v in dict(raw).items()
-                    if not k.startswith("_") and k != "embedding"
-                }
-                nodes.append({"id": member["id"], "attrs": attrs})
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+        if res.rows:
+            raw = res.rows[0][0]
+            attrs = {
+                k: v
+                for k, v in dict(raw).items()
+                if not k.startswith("_") and k != "embedding"
+            }
+            nodes.append({"id": member["id"], "attrs": attrs})
 
     attr_cols = ", ".join(f"r.{name}" for name, _ in EDGE_METADATA_COLUMNS)
     edges: list[dict[str, Any]] = []
@@ -283,7 +261,7 @@ def _snapshot_group(
         for rel_name, from_t, to_t in rel_pairs:
             try:
                 rows = _read_edge_rows(
-                    kconn,
+                    graph_scope,
                     f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
                     f"WHERE a.id = $id OR b.id = $id "
                     f"RETURN a.id, b.id, r.confidence, "
@@ -318,7 +296,7 @@ def _snapshot_group(
 
 
 def _tombstone_members(
-    kconn,
+    graph_scope,
     node_type: str,
     duplicates: list[dict[str, Any]],
     canonical_id: str,
@@ -329,17 +307,12 @@ def _tombstone_members(
 
     ts = datetime.now(timezone.utc).isoformat()
     for dup in duplicates:
-        kconn.execute(
-            f"MATCH (n:{node_type}) WHERE n.id = $id "
-            f"SET n.superseded_by = $survivor, "
-            f"n.superseded_at = timestamp($ts), "
-            f"n.revocation_reason = $reason",
-            {
-                "id": dup["id"],
-                "survivor": canonical_id,
-                "ts": ts,
-                "reason": f"dedup:{record_id}",
-            },
+        graph_scope.mark_superseded(
+            node_type,
+            dup["id"],
+            superseded_by=canonical_id,
+            superseded_at=ts,
+            revocation_reason=f"dedup:{record_id}",
         )
     return len(duplicates)
 
@@ -384,14 +357,14 @@ def migrate_dedup_entities(
         # BR1 fail-closed: writing without a composed ledger must abort
         # BEFORE the graph transaction even opens.
         ledger = None if dry_run else require_equivalence_ledger()
-        async with await get_kg_registry().graph_transaction.begin(board_id) as kconn:
-            await _run_migration_in_scope(kconn, ledger)
+        async with await get_kg_registry().graph_transaction.begin(board_id) as graph_scope:
+            await _run_migration_in_scope(graph_scope, ledger)
 
-    async def _run_migration_in_scope(kconn: Any, ledger: Any) -> None:
+    async def _run_migration_in_scope(graph_scope: Any, ledger: Any) -> None:
         nonlocal total_dups, total_edges, ledger_records
         for node_type in NODE_TYPES:
             try:
-                groups = _fetch_groups(kconn, node_type)
+                groups = _fetch_groups(graph_scope, node_type)
             except Exception as exc:
                 logger.warning(
                     "kg.dedup.scan_failed type=%s board=%s err=%s",
@@ -415,7 +388,7 @@ def migrate_dedup_entities(
                     # operation with the graph untouched.
                     record_id = f"eqv_{uuid.uuid4().hex[:16]}"
                     evidence = _snapshot_group(
-                        kconn, node_type, members, rel_pairs
+                        graph_scope, node_type, members, rel_pairs
                     )
                     await ledger.append(
                         EquivalenceRecord(
@@ -433,7 +406,7 @@ def migrate_dedup_entities(
                     # FR3/D2: reversible default — tombstone, zero edge
                     # writes, zero deletes.
                     _tombstone_members(
-                        kconn, node_type, duplicates,
+                        graph_scope, node_type, duplicates,
                         canonical["id"], record_id,
                     )
                 else:
@@ -441,21 +414,15 @@ def migrate_dedup_entities(
                         # Dry-run: count the edges that WOULD be involved.
                         for rel_name, from_t, to_t in rel_pairs:
                             try:
-                                res = kconn.execute(
+                                res = graph_scope.execute(
                                     f"MATCH (a:{from_t})-[r:{rel_name}]->"
                                     f"(b:{to_t}) "
                                     f"WHERE a.id = $dup OR b.id = $dup "
                                     f"RETURN count(r)",
                                     {"dup": dup["id"]},
                                 )
-                                try:
-                                    row = res.get_next()
-                                    edges_for_group += int(row[0])
-                                finally:
-                                    try:
-                                        res.close()
-                                    except Exception:
-                                        pass
+                                if res.rows:
+                                    edges_for_group += int(res.rows[0][0])
                             except Exception:
                                 pass
                 groups_summary.append({
@@ -533,22 +500,17 @@ class StaleProposalError(Exception):
         )
 
 
-def _count_incident_edges(kconn, rel_pairs, node_id: str) -> int:
+def _count_incident_edges(graph_scope, rel_pairs, node_id: str) -> int:
     total = 0
     for rel_name, from_t, to_t in rel_pairs:
         try:
-            res = kconn.execute(
+            res = graph_scope.execute(
                 f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
                 f"WHERE a.id = $id OR b.id = $id RETURN count(r)",
                 {"id": node_id},
             )
-            try:
-                total += int(res.get_next()[0])
-            finally:
-                try:
-                    res.close()
-                except Exception:
-                    pass
+            if res.rows:
+                total += int(res.rows[0][0])
         except Exception:
             pass
     return total
@@ -563,10 +525,10 @@ def _build_canonical_plan(board_id: str) -> dict[str, Any]:
     plan_groups: list[dict[str, Any]] = []
 
     async def _scan() -> None:
-        async with await get_kg_registry().graph_transaction.begin(board_id) as kconn:
+        async with await get_kg_registry().graph_transaction.begin(board_id) as graph_scope:
             for node_type in NODE_TYPES:
                 try:
-                    groups = _fetch_groups(kconn, node_type)
+                    groups = _fetch_groups(graph_scope, node_type)
                 except Exception:
                     continue
                 for group in groups:
@@ -580,7 +542,7 @@ def _build_canonical_plan(board_id: str) -> dict[str, Any]:
                         "merged_ids": duplicates,
                         "edge_counts": {
                             dup_id: _count_incident_edges(
-                                kconn, rel_pairs, dup_id
+                                graph_scope, rel_pairs, dup_id
                             )
                             for dup_id in duplicates
                         },
@@ -756,9 +718,9 @@ def unmerge_equivalence(board_id: str, record_id: str) -> dict[str, Any]:
             result["already_revoked"] = True
             return
         restored = 0
-        async with await get_kg_registry().graph_transaction.begin(board_id) as kconn:
+        async with await get_kg_registry().graph_transaction.begin(board_id) as graph_scope:
             for member_id in record.merged_ids:
-                kconn.execute(
+                graph_scope.execute(
                     f"MATCH (n:{record.node_type}) WHERE n.id = $id "
                     f"AND n.revocation_reason = $reason "
                     f"SET n.superseded_by = NULL, n.superseded_at = NULL, "

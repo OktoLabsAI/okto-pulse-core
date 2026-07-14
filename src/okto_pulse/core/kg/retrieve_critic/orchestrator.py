@@ -7,6 +7,8 @@ import logging
 from functools import lru_cache
 from typing import Any, Callable
 
+from okto_pulse.core.runtime_context import runtime_state
+
 from .interfaces import (
     Adequacy,
     CriticAction,
@@ -121,7 +123,7 @@ def critic_evaluate(
 
 # Simple dict acts as an ordered LRU (insertion order) for the shell.
 # Small size (64 entries) — no need for OrderedDict + proper LRU.
-_global_cache: dict[tuple, CriticDecision] = {}
+_global_cache = runtime_state("kg.retrieve_critic.cache", dict)
 
 
 def reset_critic_cache() -> None:

@@ -14,6 +14,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from okto_pulse.core.runtime_context import runtime_state
 from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
 from okto_pulse.core.ports.kg_governance import (
     BoostAuditRecord,
@@ -399,7 +400,7 @@ async def undo_session(
     )
     await store.commit(db)
 
-    # Kuzu soft-delete would happen here via TransactionOrchestrator.compensate
+    # graph backend soft-delete would happen here via TransactionOrchestrator.compensate
     # pattern. For MVP: mark in SQLite only.
     return {
         "session_id": session_id,
@@ -443,7 +444,7 @@ async def purge_expired_audit(
 # ACL violation log (FR-9, FR-10)
 # ---------------------------------------------------------------------------
 
-_acl_violations: list[dict] = []
+_acl_violations = runtime_state("kg.governance.acl_violations", list)
 _ACL_ALERT_THRESHOLD = 10
 _ACL_ALERT_WINDOW = 3600  # 1 hour
 
@@ -549,7 +550,7 @@ class BoostPersistError(Exception):
     """Raised when the graph SET that persists a node boost fails.
 
     The legacy ``api/kg_routes.boost_node`` endpoint caught the SET exception
-    inline and returned a 500 ``kuzu_error`` RFC 7807 problem; the REST adapter
+    inline and returned a 500 ``graph_error`` RFC 7807 problem; the REST adapter
     catches this and reproduces that exact problem body."""
 
 
@@ -575,7 +576,7 @@ async def boost_node(
     absent in every node type of the board graph (this module stays
     transport-free — the use case maps that to ``EntityNotFoundError`` → the
     adapter's 404 problem). A failure to persist the SET raises
-    :class:`BoostPersistError` (adapter → 500 ``kuzu_error``).
+    :class:`BoostPersistError` (adapter → 500 ``graph_error``).
 
     The staged audit row carries ALL required NOT-NULL columns (``artifact_type``,
     ``started_at``, …) so it persists on a successful boost — bug 547a2aa8 fix; the
@@ -606,8 +607,8 @@ async def boost_node(
                 )
             except Exception:
                 continue
-            if res.has_next():
-                row = res.get_next()
+            if res.rows:
+                row = res.rows[0]
                 score_before = float(row[0]) if row[0] is not None else 0.5
                 node_type = ntype
                 break

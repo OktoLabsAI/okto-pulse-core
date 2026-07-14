@@ -215,7 +215,7 @@ async def test_dashboard_readers_delegate_to_registered_read_model() -> None:
 @pytest.mark.asyncio
 async def test_health_checks_use_operational_read_model_counts() -> None:
     from okto_pulse.core.kg.health import (
-        check_kuzu_node_refs,
+        check_graph_node_refs,
         check_outbox,
         check_queue,
     )
@@ -225,7 +225,7 @@ async def test_health_checks_use_operational_read_model_counts() -> None:
     register_kg_operational_ports(read_model=port)
 
     queue = await check_queue(context, "b1")
-    refs = await check_kuzu_node_refs(context, "b1", kuzu_total=2)
+    refs = await check_graph_node_refs(context, "b1", graph_total=2)
     outbox = await check_outbox(context, "b1")
 
     assert queue.counts["pending"] == 1
@@ -382,10 +382,10 @@ def test_migrated_core_kg_reader_modules_do_not_import_sqlalchemy_or_models() ->
 
 
 def test_migrated_worker_helpers_do_not_import_sqlalchemy_or_models() -> None:
-    root = Path("src/okto_pulse/core/kg/workers")
+    root = Path("src/okto_pulse/core")
     targets = [
-        root / "dead_letter.py",
-        root / "commit_events.py",
+        root / "application/processors/dead_letter.py",
+        root / "kg/workers/commit_events.py",
     ]
     forbidden_names = {
         "AsyncSession",

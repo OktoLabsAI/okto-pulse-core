@@ -31,13 +31,8 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(autouse=True)
-def _restore_conftest_engine():
-    from okto_pulse.core.infra.database import create_database, get_engine
-
-    prior_url = str(get_engine().url)
+def _restore_conftest_engine(preserve_relational_runtime):
     yield
-    if str(get_engine().url) != prior_url:
-        create_database(prior_url, echo=False)
 
 
 @pytest.fixture
@@ -109,6 +104,29 @@ async def _delete_spec_row(session_factory, spec_id: str) -> None:
         await db.commit()
 
 
+async def _insert_card_row(
+    session_factory,
+    board_id: str,
+    spec_id: str,
+    card_id: str,
+    card_type: str,
+) -> None:
+    from okto_pulse.community.adapters.sqlalchemy_models import Card
+
+    async with session_factory() as db:
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title=f"Card {card_type} alvo do drift",
+                card_type=card_type,
+                created_by="mkgb-drift-test",
+            )
+        )
+        await db.commit()
+
+
 def _graph_snapshot(board_id: str, artifact_ref: str) -> dict:
     return _prov_row(board_id, artifact_ref)
 
@@ -127,9 +145,9 @@ async def test_s6_clean_board_reports_no_drift(drift_tempdir, monkeypatch):
     assert report["drifted_count"] == 0
     assert report["drifted"] == []
     assert report["checked_count"] >= 1
-    # Technical root (ref sem 'tipo:id' consolidável) fica em skipped, nunca
-    # em falso drift.
-    assert report["skipped_count"] >= 1
+    # The technical root does not belong to this artifact session, so it gets
+    # no fabricated source hash and never enters the drift scan.
+    assert report["skipped_count"] == 0
 
 
 async def test_s6_artifact_edited_after_consolidation_is_drifted(
@@ -215,18 +233,43 @@ async def test_s6_deleted_artifact_is_terminal_drift_and_readonly(
     assert before == after
 
 
+@pytest.mark.parametrize("card_type", ["normal", "test", "bug"])
+async def test_s6_generic_card_ref_resolves_semantic_source_alias(
+    drift_tempdir, monkeypatch, card_type
+):
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    await _insert_spec_row(session_factory, board_id, spec_id)
+    card_id = f"00000000-0000-4000-8000-{card_type.encode().hex()[:12]:0<12}"
+    await _insert_card_row(
+        session_factory, board_id, spec_id, card_id, card_type
+    )
+    artifact_ref = f"card:{card_id}"
+
+    await _drive_with_provenance(
+        session_factory,
+        board_id,
+        artifact_ref,
+        f"[MKG-B] Alias de card {card_type}",
+        content="conteudo",
+    )
+
+    report = await provenance_drift_report(board_id, "Entity")
+    drifted = {d["node_id"]: d for d in report["drifted"]}
+    node = _prov_row(board_id, artifact_ref)
+    assert node["id"] not in drifted
+
+
 async def test_s6_unknown_node_type_rejected(drift_tempdir, monkeypatch):
     await _bootstrap_test_board(monkeypatch)
     with pytest.raises(ValueError):
         await provenance_drift_report("board", "NotAType")
 
 
-def test_s6_mcp_tool_registered_within_budget():
-    import asyncio as _asyncio
+async def test_s6_mcp_tool_registered_within_budget():
     import importlib
 
     mod = importlib.import_module("okto_pulse.core.mcp.server")
-    tools = _asyncio.run(mod.mcp.get_tools())
+    tools = await mod.mcp.get_tools()
     tool = tools.get("okto_pulse_kg_provenance_drift")
     assert tool is not None
     # TR do budget R1.1: descrição ≤900 chars.

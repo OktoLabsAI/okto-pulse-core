@@ -32,8 +32,15 @@ from okto_pulse.core.infra.config import (
     CoreSettings,
     configure_settings,
     get_settings,
-    validate_graph_db_max_size_gb,
 )
+
+GRAPH_DB_MAX_SIZE_GB_VALUES = (2, 4, 8, 16, 32, 64)
+
+
+def validate_graph_db_max_size_gb(value: int) -> int:
+    if value not in GRAPH_DB_MAX_SIZE_GB_VALUES:
+        raise ValueError("invalid graph max database size")
+    return value
 from okto_pulse.core.ports.runtime_settings import (
     KG_TICK_RESCHEDULE_FAILED_SIGNAL,
     RuntimeEffectResult,
@@ -561,8 +568,12 @@ async def put_runtime_settings(
     # for callers that only use legacy keys.
     from okto_pulse.core.kg.config_guard import (
         ConfigGuardError,
+        GraphSettingPolicy,
         KGConfigChangeGuard,
         RestartPolicy,
+        SETTING_GROUP_BUFFER,
+        SETTING_GROUP_CONNECTION_POOL,
+        SETTING_GROUP_STORAGE,
     )
 
     # Identify the graph-runtime subset of the request — only those flow
@@ -587,7 +598,16 @@ async def put_runtime_settings(
                 except (TypeError, ValueError):
                     current[key] = row.value
 
-        guard = KGConfigChangeGuard()
+        guard = KGConfigChangeGuard(
+            policy=GraphSettingPolicy(
+                setting_groups={
+                    "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
+                    "kg_kuzu_max_db_size_gb": SETTING_GROUP_STORAGE,
+                    "kg_connection_pool_size": SETTING_GROUP_CONNECTION_POOL,
+                },
+                governed_prefixes=("kg_kuzu_", "kg_connection_"),
+            )
+        )
         try:
             decision = guard.validate(
                 board_id="_runtime",

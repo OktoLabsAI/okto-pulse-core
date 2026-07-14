@@ -1,6 +1,6 @@
 # okto-pulse-core
 
-Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — shared models, services, API routes, and MCP server.
+Domain and application engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse), with transport-neutral ports, contracts and MCP commands.
 
 > **Ship with AI. Stay in control.**
 
@@ -9,19 +9,19 @@ Core engine for [Okto Pulse](https://github.com/OktoLabsAI/okto-pulse) — share
 
 ## What's inside
 
-- **59 SQLAlchemy models** — Boards, Cards, Specs, Ideations, Refinements, Sprints, Agents, Knowledge, Mockups, Validations, KG queues, rebuild/cognitive-candidate records, discovery entities and audit/outbox records. Source: classes with `__tablename__` in `core/models/db.py`, checked against `Base.registry.mappers`; historical Skills entities remain removed.
+- **0 SQLAlchemy models** — Core owns no concrete relational mappings. This is checked by scanning for `__tablename__` assignments anywhere under `core/`; the Community edition owns the SQLAlchemy model and repository adapters.
 - **33 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
-- **45 API route modules** — FastAPI REST endpoints. Source: `core/api/*.py` excluding `__init__.py`, `deps.py` and `router.py`; the raw glob has 48 Python files, or 47 without only `__init__.py`.
+- **0 API route modules** — Core owns application contracts and use cases, not concrete FastAPI routers. The count scans `core/api/*.py`; Community owns the REST adapter and route modules.
 - **17 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence, bug traceability and sprint health controls.
-- **262 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
+- **265 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
   - 24 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability, rebuild preflight/confirm/run)
-  - Community runtime exposure: 262 core MCP tools, 0 community-only MCP tools
-- **App factory** — `create_app()` with dependency injection for auth and storage providers
+  - Community runtime exposure: 265 core MCP tools, 0 community-only MCP tools
+- **Application composition contracts** — edition-neutral runtime, auth, storage, persistence, graph, telemetry and transport ports; concrete app construction belongs to the edition
 - **Hexagonal backend ports** — runtime, telemetry, repository/UoW and KG provider seams, plus the adapter readiness ledger, documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - **Knowledge Graph contracts and orchestration** — graph schema vocabulary, query/consolidation semantics, deterministic + cognitive workers, 11 node types and **13 relationship types**. Source: `len(KGEdgeType)` in `core/kg/schemas.py`; the concrete LadybugDB/Kuzu board and global graph runtimes are supplied by the active edition
 - **Bounded operational metric samples** — governance, architecture, bug-regression, resource-lineage and global-discovery observability keep capped diagnostic samples. Global-discovery count APIs remain monotonic totals and do not derive totals from the retained sample ring.
@@ -45,8 +45,9 @@ The two execution-quality additions introduced in 0.2.3 — **cognitive closeout
 For the backend hexagonal refactor, the full port inventory and the executable
 adapter-readiness ledger, see [`ARCHITECTURE.md`](./ARCHITECTURE.md). It names
 the runtime, storage/MCP, initialization, telemetry, repository/UoW, Knowledge
-Graph and inbound adapter ports, plus the current ledgered exceptions that still
-need extraction. This README keeps only the runtime topology summary.
+Graph and inbound adapter ports, plus terminal boundary checks that prevent
+concrete adapters from returning to Core. This README keeps only the runtime
+topology summary.
 
 ```text
 Single Python process
@@ -66,11 +67,11 @@ The Community package mounts the bundled React SPA and owns the local-first
 runtime adapters. Core keeps the REST/MCP contracts and the application rules
 that those transports expose.
 
-Relational dependency cleanup is tracked on two axes. `asyncpg` is removed from
-the core default and is audited across package metadata, lock data, wheel
-metadata and runtime imports. The remaining SQLAlchemy/PostgreSQL code path in
-`core.infra.database` is deferred R01B/R01C migration debt, not evidence that the
-`asyncpg` dependency may return to the core package.
+Relational dependency cleanup is terminal. `asyncpg`, SQLAlchemy mappings,
+engines and session factories are absent from Core and audited across source,
+package metadata, lock data and wheel metadata. `core.infra.database` is now an
+adapter-neutral compatibility facade over relational runtime ports; concrete
+SQLite/SQLAlchemy lifecycle and persistence live in Community.
 
 AF35 adds the final relational ownership source map in
 [`docs/architecture/af35_relational_ownership_matrix.md`](./docs/architecture/af35_relational_ownership_matrix.md).
@@ -80,19 +81,19 @@ the current matrix for `adapter_owned`, `migrated_clean`,
 `non_productive_reference` and `unowned` residues. The executable gate, not this
 README prose, is the source of truth for counts and stale-exception failures.
 
-Current boundary status is intentionally mixed. The adapter readiness inventory
-currently reports 21 seams: 12 `ready`, 6 `blocked` and 3 `deferred`. The moved
-Community-owned surfaces include sentence-transformers embeddings, cross-encoder
-rerank, Ladybug/Kuzu board graph adapters, global discovery runtime, board source
-reads, rebuild ingestion and APScheduler scheduler runtime. F14 dependency ownership
-completed the distribution boundary: Core now publishes only its
-domain/application dependencies, while concrete local runtimes are owned by
-Community.
+The moved Community-owned surfaces include relational mappings and repositories,
+sentence-transformers embeddings, cross-encoder rerank, Ladybug/Kuzu board graph
+adapters, global discovery runtime, board source reads, rebuild ingestion and the
+APScheduler runtime. Core publishes domain/application dependencies and ports;
+concrete local runtimes are owned by Community and guarded by executable boundary
+checks.
 
 AF-05/AF40 dependency owner matrix. The source of truth is
 `dependency_ledger.py`, `CANONICAL_AF40_DEPENDENCY_TOKENS`,
 `CANONICAL_TEMPORARY_EXCEPTION_TOKENS` and `conformance_matrix.py`; README text
 must follow those gates, not the other way around.
+F14 dependency ownership keeps concrete runtime dependencies out of the
+published Core distribution and assigns local implementations to Community.
 
 | Dependency | Status | Current owner and evidence | Community packaging note |
 | --- | --- | --- | --- |
@@ -160,7 +161,7 @@ adapter readiness ledger and their existing gates.
 | KG consumers (22 historical imports) | `okto_pulse.core.services.application_kg` facade for governance, dashboard readers, consolidation primitives, cognitive readiness/closeout and canonical parity | Core owns the application/KG rules; the facade delegates to the current `core.kg` services while Community continues to provide local graph/runtime adapters | R01A KG parity suites, `tests/test_boundary_audit_12.py`, `tests/test_conformance_suite_15.py` |
 | Transport/schema DTOs (17 historical imports) | `okto_pulse.core.services.application_schemas` sanctioned DTO facade | Core owns REST/MCP contracts and DTO compatibility; this pass removes direct `core.models.schemas` imports from application use cases without changing payload semantics | R01A spec/card/MCP parity suites, boundary/conformance oracles |
 | Permission checks (6 historical imports) | `okto_pulse.core.services.permission_policy` application permission facade | Core owns transition and authorization policy; the facade preserves the existing `core.infra.permissions` evaluator and its patchable test seam | R01A permission/spec/story/ideation parity suites |
-| Mutable persistence marking (5 historical imports) | `okto_pulse.core.services.persistence_mutation.mark_mutable_field_modified` | Core still owns the current SQLAlchemy-backed persistence path until the repository/UoW strangler completes; use cases no longer import `sqlalchemy.orm.attributes` directly | Card/ideation mutation parity suites and boundary/conformance oracles |
+| Mutable persistence marking (5 historical imports) | `ApplicationPersistencePort` mutation methods | Core owns mutation intent and application rules; Community's SQLAlchemy persistence adapter owns mutable-column tracking and flush mechanics | Card/ideation mutation parity suites and boundary/conformance oracles |
 | Ratchet evidence | `ImportBoundaryGate` violation evidence now includes `category`; AF-11 tests pin the eliminated application import inventory | Core boundary gate owns regression detection. The ratchet fails on real-tree reintroduction and on negative fixtures rather than by rebaselining or downgrading violations | `test_af11_application_import_ratchet_real_tree_stays_zero`, `test_af11_application_import_ratchet_negative_fixture_reports_categories` |
 
 AF-20 hardens the same boundary policy for non-relational import-boundary
@@ -363,8 +364,8 @@ The executable ownership matrix is generated by `okto-pulse-saas-closure`. Every
 <!-- F16-SAAS-CLOSURE:BEGIN -->
 | F16 executable surface | Owner | Observed | Terminal target |
 | --- | --- | ---: | ---: |
-| Core import rows | Core | 4300 | classified |
-| Community-to-Core import rows | Community | 524 | classified |
+| Core import rows | Core | 4418 | classified |
+| Community-to-Core import rows | Community | 548 | classified |
 | Direct dependency rows | Distribution owner | 20 | classified |
 | `import_boundary_baseline` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |
 | `singleton_baseline` budget | `675c43ee-7d91-4cc3-8f87-44eeb293f90c` | 0 | 0 |

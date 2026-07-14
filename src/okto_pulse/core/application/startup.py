@@ -21,24 +21,24 @@ def tick_next_run_from_last(
 async def compute_tick_catch_up_next_run(
     interval_minutes: int,
     *,
-    session_factory_provider: Callable[[], Any] | None = None,
+    uow_factory_provider: Callable[[], Any] | None = None,
     now_provider: Callable[[], datetime] | None = None,
 ) -> datetime | None:
     from okto_pulse.core.infra.daily_tick import compute_tick_catch_up_next_run as operation
 
     return await operation(
         interval_minutes,
-        session_factory_provider=session_factory_provider,
+        uow_factory_provider=uow_factory_provider,
         now_provider=now_provider,
     )
 
 
 async def emit_daily_tick(
-    *, session_factory_provider: Callable[[], Any] | None = None
+    *, uow_factory_provider: Callable[[], Any] | None = None
 ) -> None:
     from okto_pulse.core.infra.daily_tick import emit_daily_tick as operation
 
-    await operation(session_factory_provider=session_factory_provider)
+    await operation(uow_factory_provider=uow_factory_provider)
 
 
 async def apply_persisted_runtime_settings() -> dict[str, int]:
@@ -56,11 +56,11 @@ async def backfill_qa_answered_at(relational_context: Any) -> dict[str, int]:
 
 
 async def run_startup_schema_sweep(
-    *, session_factory: Any, logger: logging.Logger
+    *, uow_factory: Any | None = None, logger: logging.Logger
 ) -> None:
     from okto_pulse.core.infra.startup_schema_sweep import run_startup_schema_sweep
 
-    await run_startup_schema_sweep(session_factory=session_factory, logger=logger)
+    await run_startup_schema_sweep(uow_factory=uow_factory, logger=logger)
 
 
 __all__ = [

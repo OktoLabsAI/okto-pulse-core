@@ -36,7 +36,6 @@ def test_f14_contract_and_all_distribution_surfaces_are_conformant() -> None:
     assert report.ok, report.as_dict()
     assert report.observed[CORE_DISTRIBUTION]["manifest"] == (
         "pydantic",
-        "pydantic-settings",
         "pyyaml",
     )
     assert report.observed[CORE_DISTRIBUTION]["manifest"] == report.observed[
@@ -101,7 +100,6 @@ def test_core_wheel_imports_in_clean_environment_without_edition_runtimes(
             "--python",
             str(python),
             "pydantic>=2.5,<2.14",
-            "pydantic-settings>=2.1,<3",
             "PyYAML>=6,<7",
         ],
         check=True,

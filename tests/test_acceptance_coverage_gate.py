@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -110,7 +112,7 @@ async def test_move_spec_done_accepts_linked_criteria_by_index(db_factory):
 
 async def test_list_test_scenarios_coverage_accepts_linked_criteria_by_index(db_factory):
     board_id, spec_id = await _seed_spec_with_indexed_criteria(db_factory)
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
          patch.object(mcp_server, "check_permission", return_value=None):

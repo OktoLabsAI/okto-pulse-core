@@ -122,7 +122,7 @@ def test_configure_without_base_or_factory_fails_closed() -> None:
     reset_registry_for_tests()
     try:
         with pytest.raises(RuntimeError, match="requires an explicit"):
-            configure_kg_registry(session_factory=object())
+            configure_kg_registry()
     finally:
         configure_test_kg_registry()
 

@@ -18,7 +18,7 @@ from sqlalchemy_test_models import (
     DomainEventRow,
     GlobalUpdateOutbox,
 )
-from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+from memory_rebuild_audit_storage import (
     InMemoryRebuildAuditArtifactStore,
 )
 

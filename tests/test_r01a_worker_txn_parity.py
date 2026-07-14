@@ -112,7 +112,7 @@ async def test_consolidation_rolls_back_partial_writes_on_mid_flow_failure(monke
         raise RuntimeError("mid-flow failure (R01A IMP6)")
 
     monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _failing)
-    worker = ConsolidationProcessor(session_factory=factory)
+    worker = ConsolidationProcessor(relational_scope_factory=factory)
     await worker.process_batch()
 
     async with factory() as db:
@@ -159,7 +159,7 @@ async def test_consolidation_commits_and_acks_on_success(monkeypatch) -> None:
         return True
 
     monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _ok)
-    worker = ConsolidationProcessor(session_factory=factory)
+    worker = ConsolidationProcessor(relational_scope_factory=factory)
     await worker.process_batch()
 
     async with factory() as db:
@@ -209,8 +209,9 @@ async def test_outbox_worker_failure_does_not_falsely_mark_processed(monkeypatch
         assert row.last_error and "outbox apply failure" in row.last_error
 
 
-def test_background_workers_own_session_factory_outside_http() -> None:
-    """Both workers take a ``session_factory`` (not the request-scoped get_db) —
-    they run outside the HTTP cycle."""
-    assert "session_factory" in inspect.signature(ConsolidationProcessor.__init__).parameters
-    assert "session_factory" in inspect.signature(GlobalOutboxProcessor.__init__).parameters
+def test_background_workers_receive_relational_scopes_outside_http() -> None:
+    """Workers receive opaque relational scopes instead of HTTP dependencies."""
+    for worker in (ConsolidationProcessor, GlobalOutboxProcessor):
+        parameters = inspect.signature(worker.__init__).parameters
+        assert "relational_scope_factory" in parameters
+        assert "session_factory" not in parameters

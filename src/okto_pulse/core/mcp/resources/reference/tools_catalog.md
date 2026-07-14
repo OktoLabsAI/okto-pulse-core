@@ -9,7 +9,7 @@ GENERATED FILE — do not edit by hand. Regenerate with
 (guarded by tests/test_mcp_tools_catalog_drift.py).
 
 Tool schemas arrive lazily via MCP `tools/list`. Each section links its
-long-form docs (args/returns/examples): `okto-pulse://reference/tool-docs/{family}`.
+concrete family docs with args, returns and examples.
 Required filters for the consolidated `list_*` tools:
 `okto-pulse://reference/list_tools`.
 

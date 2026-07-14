@@ -26,7 +26,7 @@ from okto_pulse.community.api.kg_rebuild import (
     _refuse_rebuild_if_quarantined,
     router as rebuild_router,
 )
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db
 from sqlalchemy_test_models import Board, BoardShare
 
@@ -216,6 +216,7 @@ def _make_rebuild_client(user_id: str) -> tuple[TestClient, object]:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: user_id
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app, raise_server_exceptions=False), db_factory
 
 

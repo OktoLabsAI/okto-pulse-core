@@ -14,7 +14,7 @@ import pytest
 
 from okto_pulse.community.app import _TelemetryASGIMiddleware
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
+pytestmark = pytest.mark.asyncio(loop_scope="function")
 
 
 class _Route:

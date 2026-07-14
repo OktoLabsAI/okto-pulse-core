@@ -147,7 +147,12 @@ def test_rest_and_mcp_principals_feed_the_same_actor_policy_contract() -> None:
         board_id="board-01",
     )
     mcp_principal = principal_from_auth_session(
-        AgentAuthSession(agent_id="agent-01", agent_name="Agent", is_active=True)
+        AgentAuthSession(
+            agent_id="agent-01",
+            agent_name="Agent",
+            is_active=True,
+            metadata={"realm_id": "local"},
+        )
     )
     assert mcp_principal is not None
     mcp_actor = actor_context_from_principal(
@@ -173,7 +178,6 @@ async def test_board_access_denial_is_forbidden_without_a_mutation(monkeypatch) 
     from fastapi import HTTPException
 
     from okto_pulse.community.api.kg_routes import _ensure_board_access
-    import okto_pulse.core.services.main as services_main
 
     class _ReadOnlyBoardService:
         calls = 0
@@ -182,11 +186,14 @@ async def test_board_access_denial_is_forbidden_without_a_mutation(monkeypatch) 
             self.calls += 1
             return None
 
-    class _UnitOfWork:
-        session = object()
-
     service = _ReadOnlyBoardService()
-    monkeypatch.setattr(services_main, "BoardService", lambda session: service)
+
+    class _Services:
+        boards = service
+
+    class _UnitOfWork:
+        services = _Services()
+
     actor = actor_context_from_principal(
         Principal("saas-user", realm_id="tenant-01"),
         source="rest",

@@ -15,7 +15,7 @@ from okto_pulse.core.kg.global_discovery_reindex import (
     ReindexStatus,
 )
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
-from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+from memory_rebuild_audit_storage import (
     InMemoryRebuildAuditArtifactStore,
 )
 from okto_pulse.core.kg.rebuild_audit import (

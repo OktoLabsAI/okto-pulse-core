@@ -28,7 +28,7 @@ from okto_pulse.core.kg.canonical_cognitive_preservation import (
     restore_canonical_cognitive,
     snapshot_canonical_cognitive,
 )
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from kg_schema_testing import (
     bootstrap_board_graph,
     open_board_connection,
@@ -88,28 +88,70 @@ def _seed_learning_with_canonical_bug(board_id, *, learning_ref):
                        title="bug node")
     with open_board_connection(board_id) as (_db, conn):
         orch = TransactionOrchestrator(
-            kuzu_conn=conn, sqlite_session=None,
+            graph_scope=conn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _attrs(learning_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE,
                    title="learning node"),
         )
-        _apply_kuzu_node_create_with_timestamp(orch, "Bug", bug_id, bug_attrs)
+        _apply_graph_node_create(orch, "Bug", bug_id, bug_attrs)
         orch.create_edge(edge_type="validates", from_id=learning_id, to_id=bug_id,
                          attrs={"confidence": 1.0}, from_type="Learning", to_type="Bug")
     return learning_id, bug_id, bug_attrs
+
+
+def _seed_cognitive_decision_with_alternative(board_id):
+    decision_id = f"r2i2d_{uuid.uuid4().hex[:12]}"
+    alternative_id = f"r2i2a_{uuid.uuid4().hex[:12]}"
+    with open_board_connection(board_id) as (_db, conn):
+        orch = TransactionOrchestrator(
+            graph_scope=conn,
+            session_id=f"seed_{uuid.uuid4().hex[:8]}",
+            board_id=board_id,
+        )
+        _apply_graph_node_create(
+            orch,
+            "Decision",
+            decision_id,
+            _attrs(
+                f"spec:{uuid.uuid4()}:decision:cognitive",
+                GRAPH_LAYER_CANONICAL,
+                MATURITY_CANONICAL_ELIGIBLE,
+                title="cognitive decision",
+            ),
+        )
+        _apply_graph_node_create(
+            orch,
+            "Alternative",
+            alternative_id,
+            _attrs(
+                f"spec:{uuid.uuid4()}:alternative:cognitive",
+                GRAPH_LAYER_CANONICAL,
+                MATURITY_CANONICAL_ELIGIBLE,
+                title="cognitive alternative",
+            ),
+        )
+        orch.create_edge(
+            edge_type="relates_to",
+            from_id=decision_id,
+            to_id=alternative_id,
+            attrs={"confidence": 1.0},
+            from_type="Decision",
+            to_type="Alternative",
+        )
+    return decision_id, alternative_id
 
 
 def _recreate_bug(board_id, bug_id, bug_attrs):
     """Simulate the deterministic rebuild re-materializing the Bug endpoint."""
     with open_board_connection(board_id) as (_db, conn):
         orch = TransactionOrchestrator(
-            kuzu_conn=conn, sqlite_session=None,
+            graph_scope=conn,
             session_id=f"redet_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(orch, "Bug", bug_id, bug_attrs)
+        _apply_graph_node_create(orch, "Bug", bug_id, bug_attrs)
 
 
 def _purge_and_rebootstrap(board_id):
@@ -183,6 +225,31 @@ def test_cognitive_canonical_node_and_edge_survive_rebuild():
     # The canonical Learning + its validates edge are back.
     assert _count(board_id, "Learning", layer=GRAPH_LAYER_CANONICAL) == 1
     assert _edge_count(board_id, "validates") == 1
+
+
+def test_cognitive_decision_and_alternative_edge_survive_rebuild():
+    board_id = _new_board()
+    decision_id, alternative_id = _seed_cognitive_decision_with_alternative(board_id)
+
+    snap = snapshot_canonical_cognitive(board_id)
+    assert any(
+        node["id"] == decision_id and node["node_type"] == "Decision"
+        for node in snap.nodes
+    )
+    assert any(
+        edge["edge_type"] == "relates_to"
+        and edge["from_id"] == decision_id
+        and edge["to_id"] == alternative_id
+        for edge in snap.edges
+    )
+
+    _purge_and_rebootstrap(board_id)
+    restore = restore_canonical_cognitive(board_id, snap)
+
+    assert preservation_summary(snap, restore)["status"] == ccp.STATUS_CLEAN
+    assert _count(board_id, "Decision", layer=GRAPH_LAYER_CANONICAL) == 1
+    assert _count(board_id, "Alternative", layer=GRAPH_LAYER_CANONICAL) == 1
+    assert _edge_count(board_id, "relates_to") == 1
 
 
 def test_restore_is_idempotent():

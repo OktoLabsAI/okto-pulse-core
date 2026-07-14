@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -21,6 +23,7 @@ from sqlalchemy_test_models import (
     Story,
     StoryIdeationLink,
     StoryStatus,
+    Topic,
 )
 from okto_pulse.core.models.schemas import (
     ScreenMockup,
@@ -54,6 +57,7 @@ def _stub_ctx(board_id: str, actor_id: str):
             "agent_id": actor_id,
             "agent_name": "stories-mcp-agent",
             "board_id": board_id,
+            "realm_id": "local",
             "permissions": [
                 "board:read",
                 "specs:create",
@@ -81,6 +85,21 @@ def _stub_ctx(board_id: str, actor_id: str):
     )()
 
 
+def _route_paths(routes) -> set[str]:
+    paths: set[str] = set()
+    for route in routes:
+        effective_route_contexts = getattr(route, "effective_route_contexts", None)
+        if callable(effective_route_contexts):
+            for context in effective_route_contexts():
+                if path := getattr(context, "path", None):
+                    paths.add(path)
+        if path := getattr(route, "path", None):
+            paths.add(path)
+        if nested := getattr(route, "routes", None):
+            paths.update(_route_paths(nested))
+    return paths
+
+
 async def _seed_board(db_factory, board_id: str, owner_id: str) -> None:
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Stories board", owner_id=owner_id))
@@ -88,7 +107,7 @@ async def _seed_board(db_factory, board_id: str, owner_id: str) -> None:
 
 
 async def _call_mcp(db_factory, tool_name: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     tool = await mcp_server.mcp.get_tool(tool_name)
     raw = await tool.fn(**kwargs)
     return json.loads(raw)
@@ -409,7 +428,7 @@ async def test_topic_delete_blocks_active_and_archived_stories(db_factory):
 
         deleted = await service.delete_topic(empty_topic.id, owner_id)
         assert deleted is not None
-        assert await db.get(type(empty_topic), empty_topic.id) is None
+        assert await db.get(Topic, empty_topic.id) is None
         activity = (await db.execute(
             select(ActivityLog).where(ActivityLog.board_id == board_id, ActivityLog.action == "topic_deleted")
         )).scalar_one()
@@ -496,7 +515,9 @@ async def test_topic_lifecycle_uses_semantic_activity_and_active_name_uniqueness
         replacement = await service.create_topic(board_id, owner_id, TopicCreate(name="Resource Gate"))
         assert replacement is not None
         assert replacement.id != topic.id
-        assert topic.name.startswith("Resource Gate [archived ")
+        archived_topic = await service.get_topic(topic.id)
+        assert archived_topic is not None
+        assert archived_topic.name.startswith("Resource Gate [archived ")
 
         with pytest.raises(ValueError):
             await service.update_topic(topic.id, owner_id, TopicUpdate(name="Resource Gate", archived=False))
@@ -840,7 +861,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
 
     from okto_pulse.community.api.router import api_router
 
-    paths = {getattr(route, "path", "") for route in api_router.routes}
+    paths = _route_paths(api_router.routes)
     assert any(path.endswith("/boards/{board_id}/stories/convert") for path in paths)
     assert any(path.endswith("/boards/{board_id}/stories/convert-to-ideation") for path in paths)
     assert any(path.endswith("/ideations/{ideation_id}/stories") for path in paths)

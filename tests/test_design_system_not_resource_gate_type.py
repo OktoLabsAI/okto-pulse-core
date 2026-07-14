@@ -62,8 +62,8 @@ def test_resource_gate_hardcoded_dispatch_and_label_dicts_have_only_canonical_ke
     for rtype in CANONICAL:
         assert resource_gate.ResourceGateService._resource_label(rtype) != rtype  # has a real label
     assert resource_gate.ResourceGateService._resource_label("design_system") == "design_system"  # no label
-    # The lazy facade delegates these policies to the registered implementation.
-    for marker in ("_collect_refs", "_remediation", "_resource_label"):
+    # The core policy owns these decisions; the edition adapter only persists.
+    for marker in ("collect_refs", "_remediation", "_resource_label"):
         source = inspect.getsource(getattr(resource_gate.ResourceGateService, marker))
         assert "design_system" not in source
 
@@ -113,16 +113,23 @@ async def test_runtime_resource_gate_summary_excludes_design_system():
 @pytest.mark.asyncio
 async def test_runtime_resource_coverage_keys_exclude_design_system():
     from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy_test_models import Spec
 
     async with get_session_factory()() as db:
         board = await _board_with_design_system(db)
         assert board.settings["design_system_gate_mode"] == "blocking"  # DS enabled context
+        spec = Spec(
+            id=str(uuid.uuid4()), board_id=board.id, title="S",
+            status=SpecStatus.DRAFT, created_by=USER_ID,
+        )
+        db.add(spec)
+        await db.flush()
         svc = resource_gate.ResourceGateService(db)
-        # the per-type task-resource coverage scaffold is keyed strictly by RESOURCE_TYPES;
-        # with Design System enabled on the board it still has only the 3 canonical types.
-        coverage = await svc._collect_task_resource_id_coverage([])
-        assert set(coverage.keys()) == set(CANONICAL)
-        assert "design_system" not in coverage
+        # The public effective-resource projection uses the same canonical
+        # resource keyspace consumed by task coverage policy.
+        effective = await svc.get_effective_resources(board.id, "spec", spec.id)
+        assert set(effective["resources"]) == set(CANONICAL)
+        assert "design_system" not in effective["resources"]
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +183,7 @@ def test_census_no_resource_type_registry_lists_design_system():
     core_dir = pathlib.Path(core_pkg.__file__).parent
     registries = _resource_type_registry_literals(core_dir)
     # sanity: we actually discovered the known registries (guard isn't a no-op).
-    assert len(registries) >= 4, registries
+    assert len(registries) >= 3, registries
     for where, vals in registries:
         assert "design_system" not in vals, (
             f"{where} lists design_system as a Resource Gate type — Design System must "

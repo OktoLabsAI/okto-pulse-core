@@ -13,9 +13,17 @@ import pytest
 
 from okto_pulse.community.api.kg_routes import list_pending_tree
 from okto_pulse.core.application.use_cases import ActorContext
+from okto_pulse.core.domain.realm import RealmScope
 from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
+
+
 def _actor(board_id: str) -> ActorContext:
-    return ActorContext("u", "rest", board_id=board_id)
+    return ActorContext(
+        "u",
+        "rest",
+        board_id=board_id,
+        realm_scope=RealmScope.local(),
+    )
 
 
 @pytest.mark.asyncio
@@ -24,7 +32,15 @@ async def test_pending_tree_empty_board(db_factory):
 
     factory = db_factory
     async with factory() as db:
-        db.add(Board(id="bt-empty", name="b", description="", owner_id="u"))
+        db.add(
+            Board(
+                id="bt-empty",
+                name="b",
+                description="",
+                owner_id="u",
+                realm_id="local",
+            )
+        )
         await db.commit()
         result = await list_pending_tree(
             "bt-empty", 5, actor=_actor("bt-empty"), uow=SQLAlchemyUnitOfWork(db)
@@ -46,7 +62,13 @@ async def test_pending_tree_hierarchical_shape(db_factory):
     )
     factory = db_factory
     async with factory() as db:
-        board = Board(id="bt-1", name="b", description="", owner_id="u")
+        board = Board(
+            id="bt-1",
+            name="b",
+            description="",
+            owner_id="u",
+            realm_id="local",
+        )
         db.add(board)
         await db.flush()
         idea = Ideation(id="i-1", board_id=board.id, title="Idea",
@@ -101,7 +123,13 @@ async def test_pending_tree_depth_limits_children(db_factory):
     )
     factory = db_factory
     async with factory() as db:
-        board = Board(id="bt-2", name="b", description="", owner_id="u")
+        board = Board(
+            id="bt-2",
+            name="b",
+            description="",
+            owner_id="u",
+            realm_id="local",
+        )
         idea = Ideation(id="i-2", board_id="bt-2", title="I2",
                         description="", problem_statement="",
                         proposed_approach="", created_by="u")
@@ -130,7 +158,13 @@ async def test_pending_tree_counters_track_queue_status(db_factory):
     )
     factory = db_factory
     async with factory() as db:
-        board = Board(id="bt-3", name="b", description="", owner_id="u")
+        board = Board(
+            id="bt-3",
+            name="b",
+            description="",
+            owner_id="u",
+            realm_id="local",
+        )
         idea = Ideation(id="i-3", board_id="bt-3", title="I3",
                         description="", problem_statement="",
                         proposed_approach="", created_by="u")

@@ -5,7 +5,7 @@ terminal error is ``KG node connectivity guard rejected the commit before graph
 mutation``. RKG-02 (existing-endpoint source_artifact_ref loading + bug-derived
 ref resolution) is the ROOT-CAUSE fix; with RKG-02/RKG-03 applied, reprocessing a
 member of this class re-runs consolidation through the connectivity guard, which
-now passes, and the artifact materialises into graph.lbug.
+now passes, and the artifact materialises into board graph.
 
 This service NEVER mutates a DLQ unless its preconditions hold (RKG-02/RKG-03
 applied, KG not quarantined, the selected DLQs still exist) — it fails closed

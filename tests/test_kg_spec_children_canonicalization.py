@@ -15,7 +15,7 @@ import uuid
 import pytest
 
 from okto_pulse.core.kg.primitives import (
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     begin_consolidation,
     commit_consolidation,
@@ -254,16 +254,16 @@ def _seed_decision(board_id, *, title, human_curated):
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Entity", root_id,
             _attrs("Spec root", "", spec_ref, False, "canonical"),
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", node_id,
             _attrs(title, "ORIGINAL CONTENT", decision_ref, human_curated, "working"),
         )
@@ -284,25 +284,30 @@ def _read_decision(board_id, source_ref):
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
             "MATCH (n:Learning) WHERE n.source_artifact_ref = $ref "
-            "RETURN count(n), coalesce(n.graph_layer, 'legacy_unknown'), "
-            "n.maturity_status, n.title, n.content",
+            "RETURN n.id, coalesce(n.graph_layer, 'legacy_unknown'), "
+            "n.maturity_status, n.title, n.content, n.superseded_by",
             {"ref": source_ref},
         )
+        rows = []
         try:
-            if res.has_next():
+            while res.has_next():
                 row = res.get_next()
-                return {
-                    "count": int(row[0]),
-                    "graph_layer": row[1],
-                    "maturity_status": row[2],
-                    "title": row[3],
-                    "content": row[4],
-                }
+                rows.append(row)
         finally:
             try:
                 res.close()
             except Exception:
                 pass
+        active = next((row for row in rows if not row[5]), None)
+        if active is not None:
+            return {
+                "count": len(rows),
+                "superseded_count": sum(bool(row[5]) for row in rows),
+                "graph_layer": active[1],
+                "maturity_status": active[2],
+                "title": active[3],
+                "content": active[4],
+            }
     return None
 
 
@@ -376,8 +381,8 @@ async def test_promotion_curated_promotes_maturity_preserves_content(
 async def test_promotion_non_curated_promotes_and_updates_content(
     board_id, agent_id, db_factory, board_handle,
 ):
-    # A non-curated WORKING decision: promotion lifts the layer AND updates the
-    # agent-managed content (current behavior, unchanged by the fix).
+    # A title change is identity-bearing under MKG-D: promotion creates a
+    # canonical successor and preserves the previous working state as history.
     source_ref = _seed_decision(
         board_id, title="OLD TITLE", human_curated=False
     )
@@ -385,12 +390,14 @@ async def test_promotion_non_curated_promotes_and_updates_content(
     commit = await _promote(
         board_id, agent_id, db_factory, source_ref=source_ref, cand_id="cand_agent"
     )
-    assert commit.nodes_merged == 1
+    assert commit.nodes_superseded == 1
+    assert commit.nodes_merged == 0
     assert commit.nodes_added == 0
 
     node = _read_decision(board_id, source_ref)
     assert node is not None
-    assert node["count"] == 1
+    assert node["count"] == 2
+    assert node["superseded_count"] == 1
     assert node["graph_layer"] == "canonical"
     assert node["title"] == "UPDATED TITLE"  # agent-managed content updated
     assert node["content"] == "UPDATED CONTENT"

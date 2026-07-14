@@ -8,6 +8,7 @@ through ``WriteLockPort``.
 from __future__ import annotations
 
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -28,8 +29,8 @@ _LOCK_COUNTER_LABELS = (
 )
 
 _LockCounterKey = tuple[str, str, str, str]
-_lock_counter: dict[_LockCounterKey, int] = {}
-_lock_counter_lock = threading.Lock()
+_lock_counter = runtime_state("kg.single_writer_lock.counter", dict)
+_lock_counter_lock = runtime_lock("kg.single_writer_lock.counter")
 
 
 def _bump_lock_counter(

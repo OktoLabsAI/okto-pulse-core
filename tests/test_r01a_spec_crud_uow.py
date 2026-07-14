@@ -22,7 +22,8 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api import specs as specs_api
 from okto_pulse.community.api.specs import router as specs_router
 from okto_pulse.community.api.deps import get_unit_of_work
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu3a-user"
@@ -46,6 +47,7 @@ def _client(user: str = USER) -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: user
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -54,7 +56,14 @@ async def _seed_board(owner: str = USER) -> str:
 
     bid = f"board-fu3a-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name="fu3a", owner_id=owner))
+        db.add(
+            Board(
+                id=bid,
+                name="fu3a",
+                owner_id=owner,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
     return bid
 
@@ -164,7 +173,7 @@ async def test_update_spec_permission_use_case_raises_permission_denied() -> Non
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     board_id = await _seed_board()
     spec_id = await _seed_spec(board_id)
-    actor = ActorContext(USER, "rest")
+    actor = ActorContext(USER, "rest", realm_id=LOCAL_REALM_ID)
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     with patch(
         "okto_pulse.core.infra.permissions.check_permission",

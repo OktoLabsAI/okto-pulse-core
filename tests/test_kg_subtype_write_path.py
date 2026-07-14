@@ -33,13 +33,8 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(autouse=True)
-def _restore_conftest_engine():
-    from okto_pulse.core.infra.database import create_database, get_engine
-
-    prior_url = str(get_engine().url)
+def _restore_conftest_engine(preserve_relational_runtime):
     yield
-    if str(get_engine().url) != prior_url:
-        create_database(prior_url, echo=False)
 
 
 @pytest.fixture

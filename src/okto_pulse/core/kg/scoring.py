@@ -27,8 +27,8 @@ Design notes:
       transaction.
     * ``_recompute_relevance_batch`` is the UNWIND-based variant used by
       commit_consolidation when a commit touches >50 endpoints, reducing
-      Kùzu round-trips from N to 3 (lookup + UPDATE + distribution log).
-    * The decay is applied on *read* — the score persisted in Kùzu is
+      graph backend round-trips from N to 3 (lookup + UPDATE + distribution log).
+    * The decay is applied on *read* — the score persisted in graph backend is
       always the "raw" value. Downstream ORDER BY queries need to reapply
       the decay expression via ``_apply_decay_reorder`` (R3 covers that
       path; spec 20f67c2a — Ideação #5 — wired it into ``find_by_topic``).
@@ -188,7 +188,7 @@ def _apply_decay_reorder(
         # The raw score embedded HITS_WEIGHT * raw_hits as part of the sum.
         # We compensate by subtracting the stale hit term and re-adding the
         # decayed one — that yields the score the agent would compute today
-        # without persisting it back to Kùzu.
+        # without persisting it back to graph backend.
         stale_hit_term = HITS_WEIGHT * float(raw_hits)
         decayed_hit_term = HITS_WEIGHT * decayed_hits
         # Spec MKG-B-S1 (FR6/TR5): the SAME attestation factor used by the
@@ -385,7 +385,7 @@ def _decay_hits(
 ) -> float:
     """Apply the 30-day half-life decay to ``query_hits``.
 
-    ``last_queried_at`` can be an ISO string (as stored in Kùzu), a
+    ``last_queried_at`` can be an ISO string (as stored in graph backend), a
     ``datetime``, or ``None``. ``None`` → returns 0.0 (node never queried,
     so any decayed count would be meaningless).
 
@@ -457,7 +457,7 @@ def _fetch_node_inputs(
 ) -> dict[str, Any] | None:
     """Read the four signals + current score for ``node_id`` in one query.
 
-    ``node_type`` is required because Kùzu stores each type in its own table
+    ``node_type`` is required because graph backend stores each type in its own table
     and ``MATCH (n)`` without a label would be expensive on large boards.
     Returns ``None`` when the node doesn't exist in this table.
 
@@ -487,9 +487,9 @@ def _fetch_node_inputs(
         )
         return None
 
-    if not res.has_next():
+    if not res.rows:
         return None
-    row = res.get_next()
+    row = res.rows[0]
     source_conf = float(row[0]) if row[0] is not None else 0.5
     out_deg = int(row[1] or 0)
     in_deg = int(row[2] or 0)
@@ -551,7 +551,7 @@ def _persist_score(
     *,
     now_iso: str | None = None,
 ) -> None:
-    """UPDATE the node's relevance_score and last_recomputed_at in Kùzu.
+    """UPDATE the node's relevance_score and last_recomputed_at in graph backend.
 
     ``now_iso`` is an optional ISO-8601 string for ``last_recomputed_at``;
     when omitted, ``datetime.now(timezone.utc).isoformat()`` is used. Pass
@@ -645,7 +645,7 @@ def _recompute_relevance_batch(
 
     Returns the number of nodes successfully recomputed. When
     ``len(endpoints) > BATCH_UPDATE_THRESHOLD``, uses the UNWIND variant:
-    inputs are fetched individually (Kùzu 0.6 has no cross-table batch
+    inputs are fetched individually (graph backend 0.6 has no cross-table batch
     fetch), scores computed in Python, and persisted with a single
     ``UNWIND $rows AS r MATCH (n:Type {id: r.id}) SET n.relevance_score = r.s``
     per node type. Groups by node type to keep the MATCH table-bound.

@@ -33,10 +33,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from typing import Any
 
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +115,12 @@ def _run_async_blocking(coro):
         except BaseException as exc:  # pragma: no cover - re-raised in caller
             box["error"] = exc
 
-    thread = threading.Thread(target=_runner, name="kg-schema-layer-migrate")
+    context = copy_context()
+    thread = threading.Thread(
+        target=context.run,
+        args=(_runner,),
+        name="kg-schema-layer-migrate",
+    )
     thread.start()
     thread.join()
     if "error" in box:
@@ -160,7 +167,7 @@ def build_structured_schema_layer_error(
     """
     action = (
         f"run MCP `okto_pulse_kg_migrate_schema --board {board_id}` "
-        f"(CLI: `python -m okto_pulse.tools.kg_migrate_schema --board {board_id}`) "
+        f"(CLI: `okto-pulse kg migrate-schema --board {board_id}`) "
         "to add the graph_layer/maturity_status columns and backfill defaults, "
         "then retry the rebuild/reprocess. Do NOT delete the graph store."
     )
@@ -298,8 +305,11 @@ def ensure_graph_layer_schema(
 # of outcome=migration_failed must be 0 once the board has been migrated.
 
 _SCHEMA_LAYER_LABELS = ("board_id", "outcome")
-_schema_layer_samples = BoundedCounterSampleBuffer(_SCHEMA_LAYER_LABELS)
-_schema_layer_lock = threading.Lock()
+_schema_layer_samples = runtime_counter_sample_buffer(
+    "kg.schema_layer_guard",
+    _SCHEMA_LAYER_LABELS,
+)
+_schema_layer_lock = runtime_lock("kg.schema_layer_guard.samples")
 
 
 def _emit_schema_layer_sample(*, board_id: str, outcome: str) -> None:

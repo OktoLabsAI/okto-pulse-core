@@ -133,9 +133,11 @@ def test_ts_fe24d781_migrated_surface_consumes_the_port_not_kg_schema():
 
 def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     """Ruling option 2: every ASYNC + simple-execute open_board_connection
-    call-site (class A) was migrated to GraphTransaction.begin / scope.execute —
-    NOT left calling open_board_connection. ``api/kg_routes.py`` also migrated
-    its sync edge diagnostics to CypherExecutor, so it stays off the ledger.
+    call-site (class A) was migrated behind GraphTransaction / scope.execute and
+    is NOT left calling open_board_connection. The Community tick route delegates
+    through its UoW service; Core application orchestration owns the graph write.
+    ``api/kg_routes.py`` also migrated its sync edge diagnostics to
+    CypherExecutor, so it stays off the ledger.
 
     Since the R01A strangler (50e3193) only ``get_kg_metrics`` consumes the
     transaction port directly in the route module; ``boost_node`` now goes
@@ -143,20 +145,34 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     ``kg.governance.boost_node``, which consumes the same port."""
     import okto_pulse.community.api.kg_routes as kg_routes
     import okto_pulse.community.api.kg_tick as kg_tick
+    import okto_pulse.core.application.kg_tick as kg_tick_application
     import okto_pulse.core.kg.canonical_learning_partition as clp
     import okto_pulse.core.kg.governance as kg_governance
 
-    # Fully migrated files: no open_board_connection left, port consumed.
-    for mod in (kg_tick, clp):
-        src = Path(inspect.getsourcefile(mod)).read_text(encoding="utf-8")
-        assert "graph_transaction.begin" in src, mod.__name__
-        assert "open_board_connection" not in src, mod.__name__
+    # The transport is persistence-agnostic and delegates through the composed
+    # service catalog rather than opening a graph transaction itself.
+    tick_route_src = Path(inspect.getsourcefile(kg_tick)).read_text(encoding="utf-8")
+    assert "db.services.kg.dispatch_manual_tick" in tick_route_src
+    assert "graph_transaction.begin" not in tick_route_src
+    assert "open_board_connection" not in tick_route_src
+
+    # The Core application policy owns the force-rebuild graph transaction.
+    tick_application_src = Path(inspect.getsourcefile(kg_tick_application)).read_text(
+        encoding="utf-8"
+    )
+    assert "get_kg_registry().graph_transaction" in tick_application_src
+    assert "transaction.begin" in tick_application_src
+    assert "open_board_connection" not in tick_application_src
+
+    clp_src = Path(inspect.getsourcefile(clp)).read_text(encoding="utf-8")
+    assert "graph_transaction.begin" in clp_src
+    assert "open_board_connection" not in clp_src
 
     # kg_routes: get_kg_metrics consumes the transaction port and the
     # sync edge diagnostics consume CypherExecutor; no raw connection remains.
     # boost_node was strangled to the use-case layer in R01A (50e3193).
     routes_src = Path(inspect.getsourcefile(kg_routes)).read_text(encoding="utf-8")
-    assert routes_src.count("graph_transaction.begin") == 1
+    assert routes_src.count("resolve_graph_transaction().begin") == 1
     assert "scope.execute" in routes_src
     assert "open_board_connection" not in routes_src
 

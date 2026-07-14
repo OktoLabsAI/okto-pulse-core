@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from okto_pulse.core.kg.interfaces.graph_lifecycle import PurgeReport
 from okto_pulse.core.kg.rebuild_service import RebuildStepInput
 
 _board_rebuild_ingestion = pytest.importorskip(
@@ -16,6 +17,10 @@ _board_rebuild_ingestion = pytest.importorskip(
     reason="AF-04 Community integration test requires the Community rebuild ingestion adapter.",
 )
 BoardRebuildIngestionAdapter = _board_rebuild_ingestion.BoardRebuildIngestionAdapter
+
+
+def _noop_purge_report(self, *, board_id: str, reason: str) -> PurgeReport:
+    return PurgeReport(board_id=board_id, status="noop", reason=reason)
 
 
 def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
@@ -363,8 +368,8 @@ def test_rebuild_step_fails_when_worker_queue_does_not_drain(
     )
     monkeypatch.setattr(
         BoardRebuildIngestionAdapter,
-        "prepare_board_graph_storage",
-        lambda self, **_: (),
+        "prepare_board_graph_storage_report",
+        _noop_purge_report,
     )
     step = adapter.build_step_adapter(
         source_resolver=lambda _req: ({"artifact_type": "spec", "id": "s1"},),
@@ -412,8 +417,8 @@ def test_rebuild_step_result_counts_include_enqueue_left_alone(
     )
     monkeypatch.setattr(
         BoardRebuildIngestionAdapter,
-        "prepare_board_graph_storage",
-        lambda self, **_: (),
+        "prepare_board_graph_storage_report",
+        _noop_purge_report,
     )
     monkeypatch.setattr(
         BoardRebuildIngestionAdapter,
@@ -704,14 +709,8 @@ def test_ladybug_lifecycle_reopen_probe_fails_on_unopenable_existing_graph(
 
 
 def test_rebuild_endpoint_wires_registry_lifecycle_adapter() -> None:
-    endpoint = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "okto_pulse"
-        / "core"
-        / "api"
-        / "kg_rebuild.py"
-    ).read_text(encoding="utf-8")
+    endpoint_module = pytest.importorskip("okto_pulse.community.api.kg_rebuild")
+    endpoint = Path(endpoint_module.__file__).resolve().read_text(encoding="utf-8")
 
     assert "step_adapter=lambda b, g, s: LifecycleStepResult(ok=True)" not in endpoint
-    assert "step_adapter=get_kg_registry().graph_lifecycle.apply_step" in endpoint
+    assert "step_adapter=resolve_graph_lifecycle().apply_step" in endpoint

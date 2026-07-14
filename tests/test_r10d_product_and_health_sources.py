@@ -49,6 +49,7 @@ from okto_pulse.core.telemetry.product_aggregator_registry import (
 )
 from okto_pulse.core.telemetry.publish_health_source_registry import (
     get_external_source_descriptors,
+    register_external_source_provider,
     reset_external_source_provider_for_tests,
 )
 from okto_pulse.core.telemetry.service import TelemetryService
@@ -179,11 +180,10 @@ def test_ts_138260c8_aws_report_never_healthy_by_inference():
     assert dto.status == ph.DEGRADED
     assert dto.reason_category == ph.REASON_SOURCE_GAP
 
-    # The registry DEFAULT (no provider) yields the gap descriptors — so a
-    # non-composed runtime can NEVER infer AWS/report healthy from a local send.
-    aws, report = get_external_source_descriptors(object())
-    assert aws == {"availability": ph.SRC_GAP}
-    assert report == {"availability": ph.SRC_GAP}
+    # An uncomposed runtime cannot claim any external visibility and therefore
+    # fails closed instead of inferring AWS/report health from a local send.
+    with pytest.raises(RuntimeError, match="No publish-health ExternalSourceProvider"):
+        get_external_source_descriptors(object())
 
     # A REQUIRED source that is entirely ABSENT is also never healthy.
     dto_missing = ph.resolve_publish_health(
@@ -254,6 +254,12 @@ def test_ts_6ad289a7_registry_wiring_resolves_port_conformant_aggregator(tmp_pat
 # ===========================================================================
 def test_ts_b23dcb42_surfaces_preserved_and_secret_free(tmp_path):
     register_product_aggregator_factory(_StubProductAggregator)
+    register_external_source_provider(
+        lambda _settings: (
+            {"availability": ph.SRC_GAP},
+            {"availability": ph.SRC_GAP},
+        )
+    )
     from okto_pulse.core.telemetry.event_store_registry import (
         register_telemetry_event_store_factory,
         reset_telemetry_event_store_factory_for_tests,
@@ -297,6 +303,7 @@ def test_ts_b23dcb42_surfaces_preserved_and_secret_free(tmp_path):
         assert "install_token" not in blob and "token_hash" not in blob
     finally:
         reset_telemetry_event_store_factory_for_tests()
+        reset_external_source_provider_for_tests()
 
 
 # ===========================================================================

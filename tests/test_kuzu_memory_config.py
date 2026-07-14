@@ -19,14 +19,20 @@ from httpx import ASGITransport, AsyncClient
 
 from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
 
+_community_config = pytest.importorskip(
+    "okto_pulse.community.config",
+    reason="graph-runtime configuration belongs to the Community edition",
+)
+CommunitySettings = _community_config.CommunitySettings
+
 
 @pytest.fixture(autouse=True)
 def _restore_core_settings():
-    """Snapshot + restore the CoreSettings singleton around each test.
+    """Snapshot and restore the configured settings around each test.
 
-    Without this, tests that `configure_settings(CoreSettings(...))` mutate
+    Without this, tests that call ``configure_settings`` mutate
     the process-wide singleton, which in turn changes `_open_kuzu_db` behavior
-    for unrelated downstream tests and can surface as Kùzu file-lock flakes.
+    for unrelated downstream tests and can surface as graph file-lock flakes.
     """
     original = get_settings()
     yield
@@ -34,23 +40,23 @@ def _restore_core_settings():
 
 
 # ----------------------------------------------------------------------
-# AC2, AC3 — CoreSettings defaults + _open_kuzu_db passes kwargs in bytes
+# AC2, AC3 — Community graph defaults + adapter kwargs in bytes
 # ----------------------------------------------------------------------
 
-def test_core_settings_defaults_are_safe():
-    """AC3: fresh CoreSettings exposes the 0.1.4 safe defaults."""
-    s = CoreSettings()
+def test_community_settings_graph_defaults_are_safe():
+    """AC3: Community owns safe defaults for its graph database adapter."""
+    s = CommunitySettings()
     assert s.kg_kuzu_buffer_pool_mb == 512
     assert s.kg_kuzu_max_db_size_gb == 2
     assert s.kg_connection_pool_size == 8
 
 
-def test_core_settings_rejects_unsupported_max_db_size():
+def test_community_settings_rejects_unsupported_max_db_size():
     """Ladybug requires max_db_size to be a power of two in bytes."""
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError) as exc_info:
-        CoreSettings(kg_kuzu_max_db_size_gb=6)
+        CommunitySettings(kg_kuzu_max_db_size_gb=6)
     msg = str(exc_info.value)
     assert "2, 4, 8, 16, 32, 64" in msg
     assert "power of 2" in msg
@@ -60,9 +66,9 @@ def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
     """AC2: _open_kuzu_db multiplies MB/GB by 1024^2 / 1024^3 correctly."""
     import kg_schema_testing as schema_module
 
-    # Pin CoreSettings to explicit values so the test is deterministic even
+    # Pin the Community settings so the test is deterministic even
     # if the suite-wide fixture wiggled the singleton.
-    configure_settings(CoreSettings(
+    configure_settings(CommunitySettings(
         kg_kuzu_buffer_pool_mb=512,
         kg_kuzu_max_db_size_gb=2,
         kg_connection_pool_size=8,
@@ -93,7 +99,7 @@ def test_open_kuzu_db_failure_message_includes_graph_settings(tmp_path):
     """Ladybug open failures include the active graph settings and fix hint."""
     import kg_schema_testing as schema_module
 
-    configure_settings(CoreSettings(
+    configure_settings(CommunitySettings(
         kg_kuzu_buffer_pool_mb=512,
         kg_kuzu_max_db_size_gb=2,
         kg_connection_pool_size=8,
@@ -123,7 +129,7 @@ def test_open_kuzu_db_retries_pybind_when_capi_shared_lib_is_missing(tmp_path):
     import kg_schema_testing as schema_module
     import okto_pulse.community.adapters.kg_runtime as kg_runtime
 
-    configure_settings(CoreSettings(
+    configure_settings(CommunitySettings(
         kg_kuzu_buffer_pool_mb=512,
         kg_kuzu_max_db_size_gb=2,
         kg_connection_pool_size=8,
@@ -231,21 +237,21 @@ def test_open_kuzu_db_controls_wal_salvage_flag():
         "the salvage retry must open with throw_on_wal_replay_failure=False"
     )
 
-    # The setting exists in CoreSettings with the safe default (salvage ON).
-    assert CoreSettings().kg_wal_salvage_enabled is True
+    # Recovery policy is adapter-specific and therefore Community-owned.
+    assert CommunitySettings().kg_wal_salvage_enabled is True
 
 
 # ----------------------------------------------------------------------
-# AC4 — connection_pool reads CoreSettings + honours env var override
+# AC4 — connection_pool reads configured edition settings + env override
 # ----------------------------------------------------------------------
 
 def test_pool_cap_reads_core_settings(monkeypatch, caplog):
-    """AC4: without env var, pool cap comes from CoreSettings; env var
+    """AC4: without env var, the pool cap comes from edition settings; env var
     overrides with a deprecation warning."""
     from okto_pulse.community.adapters import graph_connection_pool as connection_pool
 
     monkeypatch.delenv("KG_CONNECTION_POOL_SIZE", raising=False)
-    configure_settings(CoreSettings(kg_connection_pool_size=8))
+    configure_settings(CommunitySettings(kg_connection_pool_size=8))
     assert connection_pool._read_cap_from_env() == 8
 
     monkeypatch.setenv("KG_CONNECTION_POOL_SIZE", "16")
@@ -256,10 +262,10 @@ def test_pool_cap_reads_core_settings(monkeypatch, caplog):
 
 
 def test_pool_cap_env_invalid_falls_back_to_settings(monkeypatch):
-    """Invalid env var doesn't crash — falls back to CoreSettings."""
+    """Invalid env var falls back to the configured edition settings."""
     from okto_pulse.community.adapters import graph_connection_pool as connection_pool
 
-    configure_settings(CoreSettings(kg_connection_pool_size=12))
+    configure_settings(CommunitySettings(kg_connection_pool_size=12))
     monkeypatch.setenv("KG_CONNECTION_POOL_SIZE", "not-a-number")
     assert connection_pool._read_cap_from_env() == 12
 
@@ -276,6 +282,8 @@ async def settings_client():
     from okto_pulse.community.api.settings import router
     from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
+
+    configure_settings(CommunitySettings())
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
@@ -301,9 +309,8 @@ async def settings_client():
 @pytest.mark.asyncio
 async def test_settings_runtime_get_returns_defaults(settings_client):
     """AC5: GET on a fresh install returns the safe defaults."""
-    # Ensure CoreSettings is the fresh default. The test suite's autouse
-    # fixture may have left an instance with other values — force a reset.
-    configure_settings(CoreSettings())
+    # Materialize Community adapter settings before serving the endpoint.
+    configure_settings(CommunitySettings())
 
     response = await settings_client.get("/api/v1/settings/runtime")
     assert response.status_code == 200
@@ -318,7 +325,7 @@ async def test_settings_runtime_get_returns_defaults(settings_client):
 async def test_settings_runtime_put_persists_and_flips_restart(settings_client):
     """AC6: PUT with a valid value persists and sets restart_required=true."""
     # Baseline GET establishes the boot snapshot.
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     await settings_client.get("/api/v1/settings/runtime")
 
     put_resp = await settings_client.put(
@@ -367,25 +374,28 @@ async def test_settings_runtime_put_422_on_unsupported_max_db_size(settings_clie
 
 def test_commit_error_context_mentions_buffer_pool_settings():
     """Commit errors report the concrete graph knobs operators must change."""
-    from okto_pulse.core.kg.primitives import _contextualize_ladybug_commit_error
+    from okto_pulse.community.adapters.graph_error_mapping import map_graph_error
+    from okto_pulse.core.kg.primitives import _contextualize_graph_commit_error
 
-    configure_settings(CoreSettings(
+    configure_settings(CommunitySettings(
         kg_kuzu_buffer_pool_mb=128,
         kg_kuzu_max_db_size_gb=2,
         kg_connection_pool_size=8,
     ))
 
-    msg, details = _contextualize_ladybug_commit_error(
+    mapped = map_graph_error(
         RuntimeError(
             "Buffer manager exception: Unable to allocate memory! "
             "The buffer pool is full and no memory could be freed!"
-        )
+        ),
+        operation="commit",
     )
+    msg, details = _contextualize_graph_commit_error(mapped)
 
-    assert "kg_kuzu_buffer_pool_mb=512" in msg
-    assert "buffer=128MB" in msg
-    assert details["kg_kuzu_buffer_pool_mb"] == 128
-    assert details["kg_kuzu_max_db_size_gb"] == 2
+    assert "buffer manager exception" in msg.lower()
+    assert "512 MB" in details["remediation"]
+    assert details["graph_buffer_pool_mb"] == 128
+    assert details["graph_max_db_size_gb"] == 2
 
 
 # ----------------------------------------------------------------------
@@ -393,11 +403,7 @@ def test_commit_error_context_mentions_buffer_pool_settings():
 # ----------------------------------------------------------------------
 
 def test_version_is_consistent_across_runtime_surfaces():
-    """AC13 (refactored): CoreSettings + pyproject.toml carry the SAME version
-    string. The test reads pyproject as the single source of truth and asserts
-    that every other surface mirrors it — so future version bumps only need
-    to update pyproject + CoreSettings (the test verifies they stay in sync).
-    """
+    """AC13: Core policy and Community MCP surfaces mirror package version."""
     import re
 
     core_pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
@@ -406,12 +412,13 @@ def test_version_is_consistent_across_runtime_surfaces():
     assert match, "pyproject.toml must declare a top-level version"
     pyproject_version = match.group(1)
 
-    s = CoreSettings()
-    assert s.app_version == pyproject_version, (
-        f"CoreSettings.app_version={s.app_version!r} drifted from "
+    core_settings = CoreSettings()
+    assert core_settings.app_version == pyproject_version, (
+        f"CoreSettings.app_version={core_settings.app_version!r} drifted from "
         f"pyproject.toml version={pyproject_version!r}"
     )
-    assert s.mcp_server_version == pyproject_version, (
-        f"CoreSettings.mcp_server_version={s.mcp_server_version!r} drifted "
+    community_settings = CommunitySettings()
+    assert community_settings.mcp_server_version == pyproject_version, (
+        f"CommunitySettings.mcp_server_version={community_settings.mcp_server_version!r} drifted "
         f"from pyproject.toml version={pyproject_version!r}"
     )

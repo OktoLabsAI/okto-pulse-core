@@ -3,7 +3,7 @@
 Started in ``core/app.py`` alongside the deterministic consolidation worker, it
 periodically drains PENDING cognitive-closeout work from the ledger
 (opened by the CognitiveExtractionHandler) and persists Alternative/Assumption/
-Learning to graph.lbug OUTSIDE the event drain, advancing the SAME ledger
+Learning to board graph OUTSIDE the event drain, advancing the SAME ledger
 pending→consolidated/skipped/failed.
 
 The worker NEVER writes the graph inside the event drain and uses a cognitive
@@ -114,7 +114,7 @@ def _graph_bug_probe(board_id: str):
     return _probe
 
 
-def build_closeout_input_loader(session_factory):
+def build_closeout_input_loader(relational_scope_factory):
     """The production input loader: derives the closeout inputs for a pending
     ledger item from SQL (Card/Spec/Board settings) + the live graph (bug probe,
     related Decision)."""
@@ -128,7 +128,7 @@ def build_closeout_input_loader(session_factory):
         ident = item.source_ref.split(":", 1)[-1]
         reader = get_domain_event_fact_reader()
         if item.artifact_type == "bug" or kind == "bug":
-            async with session_factory() as db:
+            async with relational_scope_factory() as db:
                 card = await reader.load_cognitive_card_facts(db, card_id=ident)
                 settings = await reader.load_board_settings(db, board_id=board_id)
             settings = settings or {}
@@ -145,7 +145,7 @@ def build_closeout_input_loader(session_factory):
                 "bug_probe": _graph_bug_probe(board_id),
             }
         if item.artifact_type == "spec" or kind == "spec":
-            async with session_factory() as db:
+            async with relational_scope_factory() as db:
                 spec = await reader.load_cognitive_spec_facts(db, spec_id=ident)
             return {
                 "spec_context": spec.context if spec and spec.context else "",
@@ -159,14 +159,18 @@ def build_closeout_input_loader(session_factory):
 class CognitiveCloseoutWorker:
     """Periodic worker draining cognitive-closeout pending per board."""
 
-    def __init__(self, session_factory, *, interval_s: float = _DEFAULT_INTERVAL_S,
+    def __init__(self, relational_scope_factory=None, *, interval_s: float = _DEFAULT_INTERVAL_S,
                  store: CognitiveConsolidationItemStore | None = None,
                  pending_work_provider: CognitivePendingWorkProvider | None = None) -> None:
-        self._session_factory = session_factory
+        if relational_scope_factory is None:
+            from okto_pulse.core.ports.relational_runtime import get_db_session
+
+            relational_scope_factory = get_db_session
+        self._relational_scope_factory = relational_scope_factory
         self._interval_s = interval_s
         self._running = False
         self._task: asyncio.Task | None = None
-        self._loader = build_closeout_input_loader(session_factory)
+        self._loader = build_closeout_input_loader(relational_scope_factory)
         self._store = store or _default_item_store()
         self._pending_work_provider = (
             pending_work_provider or _default_pending_work_provider()
@@ -218,7 +222,9 @@ class CognitiveCloseoutWorker:
         for board_id, gen in self._scan_ledger_records():
             try:
                 results = await drain_cognitive_closeout_pending(
-                    self._session_factory, board_id, input_loader=self._loader,
+                    self._relational_scope_factory,
+                    board_id,
+                    input_loader=self._loader,
                     store=self._store, agent_id=AGENT_ID, kg_generation_id=gen,
                 )
                 processed += len(results)
@@ -240,12 +246,11 @@ class CognitiveCloseoutWorker:
 _RUNTIME_KEY = "kg.workers.cognitive_closeout"
 
 
-def get_cognitive_closeout_worker(session_factory=None) -> CognitiveCloseoutWorker:
+def get_cognitive_closeout_worker(
+    relational_scope_factory=None,
+) -> CognitiveCloseoutWorker:
     worker = resolve_runtime_value(_RUNTIME_KEY)
     if worker is None:
-        if session_factory is None:
-            from okto_pulse.core.ports.relational_runtime import get_session_factory
-            session_factory = get_session_factory()
-        worker = CognitiveCloseoutWorker(session_factory)
+        worker = CognitiveCloseoutWorker(relational_scope_factory)
         register_runtime_value(_RUNTIME_KEY, worker)
     return worker

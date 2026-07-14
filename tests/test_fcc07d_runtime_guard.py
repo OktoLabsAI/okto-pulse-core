@@ -69,8 +69,8 @@ def _synthetic_production_composition() -> RuntimeComposition:
         settings_provider=_ProductionSettings(),
         auth_provider=_ProductionSettings(),
         storage_provider=_ProductionSettings(),
-        session_factory=_ProductionSettings(),
         event_bus=InMemoryEventBus(),  # test-only namespace provider
+        uow_factory=_ProductionSettings(),
     )
 
 

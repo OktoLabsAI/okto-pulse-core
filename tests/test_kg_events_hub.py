@@ -27,7 +27,7 @@ from okto_pulse.core.infra.database import get_engine, get_session_factory
 from sqlalchemy_test_models import GlobalUpdateOutbox
 from okto_pulse.core.ports.kg_events import KGEventsPoll
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
+pytestmark = pytest.mark.asyncio(loop_scope="function")
 
 
 async def _insert_outbox_event(board_id: str, event_type: str = "kg.session.committed") -> str:

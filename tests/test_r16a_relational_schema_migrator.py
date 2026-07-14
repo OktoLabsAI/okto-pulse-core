@@ -168,28 +168,34 @@ print("STD_IMPORT_OK")
     assert "STD_IMPORT_OK" in proc.stdout
 
 
-def test_ts_1b1d24cc_core_init_is_lazy_and_back_compatible():
-    # Boundary fix: `from okto_pulse.core import __version__` must NOT eagerly
-    # load infra.database/SQLAlchemy; `Base`/`init_db` still resolve lazily on
-    # first access (back-compat preserved) and only THEN load the module.
+def test_ts_1b1d24cc_core_init_is_lazy_and_has_no_orm_export():
+    # Importing the package and its relational-runtime facade must stay adapter
+    # neutral. The old ORM ``Base`` export was deliberately withdrawn when the
+    # mappings moved to Community.
     script = r"""
 import sys
-from okto_pulse.core import __version__
+import okto_pulse.core as core
+from okto_pulse.core import __version__, init_db, get_db
 assert __version__, "missing __version__"
 assert "okto_pulse.core.infra.database" not in sys.modules, "version import eagerly loaded database"
 assert "sqlalchemy" not in sys.modules, "version import eagerly loaded sqlalchemy"
-# Lazy back-compat: the established API still works on demand.
-from okto_pulse.core import Base, init_db, get_db
-assert Base is not None and callable(init_db) and callable(get_db)
-assert "okto_pulse.core.infra.database" in sys.modules, "Base access did not load database"
-print("LAZY_OK")
+assert callable(init_db) and callable(get_db)
+assert "okto_pulse.core.infra.database" not in sys.modules
+assert "sqlalchemy" not in sys.modules
+try:
+    core.Base
+except AttributeError:
+    pass
+else:
+    raise AssertionError("Core must not re-export an edition-owned ORM Base")
+print("ORM_FREE_OK")
 """
     proc = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True, text=True,
     )
     assert proc.returncode == 0, f"stdout={proc.stdout}\nstderr={proc.stderr}"
-    assert "LAZY_OK" in proc.stdout
+    assert "ORM_FREE_OK" in proc.stdout
 
 
 def test_ts_1b1d24cc_protocol_is_runtime_checkable():

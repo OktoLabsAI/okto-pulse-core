@@ -119,6 +119,36 @@ class _FakeGlobalDiscoveryRuntime:
             "Decision", "canonical", 0.1,
         ]])
 
+    def search_decision_digests(
+        self,
+        query_vector,
+        *,
+        board_ids,
+        graph_layer,
+        top_k,
+        min_similarity,
+        exhaustive=False,
+    ):
+        del query_vector, top_k, min_similarity, exhaustive
+        self.execute_calls += 1
+        assert board_ids == ("board-a",)
+        assert graph_layer == "canonical"
+        return [
+            {
+                "board_id": "board-a",
+                "digest_id": "digest-a",
+                "id": "node-a",
+                "title": "Decision A",
+                "summary": "Summary A",
+                "node_type": "Decision",
+                "graph_layer": "canonical",
+                "similarity": 0.9,
+            }
+        ]
+
+    def list_schema_objects(self) -> tuple[str, ...]:
+        return ("DecisionDigest",)
+
 
 class _HealthGlobalDiscoveryRuntime:
     def __init__(self, path: Path, *, digest_count: int = 3) -> None:
@@ -145,6 +175,10 @@ class _HealthGlobalDiscoveryRuntime:
             assert params == {"bid": "board-a"}
             return GraphStatementResult.from_rows([[self.digest_count]])
         return GraphStatementResult()
+
+    def list_schema_objects(self) -> tuple[str, ...]:
+        self.execute_calls += 1
+        return ("DecisionDigest",)
 
 
 class _TokenCheckingGlobalDiscoveryRuntime(_FakeGlobalDiscoveryRuntime):
@@ -313,7 +347,7 @@ def test_kg_health_global_probe_uses_global_discovery_runtime_provider(
     assert telemetry.graph_type == "discovery"
     assert telemetry.recent_wal_errors == 0
     assert runtime.execute_calls == 1
-    assert runtime.executed == ["CALL SHOW_TABLES() RETURN name"]
+    assert runtime.executed == []
 
 
 def test_check_global_uses_global_discovery_runtime_provider(tmp_path: Path) -> None:

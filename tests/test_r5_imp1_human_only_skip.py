@@ -15,6 +15,8 @@ Anti-test-theater: every refusal is driven through the REAL MCP tool, and the
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import os
 import sys
@@ -32,6 +34,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveItemStatus,
     compute_cognitive_item_id,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import Board, Ideation
 
@@ -59,7 +62,7 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -71,8 +74,6 @@ async def _call(name: str, **kwargs) -> dict:
 def _seed_item(base_dir, board, gen, *, source_ref, status):
     """Write a generation record with one cognitive ledger item at ``status``."""
     store = CognitiveConsolidationItemStore(base_dir=base_dir)
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
     item = {
         "item_id": compute_cognitive_item_id(board, gen, source_ref),
         "board_id": board, "kg_generation_id": gen, "source_ref": source_ref,
@@ -85,7 +86,14 @@ def _seed_item(base_dir, board, gen, *, source_ref, status):
     record = {"board_id": board, "kg_generation_id": gen,
               "pending_count": 0, "pending_refs": [], "status": "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=gen,
+        ),
+        record,
+    )
     return store
 
 

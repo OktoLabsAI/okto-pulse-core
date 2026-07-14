@@ -71,9 +71,9 @@ def _fetch_priority_boost(conn, node_type: str, node_id: str) -> float:
             f"MATCH (n:{node_type} {{id: $nid}}) RETURN n.priority_boost",
             {"nid": node_id},
         )
-        if not res.has_next():
+        if not res.rows:
             return 0.0
-        row = res.get_next()
+        row = res.rows[0]
         value = row[0]
         return float(value) if value is not None else 0.0
     except Exception as exc:
@@ -82,12 +82,6 @@ def _fetch_priority_boost(conn, node_type: str, node_id: str) -> float:
             node_id, exc,
         )
         return 0.0
-    finally:
-        if res is not None:
-            try:
-                res.close()
-            except Exception:
-                pass
 
 
 def _persist_priority_boost(conn, node_type: str, node_id: str, boost: float) -> None:
@@ -136,30 +130,28 @@ def _emit_boost_decision_node(
     )
     now_iso = datetime.now(timezone.utc).isoformat()
     artifact_ref = f"card:{card_id}"
+    session_id = f"boost-recompute-{card_id}"
     try:
-        conn.execute(
-            "CREATE (d:Decision {"
-            "id: $id, title: $title, content: $content, "
-            "context: $context, justification: $justification, "
-            "source_artifact_ref: $artifact_ref, "
-            "source_session_id: $session_id, "
-            "created_at: timestamp($now), created_by_agent: $agent, "
-            "source_confidence: 1.0, relevance_score: 0.5, "
-            "query_hits: 0, last_queried_at: NULL, "
-            "last_recomputed_at: $now, priority_boost: 0.0, "
-            "human_curated: FALSE"
-            "})",
+        conn.create_node(
+            "Decision",
+            decision_id,
             {
-                "id": decision_id,
                 "title": title,
                 "content": content,
                 "context": f"Trigger: {trigger_event_type}",
                 "justification": "delta exceeds DECISION_AUDIT_DELTA threshold",
-                "artifact_ref": artifact_ref,
-                "session_id": f"boost-recompute-{card_id}",
-                "now": now_iso,
-                "agent": "card_boost_recompute_handler",
+                "source_artifact_ref": artifact_ref,
+                "created_at": now_iso,
+                "created_by_agent": "card_boost_recompute_handler",
+                "source_confidence": 1.0,
+                "relevance_score": 0.5,
+                "query_hits": 0,
+                "last_queried_at": None,
+                "last_recomputed_at": now_iso,
+                "priority_boost": 0.0,
+                "human_curated": False,
             },
+            source_session_id=session_id,
         )
     except Exception as exc:
         logger.warning(
@@ -171,18 +163,19 @@ def _emit_boost_decision_node(
     # Edge Decision -[:relates_to]-> root entity. Multi-pair belongs_to is
     # for parent hierarchy; relates_to is the right rel for context anchor.
     try:
-        conn.execute(
-            "MATCH (d:Decision {id: $did}), "
-            f"(n:{node_type} {{id: $nid}}) "
-            "CREATE (d)-[:relates_to {confidence: 1.0, "
-            "created_by_session_id: $session_id, "
-            "created_at: timestamp($now), layer: 'deterministic', "
-            "rule_id: 'boost_audit', created_by: 'card_boost_handler'}]->(n)",
+        conn.create_edge(
+            "relates_to",
+            "Decision",
+            node_type,
+            decision_id,
+            root_node_id,
             {
-                "did": decision_id,
-                "nid": root_node_id,
-                "session_id": f"boost-recompute-{card_id}",
-                "now": now_iso,
+                "confidence": 1.0,
+                "created_by_session_id": session_id,
+                "created_at": now_iso,
+                "layer": "deterministic",
+                "rule_id": "boost_audit",
+                "created_by": "card_boost_handler",
             },
         )
     except Exception as exc:
@@ -206,7 +199,7 @@ async def _recompute_boost(
     """Recompute boost + relevance through the GraphTransaction port.
 
     Returns ``(old_boost, new_boost)``. Short-circuits to (0.0, 0.0) when
-    the board has no Kùzu graph yet (event arrived before bootstrap).
+    the board has no graph backend graph yet (event arrived before bootstrap).
     """
     registry = get_kg_registry()
     if not registry.graph_runtime_store.exists(board_id):

@@ -40,14 +40,10 @@ _CONFIG_SOURCE = (
 ).read_text(encoding="utf-8")
 
 
-def _insert_after_upload_dir(source: str, field_line: str) -> str:
-    for needle in (
-        '    upload_dir: str = ""\n',
-        '    upload_dir: str = "./uploads"\n',
-    ):
-        if needle in source:
-            return source.replace(needle, f"{needle}{field_line}\n", 1)
-    raise AssertionError("CoreSettings.upload_dir source line not found")
+def _insert_after_policy_field(source: str, field_line: str) -> str:
+    needle = '    metrics_mode: str = ""\n'
+    assert needle in source
+    return source.replace(needle, f"{needle}{field_line}\n", 1)
 
 
 def _finding_codes(report) -> set[str]:
@@ -85,12 +81,8 @@ def test_inventory_covers_current_core_settings_and_required_r17_rows():
         assert by_name[field].community_surfaces
         assert "Community" in by_name[field].effective_source
 
-    assert "compatibility-only" in by_name["kg_base_dir"].effective_source
-    assert "neutral" in by_name["metrics_beacon_url"].effective_source
-    assert "Community telemetry" in by_name["metrics_beacon_url"].effective_source
-    assert "AF40" in by_name["metrics_beacon_url"].compatibility_path
-    assert "AF40" in by_name["metrics_beacon_url"].removal_criterion
-    assert "Community embedding provider" in by_name["kg_embedding_model"].effective_source
+    assert COMMUNITY_PARITY_FIELDS == ()
+    assert KG_RUNTIME_KNOBS == ()
 
     for field in KG_RUNTIME_KNOBS:
         entry = by_name[field]
@@ -119,17 +111,17 @@ def test_community_settings_effective_values_match_r17_installed_parity(tmp_path
 
     assert report.ok, report.as_dict()
     assert report.expected == report.observed
-    assert report.observed["database_url"].replace("\\", "/").endswith(
+    assert settings.database_url.replace("\\", "/").endswith(
         "/data/pulse.db"
     )
-    assert report.observed["upload_dir"].replace("\\", "/").endswith("/uploads")
-    assert report.observed["metrics_dir"].replace("\\", "/").endswith("/metrics")
-    assert report.observed["kg_base_dir"] == str((tmp_path / "pulse-data").resolve())
-    assert report.observed["kg_embedding_mode"] == "sentence-transformers"
+    assert settings.upload_dir.replace("\\", "/").endswith("/uploads")
+    assert settings.metrics_dir.replace("\\", "/").endswith("/metrics")
+    assert settings.kg_base_dir == str((tmp_path / "pulse-data").resolve())
+    assert settings.kg_embedding_mode == "sentence-transformers"
 
 
 def test_new_concrete_core_default_without_owner_fails_gate():
-    mutated = _insert_after_upload_dir(
+    mutated = _insert_after_policy_field(
         _CONFIG_SOURCE,
         '    r17_local_cache_dir: str = "./runtime-cache"',
     )
@@ -142,7 +134,7 @@ def test_new_concrete_core_default_without_owner_fails_gate():
 
 
 def test_allowlisted_agnostic_default_with_owner_passes_gate():
-    mutated = _insert_after_upload_dir(
+    mutated = _insert_after_policy_field(
         _CONFIG_SOURCE,
         "    r17_safe_feature_enabled: bool = False",
     )
@@ -171,7 +163,7 @@ def test_allowlisted_agnostic_default_with_owner_passes_gate():
 
 
 def test_allowlisted_entry_without_removal_criterion_fails_gate():
-    mutated = _insert_after_upload_dir(
+    mutated = _insert_after_policy_field(
         _CONFIG_SOURCE,
         "    r17_safe_feature_enabled: bool = False",
     )
@@ -200,7 +192,7 @@ def test_allowlisted_entry_without_removal_criterion_fails_gate():
 
 
 def test_new_local_default_with_core_owner_still_fails_gate():
-    mutated = _insert_after_upload_dir(
+    mutated = _insert_after_policy_field(
         _CONFIG_SOURCE,
         '    r17_local_cache_dir: str = "./runtime-cache"',
     )
@@ -241,8 +233,8 @@ def test_duplicate_core_settings_source_field_fails_gate():
 
 def test_public_setting_rename_without_alias_fails_and_alias_passes():
     renamed = _CONFIG_SOURCE.replace(
-        '    database_url: str = ""',
-        '    database_dsn: str = ""',
+        '    metrics_mode: str = ""',
+        '    telemetry_mode: str = ""',
         1,
     )
 
@@ -255,8 +247,8 @@ def test_public_setting_rename_without_alias_fails_and_alias_passes():
     }
 
     renamed_entry = CoreSettingDefaultEntry(
-        setting_name="database_dsn",
-        env_var="DATABASE_URL",
+        setting_name="telemetry_mode",
+        env_var="METRICS_MODE",
         default_repr="''",
         classification="edition_default_community",
         owner="okto-pulse-community/data",
@@ -272,9 +264,9 @@ def test_public_setting_rename_without_alias_fails_and_alias_passes():
         migration_plan_ref="R17-MP-database-url",
     )
     alias = PublicSettingAlias(
-        original_name="database_url",
-        new_name="database_dsn",
-        legacy_env_var="DATABASE_URL",
+        original_name="metrics_mode",
+        new_name="telemetry_mode",
+        legacy_env_var="METRICS_MODE",
         migration_plan_ref="R17-MP-database-url",
     )
 

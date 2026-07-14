@@ -17,7 +17,7 @@ COMMUNITY_ROOT = CORE_ROOT.parents[0] / "okto_labs_pulse_community"
 
 
 def test_rest_and_mcp_consumers_resolve_ingestion_through_registry() -> None:
-    rest = (CORE_ROOT / "src/okto_pulse/core/api/kg_rebuild.py").read_text(
+    rest = (COMMUNITY_ROOT / "src/okto_pulse/community/api/kg_rebuild.py").read_text(
         encoding="utf-8"
     )
     mcp = (CORE_ROOT / "src/okto_pulse/core/mcp/server.py").read_text(

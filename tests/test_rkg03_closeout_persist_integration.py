@@ -17,8 +17,8 @@ from okto_pulse.core.kg import cognitive_closeout_production as ccp
 from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
     CognitivePendingRecordRef,
 )
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
-from okto_pulse.core.kg.providers.testing.memory_rebuild_audit_storage import (
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
+from memory_rebuild_audit_storage import (
     InMemoryCognitivePendingWorkProvider,
 )
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
@@ -47,10 +47,10 @@ def _seed_node(board_id: str, node_type: str, source_ref: str, *, node_id: str |
     nid = node_id or f"{node_type.lower()}_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, node_type, nid,
             {
                 "title": f"Seed {node_type}", "content": "", "context": "", "justification": "",
@@ -129,12 +129,15 @@ def test_handler_opens_pending_without_graph_write(board_id, board_handle, tmp_p
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
     gen = "gen-open"
     spec_ref = f"spec:{uuid.uuid4()}"
+    content_hash = "a" * 64
     n = ccp.open_cognitive_closeout_pending(
         store=store, board_id=board_id, kg_generation_id=gen,
-        source_ref=spec_ref, artifact_type="spec")
+        source_ref=spec_ref, artifact_type="spec", content_hash=content_hash)
     assert n == 1
     items = store.list_items(board_id, gen)
-    assert any(i.status == "pending" and i.source_ref == spec_ref for i in items)
+    item = next(i for i in items if i.source_ref == spec_ref)
+    assert item.status == "pending"
+    assert item.content_hash == content_hash
     # no graph mutation happened.
     assert ccp._count_nodes_by_source_ref(board_id, "Alternative", spec_ref) == 0
 

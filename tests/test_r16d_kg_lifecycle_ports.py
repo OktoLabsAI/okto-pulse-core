@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 import okto_pulse.community.app as _app_mod
+import okto_pulse.core.infra.startup_schema_sweep as _startup_sweep_mod
 import okto_pulse.core.kg.startup_schema_sweep as _sweep_mod
 from okto_pulse.community.app import shutdown_kg_then_db
 from okto_pulse.core.kg.interfaces import (
@@ -155,15 +156,9 @@ def test_ts_8077c637_app_py_drops_kg_schema_lifecycle_imports():
 
 def test_ts_8077c637_app_py_wires_the_06_ports():
     src = APP_PY.read_text(encoding="utf-8")
-    assert "get_kg_registry" in src
-    assert "graph_lifecycle" in src
-    # Since the clean-core finalization (50e3193) the startup sweep wiring
-    # was extracted to infra/startup_schema_sweep.py: app.py delegates to
-    # run_startup_schema_sweep and the helper consumes the same #06 ports.
+    assert "resolve_graph_lifecycle" in src
     assert "run_startup_schema_sweep" in src
-    sweep_wiring_src = (APP_PY.parent / "infra" / "startup_schema_sweep.py").read_text(
-        encoding="utf-8"
-    )
+    sweep_wiring_src = Path(_startup_sweep_mod.__file__).read_text(encoding="utf-8")
     assert "sweep_board_schemas" in sweep_wiring_src
     assert "graph_runtime_store" in sweep_wiring_src
     assert "graph_runtime_store=kg_registry.graph_runtime_store" in sweep_wiring_src
@@ -383,7 +378,7 @@ _STARTUP_EVENTS = [
     "init_db", "seed_community_defaults", "backfill_qa_answered_at",
     "_afg_backfill_task", "_preload_embedding_model", "event_dispatcher",
     "consolidation_worker", "cleanup_worker", "outbox_worker", "settings_service",
-    "scheduler", "mcp_session_factory", "frontend_served", "_metrics_beacon_loop",
+    "scheduler", "mcp_runtime", "frontend_served", "_metrics_beacon_loop",
 ]
 
 
@@ -407,9 +402,10 @@ def test_ts_960cc3bf_golden_replay_has_no_unexpected_delta():
     hooks = [NamedLifecycleHook(startup_event=e) for e in _STARTUP_EVENTS]
     hooks.append(NamedLifecycleHook(shutdown_event="close_db"))
     comp = RuntimeComposition(
-        settings_provider=1, auth_provider=1, storage_provider=1,
-        session_factory=1, event_bus=1, lifecycle_hooks=tuple(hooks),
-        scheduler_control=1, mcp_session_factory=1,
+            settings_provider=1, auth_provider=1, storage_provider=1,
+            event_bus=1, uow_factory=1,
+            lifecycle_hooks=tuple(hooks),
+        scheduler_control=1,
     )
     report = asyncio.run(
         CommunityLifespanReplay().run(

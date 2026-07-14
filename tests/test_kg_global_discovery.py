@@ -215,18 +215,12 @@ class TestGlobalOutboxProcessor:
         assert MAX_RETRIES == 5
         assert DEAD_LETTER_SENTINEL == -1
 
-    def test_global_open_wal_error_is_retryable(self):
+    def test_global_graph_error_codes_are_retryable(self):
         assert _is_retryable_global_open_error(
-            "Failed to open LadybugDB database at "
-            "C:/Users/me/.okto-pulse/global/discovery.lbug: "
-            "RuntimeError: Assertion failed in file "
-            "wal_record.cpp on line 76: UNREACHABLE_CODE"
+            "graph_corruption:global graph could not be opened"
         )
         assert _is_retryable_global_open_error(
-            "Failed to open LadybugDB database at "
-            "C:/Users/me/.okto-pulse/global/discovery.lbug: "
-            "RuntimeError: Storage exception: Checksum verification failed, "
-            "the WAL file is corrupted."
+            "graph_unavailable:global graph temporarily unavailable"
         )
 
     def test_board_read_failure_is_retryable(self):
@@ -234,7 +228,7 @@ class TestGlobalOutboxProcessor:
             "outbox.read_board_failed: could not read source graph nodes"
         )
         assert _is_retryable_board_read_error(
-            "Existing LadybugDB graph could not be opened during bootstrap_probe"
+            "graph_unavailable:bootstrap_probe"
         )
 
     @pytest.mark.asyncio
@@ -258,12 +252,7 @@ class TestGlobalOutboxProcessor:
                 event_type="consolidation_committed",
                 payload={"session_id": session_id, "nodes_added": 1},
                 retry_count=DEAD_LETTER_SENTINEL,
-                last_error=(
-                    "Failed to open LadybugDB database at "
-                    "C:/Users/me/.okto-pulse/global/discovery.lbug: "
-                    "RuntimeError: Assertion failed in file "
-                    "wal_record.cpp on line 76: UNREACHABLE_CODE"
-                ),
+                last_error="graph_corruption:global graph could not be opened",
             ))
             await db.commit()
 

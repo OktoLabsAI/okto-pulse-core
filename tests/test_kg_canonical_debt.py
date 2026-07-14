@@ -118,10 +118,6 @@ async def test_mcp_canonical_debt_list_exposes_debt_drilldown(
         )()
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
-    # The tool now resolves its session through get_unit_of_work_factory_for_mcp()
-    # over the registered _mcp_session_factory; point it at the test factory.
-    monkeypatch.setattr(mcp_server, "_mcp_session_factory", db_factory)
-
     tool = await mcp_server.mcp.get_tool("okto_pulse_kg_canonical_debt_list")
     raw = await tool.fn(
         board_id=BOARD_ID,

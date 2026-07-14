@@ -71,8 +71,11 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
 
     events: list[str] = []
 
-    class _Engine:
-        async def dispose(self) -> None:
+    class _Runtime:
+        engine = object()
+        session_factory = staticmethod(lambda: None)
+
+        async def close(self) -> None:
             return None
 
     class _Handle:
@@ -94,16 +97,18 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
     )
 
     original_settings = get_settings()
-    original_auth = auth_mod._auth_provider
-    original_storage = storage_mod._storage_provider
-    original_engine = database_mod._engine
-    original_session_factory = database_mod._session_factory
+    try:
+        original_auth = auth_mod.get_auth_provider()
+    except RuntimeError:
+        original_auth = None
+    try:
+        original_storage = storage_mod.get_storage_provider()
+    except RuntimeError:
+        original_storage = None
+    original_runtime = database_mod.resolve_database_runtime()
 
     monkeypatch.setenv("KG_DAILY_TICK_DISABLED", "1")
-    database_mod.configure_database_runtime(
-        engine=_Engine(),
-        session_factory=lambda: None,
-    )
+    database_mod.configure_database_runtime(runtime=_Runtime())
 
     async def _noop_init_db() -> None:
         return None
@@ -139,12 +144,12 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
         ]
     finally:
         configure_settings(original_settings)
-        auth_mod._auth_provider = original_auth
-        storage_mod._storage_provider = original_storage
-        if original_engine is None or original_session_factory is None:
-            database_mod.reset_database_runtime_for_tests()
+        if original_auth is None:
+            auth_mod.reset_auth_for_tests()
         else:
-            database_mod.configure_database_runtime(
-                engine=original_engine,
-                session_factory=original_session_factory,
-            )
+            auth_mod.configure_auth(original_auth)
+        if original_storage is None:
+            storage_mod.reset_storage_provider_for_tests()
+        else:
+            storage_mod.configure_storage(original_storage)
+        database_mod.configure_database_runtime(runtime=original_runtime)

@@ -25,6 +25,9 @@ from okto_pulse.core.telemetry import failure_state as fs  # noqa: E402
 from okto_pulse.core.telemetry import publish_health as ph  # noqa: E402
 from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION  # noqa: E402
 from okto_pulse.core.telemetry.service import TelemetryService  # noqa: E402
+from okto_pulse.core.telemetry.publish_health_source_registry import (  # noqa: E402
+    register_external_source_provider,
+)
 
 _NOW = datetime(2026, 6, 15, 13, 1, 0, tzinfo=timezone.utc)
 _SECRET = "oat_SEGREDOreal_supersecret_value_123456"
@@ -144,6 +147,12 @@ def test_redact_preserves_descriptive_words_in_catalog_messages() -> None:
 
 def _settings(tmp_path: Path, monkeypatch) -> CoreSettings:
     monkeypatch.setenv("OKTO_PULSE_INSTALL_ID_PATH", str(tmp_path / "install_id"))
+    register_external_source_provider(
+        lambda _settings: (
+            {"availability": ph.SRC_GAP},
+            {"availability": ph.SRC_GAP},
+        )
+    )
     return CoreSettings(metrics_dir=str(tmp_path / "metrics"), metrics_mode="anonymous_beacon")
 
 

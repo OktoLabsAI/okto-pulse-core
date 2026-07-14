@@ -392,7 +392,7 @@ class _FakeSession:
         )
 
     async def _dispatch_manual_tick(self, **kwargs) -> None:
-        await kg_tick_policy.dispatch_manual_tick(session=self, **kwargs)
+        await kg_tick_policy.dispatch_manual_tick(relational_context=self, **kwargs)
 
     async def commit(self) -> None:
         self.committed = True

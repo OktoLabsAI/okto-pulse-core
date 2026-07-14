@@ -19,6 +19,7 @@ from okto_pulse.core.kg.global_discovery.metrics import (
 from okto_pulse.core.domain.worker_policy import RetryPolicy
 from okto_pulse.core.kg.cypher_templates import layer_label_projection
 from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.interfaces.graph_errors import GraphError
 from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
 from okto_pulse.core.ports.coordination import ClaimRepository, get_claim_repository
 from okto_pulse.core.ports.global_outbox import (
@@ -32,21 +33,17 @@ logger = logging.getLogger("okto_pulse.kg.global_discovery.outbox")
 
 MAX_RETRIES = 5
 DEAD_LETTER_SENTINEL = -1
-GLOBAL_OPEN_ERROR_MARKERS = (
-    "failed to open ladybugdb database",
-    "discovery.lbug",
-    "checksum verification failed",
-    "corrupted wal file",
-    "wal file is corrupted",
-    "invalid wal record",
-    "wal_record.cpp",
-    "unreachable_code",
-    "not a valid lbug database file",
+GLOBAL_OPEN_ERROR_CODES = (
+    "graph_corruption",
+    "graph_unavailable",
+    "graph_lock_contention",
 )
-BOARD_READ_ERROR_MARKERS = (
+BOARD_READ_ERROR_CODES = (
+    "graph_corruption",
+    "graph_unavailable",
+    "graph_lock_contention",
     "outbox.read_board_failed",
     "could not read source graph nodes",
-    "existing ladybugdb graph could not be opened",
     "bootstrap_probe",
 )
 
@@ -66,14 +63,18 @@ def _global_discovery_runtime():
 class GlobalOutboxProcessor:
     def __init__(
         self,
-        session_factory,
+        relational_scope_factory=None,
         interval_seconds: int = 5,
         *,
         claim_repository: ClaimRepository | None = None,
         clock: WorkerClockPort | None = None,
         retry_policy: RetryPolicy | None = None,
     ):
-        self._factory = session_factory
+        if relational_scope_factory is None:
+            from okto_pulse.core.ports.relational_runtime import get_db_session
+
+            relational_scope_factory = get_db_session
+        self._relational_scope_factory = relational_scope_factory
         self._interval = interval_seconds
         self._claim_repository = claim_repository
         self._clock = clock
@@ -89,7 +90,7 @@ class GlobalOutboxProcessor:
     async def process_once(self) -> int:
         """Process pending outbox events. Returns count processed."""
         processed = 0
-        async with self._factory() as db:
+        async with self._relational_scope_factory() as db:
             await self._recover_dead_lettered_global_open_failures(db)
             await self._recover_dead_lettered_board_read_failures(db)
             claim_repository = self._claim_repository or get_claim_repository()
@@ -115,7 +116,7 @@ class GlobalOutboxProcessor:
                     processed += 1
                 except Exception as exc:
                     event.retry_count += 1
-                    event.last_error = str(exc)[:500]
+                    event.last_error = _semantic_error_detail(exc)[:500]
                     if self._retry_policy.after_failure(event.retry_count).terminal:
                         event.retry_count = DEAD_LETTER_SENTINEL
                         logger.warning(
@@ -163,7 +164,7 @@ class GlobalOutboxProcessor:
         """Requeue terminal rows caused by a recoverable global DB open error.
 
         The global discovery graph is a rebuildable cache fed by SQLite's
-        transactional outbox. If LadybugDB reports WAL/open corruption, schema
+        transactional outbox. If embedded graph backend reports WAL/open corruption, schema
         bootstrap purges and recreates that cache. Rows dead-lettered during the
         bad window would otherwise stay at ``retry_count = -1`` forever because
         the worker only selects non-negative retry counts.
@@ -177,7 +178,7 @@ class GlobalOutboxProcessor:
             return 0
 
         try:
-            _global_discovery_runtime().execute("CALL SHOW_TABLES() RETURN name")
+            _global_discovery_runtime().list_schema_objects()
         except Exception as exc:
             logger.warning(
                 "outbox.recovery.global_unavailable rows=%d err=%s",
@@ -265,7 +266,7 @@ class GlobalOutboxProcessor:
         node_type, embedding) linked via (Board)-[:CONTAINS_DECISION]->.
         Without this mirror, `query_global` has nothing to search over.
 
-        KG-01.3.1 boundary: this is a write path against discovery.lbug.
+        KG-01.3.1 boundary: this is a write path against the global graph.
         process_once wraps this call in ``under_global_safe_write`` and this
         method requires the global guard before touching the global graph.
         After a processed batch, process_once closes/fsyncs/reopen-probes the
@@ -284,7 +285,7 @@ class GlobalOutboxProcessor:
         nodes_added = payload.get("nodes_added", 0)
         ts = self._now().strftime("%Y-%m-%dT%H:%M:%S")
 
-        # 1) Fetch the per-session kuzu node refs — the authoritative list of
+        # 1) Fetch the per-session graph node refs — the authoritative list of
         # what was actually written to the per-board graph. We digest only
         # `add` ops; updates/supersedes don't produce new digest rows (a
         # future pass can refresh digest embeddings on update).
@@ -299,30 +300,18 @@ class GlobalOutboxProcessor:
 
         gconn = global_runtime
         try:
-            # Upsert Board summary node
-            existing = gconn.execute(
-                "MATCH (b:Board {board_id: $bid}) RETURN b.board_id",
-                {"bid": board_id},
+            from okto_pulse.core.kg.embedding import get_embedding_provider
+
+            gconn.upsert_board_summary(
+                board_id=board_id,
+                name=board_id,
+                summary="",
+                summary_embedding=get_embedding_provider().encode(
+                    f"Board {board_id}"
+                ),
+                decision_delta=nodes_added,
+                synced_at=ts,
             )
-            if existing.has_next():
-                gconn.execute(
-                    "MATCH (b:Board {board_id: $bid}) "
-                    "SET b.decision_count = coalesce(b.decision_count, 0) + $n, "
-                    "b.last_sync_at = timestamp($ts)",
-                    {"bid": board_id, "n": nodes_added, "ts": ts},
-                )
-            else:
-                from okto_pulse.core.kg.embedding import get_embedding_provider
-                emb = get_embedding_provider().encode(f"Board {board_id}")
-                gconn.execute(
-                    "CREATE (b:Board {"
-                    "board_id: $bid, name: $name, summary: $s, "
-                    "summary_embedding: $emb, topic_count: 0, entity_count: 0, "
-                    "decision_count: $n, "
-                    "last_sync_at: timestamp($ts)})",
-                    {"bid": board_id, "name": board_id, "s": "",
-                     "emb": emb, "n": nodes_added, "ts": ts},
-                )
 
             current_node_ids = self._read_board_digestable_node_ids(board_id)
             if current_node_ids is not None:
@@ -346,7 +335,7 @@ class GlobalOutboxProcessor:
             if not refs:
                 return
 
-            # 2) Read the just-added nodes back from the per-board Kùzu to
+            # 2) Read the just-added nodes back from the per-board graph backend to
             # pick up the title + embedding computed at consolidation time.
             per_board = self._read_board_nodes_for_refs(board_id, refs)
             if per_board is None:
@@ -389,7 +378,7 @@ class GlobalOutboxProcessor:
             )
 
             # 3) Create one DecisionDigest per node + CONTAINS_DECISION edge.
-            # Kuzu's HNSW-indexed columns (DecisionDigest.embedding) cannot be
+            # graph backend's HNSW-indexed columns (DecisionDigest.embedding) cannot be
             # mutated via SET after node creation — attempting it raises
             # "Cannot set property vec in table embeddings because it is used
             # in one or more indexes". So we MATCH first; on miss we CREATE
@@ -418,47 +407,17 @@ class GlobalOutboxProcessor:
                     emit_canonical_incomplete_excluded(
                         board_id=board_id, reason_code=exclusion_reason,
                     )
-                existing_d = gconn.execute(
-                    "MATCH (d:DecisionDigest {id: $did}) RETURN d.id",
-                    {"did": digest_id},
+                digest_outcome = gconn.upsert_decision_digest(
+                    digest_id=digest_id,
+                    board_id=board_id,
+                    original_node_id=node["id"],
+                    title=title,
+                    summary=title[:280],
+                    node_type=node["node_type"],
+                    graph_layer=effective_layer,
+                    embedding=node["embedding"],
+                    created_at=ts,
                 )
-                if existing_d.has_next():
-                    gconn.execute(
-                        "MATCH (d:DecisionDigest {id: $did}) "
-                        "SET d.board_id = $bid, d.original_node_id = $oid, "
-                        "d.title = $title, d.one_line_summary = $summary, "
-                        "d.node_type = $ntype, d.graph_layer = $layer",
-                        {
-                            "did": digest_id,
-                            "bid": board_id,
-                            "oid": node["id"],
-                            "title": title,
-                            "summary": title[:280],
-                            "ntype": node["node_type"],
-                            "layer": effective_layer,
-                        },
-                    )
-                    digest_outcome = DIGEST_UPSERT_UPDATED
-                else:
-                    gconn.execute(
-                        "CREATE (d:DecisionDigest {"
-                        "id: $did, board_id: $bid, original_node_id: $oid, "
-                        "title: $title, one_line_summary: $summary, "
-                        "node_type: $ntype, graph_layer: $layer, embedding: $emb, "
-                        "created_at: timestamp($ts)})",
-                        {
-                            "did": digest_id,
-                            "bid": board_id,
-                            "oid": node["id"],
-                            "title": title,
-                            "summary": title[:280],
-                            "ntype": node["node_type"],
-                            "layer": effective_layer,
-                            "emb": node["embedding"],
-                            "ts": ts,
-                        },
-                    )
-                    digest_outcome = DIGEST_UPSERT_CREATED
                 # or_38b60fe1: record the digest upsert per node_type so a
                 # regression that stops digesting a vector type is detectable.
                 emit_digest_upsert(
@@ -468,11 +427,9 @@ class GlobalOutboxProcessor:
                 )
                 # Idempotent edge: MATCH both endpoints, then MERGE the rel.
                 # MERGE on a relationship does not touch indexed node properties.
-                gconn.execute(
-                    "MATCH (b:Board {board_id: $bid}), "
-                    "(d:DecisionDigest {id: $did}) "
-                    "MERGE (b)-[:CONTAINS_DECISION]->(d)",
-                    {"bid": board_id, "did": digest_id},
+                gconn.link_board_digest(
+                    board_id=board_id,
+                    digest_id=digest_id,
                 )
         finally:
             pass
@@ -524,8 +481,7 @@ class GlobalOutboxProcessor:
             {"bid": board_id},
         )
         stale_digest_ids: list[str] = []
-        while res.has_next():
-            row = res.get_next()
+        for row in res.rows:
             digest_id = row[0]
             original_node_id = row[1]
             if digest_id and str(original_node_id) not in current_node_ids:
@@ -564,7 +520,7 @@ class GlobalOutboxProcessor:
         board_id: str,
         refs: list[GlobalOutboxNodeRefFact],
     ) -> list[dict] | None:
-        """Read (id, title, embedding) from the per-board Kùzu for the given
+        """Read (id, title, embedding) from the per-board graph backend for the given
         node refs, bucketed by type so we issue one MATCH per type."""
 
         by_type: dict[str, list[str]] = {}
@@ -735,8 +691,7 @@ class GlobalOutboxProcessor:
             {"bid": board_id},
         )
         targets: list[dict] = []
-        while res.has_next():
-            row = res.get_next()
+        for row in res.rows:
             oid = str(row[1]) if row[1] is not None else ""
             if not oid or oid in skip_node_ids:
                 continue
@@ -890,11 +845,9 @@ class GlobalOutboxProcessor:
     @staticmethod
     def _board_graph_is_queryable(board_id: str) -> bool:
         try:
-            get_kg_registry().cypher_executor.execute_read_only(
-                board_id,
-                "CALL SHOW_TABLES() RETURN name",
-                max_rows=1,
-            )
+            store = get_kg_registry().graph_store
+            if store is None or not store.list_schema_objects(board_id):
+                return False
             return True
         except Exception as exc:
             logger.warning(
@@ -911,21 +864,27 @@ def _is_retryable_global_open_error(error: str | None) -> bool:
     if not error:
         return False
     msg = error.lower()
-    return any(marker in msg for marker in GLOBAL_OPEN_ERROR_MARKERS)
+    return any(code in msg for code in GLOBAL_OPEN_ERROR_CODES)
 
 
 def _is_retryable_board_read_error(error: str | None) -> bool:
     if not error:
         return False
     msg = error.lower()
-    return any(marker in msg for marker in BOARD_READ_ERROR_MARKERS)
+    return any(code in msg for code in BOARD_READ_ERROR_CODES)
+
+
+def _semantic_error_detail(exc: BaseException) -> str:
+    if isinstance(exc, GraphError):
+        return f"{exc.code}:{exc}"
+    return str(exc)
 
 
 __all__ = [
-    "BOARD_READ_ERROR_MARKERS",
+    "BOARD_READ_ERROR_CODES",
     "DEAD_LETTER_SENTINEL",
     "DIGESTED_NODE_TYPES",
-    "GLOBAL_OPEN_ERROR_MARKERS",
+    "GLOBAL_OPEN_ERROR_CODES",
     "GlobalOutboxProcessor",
     "MAX_RETRIES",
 ]

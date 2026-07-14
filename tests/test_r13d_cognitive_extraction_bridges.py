@@ -476,7 +476,7 @@ def _ledger_boundary_spies(monkeypatch):
         _rec_open,
     )
     monkeypatch.setattr(
-        "okto_pulse.core.kg.primitives._apply_kuzu_node_create_with_timestamp",
+        "okto_pulse.core.kg.primitives._apply_graph_node_create",
         _guard_node_write,
     )
     monkeypatch.setattr(
@@ -529,6 +529,60 @@ async def test_ts_6c2adf69_non_done_transition_opens_nothing(
         _spec_moved(to_status="in_progress"), _make_session()
     )
     assert opened == []  # no ledger handoff for non-terminal transitions
+
+
+@pytest.mark.asyncio
+async def test_terminal_transitions_forward_source_hash_to_closeout_ledger(
+    monkeypatch,
+):
+    from okto_pulse.core.ports.domain_event_delivery import (
+        CognitiveCardFacts,
+        CognitiveSpecFacts,
+        register_domain_event_fact_reader,
+    )
+
+    class _FactReader:
+        async def load_cognitive_spec_facts(self, _context, *, spec_id):
+            return CognitiveSpecFacts(
+                spec_id=spec_id,
+                context="context",
+                content_hash="spec-hash",
+            )
+
+        async def load_cognitive_card_facts(self, _context, *, card_id):
+            return CognitiveCardFacts(
+                card_id=card_id,
+                spec_id=None,
+                card_type="bug",
+                title="bug",
+                action_plan="",
+                content_hash="bug-hash",
+            )
+
+        async def load_board_settings(self, _context, *, board_id):
+            return {}
+
+    opened: list[dict] = []
+
+    def _record_open(**kwargs):
+        opened.append(kwargs)
+        return 1
+
+    register_domain_event_fact_reader(_FactReader())
+    monkeypatch.setattr(
+        "okto_pulse.core.kg.cognitive_closeout_production."
+        "open_cognitive_closeout_pending",
+        _record_open,
+    )
+
+    handler = CognitiveExtractionHandler()
+    await handler.handle(_spec_moved(spec_id="spec-hash-source"), object())
+    await handler.handle(_bug_moved(card_id="bug-hash-source"), object())
+
+    assert [call["content_hash"] for call in opened] == [
+        "spec-hash",
+        "bug-hash",
+    ]
 
 
 # ===========================================================================

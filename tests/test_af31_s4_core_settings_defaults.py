@@ -17,18 +17,14 @@ CORE_SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "co
 CORE_CONFIG_SOURCE = (CORE_SRC_ROOT / "infra" / "config.py").read_text(
     encoding="utf-8"
 )
-CANONICAL_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-
-
-def _core_source_with_upload_default(default_literal: str) -> str:
-    replacement = f'    upload_dir: str = "{default_literal}"'
-    for current in (
-        '    upload_dir: str = ""',
-        '    upload_dir: str = "./uploads"',
-    ):
-        if current in CORE_CONFIG_SOURCE:
-            return CORE_CONFIG_SOURCE.replace(current, replacement, 1)
-    raise AssertionError("CoreSettings.upload_dir source line not found")
+def _core_source_with_local_path_field(default_literal: str) -> str:
+    anchor = '    metrics_mode: str = ""'
+    assert anchor in CORE_CONFIG_SOURCE
+    return CORE_CONFIG_SOURCE.replace(
+        anchor,
+        f'{anchor}\n    local_cache_dir: str = "{default_literal}"',
+        1,
+    )
 
 
 def _finding_codes(report) -> set[str]:
@@ -39,7 +35,7 @@ def _finding_codes(report) -> set[str]:
     }
 
 
-def test_af31_s4_core_upload_dir_is_neutral_and_contracts_remain_core_owned(
+def test_af31_s4_operational_settings_are_absent_from_core_contract(
     monkeypatch,
 ):
     for env_name in (
@@ -53,25 +49,30 @@ def test_af31_s4_core_upload_dir_is_neutral_and_contracts_remain_core_owned(
     settings = CoreSettings()
     inventory = {entry.setting_name: entry for entry in build_core_settings_inventory()}
 
-    assert settings.upload_dir == ""
-    assert settings.database_url == ""
-    assert settings.metrics_beacon_url == ""
-    assert settings.kg_embedding_model == CANONICAL_EMBEDDING_MODEL
-
-    assert inventory["upload_dir"].classification == "edition_default_community"
-    assert inventory["upload_dir"].cleanup_status == "register_before_remove"
-    assert inventory["metrics_beacon_url"].classification == "core_contract_required"
-    assert "neutral" in inventory["metrics_beacon_url"].effective_source
-    assert inventory["kg_embedding_model"].classification == "core_contract_required"
-    assert "Community embedding provider" in inventory["kg_embedding_model"].effective_source
+    operational = {
+        "database_url",
+        "upload_dir",
+        "metrics_dir",
+        "metrics_beacon_url",
+        "host",
+        "port",
+        "mcp_port",
+        "cors_origins",
+        "kg_base_dir",
+        "kg_embedding_model",
+        "kg_kuzu_buffer_pool_mb",
+    }
+    assert operational.isdisjoint(CoreSettings.model_fields)
+    assert set(inventory) == set(CoreSettings.model_fields)
+    assert settings.metrics_mode == ""
 
 
 def test_af31_s4_r17_blocks_unowned_local_first_upload_dir_default():
-    mutant_source = _core_source_with_upload_default("./uploads")
+    mutant_source = _core_source_with_local_path_field("./runtime-cache")
     unowned_upload = CoreSettingDefaultEntry(
-        setting_name="upload_dir",
-        env_var="UPLOAD_DIR",
-        default_repr="'./uploads'",
+        setting_name="local_cache_dir",
+        env_var="LOCAL_CACHE_DIR",
+        default_repr="'./runtime-cache'",
         classification="core_contract_required",
         owner="okto-pulse-core/storage",
         spec_ref="AF31-S4-mutant",
@@ -97,7 +98,7 @@ def test_af31_s4_explicit_upload_override_stays_core_only(tmp_path):
     custom_upload_dir = tmp_path / "edition-upload"
     settings = CoreSettings(upload_dir=str(custom_upload_dir))
 
-    assert CoreSettings.model_fields["upload_dir"].default == ""
+    assert "upload_dir" not in CoreSettings.model_fields
     assert settings.upload_dir == str(custom_upload_dir)
     assert _core_imports_community_modules() == []
 

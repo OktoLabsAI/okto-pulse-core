@@ -12,6 +12,8 @@ import logging
 import threading
 from typing import Callable
 
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
+
 from .decompose import DecomposeRewriter
 from .fusion import FusionRewriter
 from .hyde import HyDERewriter
@@ -19,8 +21,8 @@ from .noop import NoopRewriter
 
 logger = logging.getLogger("okto_pulse.kg.query_rewrite")
 
-_cache: dict[str, object] = {}
-_cache_lock = threading.Lock()
+_cache = runtime_state("kg.query_rewrite.factory_cache", dict)
+_cache_lock = runtime_lock("kg.query_rewrite.factory_cache")
 
 
 def get_rewriter(

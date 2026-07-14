@@ -41,6 +41,14 @@ def require_rebuild_audit_artifact_store() -> Any:
     return _registry().require_rebuild_audit_artifact_store()
 
 
+def describe_current_embedding_provider() -> dict[str, Any]:
+    """Return metadata for the edition-composed embedding provider."""
+
+    from okto_pulse.core.kg.interfaces.embedding import describe_embedding_provider
+
+    return describe_embedding_provider(_registry().embedding_provider)
+
+
 def snapshot_kg_runtime(*, board_id: str | None = None) -> KGRuntimeSnapshot:
     registry = _registry()
     config = registry.config
@@ -60,6 +68,7 @@ def snapshot_kg_runtime(*, board_id: str | None = None) -> KGRuntimeSnapshot:
 
 __all__ = [
     "KGRuntimeSnapshot",
+    "describe_current_embedding_provider",
     "require_rebuild_audit_artifact_store",
     "resolve_cypher_executor",
     "resolve_graph_lifecycle",

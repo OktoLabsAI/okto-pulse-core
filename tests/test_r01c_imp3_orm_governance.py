@@ -5,11 +5,10 @@ the domain/ORM separation axis + IMP4 remain).
 Proves, deterministically and re-executably (Codex IMP3 acceptance criteria):
   1. metadata FAIL-CLOSED — an incomplete/dangling cluster governance is an error
      (withdrawal_criterion + blocked_by axis + debt_ref are mandatory);
-  2. debt_ref / withdrawal_criterion / blocked_by are present AND resolve to the
-     real ORM return debt ledger — unified governance;
+  2. the active cluster/debt registers are empty after terminal migration, while
+     injected governance remains fail-closed;
   3. the allowlist only SHRINKS (ratchet) and a NEW core ORM consumer still FAILS;
-  4. the drainability rule is DETERMINISTIC and tied to the ledger (port-backed ⟺
-     the ORM type is a registered ORM_RETURN_DEBT aggregate) — not a hardcoded 0;
+  4. the drainability rule is DETERMINISTIC and tied to the now-empty live ledger;
   5. the 4 drained files are coupling-free (re-scan) and the report keeps an
      EXPLICIT temporary remainder (nothing hidden, no silent bridge);
   6. behavioural regression — the EXACT ``db.get(Board, id) -> uow.boards.get(id)``
@@ -78,7 +77,7 @@ _GOOD_CLUSTER = {
     "reason": "r",
     "withdrawal_criterion": "w",
     "blocked_by": "domain_orm_separation_axis",
-    "debt_ref": "orm_return_debt",
+    "debt_ref": None,
 }
 
 _FAIL_CLOSED_CASES = [
@@ -148,9 +147,7 @@ def test_gate_green_and_new_consumer_outside_allowlist_fails(tmp_path):
 
 def test_ported_aggregates_derived_from_debt_ledger():
     expected = {e.orm_type.rsplit(".", 1)[-1] for e in ORM_RETURN_DEBT}
-    assert set(PORTED_AGGREGATE_ORM_TYPES) == expected == {"Board", "Ideation", "Spec"}
-    # an aggregate with NO repository port is correctly excluded
-    assert "Card" not in PORTED_AGGREGATE_ORM_TYPES
+    assert set(PORTED_AGGREGATE_ORM_TYPES) == expected == set()
 
 
 def test_drainability_classifies_port_backed_vs_no_port_from_tree():
@@ -200,11 +197,12 @@ def test_governance_report_explicit_remainder_nothing_hidden():
     assert d["files_fully_drainable_now"] == {}
     # any remaining import-drainable port-backed site is surfaced explicitly
     assert len(d["deferred_port_backed_count_only"]) == d["import_drainable_now_sites"]
-    assert d["ports_return_orm"] is True
+    assert d["ports_return_orm"] is False
 
 
 def test_report_clusters_governance_resolves():
     rep = core_orm_governance_report()
+    assert rep["clusters"] == {}
     for cluster, c in rep["clusters"].items():
         assert c["status"] == STATUS_TEMPORARY_EXCEPTION
         assert str(c["withdrawal_criterion"]).strip()

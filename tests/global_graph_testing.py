@@ -1,19 +1,24 @@
 """Test-owned access to native Community Global Discovery mechanics."""
 
+from pathlib import Path
+
 from okto_pulse.community.adapters.global_discovery_schema import (
     ensure_decision_digest_layer_column,
 )
 from okto_pulse.core.kg.global_discovery.schema import GLOBAL_SCHEMA_VERSION
-from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
 
 def _runtime():
-    return get_kg_registry().require_global_discovery_runtime()
+    from okto_pulse.core.kg import interfaces
+
+    return interfaces.get_kg_registry().require_global_discovery_runtime()
 
 
 def bootstrap_global_discovery():
     runtime = _runtime()
-    runtime.bootstrap()
+    result = runtime.bootstrap()
+    if isinstance(result, Path):
+        return result
     locator = getattr(runtime, "_global_graph_path", None)
     return locator() if callable(locator) else runtime.state().storage_ref
 
@@ -40,7 +45,9 @@ def purge_global_discovery_storage(*, reason: str = "manual"):
             targets.append(primary)
         if primary.parent.exists():
             targets.extend(sorted(primary.parent.glob(primary.name + ".*")))
-    runtime.purge(reason=reason)
+    result = runtime.purge(reason=reason)
+    if not callable(locator) and isinstance(result, list):
+        return result
     return [str(path) for path in targets if not path.exists()]
 
 

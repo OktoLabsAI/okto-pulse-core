@@ -175,9 +175,6 @@ Sprint = ApplicationRecord
 SprintHistory = ApplicationRecord
 SprintQAItem = ApplicationRecord
 
-settings = get_settings()
-
-
 def _apf(
     field: str,
     operator: ApplicationOperator,
@@ -245,6 +242,27 @@ async def _application_add(context: Any, record: ApplicationRecord) -> Applicati
 
 async def _application_delete(context: Any, record: ApplicationRecord) -> None:
     await get_application_persistence_port().delete(context, record)
+
+
+async def _discard_deleted_artifact_work(
+    context: Any,
+    *,
+    board_id: str,
+    artifact_type: str,
+    artifact_id: str,
+) -> None:
+    """Keep governed hard deletes atomic with their operational KG state."""
+
+    from okto_pulse.core.ports.consolidation import (
+        get_consolidation_persistence_port,
+    )
+
+    await get_consolidation_persistence_port().discard_artifact_work(
+        context,
+        board_id=board_id,
+        artifact_type=artifact_type,
+        artifact_id=artifact_id,
+    )
 
 
 async def _application_flush(context: Any) -> None:
@@ -1665,7 +1683,7 @@ class BoardService:
         # create_board reverts (no partial board/link/snapshot); no active
         # template -> no-op.
         await _config_service.apply_default_config_to_board(board.id, actor=user_id)
-        # Eagerly bootstrap the per-board Kùzu graph. This keeps board
+        # Eagerly bootstrap the per-board graph backend graph. This keeps board
         # creation on the slow path (~1-2s) so subsequent consolidation /
         # MCP query paths stay on the hot path.
         # Failures are logged but don't abort board creation — the
@@ -2173,6 +2191,7 @@ class CardService:
             actor_id=user_id,
             trigger="card_created",
         )
+        card = await _application_refresh(self.db, card)
 
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import CardCreated
@@ -2365,6 +2384,7 @@ class CardService:
                 card.mark_dirty(key)
 
         if "spec_id" in update_data and card.spec_id and card.spec_id != old_spec_id:
+            await _application_flush(self.db)
             await SpecResourcePropagationService(self.db).propagate_for_card(
                 board_id=card.board_id,
                 spec_id=card.spec_id,
@@ -2372,6 +2392,7 @@ class CardService:
                 actor_id=user_id,
                 trigger="card_linked_via_update",
             )
+            card = await _application_refresh(self.db, card)
 
         actor_name = await resolve_actor_name(self.db, user_id, card.board_id)
         await self._log_activity(
@@ -4273,7 +4294,7 @@ class CardService:
             )
 
         # Block forward moves if dependencies not met
-        if new_level > old_level:
+        if new_level > old_level and data.status != CardStatus.CANCELLED:
             deps_met, blocking = await self.check_dependencies_met(card_id)
             if not deps_met:
                 raise ValueError(
@@ -4333,6 +4354,10 @@ class CardService:
                     summary=f"Auto-rollback: card '{card.title}' cancelled — spec reverted for revalidation",
                     version=spec_for_rollback.version,
                 )
+
+        # Application records are detached from adapter-specific identity maps.
+        # Synchronize the transition before another service reads it in this UoW.
+        await _application_flush(self.db)
 
         resolved_name = actor_name or await resolve_actor_name(self.db, user_id, card.board_id)
 
@@ -4429,6 +4454,8 @@ class CardService:
                     items = getattr(spec, container_name, None) or []
                     changed = False
                     for item in items:
+                        if not isinstance(item, dict):
+                            continue
                         linked = item.get("linked_task_ids") or []
                         if card_id in linked:
                             item["linked_task_ids"] = [
@@ -4459,6 +4486,12 @@ class CardService:
                     bug.mark_dirty("linked_test_task_ids")
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        await _discard_deleted_artifact_work(
+            self.db,
+            board_id=board_id,
+            artifact_type="card",
+            artifact_id=card_id,
+        )
         await _application_delete(self.db, card)
 
         await self._log_activity(
@@ -4729,6 +4762,9 @@ class AgentService:
         key_hash = self.hash_api_key(reveal_once_secret)
         agent.api_key = self.credential_marker(key_hash)
         agent.api_key_hash = key_hash
+        agent.mark_dirty("api_key")
+        agent.mark_dirty("api_key_hash")
+        await _application_flush(self.db)
         return agent, reveal_once_secret
 
     async def delete_agent(self, agent_id: str) -> bool:
@@ -6697,6 +6733,12 @@ class SpecService:
 
         board_id = spec.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        await _discard_deleted_artifact_work(
+            self.db,
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=spec_id,
+        )
         await _application_delete(self.db, spec)
 
         await self._log_activity(
@@ -6728,6 +6770,7 @@ class SpecService:
         if not card or card.board_id != spec.board_id:
             return False
         card.spec_id = spec_id
+        await _application_flush(self.db)
 
         await SpecResourcePropagationService(self.db).propagate_for_card(
             board_id=spec.board_id,
@@ -7729,6 +7772,8 @@ class StoryService:
         name = data.name.strip()
         await self._ensure_active_topic_name_available(board_id, name)
         renamed_archived_topics = await self._free_archived_exact_name(board_id, name)
+        if renamed_archived_topics:
+            await _application_flush(self.db)
         topic = _new_application_record(
             "topic",
             board_id=board_id,
@@ -8886,13 +8931,36 @@ class IdeationService:
         return rows[0] if rows else None
 
     async def delete_ideation(self, ideation_id: str, user_id: str) -> bool:
-        """Delete an ideation."""
+        """Delete an ideation and every refinement/spec in its subtree."""
         ideation = await self.get_ideation(ideation_id)
         if not ideation:
             return False
 
         board_id = ideation.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
+
+        specs = await _application_list(
+            self.db,
+            "spec",
+            filters=(_apf("ideation_id", "eq", ideation_id),),
+        )
+        for spec in specs:
+            await SpecService(self.db).delete_spec(spec.id, user_id)
+
+        refinements = await _application_list(
+            self.db,
+            "refinement",
+            filters=(_apf("ideation_id", "eq", ideation_id),),
+        )
+        for refinement in refinements:
+            await RefinementService(self.db).delete_refinement(refinement.id, user_id)
+
+        await _discard_deleted_artifact_work(
+            self.db,
+            board_id=board_id,
+            artifact_type="ideation",
+            artifact_id=ideation_id,
+        )
         await _application_delete(self.db, ideation)
 
         await self._log_activity(
@@ -9745,13 +9813,28 @@ class RefinementService:
         return rows[0] if rows else None
 
     async def delete_refinement(self, refinement_id: str, user_id: str) -> bool:
-        """Delete a refinement."""
+        """Delete a refinement and every spec derived from it."""
         refinement = await self.get_refinement(refinement_id)
         if not refinement:
             return False
 
         board_id = refinement.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
+
+        specs = await _application_list(
+            self.db,
+            "spec",
+            filters=(_apf("refinement_id", "eq", refinement_id),),
+        )
+        for spec in specs:
+            await SpecService(self.db).delete_spec(spec.id, user_id)
+
+        await _discard_deleted_artifact_work(
+            self.db,
+            board_id=board_id,
+            artifact_type="refinement",
+            artifact_id=refinement_id,
+        )
         await _application_delete(self.db, refinement)
 
         await self._log_activity(
@@ -11291,7 +11374,14 @@ class SprintService:
         for card_id in card_ids:
             card = await _application_get(self.db, "card", card_id)
             if not card:
-                continue
+                raise SprintOperationError(
+                    "card_not_found",
+                    "Card not found.",
+                    remediation=(
+                        "Refresh the board and retry assignment with existing card IDs."
+                    ),
+                    facts={"sprint_id": sprint_id, "card_id": card_id},
+                )
             if card.spec_id != sprint.spec_id:
                 raise ValueError(
                     f"Card '{card.title}' belongs to a different spec. "
@@ -11691,7 +11781,10 @@ async def mcp_list_my_mentions(
         seen = await _application_list(
             db,
             "agent_seen_item",
-            filters=(_apf("agent_id", "eq", agent_id),),
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("agent_id", "eq", agent_id),
+            ),
         )
         seen_ids = {item.item_id for item in seen}
 
@@ -11885,6 +11978,7 @@ async def mcp_mark_mentions_seen(
         db,
         "agent_seen_item",
         filters=(
+            _apf("board_id", "eq", board_id),
             _apf("agent_id", "eq", agent_id),
             _apf("item_id", "in", item_ids),
         ),
@@ -11898,6 +11992,7 @@ async def mcp_mark_mentions_seen(
             db,
             _new_application_record(
                 "agent_seen_item",
+                board_id=board_id,
                 agent_id=agent_id,
                 item_type="mention",
                 item_id=item_id,
@@ -11998,6 +12093,7 @@ async def mcp_get_unseen_summary(
         db,
         "agent_seen_item",
         filters=(
+            _apf("board_id", "eq", board_id),
             _apf("agent_id", "eq", agent_id),
             _apf("item_id", "in", list(mention_ids)),
         ),

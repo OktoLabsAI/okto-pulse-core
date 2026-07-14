@@ -199,9 +199,10 @@ async def seeded_board(db_factory):
 
 @pytest.fixture(autouse=True)
 def _wire_mcp_session(db_factory):
-    """Inject the session factory into the MCP server before each test."""
-    from okto_pulse.core.mcp.server import register_session_factory
-    register_session_factory(db_factory)
+    """Compose the test MCP authenticator before each test."""
+    from mcp_runtime_testing import register_mcp_test_runtime
+
+    register_mcp_test_runtime(db_factory)
 
 
 @pytest.fixture(autouse=True)

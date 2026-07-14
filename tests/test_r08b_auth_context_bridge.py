@@ -19,13 +19,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 import okto_pulse.community.app as _core_app  # noqa: F401  (registers ORM models)
-import okto_pulse.core.infra.database as _db_mod
+import okto_pulse.community.adapters.sqlalchemy_database as _db_mod
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
 from okto_pulse.core.ports.mcp_auth import AgentAuthSession
 
@@ -48,40 +49,59 @@ def _seeded_db():
     import tempfile
 
     tmp = tempfile.mkdtemp()
-    os.environ["DATA_DIR"] = tmp
-    _config.configure_settings(CoreSettings())
-
-    from sqlalchemy_test_models import Agent, AgentBoard, Board
-
-    now = datetime.now(timezone.utc)
-
-    async def _setup():
-        _db_mod.create_database(f"sqlite+aiosqlite:///{Path(tmp) / 'r08b.db'}")
-        await _db_mod.init_db()
-        async with _db_mod.get_session_factory()() as s:
-            s.add(Board(id="B1", name="Board One", owner_id="A1",
-                        created_at=now, updated_at=now))
-            s.add(Agent(id="A1", name="Agent One", api_key="k1", api_key_hash="h1",
-                        is_active=True, created_by="owner", created_at=now))
-            s.add(Agent(id="A2", name="Agent Two", api_key="k2", api_key_hash="h2",
-                        is_active=True, created_by="owner", created_at=now))
-            s.add(AgentBoard(id="AB1", agent_id="A1", board_id="B1",
-                             granted_by="owner", granted_at=now))
-            await s.commit()
-
-    asyncio.run(_setup())
+    runtime_swapped = False
     try:
+        os.environ["DATA_DIR"] = tmp
+        _config.configure_settings(CoreSettings())
+
+        from sqlalchemy_test_models import Agent, AgentBoard, Board
+
+        now = datetime.now(timezone.utc)
+
+        async def _setup():
+            await _db_mod.init_db()
+            async with _db_mod.get_session_factory()() as s:
+                s.add(
+                    Board(
+                        id="B1",
+                        name="Board One",
+                        owner_id="A1",
+                        realm_id="local",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                s.add(Agent(id="A1", name="Agent One", api_key="k1", api_key_hash="h1",
+                            is_active=True, created_by="owner", created_at=now))
+                s.add(Agent(id="A2", name="Agent Two", api_key="k2", api_key_hash="h2",
+                            is_active=True, created_by="owner", created_at=now))
+                s.add(AgentBoard(id="AB1", agent_id="A1", board_id="B1",
+                                 granted_by="owner", granted_at=now))
+                await s.commit()
+
+        _db_mod.configure_community_database(
+            f"sqlite+aiosqlite:///{Path(tmp) / 'r08b.db'}"
+        )
+        from okto_pulse.community.adapters.relational_schema_lifecycle import (
+            register_community_relational_schema_lifecycle,
+        )
+
+        register_community_relational_schema_lifecycle()
+        runtime_swapped = True
+        asyncio.run(_setup())
         yield _db_mod.get_session_factory()
     finally:
-        try:
-            asyncio.run(_db_mod.close_db())
-        except Exception:
-            pass
+        if runtime_swapped:
+            try:
+                asyncio.run(_db_mod.close_db())
+            except Exception:
+                pass
         restore_runtime_values_for_tests(saved_runtime)
         if saved_data is None:
             os.environ.pop("DATA_DIR", None)
         else:
             os.environ["DATA_DIR"] = saved_data
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 class _Agent:

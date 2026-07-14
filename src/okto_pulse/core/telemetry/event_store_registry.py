@@ -13,7 +13,8 @@ R10-E Pass 2 fulfilled: the register-before-remove fallback that instantiated
 factory is registered the call raises ``RuntimeError`` with a structured signal —
 a composed edition MUST register before any store access.
 
-Deterministic + test-isolated: the factory is a single module global, reset via
+Deterministic + test-isolated: the factory is runtime-scoped through
+``RuntimeValueRegistry`` and reset via
 :func:`reset_telemetry_event_store_factory_for_tests`.
 """
 

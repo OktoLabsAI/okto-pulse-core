@@ -49,13 +49,17 @@ def temp_okto_home(tmp_path, monkeypatch):
         lambda: tmp_path / "kg",
         raising=False,
     )
-    monkeypatch.setattr(config_mod, "_settings_instance", None)
+    original_settings = config_mod.get_settings()
+    config_mod.configure_settings(
+        original_settings.model_copy(update={"kg_base_dir": str(tmp_path)})
+    )
     reset_registry_for_tests()
     configure_test_kg_registry()
     try:
         yield tmp_path
     finally:
         reset_registry_for_tests()
+        config_mod.configure_settings(original_settings)
 
 
 @pytest.fixture
@@ -133,39 +137,15 @@ def test_ts2_already_migrated_no_overhead(fresh_board):
 # ---------------------------------------------------------------------------
 
 
-def test_ts3_cli_single_board_fails_closed_without_composition(fresh_board):
-    """AC3 (R-P2-03): the BARE-CORE `python -m okto_pulse.tools.kg_migrate_schema`
-    is NOT an edition composition root. With the KG registry fail-closed it no
-    longer falls back to implicit embedded providers — so the standalone path
-    deprecates CLEARLY (non-zero exit + an actionable hint) instead of silently
-    migrating. The real migration runs via an edition-composed surface; the JSON
-    payload SHAPE is covered in-process (composed) by the test below."""
-    from kg_schema_testing import close_board_db_cache
-    close_board_db_cache(board_id=fresh_board)
+def test_ts3_bare_core_schema_migration_tool_is_not_packaged():
+    """The executable belongs to Community, never the standalone Core wheel."""
 
-    repo_root = Path(__file__).resolve().parent.parent
-    src = repo_root / "src"
-    env = {
-        **os.environ,
-        "PYTHONPATH": str(src),
-        "KG_BASE_DIR": os.environ["KG_BASE_DIR"],
-        "OKTO_PULSE_HOME": os.environ.get("OKTO_PULSE_HOME", ""),
-    }
-    result = subprocess.run(
-        [sys.executable, "-m", "okto_pulse.tools.kg_migrate_schema",
-         "--board", fresh_board],
-        capture_output=True, text=True, env=env, cwd=str(repo_root),
-    )
-    # Fail-closed: the bare-core process has no composition root, so the registry
-    # is unconfigured and the migration cannot run.
-    assert result.returncode != 0, f"expected fail-closed; stdout: {result.stdout}"
-    assert "registry not configured" in result.stderr.lower()
-    assert "edition-composed" in result.stderr  # the actionable deprecation hint
-    # The JSON summary is still emitted (with the captured error) so ops see why.
-    payload = json.loads(result.stdout)
-    assert payload["board_id"] == fresh_board
-    assert payload["migrated"] is False
-    assert any("registry not configured" in e.lower() for e in payload["errors"])
+    core_source = Path(__file__).resolve().parents[1] / "src" / "okto_pulse"
+    assert not (core_source / "tools" / "kg_migrate_schema.py").exists()
+
+    from okto_pulse.community.commands import kg_migrate_schema
+
+    assert "community" in Path(kg_migrate_schema.__file__).parts
 
 
 def test_ts3_in_process_single_board_returns_json_shape(fresh_board, capsys):
@@ -174,7 +154,10 @@ def test_ts3_in_process_single_board_returns_json_shape(fresh_board, capsys):
     the edition-composed path the real migration uses. ``configure_test_kg_registry``
     stands in for the edition composition (the sanctioned test/fake route)."""
     from kg_registry_testing import configure_test_kg_registry
-    from okto_pulse.tools.kg_migrate_schema import _emit_single, _run_single_board
+    from okto_pulse.community.commands.kg_migrate_schema import (
+        _emit_single,
+        _run_single_board,
+    )
 
     configure_test_kg_registry()
     summary = _run_single_board(fresh_board)
@@ -203,7 +186,10 @@ def test_ts4_cli_all_boards_iterates_known_boards(fresh_board):
     Direct unit test (subprocess + DB init costs too much in CI). The CLI
     function `_run_single_board` is the same path the all-boards loop uses.
     """
-    from okto_pulse.tools.kg_migrate_schema import _run_single_board, _emit_all
+    from okto_pulse.community.commands.kg_migrate_schema import (
+        _emit_all,
+        _run_single_board,
+    )
     summary1 = _run_single_board(fresh_board)
     assert summary1["migrated"] is True
     assert summary1["board_id"] == fresh_board
@@ -244,7 +230,7 @@ def test_ts5_mcp_rest_payload_parity(fresh_board):
 
 
 def test_ts6_compensate_sync_warning_with_guidance(caplog, monkeypatch):
-    """AC6: `_compensate_kuzu_writes` failure logs at WARNING level with
+    """AC6: `_compensate_graph_writes` failure logs at WARNING level with
     `migrate-schema` guidance and NO destructive message."""
     from okto_pulse.core.kg.interfaces import get_kg_registry
 
@@ -258,7 +244,7 @@ def test_ts6_compensate_sync_warning_with_guidance(caplog, monkeypatch):
         _BrokenGraphTransaction(),
     )
     with caplog.at_level(logging.WARNING, logger="okto_pulse.kg.primitives"):
-        primitives_mod._compensate_kuzu_writes("board-x", "session-x", [])
+        primitives_mod._compensate_graph_writes("board-x", "session-x", [])
 
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]
     msgs = [r.getMessage() for r in warnings]

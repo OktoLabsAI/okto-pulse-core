@@ -153,10 +153,8 @@ class TestSemanticGraphStore:
         info = store.get_schema_info("b1")
         assert info["schema_version"] == SCHEMA_VERSION
         assert len(info["stable_node_types"]) == 11
-        # 10 REL_TYPES single-pair entries + 5 MULTI_REL_TYPES names (implements,
-        # relates_to, belongs_to, originates_from, covered_by). S-KG-01 added the
-        # additive `relates_to` Learning taxonomy entry (reused edge name, +1).
-        assert len(info["stable_rel_types"]) == 15
+        # The current closed schema exposes 16 stable relationship names.
+        assert len(info["stable_rel_types"]) == 16
         rel_names = {rel["name"] for rel in info["stable_rel_types"]}
         assert {"belongs_to", "originates_from", "covered_by"} <= rel_names
         assert len(info["vector_indexes"]) == 9

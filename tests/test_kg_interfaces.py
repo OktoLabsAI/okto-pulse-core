@@ -145,10 +145,11 @@ class TestRegistryDefaults:
         assert reg.embedding_provider is not None
 
     def test_lazy_init_config_is_settings_based(self):
-        from okto_pulse.core.kg.providers.testing.settings_config import SettingsKGConfig
+        from okto_pulse.core.kg.interfaces import KGConfig
 
         reg = get_kg_registry()
-        assert isinstance(reg.config, SettingsKGConfig)
+        assert isinstance(reg.config, KGConfig)
+        assert type(reg.config).__module__.startswith("okto_pulse.community.adapters")
 
     def test_lazy_init_cache_is_in_memory(self):
         from okto_pulse.core.kg.providers.testing.memory import InMemoryCacheBackend

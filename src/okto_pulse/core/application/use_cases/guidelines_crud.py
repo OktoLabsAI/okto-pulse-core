@@ -371,6 +371,7 @@ class LinkOrCreateBoardGuidelineUseCase:
                 command.board_id,
                 data.guideline_id,
                 data.priority,
+                owner_id=actor.actor_id,
                 query_scope=query_scope,
             )
             if not link:
@@ -444,6 +445,7 @@ class UnlinkBoardGuidelineUseCase:
         unlinked = await uow.services.guidelines.unlink_guideline_from_board(
             command.board_id,
             command.guideline_id,
+            owner_id=actor.actor_id,
             query_scope=query_scope,
         )
         if not unlinked:
@@ -493,6 +495,7 @@ class UpdateBoardGuidelinePriorityUseCase:
             command.board_id,
             command.guideline_id,
             command.priority,
+            owner_id=actor.actor_id,
             query_scope=query_scope,
         )
         if not updated:

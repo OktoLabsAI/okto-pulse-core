@@ -23,9 +23,11 @@ from okto_pulse.community.api.default_board_config import (
     router as default_board_config_router,
 )
 from okto_pulse.community.api.design_systems import router as design_systems_router
+from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.community.api.presets import router as presets_router
-from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.infra.database import get_session_factory
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from sqlalchemy_test_models import Board
 
 PREFIX = "/api/v1"
@@ -41,18 +43,18 @@ def _client(user_id: str) -> TestClient:
     app.include_router(design_systems_router, prefix=PREFIX)
     session_factory = get_session_factory()
 
-    async def _override_db():
-        # Mirror the production get_db contract: commit on success, rollback on
-        # error — so the dry-run tests prove the use case's explicit rollback.
+    async def _override_uow():
+        # Mirror the production request UoW contract: commit on success and
+        # rollback on error, while keeping the adapter outside Core.
         async with session_factory() as session:
             try:
-                yield session
+                yield resolve_unit_of_work_factory().wrap(session)
                 await session.commit()
             except BaseException:
                 await session.rollback()
                 raise
 
-    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[require_user] = lambda: user_id
     return TestClient(app)
 
@@ -60,7 +62,14 @@ def _client(user_id: str) -> TestClient:
 async def _seed_board(owner_id: str) -> str:
     board_id = f"impexp-board-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=board_id, name="ImportExport Board", owner_id=owner_id))
+        db.add(
+            Board(
+                id=board_id,
+                name="ImportExport Board",
+                owner_id=owner_id,
+                realm_id="local",
+            )
+        )
         await db.commit()
     return board_id
 

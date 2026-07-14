@@ -1,16 +1,15 @@
 """Relational lifecycle decomposition manifest + startup-boundary oracle.
 
-R01C decomposes ``core/infra/database.py`` along the R01B boundary. Core keeps
-runtime injection, sessions, cleanup and the ORM declarative ``Base``. Concrete
-schema lifecycle execution (migrations, ``create_all`` and data bootstrap) is
-Community-owned and reached through the mandatory schema-lifecycle seam.
+R01C decomposes the former ``core/infra/database.py`` implementation along the
+R01B boundary. Core now keeps only ``ports.relational_runtime`` plus a legacy
+import facade. Engine/session construction, transaction cleanup, pool handling
+and local path resolution are edition-owned runtime behavior.
 
 Three artifacts:
 
 1. **Decomposition manifest** — every module-level function (and the key state
-   globals) in ``database.py`` is assigned to either the R01B *relational
-   provider* concern (engine / session / pool / PRAGMA / connection cleanup) or
-   the R01C *schema-lifecycle* concern (``init_db`` delegation). :func:`decomposition_drift` parses the live
+   function in ``ports/relational_runtime.py`` is assigned to either the R01B
+   *relational port* concern or the R01C schema-lifecycle delegation. :func:`decomposition_drift` parses the live
    module and FAILS if any function is unclassified or any manifest entry is
    stale — so the decomposition can never silently drift from the source.
 
@@ -43,11 +42,9 @@ from okto_pulse.core.runtime_registry import (
 
 # --- decomposition manifest ----------------------------------------------------
 
-#: R01B relational-provider concern: engine / session / pool / PRAGMA /
-#: connection cleanup. Preserved by R01B; NOT removed by R01C.
+#: Adapter-neutral relational runtime port functions retained by Core.
 R01B_PROVIDER_FUNCTIONS: frozenset[str] = frozenset({
     "configure_database_runtime",
-    "create_database",
     "get_engine",
     "get_session_factory",
     "is_database_runtime_configured",
@@ -55,11 +52,11 @@ R01B_PROVIDER_FUNCTIONS: frozenset[str] = frozenset({
     "close_db",
     "cancel_safe_session",
     "get_pool_status",
-    "_consume_cleanup_exception",
-    "_await_cleanup",
-    "_quiet_cleanup",
     "get_db_session",
     "get_db",
+    "resolve_database_runtime",
+    "resolve_sqlite_database_path",
+    "cancel_safe_session_scope",
 })
 
 #: R01C schema-lifecycle concern left in core: mandatory delegation only.
@@ -69,12 +66,9 @@ R01C_LIFECYCLE_FUNCTIONS: frozenset[str] = frozenset({"init_db"})
 #: ``_migrate_*`` implementations must live in edition adapters.
 R01C_MIGRATION_PREFIX = "_migrate_"
 
-#: Key module state globals split across the same boundary (``Base`` is the ORM
-#: declarative base retained by core; the engine/session singletons are the
-#: provider, R01B). Other module constants are provider-internal and out of the
-#: classified surface.
-R01B_PROVIDER_STATE: frozenset[str] = frozenset({"_engine", "_session_factory"})
-R01C_LIFECYCLE_STATE: frozenset[str] = frozenset({"Base"})
+#: No engine/session/ORM state remains in Core's compatibility facade.
+R01B_PROVIDER_STATE: frozenset[str] = frozenset()
+R01C_LIFECYCLE_STATE: frozenset[str] = frozenset()
 
 #: Preserved injected-runtime API (ac_af454ee3). ``close_db`` /
 #: ``get_session_factory`` are the concrete symbols the AC references as
@@ -91,7 +85,7 @@ FORBIDDEN_CORE_RUNTIME_TOKENS: tuple[str, ...] = (
 
 
 def _database_path() -> Path:
-    return Path(__file__).resolve().parent / "database.py"
+    return Path(__file__).resolve().parents[1] / "ports" / "relational_runtime.py"
 
 
 def _module_functions(path: Path) -> list[str]:

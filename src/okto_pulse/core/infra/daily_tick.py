@@ -33,36 +33,32 @@ def tick_next_run_from_last(
 async def compute_tick_catch_up_next_run(
     interval_minutes: int,
     *,
-    session_factory_provider: Callable[[], Any] | None = None,
+    uow_factory_provider: Callable[[], Any] | None = None,
     now_provider: Callable[[], datetime] | None = None,
 ) -> datetime | None:
     """Read the last persisted tick and return the scheduler next_run_time."""
 
-    from okto_pulse.core.ports.relational_runtime import get_session_factory
-    from okto_pulse.core.ports.relational_effects import (
-        get_relational_effects_port,
-    )
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
     factory = (
-        session_factory_provider()
-        if session_factory_provider is not None
-        else get_session_factory()
+        uow_factory_provider()
+        if uow_factory_provider is not None
+        else resolve_unit_of_work_factory()
     )
-    async with factory() as session:
-        last = await get_relational_effects_port().read_latest_kg_tick_completed_at(
-            session
-        )
+    realm_scope = factory.resolve_realm_scope()
+    async with factory(realm_scope=realm_scope) as uow:
+        last = await uow.services.read_latest_kg_tick_completed_at()
     now = now_provider() if now_provider is not None else datetime.now(timezone.utc)
     return tick_next_run_from_last(last, interval_minutes, now)
 
 
 async def emit_daily_tick(
     *,
-    session_factory_provider: Callable[[], Any] | None = None,
+    uow_factory_provider: Callable[[], Any] | None = None,
 ) -> None:
     """Emit KGDailyTick events when this replica owns the lease."""
 
-    from okto_pulse.core.ports.relational_runtime import get_session_factory
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
     from okto_pulse.core.ports.coordination import (
         CoordinationProviderMissing,
         get_lease_provider,
@@ -88,27 +84,24 @@ async def emit_daily_tick(
     try:
         try:
             factory = (
-                session_factory_provider()
-                if session_factory_provider is not None
-                else get_session_factory()
+                uow_factory_provider()
+                if uow_factory_provider is not None
+                else resolve_unit_of_work_factory()
             )
-        except AssertionError:
+        except RuntimeError:
             logger.warning(
-                "kg.tick.no_session_factory",
-                extra={"event": "kg.tick.no_session_factory"},
+                "kg.tick.no_uow_factory",
+                extra={"event": "kg.tick.no_uow_factory"},
             )
             return
         scheduled_at = datetime.now(timezone.utc).isoformat()
         try:
-            from okto_pulse.core.events.handlers.kg_decay_tick import (
-                publish_tick_events,
-            )
-
-            async with factory() as session:
-                tick_ids = await publish_tick_events(
-                    session, scheduled_at=scheduled_at,
+            realm_scope = factory.resolve_realm_scope()
+            async with factory(realm_scope=realm_scope) as uow:
+                tick_ids = await uow.services.publish_kg_tick_events(
+                    scheduled_at=scheduled_at
                 )
-                await session.commit()
+                await uow.commit()
             logger.info(
                 "kg.tick.emitted",
                 extra={

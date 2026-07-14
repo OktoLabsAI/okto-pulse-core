@@ -90,7 +90,8 @@ async def test_manual_link_keeps_null_provenance():
         g = await _global_guideline(db, "Manual")
         board = await _board(db)
         link = await GuidelineService(db).link_guideline_to_board(board.id, g.id, priority=2)
-        await db.refresh(link)
+        await db.commit()
+        link = await db.get(BoardGuideline, link.id)
         # the migration added the columns (else this would error) and they are NULL
         # for a manually-linked guideline — forward-only, no backfill (TR5).
         assert link.priority == 2

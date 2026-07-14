@@ -52,6 +52,7 @@ from __future__ import annotations
 import logging
 import secrets
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -132,7 +133,7 @@ def _materialized_layer_counts(board_id: str) -> dict[str, int]:
     ``MATCH (n:Label)`` per type — never the unsupported generic ``MATCH (n)``).
     Called by the orchestrator AFTER the safe-write lifecycle (checkpoint/flush/
     fsync/close-reopen probe), so opening the graph here cannot interfere with
-    that durability gate. Degrades to ``{}`` on a Kuzu/schema error.
+    that durability gate. Degrades to ``{}`` on a graph backend/schema error.
     """
     counts: dict[str, int] = {}
     try:
@@ -227,8 +228,8 @@ class RebuildRunResult:
 # --- Counter (OR or_37cebd03) ------------------------------------------------
 
 _REBUILD_LABELS = ("board_id", "status", "reason")
-_rebuild_counter: dict[tuple[str, str, str], int] = {}
-_rebuild_counter_lock = threading.Lock()
+_rebuild_counter = runtime_state("kg.rebuild_service.counter", dict)
+_rebuild_counter_lock = runtime_lock("kg.rebuild_service.counter")
 
 
 def _bump_rebuild(*, board_id: str, status: str, reason: str) -> None:

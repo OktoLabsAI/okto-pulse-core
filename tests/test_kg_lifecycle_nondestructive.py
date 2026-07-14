@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+from contextvars import copy_context
 from pathlib import Path
 
 import pytest
@@ -138,7 +139,11 @@ def test_race_continuous_reader_vs_exclusive_close(nd_board):
                 reader_errors.append(f"{type(exc).__name__}: {exc}")
                 break
 
-    th = threading.Thread(target=reader_loop, name="kg-race-reader")
+    th = threading.Thread(
+        target=copy_context().run,
+        args=(reader_loop,),
+        name="kg-race-reader",
+    )
     th.start()
     try:
         # Deadline folgado + exigência mínima de 3 closes: sob carga externa
@@ -209,6 +214,9 @@ sys.path.insert(0, os.environ["ND_SRC"])
 sys.path.insert(0, os.environ["ND_COMMUNITY_SRC"])
 sys.path.insert(0, os.environ["ND_TESTS"])
 from kg_registry_testing import configure_test_kg_registry
+from okto_pulse.community.config import CommunitySettings
+from okto_pulse.core.infra.config import configure_settings
+configure_settings(CommunitySettings())
 configure_test_kg_registry(graph_provider="real")
 from kg_schema_testing import (
     BoardConnection, apply_ladybug_lifecycle_step, bootstrap_board_graph,
@@ -233,6 +241,9 @@ sys.path.insert(0, os.environ["ND_SRC"])
 sys.path.insert(0, os.environ["ND_COMMUNITY_SRC"])
 sys.path.insert(0, os.environ["ND_TESTS"])
 from kg_registry_testing import configure_test_kg_registry
+from okto_pulse.community.config import CommunitySettings
+from okto_pulse.core.infra.config import configure_settings
+configure_settings(CommunitySettings())
 configure_test_kg_registry(graph_provider="real")
 from kg_schema_testing import BoardConnection
 bid = os.environ["ND_BOARD"]

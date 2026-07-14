@@ -141,6 +141,7 @@ def test_replay_restores_from_durable_source_after_unreadable_snapshot(kg_tempdi
 
     store = _MemoryStore()
     records = [
+        _record(board_id, "Decision", "Decisao cognitiva um"),
         _record(board_id, "Learning", "Learning um"),
         _record(board_id, "Learning", "Learning dois"),
         _record(board_id, "Alternative", "Alternativa um"),
@@ -150,7 +151,7 @@ def test_replay_restores_from_durable_source_after_unreadable_snapshot(kg_tempdi
 
     summary = replay_durable_cognitive(board_id)
     assert summary["durable_source_status"] == "ok"
-    assert summary["replayed_cognitive_count"] == 3
+    assert summary["replayed_cognitive_count"] == 4
     assert summary["replay_failed"] == []
     for record in records:
         node = _read_node(board_id, record.node_type, record.node_id)

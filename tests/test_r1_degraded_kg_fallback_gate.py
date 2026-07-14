@@ -224,14 +224,26 @@ def test_ts_47577f43_no_nonexistent_mcp_tools_named():
 # ── ts_69b4ee2b: test_f16_f17 suite stays green ───────────────────────────────
 
 
-def test_ts_69b4ee2b_f16_f17_suite_is_green():
+def test_ts_69b4ee2b_f16_f17_suite_is_green(tmp_path):
     """TC-I: the test_f16_f17_health_aware_gates.py suite must pass in full
     after the NC-1 degraded-leg flip. Runs the suite as a subprocess so
     isolation is complete."""
     tests_dir = Path(__file__).parent
     suite = str(tests_dir / "test_f16_f17_health_aware_gates.py")
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", suite, "-q", "--tb=short", "--no-header"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            suite,
+            "-q",
+            "--tb=short",
+            "--no-header",
+            "-p",
+            "no:cacheprovider",
+            "--basetemp",
+            str(tmp_path / "nested-pytest"),
+        ],
         capture_output=True,
         text=True,
         timeout=120,

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from okto_pulse.core.application.boundary.relational_adapter_import_gate import (
     ALLOWLIST,
+    RETIRED_ALLOWLIST,
     REMOVAL_CRITERION,
     SENSITIVE_SYMBOLS,
     run_relational_adapter_import_gate,
@@ -35,12 +36,9 @@ def test_real_core_is_clean_and_inbound_seams_dropped_the_adapter():
     # relational adapter (FR3 repointed them onto runtime_registry).
     assert "api/deps.py" not in referencing_files
     assert "mcp/server.py" not in referencing_files
-    # Every real-core finding is an allowlisted entry and carries a real line.
-    assert all(f.allowlisted for f in report.findings)
-    assert all(f.line >= 1 for f in report.findings)
-    # Only the remaining concrete repository package and aggregator remain.
-    assert "repositories/sqlalchemy/unit_of_work.py" in referencing_files
-    assert "repositories/__init__.py" in referencing_files
+    assert referencing_files == set()
+    assert report.findings == ()
+    assert ALLOWLIST == ()
 
 
 def test_gate_blocks_create_async_engine_in_services_with_file_and_line(tmp_path):
@@ -104,7 +102,7 @@ def test_gate_blocks_sensitive_module_import_and_respects_allowlist(tmp_path):
         "from okto_pulse.core.repositories import sqlalchemy  # noqa: F401\n",
         encoding="utf-8",
     )
-    # allowlisted by prefix: a file inside the definition package may reference it
+    # A recreated definition package is no longer exempt after the final move.
     sa = tmp_path / "repositories" / "sqlalchemy"
     sa.mkdir(parents=True)
     (sa / "internal.py").write_text(
@@ -129,7 +127,7 @@ def test_gate_blocks_sensitive_module_import_and_respects_allowlist(tmp_path):
     assert ("infra/database.py", "create_async_engine") in flagged
     assert ("infra/database.py", "async_sessionmaker") in flagged
     violation_files = {v.file for v in report.violations}
-    assert "repositories/sqlalchemy/internal.py" not in violation_files
+    assert "repositories/sqlalchemy/internal.py" in violation_files
 
 
 def test_sensitive_symbols_cover_engine_session_and_uow_concretes():
@@ -142,15 +140,12 @@ def test_sensitive_symbols_cover_engine_session_and_uow_concretes():
 
 
 def test_allowlist_is_governed_not_a_generic_escape():
-    # ts (governance): every temporary waiver names an owner and a removal criterion
-    # bound to R01C — surfaced in the report so a reviewer can audit each one.
+    # Final state has no active waiver. Historical entries remain auditable but
+    # cannot suppress a finding.
     report = run_relational_adapter_import_gate().as_dict()
-    governed = {e["pattern"]: e for e in report["allowlist"]}
-    for entry in ALLOWLIST:
+    assert report["allowlist"] == []
+    assert ALLOWLIST == ()
+    for entry in RETIRED_ALLOWLIST:
         assert entry.owner.startswith("okto-pulse-core/")
         assert "R01C" in entry.removal_criterion
-        assert entry.reason  # non-empty rationale
-        assert governed[entry.pattern]["removal_criterion"] == entry.removal_criterion
-
-    assert "infra/database.py" not in governed
-    assert "events/dispatcher.py" not in governed
+        assert entry.reason

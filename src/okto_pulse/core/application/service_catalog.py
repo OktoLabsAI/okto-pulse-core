@@ -930,6 +930,40 @@ class CoreApplicationServiceCatalog:
             scope=scope,
         )
 
+    async def read_latest_kg_tick_completed_at(self):  # noqa: ANN201
+        from okto_pulse.core.ports.relational_effects import (
+            get_relational_effects_port,
+        )
+
+        return await get_relational_effects_port().read_latest_kg_tick_completed_at(
+            self.__relational_context
+        )
+
+    async def list_board_ids(self) -> list[str]:
+        from okto_pulse.core.ports.relational_effects import (
+            get_relational_effects_port,
+        )
+
+        rows = await get_relational_effects_port().list_board_ids(
+            self.__relational_context
+        )
+        return list(rows)
+
+    async def publish_kg_tick_events(self, *, scheduled_at: str) -> list[str]:
+        from okto_pulse.core.events.handlers.kg_decay_tick import (
+            publish_tick_events,
+        )
+
+        return await publish_tick_events(
+            self.__relational_context,
+            scheduled_at=scheduled_at,
+        )
+
+    async def publish_domain_event(self, event: object) -> None:
+        from okto_pulse.core.events import publish
+
+        await publish(event, session=self.__relational_context)
+
 
 def build_application_service_catalog(
     relational_context: object,

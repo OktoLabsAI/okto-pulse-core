@@ -10,11 +10,13 @@ session:
 - ``okto_pulse_kg_queue_drilldown`` (auth + ``BOARD_READ`` permission)
 
 Golden output, the auth/permission baselines and the transactional read path are
-unchanged; the migration is limited to these two tools — ``mcp/server.py`` was not
-swept.
+unchanged. The cluster-specific assertions are complemented by a server-wide
+guard that prevents raw ``get_db_for_mcp`` access from being reintroduced.
 """
 
 from __future__ import annotations
+
+from mcp_runtime_testing import register_mcp_test_runtime
 
 import ast
 import json
@@ -24,6 +26,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.mcp import server as mcp_server
 
 STALE_TOOL = "okto_pulse_kg_stale_canonical_parity_list"
@@ -39,6 +42,7 @@ def _stub_ctx(permissions=("board:read",)):
             "agent_id": "imp5-mcp-agent",
             "agent_name": "imp5-mcp-agent",
             "permissions": list(permissions),
+            "realm_id": LOCAL_REALM_ID,
         },
     )()
 
@@ -46,7 +50,7 @@ def _stub_ctx(permissions=("board:read",)):
 async def _call(tool_name: str, **kwargs) -> str:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(tool_name)
     return await tool.fn(**kwargs)
 
@@ -58,7 +62,14 @@ async def _seed_board(board_id: str) -> None:
     factory = get_session_factory()
     async with factory() as db:
         if await db.get(Board, board_id) is None:
-            db.add(Board(id=board_id, name="imp5", owner_id="imp5-owner"))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="imp5",
+                    owner_id="imp5-owner",
+                    realm_id=LOCAL_REALM_ID,
+                )
+            )
             await db.commit()
 
 
@@ -109,7 +120,7 @@ async def test_stale_parity_auth_gates_before_use_case() -> None:
     """ctx None → unchanged _auth_error() envelope and the use case never runs."""
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     expected = mcp_server._auth_error()
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=None)), patch(
@@ -128,7 +139,7 @@ async def test_queue_drilldown_permission_denied_before_use_case() -> None:
     """A ctx without BOARD_READ → unchanged _perm_error envelope, use case skipped."""
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
 
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(permissions=()))
@@ -165,19 +176,12 @@ def test_migrated_tool_bodies_have_no_relational_coupling() -> None:
         assert "get_unit_of_work_factory_for_mcp" in names, name
 
 
-def test_migration_is_limited_to_the_cluster() -> None:
-    """TR4: only the two cluster tools were migrated — get_db_for_mcp still appears
-    in other handlers; mcp/server.py was not swept."""
+def test_mcp_server_has_no_raw_get_db_for_mcp_access() -> None:
+    """Every MCP handler must enter persistence through the application UoW."""
     tree = ast.parse(Path(mcp_server.__file__).read_text(encoding="utf-8"))
-    other_uses = 0
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
-            and node.name not in MIGRATED_TOOLS
-        ):
-            other_uses += sum(
-                1
-                for n in ast.walk(node)
-                if isinstance(n, ast.Name) and n.id == "get_db_for_mcp"
-            )
-    assert other_uses > 0
+    raw_uses = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and node.id == "get_db_for_mcp"
+    ]
+    assert raw_uses == []

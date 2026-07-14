@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 
 from okto_pulse.core.kg.primitives import (
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     begin_consolidation,
     commit_consolidation,
@@ -181,10 +181,10 @@ def seed_canonical_cognitive(board_id, node_type, *, source_ref, title="cognitiv
     node_id = f"r2cog_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, conn):
         orch = TransactionOrchestrator(
-            kuzu_conn=conn, sqlite_session=None,
+            graph_scope=conn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, node_type, node_id, _cognitive_attrs(source_ref, title=title)
         )
     return node_id
@@ -197,14 +197,14 @@ def seed_learning_with_canonical_bug(board_id, *, learning_ref):
     bug_id = f"r2bug_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, conn):
         orch = TransactionOrchestrator(
-            kuzu_conn=conn, sqlite_session=None,
+            graph_scope=conn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _cognitive_attrs(learning_ref, title="learning node"),
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Bug", bug_id, _cognitive_attrs(f"bug:{bug_id}", title="bug node"),
         )
         orch.create_edge(

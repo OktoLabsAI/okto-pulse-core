@@ -1,10 +1,10 @@
-"""Spec #04 card 3af67ea7 — PulseUnitOfWork ports + SQLAlchemy adapter + ORM debt.
+"""Spec #04 card 3af67ea7 — PulseUnitOfWork ports and terminal ORM boundary.
 
 Proves the persistence ports are real and behavior-correct: the SQLAlchemy
 UnitOfWork round-trips via the repositories (add/commit/get + rollback), is
 realm-ready without enforcement, satisfies the protocols, and powers an existing
 spec #09 use case through typed application capabilities. The ORM-return debt
-ledger is asserted against the verified baseline.
+ledger is asserted at its terminal zero budget.
 """
 
 from __future__ import annotations
@@ -44,29 +44,26 @@ def _id(prefix: str) -> str:
 
 
 def test_orm_debt_baseline_and_exceptions():
-    assert ORM_BASE_CLASS_BASELINE == 59
-    # First-cut aggregates are registered ORM-return debt...
-    assert is_orm_return_excepted("okto_pulse.core.models.db.Board")
-    assert is_orm_return_excepted("okto_pulse.core.models.db.Ideation")
-    assert is_orm_return_excepted("okto_pulse.core.models.db.Spec")
-    # ...an un-migrated aggregate's ORM return is NOT excepted (gate must block it).
-    assert not is_orm_return_excepted("okto_pulse.core.models.db.Card")
-    assert not is_orm_return_excepted("okto_pulse.core.models.db.Sprint")
-    # Pair-keyed: a non-migrated repo returning an already-excepted type is NOT
-    # excepted (no false-negative for the boundary gate).
-    board = "okto_pulse.core.models.db.Board"
-    board_repo = "okto_pulse.core.repositories.interfaces.repositories.BoardRepository"
-    card_repo = "okto_pulse.core.repositories.interfaces.repositories.CardRepository"
-    assert is_orm_return_excepted(board, repository=board_repo)
-    assert not is_orm_return_excepted(board, repository=card_repo)
+    assert ORM_BASE_CLASS_BASELINE == 0
+    for orm_type in (
+        "okto_pulse.core.models.db.Board",
+        "okto_pulse.core.models.db.Ideation",
+        "okto_pulse.core.models.db.Spec",
+        "okto_pulse.core.models.db.Card",
+        "okto_pulse.core.models.db.Sprint",
+    ):
+        assert not is_orm_return_excepted(orm_type)
+    assert not is_orm_return_excepted(
+        "okto_pulse.core.models.db.Board",
+        repository=(
+            "okto_pulse.core.repositories.interfaces.repositories.BoardRepository"
+        ),
+    )
 
 
 def test_base_class_count_matches_baseline():
-    # Cross-check the documented baseline against the live mapped classes DEFINED
-    # IN models/db.py (the spec scopes the baseline to that module). Filtering by
-    # __module__ keeps the count stable against test-only models other tests
-    # register on the shared Base. A model addition here surfaces the debt drift
-    # (the gate card b37786d9 enforces it live).
+    # No mapped class may be defined by the removed Core ORM module. Community
+    # mappings loaded by the test harness do not count toward this boundary.
     from sqlalchemy_test_models import Base
 
     mapped = len(

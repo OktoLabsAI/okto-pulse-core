@@ -514,7 +514,7 @@ class TestReconciliationRules:
             source_confidence=0.9,
         )
         match = ExistingNodeSummary(
-            kuzu_node_id="kg:d1",
+            graph_node_id="kg:d1",
             node_type="Decision",
             stable_id=None,
             title="X",
@@ -532,7 +532,7 @@ class TestReconciliationRules:
             source_confidence=0.9,
         )
         match = ExistingNodeSummary(
-            kuzu_node_id="kg:d2",
+            graph_node_id="kg:d2",
             node_type="Decision",
             stable_id=None,
             title="Y",
@@ -550,7 +550,7 @@ class TestReconciliationRules:
             source_confidence=0.9,
         )
         match = ExistingNodeSummary(
-            kuzu_node_id="kg:d3",
+            graph_node_id="kg:d3",
             node_type="Decision",
             stable_id="orn:spec:x",
             title="Old",

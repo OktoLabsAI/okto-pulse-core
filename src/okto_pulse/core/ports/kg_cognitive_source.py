@@ -1,11 +1,12 @@
 """CognitiveSourceStore port (spec MKG-A-S1, contracts api_e3aad88b / api_33539a3f).
 
 Durable, append-only source of truth for canonical COGNITIVE nodes
-(Learning / Alternative / Assumption). These nodes have no SQL artifact
-behind them, so before this port the per-board graph was their ONLY home —
-an unreadable graph meant silent loss (R2-IMP2 snapshots the LIVE graph;
-outcome ``unreadable`` == nothing preserved; incident 2026-07-10 destroyed
-73 cognitive nodes exactly this way).
+(Decision / Learning / Alternative / Assumption). A cognitive Decision can be
+independent from the structured spec decisions materialized by the deterministic
+writer, so these nodes may have no SQL artifact behind them. Before this port the
+per-board graph was their ONLY home — an unreadable graph meant silent loss
+(R2-IMP2 snapshots the LIVE graph; outcome ``unreadable`` == nothing preserved;
+incident 2026-07-10 destroyed 73 cognitive nodes exactly this way).
 
 Contract (spec BR2):
   * every cognitive commit APPENDS a full record (payload + evidence
@@ -26,6 +27,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, runtime_checkable
+
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
 
 __all__ = [
     "CognitiveSourceError",
@@ -113,20 +120,19 @@ class CognitiveSourceStore(Protocol):
         ...
 
 
-_cognitive_source_store: CognitiveSourceStore | None = None
+_RUNTIME_KEY = "ports.kg.cognitive_source_store"
 
 
 def register_cognitive_source_store(store: CognitiveSourceStore) -> None:
     """Register the edition-owned adapter (called by community main wiring)."""
 
-    global _cognitive_source_store
-    _cognitive_source_store = store
+    register_runtime_value(_RUNTIME_KEY, store)
 
 
 def resolve_cognitive_source_store() -> CognitiveSourceStore | None:
     """Return the registered store, or ``None`` when absent (probe use only)."""
 
-    return _cognitive_source_store
+    return resolve_runtime_value(_RUNTIME_KEY)
 
 
 def require_cognitive_source_store() -> CognitiveSourceStore:
@@ -136,7 +142,8 @@ def require_cognitive_source_store() -> CognitiveSourceStore:
     graph from silently running ahead of the durable source (spec BR2/D5).
     """
 
-    if _cognitive_source_store is None:
+    store = resolve_cognitive_source_store()
+    if store is None:
         raise CognitiveSourceError(
             "cognitive_source_store_absent",
             remediation=(
@@ -146,11 +153,10 @@ def require_cognitive_source_store() -> CognitiveSourceStore:
                 "cognitive nodes."
             ),
         )
-    return _cognitive_source_store
+    return store
 
 
 def reset_cognitive_source_store_for_tests() -> None:
     """Test-only: clear the registered store."""
 
-    global _cognitive_source_store
-    _cognitive_source_store = None
+    reset_runtime_values(_RUNTIME_KEY)

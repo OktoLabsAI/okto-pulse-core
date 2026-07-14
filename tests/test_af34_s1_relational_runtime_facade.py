@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from okto_pulse.core.infra import database as private_database
 from okto_pulse.core.ports import (
     RelationalDatabasePathUnavailable,
     close_db,
@@ -18,6 +18,7 @@ from okto_pulse.core.ports import (
     reset_database_runtime_for_tests,
     resolve_sqlite_database_path,
 )
+from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
 
 
 class _Url:
@@ -34,19 +35,44 @@ class _Engine:
         self.url = url
 
 
+class _Runtime:
+    def __init__(self, engine: Any, session_factory: Any) -> None:
+        self.engine = engine
+        self.session_factory = session_factory
+        self.calls: list[str] = []
+
+    @asynccontextmanager
+    async def transactional_session(self):
+        yield self.session_factory()
+
+    @asynccontextmanager
+    async def cancel_safe_session_scope(self, session_factory=None):
+        yield (session_factory or self.session_factory)()
+
+    async def close(self) -> None:
+        self.calls.append("close")
+
+    def pool_status(self) -> str:
+        return "test-pool"
+
+    def local_database_path(self) -> Path | None:
+        url = self.engine.url
+        if url.get_backend_name() != "sqlite":
+            return None
+        if not url.database or url.database == ":memory:":
+            return None
+        return Path(url.database)
+
+
 @pytest.fixture(autouse=True)
 def _reset_runtime():
-    previous_engine = get_engine()
-    previous_session_factory = get_session_factory()
+    previous_runtime = resolve_database_runtime()
     reset_database_runtime_for_tests()
     try:
         yield
     finally:
         reset_database_runtime_for_tests()
-        configure_database_runtime(
-            engine=previous_engine,
-            session_factory=previous_session_factory,
-        )
+        configure_database_runtime(runtime=previous_runtime)
 
 
 def test_public_facade_preserves_injected_runtime() -> None:
@@ -57,7 +83,7 @@ def test_public_facade_preserves_injected_runtime() -> None:
 
     assert is_database_runtime_configured() is False
 
-    configure_database_runtime(engine=engine, session_factory=session_factory)
+    configure_database_runtime(runtime=_Runtime(engine, session_factory))
 
     assert is_database_runtime_configured() is True
     assert get_engine() is engine
@@ -68,29 +94,23 @@ def test_public_facade_preserves_injected_runtime() -> None:
     assert is_database_runtime_configured() is False
 
 
-def test_public_lifecycle_facade_delegates_to_private_runtime(monkeypatch) -> None:
+def test_public_close_facade_delegates_to_registered_runtime() -> None:
     calls: list[str] = []
-
-    async def fake_init_db() -> None:
-        calls.append("init")
-
-    async def fake_close_db() -> None:
-        calls.append("close")
-
-    monkeypatch.setattr(private_database, "init_db", fake_init_db)
-    monkeypatch.setattr(private_database, "close_db", fake_close_db)
-
-    asyncio.run(init_db())
+    runtime = _Runtime(_Engine(_Url("sqlite", "pulse.db")), lambda: object())
+    runtime.calls = calls
+    configure_database_runtime(runtime=runtime)
     asyncio.run(close_db())
 
-    assert calls == ["init", "close"]
+    assert calls == ["close"]
 
 
 def test_resolve_sqlite_database_path_returns_file_path(tmp_path: Path) -> None:
     db_path = tmp_path / "pulse.db"
     configure_database_runtime(
-        engine=_Engine(_Url("sqlite", str(db_path))),
-        session_factory=lambda: object(),
+        runtime=_Runtime(
+            _Engine(_Url("sqlite", str(db_path))),
+            lambda: object(),
+        )
     )
 
     assert resolve_sqlite_database_path() == db_path
@@ -116,8 +136,10 @@ def test_resolve_sqlite_database_path_fails_closed_for_non_file_urls(
     database: str | None,
 ) -> None:
     configure_database_runtime(
-        engine=_Engine(_Url(backend, database)),
-        session_factory=lambda: object(),
+        runtime=_Runtime(
+            _Engine(_Url(backend, database)),
+            lambda: object(),
+        )
     )
 
     with pytest.raises(RelationalDatabasePathUnavailable):

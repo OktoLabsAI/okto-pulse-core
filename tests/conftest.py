@@ -8,6 +8,9 @@ Provides:
 - Fresh environment per test (complete isolation)
 """
 
+import asyncio
+import contextlib
+from contextlib import asynccontextmanager
 import hashlib
 import logging
 import copy
@@ -30,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # Path setup — must happen before any okto_pulse import
 # ---------------------------------------------------------------------------
 
-_CORE_SRC = Path(__file__).parent / ".." / "src"
+_CORE_SRC = (Path(__file__).parent / ".." / "src").resolve()
 sys.path.insert(0, str(_CORE_SRC))
 
 # ---------------------------------------------------------------------------
@@ -66,9 +69,22 @@ os.environ["KG_EMBEDDING_MODE"] = "stub"
 # Application imports
 # ---------------------------------------------------------------------------
 
+from okto_pulse.core.infra.config import CoreSettings, configure_settings  # noqa: E402
+
+try:
+    from okto_pulse.community.config import CommunitySettings  # noqa: E402
+except ModuleNotFoundError:
+    _initial_settings = CoreSettings()
+else:
+    # Real Community adapters require their edition-owned operational fields.
+    # Pure-Core runs without the Community package keep the policy-only model.
+    _initial_settings = CommunitySettings()
+
+configure_settings(_initial_settings)
+
 from okto_pulse.core.infra.database import create_database, get_session_factory, init_db  # noqa: E402
 from okto_pulse.core.infra import database as _database_mod  # noqa: E402
-from okto_pulse.core.infra import schema_lifecycle as _schema_lifecycle  # noqa: E402
+from okto_pulse.core.ports import schema_lifecycle as _schema_lifecycle  # noqa: E402
 from okto_pulse.core.kg.embedding import reset_embedding_provider_cache  # noqa: E402
 from kg_schema_testing import bootstrap_board_graph  # noqa: E402
 from okto_pulse.core.kg.session_manager import reset_session_manager_for_tests  # noqa: E402
@@ -128,16 +144,108 @@ from okto_pulse.core.ports.relational_application import (  # noqa: E402
 # or imports these SQLAlchemy implementations.
 import sqlalchemy_test_runtime_settings_service as _settings_svc  # noqa: E402
 import sqlalchemy_test_traceability_read_model as _traceability_adapter  # noqa: E402
-from sqlalchemy_test_resource_gate_service import ResourceGateService as _TestResourceGateService  # noqa: E402
+from sqlalchemy_test_resource_gate_service import (  # noqa: E402
+    TestSqlAlchemyResourceGateAdapter,
+)
 from okto_pulse.core.ports.relational_services import (  # noqa: E402
-    register_resource_gate_service_class,
+    register_resource_gate_adapter_factory,
     register_runtime_settings_adapter,
     register_traceability_adapter,
 )
 
-register_resource_gate_service_class(_TestResourceGateService)
+register_resource_gate_adapter_factory(TestSqlAlchemyResourceGateAdapter)
 register_runtime_settings_adapter(_settings_svc)
 register_traceability_adapter(_traceability_adapter)
+
+
+class _CoreTestDatabaseRuntime:
+    """Test-owned SQLAlchemy implementation of the relational runtime port."""
+
+    def __init__(self, engine, session_factory):
+        self.engine = engine
+        self.session_factory = session_factory
+        self._pending_closes = set()
+
+    async def _await_cleanup(self, awaitable):
+        task = asyncio.ensure_future(awaitable)
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            task.add_done_callback(self._consume_cleanup_exception)
+            raise
+
+    @staticmethod
+    def _consume_cleanup_exception(task):
+        if task.cancelled():
+            return
+        with contextlib.suppress(BaseException):
+            task.exception()
+
+    async def _quiet_cleanup(self, awaitable):
+        with contextlib.suppress(BaseException):
+            await self._await_cleanup(awaitable)
+
+    async def _cancel_safe_close(self, awaitable):
+        task = asyncio.ensure_future(awaitable)
+        self._pending_closes.add(task)
+        task.add_done_callback(self._pending_closes.discard)
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "db.session.cancel_safe_close_failed"
+            )
+
+    @asynccontextmanager
+    async def transactional_session(self):
+        session = self.session_factory()
+        try:
+            yield session
+            await session.commit()
+        except BaseException:
+            await self._quiet_cleanup(session.rollback())
+            raise
+        finally:
+            await self._quiet_cleanup(session.close())
+
+    @asynccontextmanager
+    async def cancel_safe_session_scope(self, session_factory=None):
+        scope = (session_factory or self.session_factory)()
+        enter = getattr(scope, "__aenter__", None)
+        exit_ = getattr(scope, "__aexit__", None)
+        if callable(enter) and callable(exit_):
+            session = await enter()
+        else:
+            session = scope
+            exit_ = None
+        exc_info = (None, None, None)
+        try:
+            yield session
+        except BaseException as exc:
+            exc_info = (type(exc), exc, exc.__traceback__)
+            raise
+        finally:
+            if exit_ is not None:
+                await self._cancel_safe_close(exit_(*exc_info))
+            else:
+                await self._cancel_safe_close(session.close())
+
+    async def close(self):
+        await self._await_cleanup(self.engine.dispose())
+
+    def pool_status(self):
+        return self.engine.sync_engine.pool.status()
+
+    def local_database_path(self):
+        url = self.engine.url
+        if url.get_backend_name() != "sqlite":
+            return None
+        database = url.database
+        if not database or str(database) in {":memory:", "file::memory:"}:
+            return None
+        return Path(str(database))
 
 
 def _build_test_relational_runtime(url: str, *, echo: bool = False):
@@ -182,7 +290,7 @@ def _build_test_relational_runtime(url: str, *, echo: bool = False):
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    return engine, session_factory
+    return _CoreTestDatabaseRuntime(engine, session_factory)
 
 
 from okto_pulse.core.runtime_registry import register_relational_runtime_factory  # noqa: E402
@@ -461,7 +569,10 @@ class _CoreTestAgentAuthenticationGateway:
             agent_id=agent.id,
             agent_name=agent.name,
             is_active=True,
-            metadata={"credential_source": credential_source},
+            metadata={
+                "credential_source": credential_source,
+                "realm_id": "local",
+            },
         )
 
     async def list_accessible_board_ids_for_agent(self, agent_id):
@@ -1261,22 +1372,16 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
         queue_entry_id: str,
         recursive: bool = False,
     ):
-        entry = await context.get(ConsolidationQueue, queue_entry_id)
-        if entry is None or entry.board_id != board_id:
-            return None
-        entry.status = "pending"
-        entry.next_retry_at = datetime.now(timezone.utc)
-        entry.claim_timeout_at = None
-        entry.worker_id = None
-        entry.claimed_at = None
-        entry.claimed_by_session_id = None
-        return {
-            "id": entry.id,
-            "board_id": entry.board_id,
-            "artifact_type": entry.artifact_type,
-            "artifact_id": entry.artifact_id,
-            "recursive": recursive,
-        }
+        from okto_pulse.community.adapters.kg_operational import (
+            CommunitySqlAlchemyKGWorkerQueue,
+        )
+
+        return await CommunitySqlAlchemyKGWorkerQueue().retry_pending_entry(
+            context,
+            board_id=board_id,
+            queue_entry_id=queue_entry_id,
+            recursive=recursive,
+        )
 
 
 class _CoreTestKGWorkerAudit(KGWorkerAuditPort):
@@ -1360,6 +1465,31 @@ async def _db_init():
     )
     await init_db()
     yield
+
+
+@pytest_asyncio.fixture
+async def preserve_relational_runtime():
+    """Restore a test-swapped relational runtime without leaking its engine."""
+
+    from okto_pulse.core.ports.relational_runtime import (
+        configure_database_runtime,
+        resolve_database_runtime,
+    )
+
+    original = resolve_database_runtime()
+    yield
+    try:
+        current = resolve_database_runtime()
+    except RuntimeError:
+        current = None
+    if current is original:
+        return
+    try:
+        close = getattr(current, "close", None)
+        if callable(close):
+            await close()
+    finally:
+        configure_database_runtime(runtime=original)
 
 
 # ============================================================================

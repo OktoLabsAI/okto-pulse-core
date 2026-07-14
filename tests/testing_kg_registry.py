@@ -8,11 +8,21 @@ from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 def build_testing_kg_registry() -> KGProviderRegistry:
     """Build in-memory contract fakes without exposing them from production wiring."""
 
-    from .embedding import build_testing_embedding_provider
-    from .memory import InMemoryCacheBackend, InMemorySessionStore, InMemoryTokenBucket
-    from .memory_board_source_reader import InMemoryBoardSourceReader
-    from .memory_global_discovery_runtime import InMemoryGlobalDiscoveryRuntime
-    from .memory_graph_store import (
+    from okto_pulse.core.kg.providers.testing.embedding import (
+        build_testing_embedding_provider,
+    )
+    from okto_pulse.core.kg.providers.testing.memory import (
+        InMemoryCacheBackend,
+        InMemorySessionStore,
+        InMemoryTokenBucket,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_board_source_reader import (
+        InMemoryBoardSourceReader,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_global_discovery_runtime import (
+        InMemoryGlobalDiscoveryRuntime,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_graph_store import (
         InMemoryCypherExecutor,
         InMemoryGraphLifecycle,
         InMemoryGraphRuntimeStore,
@@ -20,12 +30,12 @@ def build_testing_kg_registry() -> KGProviderRegistry:
         InMemoryGraphStore,
         InMemoryGraphTransaction,
     )
-    from .memory_rebuild_audit_storage import (
+    from memory_rebuild_audit_storage import (
         InMemoryCognitivePendingWorkProvider,
         InMemoryRebuildAuditArtifactStore,
         InMemoryRebuildAuditArtifactStoreResolver,
     )
-    from .settings_config import SettingsKGConfig
+    from okto_pulse.core.kg.providers.testing.settings_config import SettingsKGConfig
 
     config = SettingsKGConfig()
     graph_store = InMemoryGraphStore()
@@ -40,7 +50,7 @@ def build_testing_kg_registry() -> KGProviderRegistry:
         ),
         graph_store=graph_store,
         cypher_executor=InMemoryCypherExecutor(),
-        graph_transaction=InMemoryGraphTransaction(),
+        graph_transaction=InMemoryGraphTransaction(graph_store),
         graph_schema_manager=graph_schema_manager,
         graph_lifecycle=InMemoryGraphLifecycle(schema_manager=graph_schema_manager),
         graph_runtime_store=InMemoryGraphRuntimeStore(

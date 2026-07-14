@@ -48,7 +48,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
 )
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 
 # ---------------------------------------------------------------------------
@@ -119,8 +120,11 @@ class RefinementGuardError(Exception):
 
 
 _GUARD_LABELS = ("board_id_hash", "outcome", "reason")
-_guard_samples = BoundedCounterSampleBuffer(_GUARD_LABELS)
-_guard_samples_lock = threading.Lock()
+_guard_samples = runtime_counter_sample_buffer(
+    "kg.refinement_cognitive_guard",
+    _GUARD_LABELS,
+)
+_guard_samples_lock = runtime_lock("kg.refinement_cognitive_guard.samples")
 
 
 def _board_id_hash(board_id: str) -> str:
@@ -181,8 +185,13 @@ class TerminalWriteBlockOutcome(str, Enum):
 
 
 _TERMINAL_BLOCK_LABELS = ("board_id_hash", "attempted_status", "outcome")
-_terminal_block_samples = BoundedCounterSampleBuffer(_TERMINAL_BLOCK_LABELS)
-_terminal_block_lock = threading.Lock()
+_terminal_block_samples = runtime_counter_sample_buffer(
+    "kg.refinement_cognitive_terminal_block",
+    _TERMINAL_BLOCK_LABELS,
+)
+_terminal_block_lock = runtime_lock(
+    "kg.refinement_cognitive_terminal_block.samples"
+)
 
 _TERMINAL_ITEM_STATUSES: frozenset[str] = frozenset({
     CognitiveItemStatus.CONSOLIDATED.value,

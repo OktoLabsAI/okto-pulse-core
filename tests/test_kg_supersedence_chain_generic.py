@@ -64,7 +64,7 @@ def test_learning_chain_is_walkable_two_hops(kg_board):
             "CREATE (n:Learning {id: 'learning_v1', title: 'v1'})"
         )
         orch = TransactionOrchestrator(
-            kconn, sqlite_session=None, session_id="s-chain", board_id=board_id
+            kconn, session_id="s-chain", board_id=board_id
         )
         orch.supersede_node(
             "Learning",

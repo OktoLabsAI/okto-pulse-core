@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from okto_pulse.community.api.boards import router as boards_router
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from sqlalchemy_test_models import Board
 from okto_pulse.core.models.schemas import BoardSettings
@@ -118,7 +118,15 @@ async def _board_client():
     df = get_session_factory()
     board_id = _id("board")
     async with df() as db:
-        db.add(Board(id=board_id, name="Gate Settings", owner_id=USER_ID, settings={}))
+        db.add(
+            Board(
+                id=board_id,
+                name="Gate Settings",
+                owner_id=USER_ID,
+                realm_id="local",
+                settings={},
+            )
+        )
         await db.commit()
 
     app = FastAPI()
@@ -130,6 +138,7 @@ async def _board_client():
 
     app.dependency_overrides[get_db] = _odb
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app), board_id
 
 

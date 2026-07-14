@@ -24,6 +24,8 @@ Consolidated proofs:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import json
 from pathlib import Path
@@ -176,7 +178,7 @@ async def _seed():
 async def _call(tool: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     t = await mcp_server.mcp.get_tool(tool)
     return json.loads(await t.fn(**kwargs))
 
@@ -200,6 +202,19 @@ async def test_get_sprint_context_cross_board_not_found(_seed):
         "okto_pulse_get_sprint_context", board_id=BOARD_ID, sprint_id=_seed
     )
     assert ok["id"] == _seed and "spec" in ok  # include_spec defaults true
+
+
+@pytest.mark.asyncio
+async def test_assign_tasks_missing_card_is_explicit(_seed):
+    result = await _call(
+        "okto_pulse_assign_tasks_to_sprint",
+        board_id=BOARD_ID,
+        sprint_id=_seed,
+        card_ids=["missing-card"],
+    )
+    assert result["error"] == "card_not_found"
+    assert result["code"] == "card_not_found"
+    assert result["facts"]["card_id"] == "missing-card"
 
 
 @pytest.mark.asyncio

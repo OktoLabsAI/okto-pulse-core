@@ -46,55 +46,23 @@ REQUIRED_INVENTORY_FIELDS: tuple[str, ...] = (
     "removal_criterion",
 )
 
-COMMUNITY_PARITY_FIELDS: tuple[str, ...] = (
-    "database_url",
-    "upload_dir",
-    "metrics_dir",
-    "kg_base_dir",
-    "kg_embedding_mode",
-)
+COMMUNITY_PARITY_FIELDS: tuple[str, ...] = ()
 
-KG_RUNTIME_KNOBS: tuple[str, ...] = (
-    "kg_kuzu_buffer_pool_mb",
-    "kg_kuzu_max_db_size_gb",
-    "kg_connection_pool_size",
-)
+KG_RUNTIME_KNOBS: tuple[str, ...] = ()
 
 _BASELINE_CORE_SETTING_NAMES: tuple[str, ...] = (
     "app_name",
     "app_version",
-    "debug",
-    "environment",
-    "host",
-    "port",
-    "database_url",
-    "upload_dir",
-    "max_upload_size",
     "metrics_mode",
-    "metrics_dir",
     "metrics_retention_days",
-    "metrics_beacon_url",
     "metrics_policy_version",
     "metrics_schema_version",
     "metrics_opt_in_prompt_interval_days",
     "metrics_token_refresh_margin_hours",
-    "mcp_server_name",
-    "mcp_server_version",
-    "mcp_port",
-    "cors_origins",
-    "kg_base_dir",
-    "kg_embedding_mode",
-    "kg_embedding_model",
-    "kg_embedding_dim",
     "kg_session_ttl_seconds",
     "kg_cleanup_interval_seconds",
     "kg_cleanup_enabled",
     "kg_max_queue_depth",
-    "kg_kuzu_buffer_pool_mb",
-    "kg_kuzu_max_db_size_gb",
-    "kg_connection_pool_size",
-    "kg_wal_salvage_enabled",
-    "kg_wal_only_recovery_enabled",
     "kg_queue_max_concurrent_workers",
     "kg_queue_min_interval_ms",
     "kg_queue_claim_timeout_s",
@@ -228,7 +196,7 @@ _LOCAL_FIRST_UPLOAD_DEFAULT_REPRS: frozenset[str] = frozenset(
 _CORE_PUBLIC_CONTRACT = (
     "Core-owned public CoreSettings field and environment variable."
 )
-_CORE_EFFECTIVE_SOURCE = "CoreSettings default/env parsing."
+_CORE_EFFECTIVE_SOURCE = "Pre-materialized Core policy snapshot."
 _CORE_COMPATIBILITY_PATH = (
     "Field name and env var remain stable; renames require PublicSettingAlias "
     "and an approved migration plan."
@@ -1058,12 +1026,16 @@ def evaluate_community_settings_parity(
     """
 
     data_dir = Path(str(getattr(community_settings, "data_dir"))).expanduser().resolve()
-    expected: dict[str, object] = {
+    installed_defaults: dict[str, object] = {
         "database_url": f"sqlite+aiosqlite:///{data_dir / 'data' / 'pulse.db'}",
         "upload_dir": str(data_dir / "uploads"),
         "metrics_dir": str(data_dir / "metrics"),
         "kg_base_dir": str(data_dir),
         "kg_embedding_mode": "sentence-transformers",
+    }
+    expected = {
+        field: installed_defaults[field]
+        for field in COMMUNITY_PARITY_FIELDS
     }
     observed = {
         field: getattr(community_settings, field)

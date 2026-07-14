@@ -137,13 +137,8 @@ def ledger_tempdir(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _restore_conftest_engine():
-    from okto_pulse.core.infra.database import create_database, get_engine
-
-    prior_url = str(get_engine().url)
+def _restore_conftest_engine(preserve_relational_runtime):
     yield
-    if str(get_engine().url) != prior_url:
-        create_database(prior_url, echo=False)
 
 
 async def test_s1_sqlalchemy_ledger_contract(ledger_tempdir):
@@ -169,7 +164,7 @@ async def test_s1_sqlalchemy_ledger_contract(ledger_tempdir):
     await _contract(ledger, str(uuid.uuid4()))
 
 
-def test_s1_fail_closed_resolver_and_protocol():
+async def test_s1_fail_closed_resolver_and_protocol():
     with pytest.raises(EquivalenceLedgerError) as excinfo:
         require_equivalence_ledger()
     assert excinfo.value.failure_reason == "kg_equivalence_ledger_unavailable"

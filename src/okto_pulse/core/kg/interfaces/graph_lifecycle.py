@@ -39,6 +39,7 @@ class PurgeReport:
     reason: str
     affected_storage_refs: tuple[StorageRef, ...] = ()
     quarantined: bool = False
+    quarantine_ref: str | None = None
 
 
 @dataclass(frozen=True)

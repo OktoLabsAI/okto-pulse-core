@@ -234,7 +234,7 @@ Returns:
 
 ## `okto_pulse_resolve_bug_regression_scenarios`
 
-Preview reusable regression scenarios for a bug without mutating a locked spec.
+Preview reusable regression scenarios for a bug without mutating a content-locked spec.
 
 Use this before creating or linking a post-bug regression test. It classifies
 eligible same-spec scenarios and rejects unrelated or cross-spec candidates so

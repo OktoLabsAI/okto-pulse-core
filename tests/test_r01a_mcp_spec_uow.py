@@ -21,6 +21,8 @@ Consolidated proofs (Codex-mandated):
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import json
 from pathlib import Path
@@ -194,7 +196,7 @@ async def _seed():
 async def _call(tool: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     t = await mcp_server.mcp.get_tool(tool)
     return json.loads(await t.fn(**kwargs))
 
@@ -273,3 +275,48 @@ async def test_decision_remove_is_soft_delete(_seed):
     )
     assert removed["success"] is True and removed["revoked"] == dec_id
     assert removed["decision"]["status"] == "revoked"
+
+
+@pytest.mark.asyncio
+async def test_get_spec_history_accepts_explicit_limit(_seed):
+    out = await _call(
+        "okto_pulse_get_spec_history",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        limit="7",
+    )
+    assert out["spec_id"] == _seed
+    assert out["count"] <= 7
+    assert isinstance(out["history"], list)
+
+
+@pytest.mark.asyncio
+async def test_migrate_decisions_preserves_prose_after_contiguous_bullets(_seed):
+    updated = await _call(
+        "okto_pulse_update_spec",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        context=(
+            "Intro.\r\n\r\n## decisions\r\n"
+            "- Keep writes local\r\n"
+            "* Require idempotency\r\n\r\n"
+            "Trailing prose must survive."
+        ),
+    )
+    assert updated["success"] is True
+
+    migrated = await _call(
+        "okto_pulse_migrate_spec_decisions", board_id=BOARD_ID, spec_id=_seed
+    )
+    assert migrated["decisions_added"] == 2
+    assert migrated["context_modified"] is True
+
+    spec = await _call("okto_pulse_get_spec", board_id=BOARD_ID, spec_id=_seed)
+    assert "## decisions" not in spec["context"].lower()
+    assert "Trailing prose must survive." in spec["context"]
+
+    second = await _call(
+        "okto_pulse_migrate_spec_decisions", board_id=BOARD_ID, spec_id=_seed
+    )
+    assert second["decisions_added"] == 0
+    assert second["context_modified"] is False

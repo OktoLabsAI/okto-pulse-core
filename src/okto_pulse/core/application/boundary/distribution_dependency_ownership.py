@@ -123,12 +123,6 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             removal_criterion="Replace all public validation models with stdlib contracts.",
         ),
         _entry(
-            "pydantic-settings", core, "core", ("pydantic_settings",), "direct",
-            ("src/okto_pulse/core/infra/config.py",),
-            rationale="The edition-neutral settings contract is parsed by BaseSettings.",
-            removal_criterion="Move settings parsing behind an edition configuration port.",
-        ),
-        _entry(
             "PyYAML", core, "core", ("yaml",), "direct",
             ("src/okto_pulse/core/application/processors/deterministic_kg.py",),
             rationale="The deterministic processor reads the packaged taxonomy resource.",
@@ -157,6 +151,12 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             ("src/okto_pulse/community/api/allowed_transitions.py",),
             rationale="HTTP request and response schemas are Community transport models.",
             removal_criterion="Generate transport schemas without direct Pydantic usage.",
+        ),
+        _entry(
+            "pydantic-settings", community, "community", ("pydantic_settings",), "direct",
+            ("src/okto_pulse/community/config.py",),
+            rationale="Community owns environment and .env parsing for local operation.",
+            removal_criterion="Replace the Community environment settings loader.",
         ),
         _entry(
             "python-multipart", community, "community", ("multipart",), "dynamic",

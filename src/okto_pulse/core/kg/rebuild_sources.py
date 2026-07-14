@@ -35,6 +35,7 @@ import json
 import logging
 import secrets
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -343,8 +344,8 @@ class RebuildSourceManifest:
 # --- Counter (OR or_2d295e26 / or_01279a1c) -----------------------------------
 
 _ENUM_LABELS = ("board_id", "outcome", "reason")
-_enum_counter: dict[tuple[str, str, str], int] = {}
-_enum_counter_lock = threading.Lock()
+_enum_counter = runtime_state("kg.rebuild_sources.enum_counter", dict)
+_enum_counter_lock = runtime_lock("kg.rebuild_sources.enum_counter")
 
 
 def _bump_enum(*, board_id: str, outcome: str, reason: str) -> None:
@@ -698,8 +699,8 @@ class RevalidationResult:
 # Counter OR or_b9c33b77 — kg_spec_source_manifest_rebaseline_total. Bounded
 # labels (board_id, outcome); one sample per spec-manifest rebaseline event.
 _REBASELINE_LABELS = ("board_id", "outcome")
-_rebaseline_counter: dict[tuple[str, str], int] = {}
-_rebaseline_lock = threading.Lock()
+_rebaseline_counter = runtime_state("kg.rebuild_sources.rebaseline_counter", dict)
+_rebaseline_lock = runtime_lock("kg.rebuild_sources.rebaseline_counter")
 
 
 def _bump_rebaseline(*, board_id: str, outcome: str = "rebaseline") -> None:

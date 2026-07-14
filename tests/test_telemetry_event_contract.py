@@ -26,11 +26,22 @@ from okto_pulse.core.telemetry.event_contract import (  # noqa: E402
 )
 from okto_pulse.core.telemetry.schema import TELEMETRY_EVENT_TYPES  # noqa: E402
 
-SRC = ROOT / "src" / "okto_pulse" / "core"
+CORE_SRC = ROOT / "src" / "okto_pulse" / "core"
+COMMUNITY_SRC = (
+    ROOT.parent
+    / "okto_labs_pulse_community"
+    / "src"
+    / "okto_pulse"
+    / "community"
+)
 
 
-def _src(rel: str) -> str:
-    return (SRC / rel).read_text(encoding="utf-8")
+def _core_src(rel: str) -> str:
+    return (CORE_SRC / rel).read_text(encoding="utf-8")
+
+
+def _community_src(rel: str) -> str:
+    return (COMMUNITY_SRC / rel).read_text(encoding="utf-8")
 
 
 # --- ts_d0621cf9: the live contract covers exactly the declared types ---------
@@ -47,8 +58,8 @@ def test_live_contract_has_no_violations() -> None:
 # --- wired types are REAL: emitter present + aggregate live (no ghost) --------
 
 def test_wired_types_have_real_emitter_and_live_aggregate() -> None:
-    app_src = _src("app.py")
-    metrics_src = _src("api/metrics.py")
+    app_src = _community_src("app.py")
+    metrics_src = _community_src("api/metrics.py")
     # R10-E Pass 2: TelemetryBeaconSender moved to Community. Read the community
     # sender source (sibling repo) to verify aggregates are still materialised.
     community_sender = (
@@ -68,7 +79,7 @@ def test_wired_types_have_real_emitter_and_live_aggregate() -> None:
     # runtime emitter helpers.
     assert 'record_event("http"' in app_src
     assert "record_event(" in metrics_src
-    emitters_src = _src("telemetry/emitters.py")
+    emitters_src = _core_src("telemetry/emitters.py")
     for fn in (
         "def emit_cli_event",
         "def emit_mcp_event",

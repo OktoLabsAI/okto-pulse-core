@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import copy
 import json
 import logging
@@ -51,8 +53,9 @@ async def structured_rest_client(db_factory, monkeypatch):
     from fastapi.testclient import TestClient
 
     from okto_pulse.community.api import specs as specs_api
-    from okto_pulse.core.infra import auth as auth_mod
-    from okto_pulse.core.infra.database import get_db
+    from okto_pulse.community.api.auth_deps import require_user
+    from okto_pulse.community.api.deps import get_unit_of_work
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
     actor_id = "actor-structured-rest"
     board_id = f"board-{uuid.uuid4()}"
@@ -73,9 +76,14 @@ async def structured_rest_client(db_factory, monkeypatch):
         )
         await db.commit()
 
-    async def _override_db():
+    async def _override_uow():
         async with db_factory() as session:
-            yield session
+            try:
+                yield resolve_unit_of_work_factory().wrap(session)
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
 
     permission_preset = {"name": "Spec"}
 
@@ -84,8 +92,8 @@ async def structured_rest_client(db_factory, monkeypatch):
 
     app = FastAPI()
     app.include_router(specs_api.router, prefix="/api/v1")
-    app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[auth_mod.require_user] = lambda: actor_id
+    app.dependency_overrides[get_unit_of_work] = _override_uow
+    app.dependency_overrides[require_user] = lambda: actor_id
     # Spec R01A REST-FU3b-S1: the structured-entity flow now resolves permissions
     # inside RunStructuredSpecEntityUseCase via services.main.resolve_user_permissions
     # (Clean Core — the use case no longer routes through the api alias), so the
@@ -1911,7 +1919,7 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
         )
         await db.commit()
 
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     ctx = type(
         "Ctx",
         (),

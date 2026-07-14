@@ -100,6 +100,8 @@ def archived_card_block(facts: CardTransitionFacts) -> CardTransitionBlock | Non
 
 
 def spec_maturity_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
+    if facts.new_status is CardStatus.CANCELLED:
+        return None
     old_level = CARD_STATUS_ORDER.get(facts.old_status, 0)
     new_level = CARD_STATUS_ORDER.get(facts.new_status, 0)
     moves_forward = new_level > old_level
@@ -123,6 +125,8 @@ def spec_maturity_block(facts: CardTransitionFacts) -> CardTransitionBlock | Non
 
 
 def sprint_assignment_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
+    if facts.new_status is CardStatus.CANCELLED:
+        return None
     old_level = CARD_STATUS_ORDER.get(facts.old_status, 0)
     new_level = CARD_STATUS_ORDER.get(facts.new_status, 0)
     moves_forward = new_level > old_level

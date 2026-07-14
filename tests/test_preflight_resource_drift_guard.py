@@ -33,24 +33,34 @@ SERVER_PY = MCP_DIR / "server.py"
 PREFLIGHT_URI = "okto-pulse://workflows/preflight"
 PREFLIGHT_REL = "workflows/preflight.md"
 
-# A verbatim card-execution step — present in preflight.md, but the full fenced body
-# must NOT remain inline in agent_instructions.md (Option X: pointer, no duplication).
-VERBATIM_STEP = "okto_pulse_copy_mockups_to_card(board_id, spec_id, card_id)"
+# A verbatim card-execution step — present in preflight.md, but the full fenced
+# body must NOT remain inline in agent_instructions.md (pointer, no duplication).
+VERBATIM_STEP = (
+    'okto_pulse_get_task_context(board_id, card_id, profile="full", '
+    "include_knowledge=true, include_mockups=true, include_architecture=true, "
+    "include_qa=true, include_comments=true)"
+)
+ARTIFACT_ATTACHMENT_POINTER = (
+    "Card-Level Artifact Attachment path in §2.8 of "
+    "okto-pulse://workflows/cards"
+)
 
-# The four sub-sequence section headers (as written in preflight.md).
+# The five sub-sequence section headers (as written in preflight.md).
 PREFLIGHT_SEQUENCES = [
     "Session pre-flight",
     "Entity context pre-flight",
     "Card execution pre-flight",
     "Resource Gate pre-flight",
+    "Design System pre-flight",
 ]
 
-# The four sequences named in the inline pointer (Option X + truncation-safe steer).
+# The five sequences named in the inline pointer (truncation-safe steer).
 POINTER_SEQUENCES = [
     "session pre-flight",
     "entity-context pre-flight",
     "card-execution pre-flight",
     "resource gate pre-flight",
+    "design system pre-flight",
 ]
 
 _URI_RE = re.compile(r"okto-pulse://[a-zA-Z0-9_/\-]+")
@@ -104,6 +114,9 @@ def test_ac1_preflight_md_verbatim() -> None:
     for seq in PREFLIGHT_SEQUENCES:
         assert seq in text, f"preflight.md missing sub-sequence {seq!r}."
     assert VERBATIM_STEP in text, "preflight.md missing the verbatim card-execution step."
+    assert ARTIFACT_ATTACHMENT_POINTER in text, (
+        "preflight.md must delegate artifact selection to the canonical cards workflow."
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -306,7 +306,12 @@ class McpCopyQaToCardUseCase:
         await uow.services.comments.create_comment(
             command.card_id,
             actor.actor_id,
-            payload(content="\n".join(lines)),
+            payload(
+                content="\n".join(lines),
+                comment_type="text",
+                choices=None,
+                allow_free_text=False,
+            ),
         )
         await commit(uow)
         return McpPayloadResult({"success": True, "copied": len(qa_items)})

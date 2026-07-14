@@ -29,6 +29,7 @@ from okto_pulse.core.kg.scoring import (
 from kg_schema_testing import (
     bootstrap_board_graph,
     close_all_connections,
+    open_materialized_board_connection,
     open_board_connection,
 )
 
@@ -126,7 +127,7 @@ def _seed_decision(kconn, node_id: str, count) -> None:
 
 
 def test_s5_recompute_persists_higher_score_for_attested_node(kg_board):
-    conn_ctx = open_board_connection(kg_board)
+    conn_ctx = open_materialized_board_connection(kg_board)
     with conn_ctx as (_kdb, kconn):
         _seed_decision(kconn, "decision_plain", 1)
         _seed_decision(kconn, "decision_attested", 20)
@@ -143,16 +144,12 @@ def test_s5_recompute_persists_higher_score_for_attested_node(kg_board):
             "MATCH (n:Decision) WHERE n.source_artifact_ref = 'spec:attboost' "
             "RETURN n.id, n.relevance_score"
         )
-        scores = {}
-        while res.has_next():
-            r = res.get_next()
-            scores[r[0]] = float(r[1])
-        res.close()
+        scores = {row[0]: float(row[1]) for row in res.rows}
         assert scores["decision_attested"] > scores["decision_plain"]
 
 
 def test_s5_null_attestation_reads_as_one_in_recompute(kg_board):
-    conn_ctx = open_board_connection(kg_board)
+    conn_ctx = open_materialized_board_connection(kg_board)
     with conn_ctx as (_kdb, kconn):
         # NULL column (legacy row shape) — AC7: reads as 1, never fails.
         kconn.execute(

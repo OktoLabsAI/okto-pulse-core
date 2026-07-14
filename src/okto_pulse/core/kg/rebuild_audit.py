@@ -47,7 +47,8 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
 )
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 
 
 def confirmation_fingerprint(confirmation_id: str) -> str:
@@ -152,8 +153,8 @@ class EventPublishResult:
 
 
 _EVENT_LABELS = ("board_id", "status", "outcome")
-_event_counter: dict[tuple[str, str, str], int] = {}
-_event_counter_lock = threading.Lock()
+_event_counter = runtime_state("kg.rebuild_audit.event_counter", dict)
+_event_counter_lock = runtime_lock("kg.rebuild_audit.event_counter")
 
 
 def _bump_event(*, board_id: str, status: str, outcome: str) -> None:
@@ -533,11 +534,12 @@ class CognitiveMaterializeOutcome(str, Enum):
     FAILED = "failed"
 
 
-_materialized_samples = BoundedCounterSampleBuffer(
+_materialized_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.materialized",
     _MATERIALIZED_LABELS,
     sum_fields=("item_count",),
 )
-_materialized_samples_lock = threading.Lock()
+_materialized_samples_lock = runtime_lock("kg.rebuild_audit.materialized.samples")
 
 
 def _emit_materialized_sample(*, board_id: str, outcome: str, item_count: int) -> None:
@@ -648,8 +650,11 @@ _LIST_LABELS = (
     "status_filter_present",
     "reason_code",
 )
-_list_samples = BoundedCounterSampleBuffer(_LIST_LABELS)
-_list_samples_lock = threading.Lock()
+_list_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.list",
+    _LIST_LABELS,
+)
+_list_samples_lock = runtime_lock("kg.rebuild_audit.list.samples")
 
 
 def _emit_list_sample(
@@ -727,10 +732,13 @@ OPERATIONAL_INSPECTION_SIGNALS: frozenset[str] = frozenset(
     }
 )
 _OPERATIONAL_INSPECTION_LABELS = ("signal", "surface", "outcome", "board_id")
-_operational_inspection_samples = BoundedCounterSampleBuffer(
-    _OPERATIONAL_INSPECTION_LABELS
+_operational_inspection_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.operational_inspection",
+    _OPERATIONAL_INSPECTION_LABELS,
 )
-_operational_inspection_lock = threading.Lock()
+_operational_inspection_lock = runtime_lock(
+    "kg.rebuild_audit.operational_inspection.samples"
+)
 
 
 def emit_operational_inspection_sample(
@@ -815,10 +823,13 @@ _COGNITIVE_TECHNICAL_SIGNAL_LABELS = (
     "would_block_done",
     "board_id",
 )
-_cognitive_technical_signal_samples = BoundedCounterSampleBuffer(
-    _COGNITIVE_TECHNICAL_SIGNAL_LABELS
+_cognitive_technical_signal_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.cognitive_technical_signal",
+    _COGNITIVE_TECHNICAL_SIGNAL_LABELS,
 )
-_cognitive_technical_signal_lock = threading.Lock()
+_cognitive_technical_signal_lock = runtime_lock(
+    "kg.rebuild_audit.cognitive_technical_signal.samples"
+)
 
 
 def emit_cognitive_technical_signal_sample(
@@ -926,8 +937,11 @@ _INVALID_TARGET_STATUS = "invalid"
 
 
 _UPDATE_LABELS = ("board_id", "target_status", "outcome", "reason_code")
-_update_samples = BoundedCounterSampleBuffer(_UPDATE_LABELS)
-_update_samples_lock = threading.Lock()
+_update_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.update",
+    _UPDATE_LABELS,
+)
+_update_samples_lock = runtime_lock("kg.rebuild_audit.update.samples")
 
 
 def _emit_update_sample(
@@ -1001,8 +1015,11 @@ class CognitivePendingReopenReasonCode(str, Enum):
 
 
 _REOPEN_LABELS = ("entity_type", "outcome", "reason_code")
-_reopen_samples = BoundedCounterSampleBuffer(_REOPEN_LABELS)
-_reopen_samples_lock = threading.Lock()
+_reopen_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.reopen",
+    _REOPEN_LABELS,
+)
+_reopen_samples_lock = runtime_lock("kg.rebuild_audit.reopen.samples")
 
 
 def _emit_reopen_sample(
@@ -1090,8 +1107,11 @@ class CognitiveUnsafePayloadReason(str, Enum):
 
 
 _UNSAFE_LABELS = ("surface", "board_id", "reason")
-_unsafe_samples = BoundedCounterSampleBuffer(_UNSAFE_LABELS)
-_unsafe_samples_lock = threading.Lock()
+_unsafe_samples = runtime_counter_sample_buffer(
+    "kg.rebuild_audit.unsafe",
+    _UNSAFE_LABELS,
+)
+_unsafe_samples_lock = runtime_lock("kg.rebuild_audit.unsafe.samples")
 
 
 def _emit_unsafe_payload_sample(*, surface: str, board_id: str, reason: str) -> None:
@@ -1810,6 +1830,7 @@ class CognitiveConsolidationItemStore:
         deterministic replay does not erase agent-owned state.
         """
 
+        existing_by_source: dict[str, dict[str, Any]] = {}
         existing_terminal_by_source: dict[str, dict[str, Any]] = {}
         existing_record = self.load_record(board_id, kg_generation_id)
         if existing_record is not None:
@@ -1823,11 +1844,11 @@ class CognitiveConsolidationItemStore:
                     if not isinstance(raw, Mapping):
                         continue
                     status = raw.get("status")
-                    if status not in terminal_statuses:
-                        continue
                     src = str(raw.get("source_ref", ""))
                     if src:
-                        existing_terminal_by_source[src] = dict(raw)
+                        existing_by_source[src] = dict(raw)
+                        if status in terminal_statuses:
+                            existing_terminal_by_source[src] = dict(raw)
 
         # KG-03A.7 — cross-generation terminal lookup. Used to:
         #   1. carry forward terminal items when content_hash matches
@@ -1845,6 +1866,7 @@ class CognitiveConsolidationItemStore:
 
         items: list[CognitiveConsolidationItem] = []
         counts_by_type: dict[str, int] = {}
+        incoming_source_refs: set[str] = set()
         for row in source_set:
             artifact_type = str(row.get("artifact_type", ""))
             if artifact_type not in CONSOLIDABLE_ARTIFACT_TYPES:
@@ -1852,6 +1874,7 @@ class CognitiveConsolidationItemStore:
             source_ref = str(row.get("source_ref", row.get("id", "")))
             if not source_ref:
                 continue
+            incoming_source_refs.add(source_ref)
 
             row_content_hash = row.get("content_hash")
             row_content_hash = str(row_content_hash) if row_content_hash else None
@@ -1935,6 +1958,15 @@ class CognitiveConsolidationItemStore:
                 assert_deterministic_only_pending(board_id=board_id, items=[new_item])
                 items.append(new_item)
             counts_by_type[artifact_type] = counts_by_type.get(artifact_type, 0) + 1
+
+        # Live closeout handlers append one source at a time to the current KG
+        # generation. Keep unrelated rows already present in that generation;
+        # otherwise opening bug B silently erases pending/in-progress work for
+        # bug A. Rows replayed in the incoming set retain the existing terminal
+        # ownership rules above.
+        for source_ref, raw in existing_by_source.items():
+            if source_ref not in incoming_source_refs:
+                items.append(CognitiveConsolidationItem.from_dict(raw))
 
         with self._lock:
             active_refs = sorted(
@@ -2286,8 +2318,8 @@ class PendingMarkResult:
 
 
 _PENDING_LABELS = ("board_id", "status")
-_pending_counter: dict[tuple[str, str], int] = {}
-_pending_counter_lock = threading.Lock()
+_pending_counter = runtime_state("kg.rebuild_audit.pending_counter", dict)
+_pending_counter_lock = runtime_lock("kg.rebuild_audit.pending_counter")
 
 
 def _bump_pending(*, board_id: str, status: str, count: int = 1) -> None:
@@ -2550,8 +2582,8 @@ class ConfirmationAuditResult:
 
 
 _AUDIT_LABELS = ("board_id", "operation", "outcome")
-_audit_counter: dict[tuple[str, str, str], int] = {}
-_audit_counter_lock = threading.Lock()
+_audit_counter = runtime_state("kg.rebuild_audit.audit_counter", dict)
+_audit_counter_lock = runtime_lock("kg.rebuild_audit.audit_counter")
 
 
 def _bump_audit(*, board_id: str, operation: str, outcome: str) -> None:

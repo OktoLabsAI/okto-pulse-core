@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -39,8 +38,8 @@ from okto_pulse.core.ports.relational_effects import (
 logger = logging.getLogger(__name__)
 
 
-KG_DECAY_TICK_BATCH_SIZE = int(os.getenv("KG_DECAY_TICK_BATCH_SIZE", "200"))
-KG_DECAY_TICK_STALENESS_DAYS = int(os.getenv("KG_DECAY_TICK_STALENESS_DAYS", "7"))
+KG_DECAY_TICK_BATCH_SIZE = 200
+KG_DECAY_TICK_STALENESS_DAYS = 7
 
 
 async def publish_tick_events(
@@ -135,19 +134,12 @@ def _fetch_stale_nodes(
                 f"LIMIT $limit",
                 {"cutoff": cutoff_iso, "cursor": cursor_id, "limit": limit},
             )
-        while res.has_next():
-            row = res.get_next()
+        for row in res.rows:
             rows.append((node_type, str(row[0])))
     except Exception as exc:
         logger.warning(
             "kg.tick.fetch_stale_failed node_type=%s err=%s", node_type, exc,
         )
-    finally:
-        if res is not None:
-            try:
-                res.close()
-            except Exception:
-                pass
     return rows
 
 
@@ -171,20 +163,14 @@ def _count_stale_nodes_pre_tick(conn, cutoff_iso: str) -> int:
                 f"RETURN count(n) AS c",
                 {"cutoff": cutoff_iso},
             )
-            if res.has_next():
-                row = res.get_next()
+            if res.rows:
+                row = res.rows[0]
                 total += int(row[0] or 0)
         except Exception as exc:
             logger.debug(
                 "kg.tick.stale_count_failed node_type=%s err=%s",
                 node_type, exc,
             )
-        finally:
-            if res is not None:
-                try:
-                    res.close()
-                except Exception:
-                    pass
     return total
 
 
@@ -261,7 +247,6 @@ async def _persist_tick_run(
             error=error,
         ),
     )
-    await session.commit()
 
 
 async def _run_daily_tick(
@@ -269,8 +254,8 @@ async def _run_daily_tick(
     tick_id: str,
     session,
     board_id: str | None = None,
-    batch_size: int = KG_DECAY_TICK_BATCH_SIZE,
-    staleness_days: int = KG_DECAY_TICK_STALENESS_DAYS,
+    batch_size: int | None = None,
+    staleness_days: int | None = None,
 ) -> dict:
     """Execute the full tick cycle and persist the run row.
 
@@ -283,6 +268,22 @@ async def _run_daily_tick(
     increments ``boards_failed`` and emits a ``kg.tick.board_failed`` warning
     without aborting the remaining boards.
     """
+    from okto_pulse.core.infra.config import get_settings
+
+    settings = get_settings()
+    if batch_size is None:
+        batch_size = int(
+            getattr(settings, "kg_decay_tick_batch_size", KG_DECAY_TICK_BATCH_SIZE)
+        )
+    if staleness_days is None:
+        staleness_days = int(
+            getattr(
+                settings,
+                "kg_decay_tick_staleness_days",
+                KG_DECAY_TICK_STALENESS_DAYS,
+            )
+        )
+
     started_at = datetime.now(timezone.utc)
     cutoff_iso = (started_at - timedelta(days=staleness_days)).isoformat()
     boards_processed = 0
@@ -347,7 +348,7 @@ async def _run_daily_tick(
 
 @register_handler("kg.tick.daily")
 class KGDailyTickHandler:
-    async def handle(self, event: KGDailyTick, session: AsyncSession) -> None:
+    async def handle(self, event: KGDailyTick, session: object) -> None:
         started_at = datetime.now(timezone.utc)
         try:
             await _run_daily_tick(

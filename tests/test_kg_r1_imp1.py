@@ -34,7 +34,7 @@ from global_graph_testing import (
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
@@ -138,10 +138,10 @@ def _seed_learning(board_id, *, source_ref, title=QUERY_TEXT, canonical=0, worki
     emb = get_embedding_provider().encode(title)
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _node_attrs(source_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE,
                         title=title, embedding=emb),
@@ -155,7 +155,7 @@ def _seed_learning(board_id, *, source_ref, title=QUERY_TEXT, canonical=0, worki
 
 def _add_bug(orch, board_id, learning_id, layer):
     bug_id = f"r1i1b_{uuid.uuid4().hex[:10]}"
-    _apply_kuzu_node_create_with_timestamp(
+    _apply_graph_node_create(
         orch, "Bug", bug_id,
         _node_attrs(f"bug:{bug_id}", layer,
                     MATURITY_CANONICAL_ELIGIBLE if layer == GRAPH_LAYER_CANONICAL
@@ -170,7 +170,7 @@ def _add_bug(orch, board_id, learning_id, layer):
 def _mature_learning_with_canonical_bug(board_id, learning_id):
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"mat_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
         _add_bug(orch, board_id, learning_id, GRAPH_LAYER_CANONICAL)

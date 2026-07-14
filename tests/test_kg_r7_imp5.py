@@ -51,7 +51,7 @@ from global_graph_testing import (
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from okto_pulse.core.kg.rebuild_audit import (
     normalize_cognitive_artifact_id,
     record_cognitive_working_only_hold,
@@ -76,8 +76,17 @@ QUERY_TEXT = "caching strategy for the gateway learning"
 
 
 @pytest.fixture(autouse=True)
-def _real_board_graph_registry(_kg_registry_test_fakes):
-    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
+def _real_board_graph_registry(_kg_registry_test_fakes, _tmp_rebuild_dir):
+    from okto_pulse.community.adapters.rebuild_audit_storage import (
+        CommunityFileSystemRebuildAuditArtifactStore,
+    )
+
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        rebuild_audit_artifact_store=(
+            CommunityFileSystemRebuildAuditArtifactStore(_tmp_rebuild_dir)
+        ),
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -142,10 +151,10 @@ def _seed_learning(
     emb = get_embedding_provider().encode(title)
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _node_attrs(
                 source_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE,
@@ -154,7 +163,7 @@ def _seed_learning(
         )
         for _ in range(canonical):
             bug_id = f"imp5cb_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, "Bug", bug_id,
                 _node_attrs(
                     f"bug:{bug_id}", GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE,
@@ -166,7 +175,7 @@ def _seed_learning(
             canon_ids.append(bug_id)
         for _ in range(working):
             bug_id = f"imp5wb_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, "Bug", bug_id,
                 _node_attrs(
                     f"bug:{bug_id}", GRAPH_LAYER_WORKING, MATURITY_WORKING_IMMATURE,
@@ -182,7 +191,7 @@ def _seed_learning(
                 else MATURITY_WORKING_IMMATURE
             )
             ep_id = f"imp5ep_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, endpoint_type, ep_id,
                 _node_attrs(
                     f"{endpoint_type.lower()}:{ep_id}", layer, maturity,

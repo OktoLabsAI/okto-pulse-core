@@ -22,16 +22,17 @@ Reproduce:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 
 import pytest
 from sqlalchemy import delete
-from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import Board, BoardDesignSystem, DesignSystem
-from okto_pulse.core.models.schemas import BoardCreate
+from okto_pulse.core.models.schemas import BoardCreate, BoardSettings, BoardUpdate
 from okto_pulse.core.services.design_system import DesignSystemService
 from okto_pulse.core.services.main import BoardService
 
@@ -50,7 +51,7 @@ async def _call(name: str, **kwargs) -> dict:
 
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
@@ -73,9 +74,13 @@ async def _seed_board(db, *, gate_mode: str) -> Board:
     board = await BoardService(db).create_board(
         USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
     )
-    board.settings = {**(board.settings or {}), "design_system_gate_mode": gate_mode}
-    flag_modified(board, "settings")
-    return board
+    updated = await BoardService(db).update_board(
+        board.id,
+        USER_ID,
+        BoardUpdate(settings=BoardSettings(design_system_gate_mode=gate_mode)),
+    )
+    assert updated is not None
+    return updated
 
 
 async def test_ts_ff3cef78_board_link_blocking_mandate_true():
@@ -141,7 +146,7 @@ async def test_ts_18089a6a_no_effective_ds_effective_null_mandate_false():
             board_id = board.id
             # explicit: no board link, no design_system in default_config_snapshot.
             board.default_config_snapshot = None
-            flag_modified(board, "default_config_snapshot")
+            board.mark_dirty("default_config_snapshot")
             await db.commit()
 
         out = await _call("okto_pulse_get_board", board_id=board_id)
@@ -177,7 +182,7 @@ async def test_ts_4288636b_default_snapshot_normalizes_title_null_and_gate_from_
                     "gate_mode": "blocking",
                 }
             }
-            flag_modified(board, "default_config_snapshot")
+            board.mark_dirty("default_config_snapshot")
             await db.commit()
 
         out = await _call("okto_pulse_get_board", board_id=board_id)

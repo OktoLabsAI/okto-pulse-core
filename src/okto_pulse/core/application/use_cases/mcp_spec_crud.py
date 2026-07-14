@@ -1997,7 +1997,9 @@ class McpMigrateSpecDecisionsUseCase:
 
         context_text = spec.context or ""
         pattern = re.compile(
-            r"(?m)^##\s+Decisions\s*\n((?:(?:[-*]\s+.*\n?)|\s*\n)+?)(?=^##\s+|\Z)"
+            r"^##\s+Decisions[ \t]*\r?\n"
+            r"((?:(?:[ \t]*[-*]\s+.*(?:\r?\n|$))|(?:[ \t]*\r?\n))+)",
+            re.MULTILINE | re.IGNORECASE,
         )
         match = pattern.search(context_text)
         if not match:

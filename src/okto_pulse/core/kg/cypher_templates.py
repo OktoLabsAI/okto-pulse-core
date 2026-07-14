@@ -4,7 +4,7 @@ SECURITY: ALL templates use $-prefixed params — NEVER string interpolation.
 This mitigates Cypher injection (FR-10). Default filters (min_confidence,
 max_rows) are injected by the service layer at query time.
 
-Templates return dicts from Kuzu `RETURN` projections. The service layer
+Templates return dicts from graph backend `RETURN` projections. The service layer
 wraps results into typed Pydantic models.
 
 v0.3.0: validation_status filter removed from every template; R3 adds a
@@ -173,7 +173,7 @@ LIMIT $max_rows
 
 # ---------------------------------------------------------------------------
 # 5. find_similar_decisions — FR-13
-# HNSW vector search via QUERY_VECTOR_INDEX. Handled by kg/search.py,
+# HNSW vector search via the indexed similarity adapter. Handled by kg/search.py,
 # but we define the fallback text-match template here.
 # ---------------------------------------------------------------------------
 
@@ -244,7 +244,7 @@ LIMIT $max_rows
 # ---------------------------------------------------------------------------
 # 9. query_global — delegates to global discovery layer
 # No Cypher template here — handled by kg/search.py against the global
-# discovery.kuzu meta-graph. Placeholder for the service layer.
+# discovery.graph meta-graph. Placeholder for the service layer.
 # ---------------------------------------------------------------------------
 
 # (handled in kg_service.py via search.find_similar_nodes_by_type on global)

@@ -10,6 +10,8 @@ migration is limited to this one tool — ``mcp/server.py`` was not swept.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import json
 import uuid
@@ -63,7 +65,7 @@ async def _insert_dlq_row(db, board_id: str, idx: int) -> str:
 async def _call_tool(**kwargs) -> str:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(TOOL)
     return await tool.fn(**kwargs)
 
@@ -105,7 +107,7 @@ async def test_mcp_tool_auth_gates_before_use_case() -> None:
     auth check is still on the path before the relational work."""
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     expected = mcp_server._auth_error()
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=None)), patch(

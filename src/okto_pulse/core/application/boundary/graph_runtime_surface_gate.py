@@ -1,11 +1,8 @@
-"""AF17 graph runtime surface gate.
-
-Blocks physical storage details from new core graph runtime contracts while
-keeping the reviewed legacy compatibility shims explicit.
-"""
+"""Fail-closed boundary for graph backend details in production Core code."""
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -21,6 +18,8 @@ class GraphRuntimeSurfaceGateInput:
 
 @dataclass(frozen=True)
 class GraphRuntimeCompatibilityEntry:
+    """Deprecated ledger row retained only for import compatibility."""
+
     token: str
     legacy_surface: str
     neutral_surface: str
@@ -54,329 +53,236 @@ REQUIRED_COMPATIBILITY_FIELDS: tuple[str, ...] = (
     "validation_oracle",
 )
 
-
-HISTORICAL_GRAPH_RUNTIME_COMPATIBILITY_LEDGER: tuple[
-    GraphRuntimeCompatibilityEntry, ...
-] = (
-    GraphRuntimeCompatibilityEntry(
-        token="KuzuNodeRef",
-        legacy_surface="SQLite audit/outbox model name and table",
-        neutral_surface="Graph node reference audit ledger",
-        files=("okto_pulse/core/models/db.py",),
-        owner="okto-pulse-core/kg-governance",
-        reason=(
-            "The persisted table name and ORM class are a public migration "
-            "surface for consolidation audit, undo and global discovery outbox."
-        ),
-        removal_criterion=(
-            "Introduce a database migration plus neutral ORM alias/read model, "
-            "then retire the legacy class name after outbox and audit consumers "
-            "read the neutral surface."
-        ),
-        validation_oracle=(
-            "KG transaction/governance tests and graph runtime compatibility ledger."
-        ),
-    ),
-    GraphRuntimeCompatibilityEntry(
-        token="kuzu_node_id",
-        legacy_surface="REST/MCP KG DTO and ORM field",
-        neutral_surface="graph_node_id",
-        files=(
-            "okto_pulse/core/models/db.py",
-            "okto_pulse/core/kg/schemas.py",
-        ),
-        owner="okto-pulse-core/kg-api-compat",
-        reason=(
-            "Existing clients and persisted rows still use the legacy node-id "
-            "field. Renaming it without an additive alias would break REST/MCP "
-            "payload compatibility."
-        ),
-        removal_criterion=(
-            "Add graph_node_id as the canonical response/input alias, prove "
-            "legacy and neutral fields are equivalent, then deprecate the legacy "
-            "field in a versioned API window."
-        ),
-        validation_oracle=(
-            "AF37 public compatibility tests and KG primitive/session tests."
-        ),
-    ),
-    GraphRuntimeCompatibilityEntry(
-        token="kg_kuzu_",
-        legacy_surface="runtime settings field prefix",
-        neutral_surface="graph_runtime_* settings alias",
-        files=(
-            "okto_pulse/core/infra/config.py",
-            "okto_pulse/core/api/settings.py",
-            "okto_pulse/core/application/boundary/core_settings_defaults_gate.py",
-        ),
-        owner="okto-pulse-core/settings + okto-pulse-community/settings",
-        reason=(
-            "The current public settings API exposes Kuzu-named runtime knobs; "
-            "they must remain stable until neutral aliases ship."
-        ),
-        removal_criterion=(
-            "Introduce graph_runtime_* aliases with API/UI parity, keep legacy "
-            "env names during migration, then remove legacy names through the "
-            "public config stability gate."
-        ),
-        validation_oracle=(
-            "core_settings_defaults_gate, public_config_stability and settings "
-            "runtime effect tests."
-        ),
-    ),
-    GraphRuntimeCompatibilityEntry(
-        token="kg_connection_pool_size",
-        legacy_surface="runtime settings connection-pool field",
-        neutral_surface="graph_runtime_connection_pool_size settings alias",
-        files=(
-            "okto_pulse/core/infra/config.py",
-            "okto_pulse/core/api/settings.py",
-            "okto_pulse/core/kg/config_guard.py",
-            "okto_pulse/core/kg/connection_pool.py",
-            "okto_pulse/core/application/boundary/core_settings_defaults_gate.py",
-        ),
-        owner="okto-pulse-core/settings + okto-pulse-community/settings",
-        reason=(
-            "The connection-pool knob is part of the public runtime settings "
-            "API even though it lacks the kg_kuzu_ prefix; it must remain "
-            "stable until a provider-neutral alias ships."
-        ),
-        removal_criterion=(
-            "Introduce graph_runtime_connection_pool_size with API/UI parity, "
-            "keep the legacy field during migration, then remove it through "
-            "public config stability and connection-pool regression gates."
-        ),
-        validation_oracle=(
-            "core_settings_defaults_gate, KGConfigChangeGuard tests and runtime "
-            "settings effect tests."
-        ),
-    ),
-    GraphRuntimeCompatibilityEntry(
-        token="graph_lbug_bytes",
-        legacy_surface="KG health storage footprint response",
-        neutral_surface="storage_footprint_proxy.total_bytes/primary_bytes",
-        files=("okto_pulse/core/api/kg_health.py",),
-        owner="okto-pulse-core/kg-health",
-        reason=(
-            "Dashboard clients still read the legacy byte field; the neutral "
-            "storage footprint fields are additive and preferred."
-        ),
-        removal_criterion=(
-            "Remove only after REST/MCP/UI consumers read total_bytes/primary_bytes "
-            "and a compatibility test proves no client depends on graph_lbug_bytes."
-        ),
-        validation_oracle="AF37 public compatibility and KG health contract tests.",
-    ),
-    GraphRuntimeCompatibilityEntry(
-        token="kuzu_error",
-        legacy_surface="REST/MCP problem type",
-        neutral_surface="graph_backend_error",
-        files=(
-            "okto_pulse/core/api/kg_routes.py",
-            "okto_pulse/core/application/use_cases/kg_routes_crud.py",
-            "okto_pulse/core/kg/graph_availability.py",
-        ),
-        owner="okto-pulse-core/kg-api-compat",
-        reason=(
-            "Problem details are part of the public error contract; callers may "
-            "branch on the legacy type."
-        ),
-        removal_criterion=(
-            "Add a neutral graph_backend_error type while preserving the legacy "
-            "type mapping for one API window, then retire after client parity."
-        ),
-        validation_oracle="AF37 public compatibility tests and KG route tests.",
-    ),
-    GraphRuntimeCompatibilityEntry(
-        token="kuzu_lock_retries_5m",
-        legacy_surface="queue health retry counter",
-        neutral_surface="graph_lock_retries_5m",
-        files=(
-            "okto_pulse/core/api/queue_health.py",
-            "okto_pulse/core/kg/commit_coordinator.py",
-        ),
-        owner="okto-pulse-core/kg-operations",
-        reason=(
-            "The operations dashboard polls the legacy counter name while the "
-            "lock/retry implementation remains adapter-owned."
-        ),
-        removal_criterion=(
-            "Expose a neutral graph_lock_retries_5m field and prove queue-health "
-            "REST/MCP/UI parity before dropping the Kuzu-named field."
-        ),
-        validation_oracle="Queue health tests and AF37 public compatibility tests.",
-    ),
-)
-
-# F16 terminal budget: these rows document prior public migration concerns but
-# no longer authorize a concrete graph-runtime surface in Core.
+# Terminal state: a compatibility ledger no longer authorizes backend details.
 LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER: tuple[
     GraphRuntimeCompatibilityEntry, ...
 ] = ()
 
 
 class GraphRuntimeSurfaceGate:
+    """Reject graph-driver imports, dialect, storage markers and helper leaks."""
+
     gate_id = "graph_runtime_surface"
 
-    _FORBIDDEN_TERMS: tuple[str, ...] = (
-        "Path",
-        "Database",
-        "Connection",
-        "graph.lbug",
-        "board_kuzu_path",
-        "open_kuzu_db",
-        "apply_ladybug_lifecycle_step",
-        "affected_paths",
+    _FORBIDDEN_IMPORT_ROOTS: frozenset[str] = frozenset({
         "kuzu",
         "ladybug",
-        "neptune",
+    })
+    _FORBIDDEN_SYMBOLS: frozenset[str] = frozenset({
+        "_is_ladybug_corruption_error",
+        "_open_kuzu_db",
+        "apply_ladybug_lifecycle_step",
+        "board_kuzu_path",
+        "load_vector_extension",
+        "open_kuzu_db",
+        "get_column_names",
+        "get_next",
+        "has_next",
+    })
+    _FORBIDDEN_IDENTIFIER_FRAGMENTS: tuple[str, ...] = ("kuzu", "ladybug")
+    _FORBIDDEN_LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+        (
+            "CALL QUERY_VECTOR_INDEX",
+            re.compile(r"\bCALL\s+QUERY_VECTOR_INDEX\b", re.IGNORECASE),
+        ),
+        (
+            "CALL SHOW_TABLES",
+            re.compile(r"\bCALL\s+SHOW_TABLES\b", re.IGNORECASE),
+        ),
+        (
+            "CALL TABLE_INFO",
+            re.compile(r"\bCALL\s+TABLE_INFO\b", re.IGNORECASE),
+        ),
+        (
+            "Could not set lock on file",
+            re.compile(r"could\s+not\s+set\s+lock\s+on\s+file", re.IGNORECASE),
+        ),
+        ("wal_record.cpp", re.compile(r"wal_record\.cpp", re.IGNORECASE)),
+        ("graph.lbug", re.compile(r"\.lbug\b", re.IGNORECASE)),
+        (".kuzu", re.compile(r"\.kuzu\b", re.IGNORECASE)),
+        ("kuzu", re.compile(r"kuzu", re.IGNORECASE)),
+        ("ladybug", re.compile(r"ladybug", re.IGNORECASE)),
     )
-    _COMPATIBILITY_ALLOWLIST: tuple[str, ...] = ()
-    _SKIPPED_LEGACY_CONTRACTS: frozenset[str] = frozenset()
-    _PATH_TOKEN = re.compile(r"\bPath\b")
+
+    # Governance modules describe forbidden dependencies and therefore must be
+    # auditable without being mistaken for application/runtime behavior.
+    _EXCLUDED_PREFIXES: tuple[str, ...] = (
+        "okto_pulse/core/application/boundary/",
+        "okto_pulse/core/testing/",
+        "okto_pulse/core/kg/providers/testing/",
+    )
+    _EXCLUDED_FILES: frozenset[str] = frozenset({
+        "okto_pulse/core/infra/relational_lifecycle_decomposition.py",
+        "okto_pulse/core/kg/data_provider_ownership_gate.py",
+        "okto_pulse/core/kg/schema_import_classification_gate.py",
+        "okto_pulse/core/ports/mcp_resources.py",
+        "okto_pulse/core/repositories/orm_consumer_split_inventory.py",
+        "okto_pulse/core/repositories/relational_boundary_gate.py",
+        "okto_pulse/core/repositories/relational_consumer_inventory.py",
+    })
 
     def run(self, data: GraphRuntimeSurfaceGateInput | None = None) -> GateReport:
         data = data or GraphRuntimeSurfaceGateInput()
         root = self._source_root(data.source_root)
-        files = self._scan_targets(root)
-        violations = []
+        files, excluded = self._scan_targets(root)
+        violations: list[dict[str, object]] = []
         for file_path in files:
-            rel = self._rel(file_path)
-            if rel in self._SKIPPED_LEGACY_CONTRACTS:
-                continue
-            try:
-                lines = file_path.read_text(encoding="utf-8").splitlines()
-            except OSError as exc:
-                violations.append({
-                    "file": rel,
-                    "line": 0,
-                    "term": "<read_error>",
-                    "detail": str(exc),
-                })
-                continue
-            for line_no, line in enumerate(lines, start=1):
-                lower = line.lower()
-                for term in self._FORBIDDEN_TERMS:
-                    matched = (
-                        bool(re.search(rf"\b{re.escape(term)}\b", line))
-                        if term in {"Path", "Database", "Connection"}
-                        else term in lower
-                    )
-                    if matched:
-                        violations.append({
-                            "file": rel,
-                            "line": line_no,
-                            "term": term,
-                        })
+            violations.extend(self._scan_file(file_path))
 
-        ledger_findings = self._validate_compatibility_ledger(root)
         evidence = {
-            "forbidden_terms": list(self._FORBIDDEN_TERMS),
-            "scanned_files": [self._rel(p) for p in files],
-            "compatibility_allowlist": list(self._COMPATIBILITY_ALLOWLIST),
-            "compatibility_ledger": [
-                entry.as_dict()
-                for entry in LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER
+            "forbidden_import_roots": sorted(self._FORBIDDEN_IMPORT_ROOTS),
+            "forbidden_symbols": sorted(self._FORBIDDEN_SYMBOLS),
+            "forbidden_identifier_fragments": list(
+                self._FORBIDDEN_IDENTIFIER_FRAGMENTS
+            ),
+            "forbidden_terms": [
+                label for label, _pattern in self._FORBIDDEN_LITERAL_PATTERNS
             ],
-            "compatibility_ledger_findings": ledger_findings,
+            "scanned_files": [self._rel(path) for path in files],
+            "excluded_governance_files": excluded,
+            "compatibility_allowlist": [],
+            "compatibility_ledger": [],
+            "compatibility_ledger_findings": [],
             "violations": violations,
         }
-        if violations or ledger_findings:
+        if violations:
             return GateReport(
                 gate_id=self.gate_id,
-                subject="graph runtime core contract surface",
+                subject="graph backend details in production Core",
                 status="blocking" if data.mode == "blocking" else "xfail_advisory",
                 severity="high",
                 owner="okto-pulse-core/kg",
                 evidence=evidence,
-                observed_value=violations + ledger_findings,
+                observed_value=violations,
                 expected_value=[],
                 remediation_hint=(
-                    "Move physical storage and backend-specific symbols to an "
-                    "edition adapter or a reviewed compatibility shim with owner "
-                    "and removal criterion."
+                    "Move driver imports, dialect, physical storage markers and "
+                    "backend error mapping to an edition adapter."
                 ),
             )
         return GateReport(
             gate_id=self.gate_id,
-            subject="graph runtime core contract surface",
+            subject="graph backend details in production Core",
             status="passed",
             severity="low",
             owner="okto-pulse-core/kg",
             evidence=evidence,
         )
 
+    def _scan_file(self, file_path: Path) -> list[dict[str, object]]:
+        rel = self._rel(file_path)
+        try:
+            source = file_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return [{
+                "file": rel,
+                "line": 0,
+                "term": "<read_error>",
+                "detail": str(exc),
+            }]
+        try:
+            tree = ast.parse(source, filename=str(file_path))
+        except SyntaxError as exc:
+            return [{
+                "file": rel,
+                "line": int(exc.lineno or 0),
+                "term": "<syntax_error>",
+                "detail": str(exc),
+            }]
+
+        violations: list[dict[str, object]] = []
+        seen: set[tuple[int, str, str]] = set()
+
+        def record(node: ast.AST, term: str, category: str) -> None:
+            line = int(getattr(node, "lineno", 0) or 0)
+            key = (line, term, category)
+            if key in seen:
+                return
+            seen.add(key)
+            violations.append({
+                "file": rel,
+                "line": line,
+                "term": term,
+                "category": category,
+            })
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    root = alias.name.split(".", 1)[0].lower()
+                    if root in self._FORBIDDEN_IMPORT_ROOTS:
+                        record(node, root, "driver_import")
+                    self._record_identifier_fragment(node, alias.name, record)
+                    if alias.asname:
+                        self._record_identifier_fragment(node, alias.asname, record)
+            elif isinstance(node, ast.ImportFrom):
+                root = (node.module or "").split(".", 1)[0].lower()
+                if root in self._FORBIDDEN_IMPORT_ROOTS:
+                    record(node, root, "driver_import")
+                self._record_identifier_fragment(node, node.module or "", record)
+                for alias in node.names:
+                    self._record_identifier_fragment(node, alias.name, record)
+                    if alias.asname:
+                        self._record_identifier_fragment(node, alias.asname, record)
+            elif isinstance(node, (ast.Name, ast.Attribute)):
+                symbol = node.id if isinstance(node, ast.Name) else node.attr
+                if symbol in self._FORBIDDEN_SYMBOLS:
+                    record(node, symbol, "backend_symbol")
+                self._record_identifier_fragment(node, symbol, record)
+            elif (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            ):
+                if node.name in self._FORBIDDEN_SYMBOLS:
+                    record(node, node.name, "backend_symbol")
+                self._record_identifier_fragment(node, node.name, record)
+            elif isinstance(node, ast.arg):
+                self._record_identifier_fragment(node, node.arg, record)
+            elif isinstance(node, ast.keyword) and node.arg:
+                self._record_identifier_fragment(node, node.arg, record)
+            elif (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+            ):
+                for label, pattern in self._FORBIDDEN_LITERAL_PATTERNS:
+                    if pattern.search(node.value):
+                        record(node, label, "backend_literal")
+
+        return violations
+
+    def _record_identifier_fragment(self, node, identifier, record) -> None:
+        normalized = identifier.lower()
+        for fragment in self._FORBIDDEN_IDENTIFIER_FRAGMENTS:
+            if fragment in normalized:
+                record(node, fragment, "backend_identifier")
+
     def _source_root(self, source_root: Path | None) -> Path:
-        root = source_root or Path(__file__).resolve().parents[4]
-        root = Path(root)
+        root = Path(source_root or Path(__file__).resolve().parents[4])
         if (root / "okto_pulse" / "core").exists():
             return root
         if (root / "src" / "okto_pulse" / "core").exists():
             return root / "src"
         return root
 
-    def _scan_targets(self, source_root: Path) -> list[Path]:
+    def _scan_targets(self, source_root: Path) -> tuple[list[Path], list[str]]:
         core_root = source_root / "okto_pulse" / "core"
         targets: list[Path] = []
-        interfaces = core_root / "kg" / "interfaces"
-        if interfaces.exists():
-            targets.extend(sorted(interfaces.glob("*.py")))
-        schema_contract = core_root / "kg" / "schema_contract.py"
-        if schema_contract.exists():
-            targets.append(schema_contract)
-        return targets
+        excluded: list[str] = []
+        for path in sorted(core_root.rglob("*.py")) if core_root.exists() else []:
+            rel = self._rel(path)
+            if rel in self._EXCLUDED_FILES or any(
+                rel.startswith(prefix) for prefix in self._EXCLUDED_PREFIXES
+            ):
+                excluded.append(rel)
+                continue
+            targets.append(path)
+        return targets, excluded
 
-    def _rel(self, path: Path) -> str:
+    @staticmethod
+    def _rel(path: Path) -> str:
         parts = path.parts
         if "okto_pulse" in parts:
-            idx = parts.index("okto_pulse")
-            return Path(*parts[idx:]).as_posix()
+            return Path(*parts[parts.index("okto_pulse"):]).as_posix()
         return path.as_posix()
-
-    def _validate_compatibility_ledger(self, source_root: Path) -> list[dict[str, object]]:
-        findings: list[dict[str, object]] = []
-        for entry in LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER:
-            missing = [
-                field
-                for field in REQUIRED_COMPATIBILITY_FIELDS
-                if not getattr(entry, field)
-            ]
-            if missing:
-                findings.append({
-                    "token": entry.token or "<missing>",
-                    "diagnostic_code": "incomplete_compatibility_entry",
-                    "missing_fields": missing,
-                })
-                continue
-
-            existing_files = [source_root / file for file in entry.files]
-            readable_files = [file for file in existing_files if file.exists()]
-            if not readable_files:
-                continue
-            present = False
-            for file in readable_files:
-                try:
-                    if entry.token in file.read_text(encoding="utf-8"):
-                        present = True
-                        break
-                except OSError as exc:
-                    findings.append({
-                        "token": entry.token,
-                        "diagnostic_code": "compatibility_file_read_error",
-                        "file": self._rel(file),
-                        "detail": str(exc),
-                    })
-                    present = True
-                    break
-            if not present:
-                findings.append({
-                    "token": entry.token,
-                    "diagnostic_code": "stale_compatibility_entry",
-                    "files": list(entry.files),
-                    "owner": entry.owner,
-                    "removal_criterion": entry.removal_criterion,
-                })
-        return findings
 
 
 __all__ = [

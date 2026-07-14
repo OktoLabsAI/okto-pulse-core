@@ -41,6 +41,9 @@ from sqlalchemy_test_models import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import SpecMove, SpecUpdate
+from okto_pulse.core.ports.application_persistence import (
+    get_application_persistence_port,
+)
 from okto_pulse.core.services.main import (
     SpecLockedError,
     SpecService,
@@ -269,6 +272,25 @@ def _valid_submit_data(
     }
 
 
+async def _submit_spec_validation(service, db, *args, **kwargs):
+    """Model the caller-owned transaction used by the application UoW."""
+    result = await service.submit_spec_validation(*args, **kwargs)
+    await get_application_persistence_port().flush(db)
+    return result
+
+
+async def _move_spec(service, db, *args, **kwargs):
+    result = await service.move_spec(*args, **kwargs)
+    await get_application_persistence_port().flush(db)
+    return result
+
+
+async def _update_spec(service, db, *args, **kwargs):
+    result = await service.update_spec(*args, **kwargs)
+    await get_application_persistence_port().flush(db)
+    return result
+
+
 # ===========================================================================
 # 1. State guard
 # ===========================================================================
@@ -283,7 +305,7 @@ class TestStateGuard:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -300,7 +322,7 @@ class TestStateGuard:
         async with db_factory() as db:
             await db.execute(DomainEventRow.__table__.delete())
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -359,7 +381,7 @@ class TestStateGuard:
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'draft'"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -401,7 +423,7 @@ class TestStateGuard:
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'in_progress'"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -443,7 +465,7 @@ class TestStateGuard:
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'done'"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -485,7 +507,7 @@ class TestStateGuard:
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'validated'"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -527,7 +549,7 @@ class TestStateGuard:
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="'review'"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -540,7 +562,7 @@ class TestStateGuard:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="not found"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id="nonexistent-spec",
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -561,7 +583,7 @@ class TestThresholdPass:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -581,7 +603,7 @@ class TestThresholdPass:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -604,7 +626,7 @@ class TestThresholdPass:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -627,7 +649,7 @@ class TestThresholdPass:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -652,7 +674,7 @@ class TestThresholdFailCompleteness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -678,7 +700,7 @@ class TestThresholdFailCompleteness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -701,7 +723,7 @@ class TestThresholdFailCompleteness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -733,7 +755,7 @@ class TestThresholdFailAssertiveness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -758,7 +780,7 @@ class TestThresholdFailAssertiveness:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -790,7 +812,7 @@ class TestThresholdFailAmbiguity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -816,7 +838,7 @@ class TestThresholdFailAmbiguity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -839,7 +861,7 @@ class TestThresholdFailAmbiguity:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -871,7 +893,7 @@ class TestRecommendationReject:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -896,7 +918,7 @@ class TestRecommendationReject:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -930,7 +952,7 @@ class TestAppendOnlyHistory:
         async with db_factory() as db:
             service = SpecService(db)
             # First submission: fails (low completeness)
-            result1 = await service.submit_spec_validation(
+            result1 = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -948,7 +970,7 @@ class TestAppendOnlyHistory:
             assert result1["outcome"] == "failed"
 
             # Second submission: passes
-            result2 = await service.submit_spec_validation(
+            result2 = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -957,24 +979,24 @@ class TestAppendOnlyHistory:
             assert result2["outcome"] == "success"
 
             # Move back to approved for third submission
-            await service.move_spec(
+            await _move_spec(service, db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
             )
-            await service.move_spec(
+            await _move_spec(service, db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.REVIEW),
             )
-            await service.move_spec(
+            await _move_spec(service, db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.APPROVED),
             )
 
             # Third submission: fails again (reject)
-            result3 = await service.submit_spec_validation(
+            result3 = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1002,7 +1024,7 @@ class TestAppendOnlyHistory:
             service = SpecService(db)
             results = []
             for i in range(3):
-                result = await service.submit_spec_validation(
+                result = await _submit_spec_validation(service, db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1026,7 +1048,7 @@ class TestAppendOnlyHistory:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1041,7 +1063,7 @@ class TestAppendOnlyHistory:
                     "recommendation": "approve",
                 },
             )
-            result2 = await service.submit_spec_validation(
+            result2 = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1056,7 +1078,7 @@ class TestAppendOnlyHistory:
         async with db_factory() as db:
             service = SpecService(db)
             # Submit a successful validation → spec becomes validated
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1066,26 +1088,26 @@ class TestAppendOnlyHistory:
             validation_count = len(spec.validations)
 
             # Move back to draft
-            await service.move_spec(
+            await _move_spec(service, db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
             )
 
             # Move back through review to approved so we can submit again
-            await service.move_spec(
+            await _move_spec(service, db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.REVIEW),
             )
-            await service.move_spec(
+            await _move_spec(service, db,
                 SPEC_ID,
                 USER_ID,
                 SpecMove(status=SpecStatus.APPROVED),
             )
 
             # Submit another validation
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1121,7 +1143,7 @@ class TestContentLock:
         async with db_factory() as db:
             service = SpecService(db)
             # First, pass validation
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=content_lock_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1129,7 +1151,7 @@ class TestContentLock:
             )
             # Now try to update — should be blocked
             with pytest.raises(SpecLockedError) as exc_info:
-                await service.update_spec(
+                await _update_spec(service, db,
                     content_lock_spec_id,
                     USER_ID,
                     SpecUpdate(description="New description after validation"),
@@ -1143,14 +1165,14 @@ class TestContentLock:
         await _seed_board(db_factory, board_id=content_lock_board_id, spec_id=content_lock_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=content_lock_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             with pytest.raises(SpecLockedError):
-                await service.update_spec(
+                await _update_spec(service, db,
                     content_lock_spec_id,
                     USER_ID,
                     SpecUpdate(title="New title"),
@@ -1163,14 +1185,14 @@ class TestContentLock:
         await _seed_board(db_factory, board_id=cl_board_id, spec_id=cl_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=cl_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             with pytest.raises(SpecLockedError):
-                await service.update_spec(
+                await _update_spec(service, db,
                     cl_spec_id,
                     USER_ID,
                     SpecUpdate(functional_requirements=["New FR"]),
@@ -1183,7 +1205,7 @@ class TestContentLock:
         await _seed_board(db_factory, board_id=cl_board_id, spec_id=cl_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=cl_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1202,14 +1224,14 @@ class TestContentLock:
         await _seed_board(db_factory, board_id=cl_board_id, spec_id=cl_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=cl_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             try:
-                await service.update_spec(
+                await _update_spec(service, db,
                     SPEC_ID,
                     USER_ID,
                     SpecUpdate(description="attempted edit"),
@@ -1236,7 +1258,7 @@ class TestLockRelease:
         async with db_factory() as db:
             service = SpecService(db)
             # Pass validation
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1246,7 +1268,7 @@ class TestLockRelease:
             assert spec.current_validation_id is not None
 
             # Move back to draft
-            await service.move_spec(
+            await _move_spec(service, db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
@@ -1264,31 +1286,31 @@ class TestLockRelease:
         async with db_factory() as db:
             service = SpecService(db)
             # Pass validation
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             # Move back to draft (releases lock)
-            await service.move_spec(
+            await _move_spec(service, db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
             )
             # Move back through review to approved
-            await service.move_spec(
+            await _move_spec(service, db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.REVIEW),
             )
-            await service.move_spec(
+            await _move_spec(service, db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.APPROVED),
             )
             # Now edit should work
-            spec = await service.update_spec(
+            spec = await _update_spec(service, db,
                 lr_spec_id,
                 USER_ID,
                 SpecUpdate(description="Updated after lock release"),
@@ -1303,7 +1325,7 @@ class TestLockRelease:
         async with db_factory() as db:
             service = SpecService(db)
             # Submit multiple validations
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1318,7 +1340,7 @@ class TestLockRelease:
                     "recommendation": "approve",
                 },
             )
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1328,7 +1350,7 @@ class TestLockRelease:
             assert len(spec.validations) == 2
 
             # Move back to draft
-            await service.move_spec(
+            await _move_spec(service, db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
@@ -1344,7 +1366,7 @@ class TestLockRelease:
         await _seed_board(db_factory, board_id=lr_board_id, spec_id=lr_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=lr_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1354,7 +1376,7 @@ class TestLockRelease:
             assert spec.current_validation_id is not None
 
             # Move back to approved (not draft)
-            await service.move_spec(
+            await _move_spec(service, db,
                 lr_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.APPROVED),
@@ -1381,7 +1403,7 @@ class TestListValidations:
             service = SpecService(db)
             # Submit 3 validations
             for i in range(3):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=lv_spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1409,7 +1431,7 @@ class TestListValidations:
         async with db_factory() as db:
             service = SpecService(db)
             # Submit 2 validations
-            result1 = await service.submit_spec_validation(
+            result1 = await _submit_spec_validation(service, db,
                 spec_id=lv_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1424,7 +1446,7 @@ class TestListValidations:
                     "recommendation": "approve",
                 },
             )
-            result2 = await service.submit_spec_validation(
+            result2 = await _submit_spec_validation(service, db,
                 spec_id=lv_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1447,14 +1469,14 @@ class TestListValidations:
         await _seed_board(db_factory, board_id=lv_board_id, spec_id=lv_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=lv_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
             # Move back to draft
-            await service.move_spec(
+            await _move_spec(service, db,
                 lv_spec_id,
                 USER_ID,
                 SpecMove(status=SpecStatus.DRAFT),
@@ -1471,7 +1493,7 @@ class TestListValidations:
         await _seed_board(db_factory, board_id=lv_board_id, spec_id=lv_spec_id)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=lv_spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="TestReviewer",
@@ -1516,7 +1538,7 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="completeness"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1537,7 +1559,7 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="completeness"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1558,7 +1580,7 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="assertiveness"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1579,7 +1601,7 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="ambiguity"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1600,7 +1622,7 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="ambiguity"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1621,7 +1643,7 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="recommendation"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1643,7 +1665,7 @@ class TestInputValidation:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises((KeyError, TypeError, ValueError)):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=SPEC_ID,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1708,7 +1730,7 @@ class TestBoardLevelConfig:
             service = SpecService(db)
             # With default thresholds (80/80/30) this would pass, but with
             # custom thresholds (95/90/10) it should fail on completeness.
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1764,7 +1786,7 @@ class TestBoardLevelConfig:
             await db.commit()
 
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1814,7 +1836,7 @@ class TestBoardLevelConfig:
             await db.commit()
 
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1856,7 +1878,7 @@ class TestBoardLevelConfig:
 
             service = SpecService(db)
             with pytest.raises(ValueError, match="does not require"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -1868,7 +1890,7 @@ class TestBoardLevelConfig:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1903,7 +1925,7 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="TestReviewer",
@@ -1925,7 +1947,7 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1941,7 +1963,7 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id="reviewer-123",
                 reviewer_name="JaneReviewer",
@@ -1957,7 +1979,7 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1973,7 +1995,7 @@ class TestValidationRecordStructure:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -1997,7 +2019,7 @@ class TestEdgeCases:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            await service.submit_spec_validation(
+            await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2024,7 +2046,7 @@ class TestEdgeCases:
         await _seed_board(db_factory)
         async with db_factory() as db:
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2049,7 +2071,7 @@ class TestEdgeCases:
         async with db_factory() as db:
             service = SpecService(db)
             # Low ambiguity should pass
-            result_pass = await service.submit_spec_validation(
+            result_pass = await _submit_spec_validation(service, db,
                 spec_id=SPEC_ID,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2093,7 +2115,7 @@ class TestEdgeCases:
             await db.commit()
 
             service = SpecService(db)
-            result = await service.submit_spec_validation(
+            result = await _submit_spec_validation(service, db,
                 spec_id=spec_id,
                 reviewer_id=USER_ID,
                 reviewer_name="Tester",
@@ -2168,7 +2190,7 @@ class TestAcScenarioPrecheck:
         async with db_factory() as db:
             service = SpecService(db)
             with pytest.raises(ValueError, match="acceptance criteria lack test scenarios"):
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",
@@ -2229,7 +2251,7 @@ class TestFrCoverageMessageFormat:
 
             service = SpecService(db)
             with pytest.raises(ValueError) as exc_info:
-                await service.submit_spec_validation(
+                await _submit_spec_validation(service, db,
                     spec_id=spec_id,
                     reviewer_id=USER_ID,
                     reviewer_name="Tester",

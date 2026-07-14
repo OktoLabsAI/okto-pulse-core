@@ -98,6 +98,9 @@ def test_empty_mapping_is_identity():
 
 @pytest.fixture
 def fold_board(monkeypatch):
+    from okto_pulse.core.infra.config import configure_settings, get_settings
+
+    original_settings = get_settings()
     base = Path(tempfile.mkdtemp(prefix="okto_pulse_fold_"))
     monkeypatch.setenv("KG_BASE_DIR", str(base))
     monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
@@ -113,6 +116,7 @@ def fold_board(monkeypatch):
         pass
     invalidate_equivalence_fold_cache()
     gc.collect()
+    configure_settings(original_settings)
     shutil.rmtree(base, ignore_errors=True)
 
 

@@ -2,7 +2,7 @@
 
 The rebuild/recovery drain (BoardRebuildIngestionAdapter -> ConsolidationQueue
 source=rebuild:* -> _process_queue_entry -> _commit_consolidation_with_board_graph_lifecycle
--> commit_consolidation -> _validate_kuzu_connectivity_before_commit + the IMP2
+-> commit_consolidation -> _validate_graph_connectivity_before_commit + the IMP2
 post-commit maintenance hook) inherits the IMP1 guard and IMP2 partition ledger
 by construction — there is NO rebuild-only classifier and the deterministic
 worker never emits Learning cognition.
@@ -30,7 +30,7 @@ from okto_pulse.core.kg.connectivity_guard import (
 )
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     add_node_candidate,
     begin_consolidation,
@@ -106,10 +106,10 @@ def _seed_bug(board_id: str, *, graph_layer: str) -> str:
     )
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Bug", bug_id,
             _node_attrs(f"bug:{bug_id}", graph_layer, maturity),
         )
@@ -126,14 +126,14 @@ def _seed_materialized_learning_with_working_bug(board_id: str, source_ref: str)
     bug_id = f"r7i3b_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _node_attrs(source_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE),
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Bug", bug_id,
             _node_attrs(f"bug:{bug_id}", GRAPH_LAYER_WORKING, MATURITY_WORKING_IMMATURE),
         )

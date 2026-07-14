@@ -1,4 +1,4 @@
-"""S02: selected REST adapters remain thin UoW-based orchestration."""
+"""S02: Community REST adapters remain thin UoW-based orchestration."""
 
 from __future__ import annotations
 
@@ -14,10 +14,11 @@ _REST_FILES = (
 
 def _module_tree(filename: str) -> ast.Module:
     path = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
+        / "okto_labs_pulse_community"
         / "src"
         / "okto_pulse"
-        / "core"
+        / "community"
         / "api"
         / filename
     )

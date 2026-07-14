@@ -6,6 +6,8 @@ import logging
 import threading
 from typing import Callable
 
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
+
 from .fixed import FixedHopPlanner
 from .iterative import IterativeHopPlanner
 from .llm import LLMHopPlanner
@@ -14,8 +16,8 @@ from .utils import DEFAULT_HOPS
 
 logger = logging.getLogger("okto_pulse.kg.adaptive_hops")
 
-_cache: dict[str, object] = {}
-_cache_lock = threading.Lock()
+_cache = runtime_state("kg.adaptive_hops.factory_cache", dict)
+_cache_lock = runtime_lock("kg.adaptive_hops.factory_cache")
 
 
 def get_hop_planner(

@@ -19,7 +19,8 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
+from okto_pulse.community.config import CommunitySettings
+from okto_pulse.core.infra.config import configure_settings, get_settings
 from okto_pulse.core.kg.config_guard import (
     ConfigBlockReason,
     SETTING_GROUP_BUFFER,
@@ -94,7 +95,7 @@ async def test_put_buffer_change_persists_with_implicit_restart_required(
 ):
     """Buffer change with no explicit restart_policy uses default
     restart_policy='required' (matches existing semantics) and is allowed."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
         json={"kg_kuzu_buffer_pool_mb": 256},
@@ -108,7 +109,7 @@ async def test_put_buffer_change_persists_with_implicit_restart_required(
 async def test_put_connection_pool_change_persists_with_implicit_restart_required(
     settings_client,
 ):
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
         json={"kg_connection_pool_size": 12},
@@ -121,7 +122,7 @@ async def test_put_connection_pool_change_persists_with_implicit_restart_require
 
 @pytest.mark.asyncio
 async def test_put_storage_grow_with_migration_plan_persists(settings_client):
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
         json={
@@ -142,7 +143,7 @@ async def test_put_storage_grow_without_migration_plan_is_blocked(
 ):
     """val_06cd6809 enforcement: storage group requires migration_plan_ref.
     The endpoint MUST refuse to persist and return HTTP 400."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     # Baseline GET to establish boot snapshot.
     await settings_client.get("/api/v1/settings/runtime")
 
@@ -185,7 +186,7 @@ async def test_put_storage_grow_without_migration_plan_is_blocked(
 async def test_put_storage_shrink_below_current_is_blocked(settings_client):
     """val_06cd6809 enforcement: storage shrink below current footprint
     is blocked even with a migration plan + restart policy."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
 
     # First, grow storage to 4 (allowed with migration).
     grow = await settings_client.put(
@@ -226,7 +227,7 @@ async def test_put_buffer_with_restart_policy_none_is_blocked(
     settings_client,
 ):
     """Buffer changes are restart-required; explicit policy=none blocks."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
         json={
@@ -245,7 +246,7 @@ async def test_put_connection_pool_with_restart_policy_none_is_blocked(
     settings_client,
 ):
     """Connection-pool changes are graph-runtime constructor-time settings."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
         json={
@@ -268,7 +269,7 @@ async def test_event_queue_key_change_does_not_go_through_guard(
 ):
     """Event queue keys are hot-reloadable. The guard should NOT bump
     its counter for them."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
         json={"kg_queue_max_concurrent_workers": 4},

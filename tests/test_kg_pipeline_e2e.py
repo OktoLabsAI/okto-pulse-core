@@ -40,16 +40,11 @@ pytestmark = pytest.mark.e2e
 
 
 @pytest.fixture(autouse=True)
-def _restore_conftest_engine():
+def _restore_conftest_engine(preserve_relational_runtime):
     """FU-2 F4: the e2e contract test calls create_database() against its
-    throwaway DB, which swaps the process-global engine. Restore the conftest
-    engine on teardown so later files keep seeing the session temp database."""
-    from okto_pulse.core.infra.database import create_database, get_engine
-
-    prior_url = str(get_engine().url)
+    throwaway DB. The shared fixture closes the replacement runtime and restores
+    the conftest runtime before later files execute."""
     yield
-    if str(get_engine().url) != prior_url:
-        create_database(prior_url, echo=False)
 
 
 @pytest.fixture
@@ -115,8 +110,8 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
     from okto_pulse.core.kg.health import (
         check_global,
-        check_kuzu,
-        check_kuzu_node_refs,
+        check_graph,
+        check_graph_node_refs,
         check_outbox,
         check_queue,
     )
@@ -341,7 +336,10 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
         assert commit.connectivity["passed"] is True
 
     # --- drain the outbox once to mirror into global discovery ---------
-    worker = GlobalOutboxProcessor(session_factory=session_factory, interval_seconds=5)
+    worker = GlobalOutboxProcessor(
+        relational_scope_factory=session_factory,
+        interval_seconds=5,
+    )
     # process_once is the test-friendly hook — no asyncio.Task lifecycle needed.
     processed = await worker.process_once()
     assert processed >= 1, f"outbox worker did not process any events (got {processed})"
@@ -349,8 +347,8 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
     # --- assert every layer reports healthy ----------------------------
     async with session_factory() as db:
         queue_h = await check_queue(db, board_id)
-        kuzu_h = check_kuzu(board_id)
-        refs_h = await check_kuzu_node_refs(db, board_id, kuzu_total=kuzu_h.counts.get("total"))
+        kuzu_h = check_graph(board_id)
+        refs_h = await check_graph_node_refs(db, board_id, graph_total=kuzu_h.counts.get("total"))
         outbox_h = await check_outbox(db, board_id)
         global_h = check_global(board_id)
 

@@ -117,7 +117,7 @@ def test_ts_66c96a7e_base_registry_skips_onda_a_but_keeps_graph_audit_eventbus(
             global_discovery_runtime=_Sentinel(),
             board_source_reader=_Sentinel(),
         )
-        configure_kg_registry(session_factory=object(), base_registry=base)
+        configure_kg_registry(base_registry=base)
         reg = get_kg_registry()
 
         # Onda A slots are the community-supplied sentinels...
@@ -152,7 +152,7 @@ def test_ts_66c96a7e_no_base_path_fails_closed(monkeypatch):
         # R-P2-03: the no-base / no-factory path is NO LONGER an escape to the
         # implicit Onda A defaults — it fails closed with an actionable error.
         with pytest.raises(RuntimeError):
-            configure_kg_registry(session_factory=object())
+            configure_kg_registry()
         # The raise happens BEFORE any build: the core embedded Onda A were NOT
         # instantiated (no implicit _build_defaults side-effect).
         assert counts == {"cache": 0, "rate_limiter": 0, "session_store": 0, "embedding": 0}
@@ -186,7 +186,7 @@ def test_ts_66c96a7e_defaults_factory_path_also_composes(monkeypatch):
                 board_source_reader=_Sentinel(),
             )
 
-        configure_kg_registry(session_factory=object(), defaults_factory=_factory)
+        configure_kg_registry(defaults_factory=_factory)
         reg = get_kg_registry()
         assert counts == {"cache": 0, "rate_limiter": 0, "session_store": 0, "embedding": 0}
         assert isinstance(reg.graph_store, _Sentinel)

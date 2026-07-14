@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextvars import copy_context
 
 import pytest
 
@@ -91,7 +92,10 @@ def test_get_sync_lock_serialises_threads():
         with advisory_lock_sync("b-sync", "art-1"):
             seen.append(i)
 
-    threads = [threading.Thread(target=worker, args=(i,)) for i in range(3)]
+    threads = [
+        threading.Thread(target=copy_context().run, args=(worker, i))
+        for i in range(3)
+    ]
     for t in threads:
         t.start()
     for t in threads:

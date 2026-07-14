@@ -181,7 +181,7 @@ async def test_consolidation_commit_failure_persists_no_partial_node(
 
     actor = ActorContext(agent_id, "mcp")
     with patch(
-        "okto_pulse.core.kg.primitives._apply_kuzu_node_create_with_timestamp",
+        "okto_pulse.core.kg.primitives._apply_graph_node_create",
         side_effect=RuntimeError("mid-commit failure (R01A MCP-FU1)"),
     ):
         try:
@@ -238,15 +238,24 @@ def test_migrated_consolidation_tools_have_no_relational_session():
 
 
 def test_server_injects_uow_not_get_db_for_mcp_into_kg_tools():
+    import ast
     from pathlib import Path
 
     from okto_pulse.core.mcp import server as mcp_server
 
-    src = Path(mcp_server.__file__).read_text(encoding="utf-8")
-    assert (
-        "_register_kg_tools(mcp, get_agent=_get_authenticated_agent, "
-        "get_uow=get_unit_of_work_factory_for_mcp)" in src
-    )
+    tree = ast.parse(Path(mcp_server.__file__).read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_register_kg_tools"
+    ]
+    assert len(calls) == 1
+    keywords = {keyword.arg: keyword.value for keyword in calls[0].keywords}
+    assert isinstance(keywords.get("get_uow"), ast.Name)
+    assert keywords["get_uow"].id == "get_unit_of_work_factory_for_mcp"
+    assert "get_db" not in keywords
 
 
 def test_commit_tool_preserves_ownership_precheck_and_r7_hold():

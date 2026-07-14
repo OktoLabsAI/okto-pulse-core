@@ -49,48 +49,33 @@ BoardSourceStore = _board_source_reader.BoardSourceStore
 # ---------------------------------------------------------------------------
 
 def _make_rebuild_test_app(board_id: str = "b-test"):
-    """Return a FastAPI app with get_db overridden to satisfy FR10/FR9 gates."""
+    """Return a FastAPI app with the UoW overridden for FR10/FR9 gates."""
     from types import SimpleNamespace
 
     from fastapi import FastAPI
 
+    from okto_pulse.community.api.deps import get_unit_of_work
     from okto_pulse.community.api.router import api_router
-    from okto_pulse.core.infra.database import get_db
 
     _fake_board = SimpleNamespace(id=board_id, owner_id="user-lifecycle-test")
 
-    class _FakeResult:
-        def scalar_one_or_none(self):
-            # ShareService.get_user_permission calls execute() for BoardShare rows;
-            # return a fake share with "owner" permission so the 403 gate passes.
-            return SimpleNamespace(permission="owner")
+    class _Boards:
+        async def get(self, candidate_board_id):
+            return _fake_board if candidate_board_id == board_id else None
 
-    class _FakeSession:
-        async def __aenter__(self):
-            return self
+    class _Shares:
+        async def get_user_permission(self, candidate_board_id, _user_id):
+            return "owner" if candidate_board_id == board_id else None
 
-        async def __aexit__(self, *args):
-            pass
-
-        async def execute(self, stmt):
-            return _FakeResult()
-
-        async def get(self, model_class, pk):
-            # _require_board_access + ShareService._get_board call db.get(Board, id).
-            return _fake_board
-
-        async def commit(self):
-            pass
-
-        async def rollback(self):
-            pass
-
-    async def _fake_db():
-        yield _FakeSession()
+    async def _fake_uow():
+        yield SimpleNamespace(
+            boards=_Boards(),
+            services=SimpleNamespace(shares=_Shares()),
+        )
 
     app = FastAPI()
     app.include_router(api_router)
-    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return app
 
 
@@ -1011,7 +996,7 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
     """val_d0da4a75 #1: /preflight is the manifest issuance point.
     Response MUST include manifest_ref + source_set_hash, and the
     manifest must be loadable via the canonical store."""
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b-life") as client:
         resp = client.post(
             "/api/v1/kg/rebuild/preflight",
             params={"board_id": "b-life"},
@@ -1036,7 +1021,7 @@ def test_preflight_endpoint_returns_manifest_ref_and_source_set_hash():
 def test_confirm_uses_existing_manifest_does_not_recreate():
     """val_d0da4a75 #1: /confirm loads the manifest_ref produced by
     /preflight; it MUST NOT enumerate or build a new manifest."""
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b-confirm-isolated") as client:
         pre = client.post(
             "/api/v1/kg/rebuild/preflight",
             params={"board_id": "b-confirm-isolated"},
@@ -1077,7 +1062,7 @@ def test_confirm_uses_existing_manifest_does_not_recreate():
 
 def test_confirm_fails_when_manifest_ref_not_found():
     """val_d0da4a75 regression: confirm must reject unknown manifest_ref."""
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b1") as client:
         resp = client.post(
             "/api/v1/kg/rebuild/confirm",
             json={
@@ -1095,7 +1080,7 @@ def test_confirm_fails_when_manifest_ref_not_found():
 def test_confirm_fails_when_preflight_hash_mismatch():
     """val_d0da4a75 regression: confirm must reject when preflight_hash
     does not match the manifest's bound hash."""
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b-mismatch") as client:
         pre = client.post(
             "/api/v1/kg/rebuild/preflight",
             params={"board_id": "b-mismatch"},
@@ -1118,7 +1103,7 @@ def test_confirm_fails_when_preflight_hash_mismatch():
 
 def test_confirm_rejects_invalid_preflight_hash_shape():
     """val_d0da4a75 #3: short or non-hex preflight_hash rejected."""
-    with _client_with_router() as client:
+    with _client_with_router(board_id="b1") as client:
         resp = client.post(
             "/api/v1/kg/rebuild/confirm",
             json={

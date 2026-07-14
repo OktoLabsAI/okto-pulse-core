@@ -7,10 +7,12 @@ providers across tenants or editions.
 
 from __future__ import annotations
 
+from collections import Counter, deque
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Mapping
+from threading import RLock
+from typing import Any, Callable, Iterator, Mapping
 
 
 @dataclass(slots=True)
@@ -39,7 +41,116 @@ class RuntimeValueRegistry:
         return dict(self._values)
 
     def copy(self) -> "RuntimeValueRegistry":
-        return RuntimeValueRegistry(dict(self._values))
+        copied: dict[str, Any] = {}
+        for key, value in self._values.items():
+            clone = getattr(value, "clone_for_runtime", None)
+            if callable(clone):
+                copied[key] = clone()
+            elif key.startswith("runtime.lock."):
+                copied[key] = RLock()
+            elif key.startswith("runtime.state."):
+                if isinstance(value, Counter):
+                    copied[key] = value.copy()
+                elif isinstance(value, dict):
+                    copied[key] = value.copy()
+                elif isinstance(value, list):
+                    copied[key] = list(value)
+                elif isinstance(value, set):
+                    copied[key] = set(value)
+                elif isinstance(value, deque):
+                    copied[key] = value.copy()
+                else:
+                    copied[key] = value
+            else:
+                copied[key] = value
+        return RuntimeValueRegistry(copied)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeLock:
+    """Immutable descriptor for a lock owned by the active runtime context."""
+
+    key: str
+
+    def _resolve(self) -> RLock:
+        registry = current_runtime_values(create=True)
+        assert registry is not None
+        lock = registry.resolve(self.key)
+        if lock is None:
+            lock = RLock()
+            registry.register(self.key, lock)
+        return lock
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        return self._resolve().acquire(blocking, timeout)
+
+    def release(self) -> None:
+        self._resolve().release()
+
+    def __enter__(self) -> "RuntimeLock":
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.release()
+
+
+def runtime_lock(key: str) -> RuntimeLock:
+    """Create a descriptor whose concrete lock is runtime-context owned."""
+
+    return RuntimeLock(f"runtime.lock.{key}")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeState:
+    """Immutable descriptor for mutable state owned by a runtime context."""
+
+    key: str
+    factory: Callable[[], Any]
+
+    def resolve(self) -> Any:
+        registry = current_runtime_values(create=True)
+        assert registry is not None
+        value = registry.resolve(self.key)
+        if value is None:
+            value = self.factory()
+            registry.register(self.key, value)
+        return value
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.resolve(), name)
+
+    def __getitem__(self, key: Any) -> Any:
+        return self.resolve()[key]
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        self.resolve()[key] = value
+
+    def __delitem__(self, key: Any) -> None:
+        del self.resolve()[key]
+
+    def __iter__(self):
+        return iter(self.resolve())
+
+    def __len__(self) -> int:
+        return len(self.resolve())
+
+    def __contains__(self, item: Any) -> bool:
+        return item in self.resolve()
+
+    def __bool__(self) -> bool:
+        return bool(self.resolve())
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, RuntimeState):
+            other = other.resolve()
+        return bool(self.resolve() == other)
+
+
+def runtime_state(key: str, factory: Callable[[], Any]) -> RuntimeState:
+    """Create a descriptor whose mutable value is runtime-context owned."""
+
+    return RuntimeState(f"runtime.state.{key}", factory)
 
 
 _active_runtime_values: ContextVar[RuntimeValueRegistry | None] = ContextVar(
@@ -113,6 +224,8 @@ def runtime_value_scope(
 
 
 __all__ = [
+    "RuntimeLock",
+    "RuntimeState",
     "RuntimeValueRegistry",
     "capture_runtime_values_for_tests",
     "current_runtime_values",
@@ -122,5 +235,7 @@ __all__ = [
     "restore_runtime_values_for_tests",
     "resolve_runtime_value",
     "runtime_value_scope",
+    "runtime_lock",
+    "runtime_state",
     "snapshot_runtime_values",
 ]

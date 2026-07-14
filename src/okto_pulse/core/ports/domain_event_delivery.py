@@ -54,12 +54,14 @@ class CognitiveCardFacts:
     card_type: str | None
     title: str | None
     action_plan: str | None
+    content_hash: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class CognitiveSpecFacts:
     spec_id: str
     context: str | None
+    content_hash: str | None = None
 
 
 class DomainEventDeliveryStore(Protocol):

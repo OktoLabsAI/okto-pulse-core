@@ -83,7 +83,7 @@ def test_af29_closeout_scan_keeps_policy_in_core_and_discovery_in_port() -> None
             ]
 
     worker = CognitiveCloseoutWorker(
-        session_factory=object(),
+        relational_scope_factory=object(),
         store=_Store(),  # type: ignore[arg-type]
         pending_work_provider=_Provider(),
     )

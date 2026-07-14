@@ -87,8 +87,8 @@ def test_f09_transactions_return_materialized_core_results() -> None:
     assert signature.return_annotation == "GraphStatementResult"
     result = GraphStatementResult.from_rows([["n1", 1]], columns=["id", "score"])
     assert result.rows == (("n1", 1),)
-    assert result.get_column_names() == ["id", "score"]
-    assert result.get_next() == ["n1", 1]
+    assert result.columns == ("id", "score")
+    assert list(result) == [["n1", 1]]
 
 
 def test_f09_core_schema_contract_contains_no_ddl() -> None:

@@ -38,6 +38,8 @@ _NODE_FETCH_MAX_ROWS = 5000
 
 __all__ = ["DRIFT_REPORT_MAX_ITEMS", "provenance_drift_report"]
 
+_CARD_SOURCE_TYPES = frozenset({"task", "test", "bug"})
+
 
 def _parse_dt(value: Any) -> datetime | None:
     """Best-effort ISO parse to an aware UTC datetime; None on failure."""
@@ -89,6 +91,27 @@ def _fetch_provenance_nodes(
     return nodes
 
 
+def _index_source_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Index source rows under every equivalent persisted reference.
+
+    The board source port exposes cards by their semantic type (``task``,
+    ``test`` or ``bug``), while graph entities created by the generic card
+    path can carry ``card:<id>``. Both references identify the same source
+    row and must not produce terminal ``artifact_missing`` drift.
+    """
+
+    indexed: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        source_ref = str(row.get("source_ref") or "")
+        if source_ref:
+            indexed[source_ref] = row
+        artifact_type = str(row.get("artifact_type") or "").lower()
+        artifact_id = str(row.get("id") or "")
+        if artifact_type in _CARD_SOURCE_TYPES and artifact_id:
+            indexed[f"card:{artifact_id}"] = row
+    return indexed
+
+
 async def provenance_drift_report(
     board_id: str,
     node_type: str | None = None,
@@ -107,9 +130,7 @@ async def provenance_drift_report(
     registry = get_kg_registry()
     reader = registry.require_board_source_reader()
     rows = await asyncio.to_thread(reader.fetch, board_id)
-    rows_by_ref = {
-        str(r.get("source_ref")): r for r in rows if r.get("source_ref")
-    }
+    rows_by_ref = _index_source_rows(rows)
 
     types = [node_type] if node_type else list(NODE_TYPES)
     nodes = await asyncio.to_thread(_fetch_provenance_nodes, board_id, types)

@@ -18,6 +18,8 @@ Consolidated proofs (Codex-mandated):
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import json
 from pathlib import Path
@@ -26,7 +28,15 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from sqlalchemy_test_models import Board
+from sqlalchemy_test_models import (
+    Board,
+    Ideation,
+    IdeationStatus,
+    Refinement,
+    RefinementStatus,
+    Spec,
+    SpecStatus,
+)
 
 BOARD_ID = "r01a-mcpideation"
 OTHER_BOARD_ID = "r01a-mcpideation-other"
@@ -148,7 +158,7 @@ async def _seed():
 async def _call(tool: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     t = await mcp_server.mcp.get_tool(tool)
     return json.loads(await t.fn(**kwargs))
 
@@ -176,6 +186,55 @@ async def test_create_get_update_delete_roundtrip(_seed):
         "okto_pulse_delete_ideation", board_id=BOARD_ID, ideation_id=iid
     )
     assert deleted == {"success": True}
+
+
+@pytest.mark.asyncio
+async def test_delete_ideation_cascades_refinements_and_specs(_seed):
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        ideation = Ideation(
+            board_id=BOARD_ID,
+            title="Cascade root",
+            status=IdeationStatus.DONE,
+            created_by=USER_ID,
+        )
+        db.add(ideation)
+        await db.flush()
+        refinement = Refinement(
+            board_id=BOARD_ID,
+            ideation_id=ideation.id,
+            title="Cascade refinement",
+            status=RefinementStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        db.add(refinement)
+        await db.flush()
+        spec = Spec(
+            board_id=BOARD_ID,
+            ideation_id=ideation.id,
+            refinement_id=refinement.id,
+            title="Cascade spec",
+            status=SpecStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        db.add(spec)
+        await db.flush()
+        ideation_id = ideation.id
+        refinement_id = refinement.id
+        spec_id = spec.id
+        await db.commit()
+
+    deleted = await _call(
+        "okto_pulse_delete_ideation", board_id=BOARD_ID, ideation_id=ideation_id
+    )
+
+    assert deleted == {"success": True}
+    async with factory() as db:
+        assert await db.get(Ideation, ideation_id) is None
+        assert await db.get(Refinement, refinement_id) is None
+        assert await db.get(Spec, spec_id) is None
 
 
 @pytest.mark.asyncio
@@ -230,6 +289,50 @@ async def test_qa_ask_and_answer(_seed):
     # QASelfAnsweringNotAllowedError (committing, legacy parity) and returns the
     # error envelope. This exercises the use case's self-answer path.
     assert "error" in answered and "detail" in answered
+
+
+@pytest.mark.asyncio
+async def test_evaluate_ideation_classifies_submitted_scope_and_persists_it(_seed):
+    created = await _call(
+        "okto_pulse_create_ideation", board_id=BOARD_ID, title="Scope evaluation"
+    )
+    iid = created["ideation"]["id"]
+
+    for status in ("review", "approved", "evaluating"):
+        moved = await _call(
+            "okto_pulse_move_ideation",
+            board_id=BOARD_ID,
+            ideation_id=iid,
+            status=status,
+        )
+        assert moved["success"] is True
+
+    evaluated = await _call(
+        "okto_pulse_evaluate_ideation",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        domains="3",
+        domains_justification="Three application boundaries.",
+        ambiguity="1",
+        ambiguity_justification="The behavior is explicit.",
+        dependencies="2",
+        dependencies_justification="One external adapter is required.",
+    )
+    assert evaluated["complexity"] == "large"
+    assert evaluated["scope_assessment"] == {
+        "domains": 3,
+        "domains_justification": "Three application boundaries.",
+        "ambiguity": 1,
+        "ambiguity_justification": "The behavior is explicit.",
+        "dependencies": 2,
+        "dependencies_justification": "One external adapter is required.",
+    }
+
+    persisted = await _call(
+        "okto_pulse_get_ideation", board_id=BOARD_ID, ideation_id=iid
+    )
+    assert persisted["complexity"] == "large"
+    assert persisted["scope_assessment"] == evaluated["scope_assessment"]
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,8 @@ The ``register_kg_power_tools`` graph-only escape hatches keep their unused
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import uuid
 from pathlib import Path
@@ -16,6 +18,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.mcp import kg_power_tools, kg_query_tools
 from okto_pulse.core.mcp import server as mcp_server
 
@@ -35,7 +38,14 @@ async def _seed_agent_boards(agent_id: str, n: int = 2) -> list[str]:
     async with factory() as db:
         for i in range(n):
             bid = f"fu4q-board-{uuid.uuid4().hex[:8]}"
-            db.add(Board(id=bid, name=f"zz-{i}-{bid}", owner_id="fu4-owner"))
+            db.add(
+                Board(
+                    id=bid,
+                    name=f"zz-{i}-{bid}",
+                    owner_id="fu4-owner",
+                    realm_id=LOCAL_REALM_ID,
+                )
+            )
             db.add(AgentBoard(agent_id=agent_id, board_id=bid, granted_by="fu4-owner"))
             board_ids.append(bid)
         await db.commit()
@@ -67,8 +77,8 @@ async def test_list_boards_for_agent_use_case_parity() -> None:
     baseline = await _baseline_boards(agent_id)
     assert sorted(baseline) == sorted(seeded)
 
-    mcp_server.register_session_factory(get_session_factory())
-    actor = ActorContext(agent_id, "mcp")
+    register_mcp_test_runtime(get_session_factory())
+    actor = ActorContext(agent_id, "mcp", realm_id=LOCAL_REALM_ID)
     async with mcp_server.get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         result = await ListBoardsForAgentUseCase().execute(
             ListBoardsForAgentCommand(agent_id), actor=actor, uow=uow
@@ -83,7 +93,7 @@ async def test_get_user_boards_without_auth_context_fails_closed() -> None:
 
     agent_id = f"fu4q-agent-{uuid.uuid4().hex[:8]}"
     await _seed_agent_boards(agent_id, 2)
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
 
     async def _get_agent():
         raise AssertionError("R06 forbids get_agent fallback")
@@ -141,9 +151,36 @@ def test_query_and_power_modules_have_no_get_db_for_mcp() -> None:
 
 
 def test_server_registration_injects_uow_not_get_db_for_mcp() -> None:
-    src = Path(mcp_server.__file__).read_text(encoding="utf-8")
-    assert (
-        "_register_kg_query_tools(mcp, get_agent=_get_authenticated_agent, "
-        "get_uow=get_unit_of_work_factory_for_mcp)" in src
-    )
-    assert "_register_kg_power_tools(mcp, get_agent=_get_authenticated_agent)" in src
+    tree = ast.parse(Path(mcp_server.__file__).read_text(encoding="utf-8"))
+
+    def registration(name: str) -> ast.Call:
+        matches = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == name
+        ]
+        assert len(matches) == 1, name
+        return matches[0]
+
+    query = registration("_register_kg_query_tools")
+    assert [arg.id for arg in query.args if isinstance(arg, ast.Name)] == ["mcp"]
+    query_kwargs = {
+        keyword.arg: keyword.value.id
+        for keyword in query.keywords
+        if keyword.arg and isinstance(keyword.value, ast.Name)
+    }
+    assert query_kwargs == {
+        "get_agent": "_get_authenticated_agent",
+        "get_uow": "get_unit_of_work_factory_for_mcp",
+    }
+
+    power = registration("_register_kg_power_tools")
+    assert [arg.id for arg in power.args if isinstance(arg, ast.Name)] == ["mcp"]
+    power_kwargs = {
+        keyword.arg: keyword.value.id
+        for keyword in power.keywords
+        if keyword.arg and isinstance(keyword.value, ast.Name)
+    }
+    assert power_kwargs == {"get_agent": "_get_authenticated_agent"}

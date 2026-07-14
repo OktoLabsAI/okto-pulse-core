@@ -23,6 +23,8 @@ Scenario mapping:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import asyncio
 import os
@@ -31,9 +33,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 import okto_pulse.community.app as _core_app  # noqa: F401 (register ORM models)
-import okto_pulse.core.infra.database as _db_mod
+import okto_pulse.community.adapters.sqlalchemy_database as _db_mod
 import okto_pulse.core.mcp.server as server
 from okto_pulse.core.services.main import AgentService
 from okto_pulse.core.ports import McpCredential
@@ -60,60 +63,62 @@ class _HarnessMcpAuthenticator:
             )
 
 
-@pytest.fixture
-def _seeded():
+@pytest_asyncio.fixture
+async def _seeded():
     """Temp SQLite DB seeded with A1->B1, A2->B2, plus an inactive agent; the MCP
     session factory registered. Restores settings/engine/factory/cache/env."""
     import okto_pulse.core.infra.config as _config
     from okto_pulse.core.infra.config import CoreSettings
-    from okto_pulse.core import runtime_registry as _runtime_registry
-
-    saved = dict(
-        settings=_config._settings_instance,
-        engine=_db_mod._engine,
-        factory=_db_mod._session_factory,
-        mcp_sf=server._mcp_session_factory,
-        mcp_auth=server._mcp_authenticator,
-        uow_factory=_runtime_registry._unit_of_work_factory,
-        data=os.environ.get("DATA_DIR"),
+    from okto_pulse.core.runtime_context import (
+        capture_runtime_values_for_tests,
+        runtime_value_scope,
     )
-    cache = dict(server._permission_cache)
+
+    runtime = capture_runtime_values_for_tests()
+    runtime.discard(
+        "infra.config.settings",
+        "ports.relational_runtime",
+        "runtime.unit_of_work_factory",
+        "mcp.authenticator",
+        "mcp.scheduler_control",
+        "runtime.state.mcp.permission_cache",
+    )
+    saved_data = os.environ.get("DATA_DIR")
     tmp = tempfile.mkdtemp()
     os.environ["DATA_DIR"] = tmp
-    _config.configure_settings(CoreSettings())
-    server._permission_cache.clear()
-    try:
-        yield tmp
-    finally:
-        try:
-            if _db_mod._engine is not None:
-                _db_mod._engine.sync_engine.dispose()
-        except Exception:
-            pass
-        _config._settings_instance = saved["settings"]
-        _db_mod._engine = saved["engine"]
-        _db_mod._session_factory = saved["factory"]
-        server._mcp_session_factory = saved["mcp_sf"]
-        server._mcp_authenticator = saved["mcp_auth"]
-        _runtime_registry._unit_of_work_factory = saved["uow_factory"]
+    with runtime_value_scope(runtime):
+        _config.configure_settings(CoreSettings())
         server._permission_cache.clear()
-        server._permission_cache.update(cache)
-        if saved["data"] is None:
-            os.environ.pop("DATA_DIR", None)
-        else:
-            os.environ["DATA_DIR"] = saved["data"]
+        try:
+            yield tmp
+        finally:
+            try:
+                if _db_mod.is_database_runtime_configured():
+                    await _db_mod.close_db()
+            except Exception:
+                pass
+    if saved_data is None:
+        os.environ.pop("DATA_DIR", None)
+    else:
+        os.environ["DATA_DIR"] = saved_data
 
 
 async def _seed(tmp: str) -> None:
+    from okto_pulse.community.adapters.relational_schema_lifecycle import (
+        register_community_relational_schema_lifecycle,
+    )
     from sqlalchemy_test_models import Agent, AgentBoard, Board
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.runtime_registry import register_unit_of_work_factory
 
-    _db_mod.create_database(f"sqlite+aiosqlite:///{Path(tmp) / 'r08c.db'}")
+    _db_mod.configure_community_database(
+        f"sqlite+aiosqlite:///{Path(tmp) / 'r08c.db'}"
+    )
+    register_community_relational_schema_lifecycle()
     await _db_mod.init_db()
     session_factory = _db_mod.get_session_factory()
     register_unit_of_work_factory(SQLAlchemyUnitOfWorkFactory(session_factory))
-    server.register_session_factory(
+    register_mcp_test_runtime(
         session_factory,
         mcp_authenticator=_HarnessMcpAuthenticator(session_factory),
     )

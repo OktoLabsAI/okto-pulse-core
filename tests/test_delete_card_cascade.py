@@ -20,9 +20,19 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 
 from okto_pulse.core.infra.database import get_session_factory
-from sqlalchemy_test_models import Board, Card, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import (
+    Board,
+    CanonicalDebt,
+    Card,
+    CardType,
+    ConsolidationDeadLetter,
+    ConsolidationQueue,
+    Spec,
+    SpecStatus,
+)
 from okto_pulse.core.services.main import CardService
 
 
@@ -353,3 +363,54 @@ async def test_ac5_spec_less_card_deletes_without_cascade(db_session, board):
     # Row is gone
     got = await db_session.get(Card, card.id)
     assert got is None
+
+
+@pytest.mark.asyncio
+async def test_hard_delete_discards_all_operational_kg_work(db_session, board):
+    card = await _make_card(
+        db_session,
+        board_id=board.id,
+        spec_id=None,
+        card_type=CardType.NORMAL,
+    )
+    db_session.add_all(
+        [
+            ConsolidationQueue(
+                board_id=board.id,
+                artifact_type="card",
+                artifact_id=card.id,
+                status="pending",
+            ),
+            ConsolidationDeadLetter(
+                board_id=board.id,
+                artifact_type="card",
+                artifact_id=card.id,
+                attempts=5,
+                errors=[],
+            ),
+            CanonicalDebt(
+                board_id=board.id,
+                artifact_type="card",
+                artifact_id=card.id,
+                source_ref=f"card:{card.id}",
+                content_hash="deleted-card-hash",
+                target_status="done",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    assert await CardService(db_session).delete_card(card.id, USER_ID) is True
+    await db_session.commit()
+
+    for model in (ConsolidationQueue, ConsolidationDeadLetter, CanonicalDebt):
+        count = await db_session.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(
+                model.board_id == board.id,
+                model.artifact_type == "card",
+                model.artifact_id == card.id,
+            )
+        )
+        assert count == 0

@@ -205,10 +205,11 @@ def test_ts_dc56000c_files_remain_valid_resources():
     from okto_pulse.core.mcp import server as _srv
 
     registered = {entry[0]: entry[1] for entry in _srv._RESOURCE_REGISTRY}
-    resource_dir = _srv._get_resource_dir()
     for uri in ("okto-pulse://workflows/kg", "okto-pulse://workflows/ideations"):
         assert uri in registered, f"{uri} no longer registered"
-        assert (resource_dir / registered[uri]).exists(), f"{uri} points to a missing file"
+        assert _srv._load_resource_file(registered[uri]).strip(), (
+            f"{uri} points to a missing or empty resource"
+        )
 
     # the edits live in lazy resource files, OFF the always-loaded instructions
     # blob, so the initial-footprint budget must be unaffected.

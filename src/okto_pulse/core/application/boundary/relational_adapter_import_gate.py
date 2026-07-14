@@ -78,9 +78,9 @@ class AllowlistEntry:
         return rel.startswith(self.pattern)
 
 
-#: The TEMPORARY, governed allowlist. Each entry retires at R01C — none is a
-#: generic escape: every one names an owner + a concrete removal criterion.
-ALLOWLIST: tuple[AllowlistEntry, ...] = (
+#: Historical waivers retained as audit evidence. They are not active: the
+#: concrete SQLAlchemy repository package has moved out of Core.
+RETIRED_ALLOWLIST: tuple[AllowlistEntry, ...] = (
     AllowlistEntry(
         pattern="repositories/sqlalchemy/",
         kind="prefix",
@@ -99,6 +99,9 @@ ALLOWLIST: tuple[AllowlistEntry, ...] = (
     ),
 )
 
+# Final state: every direct concrete relational adapter reference in Core blocks.
+ALLOWLIST: tuple[AllowlistEntry, ...] = ()
+
 #: Back-compat flat views derived from the governed allowlist.
 ALLOWLISTED_PREFIXES: tuple[str, ...] = tuple(
     e.pattern for e in ALLOWLIST if e.kind == "prefix"
@@ -109,11 +112,9 @@ ALLOWLISTED_FILES: frozenset[str] = frozenset(
 
 #: Gate-level removal summary (per-entry criteria live on each AllowlistEntry).
 REMOVAL_CRITERION = (
-    "R01B IMP2: runtime authority over the relational adapter (UnitOfWork concretes + "
-    "engine/session factory) removed from startup and the inbound REST/MCP seams "
-    "(now resolve registered providers via runtime_registry / edition injection). "
-    "Each remaining reference is a GOVERNED allowlist waiver (owner + "
-    "removal_criterion) retired by R01C when the concretes physically leave core."
+    "R01C complete: SQLAlchemy UnitOfWork/repository implementations and runtime "
+    "construction are edition-owned. Core has no active waiver; any concrete "
+    "relational adapter import is a blocking regression."
 )
 
 
@@ -279,6 +280,7 @@ __all__ = [
     "SENSITIVE_MODULES",
     "AllowlistEntry",
     "ALLOWLIST",
+    "RETIRED_ALLOWLIST",
     "ALLOWLISTED_FILES",
     "ALLOWLISTED_PREFIXES",
     "REMOVAL_CRITERION",

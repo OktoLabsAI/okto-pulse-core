@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TypeVar
 
+from okto_pulse.core.runtime_context import runtime_state
 
-_registry: dict[str, list[type]] = {}
+
+_registry = runtime_state("events.registry", dict)
 T = TypeVar("T", bound=type)
 
 

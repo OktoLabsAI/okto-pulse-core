@@ -556,6 +556,10 @@ class McpEvaluateIdeationUseCase:
             existing_scope.update(command.scope)
             ideation.scope_assessment = existing_scope
             mark_mutable_field_modified(ideation, "scope_assessment")
+            # IdeationService.evaluate_complexity performs a fresh read. Expose the
+            # detached ApplicationRecord mutation inside the current transaction so
+            # that read classifies the submitted scores, not the previous DB state.
+            await uow.synchronize()
 
         ideation = await service.evaluate_complexity(
             command.ideation_id, actor.actor_id

@@ -143,6 +143,18 @@ class CoreMcpCatalog:
         self._tool_manager = CoreMcpToolManager()
         self._resource_manager = CoreMcpResourceManager()
 
+    def clone_for_runtime(self) -> "CoreMcpCatalog":
+        """Clone catalog indexes so compositions cannot share mutations."""
+
+        clone = CoreMcpCatalog(
+            name=self.name,
+            version=self.version,
+            instructions=self.instructions,
+        )
+        clone._tool_manager._tools.update(self._tool_manager._tools)
+        clone._resource_manager._resources.update(self._resource_manager._resources)
+        return clone
+
     def _register_tool(
         self,
         fn: Callable[..., Any],

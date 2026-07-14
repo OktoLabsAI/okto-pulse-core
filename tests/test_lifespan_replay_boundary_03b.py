@@ -34,7 +34,7 @@ _STARTUP_EVENTS = [
     "init_db", "seed_community_defaults", "backfill_qa_answered_at",
     "_afg_backfill_task", "_preload_embedding_model", "event_dispatcher",
     "consolidation_worker", "cleanup_worker", "outbox_worker", "settings_service",
-    "scheduler", "mcp_session_factory", "frontend_served", "_metrics_beacon_loop",
+    "scheduler", "mcp_runtime", "frontend_served", "_metrics_beacon_loop",
 ]
 
 
@@ -48,7 +48,7 @@ def _golden_hooks(extra=()):
 def _composition(hooks, **overrides) -> RuntimeComposition:
     base = dict(
         settings_provider=1, auth_provider=1, storage_provider=1,
-        session_factory=1, event_bus=1, lifecycle_hooks=hooks,
+        event_bus=1, uow_factory=1, lifecycle_hooks=hooks,
     )
     base.update(overrides)
     return RuntimeComposition(**base)
@@ -63,7 +63,7 @@ def test_closed_baseline_constants() -> None:
 
 @pytest.mark.asyncio
 async def test_replay_golden_observes_all_required_events() -> None:
-    comp = _composition(_golden_hooks(), scheduler_control=1, mcp_session_factory=1)
+    comp = _composition(_golden_hooks(), scheduler_control=1)
     report = await CommunityLifespanReplay().run(
         CommunityLifespanReplayInput(composition=comp, include_frontend=True)
     )
@@ -72,7 +72,7 @@ async def test_replay_golden_observes_all_required_events() -> None:
     assert set(REQUIRED_LIFECYCLE_EVENTS) <= observed
     assert report.workers == ["cleanup_worker", "consolidation_worker", "event_dispatcher", "outbox_worker"]
     assert report.scheduler == "running"
-    assert report.mcp_session_factory == "registered"
+    assert report.mcp_runtime == "registered"
     assert report.frontend == "served"
     assert report.unexpected_deltas == []
     assert report.order_mismatches == []
@@ -462,7 +462,10 @@ async def test_runtime_worker_registry_stop_priority_preserves_dispatcher_first(
 def test_runtime_worker_boundary_gate_real_core_tree_passes() -> None:
     report = RuntimeWorkerBoundaryGate().run()
     assert report.status == "passed", report.as_dict()
-    assert "okto_pulse/core/app.py" in report.evidence["scanned_files"]
+    assert (
+        "okto_pulse/core/application/processors/global_outbox.py"
+        in report.evidence["scanned_files"]
+    )
     assert report.evidence["offenders"] == []
 
 

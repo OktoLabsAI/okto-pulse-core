@@ -26,7 +26,7 @@ from okto_pulse.core.kg.canonical_stale_reconciler import (
     reconcile_stale_canonical,
 )
 from okto_pulse.core.kg.primitives import (
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     begin_consolidation,
     commit_consolidation,
@@ -203,10 +203,10 @@ def _seed_canonical_cognitive(board_id, node_type, *, source_ref, title="cogniti
     }
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(orch, node_type, node_id, attrs)
+        _apply_graph_node_create(orch, node_type, node_id, attrs)
     return node_id
 
 

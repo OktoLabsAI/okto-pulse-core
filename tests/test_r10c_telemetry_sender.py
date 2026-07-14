@@ -21,7 +21,6 @@ import pytest
 
 from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.ports.telemetry import TelemetrySink
-from okto_pulse.core.telemetry import sender_registry as registry
 from okto_pulse.core.telemetry.sender_registry import (
     get_telemetry_sender,
     register_telemetry_sender_factory,
@@ -63,7 +62,6 @@ def test_ts_025f3226_port_pure_and_registry_fail_closed(tmp_path, caplog):
 
     # R10-E Pass 2 fail-closed: no factory → RuntimeError + structured error signal.
     reset_telemetry_sender_factory_for_tests()
-    assert registry._telemetry_sender_factory is None
     caplog.set_level("ERROR", logger="okto_pulse.telemetry.sender_registry")
 
     with pytest.raises(RuntimeError, match="No TelemetrySink factory registered"):

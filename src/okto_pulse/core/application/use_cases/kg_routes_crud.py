@@ -441,7 +441,7 @@ class BoostNodeUseCase:
     succeeds, preserving the legacy 200/404/500 contract. A missing node (governance
     returns ``None``) is ``EntityNotFoundError("node", node_id)`` (→ adapter 404
     problem); ``BoostPersistError`` from a failed SET propagates uncaught for the
-    adapter (→ 500 ``kuzu_error``)."""
+    adapter (→ 500 ``graph_error``)."""
 
     async def execute(
         self, command: BoostNodeCommand, *, actor: ActorContext, uow: PulseUnitOfWork

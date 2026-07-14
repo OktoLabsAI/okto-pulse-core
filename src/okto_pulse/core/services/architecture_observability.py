@@ -7,7 +7,8 @@ import logging
 import threading
 from typing import Any, Mapping
 
-from okto_pulse.core.observability.sample_buffer import BoundedSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 
 logger = logging.getLogger(__name__)
@@ -64,8 +65,8 @@ _FORBIDDEN_LABEL_FRAGMENTS = (
     "token",
 )
 _MAX_LABEL_VALUE_CHARS = 128
-_METRIC_SAMPLES_LOCK = threading.Lock()
-_METRIC_SAMPLES = BoundedSampleBuffer()
+_METRIC_SAMPLES_LOCK = runtime_lock("services.architecture.samples")
+_METRIC_SAMPLES = runtime_sample_buffer("services.architecture")
 
 
 @dataclass(frozen=True)

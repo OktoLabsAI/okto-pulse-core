@@ -2,7 +2,7 @@
 
 Covers the bug where re-consolidating the same artefact (spec/sprint/card)
 produced multiple Kuzu Entity nodes for the same `source_artifact_ref`
-because the ADD branch of `_do_kuzu_commit` never consulted the existing
+because the ADD branch of `_do_graph_commit` never consulted the existing
 `_lookup_existing_node` helper.
 
 Tests in this module:
@@ -30,16 +30,11 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(autouse=True)
-def _restore_conftest_engine():
+def _restore_conftest_engine(preserve_relational_runtime):
     """FU-2 F4: tests here call create_database() against a throwaway DB,
-    which swaps the process-global engine. Restore the conftest engine on
-    teardown so later files keep seeing the session temp database."""
-    from okto_pulse.core.infra.database import create_database, get_engine
-
-    prior_url = str(get_engine().url)
+    which swaps the composed runtime. The shared fixture closes that runtime
+    and restores the conftest runtime after each test."""
     yield
-    if str(get_engine().url) != prior_url:
-        create_database(prior_url, echo=False)
 
 
 @pytest.fixture
@@ -434,20 +429,22 @@ def _count_nodes(board_id: str, node_type: str) -> int:
 
 
 def _query_one(board_id: str, source_artifact_ref: str):
-    """Return (id, title, content) of the first Entity for a given ref."""
+    """Return the first Entity and its provenance anchor for a given ref."""
     from kg_schema_testing import open_board_connection
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
             "MATCH (n:Entity) WHERE n.source_artifact_ref = $r "
-            "RETURN n.id, n.title, n.content, n.created_at LIMIT 1",
+            "RETURN n.id, n.title, n.content, n.created_at, "
+            "n.source_content_hash, n.attestation_count LIMIT 1",
             {"r": source_artifact_ref},
         )
         try:
             row = res.get_next()
             return {
                 "id": row[0], "title": row[1], "content": row[2],
-                "created_at": row[3],
+                "created_at": row[3], "source_content_hash": row[4],
+                "attestation_count": row[5],
             }
         finally:
             try:
@@ -552,7 +549,8 @@ async def test_tc3_update_op_increments_nodes_updated_not_merged(
         session_factory, board_id, artifact_ref, "[TC-3 UPDATE] original", content="v1"
     )
     assert commit1.nodes_added >= 1
-    existing_id = _query_one(board_id, artifact_ref)["id"]
+    original = _query_one(board_id, artifact_ref)
+    existing_id = original["id"]
 
     # Session 2: force op==UPDATE on the candidate via agent_overrides.
     cand_id = "nc8_update_cand"
@@ -636,7 +634,121 @@ async def test_tc3_update_op_increments_nodes_updated_not_merged(
     )
     # In-place: still exactly one Entity, with the updated title.
     assert _count_entities(board_id, artifact_ref) == 1
-    assert _query_one(board_id, artifact_ref)["title"] == "[TC-3 UPDATE] revised"
+    updated = _query_one(board_id, artifact_ref)
+    assert updated["title"] == "[TC-3 UPDATE] revised"
+    assert updated["source_content_hash"] == begin.content_hash
+    assert updated["source_content_hash"] != original["source_content_hash"]
+    assert updated["attestation_count"] == original["attestation_count"] + 1
+
+
+async def test_cross_artifact_update_preserves_source_provenance(
+    dedup_tempdir, monkeypatch
+):
+    """A child session may reconcile a parent reference, but its content hash
+    must not replace the parent artifact's provenance anchor."""
+    from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
+        begin_consolidation,
+        commit_consolidation,
+        propose_reconciliation,
+    )
+    from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
+        BeginConsolidationRequest,
+        CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
+        KGNodeType,
+        NodeCandidate,
+        ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
+    )
+
+    session_factory, board_id, parent_spec_id = await _bootstrap_test_board(
+        monkeypatch
+    )
+    parent_ref = f"spec:{parent_spec_id}"
+    await _drive_one_session(
+        session_factory,
+        board_id,
+        parent_ref,
+        "[cross-artifact] parent",
+        content="parent v1",
+    )
+    original = _query_one(board_id, parent_ref)
+
+    child_card_id = str(uuid.uuid4())
+    candidate_id = "cross_artifact_parent_ref"
+    root_candidate = NodeCandidate(
+        candidate_id="cross_artifact_technical_root",
+        node_type=KGNodeType.ENTITY,
+        title="Cross-artifact technical root",
+        content="Allowlisted deterministic source root.",
+        source_artifact_ref="tech_entities.yml",
+        source_confidence=1.0,
+    )
+    parent_candidate = NodeCandidate(
+        candidate_id=candidate_id,
+        node_type=KGNodeType.ENTITY,
+        title="[cross-artifact] parent reference",
+        content="Parent context repeated by the child card.",
+        source_artifact_ref=parent_ref,
+        source_confidence=0.95,
+    )
+    begin = await begin_consolidation(
+        BeginConsolidationRequest(
+            board_id=board_id,
+            artifact_type="card",
+            artifact_id=child_card_id,
+            raw_content="Child card content must not become the parent hash.",
+            deterministic_candidates=[root_candidate, parent_candidate],
+        ),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id="edge_cross_artifact_parent_to_root",
+                edge_type=KGEdgeType.BELONGS_TO,
+                from_candidate_id=candidate_id,
+                to_candidate_id=root_candidate.candidate_id,
+                confidence=1.0,
+            ),
+        ),
+        agent_id="system:layer1_worker",
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    override = ReconciliationHint(
+        candidate_id=candidate_id,
+        operation=ReconciliationOperation.UPDATE,
+        target_node_id=original["id"],
+        confidence=0.9,
+        reason="child session reconciles an existing parent reference",
+    )
+    async with session_factory() as db:
+        commit = await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=begin.session_id,
+                summary_text="cross-artifact provenance regression",
+                agent_overrides={candidate_id: override},
+            ),
+            agent_id="system:layer1_worker",
+            db=db,
+        )
+
+    assert commit.nodes_updated == 1
+    updated = _query_one(board_id, parent_ref)
+    assert updated["title"] == "[cross-artifact] parent reference"
+    assert updated["source_content_hash"] == original["source_content_hash"]
+    assert updated["source_content_hash"] != begin.content_hash
+    assert updated["attestation_count"] == original["attestation_count"] + 1
 
 
 # ---------------------------------------------------------------------------

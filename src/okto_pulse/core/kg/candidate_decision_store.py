@@ -39,7 +39,8 @@ from okto_pulse.core.kg.rebuild_audit import (
     _is_raw_token_shape,
     resolve_rebuild_audit_artifact_store,
 )
-from okto_pulse.core.observability.sample_buffer import BoundedCounterSampleBuffer
+from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
+from okto_pulse.core.runtime_context import runtime_lock
 
 
 logger = logging.getLogger("okto_pulse.kg.candidate_decision_store")
@@ -168,8 +169,11 @@ _MAX_EVIDENCE_ENTRY_BYTES = 200
 
 
 _CANDIDATE_LABELS = ("board_id_hash", "action", "outcome", "reason_code")
-_candidate_samples = BoundedCounterSampleBuffer(_CANDIDATE_LABELS)
-_candidate_samples_lock = threading.Lock()
+_candidate_samples = runtime_counter_sample_buffer(
+    "kg.candidate_decision_store",
+    _CANDIDATE_LABELS,
+)
+_candidate_samples_lock = runtime_lock("kg.candidate_decision_store.samples")
 
 
 def _board_id_hash(board_id: str) -> str:

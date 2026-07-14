@@ -138,19 +138,35 @@ def _telemetry_service():
         register_telemetry_event_store_factory,
         reset_telemetry_event_store_factory_for_tests,
     )
+    from okto_pulse.core.telemetry.publish_health_source_registry import (
+        register_external_source_provider,
+        reset_external_source_provider_for_tests,
+    )
+    from okto_pulse.core.runtime_context import (
+        capture_runtime_values_for_tests,
+        restore_runtime_values_for_tests,
+    )
     from okto_pulse.core.telemetry.service import TelemetryService
 
-    saved = _config._settings_instance
-    tmp = tempfile.mkdtemp()
-    settings = CoreSettings(metrics_dir=str(Path(tmp) / "metrics"))
-    _config.configure_settings(settings)
-    reset_telemetry_event_store_factory_for_tests()
-    register_telemetry_event_store_factory(_SimpleFileEventStore)
-    try:
-        yield TelemetryService(settings)
-    finally:
+    saved_runtime = capture_runtime_values_for_tests()
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = CoreSettings(metrics_dir=str(Path(tmp) / "metrics"))
+        _config.configure_settings(settings)
         reset_telemetry_event_store_factory_for_tests()
-        _config._settings_instance = saved
+        register_telemetry_event_store_factory(_SimpleFileEventStore)
+        reset_external_source_provider_for_tests()
+        register_external_source_provider(
+            lambda _settings: (
+                {"availability": "gap"},
+                {"availability": "gap"},
+            )
+        )
+        try:
+            yield TelemetryService(settings)
+        finally:
+            reset_telemetry_event_store_factory_for_tests()
+            reset_external_source_provider_for_tests()
+            restore_runtime_values_for_tests(saved_runtime)
 
 
 # ===========================================================================

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 from datetime import datetime, timezone
 import json
 import uuid
@@ -13,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.cards import router as cards_router
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db
 from sqlalchemy_test_models import Board, BugSeverity, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.mcp import server as mcp_server
@@ -348,6 +350,7 @@ async def bug_preview_client(db_factory, bug_preview_seed):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app), bug_preview_seed
 
 
@@ -395,7 +398,7 @@ def _stub_ctx():
 
 @pytest.mark.asyncio
 async def test_mcp_preview_tool_matches_rest_shape(db_factory, bug_preview_seed):
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())), patch.object(
         mcp_server, "check_permission", return_value=None
     ):

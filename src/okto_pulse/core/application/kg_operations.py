@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
+
+from okto_pulse.core.kg.curation_policy import CurationPolicyError
+from okto_pulse.core.kg.graph_export import GraphExportError
 
 
 class CoreKnowledgeGraphOperations:
@@ -22,7 +26,7 @@ class CoreKnowledgeGraphOperations:
             tick_id=tick_id,
             board_id=board_id,
             force_full_rebuild=force_full_rebuild,
-            session=self.__relational_context,
+            relational_context=self.__relational_context,
         )
 
     async def evaluate_bug_cognitive_closure(
@@ -466,13 +470,41 @@ class CoreKnowledgeGraphOperations:
     ):  # noqa: ANN201
         if not isinstance(refusal_check, Callable):
             raise TypeError("refusal_check must be callable")
+
+        async def health_probe(
+            probe_board_id: str,
+            _context: object,
+            *,
+            scheduler_control: object | None = None,
+        ) -> dict[str, object]:
+            return await self.health(
+                probe_board_id,
+                scheduler_control=scheduler_control,
+            )
+
         if scheduler_control is None:
-            return await refusal_check(board_id, self.__relational_context)
+            return await refusal_check(
+                board_id,
+                self.__relational_context,
+                health_probe=health_probe,
+            )
         return await refusal_check(
             board_id,
             self.__relational_context,
             scheduler_control=scheduler_control,
+            health_probe=health_probe,
         )
 
 
-__all__ = ["CoreKnowledgeGraphOperations"]
+def export_board_jsonld(board_id: str) -> dict[str, Any]:
+    from okto_pulse.core.kg.graph_export import export_board_jsonld as _export
+
+    return _export(board_id)
+
+
+__all__ = [
+    "CoreKnowledgeGraphOperations",
+    "CurationPolicyError",
+    "GraphExportError",
+    "export_board_jsonld",
+]

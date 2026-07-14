@@ -1431,7 +1431,7 @@ class TestSprintCardAssignment:
                 await service.assign_tasks(sprint_id, [CARD_3_ID], AGENT_ID)
 
     async def test_assign_nonexistent_card(self, db_factory):
-        """Assigning a non-existent card should be silently skipped."""
+        """Assigning a non-existent card returns the strict typed error."""
         await _seed_board(db_factory)
         async with db_factory() as db:
             sprint = Sprint(
@@ -1448,11 +1448,17 @@ class TestSprintCardAssignment:
         from okto_pulse.core.services.main import SprintService
         async with db_factory() as db:
             service = SprintService(db)
-            count = await service.assign_tasks(sprint_id, ["nonexistent-card"], AGENT_ID)
-            assert count == 0
+            with pytest.raises(SprintOperationError) as exc:
+                await service.assign_tasks(sprint_id, ["nonexistent-card"], AGENT_ID)
+
+            assert exc.value.code == "card_not_found"
+            assert exc.value.facts == {
+                "sprint_id": sprint_id,
+                "card_id": "nonexistent-card",
+            }
 
     async def test_assign_mixed_valid_invalid_cards(self, db_factory):
-        """Assigning a mix of valid and non-existent cards — valid ones succeed."""
+        """A mixed assignment fails atomically when any card does not exist."""
         await _seed_board(db_factory)
         async with db_factory() as db:
             sprint = Sprint(
@@ -1469,11 +1475,18 @@ class TestSprintCardAssignment:
         from okto_pulse.core.services.main import SprintService
         async with db_factory() as db:
             service = SprintService(db)
-            count = await service.assign_tasks(sprint_id, [CARD_1_ID, "nonexistent-card"], AGENT_ID)
-            assert count == 1
-
             card = await db.get(Card, CARD_1_ID)
-            assert card.sprint_id == sprint_id
+            original_sprint_id = card.sprint_id
+            with pytest.raises(SprintOperationError) as exc:
+                await service.assign_tasks(
+                    sprint_id,
+                    [CARD_1_ID, "nonexistent-card"],
+                    AGENT_ID,
+                )
+
+            assert exc.value.code == "card_not_found"
+            assert exc.value.facts["card_id"] == "nonexistent-card"
+            assert card.sprint_id == original_sprint_id
 
     async def test_hotfix_lane_assigns_same_spec_bug_and_test_cards(self, db_factory):
         """Hotfix lanes accept same-spec bug and regression test cards."""

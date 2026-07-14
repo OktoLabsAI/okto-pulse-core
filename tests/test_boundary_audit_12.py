@@ -95,10 +95,10 @@ AF11_ELIMINATED_APPLICATION_IMPORTS = (
         ("okto_pulse/core/api/router.py", "inbound"),
         ("okto_pulse/core/mcp/server.py", "inbound"),
         ("okto_pulse/core/repositories/board_repo.py", "outbound"),
-        ("okto_pulse/core/infra/database.py", "outbound"),
-        ("okto_pulse/core/kg/schema.py", "outbound"),
+        ("okto_pulse/core/infra/database.py", "ports"),
+        ("okto_pulse/core/kg/schema.py", "application"),
         ("okto_pulse/core/telemetry/store.py", "outbound"),
-        ("okto_pulse/core/models/db.py", "outbound"),
+        ("okto_pulse/core/models/db.py", "domain"),
         ("okto_pulse/core/events/bus.py", "event_runtime_messaging"),
         ("okto_pulse/core/ports/foo.py", "ports"),
         ("okto_pulse/tools/x.py", "packaging_ops_edition"),
@@ -126,15 +126,13 @@ def test_import_boundary_pure_layers_have_no_blocking_on_real_tree() -> None:
     assert pure_blocking == [], pure_blocking
 
 
-def test_import_boundary_bootstrap_is_non_blocking_but_blocking_mode_enforces() -> None:
+def test_import_boundary_is_terminal_in_bootstrap_and_blocking_modes() -> None:
     boot = ImportBoundaryGate().run(ImportBoundaryGateInput(mode="bootstrap"))
     enforced = ImportBoundaryGate().run(ImportBoundaryGateInput(mode="blocking"))
-    # bootstrap records known adapter debt as baseline/xfail_advisory, never blocking
-    assert boot.status in ("passed", "baseline", "xfail_advisory")
-    assert all(v["status"] != "blocking" for v in boot.evidence["violations"])
-    # blocking mode enforces the same adapter coupling as blocking
-    assert enforced.status == "blocking"
-    assert any(v["status"] == "blocking" for v in enforced.evidence["violations"])
+    assert boot.status == "passed"
+    assert enforced.status == "passed"
+    assert boot.evidence["unclassified_layers"] == []
+    assert enforced.evidence["unclassified_layers"] == []
 
 
 def test_af11_application_import_ratchet_real_tree_stays_zero() -> None:
@@ -178,13 +176,10 @@ def test_af11_application_import_ratchet_negative_fixture_reports_categories(tmp
         ImportBoundaryGateInput(source_root=tmp_path, mode="bootstrap")
     )
     assert report.status == "blocking"
-    assert report.observed_value == 4
+    assert report.observed_value == 1
 
     by_import = {v["imported"]: v for v in report.evidence["violations"]}
     expected = {
-        "okto_pulse.core.kg.governance": ("kg", "forbidden_target_layer:outbound"),
-        "okto_pulse.core.models.schemas": ("schemas", "forbidden_target_layer:outbound"),
-        "okto_pulse.core.infra.permissions": ("permissions", "forbidden_target_layer:outbound"),
         "sqlalchemy.orm.attributes": ("sqlalchemy", "forbidden_import_root"),
     }
     assert set(expected) <= set(by_import)
@@ -200,8 +195,8 @@ def test_af11_application_import_ratchet_negative_fixture_reports_categories(tmp
 
 def test_package_manifest_tools_loc_baseline_passes() -> None:
     report = PackageManifestGate().run(PackageManifestGateInput())
-    assert report.evidence["tools_loc_expected"] == 146
-    assert report.evidence["tools_loc_observed"] == 146
+    assert report.evidence["tools_loc_expected"] == 0
+    assert report.evidence["tools_loc_observed"] == 0
     assert report.status == "passed"
     assert report.evidence["force_includes"], "force-includes must be enumerated"
 
@@ -210,14 +205,12 @@ def test_package_manifest_loc_drift_blocks() -> None:
     report = PackageManifestGate().run(PackageManifestGateInput(tools_loc_baseline=999))
     assert report.status == "blocking"
     assert report.evidence["error"] == "tools_loc_drift"
-    assert report.observed_value == 146
+    assert report.observed_value == 0
     assert report.expected_value == 999
 
 
-def test_package_manifest_loc_drift_against_canonical_146_blocks(tmp_path) -> None:
-    # ts_53684ed4: observed tools/ LOC != canonical 146 (no rebaseline/exception)
-    # blocks as tools_loc_drift, preserving observed_value, expected_value=108,
-    # owner, promotion_criteria and remediation_hint. Never the stale 85.
+def test_package_manifest_reintroduced_edition_tools_block(tmp_path) -> None:
+    # Edition-owned tools reintroduced in Core block without a temporary exception.
     tools = tmp_path / "okto_pulse" / "tools"
     tools.mkdir(parents=True)
     (tools / "drifted.py").write_text(
@@ -233,9 +226,8 @@ def test_package_manifest_loc_drift_against_canonical_146_blocks(tmp_path) -> No
     assert report.status == "blocking"
     assert report.evidence["error"] == "tools_loc_drift"
     assert report.observed_value == 50
-    assert report.expected_value == 146
-    assert report.evidence["tools_loc_expected"] == 146
-    assert report.evidence["tools_loc_expected"] != 85  # stale baseline is an error
+    assert report.expected_value == 0
+    assert report.evidence["tools_loc_expected"] == 0
     assert report.owner == "okto-pulse-core/architecture"
     assert report.promotion_criteria and report.remediation_hint
 
@@ -248,10 +240,10 @@ def test_dependency_audit_missing_policy_blocks() -> None:
 
 def test_dependency_audit_forbidden_match_blocks() -> None:
     report = DependencyAuditGate().run(
-        DependencyAuditGateInput(forbidden_dependencies=["fastapi"])
+        DependencyAuditGateInput(forbidden_dependencies=["pyyaml"])
     )
     assert report.status == "blocking"
-    assert "fastapi" in report.evidence["forbidden_matches"]
+    assert "pyyaml" in report.evidence["forbidden_matches"]
 
 
 def test_gate_report_expired_exception_is_rejected() -> None:
@@ -355,18 +347,17 @@ def test_package_manifest_unexpected_runtime_file_in_record_blocks(tmp_path) -> 
 
 
 def test_dependency_audit_bootstrap_records_forbidden_as_baseline() -> None:
-    # The current monolith declares fastapi/sqlalchemy; in bootstrap those are
-    # transitional debt (baseline), not a hard block.
+    # Bootstrap still records an explicitly forbidden direct dependency.
     report = DependencyAuditGate().run(
         DependencyAuditGateInput(
-            forbidden_dependencies=["fastapi", "sqlalchemy"], mode="bootstrap"
+            forbidden_dependencies=["pyyaml"], mode="bootstrap"
         )
     )
     assert report.status == "baseline"
     assert report.evidence["error"] == "forbidden_dependency"
     assert report.promotion_criteria
     blocking = DependencyAuditGate().run(
-        DependencyAuditGateInput(forbidden_dependencies=["fastapi"], mode="blocking")
+        DependencyAuditGateInput(forbidden_dependencies=["pydantic"], mode="blocking")
     )
     assert blocking.status == "blocking"
 
@@ -468,37 +459,24 @@ def test_import_boundary_prohibited_import_reports_full_evidence() -> None:
     assert pure[0].remediation_hint
 
 
-def test_package_manifest_force_includes_and_baseline_not_stale_85() -> None:
-    # ts_713873bb: package_manifest reports pyproject force-includes and the
-    # canonical tools baseline of 146 LOC (never the stale 85).
+def test_package_manifest_force_includes_and_edition_tools_absent() -> None:
+    # package_manifest reports force-includes and protects the Core boundary.
     report = PackageManifestGate().run(PackageManifestGateInput())
     assert report.status == "passed"
-    assert report.evidence["tools_loc_expected"] == 146
-    assert report.evidence["tools_loc_expected"] != 85
-    assert report.evidence["tools_loc_observed"] == 146
+    assert report.evidence["tools_loc_expected"] == 0
+    assert report.evidence["tools_loc_observed"] == 0
     # force-includes from pyproject [tool.hatch.build.targets.wheel.force-include]
     fi = report.evidence["force_includes"]
     assert fi and any("agent_instructions.md" in entry for entry in fi)
     assert report.evidence["tools_classification"] == "ops/edition"
 
 
-def test_bootstrap_report_separates_baseline_and_xfail_from_blocking_with_governance() -> None:
-    # ts_dc8191bf: in bootstrap the report separates baseline + xfail_advisory from
-    # blocking, preserving owner/promotion_criteria/remediation_hint per item.
+def test_bootstrap_report_is_terminal_with_no_unknown_or_baseline() -> None:
     report = ImportBoundaryGate().run(ImportBoundaryGateInput(mode="bootstrap"))
     statuses = {v["status"] for v in report.evidence["violations"]}
-    # known adapter/legacy debt is recorded as baseline, NEVER blocking in bootstrap
-    assert "blocking" not in statuses
-    assert "baseline" in statuses
-    # unclassified package roots surface as xfail_advisory at the report level
-    assert report.status in ("baseline", "xfail_advisory")
-    assert report.evidence["unclassified_layers"]
-    # every baseline finding keeps owner + promotion_criteria + remediation_hint
-    for v in report.evidence["violations"]:
-        if v["status"] == "baseline":
-            assert v["owner"], v
-            assert v["promotion_criteria"], v
-            assert v["remediation_hint"], v
+    assert statuses == set()
+    assert report.status == "passed"
+    assert report.evidence["unclassified_layers"] == []
 
 
 def test_bootstrap_baseline_exception_preserves_owner_and_promotion() -> None:
@@ -525,11 +503,11 @@ def test_dependency_audit_forbidden_dependency_reports_full_evidence() -> None:
     # ts_5cab7f4f: a forbidden runtime dependency blocks with dependency, owner,
     # severity and the offending matches; a missing catalog fails closed.
     report = DependencyAuditGate().run(
-        DependencyAuditGateInput(forbidden_dependencies=["fastapi", "sqlalchemy"], mode="blocking")
+        DependencyAuditGateInput(forbidden_dependencies=["pydantic", "pyyaml"], mode="blocking")
     )
     assert report.status == "blocking"
     assert report.evidence["error"] == "forbidden_dependency"
-    assert {"fastapi", "sqlalchemy"} <= set(report.evidence["forbidden_matches"])
+    assert {"pydantic", "pyyaml"} <= set(report.evidence["forbidden_matches"])
     assert report.owner == "okto-pulse-core/architecture"
     assert report.severity in ("high", "critical")
     assert report.observed_value and report.remediation_hint

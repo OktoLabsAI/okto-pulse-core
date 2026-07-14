@@ -68,7 +68,7 @@ def test_supersede_creates_walkable_edge_for_non_decision_types(
         )
         orch = TransactionOrchestrator(
             kconn,
-            sqlite_session=None,
+
             session_id="sess-supuniv",
             board_id=board_id,
         )

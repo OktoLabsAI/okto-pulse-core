@@ -12,6 +12,8 @@ Covers:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import pathlib
 import uuid
 
@@ -348,7 +350,7 @@ async def test_ts_c4_mcp_legacy_report_twin(db_factory):
 
     ctx = type("Ctx", (), {"agent_id": USER_ID, "agent_name": "legacy-agent",
                            "board_id": board_id, "permissions": ["board:read"]})()
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
          patch.object(mcp_server, "_mcp_check_architecture_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool("okto_pulse_list_architecture_propagation_legacy")
@@ -369,7 +371,7 @@ async def test_ts_c4_rest_legacy_report_twin(db_factory):
     from fastapi.testclient import TestClient
 
     from okto_pulse.community.api.architecture import router as architecture_router
-    from okto_pulse.core.infra import auth as _auth_mod
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db
 
     board_id, _spec_id, source_id = await _seed_legacy_snapshot(db_factory)
@@ -382,7 +384,7 @@ async def test_ts_c4_rest_legacy_report_twin(db_factory):
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[require_user] = lambda: USER_ID
     client = TestClient(app)
 
     resp = client.get("/api/v1/architecture/propagation-legacy-report", params={"board_id": board_id})

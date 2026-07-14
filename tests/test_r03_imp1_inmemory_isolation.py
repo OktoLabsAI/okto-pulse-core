@@ -55,7 +55,9 @@ def test_rate_limiter_singleton_removed_from_code():
     tier_power.py would be detected as a NEW (un-baselined — we removed the
     baseline entry) singleton, so the gate blocks and lists it."""
     report = AntiSingletonGate().run(AntiSingletonGateInput(only_files=(TIER_POWER_REL,)))
-    assert report.status == "baseline", report.evidence
+    assert report.status == "passed", report.evidence
+    assert report.evidence["baseline_count"] == 0, report.evidence
+    assert report.evidence["detected_count"] == 0, report.evidence
     assert report.evidence["new_singletons"] == [], report.evidence
 
 

@@ -25,10 +25,10 @@ PUBLIC_FACADE_SYMBOLS: dict[str, tuple[str, ...]] = {
         "effective_resource_catalog",
         "freeze_resource_catalog",
         "get_authenticated_agent_for_mcp",
-        "get_db_for_current_mcp_request",
         "mount_mcp",
         "register_resource_catalog",
-        "register_session_factory",
+        "register_mcp_authenticator",
+        "register_scheduler_control_for_mcp",
     ),
     "okto_pulse.core.ports.runtime_workers": (
         "RuntimeWorkerRegistry",

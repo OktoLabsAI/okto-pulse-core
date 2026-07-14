@@ -29,7 +29,8 @@ U = "11111111-1111-1111-1111-111111111111"
 
 class _FakeRes:
     def __init__(self, rows):
-        self._rows = list(rows)
+        self.rows = list(rows)
+        self._rows = self.rows
         self._i = 0
 
     def has_next(self):
@@ -87,7 +88,7 @@ def _edge(candidate_id, edge_type, source, target):
 def test_existing_endpoint_refs_now_carry_loaded_source_artifact_ref():
     fake = _FakeKConn(source_ref=f"bug:{U}")
     refs = _existing_refs_for_edge_endpoints(
-        kconn=fake,
+        graph_scope=fake,
         edge_candidates={"e1": _edge("e1", "validates", "learn-1", "kg:bug-node")},
         node_candidates={"learn-1": _node("learn-1", "Learning", f"card:{U}")},
         candidate_to_existing_id={},

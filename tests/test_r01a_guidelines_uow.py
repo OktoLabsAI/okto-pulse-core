@@ -30,7 +30,8 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api import guidelines as guidelines_api
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.guidelines import router as guidelines_router
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu7-s3-user"
@@ -64,6 +65,7 @@ def client():
     # get_unit_of_work depends on get_db, so overriding get_db keeps the UoW path.
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -72,7 +74,14 @@ async def _seed_board(owner: str = USER, name: str = "fu7s3") -> str:
 
     bid = f"board-fu7s3-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name=name, owner_id=owner))
+        db.add(
+            Board(
+                id=bid,
+                name=name,
+                owner_id=owner,
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
         await db.commit()
         return bid
 
@@ -368,7 +377,7 @@ async def test_get_board_guidelines_use_case_raises_for_missing_board() -> None:
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
-    actor = ActorContext(USER, "rest")
+    actor = ActorContext(USER, "rest", realm_id=LOCAL_REALM_ID)
     with pytest.raises(EntityNotFoundError):
         async with uowf(actor=actor) as uow:
             await GetBoardGuidelinesUseCase().execute(

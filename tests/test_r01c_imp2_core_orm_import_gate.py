@@ -24,6 +24,7 @@ import pytest
 
 from okto_pulse.core.repositories.core_orm_import_gate import (
     CORE_ORM_IMPORT_ALLOWLIST,
+    RETIRED_CORE_ORM_IMPORT_ALLOWLIST,
     core_orm_allowlist_only_shrinks,
     orm_definition_names,
     run_core_orm_import_gate,
@@ -64,8 +65,12 @@ def test_allowlist_is_a_frozen_static_literal():
     # scan), so a NEW violation cannot auto-join. The static fixtures below prove a
     # new file is blocking precisely because the literal does not contain it.
     assert isinstance(CORE_ORM_IMPORT_ALLOWLIST, dict)
-    assert len(CORE_ORM_IMPORT_ALLOWLIST) >= 60
-    assert all(k.startswith("src/okto_pulse/core/") for k in CORE_ORM_IMPORT_ALLOWLIST)
+    assert CORE_ORM_IMPORT_ALLOWLIST == {}
+    assert len(RETIRED_CORE_ORM_IMPORT_ALLOWLIST) >= 60
+    assert all(
+        k.startswith("src/okto_pulse/core/")
+        for k in RETIRED_CORE_ORM_IMPORT_ALLOWLIST
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -127,14 +132,10 @@ def test_module_alias_bypasses_are_detected(tmp_path, name, src, expect_flagged)
 
 def test_allowlist_ratchet_only_shrinks():
     prev = dict(CORE_ORM_IMPORT_ALLOWLIST)
-    a_file = next(iter(prev))
-    shrunk = {k: v for k, v in prev.items() if k != a_file}  # migrated one file
     grown = {**prev, "src/okto_pulse/core/api/_brand_new.py": "rest"}
-    relabelled = {**prev, a_file: "bootstrap"}  # loosened cluster
-    assert core_orm_allowlist_only_shrinks(prev, shrunk) is True
+    assert prev == {}
     assert core_orm_allowlist_only_shrinks(prev, prev) is True
     assert core_orm_allowlist_only_shrinks(prev, grown) is False
-    assert core_orm_allowlist_only_shrinks(prev, relabelled) is False
 
 
 def test_gate_does_not_reuse_use_cases_boundary_or_debt_baseline():

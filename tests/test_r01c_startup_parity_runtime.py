@@ -27,20 +27,18 @@ import pytest
 def _preserve_global_engine():
     from okto_pulse.core.infra import database as db
 
-    saved_engine = db._engine
-    saved_factory = db._session_factory
+    saved_runtime = db.resolve_database_runtime()
     try:
         yield
     finally:
-        db._engine = saved_engine
-        db._session_factory = saved_factory
+        db.configure_database_runtime(runtime=saved_runtime)
 
 
 @pytest.fixture(autouse=True)
 def _no_orchestrator():
     # exercise the in-core legacy lifecycle path (migrations + create_all), not a
     # registered Community orchestrator.
-    from okto_pulse.core.infra import schema_lifecycle as sl
+    from okto_pulse.core.ports import schema_lifecycle as sl
 
     sl.reset_relational_schema_lifecycle_orchestrator()
     yield
@@ -73,7 +71,8 @@ async def test_create_database_applies_sqlite_pragmas_and_pool_at_runtime(tmp_pa
 
 async def test_init_db_runs_migrations_and_materialises_schema_idempotently(tmp_path, _preserve_global_engine):
     from okto_pulse.core.infra import database as db
-    from okto_pulse.core.infra import schema_lifecycle as sl
+    from okto_pulse.core.ports import schema_lifecycle as sl
+    from sqlalchemy_test_models import Base
 
     url = f"sqlite+aiosqlite:///{(tmp_path / 'init.db').as_posix()}"
     db.create_database(url)
@@ -81,7 +80,7 @@ async def test_init_db_runs_migrations_and_materialises_schema_idempotently(tmp_
     class _CreateAllLifecycle:
         async def initialize_schema(self) -> None:
             async with db.get_engine().begin() as conn:
-                await conn.run_sync(db.Base.metadata.create_all)
+                await conn.run_sync(Base.metadata.create_all)
 
     sl.register_relational_schema_lifecycle_orchestrator(_CreateAllLifecycle())
 

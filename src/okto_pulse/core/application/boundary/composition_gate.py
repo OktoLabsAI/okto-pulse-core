@@ -30,12 +30,13 @@ OWNED_PROVIDER_KEYS: tuple[str, ...] = (
     "settings_provider",
     "auth_provider",
     "storage_provider",
-    "session_factory",
     "event_bus",
+    "uow_factory",
     "scheduler_control",
     "telemetry",
     "lifecycle_hooks",
-    "mcp_session_factory",
+    "worker_registry",
+    "content_ingestion_resolver",
 )
 
 #: KG boundaries reserved for spec #05 (never blocking here).
@@ -56,7 +57,6 @@ PROVIDER_WIRING_SYMBOLS: dict[str, str] = {
     "configure_auth": "auth_provider",
     "configure_storage": "storage_provider",
     "FileSystemStorageProvider": "storage_provider",
-    "register_session_factory": "mcp_session_factory",
     "SqliteOutboxEventBus": "event_bus",
     "set_scheduler": "scheduler_control",
     "AsyncIOScheduler": "scheduler_control",

@@ -11,7 +11,6 @@ from typing import Any
 from okto_pulse.core.domain.runtime_settings import (
     DECAY_TICK_KEYS,
     EVENT_QUEUE_KEYS,
-    GRAPH_DB_KEYS,
     RUNTIME_KEYS,
     SETTINGS_RUNTIME_EFFECT_PORTS,
     ConfigChangeBlocked,
@@ -74,7 +73,6 @@ async def put_runtime_settings(
 __all__ = [
     "DECAY_TICK_KEYS",
     "EVENT_QUEUE_KEYS",
-    "GRAPH_DB_KEYS",
     "RUNTIME_KEYS",
     "SETTINGS_RUNTIME_EFFECT_PORTS",
     "ConfigChangeBlocked",

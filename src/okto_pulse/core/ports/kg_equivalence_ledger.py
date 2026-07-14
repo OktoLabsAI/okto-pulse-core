@@ -28,6 +28,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, runtime_checkable
 
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
+
 __all__ = [
     "EquivalenceLedgerError",
     "EquivalenceRecord",
@@ -130,20 +136,19 @@ class EquivalenceLedger(Protocol):
         ...
 
 
-_equivalence_ledger: EquivalenceLedger | None = None
+_RUNTIME_KEY = "ports.kg.equivalence_ledger"
 
 
 def register_equivalence_ledger(ledger: EquivalenceLedger) -> None:
     """Register the edition-owned adapter (called by community wiring)."""
 
-    global _equivalence_ledger
-    _equivalence_ledger = ledger
+    register_runtime_value(_RUNTIME_KEY, ledger)
 
 
 def resolve_equivalence_ledger() -> EquivalenceLedger | None:
     """Return the registered ledger, or ``None`` when absent (probe only)."""
 
-    return _equivalence_ledger
+    return resolve_runtime_value(_RUNTIME_KEY)
 
 
 def require_equivalence_ledger() -> EquivalenceLedger:
@@ -153,7 +158,8 @@ def require_equivalence_ledger() -> EquivalenceLedger:
     merge from mutating the graph without reversal evidence (BR1/D1).
     """
 
-    if _equivalence_ledger is None:
+    ledger = resolve_equivalence_ledger()
+    if ledger is None:
         raise EquivalenceLedgerError(
             "kg_equivalence_ledger_unavailable",
             remediation=(
@@ -163,11 +169,10 @@ def require_equivalence_ledger() -> EquivalenceLedger:
                 "merges."
             ),
         )
-    return _equivalence_ledger
+    return ledger
 
 
 def reset_equivalence_ledger_for_tests() -> None:
     """Test-only: clear the registered ledger."""
 
-    global _equivalence_ledger
-    _equivalence_ledger = None
+    reset_runtime_values(_RUNTIME_KEY)

@@ -40,8 +40,8 @@ def _norm_board(board) -> dict:
     return {
         "name": board.name,
         "owner_id": board.owner_id,
-        "agents": board.__dict__.get("agents"),
-        "settings_present": board.__dict__.get("settings") is not None,
+        "agents": getattr(board, "agents", None),
+        "settings_present": getattr(board, "settings", None) is not None,
     }
 
 
@@ -60,8 +60,8 @@ async def _baseline_service_create_board(db_factory, *, name: str, user_id: str)
         board = await service.create_board(user_id, BoardCreate(name=name), realm_id=None)
         await db.commit()
         board = await service.get_board(board.id)
-        board.__dict__["agents"] = []
-        board.__dict__["settings"] = BoardGovernanceService.normalize_settings(
+        board.agents = []
+        board.settings = BoardGovernanceService.normalize_settings(
             getattr(board, "settings", None)
         )
         return board

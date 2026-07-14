@@ -46,7 +46,11 @@ def test_af29_s3r_inventory_has_no_core_rebuild_root_resolver():
     )
 
     for rel_path in INVENTORY_FILES:
-        source = (CORE_ROOT / rel_path).read_text(encoding="utf-8")
+        path = CORE_ROOT / rel_path
+        if rel_path.startswith("api/"):
+            assert not path.exists(), f"REST adapter still packaged in Core: {rel_path}"
+            continue
+        source = path.read_text(encoding="utf-8")
         for literal in forbidden_literals:
             assert literal not in source, f"{literal} leaked in {rel_path}"
 

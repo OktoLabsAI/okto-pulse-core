@@ -19,7 +19,9 @@ from okto_pulse.core.infra.database import (
     get_pool_status,
 )
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
+# A function-scoped loop keeps these cancellation tests independent from sync
+# tests that legitimately use ``asyncio.run()`` and clear the current loop.
+pytestmark = pytest.mark.asyncio(loop_scope="function")
 
 
 def _checkedout() -> int:

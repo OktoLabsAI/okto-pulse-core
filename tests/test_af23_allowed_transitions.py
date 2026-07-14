@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -21,6 +23,7 @@ from okto_pulse.core.application.use_cases.allowed_transitions import (
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.domain.enums import IdeationStatus, RefinementStatus, SpecStatus
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.community.api.auth_deps import get_realm_id, require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
@@ -45,7 +48,7 @@ def client() -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
-    app.dependency_overrides[get_realm_id] = lambda: None
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -65,6 +68,7 @@ def _ctx(board_id: str):
             "agent_id": USER,
             "agent_name": USER,
             "board_id": board_id,
+            "realm_id": LOCAL_REALM_ID,
             "permissions": ["board:read"],
         },
     )()
@@ -144,7 +148,15 @@ async def _seed_fixture() -> tuple[str, str, str, str]:
     refinement_id = _id("af23-refinement")
     spec_id = _id("af23-spec")
     async with get_session_factory()() as db:
-        db.add(Board(id=board_id, name="AF23", owner_id=USER, settings={}))
+        db.add(
+            Board(
+                id=board_id,
+                name="AF23",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                settings={},
+            )
+        )
         db.add(
             Ideation(
                 id=ideation_id,
@@ -192,7 +204,9 @@ async def test_use_case_resolves_entity_status_and_exposes_unlock_edges() -> Non
     async with get_session_factory()() as db:
         result = await ListAllowedTransitionsUseCase().execute(
             ListAllowedTransitionsCommand(board_id, "spec", entity_id=spec_id),
-            actor=ActorContext(USER, "rest", board_id=board_id),
+            actor=ActorContext(
+                USER, "rest", board_id=board_id, realm_id=LOCAL_REALM_ID
+            ),
             uow=_wrap_uow(db),
         )
 
@@ -220,7 +234,7 @@ async def test_rest_endpoint_and_mcp_tool_return_the_same_contract(client: TestC
     rest_payload = rest.json()
     assert rest_payload["source"] == ALLOWED_TRANSITIONS_SOURCE
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_ctx(board_id))), patch.object(
         mcp_server, "check_permission", return_value=None
     ):
@@ -236,7 +250,15 @@ async def test_mcp_board_context_allows_authorized_non_owner_agent() -> None:
     board_id = _id("af23-board")
     spec_id = _id("af23-spec")
     async with get_session_factory()() as db:
-        db.add(Board(id=board_id, name="AF23 MCP board", owner_id="board-owner", settings={}))
+        db.add(
+            Board(
+                id=board_id,
+                name="AF23 MCP board",
+                owner_id="board-owner",
+                realm_id=LOCAL_REALM_ID,
+                settings={},
+            )
+        )
         db.add(
             Spec(
                 id=spec_id,
@@ -253,7 +275,7 @@ async def test_mcp_board_context_allows_authorized_non_owner_agent() -> None:
         )
         await db.commit()
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_ctx(board_id))), patch.object(
         mcp_server, "check_permission", return_value=None
     ):
@@ -274,7 +296,15 @@ async def test_read_model_does_not_enforce_invalid_backend_moves() -> None:
     board_id = _id("af23-board")
     spec_id = _id("af23-spec")
     async with get_session_factory()() as db:
-        db.add(Board(id=board_id, name="AF23 enforcement", owner_id=USER, settings={}))
+        db.add(
+            Board(
+                id=board_id,
+                name="AF23 enforcement",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                settings={},
+            )
+        )
         db.add(
             Spec(
                 id=spec_id,
@@ -294,7 +324,9 @@ async def test_read_model_does_not_enforce_invalid_backend_moves() -> None:
     async with get_session_factory()() as db:
         result = await ListAllowedTransitionsUseCase().execute(
             ListAllowedTransitionsCommand(board_id, "spec", entity_id=spec_id),
-            actor=ActorContext(USER, "rest", board_id=board_id),
+            actor=ActorContext(
+                USER, "rest", board_id=board_id, realm_id=LOCAL_REALM_ID
+            ),
             uow=_wrap_uow(db),
         )
         assert "done" not in [

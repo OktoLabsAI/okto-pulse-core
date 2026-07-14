@@ -1,7 +1,7 @@
 """Cursor-based pagination tests for okto_pulse_get_activity_log.
 
 Spec `353f656f` (follow-up Story 3): keyset pagination via opaque base64 cursor,
-envelope=true opt-in, OKTO_PULSE_LEGACY_OFFSET escape hatch.
+envelope=true opt-in, edition-supplied legacy-offset escape hatch.
 
 Test cards in Okto Pulse (board 1dad8706):
   - TC1 6e7362ec — helpers unit (ts_a0849bc9, ts_e118d46c)
@@ -11,6 +11,8 @@ Test cards in Okto Pulse (board 1dad8706):
 """
 
 from __future__ import annotations
+
+from mcp_runtime_testing import register_mcp_test_runtime
 
 import asyncio
 import json
@@ -97,7 +99,7 @@ async def _seed_logs(
 async def _call_tool(db_factory, **kwargs) -> str:
     """Invoke okto_pulse_get_activity_log.fn with stubbed auth + registered factory."""
     board_id = kwargs["board_id"]
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
     ), patch.object(mcp_server, "check_permission", return_value=None):
@@ -333,29 +335,33 @@ async def test_envelope_flag_opt_in(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_legacy_offset_env_var(db_factory, monkeypatch):
-    """ts_f08fd5bd — OKTO_PULSE_LEGACY_OFFSET=1 honors offset; otherwise ignores."""
+async def test_legacy_offset_setting(db_factory):
+    """ts_f08fd5bd — the composed edition setting controls legacy offset."""
+    from okto_pulse.core.infra.config import configure_settings, get_settings
+
     board_id = _id("board-legacy")
     await _seed_board(db_factory, board_id)
     await _seed_logs(db_factory, board_id=board_id, count=20)
+    original_settings = get_settings()
 
-    # Off (default): offset silently ignored
-    monkeypatch.delenv("OKTO_PULSE_LEGACY_OFFSET", raising=False)
-    raw_off = await _call_tool(db_factory, board_id=board_id, limit=5, offset=10)
-    rows_off = json.loads(raw_off)
-    raw_first = await _call_tool(db_factory, board_id=board_id, limit=5)
-    rows_first = json.loads(raw_first)
-    assert [r["id"] for r in rows_off] == [r["id"] for r in rows_first], (
-        "without env var, offset must be ignored — same as offset=0"
-    )
+    try:
+        configure_settings(original_settings.model_copy(update={"mcp_legacy_offset": False}))
+        raw_off = await _call_tool(db_factory, board_id=board_id, limit=5, offset=10)
+        rows_off = json.loads(raw_off)
+        raw_first = await _call_tool(db_factory, board_id=board_id, limit=5)
+        rows_first = json.loads(raw_first)
+        assert [r["id"] for r in rows_off] == [r["id"] for r in rows_first], (
+            "with the setting disabled, offset must be ignored"
+        )
 
-    # On: offset honored
-    monkeypatch.setenv("OKTO_PULSE_LEGACY_OFFSET", "1")
-    raw_on = await _call_tool(db_factory, board_id=board_id, limit=5, offset=10)
-    rows_on = json.loads(raw_on)
-    assert [r["id"] for r in rows_on] != [r["id"] for r in rows_first], (
-        "with env var, offset=10 must skip rows"
-    )
+        configure_settings(original_settings.model_copy(update={"mcp_legacy_offset": True}))
+        raw_on = await _call_tool(db_factory, board_id=board_id, limit=5, offset=10)
+        rows_on = json.loads(raw_on)
+        assert [r["id"] for r in rows_on] != [r["id"] for r in rows_first], (
+            "with the setting enabled, offset=10 must skip rows"
+        )
+    finally:
+        configure_settings(original_settings)
 
 
 @pytest.mark.asyncio

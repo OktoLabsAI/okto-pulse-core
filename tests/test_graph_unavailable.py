@@ -228,8 +228,8 @@ def test_ts_b4d2368a_cypher_open_failure_is_graph_unavailable(open_failure_board
     tools = _register_query_tools(monkeypatch, bid)
     payload = _invoke(tools["okto_pulse_kg_get_learning_from_bugs"], board_id=bid, area="anything")
     assert payload["error"]["code"] == "graph_unavailable"
-    # NOT the former generic kuzu_error
-    assert payload["error"]["code"] != "kuzu_error"
+    # NOT the former generic graph_error
+    assert payload["error"]["code"] != "graph_error"
 
 
 # --------------------------------------------------------------------------- #
@@ -277,7 +277,7 @@ def test_ts_753b6aba_non_open_failure_stays_narrow(healthy_empty_board, monkeypa
     bid = healthy_empty_board
 
     # CYPHER: a non-open query error (NOT the bootstrap-probe RuntimeError) must
-    # stay kuzu_error, never graph_unavailable (TR3 narrowness).
+    # stay graph_error, never graph_unavailable (TR3 narrowness).
     store = _get_graph_store()
 
     def _raise_query_error(*_a, **_k):
@@ -298,7 +298,7 @@ def test_ts_753b6aba_non_open_failure_stays_narrow(healthy_empty_board, monkeypa
 
     tools = _register_query_tools(monkeypatch, bid)
     cyp = _invoke(tools["okto_pulse_kg_get_learning_from_bugs"], board_id=bid, area="anything")
-    assert cyp["error"]["code"] == "kuzu_error"
+    assert cyp["error"]["code"] == "graph_error"
     assert cyp["error"]["code"] != "graph_unavailable"
 
     vec = _invoke(tools["okto_pulse_kg_find_similar_decisions"], board_id=bid, topic="anything")

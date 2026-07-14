@@ -19,7 +19,6 @@ CognitiveReadinessService.evaluate_artifact (tr_6bfe98e7 / tr_0aab9bea).
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -29,8 +28,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from okto_pulse.community.api.router import api_router
-from okto_pulse.core.infra import auth as _auth_mod
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.community.api import auth_deps as _auth_mod
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.kg.cognitive_action_center import (
     PRECEDENCE_ORDER,
     SIGNAL_DLQ,
@@ -54,6 +54,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
     compute_cognitive_item_id,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
@@ -70,8 +71,6 @@ def _seed_items(store, board, gen, specs):
     ``specs`` — list of dicts with at least ``source_ref`` + ``status``; optional
     ``reason_code`` / ``revisit_at`` / ``outcome_type`` / ``artifact_type``.
     """
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
     items, pending_refs = [], []
     for spec in specs:
         src = spec["source_ref"]
@@ -90,15 +89,21 @@ def _seed_items(store, board, gen, specs):
         if spec["status"] == CognitiveItemStatus.PENDING.value:
             pending_refs.append(src)
     record = {
+        "board_id": board,
+        "kg_generation_id": gen,
         "pending_count": len(pending_refs),
         "pending_refs": pending_refs,
         "status": "pending" if pending_refs else "consolidated",
         "recorded_at": "2026-06-17T00:00:00+00:00",
         "items": items,
     }
-    with path.open("w", encoding="utf-8") as fh:
-        json.dump(record, fh)
-    return path
+    key = RebuildAuditKey(
+        namespace="cognitive_pending",
+        board_id=board,
+        kg_generation_id=gen,
+    )
+    store.artifact_store.write_json_atomic(key, record)
+    return key
 
 
 async def _board(db_factory, board_id):
@@ -131,7 +136,7 @@ async def test_ts_290926c7_read_model_never_writes(tmp_path, db_factory, monkeyp
     board, gen = "ac-readonly", "gen-1"
     await _board(db_factory, board)
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
-    path = _seed_items(store, board, gen, [
+    key = _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
     ])
     async with db_factory() as db:
@@ -151,7 +156,7 @@ async def test_ts_290926c7_read_model_never_writes(tmp_path, db_factory, monkeyp
         CognitiveConsolidationItemStore, "materialize_from_marker", _boom, raising=True
     )
 
-    file_before = path.read_bytes()
+    record_before = store.artifact_store.read_json(key)
     async with db_factory() as db:
         dlq_before = (await db.execute(
             select(func.count()).select_from(ConsolidationDeadLetter)
@@ -160,8 +165,8 @@ async def test_ts_290926c7_read_model_never_writes(tmp_path, db_factory, monkeyp
         result = await _read_model(store).list_signals(db, board_id=board)
 
     assert result["items"] and result["precedence"] == list(PRECEDENCE_ORDER)
-    # nada foi escrito: arquivo idêntico, contagem DLQ idêntica.
-    assert path.read_bytes() == file_before
+    # Nada foi escrito: payload idêntico, contagem DLQ idêntica.
+    assert store.artifact_store.read_json(key) == record_before
     async with db_factory() as db:
         dlq_after = (await db.execute(
             select(func.count()).select_from(ConsolidationDeadLetter)
@@ -490,12 +495,13 @@ async def _client(tmp_path, db_factory):
     app = FastAPI()
     app.include_router(api_router)
 
-    async def _override_db():
+    async def _override_uow():
         async with db_factory() as session:
-            yield session
+            yield resolve_unit_of_work_factory().wrap(session)
 
-    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[_auth_mod.require_user] = lambda: "rest-user"
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     try:
         yield TestClient(app), board, store
     finally:

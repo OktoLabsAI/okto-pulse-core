@@ -210,8 +210,16 @@ async def test_done_complete_is_canonicalization_candidate(db_factory):
         amendment = await svc.create(
             board_id=board_id, original_spec_id=spec_id, origin_bug_id="bug-1", author=USER
         )
-        await svc.set_lineage_state(amendment.id, AmendmentLineageState.COMPLETE, USER)
-        await svc.set_status(amendment.id, AmendmentRevisionStatus.DONE, USER)
+        amendment = await svc.set_lineage_state(
+            amendment.id,
+            AmendmentLineageState.COMPLETE,
+            USER,
+        )
+        amendment = await svc.set_status(
+            amendment.id,
+            AmendmentRevisionStatus.DONE,
+            USER,
+        )
         verdict = svc.eligibility(amendment)
         assert verdict.lineage_eligible and verdict.canonicalization_candidate
 

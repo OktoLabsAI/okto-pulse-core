@@ -176,7 +176,7 @@ def test_detector_ignores_benign_and_unrelated_errors():
 @pytest.mark.asyncio
 async def test_worker_recovers_legacy_schema_instead_of_dead_letter(db_factory):
     board_id, raw_error = _legacy_board_with_seeded_node()
-    worker = ConsolidationProcessor(session_factory=db_factory)
+    worker = ConsolidationProcessor(relational_scope_factory=db_factory)
 
     entry = ConsolidationQueue(
         id=str(uuid.uuid4()),
@@ -227,7 +227,7 @@ async def test_worker_dead_letters_structured_diagnostic_not_raw(
         _capture_route_to_dead_letter,
     )
 
-    worker = ConsolidationProcessor(session_factory=db_factory)
+    worker = ConsolidationProcessor(relational_scope_factory=db_factory)
     entry = ConsolidationQueue(
         id=str(uuid.uuid4()),
         board_id=board_id,

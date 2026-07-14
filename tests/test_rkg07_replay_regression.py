@@ -31,7 +31,7 @@ from okto_pulse.core.kg.cognitive_source_ref_resolver import (
 )
 from sqlalchemy import select
 
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from kg_schema_testing import open_board_connection
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
 from okto_pulse.core.application.processors.consolidation import _process_queue_entry
@@ -77,9 +77,9 @@ def _seed_node(board_id, node_type, source_ref, *, node_id=None, graph_layer="ca
     nid = node_id or f"{node_type.lower()}_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id)
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, node_type, nid, {
                 "title": f"Seed {node_type}", "content": "", "context": "", "justification": "",
                 "source_artifact_ref": source_ref, "created_at": "2026-06-08T00:00:00+00:00",

@@ -4,7 +4,7 @@ Sub-card derived from KG-01.3 (val_e341620d). Validator approved a SOFT
 default rollout with require_write_token wired in commit_consolidation.
 This file proves the wiring in the remaining write paths:
 
-* `kg_tick._reset_last_recomputed_at` (force_full_rebuild)
+* `core.application.kg_tick.reset_last_recomputed_at` (force_full_rebuild)
 * `outbox_worker._apply_event` (discovery.lbug)
 * `clustering.board_delete_cascade` (per-board + global cascade)
 
@@ -46,11 +46,11 @@ def _force_strict_mode():
 
 
 def test_kg_tick_reset_calls_require_write_token():
-    from okto_pulse.community.api import kg_tick
+    from okto_pulse.core.application import kg_tick
 
-    src = inspect.getsource(kg_tick._reset_last_recomputed_at)
+    src = inspect.getsource(kg_tick.reset_last_recomputed_at)
     assert "require_write_token" in src
-    assert "require_write_token(bid)" in src
+    assert "require_write_token(current_board_id)" in src
 
 
 def test_outbox_worker_apply_event_calls_require_global_write_token():

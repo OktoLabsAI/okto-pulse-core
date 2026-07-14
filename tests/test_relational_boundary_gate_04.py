@@ -93,12 +93,12 @@ def test_observe_metric_buckets_by_surface(tmp_path):
     assert metric["blocking_total"] == len(report.violations)
 
 
-def test_baseline_report_is_non_blocking_debt():
+def test_baseline_report_preserves_history_and_enforces_terminal_boundary():
     report = relational_baseline_report()
     assert report["blocking"] is False
-    assert report["classification"] == "transitional_debt_out_of_scope"
+    assert report["classification"] == "terminal_core_boundary"
     assert report["owner"] and report["promotion_criteria"]
-    # Documented baseline keys (ac_cddd871d).
+    # Historical spec #04 baseline remains available as audit context.
     assert set(report["documented_baseline"]) == {
         "depends_get_db",
         "get_db_for_mcp",
@@ -107,19 +107,13 @@ def test_baseline_report_is_non_blocking_debt():
         "migrate_refs",
     }
     assert report["documented_baseline"] == RELATIONAL_BASELINE
-    # Live recount present. Post the R01A REST+MCP CRUD strangler + the R01B
-    # ownership inversion, the core-wide Depends(get_db)/get_db_for_mcp/
-    # AsyncSession counts SHRANK from the spec #04 documented baseline
-    # (268/225/554) to the R01B drawn-down baseline — a NEW measurement taken
-    # post-TR5/R01B that reconciles the stale >=200/>=200/>=500 floors which
-    # predated the strangler. The report stays non-blocking debt.
+    # The active ORM budget is terminal zero. Textual historical mentions may
+    # still appear in docs/gates, but no mapped Core class remains.
     live = report["live_counts"]
-    assert live["orm_base_classes"] == 59
+    assert live["orm_base_classes"] == 0
+    assert report["terminal_orm_base_classes"] == 0
     assert report["r01b_baseline"] == RELATIONAL_BASELINE_R01B
     for key in ("depends_get_db", "get_db_for_mcp", "async_session"):
-        # the frozen drawn-down baseline matches the live recount...
-        assert live[key] == RELATIONAL_BASELINE_R01B[key]
-        # ...and is strictly below the spec #04 documented baseline (it shrank).
         assert live[key] < RELATIONAL_BASELINE[key]
 
 
@@ -185,15 +179,17 @@ _SNAP = {
 
 
 def test_relational_coverage_frozen_snapshot_clears_floors_and_no_drift():
-    # The real core tree must (1) clear the AC5 "ao menos" floors and (2) match
-    # the frozen R01B live snapshot exactly — zero drift.
+    # The real Core tree matches the terminal zero-coupling snapshot exactly.
     report = relational_baseline_report()
     assert report["coverage_floor"] == RELATIONAL_COVERAGE_BASELINE
     cov = report["coverage_counts"]
-    for aggregate, floor in RELATIONAL_COVERAGE_BASELINE.items():
-        assert cov[aggregate] >= floor, (aggregate, cov[aggregate], floor)
+    assert RELATIONAL_COVERAGE_BASELINE == {
+        "relational_imports": 0,
+        "relational_symbols": 0,
+        "classified_call_sites": 0,
+    }
     assert report["coverage_floor_ok"] is True
-    snap = report["coverage_snapshot_r01b"]
+    snap = report["coverage_snapshot_terminal"]
     for aggregate in ("relational_imports", "relational_symbols", "classified_call_sites"):
         assert cov[aggregate] == snap[aggregate], (aggregate, cov[aggregate], snap[aggregate])
     assert cov["by_surface"] == snap["by_surface"]
@@ -291,6 +287,15 @@ def test_relational_coverage_below_floor_fails_even_when_declared():
         "by_surface": dict(_SNAP["by_surface"]),
     }
     declared = {"relational_symbols": {"count": 241, "task": "R01C-x"}}
-    verdict = relational_coverage_drift(live, snapshot=_SNAP, declared_removals=declared)
+    verdict = relational_coverage_drift(
+        live,
+        floors={
+            "relational_imports": 232,
+            "relational_symbols": 605,
+            "classified_call_sites": 276,
+        },
+        snapshot=_SNAP,
+        declared_removals=declared,
+    )
     assert verdict["ok"] is False
     assert any(fv["aggregate"] == "relational_symbols" for fv in verdict["floor_violations"])

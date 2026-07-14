@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.kg_health import router as kg_health_router
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db
 from sqlalchemy_test_models import Board, KGTickRun
 from okto_pulse.core.services.kg_health_service import get_kg_health
@@ -149,6 +149,7 @@ def kg_health_test_client(db_factory, tick_fields_board):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: _USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
 
     return TestClient(app), tick_fields_board
 

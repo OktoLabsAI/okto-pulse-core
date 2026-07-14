@@ -260,6 +260,7 @@ async def test_ac2b_regression_session_add_raises_integrity_error(
     )
     session.add(row)
     await session.flush()
+    session.expunge(row)
 
     # A second add with the same PK must raise.
     row2 = KGTickRun(

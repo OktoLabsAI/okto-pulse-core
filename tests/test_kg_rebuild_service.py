@@ -1021,7 +1021,7 @@ def test_completed_run_after_backfill_publishes_zero_orphan_validation(
         OrphanBackfillReconciler,
         OrphanNodeScanner,
     )
-    from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+    from okto_pulse.core.kg.primitives import _apply_graph_node_create
     from okto_pulse.core.kg.rebuild_report import get_terminal_count
     from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
@@ -1035,7 +1035,7 @@ def test_completed_run_after_backfill_publishes_zero_orphan_validation(
     learning_id = "learning_zero_orphan"
 
     def _seed_node(kconn, orch, node_type: str, node_id: str, source_ref: str) -> None:
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch,
             node_type,
             node_id,
@@ -1063,8 +1063,8 @@ def test_completed_run_after_backfill_publishes_zero_orphan_validation(
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id="seed_zero_orphan_e2e",
             board_id=board_id,
         )

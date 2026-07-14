@@ -7,9 +7,9 @@ consumes it and, under ``strict_runtime=True``, fails fast with
 silent fallback to a concrete default.
 
 Ownership (Remediacao #03 v2): the providers OWNED/wired by #03 in this phase are
-settings, auth, storage, session_factory, event_bus, scheduler_control,
-telemetry, lifecycle_hooks and mcp_session_factory. R01B REPLAN-IMP1 adds the
-optional ``uow_factory`` (the edition-owned relational UnitOfWorkFactory). The KG registry
+settings, auth, storage, event_bus, UnitOfWorkFactory, scheduler_control,
+telemetry and lifecycle hooks. Relational engines and session factories stay
+inside edition adapters. The KG registry
 (``kg_registry``) is transitional debt deferred to #05 and is NOT a required
 provider here. ``event_bus`` is a #03-owned provider key supplied by the edition
 composition root; core code must not instantiate a concrete relational event-bus
@@ -25,11 +25,12 @@ from collections import Counter
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from threading import Lock
 from typing import Any, AsyncIterator, Protocol, Sequence, runtime_checkable
 
 from .runtime_context import (
     RuntimeValueRegistry,
+    runtime_lock,
+    runtime_state,
     runtime_value_scope,
     snapshot_runtime_values,
 )
@@ -39,19 +40,16 @@ REQUIRED_OWNED_PROVIDERS: tuple[str, ...] = (
     "settings_provider",
     "auth_provider",
     "storage_provider",
-    "session_factory",
     "event_bus",
+    "uow_factory",
 )
 
 #: Optional owned providers (may be ``None`` even in strict mode).
 OPTIONAL_OWNED_PROVIDERS: tuple[str, ...] = (
     "scheduler_control",
     "telemetry",
-    "mcp_session_factory",
-    "uow_factory",
     "lifecycle_hooks",
     "worker_registry",
-    "relational_engine",
     "content_ingestion_resolver",
     "relational_runtime_factory",
 )
@@ -112,20 +110,14 @@ class RuntimeComposition:
     settings_provider: Any
     auth_provider: Any
     storage_provider: Any
-    session_factory: Any
     event_bus: Any
+    # Edition-owned transaction boundary; the Core never constructs a fallback.
+    uow_factory: Any
     kg_registry: Any = None  # deferred_to_05 boundary
     scheduler_control: Any = None
     telemetry: Any = None
-    mcp_session_factory: Any = None
-    # R01B REPLAN-IMP1: the relational UnitOfWorkFactory the edition composition
-    # root owns. Optional/duck-typed (no concrete adapter import). Supplied by the
-    # Community composition (build_community_unit_of_work_factory); re-pointing the
-    # REST/MCP consumers to it is IMP2 (FR3).
-    uow_factory: Any = None
     lifecycle_hooks: Sequence[LifecycleHook] = field(default_factory=tuple)
     worker_registry: Any = None
-    relational_engine: Any = None
     content_ingestion_resolver: Any = None
     relational_runtime_factory: Any = None
     runtime_values: RuntimeValueRegistry = field(default_factory=snapshot_runtime_values)
@@ -171,8 +163,8 @@ _active_runtime_composition: ContextVar[RuntimeComposition | None] = ContextVar(
     "okto_pulse_active_runtime_composition",
     default=None,
 )
-_bridge_usage: Counter[str] = Counter()
-_bridge_usage_lock = Lock()
+_bridge_usage = runtime_state("composition.bridge_usage", Counter)
+_bridge_usage_lock = runtime_lock("composition.bridge_usage")
 
 
 def current_runtime_composition() -> RuntimeComposition | None:

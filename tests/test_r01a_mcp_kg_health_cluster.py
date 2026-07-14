@@ -15,6 +15,8 @@ MCP projection are unchanged; the migration is limited to these two tools.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import ast
 import json
 import uuid
@@ -58,7 +60,7 @@ def _stub_ctx():
 async def _call(tool_name: str, *, scheduler_control=None, **kwargs) -> str:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(
+    register_mcp_test_runtime(
         get_session_factory(),
         scheduler_control=scheduler_control,
     )
@@ -228,7 +230,7 @@ async def test_kg_health_auth_gates_before_use_case() -> None:
     """ctx None → unchanged _auth_error() envelope and the use case never runs."""
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     expected = mcp_server._auth_error()
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=None)), patch(

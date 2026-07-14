@@ -1202,11 +1202,10 @@ async def test_confirm_amendment_coverage_enables_gate_allow():
         assert confirmation["evidence_ref"] == "tests/test_reg.py::test_reg_case"
 
         # gate now ALLOWS the bug move (path_b_ready).
-        await CardService(db).move_card(
+        moved = await CardService(db).move_card(
             ids["bug"], USER_ID, CardMove(status=CardStatus.IN_PROGRESS)
         )
-        bug = await db.get(Card, ids["bug"])
-        assert bug.status == CardStatus.IN_PROGRESS
+        assert moved.status == CardStatus.IN_PROGRESS
 
         preview = await BugRegressionScenarioPreviewService(db).resolve(
             board_id=ids["board"],
