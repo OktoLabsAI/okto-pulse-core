@@ -1,5 +1,7 @@
 """Tests for Global Discovery Layer — schema, cascade, clustering, GC."""
 
+from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
 import os
 import sys
 import tempfile
@@ -13,7 +15,8 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gdt_"))
 from global_graph_testing import (
     GLOBAL_SCHEMA_VERSION,
     bootstrap_global_discovery,
-    open_global_connection,
+    execute_global_read,
+    execute_global_write,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.global_discovery.clustering import (
@@ -30,12 +33,16 @@ from okto_pulse.core.application.processors.global_outbox import (
     DEAD_LETTER_SENTINEL,
     MAX_RETRIES,
     GlobalOutboxProcessor,
-    _is_retryable_board_read_error,
     _is_retryable_global_open_error,
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
-from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import (
+    Board,
+    ConsolidationAudit,
+    GlobalUpdateOutbox,
+    KuzuNodeRef,
+)
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
@@ -54,35 +61,29 @@ def _bootstrap():
 
 class TestGlobalSchema:
     def test_bootstrap_creates_tables(self):
-        db, conn = open_global_connection()
-        r = conn.execute("CALL SHOW_TABLES() RETURN *")
-        tables = []
-        while r.has_next():
-            tables.append(r.get_next())
+        tables = execute_global_read("CALL SHOW_TABLES() RETURN *").rows
         node_count = sum(1 for t in tables if t[2] == "NODE")
         rel_count = sum(1 for t in tables if t[2] == "REL")
         assert node_count == 4
         assert rel_count == 7
-        del conn
 
     def test_schema_version(self):
         assert GLOBAL_SCHEMA_VERSION == "0.1.1"
 
     def test_decision_digest_carries_graph_layer(self):
-        db, conn = open_global_connection()
-        r = conn.execute("CALL TABLE_INFO('DecisionDigest') RETURN *")
         columns = set()
-        while r.has_next():
-            row = r.get_next()
+        for row in execute_global_read(
+            "CALL TABLE_INFO('DecisionDigest') RETURN *"
+        ).rows:
             for cell in row:
                 if isinstance(cell, str):
                     columns.add(cell)
                     break
         assert "graph_layer" in columns
-        del conn
 
-    def test_corrupt_global_discovery_wal_is_preserved_and_blocks_rebootstrap(self, monkeypatch, tmp_path):
-        import global_graph_testing as global_schema
+    def test_corrupt_global_discovery_wal_is_preserved_and_blocks_rebootstrap(
+        self, monkeypatch, tmp_path
+    ):
         from okto_pulse.core.kg.interfaces import get_kg_registry
 
         reset_global_discovery_runtime_for_tests()
@@ -105,17 +106,20 @@ class TestGlobalSchema:
 
         calls = {"open": 0}
 
-        def fake_open(_path):
+        def fake_open(_path, *, on_corruption=None):
             calls["open"] += 1
             if calls["open"] == 1:
-                raise RuntimeError(
+                exc = RuntimeError(
                     "Storage exception: Checksum verification failed, "
                     "the WAL file is corrupted."
                 )
+                if on_corruption is not None:
+                    on_corruption(exc)
+                raise exc
             return FakeDB()
 
         global_runtime = get_kg_registry().global_discovery_runtime
-        monkeypatch.setattr(global_runtime, "_global_graph_path", lambda: path)
+        monkeypatch.setattr(global_runtime, "_graph_path_provider", lambda: path)
         board_runtime = global_runtime._runtime()
         monkeypatch.setattr(board_runtime, "open_kuzu_db", fake_open)
         monkeypatch.setattr(board_runtime, "new_connection", lambda _db: FakeConn())
@@ -129,46 +133,53 @@ class TestGlobalSchema:
         assert wal.exists()
 
     def test_board_insert_and_query(self):
-        db, conn = open_global_connection()
         emb = get_embedding_provider().encode("test board")
-        conn.execute(
+        execute_global_write(
             "CREATE (b:Board {board_id: $bid, name: $n, summary: $s, "
             "summary_embedding: $emb, topic_count: 0, entity_count: 0, "
             "decision_count: 1, last_sync_at: timestamp($ts)})",
-            {"bid": "test-schema-b", "n": "Test", "s": "", "emb": emb,
-             "ts": "2026-04-15T10:00:00"},
+            {
+                "bid": "test-schema-b",
+                "n": "Test",
+                "s": "",
+                "emb": emb,
+                "ts": "2026-04-15T10:00:00",
+            },
+            operation="test_global_schema_insert_board",
         )
-        r = conn.execute(
+        r = execute_global_read(
             "MATCH (b:Board {board_id: $bid}) RETURN b.decision_count",
             {"bid": "test-schema-b"},
         )
-        assert r.get_next()[0] == 1
-        conn.execute(
-            "MATCH (b:Board {board_id: 'test-schema-b'}) DETACH DELETE b"
+        assert r.rows[0][0] == 1
+        execute_global_write(
+            "MATCH (b:Board {board_id: 'test-schema-b'}) DETACH DELETE b",
+            operation="test_global_schema_delete_board",
         )
-        del conn
 
 
 class TestBoardCascade:
     def test_cascade_removes_board(self):
-        db, conn = open_global_connection()
         emb = get_embedding_provider().encode("cascade board")
-        conn.execute(
+        execute_global_write(
             "CREATE (b:Board {board_id: $bid, name: $n, summary: $s, "
             "summary_embedding: $emb, topic_count: 0, entity_count: 0, "
             "decision_count: 3, last_sync_at: timestamp($ts)})",
-            {"bid": "cascade-b", "n": "CB", "s": "", "emb": emb,
-             "ts": "2026-04-15T10:00:00"},
+            {
+                "bid": "cascade-b",
+                "n": "CB",
+                "s": "",
+                "emb": emb,
+                "ts": "2026-04-15T10:00:00",
+            },
+            operation="test_global_cascade_seed_board",
         )
-        del conn
         counts = board_delete_cascade("cascade-b")
         assert counts["board_removed"] is True
-        db, conn = open_global_connection()
-        r = conn.execute(
+        r = execute_global_read(
             "MATCH (b:Board {board_id: 'cascade-b'}) RETURN count(b)"
         )
-        assert r.get_next()[0] == 0
-        del conn
+        assert r.rows[0][0] == 0
 
 
 class TestClustering:
@@ -222,17 +233,211 @@ class TestGlobalOutboxProcessor:
         assert _is_retryable_global_open_error(
             "graph_unavailable:global graph temporarily unavailable"
         )
-
-    def test_board_read_failure_is_retryable(self):
-        assert _is_retryable_board_read_error(
-            "outbox.read_board_failed: could not read source graph nodes"
-        )
-        assert _is_retryable_board_read_error(
-            "graph_unavailable:bootstrap_probe"
+        assert _is_retryable_global_open_error(
+            "graph_lock_contention:global lifecycle reader still active"
         )
 
     @pytest.mark.asyncio
-    async def test_dead_lettered_global_open_failure_is_requeued_and_processed(
+    async def _case_post_flush_verification_isolated_per_board(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        import uuid
+        import okto_pulse.core.application.processors.global_outbox as worker_mod
+
+        healthy_board = f"board-healthy-{uuid.uuid4().hex[:8]}"
+        toxic_board = f"board-toxic-{uuid.uuid4().hex[:8]}"
+        event_ids = {
+            healthy_board: str(uuid.uuid4()),
+            toxic_board: str(uuid.uuid4()),
+        }
+        async with db_factory() as db:
+            await db.execute(delete(GlobalUpdateOutbox))
+            for board_id in event_ids:
+                db.add(Board(id=board_id, name=board_id, owner_id="owner"))
+                db.add(
+                    GlobalUpdateOutbox(
+                        event_id=event_ids[board_id],
+                        board_id=board_id,
+                        session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                        event_type="consolidation_committed",
+                        payload={"session_id": "", "nodes_added": 0},
+                    )
+                )
+            await db.commit()
+
+        class _Runtime:
+            @contextmanager
+            def post_write_verification_scope(self):
+                yield
+
+            def close(self):
+                return None
+
+        runtime = _Runtime()
+        source_rechecks: list[tuple[str, dict[str, str]]] = []
+
+        async def fake_apply_event(self, event, db):
+            del self, db
+            return {f"source-{event.board_id}": ("canonical", "Decision")}
+
+        def fake_verify(self, _runtime, board_id, _expected):
+            del self, _runtime
+            if board_id == toxic_board:
+                raise RuntimeError(
+                    "outbox.digest_reconcile_verification_failed: toxic-board"
+                )
+
+        monkeypatch.setattr(worker_mod, "_global_discovery_runtime", lambda: runtime)
+        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fake_apply_event)
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_flush_global_discovery_storage_after_batch",
+            lambda self: None,
+        )
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_assert_source_inventory_unchanged",
+            staticmethod(
+                lambda selected_board, types: source_rechecks.append(
+                    (selected_board, dict(types))
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_verify_reconciled_digest_layers",
+            fake_verify,
+        )
+
+        assert await GlobalOutboxProcessor(db_factory).process_once() == 1
+        assert {board for board, _types in source_rechecks} == {
+            healthy_board,
+            toxic_board,
+        }
+
+        async with db_factory() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(GlobalUpdateOutbox).where(
+                            GlobalUpdateOutbox.event_id.in_(event_ids.values())
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            by_board = {row.board_id: row for row in rows}
+            assert by_board[healthy_board].processed_at is not None
+            assert by_board[healthy_board].retry_count == 0
+            assert by_board[toxic_board].processed_at is None
+            assert by_board[toxic_board].retry_count == 1
+
+    @pytest.mark.asyncio
+    async def _case_terminal_source_inventory_churn_requires_operator_reprocess(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        import uuid
+        import okto_pulse.core.application.processors.global_outbox as worker_mod
+
+        board_id = f"board-churn-recover-{uuid.uuid4().hex[:8]}"
+        event_id = str(uuid.uuid4())
+        async with db_factory() as db:
+            await db.execute(delete(GlobalUpdateOutbox))
+            db.add(Board(id=board_id, name=board_id, owner_id="owner"))
+            db.add(
+                GlobalUpdateOutbox(
+                    event_id=event_id,
+                    board_id=board_id,
+                    session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                    event_type="consolidation_committed",
+                    payload={"session_id": "", "nodes_added": 0},
+                    retry_count=DEAD_LETTER_SENTINEL,
+                    last_error=(
+                        "global_discovery_post_flush_verification_failed: "
+                        "outbox.source_inventory_changed: board churned"
+                    ),
+                )
+            )
+            await db.commit()
+
+        class _Runtime:
+            @contextmanager
+            def post_write_verification_scope(self):
+                yield
+
+            def close(self):
+                return None
+
+        async def fake_apply_event(self, event, db):
+            del self, event, db
+            return {}
+
+        class _Clock:
+            def __init__(self):
+                self.current = datetime(2026, 7, 15, tzinfo=timezone.utc)
+
+            def now(self):
+                return self.current
+
+            def advance(self, seconds):
+                self.current += timedelta(seconds=seconds)
+
+        clock = _Clock()
+
+        monkeypatch.setattr(worker_mod, "_global_discovery_runtime", _Runtime)
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_read_board_digestable_node_types",
+            staticmethod(lambda _board_id: {"stable-source": "Decision"}),
+        )
+        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fake_apply_event)
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_flush_global_discovery_storage_after_batch",
+            lambda self: None,
+        )
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_assert_source_inventory_unchanged",
+            staticmethod(lambda _board_id, _types: None),
+        )
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_verify_reconciled_digest_layers",
+            lambda self, runtime, selected_board, expected: None,
+        )
+
+        worker = GlobalOutboxProcessor(db_factory, clock=clock)
+        # Backend health and elapsed stability never authorize an implicit
+        # terminal-DLQ mutation.  Only the explicit operator service may
+        # reopen an immutable selected ID.
+        assert await worker.process_once() == 0
+        clock.advance(31)
+        assert await worker.process_once() == 0
+        async with db_factory() as db:
+            row = (
+                await db.execute(
+                    select(GlobalUpdateOutbox).where(
+                        GlobalUpdateOutbox.event_id == event_id
+                    )
+                )
+            ).scalar_one()
+            assert row.processed_at is None
+            assert row.retry_count == DEAD_LETTER_SENTINEL
+            assert row.last_error == (
+                "global_discovery_post_flush_verification_failed: "
+                "outbox.source_inventory_changed: board churned"
+            )
+            await db.execute(delete(GlobalUpdateOutbox))
+            await db.commit()
+
+    @pytest.mark.asyncio
+    async def test_recovered_global_backend_does_not_implicitly_requeue_terminal(
         self,
         db_factory,
         monkeypatch,
@@ -245,15 +450,17 @@ class TestGlobalOutboxProcessor:
         session_id = f"kgses_{uuid.uuid4().hex[:16]}"
         async with db_factory() as db:
             await db.execute(delete(GlobalUpdateOutbox))
-            db.add(GlobalUpdateOutbox(
-                event_id=event_id,
-                board_id=board_id,
-                session_id=session_id,
-                event_type="consolidation_committed",
-                payload={"session_id": session_id, "nodes_added": 1},
-                retry_count=DEAD_LETTER_SENTINEL,
-                last_error="graph_corruption:global graph could not be opened",
-            ))
+            db.add(
+                GlobalUpdateOutbox(
+                    event_id=event_id,
+                    board_id=board_id,
+                    session_id=session_id,
+                    event_type="consolidation_committed",
+                    payload={"session_id": session_id, "nodes_added": 1},
+                    retry_count=DEAD_LETTER_SENTINEL,
+                    last_error="graph_corruption:global graph could not be opened",
+                )
+            )
             await db.commit()
 
         calls = {"open": 0, "apply": 0}
@@ -267,6 +474,7 @@ class TestGlobalOutboxProcessor:
 
         async def fake_apply_event(self, event, db):
             calls["apply"] += 1
+            return {}
 
         monkeypatch.setattr(
             worker_mod._global_discovery_runtime(),
@@ -283,181 +491,168 @@ class TestGlobalOutboxProcessor:
         worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
         processed = await worker.process_once()
 
-        assert processed == 1
-        assert calls == {"open": 1, "apply": 1}
+        assert processed == 0
+        assert calls == {"open": 0, "apply": 0}
 
         async with db_factory() as db:
             row = (
                 await db.execute(
-                    select(GlobalUpdateOutbox)
-                    .where(GlobalUpdateOutbox.event_id == event_id)
+                    select(GlobalUpdateOutbox).where(
+                        GlobalUpdateOutbox.event_id == event_id
+                    )
                 )
             ).scalar_one()
-            assert row.processed_at is not None
-            assert row.retry_count == 0
-            assert row.last_error is None
+            assert row.processed_at is None
+            assert row.retry_count == DEAD_LETTER_SENTINEL
+            assert row.last_error == "graph_corruption:global graph could not be opened"
             await db.execute(delete(GlobalUpdateOutbox))
             await db.commit()
 
     @pytest.mark.asyncio
-    async def test_dead_lettered_board_read_failure_is_requeued_when_board_recovers(
+    async def test_terminal_board_read_failure_requires_explicit_operator_reprocess(
         self,
         db_factory,
         monkeypatch,
     ):
         import uuid
-        import okto_pulse.core.application.processors.global_outbox as worker_mod
 
         board_id = f"board-outbox-board-recover-{uuid.uuid4().hex[:8]}"
         event_id = str(uuid.uuid4())
         session_id = f"kgses_{uuid.uuid4().hex[:16]}"
         async with db_factory() as db:
             await db.execute(delete(GlobalUpdateOutbox))
-            db.add(GlobalUpdateOutbox(
-                event_id=event_id,
-                board_id=board_id,
-                session_id=session_id,
-                event_type="consolidation_committed",
-                payload={"session_id": session_id, "nodes_added": 1},
-                retry_count=DEAD_LETTER_SENTINEL,
-                last_error=(
-                    "outbox.read_board_failed: could not read source graph nodes"
-                ),
-            ))
+            db.add(
+                GlobalUpdateOutbox(
+                    event_id=event_id,
+                    board_id=board_id,
+                    session_id=session_id,
+                    event_type="consolidation_committed",
+                    payload={"session_id": session_id, "nodes_added": 1},
+                    retry_count=DEAD_LETTER_SENTINEL,
+                    last_error=(
+                        "outbox.read_board_failed: could not read source graph nodes"
+                    ),
+                )
+            )
             await db.commit()
 
-        calls = {"probe": 0, "apply": 0}
+        async def fail_if_applied(self, event, db):
+            raise AssertionError("terminal event requires explicit operator selection")
 
-        def fake_probe(_board_id: str) -> bool:
-            calls["probe"] += 1
-            return True
+        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fail_if_applied)
 
-        async def fake_apply_event(self, event, db):
-            calls["apply"] += 1
+        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
+        processed = await worker.process_once()
+
+        assert processed == 0
+
+        async with db_factory() as db:
+            row = (
+                await db.execute(
+                    select(GlobalUpdateOutbox).where(
+                        GlobalUpdateOutbox.event_id == event_id
+                    )
+                )
+            ).scalar_one()
+            assert row.processed_at is None
+            assert row.retry_count == DEAD_LETTER_SENTINEL
+            assert row.last_error == (
+                "outbox.read_board_failed: could not read source graph nodes"
+            )
+            await db.execute(delete(GlobalUpdateOutbox))
+            await db.commit()
+
+    @pytest.mark.asyncio
+    async def test_terminal_dead_letter_requires_explicit_operator_reprocess(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        import uuid
+
+        terminal_event_id = str(uuid.uuid4())
+        active_event_id = str(uuid.uuid4())
+        async with db_factory() as db:
+            await db.execute(delete(GlobalUpdateOutbox))
+            db.add(
+                GlobalUpdateOutbox(
+                    event_id=terminal_event_id,
+                    board_id=f"board-outbox-terminal-{uuid.uuid4().hex[:8]}",
+                    session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                    event_type="consolidation_committed",
+                    payload={"session_id": "ignored"},
+                    retry_count=DEAD_LETTER_SENTINEL,
+                    last_error="graph_unavailable: backend is queryable again",
+                )
+            )
+            db.add(
+                GlobalUpdateOutbox(
+                    event_id=active_event_id,
+                    board_id=f"board-outbox-active-{uuid.uuid4().hex[:8]}",
+                    session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                    event_type="consolidation_committed",
+                    payload={"session_id": "active-retry"},
+                    retry_count=1,
+                    last_error="graph_unavailable: prior transient failure",
+                )
+            )
+            await db.commit()
+
+        applied_event_ids: list[str] = []
+
+        async def apply_active_retry(self, event, db):
+            assert event.event_id == active_event_id
+            applied_event_ids.append(event.event_id)
+            return {}
+
+        def verify_active_retry(self, processed_events):
+            assert [event.event_id for event, _expected in processed_events] == [
+                active_event_id
+            ]
+            return {}, None
 
         monkeypatch.setattr(
             GlobalOutboxProcessor,
-            "_board_graph_is_queryable",
-            staticmethod(fake_probe),
+            "_apply_event",
+            apply_active_retry,
         )
-        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fake_apply_event)
+        monkeypatch.setattr(
+            GlobalOutboxProcessor,
+            "_verify_processed_batch",
+            verify_active_retry,
+        )
 
         worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
         processed = await worker.process_once()
 
         assert processed == 1
-        assert calls == {"probe": 1, "apply": 1}
-
+        assert applied_event_ids == [active_event_id]
         async with db_factory() as db:
-            row = (
+            terminal_row = (
                 await db.execute(
-                    select(GlobalUpdateOutbox)
-                    .where(GlobalUpdateOutbox.event_id == event_id)
+                    select(GlobalUpdateOutbox).where(
+                        GlobalUpdateOutbox.event_id == terminal_event_id
+                    )
                 )
             ).scalar_one()
-            assert row.processed_at is not None
-            assert row.retry_count == 0
-            assert row.last_error is None
-            await db.execute(delete(GlobalUpdateOutbox))
-            await db.commit()
-
-    @pytest.mark.asyncio
-    async def test_dead_lettered_board_read_failure_waits_if_board_unavailable(
-        self,
-        db_factory,
-        monkeypatch,
-    ):
-        import uuid
-
-        event_id = str(uuid.uuid4())
-        async with db_factory() as db:
-            await db.execute(delete(GlobalUpdateOutbox))
-            db.add(GlobalUpdateOutbox(
-                event_id=event_id,
-                board_id=f"board-outbox-board-still-down-{uuid.uuid4().hex[:8]}",
-                session_id=f"kgses_{uuid.uuid4().hex[:16]}",
-                event_type="consolidation_committed",
-                payload={"session_id": "ignored"},
-                retry_count=DEAD_LETTER_SENTINEL,
-                last_error=(
-                    "outbox.read_board_failed: could not read source graph nodes"
-                ),
-            ))
-            await db.commit()
-
-        monkeypatch.setattr(
-            GlobalOutboxProcessor,
-            "_board_graph_is_queryable",
-            staticmethod(lambda _board_id: False),
-        )
-
-        async def fail_if_called(self, event, db):
-            raise AssertionError("event should stay dead-lettered")
-
-        monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fail_if_called)
-
-        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
-        processed = await worker.process_once()
-
-        assert processed == 0
-        async with db_factory() as db:
-            row = (
+            active_row = (
                 await db.execute(
-                    select(GlobalUpdateOutbox)
-                    .where(GlobalUpdateOutbox.event_id == event_id)
+                    select(GlobalUpdateOutbox).where(
+                        GlobalUpdateOutbox.event_id == active_event_id
+                    )
                 )
             ).scalar_one()
-            assert row.processed_at is None
-            assert row.retry_count == DEAD_LETTER_SENTINEL
-            assert "outbox.read_board_failed" in (row.last_error or "")
+            assert terminal_row.processed_at is None
+            assert terminal_row.retry_count == DEAD_LETTER_SENTINEL
+            assert (
+                terminal_row.last_error
+                == "graph_unavailable: backend is queryable again"
+            )
+            assert active_row.processed_at is not None
+            assert active_row.retry_count == 1
+            assert active_row.last_error is None
             await db.execute(delete(GlobalUpdateOutbox))
             await db.commit()
-
-    @pytest.mark.asyncio
-    async def test_non_global_dead_letter_is_not_requeued(
-        self,
-        db_factory,
-        monkeypatch,
-    ):
-        import uuid
-        import okto_pulse.core.application.processors.global_outbox as worker_mod
-
-        event_id = str(uuid.uuid4())
-        async with db_factory() as db:
-            db.add(GlobalUpdateOutbox(
-                event_id=event_id,
-                board_id=f"board-outbox-non-recover-{uuid.uuid4().hex[:8]}",
-                session_id=f"kgses_{uuid.uuid4().hex[:16]}",
-                event_type="consolidation_committed",
-                payload={"session_id": "ignored"},
-                retry_count=DEAD_LETTER_SENTINEL,
-                last_error="invalid payload shape",
-            ))
-            await db.commit()
-
-        def fail_if_called():
-            raise AssertionError("global recovery should not run")
-
-        monkeypatch.setattr(
-            worker_mod._global_discovery_runtime(),
-            "execute",
-            fail_if_called,
-        )
-
-        worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
-        processed = await worker.process_once()
-
-        assert processed == 0
-        async with db_factory() as db:
-            row = (
-                await db.execute(
-                    select(GlobalUpdateOutbox)
-                    .where(GlobalUpdateOutbox.event_id == event_id)
-                )
-            ).scalar_one()
-            assert row.processed_at is None
-            assert row.retry_count == DEAD_LETTER_SENTINEL
-            assert row.last_error == "invalid payload shape"
 
     @pytest.mark.asyncio
     async def test_process_once_uses_global_guard_and_flushes_after_batch(
@@ -475,13 +670,15 @@ class TestGlobalOutboxProcessor:
         event_id = str(uuid.uuid4())
         async with db_factory() as db:
             await db.execute(delete(GlobalUpdateOutbox))
-            db.add(GlobalUpdateOutbox(
-                event_id=event_id,
-                board_id=f"board-outbox-guard-{uuid.uuid4().hex[:8]}",
-                session_id=f"kgses_{uuid.uuid4().hex[:16]}",
-                event_type="consolidation_committed",
-                payload={"session_id": "ignored", "nodes_added": 0},
-            ))
+            db.add(
+                GlobalUpdateOutbox(
+                    event_id=event_id,
+                    board_id=f"board-outbox-guard-{uuid.uuid4().hex[:8]}",
+                    session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                    event_type="consolidation_committed",
+                    payload={"session_id": "ignored", "nodes_added": 0},
+                )
+            )
             await db.commit()
 
         calls = {"apply": 0, "flush": 0}
@@ -489,6 +686,7 @@ class TestGlobalOutboxProcessor:
         async def fake_apply_event(self, event, db):
             require_global_write_token()
             calls["apply"] += 1
+            return {}
 
         def fake_flush(self):
             calls["flush"] += 1
@@ -509,8 +707,9 @@ class TestGlobalOutboxProcessor:
         async with db_factory() as db:
             row = (
                 await db.execute(
-                    select(GlobalUpdateOutbox)
-                    .where(GlobalUpdateOutbox.event_id == event_id)
+                    select(GlobalUpdateOutbox).where(
+                        GlobalUpdateOutbox.event_id == event_id
+                    )
                 )
             ).scalar_one()
             assert row.processed_at is not None
@@ -530,20 +729,45 @@ class TestGlobalOutboxProcessor:
         event_id = str(uuid.uuid4())
         session_id = f"kgses_{uuid.uuid4().hex[:16]}"
         async with db_factory() as db:
-            db.add(KuzuNodeRef(
-                session_id=session_id,
-                board_id=board_id,
-                kuzu_node_id="entity_source",
-                kuzu_node_type="Entity",
-                operation="add",
-            ))
-            db.add(GlobalUpdateOutbox(
-                event_id=event_id,
-                board_id=board_id,
-                session_id=session_id,
-                event_type="consolidation_committed",
-                payload={"session_id": session_id, "nodes_added": 1},
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Global Outbox Read Failure {board_id}",
+                    owner_id="global-outbox-test",
+                )
+            )
+            await db.flush()
+            now = datetime.now(timezone.utc)
+            db.add(
+                ConsolidationAudit(
+                    session_id=session_id,
+                    board_id=board_id,
+                    artifact_id="global-outbox-read-failure",
+                    artifact_type="test",
+                    agent_id="global-outbox-test",
+                    started_at=now,
+                    committed_at=now,
+                )
+            )
+            await db.flush()
+            db.add(
+                KuzuNodeRef(
+                    session_id=session_id,
+                    board_id=board_id,
+                    kuzu_node_id="entity_source",
+                    kuzu_node_type="Entity",
+                    operation="add",
+                )
+            )
+            db.add(
+                GlobalUpdateOutbox(
+                    event_id=event_id,
+                    board_id=board_id,
+                    session_id=session_id,
+                    event_type="consolidation_committed",
+                    payload={"session_id": session_id, "nodes_added": 1},
+                )
+            )
             await db.commit()
 
         class FakeResult:
@@ -572,10 +796,104 @@ class TestGlobalOutboxProcessor:
         async with db_factory() as db:
             row = (
                 await db.execute(
-                    select(GlobalUpdateOutbox)
-                    .where(GlobalUpdateOutbox.event_id == event_id)
+                    select(GlobalUpdateOutbox).where(
+                        GlobalUpdateOutbox.event_id == event_id
+                    )
                 )
             ).scalar_one()
             assert row.processed_at is None
             assert row.retry_count == 1
             assert "outbox.read_board_failed" in (row.last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_post_flush_verification_isolated_per_board(
+    db_factory,
+    monkeypatch,
+):
+    await TestGlobalOutboxProcessor()._case_post_flush_verification_isolated_per_board(
+        db_factory,
+        monkeypatch,
+    )
+
+
+@pytest.mark.asyncio
+async def test_terminal_source_inventory_churn_requires_operator_reprocess(
+    db_factory,
+    monkeypatch,
+):
+    await TestGlobalOutboxProcessor()._case_terminal_source_inventory_churn_requires_operator_reprocess(
+        db_factory,
+        monkeypatch,
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_flush_source_inventory_change_prevents_ack(
+    db_factory,
+    monkeypatch,
+):
+    import uuid
+    import okto_pulse.core.application.processors.global_outbox as worker_mod
+
+    board_id = f"board-postflush-churn-{uuid.uuid4().hex[:8]}"
+    event_id = str(uuid.uuid4())
+    async with db_factory() as db:
+        await db.execute(delete(GlobalUpdateOutbox))
+        db.add(Board(id=board_id, name=board_id, owner_id="owner"))
+        db.add(
+            GlobalUpdateOutbox(
+                event_id=event_id,
+                board_id=board_id,
+                session_id=f"kgses_{uuid.uuid4().hex[:16]}",
+                event_type="consolidation_committed",
+                payload={"session_id": "", "nodes_added": 0},
+            )
+        )
+        await db.commit()
+
+    class _Runtime:
+        @contextmanager
+        def post_write_verification_scope(self):
+            yield
+
+        def close(self):
+            return None
+
+    async def fake_apply_event(self, event, db):
+        del self, event, db
+        return {"source-a": ("canonical", "Decision")}
+
+    def inventory_changed(_board_id, _types):
+        raise RuntimeError("outbox.source_inventory_changed: concurrent remove/insert")
+
+    monkeypatch.setattr(worker_mod, "_global_discovery_runtime", _Runtime)
+    monkeypatch.setattr(GlobalOutboxProcessor, "_apply_event", fake_apply_event)
+    monkeypatch.setattr(
+        GlobalOutboxProcessor,
+        "_flush_global_discovery_storage_after_batch",
+        lambda self: None,
+    )
+    monkeypatch.setattr(
+        GlobalOutboxProcessor,
+        "_assert_source_inventory_unchanged",
+        staticmethod(inventory_changed),
+    )
+    monkeypatch.setattr(
+        GlobalOutboxProcessor,
+        "_verify_reconciled_digest_layers",
+        lambda *_args: pytest.fail("global verify must follow source revalidation"),
+    )
+
+    assert await GlobalOutboxProcessor(db_factory).process_once() == 0
+    async with db_factory() as db:
+        row = (
+            await db.execute(
+                select(GlobalUpdateOutbox).where(
+                    GlobalUpdateOutbox.event_id == event_id
+                )
+            )
+        ).scalar_one()
+        assert row.processed_at is None
+        assert row.retry_count == 1
+        assert "outbox.source_inventory_changed" in (row.last_error or "")

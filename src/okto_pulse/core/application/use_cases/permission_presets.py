@@ -6,6 +6,7 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -43,6 +44,8 @@ class GetMyPermissionsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> GetMyPermissionsResult:
+        if await load_accessible_board(uow, command.board_id, actor) is None:
+            raise EntityNotFoundError("board", command.board_id)
         permissions = await _gateway(uow).get_effective_permissions(
             user_id=actor.actor_id,
             board_id=command.board_id,

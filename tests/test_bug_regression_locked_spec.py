@@ -1083,6 +1083,10 @@ async def _seed_path_b_board(db, *, amendment_kwargs):
         card_type=CardType.TEST, test_scenario_ids=[ids["foreign_scenario"]],
         created_by=USER_ID, created_at=now + timedelta(seconds=1),
     ))
+    # The amendment model has a board FK but no ORM relationship that orders
+    # its insert after these parents.  Persist the actual board/spec/card graph
+    # before adding the amendment lineage row.
+    await db.flush()
     base_amendment = dict(
         id=ids["amendment"], board_id=ids["board"],
         original_spec_id=ids["spec"], origin_bug_id=ids["bug"],
@@ -1282,6 +1286,8 @@ async def test_create_strips_reserved_coverage_confirmation_key():
         "evidence_ref": "x::y",
     }
     async with factory() as db:
+        db.add(Board(id="pb-forge-board", name="Path B Forge Board", owner_id=USER_ID))
+        await db.flush()
         amendment = await AmendmentRevisionService(db).create(
             board_id="pb-forge-board",
             original_spec_id="pb-forge-spec",

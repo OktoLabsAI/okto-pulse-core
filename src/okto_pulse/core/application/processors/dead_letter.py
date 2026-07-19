@@ -10,7 +10,11 @@ history in the ``errors`` JSON array following the schema fixed by TR16/AC17:
         "occurred_at": <ISO8601 UTC string>,
         "error_type": <str, exception class name>,
         "message": <str, ≤500 chars>,
-        "traceback": <str|None, ≤2000 chars when DEBUG, else null>
+        "traceback": <str|None, ≤2000 chars when DEBUG, else null>,
+        "recovery_class": "connectivity"|"invalid_payload"|"true_drift",
+        "reason_code": <stable str>,
+        "replay_safe": <bool>,
+        "correlation_id": <uuid>
     }
 
 The ``last_error`` column on the queue acts as the per-attempt scratch slot;
@@ -25,11 +29,13 @@ from __future__ import annotations
 
 import logging
 import traceback
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.ports.kg_operational import (
     KGQueueEntrySnapshot,
+    classify_kg_recovery_failure,
     get_kg_worker_queue_port,
 )
 
@@ -47,6 +53,7 @@ def build_attempt_entry(
     message: str,
     include_traceback: bool = False,
     occurred_at: datetime | None = None,
+    correlation_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a single ``errors[]`` entry following the TR16/AC17 schema.
 
@@ -67,12 +74,17 @@ def build_attempt_entry(
             tb_text = None
     else:
         tb_text = None
+    classification = classify_kg_recovery_failure(error_type, message)
     return {
         "attempt": int(attempt),
         "occurred_at": when.isoformat(),
         "error_type": str(error_type)[:80],
         "message": str(message)[:_MESSAGE_TRUNCATE_CHARS],
         "traceback": tb_text,
+        "recovery_class": classification.recovery_class,
+        "reason_code": classification.reason_code,
+        "replay_safe": classification.replay_safe,
+        "correlation_id": correlation_id or str(uuid.uuid4()),
     }
 
 
@@ -96,13 +108,14 @@ def _accumulate_history(
         placeholder_ts = datetime.now(timezone.utc).isoformat()
         previous_message = (queue_entry.last_error or "").strip()
         for n in range(1, placeholder_count + 1):
-            history.append({
-                "attempt": n,
-                "occurred_at": placeholder_ts,
-                "error_type": "PriorAttempt",
-                "message": (previous_message or "(no message captured)")[:_MESSAGE_TRUNCATE_CHARS],
-                "traceback": None,
-            })
+            history.append(
+                build_attempt_entry(
+                    attempt=n,
+                    occurred_at=datetime.fromisoformat(placeholder_ts),
+                    error_type="PriorAttempt",
+                    message=previous_message or "(no message captured)",
+                )
+            )
     history.append(final_entry)
     return history
 

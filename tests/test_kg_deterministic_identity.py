@@ -19,12 +19,13 @@ from pathlib import Path
 import pytest
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.node_identity import derive_natural_key, mint_node_id
 
 from test_kg_dedup_nc8 import (  # noqa: F401  (fixture reuse)
     _bootstrap_test_board,
     _drive_one_session,
-    _query_one,
+    _query_one_async,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -81,6 +82,40 @@ def _node_attrs(board_id: str, node_id: str) -> dict:
                 pass
 
 
+async def _node_attrs_async(board_id: str, node_id: str) -> dict:
+    return await run_blocking_graph_io(
+        lambda: _node_attrs(board_id, node_id),
+        task_name="tests.deterministic_identity.node_attrs",
+    )
+
+
+def _materialize_entity_sync(board_id: str, node_id: str, title: str) -> None:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_db, conn):
+        conn.execute(
+            "CREATE (n:Entity {id: $id, title: $title, content: '', "
+            "context: '', justification: '', source_artifact_ref: '', "
+            "source_confidence: 0.95, relevance_score: 0.5, "
+            "priority_boost: 0.0, human_curated: false, generation: 0})",
+            {"id": node_id, "title": title},
+        )
+
+
+def _count_entity_id_sync(board_id: str, node_id: str) -> int:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_db, conn):
+        result = conn.execute(
+            "MATCH (n:Entity) WHERE n.id = $id RETURN count(n)",
+            {"id": node_id},
+        )
+        try:
+            return int(result.get_next()[0])
+        finally:
+            result.close()
+
+
 async def test_fresh_create_mints_deterministic_recipe_id(
     identity_tempdir, monkeypatch
 ):
@@ -92,7 +127,7 @@ async def test_fresh_create_mints_deterministic_recipe_id(
     )
     assert commit.nodes_added >= 1
 
-    node = _query_one(board_id, artifact_ref)
+    node = await _query_one_async(board_id, artifact_ref)
     expected = mint_node_id(
         board_id,
         "Entity",
@@ -101,7 +136,7 @@ async def test_fresh_create_mints_deterministic_recipe_id(
     )
     assert node["id"] == expected
 
-    attrs = _node_attrs(board_id, node["id"])
+    attrs = await _node_attrs_async(board_id, node["id"])
     assert int(attrs["generation"] or 0) == 0
 
 
@@ -112,13 +147,60 @@ async def test_nc8_reuse_keeps_existing_id(identity_tempdir, monkeypatch):
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "[MKG-A] Spec Y"
     )
-    first_id = _query_one(board_id, artifact_ref)["id"]
+    first_id = (await _query_one_async(board_id, artifact_ref))["id"]
 
     commit2 = await _drive_one_session(
         session_factory, board_id, artifact_ref, "[MKG-A] Spec Y revised"
     )
     assert commit2.nodes_added == 0
-    assert _query_one(board_id, artifact_ref)["id"] == first_id
+    assert (await _query_one_async(board_id, artifact_ref))["id"] == first_id
+
+
+async def test_replay_reuses_already_materialized_deterministic_id(
+    identity_tempdir, monkeypatch
+):
+    """An already-written id is an ACKed replay, not a duplicate-PK DLQ.
+
+    This models the field failure precisely: the deterministic Entity exists
+    in Ladybug, but the historical row has no source_artifact_ref, so the
+    legacy NC-8 lookup cannot find it.  Reprocessing must bind the missing ref,
+    keep one node, and report a merge instead of issuing CREATE again.
+    """
+
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}"
+    title = "[MKG-A] Already materialized"
+    node_id = mint_node_id(
+        board_id,
+        "Entity",
+        derive_natural_key(artifact_ref, "Entity", title),
+        0,
+    )
+
+    await run_blocking_graph_io(
+        lambda: _materialize_entity_sync(board_id, node_id, title),
+        task_name="tests.deterministic_identity.materialize_entity",
+    )
+
+    commit = await _drive_one_session(
+        session_factory,
+        board_id,
+        artifact_ref,
+        title,
+    )
+
+    assert commit.nodes_merged >= 1
+    assert any(
+        item["operation"] == "MERGE_BY_DETERMINISTIC_ID"
+        and item["reused_node_id"] == node_id
+        for item in commit.merge_audit_items
+    )
+    assert (await _query_one_async(board_id, artifact_ref))["id"] == node_id
+
+    assert await run_blocking_graph_io(
+        lambda: _count_entity_id_sync(board_id, node_id),
+        task_name="tests.deterministic_identity.count_entity_id",
+    ) == 1
 
 
 async def test_supersede_mints_generation_plus_one_deterministically(
@@ -145,7 +227,7 @@ async def test_supersede_mints_generation_plus_one_deterministically(
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "[MKG-A] Spec Z"
     )
-    old_id = _query_one(board_id, artifact_ref)["id"]
+    old_id = (await _query_one_async(board_id, artifact_ref))["id"]
 
     cand_id = "mkga_supersede_cand"
     cand = NodeCandidate(
@@ -199,10 +281,51 @@ async def test_supersede_mints_generation_plus_one_deterministically(
         derive_natural_key(artifact_ref, "Entity", "[MKG-A] Spec Z v2"),
         1,
     )
-    successor = _node_attrs(board_id, expected_successor)
+    successor = await _node_attrs_async(board_id, expected_successor)
     assert successor["id"] == expected_successor
     assert int(successor["generation"] or 0) == 1
     assert successor["id"] != old_id
 
-    old = _node_attrs(board_id, old_id)
+    old = await _node_attrs_async(board_id, old_id)
     assert old["superseded_by"] == expected_successor
+
+    # At-least-once replay of the same explicit SUPERSEDE must acknowledge the
+    # already materialized deterministic successor.  Before the replay guard,
+    # this second commit issued CREATE for ``expected_successor`` again and
+    # Ladybug raised a duplicate-primary-key error.
+    replay_begin = await begin_consolidation(
+        BeginConsolidationRequest(
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=spec_id,
+            raw_content="MKG-A supersede cycle replay",
+            deterministic_candidates=[cand],
+        ),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=replay_begin.session_id),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    replay_override = ReconciliationHint(
+        candidate_id=cand_id,
+        operation=ReconciliationOperation.SUPERSEDE,
+        target_node_id=old_id,
+        confidence=0.9,
+        reason="test replays the same explicit SUPERSEDE",
+    )
+    async with session_factory() as db:
+        replay = await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=replay_begin.session_id,
+                summary_text="forced supersede replay",
+                agent_overrides={cand_id: replay_override},
+            ),
+            agent_id="system:layer1_worker",
+            db=db,
+        )
+    assert replay.nodes_superseded == 0
+    assert replay.nodes_merged == 1
+    assert (await _node_attrs_async(board_id, old_id))["superseded_by"] == expected_successor

@@ -593,7 +593,6 @@ def test_purge_global_discovery_storage_goes_through_quarantine(
     import global_graph_testing as gd_schema
     import okto_pulse.core.kg.quarantine as quarantine_module
     from okto_pulse.core.kg.interfaces import get_kg_registry
-    from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
     storage_root = tmp_path / "okto-data" / "global"
     storage_root.mkdir(parents=True)
@@ -610,10 +609,9 @@ def test_purge_global_discovery_storage_goes_through_quarantine(
     quarantine_module.reset_quarantine_counter()
 
     try:
-        with under_global_safe_write("global-token", "purge_test"):
-            removed = gd_schema.purge_global_discovery_storage(
-                reason="corruption detected on open"
-            )
+        removed = gd_schema.purge_global_discovery_storage(
+            reason="corruption detected on open"
+        )
 
         assert not primary.exists()
         assert not sidecar.exists()
@@ -729,7 +727,6 @@ def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
     import global_graph_testing as gd_schema
     import okto_pulse.core.kg.quarantine as quarantine_module
     from okto_pulse.core.kg.interfaces import get_kg_registry
-    from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
     storage_root = tmp_path / "okto-data" / "global"
     storage_root.mkdir(parents=True)
@@ -755,10 +752,7 @@ def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
     )
 
     try:
-        with under_global_safe_write("token", "purge_test"):
-            removed = gd_schema.purge_global_discovery_storage(
-                reason="corruption"
-            )
+        removed = gd_schema.purge_global_discovery_storage(reason="corruption")
         assert removed == []
         assert primary.exists()
         assert primary.read_text() == "global-evidence"

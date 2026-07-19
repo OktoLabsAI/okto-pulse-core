@@ -38,20 +38,21 @@ Returns:
 
 ## `okto_pulse_get_allowed_transitions`
 
-Return the allowed lifecycle transitions for an ideation, refinement, or spec
-from the backend transition authority — the same authority the move
+Return the allowed lifecycle transitions for a story, ideation, refinement,
+spec, card, or sprint from the Core SDLC registry — the same authority the move
 tools/endpoints enforce. Use it to know which `status` values a move will
 accept before calling `okto_pulse_move_*`.
 
 Args:
     board_id: Board ID
-    entity_type: One of: ideation, refinement, spec
+    entity_type: One of: story, ideation, refinement, spec, card, sprint
     entity_id: Target entity ID
     current_status: Optional status to evaluate from (empty = the entity's
         current status)
 
 Returns:
-    JSON with the allowed target statuses for the entity.
+    JSON with target statuses plus gate, preconditions, capabilities, effects,
+    stable reason codes and the registry source identifier.
 
 ## `okto_pulse_get_resource_gate_summary`
 
@@ -110,6 +111,9 @@ Args:
 
 Returns:
     JSON with complete task context: card details + spec requirements + linked artifacts.
+    `reviewer_separation` projects the current caller's task-validation policy
+    decision (`mode`, `allowed`, `warning`, creator/assignee/executor
+    `conflicts`, and `source`); inspect it from `profile="full"` before validating.
     Test cards expose `test_card_operational_flow`; `gate_readiness` mirrors the
     active done-gate and cognitive-readiness verdict without mutating or skipping
     anything.
@@ -306,6 +310,12 @@ Submit a task validation for a card in 'validation' status.
 Evaluates the implementation quality of a completed task against three
 dimensions: confidence, completeness, and drift. The system applies
 threshold checks (resolved from sprint → spec → board hierarchy) and
+the board's `reviewer_separation_mode` against task creator, assignee, and
+executor conflicts. `enforce` returns the action-required code
+`reviewer_separation_required` with remediation
+`request_independent_task_validator` before any mutation. `warn` and `off`
+continue and persist/return `reviewer_separation`; a legacy board with the
+setting absent is explicitly `off` with `source=legacy_absent_compat`. It then
 automatically routes the card: success → done; failed remains in
 validation so the validator feedback stays visible and the executor can
 decide whether to move the card back for rework.
@@ -323,7 +333,10 @@ Args:
     recommendation: One of: approve, reject
 
 Returns:
-    JSON with validation result, outcome, threshold violations, and card routing
+    JSON with validation result, outcome, threshold violations,
+    `reviewer_separation`, and card routing. Under `enforce`, a conflict returns
+    `outcome=action_required` in MCP Outcome V2 with code,
+    conflicts/source facts, and remediation; no validation is persisted.
 
 ## `okto_pulse_list_design_systems`
 

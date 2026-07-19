@@ -18,6 +18,8 @@ AnalyticsOperator = Literal[
     "not_in",
     "gte",
     "lte",
+    "gt",
+    "lt",
     "is_true",
     "is_false",
     "contains",

@@ -12,9 +12,10 @@ Scenario mapping:
   TS05 — load-bearing direct negatives (broken link / unauthorized duplicate URI
        / common forbidden term / empty resource) fail deterministically; the
        freeze-late-mutation negative is COVERED by R11-A (referenced, not duped).
-  TS07 — baseline regression guard: R11-C adds NO resources (count + payload
-       within baseline); the wide PRE-EXISTING failures (r1 tool-count drift,
-       f16/f17 KG-health) are TOOL/health baseline, OUT of R11-C scope.
+  TS07 — canonical-manifest regression guard: resource cardinality and URI order
+       are derived from the frozen manifest; payload remains bounded. The wide
+       PRE-EXISTING failures (r1 tool-count drift, f16/f17 KG-health) are
+       TOOL/health baseline, OUT of R11-C scope.
 """
 
 from __future__ import annotations
@@ -27,16 +28,14 @@ from okto_pulse.core.mcp import payload_budget
 from okto_pulse.core.mcp import server as srv
 from okto_pulse.core.ports.mcp_resources import (
     CompositeMcpResourceCatalog,
+    McpResourceCatalogError,
+    McpResourceReplacementTarget,
     McpResourceSpec,
     StaticMcpResourceCatalog,
     catalog_link_integrity,
-    catalog_uri_conflicts,
     scan_forbidden_terms,
 )
 
-#: R11-A/B baseline: the effective core catalog spec count (a NEW resource changes
-#: this — the regression guard catches the increase).
-_RESOURCE_COUNT_BASELINE = 48
 #: generous total-payload ceiling (chars) — catches content bloat, not normal docs.
 _RESOURCE_PAYLOAD_CEILING = 800_000
 
@@ -74,16 +73,26 @@ def test_ts03_snapshot_measures_effective_catalog():
     assert len(snap) == len(cat.specs())
     assert all(len(v) > 0 for v in snap.values())
 
-    # inject a Community-style operational overlay -> the snapshot follows the
-    # EFFECTIVE catalog (the overlay's merged content is measured, keyed by URI).
-    overlay = StaticMcpResourceCatalog(
-        "community",
-        (McpResourceSpec(
-            uri="okto-pulse://workflows/kg", description="ov", category="workflows",
-            edition="community", kind="operational", provider="p", capability="kg",
-            same_uri_overlay=True, content="OVERLAY BODY"),),
+    # Inject an explicit higher-precedence replacement; the snapshot follows the
+    # effective declaration selected by the resolver.
+    replacement = StaticMcpResourceCatalog(
+        "extension",
+        (
+            McpResourceSpec(
+                uri="okto-pulse://workflows/kg",
+                description="ov",
+                category="workflows",
+                edition="extension",
+                kind="operational",
+                provider="p",
+                capability="kg",
+                replace_target=McpResourceReplacementTarget(edition="core"),
+                content="OVERLAY BODY",
+            ),
+        ),
+        precedence=10,
     )
-    srv.register_resource_catalog(overlay)
+    srv.register_resource_catalog(replacement)
     snap2 = payload_budget.snapshot_resources(srv)
     # still one entry per effective spec (overlay merged in-place, not added).
     assert len(snap2) == len(srv.effective_resource_catalog().specs())
@@ -98,37 +107,80 @@ def test_ts05_load_bearing_negatives_fail_deterministically():
     # (1) broken okto-pulse:// link -> link integrity flags it.
     broken = StaticMcpResourceCatalog(
         "core",
-        (McpResourceSpec(
-            uri="okto-pulse://workflows/x", description="see okto-pulse://ghost/missing",
-            category="workflows", edition="core", content="ref okto-pulse://also/missing"),),
+        (
+            McpResourceSpec(
+                uri="okto-pulse://workflows/x",
+                description="see okto-pulse://ghost/missing",
+                category="workflows",
+                edition="core",
+                content="ref okto-pulse://also/missing",
+            ),
+        ),
     )
     bad_links = catalog_link_integrity(broken)
     assert {b["link"] for b in bad_links} == {
-        "okto-pulse://ghost/missing", "okto-pulse://also/missing",
+        "okto-pulse://ghost/missing",
+        "okto-pulse://also/missing",
     }
 
-    # (2) UNAUTHORIZED duplicate URI (no overlay flag) -> conflict.
-    dup = CompositeMcpResourceCatalog([
-        StaticMcpResourceCatalog("core", (McpResourceSpec(
-            uri="okto-pulse://a/b", description="d", category="a", edition="core", content="1"),)),
-        StaticMcpResourceCatalog("community", (McpResourceSpec(
-            uri="okto-pulse://a/b", description="d", category="a", edition="community", content="2"),)),
-    ])
-    assert len(catalog_uri_conflicts(dup)) == 1
+    # (2) Undeclared cross-edition duplicate -> fail before publication.
+    with pytest.raises(McpResourceCatalogError) as exc_info:
+        CompositeMcpResourceCatalog(
+            [
+                StaticMcpResourceCatalog(
+                    "core",
+                    (
+                        McpResourceSpec(
+                            uri="okto-pulse://a/b",
+                            description="d",
+                            category="a",
+                            edition="core",
+                            content="1",
+                        ),
+                    ),
+                ),
+                StaticMcpResourceCatalog(
+                    "extension",
+                    (
+                        McpResourceSpec(
+                            uri="okto-pulse://a/b",
+                            description="d",
+                            category="a",
+                            edition="extension",
+                            content="2",
+                        ),
+                    ),
+                    precedence=10,
+                ),
+            ]
+        )
+    assert exc_info.value.code == "undeclared_replace"
 
     # (3) common spec with a forbidden backend term -> selective scan reproves.
     rogue = StaticMcpResourceCatalog(
         "core",
-        (McpResourceSpec(
-            uri="okto-pulse://workflows/y", description="d", category="workflows",
-            edition="core", kind="common", content="store graph.lbug via Ladybug"),),
+        (
+            McpResourceSpec(
+                uri="okto-pulse://workflows/y",
+                description="d",
+                category="workflows",
+                edition="core",
+                kind="common",
+                content="store graph.lbug via Ladybug",
+            ),
+        ),
     )
     assert {f["term"] for f in scan_forbidden_terms(rogue)} >= {".lbug", "ladybug"}
 
     # (4) empty resource (path-loader without base_dir) -> fail-closed at build.
     with pytest.raises(ValueError):
-        McpResourceSpec(uri="okto-pulse://z", description="d", category="z",
-                        edition="core", path="x.md")
+        McpResourceSpec(
+            uri="okto-pulse://z",
+            description="d",
+            category="z",
+            edition="core",
+            path="x.md",
+        )
 
     # (5) freeze-late-mutation: registering after freeze FAILS closed. This is the
     #     guard R11-A established (test_ts_c8545186); exercised here directly as a
@@ -138,22 +190,29 @@ def test_ts05_load_bearing_negatives_fail_deterministically():
         srv.register_resource_catalog(
             StaticMcpResourceCatalog(
                 "community",
-                (McpResourceSpec(
-                    uri="okto-pulse://late/mutation", description="d",
-                    category="late", edition="community", content="x"),),
+                (
+                    McpResourceSpec(
+                        uri="okto-pulse://late/mutation",
+                        description="d",
+                        category="late",
+                        edition="community",
+                        content="x",
+                    ),
+                ),
             )
         )
 
 
 # ===========================================================================
-# TS07 — baseline regression guard + pre-existing-failure characterization.
+# TS07 — manifest-driven guard + pre-existing-failure characterization.
 # ===========================================================================
-def test_ts07_resource_count_and_payload_within_baseline():
-    cat = srv.effective_resource_catalog()
-    specs = cat.specs()
-    # R11-C adds NO resources: count is the known baseline (a NEW resource fails).
-    assert len(specs) == _RESOURCE_COUNT_BASELINE, (
-        f"resource count drifted to {len(specs)} (baseline {_RESOURCE_COUNT_BASELINE})"
+def test_ts07_resource_manifest_and_payload_are_consistent():
+    frozen = srv.freeze_resource_catalog()
+    specs = frozen.specs()
+    manifest = frozen.manifest
+    assert len(specs) == manifest.count
+    assert tuple(spec.uri for spec in specs) == tuple(
+        entry.uri for entry in manifest.entries
     )
     total = sum(len(s.read()) for s in specs)
     assert total <= _RESOURCE_PAYLOAD_CEILING, f"resource payload bloated: {total}"
@@ -164,14 +223,25 @@ def test_ts07_preexisting_wide_failures_are_out_of_scope_baseline():
     NOT MCP-resource regressions, so the R11-C resource guard must not own them."""
     # The R1 file owns a pinned tool-count guard; its exact reviewed count is a
     # tool-surface concern, orthogonal to the effective RESOURCE catalog.
-    r1_src = Path(__file__).parent.joinpath("test_r1_tool_compaction.py").read_text(encoding="utf-8")
+    r1_src = (
+        Path(__file__)
+        .parent.joinpath("test_r1_tool_compaction.py")
+        .read_text(encoding="utf-8")
+    )
     assert "def test_tool_names_stable_after_compaction" in r1_src
     assert "assert len(names) ==" in r1_src
+    resource_test_source = Path(__file__).read_text(encoding="utf-8")
+    forbidden_literal = "_RESOURCE_COUNT_" + "BASELINE"
+    assert forbidden_literal not in resource_test_source
     # the f16/f17 KG-health meta-suite is a health-gate concern, also not resources.
-    f16_src = Path(__file__).parent.joinpath("test_r1_degraded_kg_fallback_gate.py").read_text(encoding="utf-8")
+    f16_src = (
+        Path(__file__)
+        .parent.joinpath("test_r1_degraded_kg_fallback_gate.py")
+        .read_text(encoding="utf-8")
+    )
     assert "f16_f17" in f16_src
     # and R11-C's surface — the effective resource catalog — is stable + scan-clean
     # (these pre-existing failures touch neither).
-    cat = srv.effective_resource_catalog()
-    assert len(cat.specs()) == _RESOURCE_COUNT_BASELINE
-    assert scan_forbidden_terms(cat) == ()  # common catalog clean (R11-B)
+    frozen = srv.freeze_resource_catalog()
+    assert len(frozen.specs()) == frozen.manifest.count
+    assert scan_forbidden_terms(frozen) == ()  # common catalog clean (R11-B)

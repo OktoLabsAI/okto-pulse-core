@@ -22,8 +22,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable
 from datetime import datetime, timezone
 from functools import partial
+from typing import TypeVar
 
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
@@ -71,8 +73,11 @@ from okto_pulse.core.kg.session_manager import (
     ConsolidationSession,
     compute_content_hash,
 )
+from okto_pulse.core.ports.runtime_workers import BlockingExecutionPort
 
 logger = logging.getLogger("okto_pulse.kg.primitives")
+
+_T = TypeVar("_T")
 
 
 def _allowed_edge_pairs(edge_type: str) -> tuple[tuple[str, str], ...]:
@@ -118,10 +123,69 @@ def _validate_local_edge_pair(
         },
     )
 
-async def _run_graph_io(func, *args, **kwargs):
-    """Run synchronous adapter IO through the caller's event-loop executor."""
+async def _run_graph_io(
+    func,
+    *args,
+    executor: BlockingExecutionPort | None = None,
+    **kwargs,
+):
+    """Run synchronous graph IO without losing its lifetime on cancellation.
 
-    return await asyncio.to_thread(partial(func, *args, **kwargs))
+    Edition workers pass their tracked executor so shutdown can join an
+    in-flight native graph call. Direct callers retain a cancellation-drained
+    fallback: the parent does not disappear while an untracked thread still
+    owns the process writer lease.
+    """
+
+    operation = partial(func, *args, **kwargs)
+    if executor is not None:
+        return await executor.run(operation)
+    task = asyncio.create_task(
+        asyncio.to_thread(operation),
+        name="core.kg.graph_io",
+    )
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await asyncio.gather(task, return_exceptions=True)
+        raise
+
+
+async def _run_cancellation_atomic(
+    operation: Awaitable[_T],
+    *,
+    task_name: str,
+) -> _T:
+    """Finish a commit critical section before propagating cancellation.
+
+    ``asyncio.shield`` prevents the parent cancellation from reaching the
+    critical task.  The drain loop also tolerates repeated cancellation of
+    the parent, so graph commit, durable audit/outbox persistence, and session
+    finalization cannot be split across separate task lifetimes.
+    """
+
+    task = asyncio.create_task(operation, name=task_name)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except BaseException:
+                break
+
+        if task.done() and not task.cancelled():
+            try:
+                task.result()
+            except BaseException as exc:
+                logger.error(
+                    "kg.commit.cancel_drain_failed task=%s error_type=%s",
+                    task_name,
+                    type(exc).__name__,
+                )
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -1591,6 +1655,28 @@ def _do_graph_commit(
     # nodes (Decision/Learning/Alternative/Assumption) written by this commit.
     cognitive_source_records: list[dict] = []
 
+    def _queue_cognitive_source_record(
+        *,
+        node_id: str,
+        node_type: str,
+        generation: int,
+        attrs: dict,
+    ) -> None:
+        """Queue one MKG-A append while keeping identity inputs explicit."""
+
+        if node_type not in _COGNITIVE_SOURCE_TYPES:
+            return
+        cognitive_source_records.append(
+            _cognitive_source_record_kwargs(
+                board_id=board_id,
+                session_id=session_id,
+                node_id=node_id,
+                node_type=node_type,
+                generation=generation,
+                attrs=attrs,
+            )
+        )
+
     try:
         connectivity = _validate_graph_connectivity_before_commit(
             graph_scope=graph_scope,
@@ -1767,23 +1853,146 @@ def _do_graph_commit(
                     ),
                     "embedding": embedding,
                 }
+
+                # The deterministic successor id is also the idempotency
+                # key for an explicit SUPERSEDE replay.  The embedded
+                # adapter auto-commits each statement, so a prior attempt
+                # may already have materialized the successor (and perhaps
+                # completed the trail) even when the relational ACK was
+                # retried.  Reconcile that exact successor instead of
+                # issuing CREATE for its primary key again.
+                existing_successor = _lookup_existing_node_identity_by_id(
+                    graph_scope, node_type, new_node_id
+                )
+                if existing_successor is not None:
+                    existing_ref = str(
+                        existing_successor.get("source_artifact_ref") or ""
+                    ).strip()
+                    candidate_ref = str(cand.source_artifact_ref or "").strip()
+                    if (
+                        (
+                            existing_ref
+                            and candidate_ref
+                            and existing_ref != candidate_ref
+                        )
+                        or (existing_ref and not candidate_ref)
+                    ):
+                        raise ValueError(
+                            "deterministic_identity_conflict: explicit "
+                            "SUPERSEDE successor is bound to a different "
+                            "source_artifact_ref; "
+                            f"node_id={new_node_id} node_type={node_type} "
+                            f"existing_ref={existing_ref!r} "
+                            f"candidate_ref={candidate_ref!r}"
+                        )
+
+                    existing_title = _node_title(
+                        graph_scope, node_type, new_node_id
+                    )
+                    if normalize_text(existing_title) != normalize_text(
+                        cand.title
+                    ):
+                        raise ValueError(
+                            "deterministic_identity_conflict: explicit "
+                            "SUPERSEDE successor has a different title; "
+                            f"node_id={new_node_id} node_type={node_type}"
+                        )
+
+                    linked_successor = _node_superseded_by(
+                        graph_scope, node_type, superseded_id
+                    )
+                    if linked_successor not in (None, new_node_id):
+                        raise ValueError(
+                            "deterministic_supersede_conflict: target is "
+                            "already linked to a different successor; "
+                            f"target_node_id={superseded_id} "
+                            f"existing_successor={linked_successor} "
+                            f"candidate_successor={new_node_id}"
+                        )
+
+                    is_curated = _node_is_human_curated(
+                        graph_scope, node_type, new_node_id
+                    )
+                    if not is_curated:
+                        _apply_graph_node_update_partial(
+                            orch, node_type, new_node_id, new_attrs
+                        )
+                    if candidate_ref and not existing_ref:
+                        graph_scope.update_node(
+                            node_type,
+                            new_node_id,
+                            {"source_artifact_ref": candidate_ref},
+                        )
+                    if linked_successor is None:
+                        graph_scope.mark_superseded(
+                            node_type,
+                            superseded_id,
+                            superseded_by=new_node_id,
+                            superseded_at=_now_iso(),
+                            revocation_reason=(
+                                "superseded by consolidation session"
+                            ),
+                        )
+                    orch.create_edge(
+                        "supersedes",
+                        new_node_id,
+                        superseded_id,
+                        attrs={"confidence": 1.0},
+                        from_type=node_type,
+                        to_type=node_type,
+                    )
+                    _bump_attestation(orch, node_type, new_node_id)
+                    candidate_to_graph_id[cand_id] = new_node_id
+                    candidate_to_node_type[cand_id] = node_type
+                    orch.counters.nodes_merged += 1
+                    orch.counters.merge_audit_items.append({
+                        "candidate_id": cand_id,
+                        "node_type": node_type,
+                        "source_artifact_ref": candidate_ref,
+                        "reused_node_id": new_node_id,
+                        "operation": "MERGE_SUPERSEDE_BY_DETERMINISTIC_ID",
+                    })
+                    # A graph-ahead crash can leave the deterministic
+                    # successor materialized while its durable MKG-A source
+                    # record is absent. Queue the same idempotent append as
+                    # the fresh SUPERSEDE path before acknowledging replay.
+                    _queue_cognitive_source_record(
+                        node_id=new_node_id,
+                        node_type=node_type,
+                        generation=successor_generation,
+                        attrs=new_attrs,
+                    )
+                    logger.info(
+                        "kg.consolidation.supersede_replayed candidate=%s "
+                        "existing=%s target=%s type=%s session=%s",
+                        cand_id,
+                        new_node_id,
+                        superseded_id,
+                        node_type,
+                        session_id,
+                        extra={
+                            "event": "kg.consolidation.supersede_replayed",
+                            "candidate_id": cand_id,
+                            "existing_id": new_node_id,
+                            "superseded_node_id": superseded_id,
+                            "node_type": node_type,
+                            "session_id": session_id,
+                        },
+                    )
+                    continue
+
                 orch.supersede_node(
                     node_type, new_node_id, superseded_id, new_attrs,
                     revocation_reason="superseded by consolidation session",
                 )
                 candidate_to_graph_id[cand_id] = new_node_id
                 candidate_to_node_type[cand_id] = node_type
-                if node_type in _COGNITIVE_SOURCE_TYPES:
-                    cognitive_source_records.append(
-                        _cognitive_source_record_kwargs(
-                            board_id=board_id,
-                            session_id=session_id,
-                            node_id=new_node_id,
-                            node_type=node_type,
-                            generation=successor_generation,
-                            attrs=new_attrs,
-                        )
-                    )
+                _queue_cognitive_source_record(
+                    node_id=new_node_id,
+                    node_type=node_type,
+                    generation=successor_generation,
+                    attrs=new_attrs,
+                )
                 logger.info(
                     "kg.consolidation.superseded candidate=%s new=%s old=%s "
                     "type=%s session=%s",
@@ -1884,17 +2093,12 @@ def _do_graph_commit(
                         )
                         candidate_to_graph_id[cand_id] = trail_node_id
                         candidate_to_node_type[cand_id] = node_type
-                        if node_type in _COGNITIVE_SOURCE_TYPES:
-                            cognitive_source_records.append(
-                                _cognitive_source_record_kwargs(
-                                    board_id=board_id,
-                                    session_id=session_id,
-                                    node_id=trail_node_id,
-                                    node_type=node_type,
-                                    generation=trail_generation,
-                                    attrs=trail_attrs,
-                                )
-                            )
+                        _queue_cognitive_source_record(
+                            node_id=trail_node_id,
+                            node_type=node_type,
+                            generation=trail_generation,
+                            attrs=trail_attrs,
+                        )
                         logger.info(
                             "kg.consolidation.reuse_superseded candidate=%s "
                             "old=%s new=%s type=%s session=%s",
@@ -1981,6 +2185,23 @@ def _do_graph_commit(
                         "reused_node_id": existing_id,
                         "operation": "MERGE",
                     })
+                    if node_type in _COGNITIVE_SOURCE_TYPES:
+                        # Recovery for a graph-ahead NC-8 write: a prior
+                        # auto-committed graph update may exist without the
+                        # relational durable-source append. Snapshot the
+                        # actual post-update node so rebuild remains literal.
+                        reuse_generation = _node_generation(
+                            graph_scope, node_type, existing_id
+                        )
+                        reuse_attrs = _read_cognitive_source_node_attrs(
+                            graph_scope, node_type, existing_id
+                        )
+                        _queue_cognitive_source_record(
+                            node_id=existing_id,
+                            node_type=node_type,
+                            generation=reuse_generation,
+                            attrs=reuse_attrs,
+                        )
                     logger.info(
                         "kg.consolidation.dedup_reused candidate=%s "
                         "existing=%s type=%s ref=%s session=%s curated=%s",
@@ -2040,22 +2261,105 @@ def _do_graph_commit(
                 ),
                 "embedding": embedding,
             }
+
+            # A deterministic id is an idempotency key in its own right.
+            # Normally NC-8 finds the node above by source_artifact_ref, but
+            # an at-least-once replay can observe a node that was already
+            # materialized while the source-ref lookup is unavailable or the
+            # historical row has an empty source ref.  Retrying CREATE in
+            # that state turns a successful prior materialization into a
+            # permanent PRIMARY KEY DLQ.  Reuse the exact deterministic id
+            # instead, while refusing to alias two non-empty source refs (a
+            # genuine identity conflict must stay visible).
+            existing_identity = _lookup_existing_node_identity_by_id(
+                graph_scope, node_type, node_id
+            )
+            if existing_identity is not None:
+                existing_ref = str(
+                    existing_identity.get("source_artifact_ref") or ""
+                ).strip()
+                candidate_ref = str(cand.source_artifact_ref or "").strip()
+                if (
+                    (existing_ref and candidate_ref and existing_ref != candidate_ref)
+                    or (existing_ref and not candidate_ref)
+                ):
+                    raise ValueError(
+                        "deterministic_identity_conflict: deterministic node id "
+                        "is already bound to a different source_artifact_ref; "
+                        f"node_id={node_id} node_type={node_type} "
+                        f"existing_ref={existing_ref!r} "
+                        f"candidate_ref={candidate_ref!r}"
+                    )
+
+                is_curated = _node_is_human_curated(
+                    graph_scope, node_type, node_id
+                )
+                if not is_curated:
+                    _apply_graph_node_update_partial(
+                        orch, node_type, node_id, node_attrs
+                    )
+                # Empty source refs exist in historical/partially-written
+                # rows.  Binding the ref is safe here because node_id was
+                # derived from this exact candidate identity and non-empty
+                # conflicting refs were rejected above.
+                if candidate_ref and not existing_ref:
+                    graph_scope.update_node(
+                        node_type,
+                        node_id,
+                        {"source_artifact_ref": candidate_ref},
+                    )
+                _bump_attestation(orch, node_type, node_id)
+                candidate_to_graph_id[cand_id] = node_id
+                candidate_to_node_type[cand_id] = node_type
+                orch.counters.nodes_merged += 1
+                orch.counters.merge_audit_items.append({
+                    "candidate_id": cand_id,
+                    "node_type": node_type,
+                    "source_artifact_ref": candidate_ref,
+                    "reused_node_id": node_id,
+                    "operation": "MERGE_BY_DETERMINISTIC_ID",
+                })
+                # Same graph-ahead recovery as explicit SUPERSEDE, for a
+                # generation-zero CREATE whose deterministic id already
+                # exists. The durable store deduplicates a surviving append.
+                _queue_cognitive_source_record(
+                    node_id=node_id,
+                    node_type=node_type,
+                    generation=0,
+                    attrs=node_attrs,
+                )
+                logger.info(
+                    "kg.consolidation.deterministic_id_reused candidate=%s "
+                    "existing=%s type=%s ref=%s session=%s curated=%s",
+                    cand_id,
+                    node_id,
+                    node_type,
+                    candidate_ref,
+                    session_id,
+                    is_curated,
+                    extra={
+                        "event": "kg.consolidation.deterministic_id_reused",
+                        "candidate_id": cand_id,
+                        "existing_id": node_id,
+                        "node_type": node_type,
+                        "source_artifact_ref": candidate_ref,
+                        "session_id": session_id,
+                        "was_curated_preserved": is_curated,
+                    },
+                )
+                continue
+
             _apply_graph_node_create(
                 orch, node_type, node_id, node_attrs
             )
             candidate_to_graph_id[cand_id] = node_id
             candidate_to_node_type[cand_id] = node_type
-            if node_type in _COGNITIVE_SOURCE_TYPES:
-                cognitive_source_records.append(
-                    _cognitive_source_record_kwargs(
-                        board_id=board_id,
-                        session_id=session_id,
-                        node_id=node_id,
-                        node_type=node_type,
-                        generation=0,
-                        attrs=node_attrs,
-                    )
-                )
+            _queue_cognitive_source_record(
+                node_id=node_id,
+                node_type=node_type,
+                generation=0,
+                attrs=node_attrs,
+            )
 
         for edge in edge_candidates.values():
             from_id, from_xref_type = _resolve_endpoint(
@@ -2202,6 +2506,7 @@ async def commit_consolidation(
     *,
     agent_id: str,
     db=None,
+    blocking_execution: BlockingExecutionPort | None = None,
 ) -> CommitConsolidationResponse:
     """Atomically write graph backend nodes/edges + audit + outbox event.
 
@@ -2230,15 +2535,12 @@ async def commit_consolidation(
     # Spec MKG-E-S1 (FR4): subtype opt-in validation BEFORE any write.
     await _validate_subtype_declarations(dict(session.node_candidates))
 
-    async with session.lock:
+    async def _complete_commit(
+        kg_health_state: str,
+    ) -> CommitConsolidationResponse:
         effective_hints = dict(session.reconciliation_hints)
         for cid, override in req.agent_overrides.items():
             effective_hints[cid] = override
-
-        kg_health_state = await _resolve_commit_kg_health_state(
-            session.board_id,
-            db,
-        )
 
         # --- graph backend writes (offloaded to thread pool) ---
         try:
@@ -2260,6 +2562,7 @@ async def commit_consolidation(
                 kg_health_state,
                 session.content_hash,
                 session.artifact_id,
+                executor=blocking_execution,
             )
         except KGPrimitiveError:
             raise
@@ -2274,13 +2577,24 @@ async def commit_consolidation(
 
         # --- SQLite audit + outbox (async, remains in event loop) ---
         await _commit_audit_records(
-            registry, db, records, counters, req, session, agent_id, committed_at,
+            registry,
+            db,
+            records,
+            counters,
+            req,
+            session,
+            agent_id,
+            committed_at,
         )
 
         session.status = SessionStatus.COMMITTED
         session.committed_graph_node_refs = [
-            {"node_id": r.entity_id, "node_type": r.entity_type, "kind": r.kind}
-            for r in records
+            {
+                "node_id": record.entity_id,
+                "node_type": record.entity_type,
+                "kind": record.kind,
+            }
+            for record in records
         ]
         await registry.require_session_store().remove(req.session_id)
 
@@ -2322,6 +2636,20 @@ async def commit_consolidation(
             committed_at=committed_at,
         )
 
+    # Waiting for the session lock and resolving pre-commit health remain
+    # cancellable: no irreversible graph write has started at either point.
+    # Once graph IO begins, keep the parent-held lock until graph, audit/outbox,
+    # and session finalization have all completed.
+    async with session.lock:
+        kg_health_state = await _resolve_commit_kg_health_state(
+            session.board_id,
+            db,
+        )
+        return await _run_cancellation_atomic(
+            _complete_commit(kg_health_state),
+            task_name="core.kg.commit_consolidation",
+        )
+
 
 def _resolve_op(
     hint: ReconciliationHint | None, default_confidence: float
@@ -2341,22 +2669,63 @@ def _enum_value(obj):
 def _lookup_existing_node(
     graph_scope, node_type: str, source_artifact_ref: str
 ) -> str | None:
-    """Lookup an existing graph backend node by type and source_artifact_ref.
+    """Lookup the active graph node by type and source artifact reference.
 
-    Returns the graph_node_id if found, None otherwise. Used when NOOP
-    to find existing nodes so edges can still be resolved.
+    Supersedence deliberately retains every historical generation with the
+    same ``source_artifact_ref``.  A bare ``LIMIT 1`` can therefore select a
+    superseded generation and make an at-least-once replay mint its already
+    materialized successor again.  Select only the active node and break ties
+    deterministically by highest generation, then id (legacy NULL generation
+    is generation zero).  Returns the graph node id if found, ``None``
+    otherwise.  Used when NOOP to find existing nodes so edges can still be
+    resolved and by NC-8 to update/supersede the current assertion.
     """
     if not source_artifact_ref:
         return None
     cypher = (
         f"MATCH (n:{node_type}) "
-        f"WHERE n.source_artifact_ref = $ref "
-        f"RETURN n.id LIMIT 1"
+        "WHERE n.source_artifact_ref = $ref "
+        "AND n.superseded_by IS NULL "
+        "RETURN n.id "
+        "ORDER BY coalesce(n.generation, 0) DESC, n.id DESC "
+        "LIMIT 1"
     )
     try:
         res = graph_scope.execute(cypher, {"ref": source_artifact_ref})
         if res.rows:
             return res.rows[0][0]
+    except Exception:
+        pass
+    return None
+
+
+def _lookup_existing_node_identity_by_id(
+    graph_scope, node_type: str, node_id: str
+) -> dict[str, object] | None:
+    """Return the minimal identity record for an exact deterministic id.
+
+    Unlike the legacy source-ref lookup, this is the replay safety net for
+    at-least-once materialization.  Read failures remain best-effort so graph
+    adapters that cannot execute the lookup preserve their existing error
+    behavior at CREATE; production semantic transaction adapters materialize
+    ``GraphStatementResult.rows``.
+    """
+
+    if not node_id:
+        return None
+    try:
+        result = graph_scope.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id "
+            "RETURN n.id, n.source_artifact_ref LIMIT 1",
+            {"id": node_id},
+        )
+        rows = getattr(result, "rows", ())
+        if rows:
+            row = rows[0]
+            return {
+                "id": row[0],
+                "source_artifact_ref": row[1],
+            }
     except Exception:
         pass
     return None
@@ -2636,6 +3005,64 @@ async def _register_count_only_attestation(
         )
 
 
+def _read_cognitive_source_node_attrs(
+    graph_scope, node_type: str, node_id: str
+) -> dict:
+    """Read the literal rebuild payload for an existing cognitive node.
+
+    NC-8 reuses an existing generation and deliberately updates only mutable
+    fields.  Reconstructing its durable-source record from the candidate would
+    therefore lose historical fields such as ``created_at`` and the immutable
+    embedding.  Read every stable graph property after the update instead.
+    """
+
+    from okto_pulse.core.kg.schema_contract import STABLE_NODE_PROPERTIES
+
+    property_names = tuple(
+        name for name in STABLE_NODE_PROPERTIES if name != "id"
+    ) + ("embedding",)
+    return_clause = ", ".join(f"n.{name}" for name in property_names)
+    result = graph_scope.execute(
+        f"MATCH (n:{node_type}) WHERE n.id = $id "
+        f"RETURN {return_clause} LIMIT 1",
+        {"id": node_id},
+    )
+    rows = getattr(result, "rows", ())
+    if not rows:
+        raise RuntimeError(
+            "cognitive_source_snapshot_missing: graph node disappeared "
+            f"before durable append; node_id={node_id} node_type={node_type}"
+        )
+    row = rows[0]
+    if len(row) != len(property_names):
+        raise RuntimeError(
+            "cognitive_source_snapshot_invalid: graph adapter returned an "
+            f"incomplete payload; node_id={node_id} node_type={node_type}"
+        )
+    return {
+        name: _cognitive_source_json_value(value)
+        for name, value in zip(property_names, row, strict=True)
+    }
+
+
+def _cognitive_source_json_value(value):
+    """Normalize graph-native values for the relational JSON payload."""
+
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (list, tuple)):
+        return [_cognitive_source_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _cognitive_source_json_value(item)
+            for key, item in value.items()
+        }
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        return _cognitive_source_json_value(tolist())
+    return value
+
+
 def _cognitive_source_record_kwargs(
     *,
     board_id: str,
@@ -2744,6 +3171,27 @@ def _node_title(graph_scope, node_type: str, node_id: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def _node_superseded_by(
+    graph_scope, node_type: str, node_id: str
+) -> str | None:
+    """Return the deterministic successor linked from ``node_id``, if any."""
+
+    if not node_id:
+        return None
+    try:
+        result = graph_scope.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id "
+            "RETURN n.superseded_by LIMIT 1",
+            {"id": node_id},
+        )
+        rows = getattr(result, "rows", ())
+        if rows and rows[0][0]:
+            return str(rows[0][0])
+    except Exception:
+        pass
+    return None
 
 
 def _node_generation(graph_scope, node_type: str, node_id: str) -> int:

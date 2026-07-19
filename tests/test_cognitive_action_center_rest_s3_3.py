@@ -86,10 +86,17 @@ def _seed_items(store, board, gen, specs):
     )
 
 
-async def _board(db_factory, board_id, settings=None):
+async def _board(db_factory, board_id, settings=None, *, owner_id="u"):
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
-            db.add(Board(id=board_id, name="ac-rest3", owner_id="o", settings=settings or {}))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="ac-rest3",
+                    owner_id=owner_id,
+                    settings=settings or {},
+                )
+            )
             await db.commit()
 
 
@@ -178,7 +185,7 @@ def test_routes_registered():
 @pytest.mark.asyncio
 async def test_rest_skip_happy_terminal(tmp_path, db_factory, monkeypatch):
     board, gen = "ac3-skip", "gen-1"
-    await _board(db_factory, board)
+    await _board(db_factory, board, owner_id="rest-user")
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
@@ -292,7 +299,7 @@ async def test_rest_skip_400_revisit_required(tmp_path, db_factory, monkeypatch)
 @pytest.mark.asyncio
 async def test_rest_clear_reopen(tmp_path, db_factory, monkeypatch):
     board, gen = "ac3-clear", "gen-1"
-    await _board(db_factory, board)
+    await _board(db_factory, board, owner_id="rest-user")
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.SKIPPED.value,
@@ -437,7 +444,7 @@ async def test_rest_list_enforcement_active_blocks(tmp_path, db_factory, monkeyp
 @pytest.mark.asyncio
 async def test_rest_mcp_skip_parity(tmp_path, db_factory, monkeypatch):
     board, gen = "ac3-parity", "gen-1"
-    await _board(db_factory, board)
+    await _board(db_factory, board, owner_id="rest-user")
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
@@ -477,8 +484,11 @@ async def test_rest_mcp_skip_parity(tmp_path, db_factory, monkeypatch):
     assert mcp["details"]["state_changed"] is False
 
 
-def test_rest_routes_via_client(tmp_path, db_factory):
+@pytest.mark.asyncio
+async def test_rest_routes_via_client(tmp_path, db_factory):
     # smoke: as rotas POST/GET existem e respondem (400 invalid_filter prova o GET items).
+    board = "ac3-client-filter"
+    await _board(db_factory, board)
     app = FastAPI()
     app.include_router(api_router)
     from okto_pulse.community.api import auth_deps as _auth_mod
@@ -495,5 +505,8 @@ def test_rest_routes_via_client(tmp_path, db_factory):
     app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     app.dependency_overrides[get_unit_of_work] = _fake_uow
     client = TestClient(app)
-    r = client.get("/api/v1/kg/any-board/cognitive-readiness/items", params={"signal": "nope"})
+    r = client.get(
+        f"/api/v1/kg/{board}/cognitive-readiness/items",
+        params={"signal": "nope"},
+    )
     assert r.status_code == 400 and r.json()["detail"]["error"] == "invalid_filter"

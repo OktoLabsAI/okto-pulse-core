@@ -24,7 +24,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.specs import router as specs_router
 from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
@@ -340,10 +339,12 @@ async def test_rest_and_mcp_wrong_board_errors_are_equivalent_and_non_mutating(
     client: TestClient,
 ) -> None:
     board_id, spec_id, other_card_id = await _seed_wrong_board_fixture()
-    expected = f"Card '{other_card_id}' belongs to a different board than spec '{spec_id}'."
+    expected = (
+        f"Card '{other_card_id}' not found — cannot link a non-existent card."
+    )
 
     rest = client.post(f"{PREFIX}/specs/{spec_id}/scenarios/ts_wrong_board/link-task/{other_card_id}")
-    assert rest.status_code == 422
+    assert rest.status_code == 404
     assert rest.json()["detail"] == expected
 
     mcp_payload = await _call_mcp_link(board_id, spec_id, "ts_wrong_board", other_card_id)

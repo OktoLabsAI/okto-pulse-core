@@ -81,6 +81,7 @@ def test_public_facade_preserves_injected_runtime() -> None:
     def session_factory() -> object:
         return object()
 
+    assert callable(init_db)
     assert is_database_runtime_configured() is False
 
     configure_database_runtime(runtime=_Runtime(engine, session_factory))

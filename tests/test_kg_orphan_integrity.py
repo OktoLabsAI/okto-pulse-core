@@ -19,6 +19,7 @@ from okto_pulse.core.kg.orphan_integrity import (
     InMemoryOrphanMetricSink,
     OrphanBackfillReconciler,
     OrphanNodeScanner,
+    OrphanScanQueryError,
     SAFE_ORPHAN_AUDIT_FIELDS,
     SAFE_ORPHAN_METRIC_LABELS,
     schema_node_types_for_orphan_scanner,
@@ -41,6 +42,37 @@ from kg_registry_testing import (
 @pytest.fixture(autouse=True)
 def _real_board_graph_registry(_kg_registry_test_fakes):
     configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
+
+
+class _BatchScannerConnection:
+    def __init__(
+        self,
+        node_rows: tuple[tuple[object, ...], ...],
+        *,
+        connected_degrees: dict[str, tuple[int, int]] | None = None,
+        fail_phase: str | None = None,
+    ) -> None:
+        self.node_rows = node_rows
+        self.connected_degrees = connected_degrees or {}
+        self.fail_phase = fail_phase
+        self.queries: list[str] = []
+
+    def execute(self, query: str, _params=None):
+        self.queries.append(query)
+        if "n.source_artifact_ref" in query:
+            if self.fail_phase == "enumeration":
+                raise RuntimeError("enumeration unavailable")
+            return SimpleNamespace(rows=self.node_rows)
+        if "OPTIONAL MATCH (n)-[r_out]->()" in query:
+            if self.fail_phase == "connectivity":
+                raise RuntimeError("connectivity unavailable")
+            return SimpleNamespace(
+                rows=tuple(
+                    (node_id, degrees[0], degrees[1])
+                    for node_id, degrees in self.connected_degrees.items()
+                )
+            )
+        raise AssertionError(f"unexpected scanner query: {query}")
 
 
 def _seed_node(
@@ -89,6 +121,66 @@ def test_orphan_scanner_uses_schema_node_and_relationship_catalogs() -> None:
         expected.extend((rel_name, from_type, to_type) for from_type, to_type in endpoint_pairs)
 
     assert schema_relationship_pairs_for_orphan_scanner() == tuple(expected)
+
+
+def test_scanner_batches_connectivity_with_constant_query_count_for_many_nodes() -> None:
+    node_count = 250
+    connected_count = 100
+    rows = tuple(
+        (
+            f"learning-{index}",
+            f"card:bug:bulk-{index}:learning:0",
+            f"kgses_bulk_{index}",
+            "agent:cognitive",
+        )
+        for index in range(node_count)
+    )
+    connection = _BatchScannerConnection(
+        rows,
+        connected_degrees={
+            f"learning-{index}": (1, 0) for index in range(connected_count)
+        },
+    )
+
+    report = OrphanNodeScanner().scan(
+        board_id="board-batch-query-bound",
+        node_type="Learning",
+        limit=3,
+        connection=connection,
+    )
+
+    assert len(connection.queries) == 2
+    assert sum("n.source_artifact_ref" in query for query in connection.queries) == 1
+    assert sum("OPTIONAL MATCH" in query for query in connection.queries) == 1
+    assert report.orphan_count == node_count - connected_count
+    assert report.orphan_count_by_type == {"Learning": node_count - connected_count}
+    assert len(report.samples) == 3
+
+
+@pytest.mark.parametrize("fail_phase", ["enumeration", "connectivity"])
+def test_scanner_query_failures_are_fail_closed(fail_phase: str) -> None:
+    metric_sink = InMemoryOrphanMetricSink()
+    audit_sink = InMemoryOrphanAuditSink()
+    connection = _BatchScannerConnection(
+        (("learning-1", "card:bug:bug-1:learning:0", None, "agent:cognitive"),),
+        fail_phase=fail_phase,
+    )
+
+    with pytest.raises(OrphanScanQueryError) as exc_info:
+        OrphanNodeScanner(
+            metric_sink=metric_sink,
+            audit_sink=audit_sink,
+        ).scan(
+            board_id="board-fail-closed",
+            node_type="Learning",
+            connection=connection,
+        )
+
+    assert exc_info.value.phase == fail_phase
+    assert exc_info.value.node_type == "Learning"
+    assert len(connection.queries) == (1 if fail_phase == "enumeration" else 2)
+    assert metric_sink.events == []
+    assert audit_sink.records == []
 
 
 def test_scanner_detects_only_zero_degree_learning_with_safe_samples() -> None:
@@ -162,6 +254,43 @@ def test_scanner_detects_only_zero_degree_learning_with_safe_samples() -> None:
         == ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL
     )
     assert set(projection["samples"][0]) == set(SAFE_ORPHAN_SAMPLE_FIELDS)
+
+
+def test_scanner_batch_connectivity_counts_both_edge_directions() -> None:
+    board_id = f"orphan-directions-{uuid.uuid4()}"
+    decision_id = f"decision_outgoing_{uuid.uuid4().hex[:12]}"
+    entity_id = f"entity_incoming_{uuid.uuid4().hex[:12]}"
+
+    with open_board_connection(board_id) as (_db, kconn):
+        orch = TransactionOrchestrator(
+            graph_scope=kconn,
+            session_id=f"seed_{uuid.uuid4().hex[:8]}",
+            board_id=board_id,
+        )
+        _seed_node(kconn, orch, "Decision", decision_id, "spec:directions:decision")
+        _seed_node(kconn, orch, "Entity", entity_id, "spec:directions")
+        orch.create_edge(
+            "belongs_to",
+            decision_id,
+            entity_id,
+            attrs={"confidence": 1.0},
+            from_type="Decision",
+            to_type="Entity",
+        )
+
+        outgoing_report = OrphanNodeScanner().scan(
+            board_id=board_id,
+            node_type="Decision",
+            connection=kconn,
+        )
+        incoming_report = OrphanNodeScanner().scan(
+            board_id=board_id,
+            node_type="Entity",
+            connection=kconn,
+        )
+
+    assert outgoing_report.orphan_count == 0
+    assert incoming_report.orphan_count == 0
 
 
 def test_scanner_does_not_report_allowlisted_board_root_entity() -> None:

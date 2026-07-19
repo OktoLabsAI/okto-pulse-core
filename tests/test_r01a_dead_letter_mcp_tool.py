@@ -35,8 +35,11 @@ def _stub_ctx():
 
 
 async def _insert_dlq_row(db, board_id: str, idx: int) -> str:
-    from sqlalchemy_test_models import ConsolidationDeadLetter
+    from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name="dlq-mcp-r01a", owner_id=USER_ID))
+        await db.flush()
     row_id = f"dlq_r01a_{uuid.uuid4().hex[:8]}_{idx}"
     db.add(
         ConsolidationDeadLetter(

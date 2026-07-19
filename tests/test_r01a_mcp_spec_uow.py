@@ -15,8 +15,8 @@ Consolidated proofs (Codex-mandated):
   and ``available_structured_ids`` extracts the canonical ids.
 - Unit: the api_contract F9/F10 — an invalid http method becomes the canonical
   ``invalid_api_contract`` with no ``errors.pydantic.dev`` leak.
-- Runtime: add business_rule / add api_contract round-trip; the board-scope asymmetry
-  (IR is board-scoped, business_rule is not); decision SOFT-remove (status=revoked).
+- Runtime: add business_rule / add api_contract round-trip; every legacy JSON-list
+  Spec read/write is board-scoped; decision SOFT-remove (status=revoked).
 """
 
 from __future__ import annotations
@@ -24,18 +24,48 @@ from __future__ import annotations
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import ast
+from copy import deepcopy
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import func, select
 
 from okto_pulse.core.mcp import server as mcp_server
-from sqlalchemy_test_models import Board, Spec, SpecStatus
+from sqlalchemy_test_models import (
+    ActivityLog,
+    Board,
+    Card,
+    Spec,
+    SpecHistory,
+    SpecKnowledgeBase,
+    SpecQAItem,
+    SpecStatus,
+)
 
 BOARD_ID = "r01a-mcpspec"
 OTHER_BOARD_ID = "r01a-mcpspec-other"
 USER_ID = "r01a-mcpspec-agent"
+KNOWLEDGE_ID_PREFIX = "r01a-mcpspec-kb"
+EVALUATION_ID = "eval_r01a_mcp"
+CONTRACT_ID = "api_scope"
+TECHNICAL_REQUIREMENT_ID = "tr_scope"
+DECISION_ID = "dec_scope"
+INTEGRATION_REQUIREMENT_ID = "ir_scope"
+OBSERVABILITY_REQUIREMENT_ID = "or_scope"
+
+
+def _seed_card_id(spec_id: str) -> str:
+    return f"card-scope-{spec_id[:8]}"
+
+
+def _seed_foreign_card_id(spec_id: str) -> str:
+    return f"card-foreign-{spec_id[:8]}"
+
+
+def _seed_qa_id(spec_id: str) -> str:
+    return f"qa-scope-{spec_id[:8]}"
 
 # The 33 spec-family MCP tools (inventory w1ahn926e).
 _SPEC_TOOLS = (
@@ -184,11 +214,94 @@ async def _seed():
             status=SpecStatus.DRAFT,
             created_by=USER_ID,
             functional_requirements=["the system logs in"],
+            technical_requirements=[
+                {
+                    "id": TECHNICAL_REQUIREMENT_ID,
+                    "text": "Use scoped storage",
+                    "linked_task_ids": [],
+                }
+            ],
             acceptance_criteria=["login returns a token"],
+            api_contracts=[
+                {
+                    "id": CONTRACT_ID,
+                    "method": "GET",
+                    "path": "/scope",
+                    "linked_task_ids": [],
+                }
+            ],
+            decisions=[
+                {
+                    "id": DECISION_ID,
+                    "title": "Keep scope explicit",
+                    "rationale": "Prevent cross-board mutation",
+                    "linked_task_ids": [],
+                }
+            ],
+            integration_requirements=[
+                {
+                    "id": INTEGRATION_REQUIREMENT_ID,
+                    "title": "Scoped integration",
+                    "linked_task_ids": [],
+                }
+            ],
+            observability_requirements=[
+                {
+                    "id": OBSERVABILITY_REQUIREMENT_ID,
+                    "title": "Scoped observability",
+                    "linked_task_ids": [],
+                }
+            ],
+            evaluations=[
+                {
+                    "id": EVALUATION_ID,
+                    "evaluator_id": USER_ID,
+                    "evaluator_name": USER_ID,
+                    "evaluator_type": "agent",
+                    "overall_score": 80,
+                    "recommendation": "approve",
+                    "stale": False,
+                }
+            ],
         )
         db.add(spec)
         await db.flush()
         spec_id = spec.id
+        db.add(
+            Card(
+                id=_seed_card_id(spec_id),
+                board_id=BOARD_ID,
+                title="Scoped link card",
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            Card(
+                id=_seed_foreign_card_id(spec_id),
+                board_id=OTHER_BOARD_ID,
+                title="Foreign link card",
+                created_by=USER_ID,
+            )
+        )
+        db.add(
+            SpecQAItem(
+                id=_seed_qa_id(spec_id),
+                spec_id=spec_id,
+                question="Can another agent answer?",
+                question_type="text",
+                asked_by="different-asker",
+            )
+        )
+        db.add(
+            SpecKnowledgeBase(
+                id=f"{KNOWLEDGE_ID_PREFIX}-{spec_id}",
+                spec_id=spec_id,
+                title="Scoped KB",
+                content="private board content",
+                mime_type="text/markdown",
+                created_by=USER_ID,
+            )
+        )
         await db.commit()
     return spec_id
 
@@ -199,6 +312,86 @@ async def _call(tool: str, **kwargs) -> dict:
     register_mcp_test_runtime(get_session_factory())
     t = await mcp_server.mcp.get_tool(tool)
     return json.loads(await t.fn(**kwargs))
+
+
+async def _spec_mutation_state(spec_id: str) -> dict:
+    """Capture persisted Spec state plus both mutation audit surfaces."""
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, spec_id)
+        history_count = await db.scalar(
+            select(func.count())
+            .select_from(SpecHistory)
+            .where(SpecHistory.spec_id == spec_id)
+        )
+        activity_count = await db.scalar(
+            select(func.count())
+            .select_from(ActivityLog)
+            .where(ActivityLog.board_id == BOARD_ID)
+        )
+        foreign_activity_count = await db.scalar(
+            select(func.count())
+            .select_from(ActivityLog)
+            .where(ActivityLog.board_id == OTHER_BOARD_ID)
+        )
+        knowledge_ids = list(
+            await db.scalars(
+                select(SpecKnowledgeBase.id).where(
+                    SpecKnowledgeBase.spec_id == spec_id
+                )
+            )
+        )
+        qa_items = list(
+            await db.scalars(
+                select(SpecQAItem)
+                .where(SpecQAItem.spec_id == spec_id)
+                .order_by(SpecQAItem.id)
+            )
+        )
+        card = await db.get(Card, _seed_card_id(spec_id))
+        foreign_card = await db.get(Card, _seed_foreign_card_id(spec_id))
+        state = {
+            "exists": spec is not None,
+            "knowledge_ids": knowledge_ids,
+            "qa_items": [
+                {
+                    "id": item.id,
+                    "answer": item.answer,
+                    "selected": deepcopy(item.selected),
+                    "answered_by": item.answered_by,
+                    "answered_at": item.answered_at,
+                }
+                for item in qa_items
+            ],
+            "card_spec_id": card.spec_id if card is not None else None,
+            "foreign_card_spec_id": (
+                foreign_card.spec_id if foreign_card is not None else None
+            ),
+            "history_count": history_count,
+            "activity_count": activity_count,
+            "foreign_activity_count": foreign_activity_count,
+        }
+        if spec is None:
+            return state
+        state.update({
+            "title": spec.title,
+            "description": spec.description,
+            "context": spec.context,
+            "version": spec.version,
+            "updated_at": spec.updated_at,
+            "functional_requirements": deepcopy(spec.functional_requirements),
+            "technical_requirements": deepcopy(spec.technical_requirements),
+            "acceptance_criteria": deepcopy(spec.acceptance_criteria),
+            "business_rules": deepcopy(spec.business_rules),
+            "api_contracts": deepcopy(spec.api_contracts),
+            "decisions": deepcopy(spec.decisions),
+            "test_scenarios": deepcopy(spec.test_scenarios),
+            "validations": deepcopy(spec.validations),
+            "current_validation_id": spec.current_validation_id,
+            "evaluations": deepcopy(spec.evaluations),
+        })
+        return state
 
 
 @pytest.mark.asyncio
@@ -251,14 +444,446 @@ async def test_integration_requirement_is_board_scoped(_seed):
 
 
 @pytest.mark.asyncio
-async def test_business_rule_is_not_board_scoped(_seed):
-    """business_rule is NOT board-scoped (asymmetry preserved): the cross-board read
-    still resolves the spec (no "Spec not found")."""
+async def test_business_rule_read_is_board_scoped(_seed):
     cross = await _call(
         "okto_pulse_list_business_rules", board_id=OTHER_BOARD_ID, spec_id=_seed
     )
-    assert "error" not in cross
-    assert "business_rules" in cross
+    assert cross == {"error": "Spec not found"}
+
+
+_CROSS_BOARD_JSON_SPEC_CASES = (
+    ("okto_pulse_update_spec", {"title": "cross-board write"}),
+    (
+        "okto_pulse_add_business_rule",
+        {"title": "BR", "rule": "MUST", "when": "x", "then": "y"},
+    ),
+    ("okto_pulse_update_business_rule", {"rule_id": "br_missing", "title": "x"}),
+    ("okto_pulse_remove_business_rule", {"rule_id": "br_missing"}),
+    ("okto_pulse_list_business_rules", {}),
+    ("okto_pulse_add_api_contract", {"method": "GET", "path": "/cross"}),
+    (
+        "okto_pulse_update_api_contract",
+        {"contract_id": "api_missing", "path": "/cross"},
+    ),
+    ("okto_pulse_remove_api_contract", {"contract_id": "api_missing"}),
+    ("okto_pulse_list_api_contracts", {}),
+    (
+        "okto_pulse_add_decision",
+        {"title": "Decision", "rationale": "cross-board"},
+    ),
+    (
+        "okto_pulse_update_decision",
+        {"decision_id": "dec_missing", "title": "cross-board"},
+    ),
+    ("okto_pulse_remove_decision", {"decision_id": "dec_missing"}),
+    ("okto_pulse_migrate_spec_decisions", {}),
+    (
+        "okto_pulse_add_test_scenario",
+        {"title": "Scenario", "given": "g", "when": "w", "then": "t"},
+    ),
+    ("okto_pulse_list_test_scenarios", {}),
+    (
+        "okto_pulse_update_test_scenario",
+        {"scenario_id": "ts_missing", "title": "cross-board"},
+    ),
+    ("okto_pulse_delete_test_scenario", {"scenario_id": "ts_missing"}),
+    (
+        "okto_pulse_update_test_scenario_status",
+        {"scenario_id": "ts_missing", "status": "ready"},
+    ),
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "tool_args"),
+    _CROSS_BOARD_JSON_SPEC_CASES,
+    ids=[case[0].removeprefix("okto_pulse_") for case in _CROSS_BOARD_JSON_SPEC_CASES],
+)
+async def test_json_spec_operations_fail_closed_cross_board_without_audit(
+    _seed, tool: str, tool_args: dict
+) -> None:
+    before = await _spec_mutation_state(_seed)
+
+    result = await _call(
+        tool,
+        board_id=OTHER_BOARD_ID,
+        spec_id=_seed,
+        **tool_args,
+    )
+
+    assert "error" in result, result
+    assert result["error"] in {"Spec not found", "scenario_not_found"}, result
+    assert await _spec_mutation_state(_seed) == before
+
+
+_CROSS_BOARD_SPEC_PARENT_CASES = (
+    ("okto_pulse_get_spec", {}, "Spec not found"),
+    ("okto_pulse_delete_spec", {}, "Spec not found"),
+    ("okto_pulse_get_spec_history", {}, "Spec not found"),
+    ("okto_pulse_list_spec_validations", {}, "Spec not found"),
+    (
+        "okto_pulse_submit_spec_validation",
+        {
+            "completeness": 90,
+            "completeness_justification": "All criteria have detailed coverage",
+            "assertiveness": 85,
+            "assertiveness_justification": "Requirements use measurable language",
+            "ambiguity": 15,
+            "ambiguity_justification": "Terms are explicitly and clearly defined",
+            "general_justification": "The specification is ready for deterministic execution",
+            "recommendation": "approve",
+        },
+        "Spec not found",
+    ),
+    ("okto_pulse_list_spec_evaluations", {}, "Spec not found"),
+    (
+        "okto_pulse_get_spec_evaluation",
+        {"evaluation_id": EVALUATION_ID},
+        "Spec not found",
+    ),
+    (
+        "okto_pulse_delete_spec_evaluation",
+        {"evaluation_id": EVALUATION_ID},
+        "Spec not found",
+    ),
+    (
+        "okto_pulse_submit_spec_evaluation",
+        {
+            "breakdown_completeness": 80,
+            "breakdown_justification": "complete",
+            "granularity": 80,
+            "granularity_justification": "granular",
+            "dependency_coherence": 80,
+            "dependency_justification": "coherent",
+            "test_coverage_quality": 80,
+            "test_coverage_justification": "covered",
+            "overall_score": 80,
+            "overall_justification": "good",
+            "recommendation": "approve",
+        },
+        "Spec not found",
+    ),
+    (
+        "okto_pulse_get_spec_knowledge",
+        {"knowledge_id": "__seed_knowledge__"},
+        "Knowledge base item not found",
+    ),
+    (
+        "okto_pulse_add_spec_knowledge",
+        {"title": "cross-board", "content": "must not persist"},
+        "Failed to create knowledge base item — spec not found",
+    ),
+    (
+        "okto_pulse_delete_spec_knowledge",
+        {"knowledge_id": "__seed_knowledge__"},
+        "Knowledge base item not found",
+    ),
+    (
+        "okto_pulse_ask_spec_choice_question",
+        {"question": "Choose safely", "options": ["A", "B"]},
+        "Spec not found",
+    ),
+    (
+        "okto_pulse_answer_spec_question",
+        {"qa_id": "__seed_qa__", "answer": "must not persist"},
+        "Q&A item not found or invalid selection",
+    ),
+    (
+        "okto_pulse_delete_spec_question",
+        {"qa_id": "__seed_qa__"},
+        "Q&A item not found",
+    ),
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "tool_args", "expected_error"),
+    _CROSS_BOARD_SPEC_PARENT_CASES,
+    ids=[case[0].removeprefix("okto_pulse_") for case in _CROSS_BOARD_SPEC_PARENT_CASES],
+)
+async def test_spec_parent_operations_fail_closed_cross_board_without_audit(
+    _seed, tool: str, tool_args: dict, expected_error: str
+) -> None:
+    before = await _spec_mutation_state(_seed)
+    resolved_args = {
+        key: (
+            f"{KNOWLEDGE_ID_PREFIX}-{_seed}"
+            if value == "__seed_knowledge__"
+            else _seed_qa_id(_seed)
+            if value == "__seed_qa__"
+            else value
+        )
+        for key, value in tool_args.items()
+    }
+    resolved_expected_error = expected_error.replace("__seed_spec__", _seed)
+
+    result = await _call(
+        tool,
+        board_id=OTHER_BOARD_ID,
+        spec_id=_seed,
+        **resolved_args,
+    )
+
+    assert result == {"error": resolved_expected_error}
+    assert await _spec_mutation_state(_seed) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target_type", "target_id", "expected_error"),
+    (
+        ("spec", "__seed_spec__", "Spec or card not found, or they belong to different boards"),
+        ("contract", CONTRACT_ID, "Spec not found"),
+        ("tr", TECHNICAL_REQUIREMENT_ID, "Spec not found"),
+        ("decision", DECISION_ID, "Spec not found"),
+        ("ir", INTEGRATION_REQUIREMENT_ID, "Spec not found"),
+        ("or", OBSERVABILITY_REQUIREMENT_ID, "Spec not found"),
+    ),
+)
+async def test_link_task_parents_fail_closed_cross_board_without_audit(
+    _seed, target_type: str, target_id: str, expected_error: str
+) -> None:
+    before = await _spec_mutation_state(_seed)
+    resolved_target_id = _seed if target_id == "__seed_spec__" else target_id
+    args = {
+        "board_id": OTHER_BOARD_ID,
+        "target_type": target_type,
+        "target_id": resolved_target_id,
+        "card_id": _seed_card_id(_seed),
+    }
+    if target_type != "spec":
+        args["spec_id"] = _seed
+
+    result = await _call("okto_pulse_link_task", **args)
+
+    assert result == {"error": expected_error}
+    assert await _spec_mutation_state(_seed) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target_type", "target_id", "expected_error"),
+    (
+        ("spec", "__seed_spec__", "Spec or card not found, or they belong to different boards"),
+        ("contract", CONTRACT_ID, "Card not found"),
+        ("tr", TECHNICAL_REQUIREMENT_ID, "Card not found"),
+        ("decision", DECISION_ID, "Card not found"),
+        ("ir", INTEGRATION_REQUIREMENT_ID, "Card not found"),
+        ("or", OBSERVABILITY_REQUIREMENT_ID, "Card not found"),
+    ),
+)
+async def test_link_task_foreign_card_fails_closed_without_audit(
+    _seed, target_type: str, target_id: str, expected_error: str
+) -> None:
+    before = await _spec_mutation_state(_seed)
+    resolved_target_id = _seed if target_id == "__seed_spec__" else target_id
+    args = {
+        "board_id": BOARD_ID,
+        "target_type": target_type,
+        "target_id": resolved_target_id,
+        "card_id": _seed_foreign_card_id(_seed),
+    }
+    if target_type != "spec":
+        args["spec_id"] = _seed
+
+    result = await _call("okto_pulse_link_task", **args)
+
+    assert result == {"error": expected_error}
+    assert await _spec_mutation_state(_seed) == before
+
+
+@pytest.mark.asyncio
+async def test_link_task_parents_same_board_roundtrip(_seed) -> None:
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, _seed)
+        spec.status = SpecStatus.APPROVED
+        await db.commit()
+
+    card_id = _seed_card_id(_seed)
+    linked_spec = await _call(
+        "okto_pulse_link_task",
+        board_id=BOARD_ID,
+        target_type="spec",
+        target_id=_seed,
+        card_id=card_id,
+    )
+    assert linked_spec["success"] is True
+
+    for target_type, target_id, result_key in (
+        ("contract", CONTRACT_ID, "contract_id"),
+        ("tr", TECHNICAL_REQUIREMENT_ID, "tr_id"),
+        ("decision", DECISION_ID, "decision_id"),
+        ("ir", INTEGRATION_REQUIREMENT_ID, "requirement_id"),
+        ("or", OBSERVABILITY_REQUIREMENT_ID, "requirement_id"),
+    ):
+        linked = await _call(
+            "okto_pulse_link_task",
+            board_id=BOARD_ID,
+            target_type=target_type,
+            target_id=target_id,
+            card_id=card_id,
+            spec_id=_seed,
+        )
+        assert linked["success"] is True, linked
+        assert linked[result_key] == target_id
+
+
+@pytest.mark.asyncio
+async def test_spec_qa_same_board_choice_answer_delete(_seed) -> None:
+    answered = await _call(
+        "okto_pulse_answer_spec_question",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        qa_id=_seed_qa_id(_seed),
+        answer="Scoped answer",
+    )
+    assert answered["success"] is True, answered
+    assert answered["qa"]["answer"] == "Scoped answer"
+
+    choice = await _call(
+        "okto_pulse_ask_spec_choice_question",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        question="Choose one",
+        options=["A", "B"],
+    )
+    assert choice["success"] is True, choice
+    deleted = await _call(
+        "okto_pulse_delete_spec_question",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        qa_id=choice["qa"]["id"],
+    )
+    assert deleted == {"success": True}
+
+
+@pytest.mark.asyncio
+async def test_spec_qa_child_must_belong_to_requested_spec_without_audit(_seed) -> None:
+    from okto_pulse.core.infra.database import get_session_factory
+
+    other_spec_id = f"spec-qa-parent-{_seed[:8]}"
+    other_qa_id = f"qa-other-parent-{_seed[:8]}"
+    async with get_session_factory()() as db:
+        db.add(
+            Spec(
+                id=other_spec_id,
+                board_id=BOARD_ID,
+                title="Other Q&A parent",
+                status=SpecStatus.DRAFT,
+                created_by=USER_ID,
+                functional_requirements=[],
+                acceptance_criteria=[],
+            )
+        )
+        db.add(
+            SpecQAItem(
+                id=other_qa_id,
+                spec_id=other_spec_id,
+                question="Belongs to another spec",
+                question_type="text",
+                asked_by="different-asker",
+            )
+        )
+        await db.commit()
+
+    async def _other_qa_state() -> tuple:
+        async with get_session_factory()() as db:
+            qa = await db.get(SpecQAItem, other_qa_id)
+            activity_count = await db.scalar(
+                select(func.count())
+                .select_from(ActivityLog)
+                .where(ActivityLog.board_id == BOARD_ID)
+            )
+            return (
+                qa is not None,
+                qa.answer if qa else None,
+                qa.answered_by if qa else None,
+                qa.answered_at if qa else None,
+                activity_count,
+            )
+
+    before = await _other_qa_state()
+    answered = await _call(
+        "okto_pulse_answer_spec_question",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        qa_id=other_qa_id,
+        answer="must not persist",
+    )
+    deleted = await _call(
+        "okto_pulse_delete_spec_question",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        qa_id=other_qa_id,
+    )
+
+    assert answered == {"error": "Q&A item not found or invalid selection"}
+    assert deleted == {"error": "Q&A item not found"}
+    assert await _other_qa_state() == before
+
+
+@pytest.mark.asyncio
+async def test_spec_knowledge_same_board_lifecycle(_seed) -> None:
+    seeded_id = f"{KNOWLEDGE_ID_PREFIX}-{_seed}"
+    got = await _call(
+        "okto_pulse_get_spec_knowledge",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        knowledge_id=seeded_id,
+    )
+    assert got["id"] == seeded_id
+    assert got["content"] == "private board content"
+
+    added = await _call(
+        "okto_pulse_add_spec_knowledge",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        title="same-board KB",
+        content="same-board content",
+    )
+    assert added["success"] is True
+    added_id = added["knowledge"]["id"]
+
+    deleted = await _call(
+        "okto_pulse_delete_spec_knowledge",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        knowledge_id=added_id,
+    )
+    assert deleted == {"success": True}
+
+
+@pytest.mark.asyncio
+async def test_spec_evaluation_same_board_read_and_delete(_seed) -> None:
+    listed = await _call(
+        "okto_pulse_list_spec_evaluations",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+    )
+    assert EVALUATION_ID in {item["id"] for item in listed["evaluations"]}
+
+    got = await _call(
+        "okto_pulse_get_spec_evaluation",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        evaluation_id=EVALUATION_ID,
+    )
+    assert got["evaluation"]["id"] == EVALUATION_ID
+
+    deleted = await _call(
+        "okto_pulse_delete_spec_evaluation",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        evaluation_id=EVALUATION_ID,
+    )
+    assert deleted == {
+        "success": True,
+        "deleted_evaluation_id": EVALUATION_ID,
+    }
 
 
 @pytest.mark.asyncio

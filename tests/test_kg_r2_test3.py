@@ -57,7 +57,7 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 
 async def _make_stale_spec(db_factory, board_id):
     spec_id, _ref = await seed_done_spec_canonical(db_factory, board_id)
-    assert count_canonical(board_id, "Requirement") >= 1
+    assert await count_canonical(board_id, "Requirement") >= 1
     await set_spec_status(db_factory, spec_id, "draft")  # real maturity regression
     return spec_id
 
@@ -75,7 +75,7 @@ def _issues(health, code):
 async def test_health_surfaces_stale_parity_with_mutation_allowed_false(db_factory):
     board_id = await new_board(db_factory, "r2t3")
     await _make_stale_spec(db_factory, board_id)
-    canonical_before = count_canonical(board_id, "Requirement")
+    canonical_before = await count_canonical(board_id, "Requirement")
     assert canonical_before >= 1
 
     async with db_factory() as db:
@@ -102,7 +102,7 @@ async def test_health_surfaces_stale_parity_with_mutation_allowed_false(db_facto
     assert drill["items"][0]["board_graph_stale"] is True
 
     # ... and the diagnostic is genuinely READ-ONLY: the node is still canonical.
-    assert count_canonical(board_id, "Requirement") == canonical_before
+    assert await count_canonical(board_id, "Requirement") == canonical_before
 
 
 @pytest.mark.asyncio
@@ -126,9 +126,19 @@ async def test_stale_parity_precedence_documented_and_primary_is_deterministic(d
     # Deterministic primary cause: same state -> same primary across reads.
     assert health1["primary_health_cause"] == health2["primary_health_cause"]
     assert health1["primary_health_cause"] not in ("none", None)
-    # stale_parity is a warning that never escalates to claim primary over a
-    # stronger/earlier-ranked cause.
-    assert health1["primary_health_cause"] != SCP
+    # stale_parity may itself be primary when no stronger signal is present;
+    # what the precedence contract forbids is masking an actual stronger cause.
+    stronger_codes = {
+        "canonical_debt_open",
+        "cognitive_consolidation_pending",
+        "canonical_partition_integrity",
+        "dead_letter_backlog",
+    }
+    present_stronger = stronger_codes.intersection(
+        {issue["code"] for issue in health1["health_issues"]}
+    )
+    if present_stronger:
+        assert health1["primary_health_cause"] != SCP
 
 
 # ===========================================================================

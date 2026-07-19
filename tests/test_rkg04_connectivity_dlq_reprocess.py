@@ -59,6 +59,15 @@ async def _seed_dlq(
 ) -> tuple[str, str]:
     aid = artifact_id or uuid.uuid4().hex
     async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name="RKG-04 connectivity fixture",
+                    owner_id="rkg04-test-agent",
+                )
+            )
+            await db.flush()
         row = ConsolidationDeadLetter(
             board_id=board_id, artifact_type=artifact_type, artifact_id=aid,
             attempts=attempts,

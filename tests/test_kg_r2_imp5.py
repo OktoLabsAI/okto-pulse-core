@@ -22,10 +22,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r2i5_"))
 
 from okto_pulse.core.kg.canonical_stale_reconciler import reconcile_stale_canonical
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
 from global_graph_testing import (
     bootstrap_global_discovery,
-    open_global_connection,
+    execute_global_read,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.primitives import (
@@ -87,7 +88,10 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 
 async def _new_board(db_factory) -> str:
     board_id = f"r2i5-{uuid.uuid4().hex[:10]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.r2_imp5.bootstrap_board_graph",
+    )
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
             db.add(Board(id=board_id, name="r2 imp5", owner_id=USER_ID))
@@ -168,11 +172,44 @@ def _first_canonical_requirement(board_id) -> tuple[str, str] | None:
     return None
 
 
+async def _first_canonical_requirement_async(
+    board_id: str,
+) -> tuple[str, str] | None:
+    return await run_blocking_graph_io(
+        lambda: _first_canonical_requirement(board_id),
+        task_name="tests.r2_imp5.first_canonical_requirement",
+    )
+
+
+async def _ensure_outbox_audit_parent(db, board_id: str, session_id: str) -> None:
+    """Persist the relational parents required by KuzuNodeRef fixtures."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy_test_models import ConsolidationAudit
+
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name=f"R2 IMP5 {board_id}", owner_id=USER_ID))
+        await db.flush()
+    if await db.get(ConsolidationAudit, session_id) is None:
+        now = datetime.now(timezone.utc)
+        db.add(ConsolidationAudit(
+            session_id=session_id,
+            board_id=board_id,
+            artifact_id=f"outbox-{session_id[-16:]}",
+            artifact_type="test_fixture",
+            agent_id=USER_ID,
+            started_at=now,
+            committed_at=now,
+        ))
+        await db.flush()
+
+
 async def _digest_node_via_gd_worker(db_factory, board_id, node_id, node_type):
     """Create the DecisionDigest by the REAL GD outbox pipeline (add-ref + event)."""
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     async with db_factory() as db:
         await db.execute(delete(GlobalUpdateOutbox))
+        await _ensure_outbox_audit_parent(db, board_id, session_id)
         db.add(KuzuNodeRef(
             session_id=session_id, board_id=board_id,
             kuzu_node_id=node_id, kuzu_node_type=node_type, operation="add",
@@ -191,16 +228,12 @@ async def _drain_gd_worker(db_factory) -> int:
 
 
 def _digest_layer(board_id, node_id) -> str | None:
-    _gdb, gconn = open_global_connection()
-    try:
-        res = gconn.execute(
-            "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
-            "RETURN coalesce(d.graph_layer, 'legacy_unknown')",
-            {"b": board_id, "n": node_id},
-        )
-        return str(res.get_next()[0]) if res.has_next() else None
-    finally:
-        del gconn, _gdb
+    res = execute_global_read(
+        "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
+        "RETURN coalesce(d.graph_layer, 'legacy_unknown')",
+        {"b": board_id, "n": node_id},
+    )
+    return str(res.rows[0][0]) if res.rows else None
 
 
 def _query_ids(board_id, layer):
@@ -209,21 +242,13 @@ def _query_ids(board_id, layer):
     flakiness; this is the exact filter that decides what query_global can return)."""
     from okto_pulse.core.kg.cypher_templates import layer_filter_clause
 
-    _gdb, gconn = open_global_connection()
-    try:
-        cypher = (
-            "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
-            "WHERE b.board_id = $bid AND " + layer_filter_clause("d") + " "
-            "RETURN d.original_node_id"
-        )
-        res = gconn.execute(cypher, {"bid": board_id, "graph_layer": layer})
-        out = set()
-        while res.has_next():
-            row = res.get_next()
-            out.add(str(row[0]))
-        return out
-    finally:
-        del gconn, _gdb
+    cypher = (
+        "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
+        "WHERE b.board_id = $bid AND " + layer_filter_clause("d") + " "
+        "RETURN d.original_node_id"
+    )
+    res = execute_global_read(cypher, {"bid": board_id, "graph_layer": layer})
+    return {str(row[0]) for row in res.rows}
 
 
 # ===========================================================================
@@ -239,7 +264,7 @@ async def test_demotion_syncs_global_discovery_canonical_disappears(db_factory):
     result = DeterministicWorker().process_spec(_spec_dict(spec_id, board_id, "done"))
     await _commit_worker_result(db_factory, board_id, result)
 
-    req = _first_canonical_requirement(board_id)
+    req = await _first_canonical_requirement_async(board_id)
     assert req is not None, "pipeline must produce a canonical Requirement"
     req_id, _title = req
 

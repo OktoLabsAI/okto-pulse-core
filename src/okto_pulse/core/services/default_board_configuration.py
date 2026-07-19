@@ -11,7 +11,8 @@ Design invariants:
 * ``BoardCreate.settings`` is a PARTIAL override merged over the template via
   ``BoardGovernanceService.merge_settings_patch`` (TR3);
 * no active template → effective settings fall back to the supplied override (or
-  ``BoardSettings()`` default), with NO snapshot and NO error (AC11);
+  forward-safe new-board defaults, including reviewer separation ``enforce``),
+  with NO snapshot and NO error (AC11);
 * there is at most ONE active template per scope, enforced inside the caller's
   transaction (AC-single-active);
 * Guidelines (card #3) and Design System (card #4) consume this provider as
@@ -172,15 +173,31 @@ class DefaultBoardConfigurationService:
 
         With an active template: effective = template payload + partial override;
         snapshot_meta records the applied template + override summary.
-        Without one: effective = normalized override (or BoardSettings() default)
-        and snapshot_meta is ``None`` (graceful fallback, AC11)."""
+        Without one: effective = normalized override (or the forward-safe new
+        board defaults) and snapshot_meta is ``None`` (graceful fallback,
+        AC11). New boards default reviewer separation to ``enforce`` even when
+        no template has been configured; an explicit ``off``/``warn`` override
+        is preserved. Persisted legacy boards are not touched by this path.
+        """
         template = await self.resolve_active(scope)
         if template is None:
-            return BoardGovernanceService.normalize_settings(settings_override), None
+            if isinstance(settings_override, BoardSettings):
+                supplied_settings = settings_override.model_dump(
+                    mode="json", exclude_unset=True
+                )
+            else:
+                supplied_settings = dict(settings_override or {})
+            supplied_settings.setdefault("reviewer_separation_mode", "enforce")
+            return BoardGovernanceService.normalize_settings(supplied_settings), None
 
         effective = BoardGovernanceService.merge_settings_patch(
             template.settings_payload, settings_override
         )
+        # Creating a board is forward-only. A historical template may itself
+        # predate reviewer_separation_mode; do not mutate that template, but do
+        # materialize the current safe default on the new board unless the
+        # template/override explicitly selected another mode.
+        effective.setdefault("reviewer_separation_mode", "enforce")
         snapshot_meta = {
             "template_id": template.id,
             "template_version": template.version,
@@ -217,15 +234,38 @@ class DefaultBoardConfigurationService:
           forward-only (no live inheritance).
         """
         snapshot = board.default_config_snapshot
+        if snapshot is None:
+            return {
+                "state": "legacy_no_snapshot",
+                "board_id": board.id,
+                "configuration_presence": "absent",
+                "comparable": False,
+            }
         if not snapshot:
-            return {"state": "legacy_no_snapshot", "board_id": board.id}
+            return {
+                "state": "empty_snapshot",
+                "board_id": board.id,
+                "configuration_presence": "empty",
+                "comparable": False,
+            }
         scope = snapshot.get("scope", _DEFAULT_SCOPE)
         active = await self.resolve_active(scope)
+        applied_template = await get_default_board_configuration_store().get_template(
+            self.db,
+            template_id=str(snapshot.get("template_id") or ""),
+        )
         applied_version = snapshot.get("template_version")
         active_version = active.version if active is not None else None
         return {
             "state": "applied",
             "board_id": board.id,
+            "configuration_presence": "configured",
+            "comparable": applied_template is not None,
+            "template_settings_presence": (
+                "configured"
+                if applied_template is not None and applied_template.settings_payload
+                else "empty"
+            ),
             "scope": scope,
             "applied_template_id": snapshot.get("template_id"),
             "applied_template_version": applied_version,
@@ -243,10 +283,25 @@ class DefaultBoardConfigurationService:
         template. Reports ``snapshot_state`` plus applied-vs-active version metadata
         in separate fields. Never mutates the board / never backfills (TR4/TR5)."""
         snapshot = board.default_config_snapshot
-        if not snapshot:
+        if snapshot is None:
             return {
                 "board_id": board.id,
                 "snapshot_state": "legacy_no_snapshot",
+                "configuration_presence": "absent",
+                "comparable": False,
+                "applied_template_id": None,
+                "applied_template_version": None,
+                "active_template_id": None,
+                "active_template_version": None,
+                "is_outdated": False,
+                "fields": [],
+            }
+        if not snapshot:
+            return {
+                "board_id": board.id,
+                "snapshot_state": "empty_snapshot",
+                "configuration_presence": "empty",
+                "comparable": False,
                 "applied_template_id": None,
                 "applied_template_version": None,
                 "active_template_id": None,
@@ -265,7 +320,18 @@ class DefaultBoardConfigurationService:
         applied_version = snapshot.get("template_version")
         active_version = active.version if active is not None else None
         fields = []
-        for field in sorted(set(template_settings) | set(current_settings)):
+        override_summary = snapshot.get("override_summary")
+        explicit_override_fields = (
+            set(override_summary)
+            if isinstance(override_summary, dict)
+            else set()
+        )
+        # ``board.settings`` is normalized and therefore contains every default
+        # field.  Comparing that complete payload to an intentionally empty
+        # template fabricated dozens of ``template_value: null`` overrides.  Only
+        # template-owned fields and explicitly recorded overrides are comparable.
+        comparable_fields = set(template_settings) | explicit_override_fields
+        for field in sorted(comparable_fields):
             template_value = template_settings.get(field)
             current_value = current_settings.get(field)
             if template_value != current_value:
@@ -278,6 +344,11 @@ class DefaultBoardConfigurationService:
         return {
             "board_id": board.id,
             "snapshot_state": "applied",
+            "configuration_presence": "configured",
+            "comparable": applied_template is not None,
+            "template_settings_presence": (
+                "configured" if template_settings else "empty"
+            ),
             "applied_template_id": snapshot.get("template_id"),
             "applied_template_version": applied_version,
             "active_template_id": active.id if active is not None else None,
@@ -424,8 +495,20 @@ class DefaultBoardConfigurationService:
         query_scope: QueryScope | None = None,
     ) -> DefaultBoardTemplateRecord:
         """Create a new draft template version (validated as BoardSettings, TR1).
-        ``activate=True`` immediately activates it (single-active enforced)."""
-        validated_payload = self._validate_settings(settings_payload)
+        ``activate=True`` immediately activates it (single-active enforced).
+
+        New template versions default reviewer separation to ``enforce``. This
+        is forward-only: legacy templates/boards are never backfilled and their
+        absent value resolves explicitly to compatibility mode ``off``.
+        """
+        if isinstance(settings_payload, BoardSettings):
+            supplied_settings = settings_payload.model_dump(
+                mode="json", exclude_unset=True
+            )
+        else:
+            supplied_settings = dict(settings_payload or {})
+        supplied_settings.setdefault("reviewer_separation_mode", "enforce")
+        validated_payload = self._validate_settings(supplied_settings)
         await self._validate_guideline_default_refs(
             guideline_default_refs,
             actor=actor,
@@ -435,6 +518,10 @@ class DefaultBoardConfigurationService:
         if isinstance(settings_payload, dict) and active is not None:
             active_payload = active.settings_payload or {}
             for key in LEGACY_ABSENT_SETTING_KEYS:
+                if key == "reviewer_separation_mode":
+                    # Forward-only default for every newly-created template
+                    # version, including one derived from a historical template.
+                    continue
                 if key not in settings_payload and key not in active_payload:
                     validated_payload.pop(key, None)
         store = get_default_board_configuration_store()

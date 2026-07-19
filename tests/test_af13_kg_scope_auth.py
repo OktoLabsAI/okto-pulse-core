@@ -96,6 +96,7 @@ def test_rest_kg_board_routes_require_board_actor_dependency() -> None:
         deps = route_dependencies[route.endpoint.__name__]
         assert (
             kg_routes.require_kg_board_actor in deps
+            or kg_routes.require_kg_board_writer_actor in deps
             or kg_routes.require_kg_admin_board_actor in deps
             or kg_routes.require_kg_stream_board_actor in deps
         ), path

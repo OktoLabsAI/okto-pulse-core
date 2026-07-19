@@ -20,7 +20,6 @@ the structured log, never in a metric label.
 
 from __future__ import annotations
 
-import threading
 from typing import Any
 
 from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer

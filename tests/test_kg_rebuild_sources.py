@@ -65,7 +65,7 @@ def _make_rebuild_test_app(board_id: str = "b-test"):
 
     class _Shares:
         async def get_user_permission(self, candidate_board_id, _user_id):
-            return "owner" if candidate_board_id == board_id else None
+            return "editor" if candidate_board_id == board_id else None
 
     async def _fake_uow():
         yield SimpleNamespace(
@@ -296,6 +296,48 @@ def test_rebuild_legacy_missing_hash_is_not_canonical():
     assert [r.id for r in result.legacy_unknown] == ["legacy-no-hash"]
     assert result.legacy_unknown[0].reason_code == "missing_status_or_content_hash"
     assert result.has_non_deterministic_inputs is True
+
+
+def test_legacy_unknown_warning_is_aggregated_once_per_enumeration(caplog):
+    rows = [
+        _row(artifact_type="decision", id_=f"decision-{index}")
+        for index in range(12)
+    ] + [
+        _row(id_="missing-hash-a", content_hash=""),
+        _row(id_="missing-hash-b", content_hash=""),
+    ]
+
+    with caplog.at_level("WARNING", logger="okto_pulse.kg.rebuild_sources"):
+        result = RebuildSourceEnumerator(
+            source_store=lambda _board_id: rows
+        ).enumerate(board_id="board-legacy-diagnostics")
+
+    records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("kg.rebuild_sources.legacy_unknown")
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.legacy_unknown_count == 14
+    assert record.legacy_unknown_breakdown == [
+        {
+            "artifact_type": "decision",
+            "reason_code": "unknown_artifact_type",
+            "count": 12,
+        },
+        {
+            "artifact_type": "spec",
+            "reason_code": "missing_status_or_content_hash",
+            "count": 2,
+        },
+    ]
+    assert result.legacy_unknown_count == 14
+    assert {row.id for row in result.legacy_unknown} == {
+        *(f"decision-{index}" for index in range(12)),
+        "missing-hash-a",
+        "missing-hash-b",
+    }
 
 
 def test_regression_fresh_working_sources_are_not_dropped_from_partition():

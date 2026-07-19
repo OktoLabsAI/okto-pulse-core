@@ -46,6 +46,7 @@ from okto_pulse.core.models.schemas import (
 )
 from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
+    ArchitectureDesignSelectionError,
     ArchitecturePropagationBlocked,
     ArchitecturePropagationService,
 )
@@ -245,6 +246,119 @@ async def test_ts_b3_propagate_architecture_designs_blocks_derive(db_factory):
             .where(ArchitectureDesign.parent_type == "refinement",
                    ArchitectureDesign.refinement_id == refinement_id)
         )).scalar_one()
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_multihop_selection_resolves_physical_root_ref_and_resource_gate_tokens(
+    db_factory,
+):
+    _board_id, ideation_id, refinement_id, spec_id = (
+        await _seed_ideation_refinement_spec(db_factory)
+    )
+    async with db_factory() as db:
+        root = await ArchitectureDesignRepository(db).create(
+            "ideation", ideation_id, _clean_create(), USER_ID
+        )
+        await db.commit()
+        root_id = root.id
+    async with db_factory() as db:
+        copied = await ArchitecturePropagationService(db).copy_from_parent(
+            "ideation", ideation_id, "refinement", refinement_id, USER_ID
+        )
+        await db.commit()
+        intermediate_id = copied[0].id
+        intermediate_source_ref = copied[0].source_ref
+
+    # Reopen between every hop: this exercises persisted lineage, not identity-map
+    # state. Every supported token must converge on the same target snapshot.
+    for token in (
+        intermediate_id,
+        root_id,
+        intermediate_source_ref,
+        f"architecture:{root_id}",
+        f"architecture_design:{root_id}",
+    ):
+        async with db_factory() as db:
+            copied = await ArchitecturePropagationService(db).copy_from_parent(
+                "refinement",
+                refinement_id,
+                "spec",
+                spec_id,
+                USER_ID,
+                design_ids=[token],
+            )
+            await db.commit()
+            assert len(copied) == 1
+            assert copied[0].source_design_id == root_id
+
+    async with db_factory() as db:
+        rows = (
+            await db.execute(
+                select(ArchitectureDesign).where(
+                    ArchitectureDesign.parent_type == "spec",
+                    ArchitectureDesign.spec_id == spec_id,
+                )
+            )
+        ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].source_design_id == root_id
+
+
+@pytest.mark.asyncio
+async def test_explicit_mixed_valid_and_foreign_selection_fails_atomically(db_factory):
+    _board_id, ideation_id, refinement_id, _spec_id = (
+        await _seed_ideation_refinement_spec(db_factory)
+    )
+    second_spec_id = _id("propenf-spec-target")
+    async with db_factory() as db:
+        await ArchitectureDesignRepository(db).create(
+            "ideation", ideation_id, _clean_create(), USER_ID
+        )
+        db.add(
+            Spec(
+                id=second_spec_id,
+                board_id=_board_id,
+                refinement_id=refinement_id,
+                title="atomic target",
+                created_by=USER_ID,
+            )
+        )
+        await db.commit()
+    async with db_factory() as db:
+        copied = await ArchitecturePropagationService(db).copy_from_parent(
+            "ideation", ideation_id, "refinement", refinement_id, USER_ID
+        )
+        await db.commit()
+        valid_id = copied[0].id
+
+    foreign_id = "architecture:foreign-root"
+    async with db_factory() as db:
+        with pytest.raises(ArchitectureDesignSelectionError) as caught:
+            await ArchitecturePropagationService(db).copy_from_parent(
+                "refinement",
+                refinement_id,
+                "spec",
+                second_spec_id,
+                USER_ID,
+                design_ids=[valid_id, foreign_id],
+            )
+        payload = caught.value.to_error_dict()
+        assert payload["requested"] == [valid_id, foreign_id]
+        assert payload["matched"] == [valid_id]
+        assert payload["missing"] == [foreign_id]
+
+    async with db_factory() as db:
+        count = (
+            await db.execute(
+                select(func.count())
+                .select_from(ArchitectureDesign)
+                .where(
+                    ArchitectureDesign.parent_type == "spec",
+                    ArchitectureDesign.spec_id == second_spec_id,
+                )
+            )
+        ).scalar_one()
     assert count == 0
 
 

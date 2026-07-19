@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.router import api_router
 from okto_pulse.community.api.auth_deps import require_user
-from okto_pulse.core.infra.database import get_db
+from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.core.kg.orphan_integrity import (
     OrphanBackfillResult,
     OrphanBackfillSample,
@@ -20,16 +21,34 @@ BOARD_ID = "board-orphan-api"
 USER_ID = "user-orphan-api"
 
 
-class _FakeSession:
-    async def __aenter__(self):
-        return self
+class _Boards:
+    async def get(self, board_id: str):
+        if board_id != BOARD_ID:
+            return None
+        return SimpleNamespace(id=BOARD_ID, owner_id=USER_ID)
 
-    async def __aexit__(self, *args):
-        pass
+
+class _Shares:
+    async def get_user_permission(self, _board_id: str, _user_id: str):
+        return None
 
 
-async def _fake_db():
-    yield _FakeSession()
+class _KGOperations:
+    async def invoke_health_reader(
+        self,
+        reader,
+        board_id: str,
+        *,
+        scheduler_control,
+    ):
+        return await reader(board_id, None, scheduler_control=scheduler_control)
+
+
+async def _fake_uow():
+    yield SimpleNamespace(
+        boards=_Boards(),
+        services=SimpleNamespace(shares=_Shares(), kg=_KGOperations()),
+    )
 
 
 def _client() -> TestClient:
@@ -40,7 +59,7 @@ def _client() -> TestClient:
         return USER_ID
 
     app.dependency_overrides[require_user] = _fake_user
-    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return TestClient(app)
 
 

@@ -19,8 +19,10 @@ from typing import Any, Mapping
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
-    EntityNotFoundError,
     commit,
+)
+from okto_pulse.core.application.use_cases.spec_crud import (
+    _require_actor_board_spec,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
@@ -100,11 +102,11 @@ class SubmitSpecValidationUseCase:
     async def execute(
         self, command: SubmitSpecValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SubmitSpecValidationResult:
-        command.validate()
         service = uow.services.specs
-        spec = await service.get_spec(command.spec_id)
-        if spec is None:
-            raise EntityNotFoundError("spec", command.spec_id)
+        spec = await _require_actor_board_spec(
+            uow, command.spec_id, actor, write=True
+        )
+        command.validate()
         # MCP supplies the resolved agent name (actor.actor_name); REST leaves it
         # None and we resolve it here — preserving each surface's reviewer_name.
         reviewer_name = actor.actor_name or await _resolve_reviewer_name(

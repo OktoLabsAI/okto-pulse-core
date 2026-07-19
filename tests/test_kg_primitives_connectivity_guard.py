@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     _apply_graph_node_create,
@@ -22,6 +23,13 @@ from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ProposeReconciliationRequest,
 )
+
+
+async def _run_test_graph_io(operation, *, task_name: str):
+    return await run_blocking_graph_io(
+        operation,
+        task_name=f"test.connectivity-guard.{task_name}",
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +95,6 @@ def _seed_learning_with_optional_parent(
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
             graph_scope=kconn,
-
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -156,7 +163,6 @@ def _seed_bug_with_parent(board_id: str, *, graph_layer: str = "canonical") -> s
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
             graph_scope=kconn,
-
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -192,7 +198,6 @@ def _seed_spec_root_and_decision(board_id: str, spec_ref: str) -> tuple[str, str
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
             graph_scope=kconn,
-
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -364,7 +369,13 @@ async def test_commit_rejects_isolated_learning_before_graph_mutation(
     assert details["passed"] is False
     assert details["violations"][0]["source_artifact_ref"] == source_ref
     assert "content" not in details["violations"][0]
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 0
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-isolated-learning",
+        )
+        == 0
+    )
 
 
 @pytest.mark.asyncio
@@ -375,8 +386,21 @@ async def test_source_artifact_ref_dedup_hit_without_edge_is_not_successful_merg
     board_handle,
 ):
     source_ref = f"learning:orphan-dedup:{uuid.uuid4()}"
-    _seed_learning_with_optional_parent(board_id, source_ref=source_ref, connected=False)
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 1
+    await _run_test_graph_io(
+        lambda: _seed_learning_with_optional_parent(
+            board_id,
+            source_ref=source_ref,
+            connected=False,
+        ),
+        task_name="seed-orphan-learning",
+    )
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-seeded-orphan-learning",
+        )
+        == 1
+    )
 
     begin = await _begin_with_learning(
         board_id,
@@ -396,7 +420,13 @@ async def test_source_artifact_ref_dedup_hit_without_edge_is_not_successful_merg
 
     assert exc_info.value.code == "kg_node_connectivity_violation"
     assert exc_info.value.details["connectivity"]["checked_nodes"] == 1
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-rejected-orphan-learning",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -407,8 +437,21 @@ async def test_source_artifact_ref_dedup_hit_with_existing_edge_counts_merge(
     board_handle,
 ):
     source_ref = f"learning:connected-dedup:{uuid.uuid4()}"
-    _seed_learning_with_optional_parent(board_id, source_ref=source_ref, connected=True)
-    assert _count_learning_belongs_to(board_id, source_ref) == 1
+    await _run_test_graph_io(
+        lambda: _seed_learning_with_optional_parent(
+            board_id,
+            source_ref=source_ref,
+            connected=True,
+        ),
+        task_name="seed-connected-learning",
+    )
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_learning_belongs_to(board_id, source_ref),
+            task_name="count-seeded-learning-edge",
+        )
+        == 1
+    )
 
     begin = await _begin_with_learning(
         board_id,
@@ -429,7 +472,13 @@ async def test_source_artifact_ref_dedup_hit_with_existing_edge_counts_merge(
     assert commit.nodes_merged == 1
     assert commit.connectivity["passed"] is True
     assert commit.processed_candidates == 1
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-merged-connected-learning",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -480,7 +529,13 @@ async def test_degraded_graph_returns_contextual_error_without_opening_kuzu(
         "deferred_degraded_graph"
     )
     monkeypatch.setattr(kg_schema, "open_board_connection", original_open)
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 0
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+            task_name="count-degraded-learning",
+        )
+        == 0
+    )
 
 
 @pytest.mark.asyncio
@@ -490,7 +545,10 @@ async def test_bug_derived_learning_validates_existing_bug_is_connected(
     db_factory,
     board_handle,
 ):
-    bug_id = _seed_bug_with_parent(board_id)
+    bug_id = await _run_test_graph_io(
+        lambda: _seed_bug_with_parent(board_id),
+        task_name="seed-bug-with-parent",
+    )
     source_ref = f"card:bug:{bug_id}:learning:{uuid.uuid4()}"
     begin = await _begin_with_learning(
         board_id,
@@ -526,11 +584,17 @@ async def test_bug_derived_learning_validates_existing_bug_is_connected(
     assert commit.connectivity["passed"] is True
     assert commit.nodes_added == 1
     assert commit.edges_added == 1
-    assert _count_learning_validates_bug(
-        board_id,
-        learning_source_ref=source_ref,
-        bug_id=bug_id,
-    ) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_learning_validates_bug(
+                board_id,
+                learning_source_ref=source_ref,
+                bug_id=bug_id,
+            ),
+            task_name="count-learning-validates-bug",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -542,7 +606,10 @@ async def test_commit_auto_attaches_cognitive_decision_to_source_root(
 ):
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    root_id, existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
+    root_id, existing_decision_id = await _run_test_graph_io(
+        lambda: _seed_spec_root_and_decision(board_id, spec_ref),
+        task_name="seed-spec-root-and-decision",
+    )
     decision_source_ref = f"{spec_ref}:decision:e2e"
 
     async with db_factory() as db:
@@ -605,11 +672,17 @@ async def test_commit_auto_attaches_cognitive_decision_to_source_root(
     assert commit.connectivity["passed"] is True
     assert commit.nodes_added == 1
     assert commit.edges_added == 2
-    assert _count_decision_belongs_to_root(
-        board_id,
-        decision_source_ref=decision_source_ref,
-        root_id=root_id,
-    ) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_decision_belongs_to_root(
+                board_id,
+                decision_source_ref=decision_source_ref,
+                root_id=root_id,
+            ),
+            task_name="count-decision-root-edge",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -621,7 +694,10 @@ async def test_commit_auto_attaches_cognitive_assumption_to_source_root(
 ):
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    root_id, _existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
+    root_id, _existing_decision_id = await _run_test_graph_io(
+        lambda: _seed_spec_root_and_decision(board_id, spec_ref),
+        task_name="seed-spec-root-for-assumption",
+    )
     assumption_source_ref = f"{spec_ref}:assumption:e2e"
 
     async with db_factory() as db:
@@ -669,8 +745,14 @@ async def test_commit_auto_attaches_cognitive_assumption_to_source_root(
     assert commit.connectivity["passed"] is True
     assert commit.nodes_added == 1
     assert commit.edges_added == 1
-    assert _count_assumption_belongs_to_root(
-        board_id,
-        assumption_source_ref=assumption_source_ref,
-        root_id=root_id,
-    ) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_assumption_belongs_to_root(
+                board_id,
+                assumption_source_ref=assumption_source_ref,
+                root_id=root_id,
+            ),
+            task_name="count-assumption-root-edge",
+        )
+        == 1
+    )

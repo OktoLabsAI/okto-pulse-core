@@ -107,6 +107,36 @@ def test_root_cause_source_enumeration_failure_marks_drilldown_unavailable():
     assert rc["present_categories"] == ["source_enumeration_failure"]
 
 
+def test_root_cause_discovery_scope_matches_prefixed_classification_reason():
+    rc = _build_kg_root_cause(
+        total_nodes=12,
+        queue_depth=0,
+        dead_letter_count=0,
+        active_queue={"classification": "idle", "total_active_depth": 0},
+        empty_after_materialized_history=False,
+        combined_reasons=["discovery:wal_or_commit_errors.present"],
+        source_diag=_src(fail=True, err="board source unavailable"),
+        safe_write_diag=_sw(outcome="failed", drain=True),
+        scope="discovery",
+    )
+
+    assert rc["scope"] == "discovery"
+    assert rc["classification_reasons"] == [
+        "discovery:wal_or_commit_errors.present"
+    ]
+    wal = rc["categories"]["wal_or_commit_errors"]
+    assert wal == {
+        "present": True,
+        "scope": "discovery",
+        "present_scopes": ["discovery"],
+    }
+    assert rc["present_categories"] == ["wal_or_commit_errors"]
+    # Board-only recovery probes must not contaminate a discovery root cause.
+    assert rc["categories"]["source_enumeration_failure"]["present"] is False
+    assert rc["categories"]["safe_write_drain_failure"]["present"] is False
+    assert rc["drilldown_unavailable"] is False
+
+
 # ---------------------------------------------------------------------------
 # _probe_safe_write_diagnostics — read-only counter derivation
 # ---------------------------------------------------------------------------

@@ -67,7 +67,6 @@ from okto_pulse.core.runtime_context import (
 
 import logging
 import threading
-import time
 import uuid
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field

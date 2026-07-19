@@ -6,19 +6,18 @@ operational/KG services are strangled behind UoW-backed application calls.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
     PermissionDeniedError,
     commit,
 )
-from okto_pulse.core.ports.application_services import (
-    ApplicationServiceCatalog,
-    KnowledgeGraphOperations,
-)
+from okto_pulse.core.ports.application_services import KnowledgeGraphOperations
 from okto_pulse.core.ports.scheduler import SchedulerControl
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
@@ -38,32 +37,85 @@ class BugNotFoundError(EntityNotFoundError):
         super().__init__("bug", bug_id)
 
 
-async def _require_board_for_actor(
-    services: ApplicationServiceCatalog,
-    board_id: str,
-    actor: ActorContext,
-) -> Any:
-    board = await services.boards.get_board(board_id, actor.actor_id)
-    if not board:
-        raise BoardNotFoundError(board_id)
-    return board
-
-
 async def _require_board_access(
     uow: PulseUnitOfWork,
     board_id: str,
     actor: ActorContext,
-) -> None:
-    board = await uow.boards.get(board_id)
+    *,
+    allowed_share_permissions: set[str] | None = None,
+) -> Any:
+    board = await load_accessible_board(
+        uow,
+        board_id,
+        actor,
+        allowed_share_permissions=allowed_share_permissions,
+    )
     if board is None:
         raise BoardNotFoundError(board_id)
-    if getattr(board, "owner_id", None) == actor.actor_id:
+    return board
+
+
+async def _require_resource_gate_entity(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+) -> Any:
+    """Resolve a Resource Gate child and prove it belongs to ``board_id``."""
+    if entity_type == "ideation":
+        entity = await uow.services.ideations.get_ideation(entity_id)
+    elif entity_type == "refinement":
+        entity = await uow.services.refinements.get_refinement(entity_id)
+    elif entity_type == "spec":
+        entity = await uow.services.specs.get_spec(entity_id)
+    elif entity_type == "card":
+        entity = await uow.services.cards.get_card(entity_id)
+    else:
+        entity = None
+    if entity is None or getattr(entity, "board_id", None) != board_id:
+        raise BoardNotFoundError(board_id)
+    return entity
+
+
+_RUNTIME_SETTINGS_WRITE_PERMISSIONS = (
+    "runtime.settings.write",
+    "settings.runtime.write",
+)
+
+
+def _permission_enabled(permissions: Any, required: str) -> bool:
+    if isinstance(permissions, Mapping):
+        if permissions.get("*") is True or permissions.get(required) is True:
+            return True
+        cursor: Any = permissions
+        for part in required.split("."):
+            if not isinstance(cursor, Mapping) or part not in cursor:
+                return False
+            cursor = cursor[part]
+        return cursor is True
+    checker = getattr(permissions, "check", None)
+    if callable(checker):
+        try:
+            return checker(required) is None
+        except Exception:
+            return False
+    if isinstance(permissions, (list, tuple, set, frozenset)):
+        return required in permissions or "*" in permissions
+    return False
+
+
+def _require_runtime_settings_admin(actor: ActorContext) -> None:
+    roles = {str(role).lower() for role in actor.roles}
+    if roles.intersection({"admin", "operator"}):
         return
-    perm = await uow.services.shares.get_user_permission(board_id, actor.actor_id)
-    if perm is None:
-        raise PermissionDeniedError(
-            "Access denied: user does not have access to this board"
-        )
+    if any(
+        _permission_enabled(actor.permissions, permission)
+        for permission in _RUNTIME_SETTINGS_WRITE_PERMISSIONS
+    ):
+        return
+    raise PermissionDeniedError(
+        "Runtime settings write requires an admin or operator capability"
+    )
 
 
 @dataclass(frozen=True)
@@ -103,7 +155,13 @@ class GetSpecResourceTaskCoverageUseCase:
         self, command: ResourceGateTaskCoverageCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
-        board = await _require_board_for_actor(uow.services, command.board_id, actor)
+        board = await _require_board_access(uow, command.board_id, actor)
+        await _require_resource_gate_entity(
+            uow,
+            command.board_id,
+            "spec",
+            command.spec_id,
+        )
         service = uow.services.resource_gate
         data = await service.validate_spec_resource_task_coverage(
             command.board_id,
@@ -118,7 +176,13 @@ class GetResourceGateSummaryUseCase:
         self, command: ResourceGateEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
-        await _require_board_for_actor(uow.services, command.board_id, actor)
+        await _require_board_access(uow, command.board_id, actor)
+        await _require_resource_gate_entity(
+            uow,
+            command.board_id,
+            command.entity_type,
+            command.entity_id,
+        )
         return DataResult(
             await uow.services.resource_gate.get_summary(
                 command.board_id, command.entity_type, command.entity_id
@@ -131,7 +195,13 @@ class GetEffectiveResourcesUseCase:
         self, command: ResourceGateEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
-        await _require_board_for_actor(uow.services, command.board_id, actor)
+        await _require_board_access(uow, command.board_id, actor)
+        await _require_resource_gate_entity(
+            uow,
+            command.board_id,
+            command.entity_type,
+            command.entity_id,
+        )
         return DataResult(
             await uow.services.resource_gate.get_effective_resources(
                 command.board_id, command.entity_type, command.entity_id
@@ -144,7 +214,18 @@ class MarkResourceNotApplicableUseCase:
         self, command: MarkResourceNotApplicableCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
-        await _require_board_for_actor(uow.services, command.board_id, actor)
+        await _require_board_access(
+            uow,
+            command.board_id,
+            actor,
+            allowed_share_permissions={"editor", "admin"},
+        )
+        await _require_resource_gate_entity(
+            uow,
+            command.board_id,
+            command.entity_type,
+            command.entity_id,
+        )
         data = await uow.services.resource_gate.mark_not_applicable(
             command.board_id,
             command.entity_type,
@@ -163,7 +244,18 @@ class ClearResourceNotApplicableUseCase:
         self, command: ClearResourceNotApplicableCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
-        await _require_board_for_actor(uow.services, command.board_id, actor)
+        await _require_board_access(
+            uow,
+            command.board_id,
+            actor,
+            allowed_share_permissions={"editor", "admin"},
+        )
+        await _require_resource_gate_entity(
+            uow,
+            command.board_id,
+            command.entity_type,
+            command.entity_id,
+        )
         data = await uow.services.resource_gate.clear_not_applicable(
             command.board_id,
             command.entity_type,
@@ -184,6 +276,12 @@ class UpdateResourceGateBoardSettingsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DataResult:
+        await _require_board_access(
+            uow,
+            command.board_id,
+            actor,
+            allowed_share_permissions={"editor", "admin"},
+        )
         settings = await uow.services.update_resource_gate_board_settings(
             command.board_id,
             actor.actor_id,
@@ -221,6 +319,7 @@ class PutRuntimeSettingsUseCase:
     async def execute(
         self, command: PutRuntimeSettingsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        _require_runtime_settings_admin(actor)
         return DataResult(
             await uow.services.put_runtime_settings(
                 command.values,
@@ -244,6 +343,8 @@ class GetLineageGraphUseCase:
     async def execute(
         self, command: GetLineageGraphCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        if await load_accessible_board(uow, command.board_id, actor) is None:
+            raise BoardNotFoundError(command.board_id)
         return DataResult(
             await uow.services.build_lineage_graph(
                 command.board_id,
@@ -281,6 +382,8 @@ class EvaluateBugCognitiveClosureByBugIdUseCase:
         card = await uow.services.cards.get_card(command.bug_id)
         board_id = getattr(card, "board_id", None) if card is not None else None
         if not board_id:
+            raise BugNotFoundError(command.bug_id)
+        if await load_accessible_board(uow, board_id, actor) is None:
             raise BugNotFoundError(command.bug_id)
         result = await EvaluateBugCognitiveClosureUseCase().execute(
             EvaluateBugCognitiveClosureCommand(
@@ -333,6 +436,12 @@ class RecordCognitiveSkipUseCase:
     async def execute(
         self, command: CognitiveSkipCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        await _require_board_access(
+            uow,
+            command.board_id,
+            actor,
+            allowed_share_permissions={"editor", "admin"},
+        )
         service = self._readiness_service()
         item = await uow.services.kg.record_cognitive_skip(
             service,
@@ -380,6 +489,12 @@ class ClearCognitiveSkipUseCase:
     async def execute(
         self, command: CognitiveClearCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        await _require_board_access(
+            uow,
+            command.board_id,
+            actor,
+            allowed_share_permissions={"editor", "admin"},
+        )
         service = self._readiness_service()
         item = await uow.services.kg.clear_cognitive_skip(
             service,
@@ -433,6 +548,7 @@ class GetCognitiveReadinessMetricsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DataResult:
+        await _require_board_access(uow, command.board_id, actor)
         return DataResult(
             await uow.services.kg.cognitive_readiness_metrics(
                 self._readiness_service(),
@@ -459,6 +575,7 @@ class GetCognitiveEffectivenessInventoryUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DataResult:
+        await _require_board_access(uow, command.board_id, actor)
         health = await uow.services.kg.health(
             command.board_id,
             scheduler_control=command.scheduler_control,
@@ -510,7 +627,12 @@ class RetryCanonicalDebtUseCase:
     async def execute(
         self, command: CanonicalDebtRetryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-        await _require_board_access(uow, command.board_id, actor)
+        await _require_board_access(
+            uow,
+            command.board_id,
+            actor,
+            allowed_share_permissions={"editor", "admin"},
+        )
         health = await uow.services.kg.health(
             command.board_id,
             scheduler_control=command.scheduler_control,
@@ -553,6 +675,7 @@ class ListCanonicalPartitionIntegrityUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DataResult:
+        await _require_board_access(uow, command.board_id, actor)
         return DataResult(
             await uow.services.kg.list_canonical_partition_integrity(
                 board_id=command.board_id,
@@ -575,6 +698,7 @@ class GetCanonicalPartitionIntegrityDetailUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DataResult:
+        await _require_board_access(uow, command.board_id, actor)
         return DataResult(
             await uow.services.kg.canonical_partition_integrity_detail(
                 board_id=command.board_id,
@@ -598,11 +722,47 @@ class ListDigestLayerMismatchUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DataResult:
+        await _require_board_access(uow, command.board_id, actor)
         return DataResult(
             await uow.services.kg.list_digest_layer_mismatches(
                 board_id=command.board_id,
                 limit=command.limit,
                 offset=command.offset,
+            )
+        )
+
+
+@dataclass(frozen=True)
+class OrphanIntegrityReportCommand:
+    board_id: str
+    generation_id: str | None
+    limit: int
+
+
+class GetOrphanIntegrityReportUseCase:
+    def __init__(self, *, scanner_factory=None) -> None:
+        self._scanner_factory = scanner_factory
+
+    def _scanner(self):
+        if self._scanner_factory is not None:
+            return self._scanner_factory()
+        from okto_pulse.core.kg.orphan_integrity import OrphanNodeScanner
+
+        return OrphanNodeScanner()
+
+    async def execute(
+        self,
+        command: OrphanIntegrityReportCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> DataResult:
+        await _require_board_access(uow, command.board_id, actor)
+        return DataResult(
+            self._scanner().scan(
+                board_id=command.board_id,
+                generation_id=command.generation_id,
+                limit=command.limit,
             )
         )
 
@@ -652,6 +812,12 @@ class RunOrphanBackfillUseCase:
     ) -> DataResult:
         from okto_pulse.core.services.application_kg import max_orphan_sample_limit
 
+        await _require_board_access(
+            uow,
+            command.board_id,
+            actor,
+            allowed_share_permissions={"editor", "admin"},
+        )
         health = await self._get_health(command, uow.services.kg)
         state = str(health.get("overall_state") or health.get("graph_state") or "")
         if state in {"recovery_needed", "quarantined"}:

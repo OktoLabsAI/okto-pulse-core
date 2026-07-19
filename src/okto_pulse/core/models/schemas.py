@@ -259,15 +259,65 @@ class CommentResponse(BaseSchema):
 # ============================================================================
 
 
+class TestEvidenceAssertionV2(BaseModel):
+    """One machine-checkable assertion observed during a product execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    expected: Any
+    observed: Any
+    status: Literal["passed", "failed"]
+    message: str | None = None
+
+
+class TestEvidenceProvenanceV2(BaseModel):
+    """Identity of the Community adapter that produced an attestation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    producer: str = Field(..., min_length=1)
+    producer_version: str = Field(..., min_length=1)
+    adapter: str = Field(..., min_length=1)
+    environment: str = Field(..., min_length=1)
+
+
+class TestExecutionAttestationV2(BaseModel):
+    """Evidence V2 result emitted after exercising the real product runtime.
+
+    The CORE owns this transport-neutral contract and its pure verification
+    rules.  Reading/running the manifest belongs to a concrete Community
+    adapter; the adapter binds that execution to this payload with the manifest
+    digest and the deterministic ``attestation_sha256``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[2] = 2
+    run_id: str = Field(..., min_length=1)
+    executed_at: str = Field(..., min_length=1)
+    scenario_id: str = Field(..., min_length=1)
+    # Optional only for lossless reads of pre-hardening V2 rows. Every new
+    # gated write requires a valid digest in the semantic verifier.
+    scenario_sha256: str | None = None
+    outcome: Literal["passed", "failed"]
+    product_runtime_exercised: bool
+    manifest_sha256: str = Field(..., min_length=1)
+    assertions: list[TestEvidenceAssertionV2] = Field(..., min_length=1)
+    provenance: TestEvidenceProvenanceV2
+    attestation_sha256: str = Field(..., min_length=1)
+
+
 class TestScenarioEvidence(BaseModel):
     """Structured proof that a test scenario exists or was executed.
 
     Spec 9e0bf979 — re-executable validation evidence contract. ``evidence_class``
     classifies the KIND of proof (see ``test_scenario_lifecycle.EVIDENCE_CLASSES``)
     so a validator can rerun or inspect the artifact instead of trusting a raw
-    run log. All new fields are additive and optional; legacy evidence that only
-    carries the minimal automated/passed fields stays valid and readable
-    (backward compatibility, fr_a245e2c7).
+    run log. All new fields are additive and optional. Legacy evidence stays
+    readable for backward compatibility; specifically, historical free-form
+    MCP manifests are reader-only/unverified until a V2 execution attestation
+    is produced.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -281,7 +331,18 @@ class TestScenarioEvidence(BaseModel):
     # Re-executable evidence contract (spec 9e0bf979, tr_61dabab8).
     evidence_class: str | None = None
     replay_command: str | None = None
-    mcp_replay_manifest: str | None = None
+    # Deprecated reader-only alias. Historical rows may contain either a string
+    # or the free-form object accepted by the old status endpoint. Both remain
+    # serializable so a GET -> SpecUpdate round-trip never loses data, but the
+    # Evidence V2 gate treats them as ``legacy_unverified``.
+    mcp_replay_manifest: str | dict[str, Any] | None = None
+    # Evidence V2 canonical contract. New MCP replay writes use these two
+    # fields; ``manifest_ref`` is always a reference, never an embedded object.
+    manifest_ref: str | None = None
+    execution_attestation: TestExecutionAttestationV2 | None = None
+    # Opaque installation-issued receipt. CORE never derives or trusts this
+    # value itself; the concrete edition authenticates it at every write.
+    execution_receipt: str | None = None
     manual_checklist_ref: str | None = None
     expected_output_snapshot: str | None = None
     replay_should_exist: bool | None = None
@@ -884,6 +945,7 @@ class ArchitectureDesignSummary(BaseSchema):
     title: str
     version: int
     source_ref: str | None = None
+    source_design_id: str | None = None
     source_version: int | None = None
     stale: bool = False
     breaking_change_flag: bool = False
@@ -1874,6 +1936,14 @@ class CardCreate(BaseModel):
             "(default 3; boards podem configurar 2 ou outro valor)."
         ),
     )
+    functional_requirement_ids: list[str] | None = Field(
+        None,
+        description="FR IDs to backlink atomically during card creation.",
+    )
+    business_rule_ids: list[str] | None = Field(
+        None,
+        description="Business-rule IDs to backlink atomically during card creation.",
+    )
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela vinculados ao card.")
     # Card type: "normal", "test", or "bug".
     card_type: str = Field("normal", description="Tipo do card: 'normal', 'test' ou 'bug'.")
@@ -2252,6 +2322,11 @@ class BoardSettings(BaseModel):
     allow_agent_self_answering: bool = False  # explicit opt-in that permits same-principal Q&A answers
     require_full_context_for_critical_actions: bool = True  # if True, critical mutations must resolve full entity context
     qa_require_role_separation: bool = False  # if True, a Q&A question cannot be answered by the same principal who asked it
+    # Task-validation and sprint reviewer/executor separation. Missing on legacy
+    # persisted boards is resolved explicitly as ``off``; new boards and new
+    # default-board template versions inject ``enforce`` unless the administrator
+    # chooses another mode.
+    reviewer_separation_mode: Literal["off", "warn", "enforce"] = "off"
     # Design System mockup gate mode (spec 3a006f65 / card 96f76a5f). CANONICAL source
     # of the board's Design System gate mode (the design_system_default_ref only carries
     # the DS identity; any gate_mode inside it is a derived mirror). off = no gate;
@@ -2453,6 +2528,11 @@ class SprintUpdate(BaseModel):
     skip_rules_coverage: bool | None = None
     skip_qualitative_validation: bool | None = None
     validation_threshold: int | None = None
+    expected_version: int | None = Field(
+        None,
+        ge=1,
+        description="Optimistic-lock version read by the caller.",
+    )
 
 
 class SprintMove(BaseModel):
@@ -2462,6 +2542,11 @@ class SprintMove(BaseModel):
     cancellation_reason: str | None = Field(
         None,
         description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
+    expected_version: int | None = Field(
+        None,
+        ge=1,
+        description="Optimistic-lock version read by the caller.",
     )
 
 
@@ -2557,6 +2642,9 @@ class SprintSummary(BaseSchema):
     created_at: datetime
     updated_at: datetime
     archived: bool = False
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
 
 
 class SprintResponse(BaseSchema):

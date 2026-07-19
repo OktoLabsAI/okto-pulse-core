@@ -12,8 +12,8 @@ from typing import Any, Callable
 
 from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.core.application.artifact_propagation import (
-    _propagated_kb_description,
     propagate_artifacts,
+    validate_artifact_selections,
 )
 from okto_pulse.core.domain.amendment_eligibility import evaluate_amendment_eligibility
 from okto_pulse.core.domain.card_transition import (
@@ -39,7 +39,11 @@ from okto_pulse.core.domain.enums import (
     SprintStatus,
     StoryStatus,
 )
-from okto_pulse.core.infra.config import get_settings
+from okto_pulse.core.domain.sdlc_registry import (
+    is_transition_allowed,
+    transition_contracts,
+    transition_map,
+)
 from okto_pulse.core.infra.storage import get_storage_provider
 from okto_pulse.core.ports.application_persistence import (
     ApplicationFilter,
@@ -126,6 +130,7 @@ from okto_pulse.core.services.bug_workflow_remediation import (
     serialize_bug_workflow_remediation,
 )
 from okto_pulse.core.services.cancellation import apply_cancellation_policy
+from okto_pulse.core.services.card_traceability import link_card_traceability
 from okto_pulse.core.services.critical_context_guard import (
     CRITICAL_CONTEXT_DECISION_ACTION,
     CriticalAction,
@@ -141,19 +146,127 @@ from okto_pulse.core.services.governance_observability import (
 )
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
 from okto_pulse.core.services.resource_gate import ResourceGateService
+from okto_pulse.core.services.reviewer_separation import (
+    evaluate_reviewer_separation,
+    evaluate_task_reviewer_separation,
+)
+from okto_pulse.core.services.sprint_scope import (
+    SprintScopeResolver,
+    completion_blockers,
+)
 from okto_pulse.core.services.spec_entity_canonicalization import canonicalize_fr_ac
 from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 from okto_pulse.core.services.test_scenario_lifecycle import (
     GATED_STATUSES,
     StatusNotMutableError,
     VALID_SCENARIO_STATUSES,
+    compute_test_scenario_semantic_sha256,
     evidence_invalidated_by_semantic_edit,
+    reexecutable_evidence_reference,
     require_test_scenario_status_mutable,
     scenario_has_required_evidence,
     validate_scenario_type,
     validate_scenario_types_for_write,
     validate_test_scenario_evidence,
 )
+
+
+def _claims_test_evidence_v2(evidence: object) -> bool:
+    return bool(
+        isinstance(evidence, dict)
+        and (
+            evidence.get("manifest_ref") is not None
+            or evidence.get("execution_attestation") is not None
+            or evidence.get("execution_receipt") is not None
+        )
+    )
+
+
+def _require_trusted_test_evidence_v2_write(
+    *,
+    board_id: str,
+    spec_id: str,
+    scenario_id: str,
+    scenario_sha256: str,
+    status: str,
+    actor_id: str | None,
+    evidence: object,
+) -> None:
+    """Authenticate an edition receipt before a scenario write can persist."""
+
+    if not _claims_test_evidence_v2(evidence):
+        return
+    from okto_pulse.core.ports.test_evidence import (
+        resolve_test_evidence_write_verifier,
+    )
+
+    verifier = resolve_test_evidence_write_verifier()
+    if verifier is None:
+        raise ValueError(
+            "evidence_unverified: evidence_v2.concrete_verifier_not_configured"
+        )
+    verification = verifier.verify(
+        board_id=board_id,
+        spec_id=spec_id,
+        scenario_id=scenario_id,
+        scenario_sha256=scenario_sha256,
+        status=status,
+        actor_id=actor_id,
+        evidence=evidence,
+    )
+    if not verification.verified:
+        raise ValueError(
+            "evidence_unverified: " + ", ".join(verification.reason_codes)
+        )
+
+
+def scenario_has_authenticated_required_evidence(
+    *,
+    board_id: str,
+    spec_id: str,
+    scenario: dict[str, Any],
+    acceptance_criteria: list[object],
+) -> bool:
+    """Consumer-side evidence gate with edition authentication for V2.
+
+    Non-V2 evidence keeps the established structural rules. Any Evidence V2
+    claim must additionally resolve to a receipt in the registered concrete
+    ledger and must bind the scenario's current semantic digest. There is no
+    actor match here: downstream card/sprint reviewers may consume proof issued
+    by another actor; actor equality is enforced when evidence itself is written.
+    """
+
+    if not scenario_has_required_evidence(scenario):
+        return False
+    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    if not _claims_test_evidence_v2(evidence):
+        return True
+    from okto_pulse.core.ports.test_evidence import (
+        resolve_test_evidence_write_verifier,
+    )
+
+    verifier = resolve_test_evidence_write_verifier()
+    if verifier is None or not isinstance(evidence, dict):
+        return False
+    try:
+        scenario_sha256 = compute_test_scenario_semantic_sha256(
+            board_id=board_id,
+            spec_id=spec_id,
+            scenario=scenario,
+            acceptance_criteria=acceptance_criteria,
+        )
+        verification = verifier.verify(
+            board_id=board_id,
+            spec_id=spec_id,
+            scenario_id=str(scenario.get("id") or ""),
+            scenario_sha256=scenario_sha256,
+            status=str(scenario.get("status") or ""),
+            actor_id=None,
+            evidence=evidence,
+        )
+    except (TypeError, ValueError):
+        return False
+    return verification.verified
 
 # Preserve the service API's aggregate names without coupling annotations to
 # Community persistence models.
@@ -1136,7 +1249,12 @@ def _legacy_filter_mockups(
     copied = []
     for m in source:
         new_m = dict(m)
-        new_m["origin_id"] = m.get("id")
+        new_m["origin_id"] = (
+            m.get("origin_id")
+            or m.get("source_mockup_id")
+            or m.get("id")
+        )
+        new_m["source_mockup_id"] = m.get("id")
         origin_token = f"{m.get('id')}{id(new_m)}"
         new_m["id"] = f"sm_{hashlib.md5(origin_token.encode()).hexdigest()[:8]}"
         copied.append(new_m)
@@ -1610,6 +1728,113 @@ async def propagate_architecture_designs(
     )
 
 
+async def preflight_architecture_designs(
+    db: Any,
+    *,
+    source_parent_type: str,
+    source_parent_id: str,
+    mode: str | None,
+    design_ids: list[str] | None,
+) -> None:
+    """Fail an invalid/blocked Architecture selection before target creation."""
+
+    normalized = (mode or "copy").strip().lower()
+    if normalized not in {"copy", "derive", "reference_only", "none"}:
+        raise ValueError(
+            "architecture_propagation_mode must be one of: copy, derive, "
+            "reference_only, none"
+        )
+    if normalized in {"reference_only", "none"}:
+        return
+
+    from okto_pulse.core.services.architecture import ArchitecturePropagationService
+
+    await ArchitecturePropagationService(db).preflight_copy_from_parent(
+        source_parent_type=source_parent_type,
+        source_parent_id=source_parent_id,
+        design_ids=design_ids,
+    )
+
+
+def _resource_propagation_summary(
+    *,
+    source_parent_type: str,
+    source_parent_id: str,
+    target_parent_type: str,
+    target_parent_id: str,
+    architecture_mode: str | None,
+    architecture_requested_ids: list[str] | None,
+    architecture_designs: list[Any],
+    artifact_counts: dict[str, int] | None,
+) -> dict[str, Any]:
+    """Stable write-result projection shared by refinement/spec derive flows."""
+
+    counts = {
+        "mockup": int((artifact_counts or {}).get("mockup", 0)),
+        "knowledge_base": int((artifact_counts or {}).get("knowledge_base", 0)),
+        "architecture": len(architecture_designs),
+    }
+    mode = (architecture_mode or "copy").strip().lower()
+    architecture_status = (
+        "inherited_reference"
+        if mode in {"reference_only", "none"}
+        else (
+            "created_with_resources"
+            if architecture_designs
+            else "created_without_required_resources"
+        )
+    )
+    aggregate = (
+        "created_with_resources"
+        if any(counts.values())
+        else (
+            "created_with_inherited_references"
+            if mode in {"reference_only", "none"}
+            else "created_without_required_resources"
+        )
+    )
+    return {
+        "status": aggregate,
+        "source": {
+            "entity_type": source_parent_type,
+            "entity_id": source_parent_id,
+        },
+        "target": {
+            "entity_type": target_parent_type,
+            "entity_id": target_parent_id,
+        },
+        "counts": counts,
+        "by_type": {
+            "mockup": {
+                "status": (
+                    "created_with_resources"
+                    if counts["mockup"]
+                    else "created_without_required_resources"
+                ),
+                "copied": counts["mockup"],
+            },
+            "knowledge_base": {
+                "status": (
+                    "created_with_resources"
+                    if counts["knowledge_base"]
+                    else "created_without_required_resources"
+                ),
+                "copied": counts["knowledge_base"],
+            },
+            "architecture": {
+                "status": architecture_status,
+                "mode": mode,
+                "requested_ids": list(architecture_requested_ids or []),
+                "copied": counts["architecture"],
+                "snapshot_ids": [item.id for item in architecture_designs],
+                "source_design_ids": [
+                    item.source_design_id or item.id for item in architecture_designs
+                ],
+            },
+        },
+    }
+
+
 class BoardService:
     """Service for board operations."""
 
@@ -1628,8 +1853,9 @@ class BoardService:
 
         # FR3: the single provider resolves the active default template (if any)
         # and produces the effective settings + snapshot metadata in THIS same
-        # transaction. No active template -> graceful fallback (BoardSettings()
-        # default, no snapshot, no error — AC11). Snapshot metadata is persisted on
+        # transaction. No active template -> graceful forward-safe new-board
+        # defaults (including reviewer separation=enforce), no snapshot and no
+        # error (AC11). Snapshot metadata is persisted on
         # Board.default_config_snapshot, OUTSIDE Board.settings (FR4).
         _config_service = DefaultBoardConfigurationService(self.db)
         effective_settings, snapshot_meta = await _config_service.build_snapshot_for_create(
@@ -1715,7 +1941,9 @@ class BoardService:
             board_id=board_id,
             user_id=user_id,
             query_scope=query_scope,
-            require_ownership=True,
+            require_ownership=(
+                query_scope.require_ownership if query_scope is not None else True
+            ),
         )
         if clauses is None:
             return None
@@ -2049,14 +2277,20 @@ class CardService:
 
         # --- Bug card validations (before spec check, since spec is auto-resolved) ---
         card_type_val = getattr(data, "card_type", "normal") or "normal"
+        origin_task_id = getattr(data, "origin_task_id", None)
+        if card_type_val != "bug" and origin_task_id:
+            raise ValueError("origin_task_id is only allowed for bug cards")
+
         if card_type_val == "bug":
-            if not data.origin_task_id:
+            if not origin_task_id:
                 raise ValueError("origin_task_id is required for bug cards")
 
-            # Validate origin task exists
-            origin_task = await _application_get(self.db, "card", data.origin_task_id)
-            if not origin_task:
-                raise ValueError("Origin task not found")
+            # Resolve the governed lineage before constructing/flushing the bug card.
+            # Missing and foreign-board ids intentionally share one response so the
+            # caller cannot use this write path to probe another board's cards.
+            origin_task = await _application_get(self.db, "card", origin_task_id)
+            if not origin_task or origin_task.board_id != board_id:
+                raise ValueError("Origin task not found on this board")
 
             # Validate origin task has a spec
             if not origin_task.spec_id:
@@ -2168,7 +2402,7 @@ class CardService:
             labels=data.labels,
             test_scenario_ids=data.test_scenario_ids,
             card_type=card_type_val,
-            origin_task_id=getattr(data, "origin_task_id", None),
+            origin_task_id=origin_task_id,
             severity=getattr(data, "severity", None),
             expected_behavior=getattr(data, "expected_behavior", None),
             observed_behavior=getattr(data, "observed_behavior", None),
@@ -2177,10 +2411,21 @@ class CardService:
         )
         await _application_add(self.db, card)
 
+        traceability_targets = [
+            *(('scenario', target_id) for target_id in (data.test_scenario_ids or [])),
+            *(('fr', target_id) for target_id in (getattr(data, 'functional_requirement_ids', None) or [])),
+            *(('rule', target_id) for target_id in (getattr(data, 'business_rule_ids', None) or [])),
+        ]
+        traceability = link_card_traceability(
+            spec=spec,
+            card=card,
+            targets=traceability_targets,
+        )
+
         if card_type_val == "bug":
             await self._inherit_bug_origin_traceability(
                 bug_card=card,
-                origin_task_id=getattr(data, "origin_task_id", None),
+                origin_task_id=origin_task_id,
                 spec=spec,
             )
 
@@ -2217,7 +2462,11 @@ class CardService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"title": data.title, "status": data.status.value},
+            details={
+                "title": data.title,
+                "status": data.status.value,
+                "traceability": traceability.to_dict(),
+            },
         )
         return card
 
@@ -2321,6 +2570,65 @@ class CardService:
             allow=allow_card_resource_write,
         )
 
+        # Validate relationship changes before authorization auditing, entity
+        # mutation, or an implicit/explicit flush.  Besides turning raw FK
+        # failures into governed errors, this keeps the card's resulting
+        # ``spec_id``/``sprint_id`` pair coherent when only one side changes.
+        relation_update = "spec_id" in update_data or "sprint_id" in update_data
+        next_spec_id = (
+            update_data["spec_id"] if "spec_id" in update_data else card.spec_id
+        )
+        next_sprint_id = (
+            update_data["sprint_id"] if "sprint_id" in update_data else card.sprint_id
+        )
+        next_spec = None
+        if relation_update and next_spec_id is not None:
+            next_spec = await _application_get(self.db, "spec", next_spec_id)
+            if not next_spec or next_spec.board_id != card.board_id:
+                raise ValueError("Spec not found on this board")
+
+        if relation_update and next_sprint_id is not None:
+            next_sprint = await _application_get(self.db, "sprint", next_sprint_id)
+            if not next_sprint or next_sprint.board_id != card.board_id:
+                raise ValueError("Sprint not found on this board")
+            if next_spec_id is None or next_sprint.spec_id != next_spec_id:
+                raise ValueError("Sprint must belong to the card's resulting spec")
+
+        # A bug referenced by Sprint.origin_bug_id is part of that lane's
+        # same-board/same-spec lineage.  Reparenting is allowed only when the
+        # resulting spec still matches every dependent lane (which also permits
+        # repairing a legacy row without direct SQL).  Run before authorization,
+        # audit, propagation, flush, or mutation.
+        if "spec_id" in update_data and next_spec_id != card.spec_id:
+            origin_bug_dependents = await _application_list(
+                self.db,
+                "sprint",
+                filters=(_apf("origin_bug_id", "eq", card.id),),
+            )
+            broken_dependents = [
+                sprint
+                for sprint in origin_bug_dependents
+                if next_spec_id is None
+                or sprint.board_id != card.board_id
+                or sprint.spec_id != next_spec_id
+            ]
+            if broken_dependents:
+                raise CardOperationError(
+                    "hotfix_origin_bug_reparent_conflict",
+                    "Cannot reparent the bug because it is the origin of one or "
+                    "more hotfix lanes in a different resulting spec.",
+                    remediation="relineage_hotfix_lanes_before_reparenting_origin_bug",
+                    facts={
+                        "card_id": card.id,
+                        "current_spec_id": card.spec_id,
+                        "target_spec_id": next_spec_id,
+                        "dependent_sprint_ids": sorted(
+                            sprint.id for sprint in broken_dependents
+                        )[:20],
+                        "dependent_sprint_count": len(broken_dependents),
+                    },
+                )
+
         await _authorize_critical_context_or_raise(
             self.db,
             board_id=card.board_id,
@@ -2350,8 +2658,10 @@ class CardService:
             next_type = update_data.get("card_type", card.card_type)
             if getattr(next_type, "value", next_type) == CardType.TEST.value:
                 board = await _application_get(self.db, "board", card.board_id)
-                spec_id = update_data.get("spec_id") or card.spec_id
-                spec = await _application_get(self.db, "spec", spec_id) if spec_id else None
+                spec_id = next_spec_id if relation_update else card.spec_id
+                spec = next_spec
+                if spec is None and spec_id:
+                    spec = await _application_get(self.db, "spec", spec_id)
                 if not spec:
                     raise ValueError("Test cards require a linked spec before updating test_scenario_ids")
                 scenario_ids = list(update_data.get("test_scenario_ids") or [])
@@ -2458,8 +2768,19 @@ class CardService:
     async def add_dependency(
         self, card_id: str, depends_on_id: str
     ) -> ApplicationRecord | None:
-        """Add a dependency. Returns None if circular."""
+        """Add a dependency. Returns None if duplicate, self-referential, or circular."""
         if card_id == depends_on_id:
+            return None
+        existing = await _application_list(
+            self.db,
+            "card_dependency",
+            filters=(
+                _apf("card_id", "eq", card_id),
+                _apf("depends_on_id", "eq", depends_on_id),
+            ),
+            limit=1,
+        )
+        if existing:
             return None
         # Check circular
         if await self._would_create_cycle(card_id, depends_on_id):
@@ -2643,6 +2964,31 @@ class CardService:
         sprint = await _application_get(self.db, "sprint", card.sprint_id) if card.sprint_id else None
         config = self._resolve_validation_config(card, spec, sprint, board_settings)
 
+        # Reviewer independence is board policy, shared with sprint evaluation.
+        # The decision happens before authorization, closeout checks, activity
+        # writes, or mutation so ``enforce`` is fail-closed and atomic.  Legacy
+        # boards with no persisted setting resolve to explicit compatibility
+        # mode ``off`` and still record their conflicts/source on the accepted
+        # validation below.
+        reviewer_separation = evaluate_task_reviewer_separation(
+            board=board,
+            reviewer_id=reviewer_id,
+            card=card,
+        )
+        if not reviewer_separation.allowed:
+            raise CardOperationError(
+                "reviewer_separation_required",
+                "Task validator must be independent from the task creator, "
+                "assignee, and executor.",
+                remediation="request_independent_task_validator",
+                facts={
+                    "board_id": card.board_id,
+                    "card_id": card.id,
+                    "current_status": card.status.value,
+                    "reviewer_separation": reviewer_separation.to_dict(),
+                },
+            )
+
         await _authorize_critical_context_or_raise(
             self.db,
             board_id=card.board_id,
@@ -2735,6 +3081,7 @@ class CardService:
             "outcome": outcome,
             "verdict": "pass" if outcome == "success" else "fail",
             "threshold_violations": violations,
+            "reviewer_separation": reviewer_separation.to_dict(),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -2848,6 +3195,7 @@ class CardService:
                 "estimated_completeness": completeness,
                 "estimated_drift": drift,
                 "threshold_violations": violations,
+                "reviewer_separation": reviewer_separation.to_dict(),
                 "card_title": card.title,
             },
         )
@@ -2975,8 +3323,9 @@ class CardService:
             raise CardOperationError(
                 "coverage_precondition_unmet",
                 f"Scenario '{regression_scenario_id}' has no reexecutable evidence "
-                "(needs status passed/automated with test_file_path+test_function or "
-                "test_run_id). Lineage + a generic status are NOT sufficient (G2).",
+                "(needs status passed/automated with authenticated replayable evidence, "
+                "a test_file_path+test_function pointer, or test_run_id). Lineage + a "
+                "generic status are NOT sufficient (G2).",
                 remediation="attach_reexecutable_evidence",
                 facts={"amendment_id": amendment_id},
             )
@@ -3044,16 +3393,14 @@ class CardService:
                     continue
                 if str(sc.get("status") or "").lower() not in ("passed", "automated"):
                     return "", spec_id
-                ev = sc.get("evidence")
-                if isinstance(ev, dict):
-                    fp = str(ev.get("test_file_path") or "").strip()
-                    fn = str(ev.get("test_function") or "").strip()
-                    if fp and fn:
-                        return f"{fp}::{fn}", spec_id
-                    trid = str(ev.get("test_run_id") or "").strip()
-                    if trid:
-                        return f"test_run:{trid}", spec_id
-                return "", spec_id
+                if not scenario_has_authenticated_required_evidence(
+                    board_id=str(test_task.board_id),
+                    spec_id=spec_id,
+                    scenario=sc,
+                    acceptance_criteria=list(spec.acceptance_criteria or []),
+                ):
+                    return "", spec_id
+                return reexecutable_evidence_reference(sc), spec_id
         return "", None
 
     async def _assert_coverage_gate_consumable(
@@ -3294,7 +3641,8 @@ class CardService:
                 f"in spec '{spec.title}' have no linked task cards "
                 f"({titles}{suffix}). "
                 f"REQUIRED ACTION: Link task cards to each business rule via "
-                f"okto_pulse_link_task_to_rule. "
+                f"okto_pulse_link_task(target_type='rule', target_id=<rule_id>, "
+                f"card_id=<card_id>, spec_id=<spec_id>). "
                 f"Alternatively, enable 'skip rules coverage' on the spec or board."
             )
 
@@ -3319,7 +3667,8 @@ class CardService:
                 f"in spec '{spec.title}' have no linked task cards "
                 f"({previews}{suffix}). "
                 f"REQUIRED ACTION: Link task cards to each TR via "
-                f"okto_pulse_link_task_to_tr. "
+                f"okto_pulse_link_task(target_type='tr', target_id=<tr_id>, "
+                f"card_id=<card_id>, spec_id=<spec_id>). "
                 f"Alternatively, enable 'skip TRs coverage' on the spec or board."
             )
 
@@ -3328,7 +3677,12 @@ class CardService:
         skip_global = (board.settings or {}).get("skip_contract_coverage_global", False) if board else False
         if getattr(spec, "skip_contract_coverage", False) or skip_global:
             return
-        contracts = list(spec.api_contracts or [])
+        contracts = [
+            contract
+            for contract in (spec.api_contracts or [])
+            if isinstance(contract, dict)
+            and contract.get("status", "active") == "active"
+        ]
         if not contracts:
             return
         unlinked = [c for c in contracts if not c.get("linked_task_ids")]
@@ -3343,7 +3697,8 @@ class CardService:
                 f"in spec '{spec.title}' have no linked task cards "
                 f"({previews}{suffix}). "
                 f"REQUIRED ACTION: Link task cards to each API contract via "
-                f"okto_pulse_link_task_to_contract. "
+                f"okto_pulse_link_task(target_type='contract', "
+                f"target_id=<contract_id>, card_id=<card_id>, spec_id=<spec_id>). "
                 f"Alternatively, enable 'skip contract coverage' on the spec or board."
             )
 
@@ -3370,7 +3725,8 @@ class CardService:
                 f"in spec '{spec.title}' have no linked task cards "
                 f"({titles}{suffix}). "
                 f"REQUIRED ACTION: Link task cards to each IR via "
-                f"okto_pulse_link_task_to_integration_requirement. "
+                f"okto_pulse_link_task(target_type='ir', target_id=<ir_id>, "
+                f"card_id=<card_id>, spec_id=<spec_id>). "
                 f"Alternatively, enable 'skip IR coverage' on the spec or board."
             )
 
@@ -3397,7 +3753,8 @@ class CardService:
                 f"in spec '{spec.title}' have no linked task cards "
                 f"({titles}{suffix}). "
                 f"REQUIRED ACTION: Link task cards to each OR via "
-                f"okto_pulse_link_task_to_observability_requirement. "
+                f"okto_pulse_link_task(target_type='or', target_id=<or_id>, "
+                f"card_id=<card_id>, spec_id=<spec_id>). "
                 f"Alternatively, enable 'skip OR coverage' on the spec or board."
             )
 
@@ -3536,16 +3893,14 @@ class CardService:
         )
 
     async def check_decisions_coverage(self, spec: "Spec", board: "Board | None") -> None:
-        """Check that every active Decision has a linked task (OPT-IN).
+        """Check that every active Decision has a linked task unless skipped.
 
-        Specs and boards default `skip_decisions_coverage=True`, so this is a
-        no-op unless the user explicitly enables the gate. Only `active`
+        New and legacy specs default to enforcing this gate. Only `active`
         decisions are checked — `superseded` and `revoked` are historical and
-        don't need linkage.
+        do not need linkage.
         """
         skip_global = (board.settings or {}).get("skip_decisions_coverage_global", False) if board else False
-        # Default True at both levels — if either says skip, skip.
-        skip_spec = getattr(spec, "skip_decisions_coverage", True)
+        skip_spec = getattr(spec, "skip_decisions_coverage", False)
         if skip_spec or skip_global:
             return
         decisions = list(spec.decisions or [])
@@ -3564,7 +3919,8 @@ class CardService:
                 f"in spec '{spec.title}' have no linked task cards "
                 f"({titles}{suffix}). "
                 f"REQUIRED ACTION: Link task cards to each Decision via "
-                f"okto_pulse_link_task_to_decision. "
+                f"okto_pulse_link_task(target_type='decision', "
+                f"target_id=<decision_id>, card_id=<card_id>, spec_id=<spec_id>). "
                 f"Alternatively, enable 'skip decisions coverage' on the spec or board."
             )
 
@@ -3593,6 +3949,39 @@ class CardService:
             raise ValueError(archived_block.detail)
 
         old_status = card.status
+        card_type_value = getattr(card.card_type, "value", card.card_type or "normal")
+        if old_status != data.status and not is_transition_allowed(
+            "card",
+            old_status.value,
+            data.status.value,
+            card_type=str(card_type_value),
+        ):
+            allowed_values = [
+                edge.to_status
+                for edge in transition_contracts("card", old_status.value)
+                if not edge.card_types or str(card_type_value) in edge.card_types
+            ]
+            raise CardOperationError(
+                "card_transition_not_allowed",
+                (
+                    f"Cannot move {card_type_value} card from '{old_status.value}' "
+                    f"to '{data.status.value}'. Allowed: {allowed_values}."
+                ),
+                remediation=(
+                    "move_card_to_started_first"
+                    if old_status == CardStatus.NOT_STARTED
+                    and data.status == CardStatus.IN_PROGRESS
+                    and card_type_value == CardType.NORMAL.value
+                    else "choose_allowed_card_transition"
+                ),
+                facts={
+                    "card_id": card.id,
+                    "card_type": str(card_type_value),
+                    "from_status": old_status.value,
+                    "to_status": data.status.value,
+                    "allowed_statuses": allowed_values,
+                },
+            )
         old_position = card.position
 
         # Load board settings for governance
@@ -3763,7 +4152,17 @@ class CardService:
                 stale = []
                 for sid in (card.test_scenario_ids or []):
                     sc = all_scenarios.get(sid)
-                    if sc and sc.get("status") in ("draft", "ready"):
+                    if sc and (
+                        sc.get("status") in ("draft", "ready")
+                        or not scenario_has_authenticated_required_evidence(
+                            board_id=card.board_id,
+                            spec_id=card.spec_id,
+                            scenario=sc,
+                            acceptance_criteria=list(
+                                spec_for_test_scenarios.acceptance_criteria or []
+                            ),
+                        )
+                    ):
                         stale.append({
                             "id": sid,
                             "title": sc.get("title", sid),
@@ -3932,7 +4331,9 @@ class CardService:
                     raise ValueError(
                         f"Linked test task '{test_task.title}' has no test_scenario_ids. "
                         f"A test task must be linked to at least one test scenario. "
-                        f"Use okto_pulse_link_task_to_scenario to link the test task to a scenario, "
+                        f"Use okto_pulse_link_task(target_type='scenario', "
+                        f"target_id=<scenario_id>, card_id=<test_card_id>, "
+                        f"spec_id=<spec_id>) to link the test task to a scenario, "
                         f"or create a new test task with test_scenario_ids set."
                     )
 
@@ -4435,6 +4836,38 @@ class CardService:
 
         board_id = card.board_id
 
+        # A hotfix lane requires origin_bug_id for its entire persisted lifetime.
+        # Guard in the application writer rather than relying on schema FKs: fresh
+        # databases use ON DELETE SET NULL, while upgraded legacy schemas may have
+        # no FK at all. Both would otherwise destroy/dangle mandatory lineage.
+        origin_references = await _application_list(
+            self.db,
+            "sprint",
+            filters=(_apf("origin_bug_id", "eq", card_id),),
+        )
+        if origin_references:
+            same_board_sprint_ids = [
+                sprint.id
+                for sprint in origin_references
+                if sprint.board_id == board_id
+            ]
+            raise CardOperationError(
+                "hotfix_origin_bug_delete_conflict",
+                "Cannot delete this bug while a hotfix sprint references it as "
+                "origin_bug_id.",
+                remediation=(
+                    "Complete/close the hotfix workflow, then remove the sprint or "
+                    "relineage it to a valid same-spec bug before deleting this card."
+                ),
+                facts={
+                    "card_id": card_id,
+                    "board_id": board_id,
+                    "referencing_sprint_count": len(origin_references),
+                    "referencing_sprint_ids": same_board_sprint_ids,
+                    "next_action": "remove_or_relineage_hotfix_before_bug_delete",
+                },
+            )
+
         # Cascade cleanup: strip card_id from every reference list on the
         # parent spec. Must run BEFORE db.delete(card) so any validator
         # running on the same session sees a consistent state.
@@ -4837,6 +5270,10 @@ class QAService:
 
     def __init__(self, db: Any):
         self.db = db
+
+    async def get_question(self, qa_id: str) -> ApplicationRecord | None:
+        """Get a card Q&A item by ID without mutating it."""
+        return await _application_get(self.db, "qa_item", qa_id)
 
     async def create_question(
         self, card_id: str, user_id: str, data: QACreate
@@ -5367,11 +5804,16 @@ class SpecService:
         query_scope: QueryScope | None = None,
     ) -> ApplicationRecord | None:
         """Create a new spec in a board."""
+        require_ownership = (
+            query_scope.require_ownership
+            if query_scope is not None
+            else not skip_ownership_check
+        )
         board_query = _board_scope_select(
             board_id=board_id,
             user_id=user_id,
             query_scope=None if skip_ownership_check else query_scope,
-            require_ownership=not skip_ownership_check,
+            require_ownership=require_ownership,
         )
         if board_query is None:
             return None
@@ -5489,8 +5931,15 @@ class SpecService:
         board_id: str,
         status_filter: str | None = None,
         include_archived: bool = False,
+        *,
+        query_scope: QueryScope | None = None,
     ) -> list[ApplicationRecord]:
         """List specs for a board, optionally filtered by status."""
+        if query_scope is not None and (
+            query_scope.target_board_id != board_id
+            or not query_scope.allows_board_id(board_id)
+        ):
+            return []
         filters = [_apf("board_id", "eq", board_id)]
         if status_filter:
             filters.append(_apf("status", "eq", SpecStatus(status_filter)))
@@ -5774,6 +6223,36 @@ class SpecService:
         if not spec:
             raise ValueError("scenario_not_found: spec not found")
 
+        scenarios = [
+            dict(s) for s in (spec.test_scenarios or []) if isinstance(s, dict)
+        ]
+        target_scenario = next(
+            (item for item in scenarios if item.get("id") == scenario_id),
+            None,
+        )
+        if target_scenario is None:
+            raise ValueError(f"scenario_not_found: {scenario_id}")
+        scenario_sha256 = compute_test_scenario_semantic_sha256(
+            board_id=spec.board_id,
+            spec_id=spec_id,
+            scenario=target_scenario,
+            acceptance_criteria=list(spec.acceptance_criteria or []),
+        )
+
+        # A board-level evidence bypass may relax NC-9 completeness, but it must
+        # never turn a caller-authored SHA/boolean into a trusted V2 execution.
+        # Authenticate the installation receipt before any mutation or audit.
+        if evidence is not None:
+            _require_trusted_test_evidence_v2_write(
+                board_id=spec.board_id,
+                spec_id=spec_id,
+                scenario_id=scenario_id,
+                scenario_sha256=scenario_sha256,
+                status=status,
+                actor_id=user_id,
+                evidence=evidence,
+            )
+
         # Guard by STATUS (NOT the content-lock): blocks validated/done, allows
         # in_progress — the execution phase where scenarios become passed.
         # Post-lock exception: a done/validated spec may still receive
@@ -5793,20 +6272,22 @@ class SpecService:
             if board
             else False
         )
+        evidence_verification_status = (
+            "bypassed" if skip and status in GATED_STATUSES else "not_required"
+        )
         if not skip:
             # for_write: a NEW gated write must satisfy the re-executable
             # evidence contract (spec 9e0bf979) — explicit evidence_class is
             # strict, and an unclassed run-log-like payload is rejected before
             # persisting (only a direct test pointer is grandfathered).
             ok, missing = validate_test_scenario_evidence(
-                status, evidence, for_write=True
+                status, evidence, for_write=True, scenario_id=scenario_id
             )
             if not ok:
                 raise ValueError(f"evidence_required: {', '.join(missing)}")
+            if status in GATED_STATUSES:
+                evidence_verification_status = "verified"
 
-        scenarios = [
-            dict(s) for s in (spec.test_scenarios or []) if isinstance(s, dict)
-        ]
         old_status = None
         found = False
         for s in scenarios:
@@ -5817,7 +6298,7 @@ class SpecService:
                     s["evidence"] = evidence
                 found = True
                 break
-        if not found:
+        if not found:  # defensive: target_scenario was resolved above
             raise ValueError(f"scenario_not_found: {scenario_id}")
 
         # Narrow persist: write only the test_scenarios column, no version bump,
@@ -5840,6 +6321,7 @@ class SpecService:
                     "to_status": status,
                     "evidence_provided": evidence is not None,
                     "evidence_gate_skipped": skip,
+                    "evidence_verification_status": evidence_verification_status,
                 },
             )
         )
@@ -5864,6 +6346,7 @@ class SpecService:
                 "to_status": status,
                 "evidence_provided": evidence is not None,
                 "evidence_gate_skipped": skip,
+                "evidence_verification_status": evidence_verification_status,
                 "changed_by_agent_id": user_id,
             },
         )
@@ -5890,6 +6373,7 @@ class SpecService:
             "new_status": status,
             "evidence_provided": evidence is not None,
             "evidence_gate_skipped": skip,
+            "evidence_verification_status": evidence_verification_status,
         }
 
     async def _has_executable_test_card_for_scenario(
@@ -5928,7 +6412,12 @@ class SpecService:
         return False
 
     async def _enforce_test_scenario_evidence_gate(
-        self, spec: "Spec", new_scenarios: list, user_id: str
+        self,
+        spec: "Spec",
+        new_scenarios: list,
+        user_id: str,
+        *,
+        acceptance_criteria: list[object] | None = None,
     ) -> None:
         """NC-9 service gate (spec 6f1e75bf, FR1/BR2).
 
@@ -5958,19 +6447,70 @@ class SpecService:
             status = s.get("status")
             if status not in GATED_STATUSES:
                 continue
-            if scenario_has_required_evidence(s):
-                continue
             sid = s.get("id")
             old = old_by_id.get(sid)
             is_new = old is None
             status_changed = (old or {}).get("status") != status
+            evidence = s.get("evidence") or s.get("latest_evidence")
+            old_evidence = (
+                (old or {}).get("evidence") or (old or {}).get("latest_evidence")
+            )
+            evidence_changed = bool(old and old_evidence != evidence)
+            semantic_changed = False
+            if old is not None:
+                try:
+                    old_semantic_sha256 = compute_test_scenario_semantic_sha256(
+                        board_id=spec.board_id,
+                        spec_id=spec.id,
+                        scenario=old,
+                        acceptance_criteria=list(spec.acceptance_criteria or []),
+                    )
+                    new_semantic_sha256 = compute_test_scenario_semantic_sha256(
+                        board_id=spec.board_id,
+                        spec_id=spec.id,
+                        scenario=s,
+                        acceptance_criteria=(
+                            acceptance_criteria
+                            if acceptance_criteria is not None
+                            else list(spec.acceptance_criteria or [])
+                        ),
+                    )
+                    semantic_changed = old_semantic_sha256 != new_semantic_sha256
+                except (TypeError, ValueError):
+                    # A malformed semantic shape cannot inherit old evidence.
+                    semantic_changed = True
+            # Whole-spec writes are allowed to round-trip untouched historical
+            # rows. A new/changed V2 claim, however, must carry an authentic
+            # receipt bound to this exact board/spec/scenario/status.
+            if is_new or status_changed or evidence_changed or semantic_changed:
+                scenario_sha256 = compute_test_scenario_semantic_sha256(
+                    board_id=spec.board_id,
+                    spec_id=spec.id,
+                    scenario=s,
+                    acceptance_criteria=(
+                        acceptance_criteria
+                        if acceptance_criteria is not None
+                        else list(spec.acceptance_criteria or [])
+                    ),
+                )
+                _require_trusted_test_evidence_v2_write(
+                    board_id=spec.board_id,
+                    spec_id=spec.id,
+                    scenario_id=str(sid or ""),
+                    scenario_sha256=scenario_sha256,
+                    status=str(status),
+                    actor_id=user_id,
+                    evidence=evidence,
+                )
+            if scenario_has_required_evidence(s, for_write=True):
+                continue
             old_had_evidence = scenario_has_required_evidence(old) if old else False
             # Enforce on: new scenario already gated, status transition into a
             # gated state, or evidence removed/altered from a previously-valid
             # scenario. A pre-existing gated scenario that was always evidenceless
             # and is left unchanged is NOT newly rejected (legacy data, not
             # introduced by this write).
-            if is_new or status_changed or old_had_evidence:
+            if is_new or status_changed or old_had_evidence or evidence_changed:
                 offenders.append(str(sid) if sid else "(new)")
 
         if not offenders:
@@ -6160,7 +6700,14 @@ class SpecService:
         # the incoming list, comparing against the current persisted scenarios.
         if update_data.get("test_scenarios") is not None:
             await self._enforce_test_scenario_evidence_gate(
-                spec, update_data["test_scenarios"], user_id
+                spec,
+                update_data["test_scenarios"],
+                user_id,
+                acceptance_criteria=list(
+                    update_data.get("acceptance_criteria")
+                    if update_data.get("acceptance_criteria") is not None
+                    else spec.acceptance_criteria or []
+                ),
             )
 
         # MockupDesignSystemGate (spec 3a006f65, card 0192f58d) — defense in depth:
@@ -6379,15 +6926,7 @@ class SpecService:
     # Validation Gate: editing a validated spec requires one click/call, not three
     # hops (validated→approved→review→draft). Both transitions trigger the backward
     # clear of current_validation_id in move_spec().
-    _SPEC_TRANSITIONS = {
-        SpecStatus.DRAFT: [SpecStatus.REVIEW, SpecStatus.CANCELLED],
-        SpecStatus.REVIEW: [SpecStatus.DRAFT, SpecStatus.APPROVED, SpecStatus.CANCELLED],
-        SpecStatus.APPROVED: [SpecStatus.REVIEW, SpecStatus.VALIDATED, SpecStatus.DRAFT, SpecStatus.CANCELLED],
-        SpecStatus.VALIDATED: [SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.DRAFT, SpecStatus.CANCELLED],
-        SpecStatus.IN_PROGRESS: [SpecStatus.VALIDATED, SpecStatus.DONE, SpecStatus.CANCELLED],
-        SpecStatus.DONE: [SpecStatus.DRAFT],
-        SpecStatus.CANCELLED: [SpecStatus.DRAFT],
-    }
+    _SPEC_TRANSITIONS = transition_map("spec")
 
     # Statuses from which a backward move clears current_validation_id.
     # Any move from {validated, in_progress, done} to {draft, review, approved}
@@ -6426,6 +6965,52 @@ class SpecService:
 
         # Load board for settings
         board = await _application_get(self.db, "board", spec.board_id)
+
+        # A done spec is one of the two eligibility anchors for a hotfix lane.
+        # Reopening it must not silently invalidate lanes that have no valid,
+        # closed same-spec origin sprint.  This preflight deliberately runs
+        # before authorization/audit and before any entity mutation.
+        if spec.status == SpecStatus.DONE and data.status == SpecStatus.DRAFT:
+            hotfix_sprints = await _application_list(
+                self.db,
+                "sprint",
+                filters=(
+                    _apf("spec_id", "eq", spec.id),
+                    _apf("lane_type", "eq", SprintLaneType.HOTFIX),
+                ),
+            )
+            ineligible_sprint_ids: list[str] = []
+            for hotfix in hotfix_sprints:
+                origin_sprint = (
+                    await _application_get(
+                        self.db, "sprint", hotfix.origin_sprint_id
+                    )
+                    if hotfix.origin_sprint_id
+                    else None
+                )
+                has_closed_origin = bool(
+                    origin_sprint
+                    and origin_sprint.id != hotfix.id
+                    and origin_sprint.board_id == hotfix.board_id
+                    and origin_sprint.spec_id == hotfix.spec_id
+                    and origin_sprint.status == SprintStatus.CLOSED
+                )
+                if not has_closed_origin:
+                    ineligible_sprint_ids.append(hotfix.id)
+
+            if ineligible_sprint_ids:
+                raise SprintOperationError(
+                    "hotfix_spec_reopen_conflict",
+                    "Cannot reopen the spec: one or more hotfix lanes rely on "
+                    "the spec remaining done.",
+                    remediation="close_and_link_same_spec_origin_sprint_before_reopening_spec",
+                    facts={
+                        "spec_id": spec.id,
+                        "target_status": data.status.value,
+                        "dependent_sprint_ids": sorted(ineligible_sprint_ids)[:20],
+                        "dependent_sprint_count": len(ineligible_sprint_ids),
+                    },
+                )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -6906,8 +7491,8 @@ class SpecService:
         await card_service.check_or_coverage(spec, board)
         await card_service.check_task_requirement_links_for_spec(spec, board)
         await card_service.check_decision_presence(spec)
-        # Decisions coverage is OPT-IN — no-op when skip_decisions_coverage=True
-        # (spec or board). See check_decisions_coverage for details.
+        # Decisions coverage is enforced unless explicitly skipped on the spec
+        # or board. See check_decisions_coverage for details.
         await card_service.check_decisions_coverage(spec, board)
         resource_gate = ResourceGateService(self.db)
         await resource_gate.validate_or_raise_spec_architecture_validation_resource(
@@ -7200,6 +7785,10 @@ class SpecQAService:
 
     def __init__(self, db: Any):
         self.db = db
+
+    async def get_question(self, qa_id: str) -> ApplicationRecord | None:
+        """Get one Spec Q&A item by ID for parent-scope validation."""
+        return await _application_get(self.db, "spec_qa_item", qa_id)
 
     async def create_question(
         self, spec_id: str, user_id: str, data: SpecQACreate
@@ -7629,12 +8218,7 @@ class StoryService:
     def __init__(self, db: Any):
         self.db = db
 
-    _STORY_TRANSITIONS: dict[StoryStatus, list[StoryStatus]] = {
-        StoryStatus.DRAFT: [StoryStatus.TRIAGE, StoryStatus.READY],
-        StoryStatus.TRIAGE: [StoryStatus.DRAFT, StoryStatus.READY],
-        StoryStatus.READY: [StoryStatus.TRIAGE],
-        StoryStatus.CONVERTED: [],
-    }
+    _STORY_TRANSITIONS: dict[StoryStatus, list[StoryStatus]] = transition_map("story")
     _EDITABLE_IDEATION_STATUSES = (
         IdeationStatus.DRAFT,
         IdeationStatus.REVIEW,
@@ -8638,14 +9222,9 @@ class IdeationService:
     # Approved → Review, Evaluating, Cancelled
     # Evaluating → Approved, Done, Cancelled
     # Done → Draft (new version)
-    _IDEATION_TRANSITIONS: dict[IdeationStatus, list[IdeationStatus]] = {
-        IdeationStatus.DRAFT: [IdeationStatus.REVIEW, IdeationStatus.CANCELLED],
-        IdeationStatus.REVIEW: [IdeationStatus.DRAFT, IdeationStatus.APPROVED, IdeationStatus.CANCELLED],
-        IdeationStatus.APPROVED: [IdeationStatus.REVIEW, IdeationStatus.EVALUATING, IdeationStatus.CANCELLED],
-        IdeationStatus.EVALUATING: [IdeationStatus.APPROVED, IdeationStatus.DONE, IdeationStatus.CANCELLED],
-        IdeationStatus.DONE: [IdeationStatus.DRAFT],
-        IdeationStatus.CANCELLED: [],
-    }
+    _IDEATION_TRANSITIONS: dict[IdeationStatus, list[IdeationStatus]] = transition_map(
+        "ideation"
+    )
 
     @staticmethod
     def _resolve_ideation_ambiguity_config(board: Board | None) -> dict[str, Any]:
@@ -9075,6 +9654,22 @@ class IdeationService:
         snapshot_qa = list(ideation.qa_items or [])
         snapshot_kbs = list(ideation.knowledge_bases or [])
 
+        validate_artifact_selections(
+            source_mockups=list(ideation.screen_mockups or []),
+            source_knowledge_bases=snapshot_kbs,
+            mockup_ids=mockup_ids,
+            kb_ids=kb_ids,
+            source_type="ideation",
+            source_id=ideation_id,
+        )
+        await preflight_architecture_designs(
+            self.db,
+            source_parent_type="ideation",
+            source_parent_id=ideation_id,
+            mode=architecture_propagation_mode,
+            design_ids=architecture_design_ids,
+        )
+
         spec_data = SpecCreate(
             title=ideation.title,
             description=ideation.description,
@@ -9092,7 +9687,7 @@ class IdeationService:
         )
         if spec:
             # Propagate mockups and Q&A from ideation to spec
-            await propagate_artifacts(
+            artifact_counts = await propagate_artifacts(
                 db=self.db,
                 source_mockups=ideation.screen_mockups,
                 source_qa_items=snapshot_qa,
@@ -9107,7 +9702,7 @@ class IdeationService:
                 source_title=ideation.title,
                 source_version=ideation.version,
             )
-            await propagate_architecture_designs(
+            architecture_designs = await propagate_architecture_designs(
                 self.db,
                 source_parent_type="ideation",
                 source_parent_id=ideation_id,
@@ -9116,6 +9711,19 @@ class IdeationService:
                 actor_id=user_id,
                 mode=architecture_propagation_mode,
                 design_ids=architecture_design_ids,
+            )
+            spec.attach(
+                "resource_propagation",
+                _resource_propagation_summary(
+                    source_parent_type="ideation",
+                    source_parent_id=ideation_id,
+                    target_parent_type="spec",
+                    target_parent_id=spec.id,
+                    architecture_mode=architecture_propagation_mode,
+                    architecture_requested_ids=architecture_design_ids,
+                    architecture_designs=architecture_designs,
+                    artifact_counts=artifact_counts,
+                ),
             )
 
             from okto_pulse.core.events import publish as event_publish
@@ -9153,6 +9761,10 @@ class IdeationQAService:
 
     def __init__(self, db: Any):
         self.db = db
+
+    async def get_question(self, qa_id: str) -> IdeationQAItem | None:
+        """Load a Q&A item so callers can authorize its canonical parent."""
+        return await _application_get(self.db, "ideation_qa_item", qa_id)
 
     async def create_question(self, ideation_id: str, user_id: str, data: IdeationQACreate) -> IdeationQAItem | None:
         """Create a question on an ideation (text or choice)."""
@@ -9361,7 +9973,11 @@ class RefinementService:
                 board_id=board_id,
                 user_id=user_id,
                 query_scope=query_scope,
-                require_ownership=True,
+                require_ownership=(
+                    query_scope.require_ownership
+                    if query_scope is not None
+                    else True
+                ),
             )
             if board_query is None:
                 return None
@@ -9382,6 +9998,22 @@ class RefinementService:
         prop_kb_ids = getattr(data, "kb_ids", None)
         prop_architecture_ids = getattr(data, "architecture_design_ids", None)
         architecture_mode = getattr(data, "architecture_propagation_mode", "copy")
+
+        validate_artifact_selections(
+            source_mockups=list(ideation.screen_mockups or []),
+            source_knowledge_bases=list(ideation.knowledge_bases or []),
+            mockup_ids=prop_mockup_ids,
+            kb_ids=prop_kb_ids,
+            source_type="ideation",
+            source_id=ideation_id,
+        )
+        await preflight_architecture_designs(
+            self.db,
+            source_parent_type="ideation",
+            source_parent_id=ideation_id,
+            mode=architecture_mode,
+            design_ids=prop_architecture_ids,
+        )
 
         refinement = _new_application_record(
             "refinement",
@@ -9414,7 +10046,7 @@ class RefinementService:
         await _application_add(self.db, refinement)
 
         # Propagate artifacts from ideation (mockups, KBs, Q&A)
-        await propagate_artifacts(
+        artifact_counts = await propagate_artifacts(
             db=self.db,
             source_mockups=ideation.screen_mockups,
             source_qa_items=ideation.qa_items,
@@ -9429,7 +10061,7 @@ class RefinementService:
             source_title=ideation.title,
             source_version=ideation.version,
         )
-        await propagate_architecture_designs(
+        architecture_designs = await propagate_architecture_designs(
             self.db,
             source_parent_type="ideation",
             source_parent_id=ideation_id,
@@ -9438,6 +10070,19 @@ class RefinementService:
             actor_id=user_id,
             mode=architecture_mode,
             design_ids=prop_architecture_ids,
+        )
+        refinement.attach(
+            "resource_propagation",
+            _resource_propagation_summary(
+                source_parent_type="ideation",
+                source_parent_id=ideation_id,
+                target_parent_type="refinement",
+                target_parent_id=refinement.id,
+                architecture_mode=architecture_mode,
+                architecture_requested_ids=prop_architecture_ids,
+                architecture_designs=architecture_designs,
+                artifact_counts=artifact_counts,
+            ),
         )
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
@@ -9599,13 +10244,9 @@ class RefinementService:
     # Review → Draft, Approved, Cancelled
     # Approved → Review, Done, Cancelled
     # Done → Draft (new version)
-    _REFINEMENT_TRANSITIONS: dict[RefinementStatus, list[RefinementStatus]] = {
-        RefinementStatus.DRAFT: [RefinementStatus.REVIEW, RefinementStatus.CANCELLED],
-        RefinementStatus.REVIEW: [RefinementStatus.DRAFT, RefinementStatus.APPROVED, RefinementStatus.CANCELLED],
-        RefinementStatus.APPROVED: [RefinementStatus.REVIEW, RefinementStatus.DONE, RefinementStatus.CANCELLED],
-        RefinementStatus.DONE: [RefinementStatus.DRAFT],
-        RefinementStatus.CANCELLED: [],
-    }
+    _REFINEMENT_TRANSITIONS: dict[RefinementStatus, list[RefinementStatus]] = transition_map(
+        "refinement"
+    )
 
     async def move_refinement(
         self, refinement_id: str, user_id: str, data: RefinementMove, actor_name: str | None = None
@@ -9905,9 +10546,27 @@ class RefinementService:
              "source_id": getattr(kb, "source_id", None),
              "source_title": getattr(kb, "source_title", None),
              "source_version": getattr(kb, "source_version", None),
-             "source_kb_id": getattr(kb, "source_kb_id", None)}
+             "source_kb_id": getattr(kb, "source_kb_id", None),
+             "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
+             "immediate_parent_kb_id": getattr(kb, "immediate_parent_kb_id", None)}
             for kb in (refinement.knowledge_bases or [])
         ]
+
+        validate_artifact_selections(
+            source_mockups=snapshot_mockups,
+            source_knowledge_bases=snapshot_kbs,
+            mockup_ids=mockup_ids,
+            kb_ids=kb_ids,
+            source_type="refinement",
+            source_id=refinement_id,
+        )
+        await preflight_architecture_designs(
+            self.db,
+            source_parent_type="refinement",
+            source_parent_id=refinement_id,
+            mode=architecture_propagation_mode,
+            design_ids=architecture_design_ids,
+        )
 
         spec_data = SpecCreate(
             title=refinement.title,
@@ -9927,7 +10586,7 @@ class RefinementService:
         )
         if spec:
             # Propagate artifacts using pre-flush snapshots
-            await propagate_artifacts(
+            artifact_counts = await propagate_artifacts(
                 db=self.db,
                 source_mockups=snapshot_mockups,
                 source_qa_items=snapshot_qa,
@@ -9942,7 +10601,7 @@ class RefinementService:
                 source_title=refinement.title,
                 source_version=refinement.version,
             )
-            await propagate_architecture_designs(
+            architecture_designs = await propagate_architecture_designs(
                 self.db,
                 source_parent_type="refinement",
                 source_parent_id=refinement_id,
@@ -9951,6 +10610,19 @@ class RefinementService:
                 actor_id=user_id,
                 mode=architecture_propagation_mode,
                 design_ids=architecture_design_ids,
+            )
+            spec.attach(
+                "resource_propagation",
+                _resource_propagation_summary(
+                    source_parent_type="refinement",
+                    source_parent_id=refinement_id,
+                    target_parent_type="spec",
+                    target_parent_id=spec.id,
+                    architecture_mode=architecture_propagation_mode,
+                    architecture_requested_ids=architecture_design_ids,
+                    architecture_designs=architecture_designs,
+                    artifact_counts=artifact_counts,
+                ),
             )
 
             from okto_pulse.core.events import publish as event_publish
@@ -9988,6 +10660,10 @@ class RefinementQAService:
 
     def __init__(self, db: Any):
         self.db = db
+
+    async def get_question(self, qa_id: str) -> RefinementQAItem | None:
+        """Load a Q&A item so callers can authorize its canonical parent."""
+        return await _application_get(self.db, "refinement_qa_item", qa_id)
 
     async def create_question(self, refinement_id: str, user_id: str, data: RefinementQACreate) -> RefinementQAItem | None:
         """Create a question on a refinement (text or choice)."""
@@ -10727,13 +11403,7 @@ class SprintService:
     def __init__(self, db: Any):
         self.db = db
 
-    _SPRINT_TRANSITIONS = {
-        SprintStatus.DRAFT: [SprintStatus.ACTIVE, SprintStatus.CANCELLED],
-        SprintStatus.ACTIVE: [SprintStatus.DRAFT, SprintStatus.REVIEW, SprintStatus.CANCELLED],
-        SprintStatus.REVIEW: [SprintStatus.ACTIVE, SprintStatus.CLOSED, SprintStatus.CANCELLED],
-        SprintStatus.CLOSED: [SprintStatus.DRAFT],
-        SprintStatus.CANCELLED: [SprintStatus.DRAFT],
-    }
+    _SPRINT_TRANSITIONS = transition_map("sprint")
 
     async def _record_history(
         self, sprint_id: str, action: str, actor_id: str, actor_name: str,
@@ -10776,42 +11446,77 @@ class SprintService:
             "normal_sprint_created": lane_type == SprintLaneType.NORMAL.value,
         }
 
-    async def _validate_hotfix_lane_create(
+    async def _validate_sprint_lane_lineage(
         self,
+        *,
         board_id: str,
         spec: Spec,
-        data: SprintCreate,
+        lane_type: SprintLaneType,
+        origin_sprint_id: str | None,
+        origin_bug_id: str | None,
+        current_sprint_id: str | None = None,
     ) -> tuple[Sprint | None, Card | None]:
-        """Validate hotfix lane creation inputs without mutating source artifacts."""
-        if data.lane_type != SprintLaneType.HOTFIX:
+        """Validate the complete resulting lane state before any write.
+
+        Normal lanes cannot carry hotfix lineage. Hotfix lanes require a valid
+        same-board/spec bug; an origin sprint is optional but, when supplied, must
+        resolve inside the same board/spec and cannot point at the sprint being
+        updated. The eligibility rule remains a done spec OR a closed origin sprint.
+        """
+        if lane_type == SprintLaneType.NORMAL:
+            if origin_sprint_id is not None or origin_bug_id is not None:
+                raise SprintOperationError(
+                    "normal_lane_lineage_forbidden",
+                    "Normal lanes cannot declare hotfix origin lineage.",
+                    remediation="remove_origin_lineage_or_use_hotfix_lane",
+                    facts={
+                        "board_id": board_id,
+                        "spec_id": spec.id,
+                        "origin_sprint_id": origin_sprint_id,
+                        "origin_bug_id": origin_bug_id,
+                    },
+                )
             return None, None
+        if lane_type != SprintLaneType.HOTFIX:
+            raise SprintOperationError(
+                "invalid_lane_type",
+                "Sprint lane_type must be normal or hotfix.",
+                remediation="use_supported_sprint_lane_type",
+                facts={
+                    "board_id": board_id,
+                    "spec_id": spec.id,
+                    "lane_type": getattr(lane_type, "value", lane_type),
+                    "accepted_values": [lane.value for lane in SprintLaneType],
+                },
+            )
 
         origin_sprint: Sprint | None = None
-        if data.origin_sprint_id:
-            origin_sprint = await _application_get(self.db, "sprint", data.origin_sprint_id)
+        if origin_sprint_id is not None:
+            origin_sprint = await _application_get(self.db, "sprint", origin_sprint_id)
             if (
                 not origin_sprint
                 or origin_sprint.board_id != board_id
-                or origin_sprint.spec_id != data.spec_id
+                or origin_sprint.spec_id != spec.id
+                or origin_sprint.id == current_sprint_id
             ):
                 raise SprintOperationError(
                     "origin_sprint_not_found",
                     "origin_sprint_id does not reference a sprint in this board/spec.",
                     remediation="provide_same_spec_origin_sprint",
                     facts={
-                        "origin_sprint_id": data.origin_sprint_id,
-                        "spec_id": data.spec_id,
+                        "origin_sprint_id": origin_sprint_id,
+                        "spec_id": spec.id,
                         "board_id": board_id,
                     },
                 )
 
         origin_bug: Card | None = None
-        if data.origin_bug_id:
-            origin_bug = await _application_get(self.db, "card", data.origin_bug_id)
+        if origin_bug_id:
+            origin_bug = await _application_get(self.db, "card", origin_bug_id)
             if (
                 not origin_bug
                 or origin_bug.board_id != board_id
-                or origin_bug.spec_id != data.spec_id
+                or origin_bug.spec_id != spec.id
                 or origin_bug.card_type != CardType.BUG
             ):
                 raise SprintOperationError(
@@ -10819,8 +11524,8 @@ class SprintService:
                     "origin_bug_id does not reference a bug in this board/spec.",
                     remediation="provide_same_spec_bug_card",
                     facts={
-                        "origin_bug_id": data.origin_bug_id,
-                        "spec_id": data.spec_id,
+                        "origin_bug_id": origin_bug_id,
+                        "spec_id": spec.id,
                         "board_id": board_id,
                     },
                 )
@@ -10835,14 +11540,118 @@ class SprintService:
                 facts={
                     "spec_id": spec.id,
                     "spec_status": spec.status.value,
-                    "origin_sprint_id": data.origin_sprint_id,
+                    "origin_sprint_id": origin_sprint_id,
                     "origin_sprint_status": (
                         origin_sprint.status.value if origin_sprint else None
                     ),
                 },
             )
 
+        if origin_bug is None:
+            raise SprintOperationError(
+                "hotfix_lineage_required",
+                "Hotfix lanes require an explicit same-spec origin_bug_id.",
+                remediation="create_or_select_same_spec_bug_and_retry",
+                facts={
+                    "spec_id": spec.id,
+                    "board_id": board_id,
+                    "origin_sprint_id": origin_sprint_id,
+                    "required_lineage": ["origin_bug_id"],
+                },
+            )
+
         return origin_sprint, origin_bug
+
+    async def _validate_hotfix_lane_create(
+        self,
+        board_id: str,
+        spec: Spec,
+        data: SprintCreate,
+    ) -> tuple[Sprint | None, Card | None]:
+        """Compatibility wrapper around the canonical resulting-state validator."""
+        return await self._validate_sprint_lane_lineage(
+            board_id=board_id,
+            spec=spec,
+            lane_type=data.lane_type,
+            origin_sprint_id=data.origin_sprint_id,
+            origin_bug_id=data.origin_bug_id,
+        )
+
+    async def _is_confirmed_path_b_hotfix_test(
+        self,
+        *,
+        sprint: Sprint,
+        card: Card,
+    ) -> bool:
+        """Return whether a cross-spec test card is safe in this hotfix lane.
+
+        Path B intentionally permits a regression test task on a revision spec
+        to provide evidence for a bug on the original spec.  Path C then asks
+        callers to put that bug *and its regression test card* in a hotfix lane
+        on the original spec.  The normal same-spec sprint invariant therefore
+        needs one narrow exception.  It is granted only when the persisted,
+        validator-owned coverage attestation binds all of these identities:
+
+        * this hotfix lane's origin bug;
+        * this exact regression test task and one of its scenarios;
+        * a non-blocking, complete amendment for the original spec; and
+        * the test task's revision spec.
+
+        Mere linkage on the bug, an unconfirmed amendment, or a same-board
+        cross-spec card is insufficient.  Unknown/malformed state fails closed.
+        """
+        if (
+            sprint.lane_type != SprintLaneType.HOTFIX
+            or card.card_type != CardType.TEST
+            or not sprint.origin_bug_id
+            or not sprint.spec_id
+            or card.board_id != sprint.board_id
+            or card.spec_id == sprint.spec_id
+            or not card.spec_id
+        ):
+            return False
+
+        origin_bug = await _application_get(self.db, "card", sprint.origin_bug_id)
+        if (
+            origin_bug is None
+            or origin_bug.board_id != sprint.board_id
+            or origin_bug.spec_id != sprint.spec_id
+            or origin_bug.card_type != CardType.BUG
+            or card.id not in set(origin_bug.linked_test_task_ids or [])
+        ):
+            return False
+
+        amendments = await AmendmentRevisionService(self.db).list_for_bug(
+            board_id=sprint.board_id,
+            original_spec_id=sprint.spec_id,
+            origin_bug_id=origin_bug.id,
+        )
+        card_scenarios = {str(value) for value in (card.test_scenario_ids or [])}
+        for amendment in amendments:
+            fact = AmendmentLineageFact.from_row(amendment)
+            eligibility = evaluate_amendment_eligibility(
+                fact.status,
+                fact.lineage_state,
+            )
+            confirmation = fact.coverage_confirmation
+            if (
+                not eligibility.lineage_eligible
+                or str(getattr(amendment, "revision_spec_id", "") or "")
+                != str(card.spec_id)
+                or card.id not in set(fact.regression_test_task_ids)
+                or confirmation is None
+                or confirmation.amendment_revision_id
+                != fact.amendment_revision_id
+                or confirmation.regression_test_task_id != card.id
+                or confirmation.regression_scenario_id not in card_scenarios
+                or confirmation.regression_scenario_id
+                not in set(fact.regression_scenario_ids)
+                or not confirmation.validator_id
+                or not confirmation.evidence_ref
+            ):
+                continue
+            return True
+        return False
 
     async def create_sprint(
         self, board_id: str, user_id: str, data: SprintCreate,
@@ -10859,7 +11668,11 @@ class SprintService:
                 board_id=board_id,
                 user_id=user_id,
                 query_scope=query_scope,
-                require_ownership=True,
+                require_ownership=(
+                    query_scope.require_ownership
+                    if query_scope is not None
+                    else True
+                ),
             )
             if board_query is None:
                 return None
@@ -11004,15 +11817,59 @@ class SprintService:
             raise ValueError("This sprint is archived. Restore it first.")
 
         update_data = data.model_dump(exclude_unset=True)
-        old_data = {k: getattr(sprint, k) for k in update_data.keys()}
-
+        expected_version = update_data.pop("expected_version", None)
+        if expected_version is not None and expected_version != sprint.version:
+            raise SprintOperationError(
+                "sprint_version_conflict",
+                "Sprint was changed after it was read.",
+                remediation="reload_sprint_and_retry",
+                facts={
+                    "sprint_id": sprint_id,
+                    "expected_version": expected_version,
+                    "actual_version": sprint.version,
+                },
+            )
+        if update_data.get("lane_type") == SprintLaneType.NORMAL:
+            # Switching out of a hotfix is one atomic resulting-state change. MCP
+            # represents omitted optional strings as empty input, so callers should
+            # not need a second transport-specific operation to clear stale lineage.
+            update_data.setdefault("origin_sprint_id", None)
+            update_data.setdefault("origin_bug_id", None)
         lane_fields = {"lane_type", "origin_sprint_id", "origin_bug_id"}
         if lane_fields & update_data.keys() and sprint.status != SprintStatus.DRAFT:
             raise ValueError("Sprint lane metadata can only be updated while the sprint is draft")
 
+        # Always validate the complete resulting lineage, not only when a lane
+        # field is present.  Otherwise a legacy-invalid row could be mutated by
+        # changing an unrelated field and remain silently corrupt.
+        spec = await _application_get(self.db, "spec", sprint.spec_id)
+        if not spec or spec.board_id != sprint.board_id:
+            raise SprintOperationError(
+                "sprint_spec_not_found",
+                "Sprint does not reference a spec in its board.",
+                remediation="repair_sprint_spec_lineage",
+                facts={
+                    "sprint_id": sprint.id,
+                    "spec_id": sprint.spec_id,
+                    "board_id": sprint.board_id,
+                },
+            )
+        await self._validate_sprint_lane_lineage(
+            board_id=sprint.board_id,
+            spec=spec,
+            lane_type=update_data.get("lane_type", sprint.lane_type),
+            origin_sprint_id=update_data.get(
+                "origin_sprint_id", sprint.origin_sprint_id
+            ),
+            origin_bug_id=update_data.get("origin_bug_id", sprint.origin_bug_id),
+            current_sprint_id=sprint.id,
+        )
+
+        old_data = {k: getattr(sprint, k) for k in update_data.keys()}
+
         # Validate scoped IDs if changed
         if "test_scenario_ids" in update_data and update_data["test_scenario_ids"] is not None:
-            spec = await _application_get(self.db, "spec", sprint.spec_id)
+            spec = spec or await _application_get(self.db, "spec", sprint.spec_id)
             if spec:
                 spec_ts_ids = {s.get("id") for s in (spec.test_scenarios or [])}
                 invalid = set(update_data["test_scenario_ids"]) - spec_ts_ids
@@ -11029,11 +11886,20 @@ class SprintService:
         content_fields = {
             "title",
             "description",
+            "objective",
+            "expected_outcome",
             "test_scenario_ids",
             "business_rule_ids",
             "lane_type",
             "origin_sprint_id",
             "origin_bug_id",
+            "start_date",
+            "end_date",
+            "labels",
+            "skip_test_coverage",
+            "skip_rules_coverage",
+            "skip_qualitative_validation",
+            "validation_threshold",
         }
         bumps_version = bool(content_fields & update_data.keys())
 
@@ -11073,6 +11939,19 @@ class SprintService:
         if sprint.archived:
             raise ValueError("This sprint is archived. Restore it first.")
 
+        expected_version = getattr(data, "expected_version", None)
+        if expected_version is not None and expected_version != sprint.version:
+            raise SprintOperationError(
+                "sprint_version_conflict",
+                "Sprint was changed after it was read.",
+                remediation="reload_sprint_and_retry",
+                facts={
+                    "sprint_id": sprint_id,
+                    "expected_version": expected_version,
+                    "actual_version": sprint.version,
+                },
+            )
+
         allowed = self._SPRINT_TRANSITIONS.get(sprint.status, [])
         if data.status not in allowed:
             allowed_values = [s.value for s in allowed]
@@ -11082,6 +11961,59 @@ class SprintService:
             )
 
         spec = await _application_get(self.db, "spec", sprint.spec_id)
+        if not spec or spec.board_id != sprint.board_id:
+            raise SprintOperationError(
+                "sprint_spec_not_found",
+                "Sprint does not reference a spec in its board.",
+                remediation="repair_sprint_spec_lineage",
+                facts={
+                    "sprint_id": sprint.id,
+                    "spec_id": sprint.spec_id,
+                    "board_id": sprint.board_id,
+                },
+            )
+        await self._validate_sprint_lane_lineage(
+            board_id=sprint.board_id,
+            spec=spec,
+            lane_type=sprint.lane_type,
+            origin_sprint_id=sprint.origin_sprint_id,
+            origin_bug_id=sprint.origin_bug_id,
+            current_sprint_id=sprint.id,
+        )
+
+        # A closed origin sprint is the alternative eligibility anchor for
+        # hotfix lanes whose spec is not done.  Reopening it would make those
+        # dependents invalid, so reject before authorization/audit/mutation.
+        if sprint.status == SprintStatus.CLOSED and data.status == SprintStatus.DRAFT:
+            dependents = await _application_list(
+                self.db,
+                "sprint",
+                filters=(_apf("origin_sprint_id", "eq", sprint.id),),
+            )
+            blocked_ids: list[str] = []
+            for dependent in dependents:
+                dependent_spec = await _application_get(
+                    self.db, "spec", dependent.spec_id
+                )
+                if (
+                    not dependent_spec
+                    or dependent_spec.board_id != dependent.board_id
+                    or dependent_spec.status != SpecStatus.DONE
+                ):
+                    blocked_ids.append(dependent.id)
+            if blocked_ids:
+                raise SprintOperationError(
+                    "origin_sprint_reopen_conflict",
+                    "Cannot reopen the sprint: one or more hotfix lanes require "
+                    "this closed origin to remain eligible.",
+                    remediation="complete_dependent_specs_or_relineage_hotfix_lanes",
+                    facts={
+                        "origin_sprint_id": sprint.id,
+                        "target_status": data.status.value,
+                        "dependent_sprint_ids": sorted(blocked_ids)[:20],
+                        "dependent_sprint_count": len(blocked_ids),
+                    },
+                )
         board = await _application_get(self.db, "board", sprint.board_id) if spec else None
 
         await _authorize_critical_context_or_raise(
@@ -11105,22 +12037,67 @@ class SprintService:
                     _apf("sprint_id", "eq", sprint_id),
                     _apf("archived", "is_false"),
                 ),
-                limit=1,
             )
             if not assigned_cards:
                 raise ValueError(
                     "Cannot activate sprint: no cards assigned. "
                     "Assign at least one card to this sprint before activating."
                 )
+            if sprint.lane_type == SprintLaneType.HOTFIX:
+                bug_ids = {
+                    card.id
+                    for card in assigned_cards
+                    if card.card_type == CardType.BUG
+                }
+                test_ids = {
+                    card.id
+                    for card in assigned_cards
+                    if card.card_type == CardType.TEST
+                }
+                origin_bug = next(
+                    (
+                        card
+                        for card in assigned_cards
+                        if card.id == sprint.origin_bug_id
+                        and card.card_type == CardType.BUG
+                    ),
+                    None,
+                )
+                linked_regression_ids = set(
+                    getattr(origin_bug, "linked_test_task_ids", None) or []
+                ) if origin_bug else set()
+                if (
+                    not sprint.origin_bug_id
+                    or sprint.origin_bug_id not in bug_ids
+                    or not test_ids
+                    or not linked_regression_ids.intersection(test_ids)
+                ):
+                    raise SprintOperationError(
+                        "hotfix_regression_lineage_required",
+                        "Hotfix activation requires its origin bug and an explicitly "
+                        "linked regression test card in the lane.",
+                        remediation="assign_origin_bug_and_linked_regression_test",
+                        facts={
+                            "sprint_id": sprint.id,
+                            "origin_bug_id": sprint.origin_bug_id,
+                            "assigned_bug_ids": sorted(bug_ids),
+                            "assigned_test_ids": sorted(test_ids),
+                            "origin_bug_linked_test_ids": sorted(linked_regression_ids),
+                        },
+                    )
 
         # Gate: active → review requires scoped test coverage check
         if data.status == SprintStatus.REVIEW:
             skip_tc = sprint.skip_test_coverage or (
                 (board.settings or {}).get("skip_test_coverage_global", False) if board else False
             )
-            if not skip_tc and spec and sprint.test_scenario_ids:
-                scenarios = spec.test_scenarios or []
-                scoped = [s for s in scenarios if s.get("id") in (sprint.test_scenario_ids or [])]
+            if not skip_tc and spec:
+                scope = SprintScopeResolver.resolve(
+                    sprint=sprint,
+                    spec=spec,
+                    cards=sprint.cards,
+                )
+                scoped = list(scope.items.get("test_scenarios", ()))
                 not_covered = [s for s in scoped if s.get("status") != "passed"]
                 if not_covered:
                     names = "; ".join(s.get("title", s.get("id", "?"))[:60] for s in not_covered[:5])
@@ -11188,39 +12165,44 @@ class SprintService:
                 if board
                 else False
             )
-            if not skip_evidence:
-                evidenceless: list[str] = []
-                # Sprint -> Test cards -> linked scenarios -> evidence check
-                test_cards = await _application_list(
-                    self.db,
-                    "card",
-                    filters=(
-                        _apf("sprint_id", "eq", sprint_id),
-                        _apf("archived", "is_false"),
-                        _apf("card_type", "eq", CardType.TEST),
-                    ),
-                )
-                spec_scenarios_by_id: dict[str, dict] = {
-                    s.get("id"): s for s in (spec.test_scenarios or [])
-                }
-                for card in test_cards:
-                    for sid in (card.test_scenario_ids or []):
-                        sc = spec_scenarios_by_id.get(sid)
-                        if not sc:
-                            continue
-                        if not scenario_has_required_evidence(sc):
-                            evidenceless.append(sid)
-                if evidenceless:
-                    # NC-9 BR4 — sprint close gate as defense in depth.
-                    raise ValueError(
-                        f"Cannot close sprint: {len(evidenceless)} scenario(s) "
-                        f"marked passed/automated without structured evidence: "
-                        f"{', '.join(evidenceless[:5])}"
-                        f"{f' (and {len(evidenceless) - 5} more)' if len(evidenceless) > 5 else ''}. "
-                        "Provide evidence via update_test_scenario_status OR "
-                        "enable skip_test_evidence_global on the board to bypass."
+            scope = SprintScopeResolver.resolve(
+                sprint=sprint,
+                spec=spec,
+                cards=sprint.cards,
+            )
+            scope_blockers = completion_blockers(
+                scope,
+                skip_test_coverage=bool(
+                    sprint.skip_test_coverage
+                    or ((board.settings or {}).get("skip_test_coverage_global", False) if board else False)
+                ),
+                skip_test_evidence=skip_evidence,
+                skip_rules_coverage=bool(
+                    sprint.skip_rules_coverage
+                    or ((board.settings or {}).get("skip_rules_coverage_global", False) if board else False)
+                ),
+                evidence_validator=lambda scenario: (
+                    scenario_has_authenticated_required_evidence(
+                        board_id=sprint.board_id,
+                        spec_id=spec.id,
+                        scenario=scenario,
+                        acceptance_criteria=list(spec.acceptance_criteria or []),
                     )
-            elif spec is not None:
+                ),
+            )
+            if scope_blockers:
+                raise SprintOperationError(
+                    "sprint_scope_gate_blocked",
+                    f"Cannot close sprint: {len(scope_blockers)} scoped gate blocker(s).",
+                    remediation="resolve_sprint_scope_blockers",
+                    facts={
+                        "sprint_id": sprint_id,
+                        "sprint_version": sprint.version,
+                        "spec_version": spec.version,
+                        "blockers": [blocker.to_dict() for blocker in scope_blockers],
+                    },
+                )
+            if skip_evidence:
                 # Skip ON — log forensics record so reactivation analytics
                 # can flag boards that bypass the gate at sprint close.
                 import logging as _logging
@@ -11245,14 +12227,20 @@ class SprintService:
                 rejections = [e for e in evaluations if e.get("recommendation") == "reject"]
                 if rejections:
                     names = ", ".join(e.get("evaluator_name", "?") for e in rejections)
-                    raise ValueError(
+                    raise SprintOperationError(
+                        "sprint_evaluation_rejected",
                         f"Cannot close sprint: {len(rejections)} evaluation(s) with 'reject' "
-                        f"recommendation (by: {names}). Remove or replace rejections."
+                        f"recommendation (by: {names}). Remove or replace rejections.",
+                        remediation="replace_rejected_sprint_evaluation",
+                        facts={"sprint_id": sprint_id, "rejected_by": names},
                     )
                 if not approvals:
-                    raise ValueError(
+                    raise SprintOperationError(
+                        "sprint_evaluation_required",
                         "Cannot close sprint: no evaluation with 'approve' recommendation. "
-                        "Submit an evaluation before closing."
+                        "Submit an evaluation before closing.",
+                        remediation="submit_sprint_evaluation",
+                        facts={"sprint_id": sprint_id},
                     )
                 threshold = (
                     sprint.validation_threshold
@@ -11260,9 +12248,16 @@ class SprintService:
                 )
                 avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(approvals)
                 if avg_score < threshold:
-                    raise ValueError(
+                    raise SprintOperationError(
+                        "sprint_evaluation_below_threshold",
                         f"Cannot close sprint: average approval score ({avg_score:.0f}) "
-                        f"is below threshold ({threshold})."
+                        f"is below threshold ({threshold}).",
+                        remediation="improve_delivery_and_resubmit_evaluation",
+                        facts={
+                            "sprint_id": sprint_id,
+                            "average_score": avg_score,
+                            "threshold": threshold,
+                        },
                     )
 
         old_status = sprint.status
@@ -11279,6 +12274,8 @@ class SprintService:
         )
 
         sprint.status = data.status
+        if old_status != data.status:
+            sprint.version += 1
 
         if old_status != data.status:
             from okto_pulse.core.events import publish as event_publish
@@ -11316,6 +12313,12 @@ class SprintService:
             details={
                 "sprint_id": sprint_id, "spec_id": sprint.spec_id,
                 "from_status": old_status.value, "to_status": data.status.value,
+                "version": sprint.version,
+                "cancellation_reason": sprint.cancellation_reason,
+                "cancelled_by": sprint.cancelled_by,
+                "cancelled_at": (
+                    sprint.cancelled_at.isoformat() if sprint.cancelled_at else None
+                ),
                 **self._lane_activity_details(sprint),
             },
         )
@@ -11326,6 +12329,11 @@ class SprintService:
                 "field": "status",
                 "old": old_status.value,
                 "new": data.status.value,
+                "cancellation_reason": sprint.cancellation_reason,
+                "cancelled_by": sprint.cancelled_by,
+                "cancelled_at": (
+                    sprint.cancelled_at.isoformat() if sprint.cancelled_at else None
+                ),
                 **self._lane_activity_details(sprint),
             }],
             summary=f"Status: {old_status.value} → {data.status.value}",
@@ -11339,6 +12347,45 @@ class SprintService:
         sprint = await self.get_sprint(sprint_id)
         if not sprint:
             return False
+
+        # Resolve origin-sprint dependents explicitly so fresh schemas (where
+        # the FK has ON DELETE SET NULL) and upgraded legacy schemas (where the
+        # column may have no FK) have identical application behavior.  A hotfix
+        # whose spec is not done would lose its only eligibility anchor, so the
+        # entire delete fails before any mutation, flush, activity, or history.
+        origin_dependents = await _application_list(
+            self.db,
+            "sprint",
+            filters=(_apf("origin_sprint_id", "eq", sprint_id),),
+        )
+        blocked_ids: list[str] = []
+        for dependent in origin_dependents:
+            dependent_spec = await _application_get(
+                self.db, "spec", dependent.spec_id
+            )
+            if (
+                not dependent_spec
+                or dependent_spec.board_id != dependent.board_id
+                or dependent_spec.status != SpecStatus.DONE
+            ):
+                blocked_ids.append(dependent.id)
+
+        if blocked_ids:
+            raise SprintOperationError(
+                "origin_sprint_delete_conflict",
+                "Cannot delete the sprint: one or more dependent hotfix lanes "
+                "would become ineligible.",
+                remediation="complete_dependent_specs_or_relineage_hotfix_lanes",
+                facts={
+                    "origin_sprint_id": sprint_id,
+                    "dependent_sprint_ids": sorted(blocked_ids)[:20],
+                    "dependent_sprint_count": len(blocked_ids),
+                },
+            )
+
+        for dependent in origin_dependents:
+            dependent.origin_sprint_id = None
+
         assigned_cards = await _application_list(
             self.db,
             "card",
@@ -11361,7 +12408,12 @@ class SprintService:
     async def assign_tasks(
         self, sprint_id: str, card_ids: list[str], user_id: str,
     ) -> int:
-        """Assign cards to a sprint. Cards must belong to the same spec."""
+        """Assign cards to a sprint.
+
+        Cards normally belong to the sprint spec.  A hotfix lane additionally
+        accepts its origin bug's exact, validator-confirmed Path B regression
+        test task from the amendment revision spec.
+        """
         sprint = await _application_get(self.db, "sprint", sprint_id)
         if not sprint:
             raise SprintOperationError(
@@ -11371,9 +12423,10 @@ class SprintService:
                 facts={"sprint_id": sprint_id},
             )
         cards_to_assign: list[Card] = []
+        cross_spec_path_b_test_ids: list[str] = []
         for card_id in card_ids:
             card = await _application_get(self.db, "card", card_id)
-            if not card:
+            if not card or card.board_id != sprint.board_id:
                 raise SprintOperationError(
                     "card_not_found",
                     "Card not found.",
@@ -11382,11 +12435,19 @@ class SprintService:
                     ),
                     facts={"sprint_id": sprint_id, "card_id": card_id},
                 )
+            cross_spec_path_b_test = False
             if card.spec_id != sprint.spec_id:
+                cross_spec_path_b_test = await self._is_confirmed_path_b_hotfix_test(
+                    sprint=sprint,
+                    card=card,
+                )
+            if card.spec_id != sprint.spec_id and not cross_spec_path_b_test:
                 raise ValueError(
                     f"Card '{card.title}' belongs to a different spec. "
                     f"Sprint spec: {sprint.spec_id}, card spec: {card.spec_id}"
                 )
+            if cross_spec_path_b_test:
+                cross_spec_path_b_test_ids.append(card.id)
             if sprint.lane_type == SprintLaneType.HOTFIX and card.card_type not in {
                 CardType.BUG,
                 CardType.TEST,
@@ -11410,9 +12471,11 @@ class SprintService:
 
         assigned = 0
         for card in cards_to_assign:
-            card.sprint_id = sprint_id
-            assigned += 1
+            if card.sprint_id != sprint_id:
+                card.sprint_id = sprint_id
+                assigned += 1
         if assigned:
+            sprint.version += 1
             actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
             await self._log_activity(
                 board_id=sprint.board_id, action="sprint_tasks_assigned",
@@ -11421,6 +12484,7 @@ class SprintService:
                     "sprint_id": sprint_id,
                     "card_ids": [card.id for card in cards_to_assign],
                     "count": assigned,
+                    "cross_spec_path_b_test_ids": cross_spec_path_b_test_ids,
                     **self._lane_activity_details(sprint),
                     "accepted_card_types": (
                         [CardType.BUG.value, CardType.TEST.value]
@@ -11436,6 +12500,7 @@ class SprintService:
                     "field": "cards",
                     "added": [card.id for card in cards_to_assign],
                     "count": assigned,
+                    "cross_spec_path_b_test_ids": cross_spec_path_b_test_ids,
                     **self._lane_activity_details(sprint),
                 }],
                 summary=(
@@ -11448,6 +12513,60 @@ class SprintService:
         await _application_commit(self.db)
         return assigned
 
+    async def unassign_tasks(
+        self, sprint_id: str, card_ids: list[str], user_id: str,
+    ) -> int:
+        """Atomically unassign cards and invalidate version-keyed scope caches."""
+
+        sprint = await _application_get(self.db, "sprint", sprint_id)
+        if not sprint:
+            raise SprintOperationError(
+                "sprint_not_found",
+                "Sprint not found.",
+                remediation="refresh_sprint_list",
+                facts={"sprint_id": sprint_id},
+            )
+        cards: list[Card] = []
+        for card_id in dict.fromkeys(card_ids):
+            card = await _application_get(self.db, "card", card_id)
+            if (
+                card is not None
+                and card.board_id == sprint.board_id
+                and card.sprint_id == sprint_id
+            ):
+                cards.append(card)
+        for card in cards:
+            card.sprint_id = None
+        if cards:
+            sprint.version += 1
+            actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
+            details = {
+                "sprint_id": sprint_id,
+                "card_ids": [card.id for card in cards],
+                "count": len(cards),
+                "version": sprint.version,
+                **self._lane_activity_details(sprint),
+            }
+            await self._log_activity(
+                board_id=sprint.board_id,
+                action="sprint_tasks_unassigned",
+                actor_type="user",
+                actor_id=user_id,
+                actor_name=actor_name,
+                details=details,
+            )
+            await self._record_history(
+                sprint_id=sprint_id,
+                action="tasks_unassigned",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=[{"field": "cards", "removed": details["card_ids"]}],
+                summary=f"Unassigned {len(cards)} card(s) from sprint",
+                version=sprint.version,
+            )
+        await _application_commit(self.db)
+        return len(cards)
+
     async def submit_evaluation(
         self, sprint_id: str, user_id: str, evaluation: dict,
     ) -> Sprint | None:
@@ -11459,6 +12578,28 @@ class SprintService:
             raise ValueError(
                 f"Evaluations can only be submitted for sprints in 'review' status "
                 f"(current: '{sprint.status.value}')"
+            )
+        board = await _application_get(self.db, "board", sprint.board_id)
+        cards = await _application_list(
+            self.db,
+            "card",
+            filters=(
+                _apf("sprint_id", "eq", sprint_id),
+                _apf("archived", "is_false"),
+            ),
+        )
+        separation = evaluate_reviewer_separation(
+            board=board,
+            reviewer_id=user_id,
+            sprint=sprint,
+            cards=cards,
+        )
+        if not separation.allowed:
+            raise SprintOperationError(
+                "reviewer_separation_required",
+                "Sprint reviewer must be independent from its creator/executors.",
+                remediation="request_independent_sprint_reviewer",
+                facts={"sprint_id": sprint_id, **separation.to_dict()},
             )
         evaluator_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
         await _authorize_critical_context_or_raise(
@@ -11474,11 +12615,12 @@ class SprintService:
         )
         import uuid as _uuid
         eval_entry = {
+            **evaluation,
             "id": f"eval_{_uuid.uuid4().hex[:8]}",
             "evaluator_id": user_id,
             "evaluator_name": evaluator_name,
             "evaluator_type": "user",
-            **evaluation,
+            "reviewer_separation": separation.to_dict(),
             "stale": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -11486,6 +12628,7 @@ class SprintService:
         evals.append(eval_entry)
         sprint.evaluations = evals
         sprint.mark_dirty("evaluations")
+        sprint.version += 1
 
         await self._log_activity(
             board_id=sprint.board_id, action="sprint_evaluation_submitted",
@@ -11494,6 +12637,7 @@ class SprintService:
                 "sprint_id": sprint_id,
                 "evaluation_id": eval_entry["id"],
                 "score": evaluation.get("overall_score"),
+                "reviewer_separation": separation.to_dict(),
                 **self._lane_activity_details(sprint),
             },
         )
@@ -11697,6 +12841,10 @@ class SprintQAService:
 
     def __init__(self, db: Any):
         self.db = db
+
+    async def get_question(self, qa_id: str) -> SprintQAItem | None:
+        """Load a Sprint Q&A item so callers can authorize its parent first."""
+        return await _application_get(self.db, "sprint_qa_item", qa_id)
 
     async def create_question(
         self, sprint_id: str, user_id: str, question: str,
@@ -12135,6 +13283,9 @@ async def mcp_get_activity_log_rows(
         activity_log_summary,
         sanitize_activity_details,
     )
+    from okto_pulse.core.services.analytics_contract import (
+        normalize_activity_timestamp,
+    )
 
     filters = [_apf("board_id", "eq", board_id)]
     if action:
@@ -12171,7 +13322,7 @@ async def mcp_get_activity_log_rows(
             "id": log.id,
             "action": log.action,
             "card_id": log.card_id,
-            "created_at": log.created_at.isoformat(),
+            "created_at": normalize_activity_timestamp(log.created_at).isoformat(),
             "trigger": (
                 (log.details or {}).get("trigger")
                 if isinstance(log.details, dict)

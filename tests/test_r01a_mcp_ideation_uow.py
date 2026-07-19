@@ -11,9 +11,9 @@ Consolidated proofs (Codex-mandated):
   ``server.py`` helper.
 - AST: the Q&A mutations carry the activity-log ATOMICALLY in the use case (the
   ``_log_activity`` calls live in ``mcp_ideation_crud``, not the adapter tools).
-- Runtime: create/get/update/delete round-trip; KB add/get; Q&A ask/answer;
-  the board-scope asymmetry (get_ideation cross-board not found); the story tools'
-  not-found envelopes ("Story or Ideation not found" / "One or more Stories ...").
+- Runtime: same-board, missing-parent, cross-board, wrong-parent-Q&A, and direct
+  actor/command mismatch matrices across CRUD, snapshot, history, KB, Q&A, and
+  empty-scope evaluation; plus the story tools' governed not-found envelopes.
 """
 
 from __future__ import annotations
@@ -26,11 +26,17 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import func, select
 
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
+    ActivityLog,
     Board,
     Ideation,
+    IdeationHistory,
+    IdeationKnowledgeBase,
+    IdeationQAItem,
+    IdeationSnapshot,
     IdeationStatus,
     Refinement,
     RefinementStatus,
@@ -41,6 +47,7 @@ from sqlalchemy_test_models import (
 BOARD_ID = "r01a-mcpideation"
 OTHER_BOARD_ID = "r01a-mcpideation-other"
 USER_ID = "r01a-mcpideation-agent"
+OTHER_USER_ID = "r01a-mcpideation-other-agent"
 
 _MIGRATED = (
     "create_ideation", "get_ideation", "update_ideation", "delete_ideation",
@@ -163,6 +170,129 @@ async def _call(tool: str, **kwargs) -> dict:
     return json.loads(await t.fn(**kwargs))
 
 
+@pytest.fixture
+async def _board_scope_graph(_seed):
+    """Same-board and foreign ideation graphs with every by-id child type."""
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        local = Ideation(
+            board_id=BOARD_ID,
+            title="Local ideation",
+            status=IdeationStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        local_sibling = Ideation(
+            board_id=BOARD_ID,
+            title="Local sibling",
+            status=IdeationStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        foreign = Ideation(
+            board_id=OTHER_BOARD_ID,
+            title="foreign-secret-ideation",
+            status=IdeationStatus.DRAFT,
+            created_by=OTHER_USER_ID,
+        )
+        db.add_all((local, local_sibling, foreign))
+        await db.flush()
+
+        rows: dict[str, dict[str, str]] = {}
+        for label, ideation in (("local", local), ("foreign", foreign)):
+            snapshot = IdeationSnapshot(
+                ideation_id=ideation.id,
+                version=1,
+                title=f"{label}-secret-snapshot",
+                description=f"{label} snapshot",
+                problem_statement=f"{label} problem",
+                proposed_approach=f"{label} approach",
+                scope_assessment={},
+                complexity=None,
+                labels=[label],
+                qa_snapshot=[],
+                created_by=OTHER_USER_ID,
+            )
+            history = IdeationHistory(
+                ideation_id=ideation.id,
+                action=f"{label}-secret-history",
+                actor_type="user",
+                actor_id=OTHER_USER_ID,
+                actor_name="Other User",
+                changes=[],
+                summary=f"{label} history",
+                version=1,
+            )
+            kb = IdeationKnowledgeBase(
+                ideation_id=ideation.id,
+                title=f"{label}-secret-kb",
+                content=f"{label}-secret-content",
+                mime_type="text/markdown",
+                created_by=OTHER_USER_ID,
+            )
+            qa = IdeationQAItem(
+                ideation_id=ideation.id,
+                question=f"{label}-secret-question",
+                question_type="choice",
+                choices=[{"id": "opt_0", "label": "Yes"}],
+                allow_free_text=False,
+                asked_by=OTHER_USER_ID,
+            )
+            db.add_all((snapshot, history, kb, qa))
+            await db.flush()
+            rows[label] = {
+                "ideation_id": ideation.id,
+                "snapshot_id": snapshot.id,
+                "history_id": history.id,
+                "kb_id": kb.id,
+                "qa_id": qa.id,
+            }
+
+        rows["local_sibling"] = {"ideation_id": local_sibling.id}
+        await db.commit()
+    return rows
+
+
+async def _ideation_graph_state(graph: dict[str, dict[str, str]]) -> dict:
+    from okto_pulse.core.infra.database import get_session_factory
+
+    foreign = graph["foreign"]
+    async with get_session_factory()() as db:
+        ideation = await db.get(Ideation, foreign["ideation_id"])
+        qa = await db.get(IdeationQAItem, foreign["qa_id"])
+        kb = await db.get(IdeationKnowledgeBase, foreign["kb_id"])
+        return {
+            "ideation": None
+            if ideation is None
+            else (
+                ideation.title,
+                ideation.version,
+                ideation.status,
+                ideation.scope_assessment,
+                ideation.complexity,
+            ),
+            "qa": None
+            if qa is None
+            else (qa.answer, qa.selected, qa.answered_by, qa.answered_at),
+            "kb": None if kb is None else (kb.ideation_id, kb.content),
+            "ideation_count": int(
+                await db.scalar(select(func.count()).select_from(Ideation)) or 0
+            ),
+            "kb_count": int(
+                await db.scalar(
+                    select(func.count()).select_from(IdeationKnowledgeBase)
+                )
+                or 0
+            ),
+            "qa_count": int(
+                await db.scalar(select(func.count()).select_from(IdeationQAItem))
+                or 0
+            ),
+            "activity_count": int(
+                await db.scalar(select(func.count()).select_from(ActivityLog)) or 0
+            ),
+        }
+
+
 @pytest.mark.asyncio
 async def test_create_get_update_delete_roundtrip(_seed):
     created = await _call(
@@ -247,6 +377,361 @@ async def test_get_ideation_cross_board_not_found(_seed):
         "okto_pulse_get_ideation", board_id=OTHER_BOARD_ID, ideation_id=iid
     )
     assert cross == {"error": "Ideation not found"}
+
+
+@pytest.mark.asyncio
+async def test_ideation_cross_board_matrix_has_no_payload_write_or_log(
+    _board_scope_graph,
+):
+    foreign = _board_scope_graph["foreign"]
+    ideation_id = foreign["ideation_id"]
+    before = await _ideation_graph_state(_board_scope_graph)
+
+    results = {
+        "update": await _call(
+            "okto_pulse_update_ideation",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            title="must-not-persist",
+        ),
+        "delete": await _call(
+            "okto_pulse_delete_ideation",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+        ),
+        "snapshot": await _call(
+            "okto_pulse_get_ideation_snapshot",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            version="1",
+        ),
+        "history": await _call(
+            "okto_pulse_get_ideation_history",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+        ),
+        "get_kb": await _call(
+            "okto_pulse_get_ideation_knowledge",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            knowledge_id=foreign["kb_id"],
+        ),
+        "add_kb": await _call(
+            "okto_pulse_add_ideation_knowledge",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            title="must-not-create",
+            content="must-not-persist",
+        ),
+        "delete_kb": await _call(
+            "okto_pulse_delete_ideation_knowledge",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            knowledge_id=foreign["kb_id"],
+        ),
+        "ask": await _call(
+            "okto_pulse_ask_ideation_choice_question",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            question="must-not-create",
+            options="A|B",
+        ),
+        "answer": await _call(
+            "okto_pulse_answer_ideation_question",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            qa_id=foreign["qa_id"],
+            selected="opt_0",
+        ),
+        "delete_qa": await _call(
+            "okto_pulse_delete_ideation_question",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+            qa_id=foreign["qa_id"],
+        ),
+        "evaluate_empty_scope": await _call(
+            "okto_pulse_evaluate_ideation",
+            board_id=BOARD_ID,
+            ideation_id=ideation_id,
+        ),
+    }
+
+    assert results == {
+        "update": {"error": "Ideation not found"},
+        "delete": {"error": "Ideation not found"},
+        "snapshot": {"error": "Snapshot v1 not found"},
+        "history": {"error": "Ideation not found"},
+        "get_kb": {"error": "Ideation not found"},
+        "add_kb": {"error": "Ideation not found"},
+        "delete_kb": {"error": "Ideation not found"},
+        "ask": {"error": "Ideation not found"},
+        "answer": {"error": "Q&A item not found or invalid selection"},
+        "delete_qa": {"error": "Q&A item not found"},
+        "evaluate_empty_scope": {"error": "Ideation not found"},
+    }
+    assert "foreign-secret" not in json.dumps(results)
+    assert await _ideation_graph_state(_board_scope_graph) == before
+
+
+@pytest.mark.asyncio
+async def test_ideation_missing_parent_matrix_is_not_found_and_zero_write(
+    _board_scope_graph,
+):
+    before = await _ideation_graph_state(_board_scope_graph)
+    missing = "missing-ideation"
+    missing_qa = "missing-ideation-qa"
+    missing_kb = "missing-ideation-kb"
+
+    results = [
+        await _call(
+            "okto_pulse_update_ideation",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+            title="must-not-persist",
+        ),
+        await _call(
+            "okto_pulse_delete_ideation",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+        ),
+        await _call(
+            "okto_pulse_get_ideation_snapshot",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+            version="1",
+        ),
+        await _call(
+            "okto_pulse_get_ideation_history",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+        ),
+        await _call(
+            "okto_pulse_get_ideation_knowledge",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+            knowledge_id=missing_kb,
+        ),
+        await _call(
+            "okto_pulse_add_ideation_knowledge",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+            title="must-not-create",
+            content="must-not-persist",
+        ),
+        await _call(
+            "okto_pulse_delete_ideation_knowledge",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+            knowledge_id=missing_kb,
+        ),
+        await _call(
+            "okto_pulse_ask_ideation_choice_question",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+            question="must-not-create",
+            options="A|B",
+        ),
+        await _call(
+            "okto_pulse_answer_ideation_question",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+            qa_id=missing_qa,
+            selected="opt_0",
+        ),
+        await _call(
+            "okto_pulse_delete_ideation_question",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+            qa_id=missing_qa,
+        ),
+        await _call(
+            "okto_pulse_evaluate_ideation",
+            board_id=BOARD_ID,
+            ideation_id=missing,
+        ),
+    ]
+
+    assert results == [
+        {"error": "Ideation not found"},
+        {"error": "Ideation not found"},
+        {"error": "Snapshot v1 not found"},
+        {"error": "Ideation not found"},
+        {"error": "Ideation not found"},
+        {"error": "Ideation not found"},
+        {"error": "Ideation not found"},
+        {"error": "Ideation not found"},
+        {"error": "Q&A item not found or invalid selection"},
+        {"error": "Q&A item not found"},
+        {"error": "Ideation not found"},
+    ]
+    assert await _ideation_graph_state(_board_scope_graph) == before
+
+
+@pytest.mark.asyncio
+async def test_ideation_direct_use_cases_compare_actor_and_command_board(
+    _board_scope_graph,
+):
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.application.use_cases.mcp_ideation_crud import (
+        McpAskIdeationChoiceQuestionCommand,
+        McpAskIdeationChoiceQuestionUseCase,
+        McpGetIdeationCommand,
+        McpGetIdeationSnapshotCommand,
+        McpGetIdeationSnapshotUseCase,
+        McpGetIdeationUseCase,
+        McpUpdateIdeationCommand,
+        McpUpdateIdeationUseCase,
+    )
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.models.schemas import (
+        IdeationQACreate,
+        IdeationQAChoiceOption,
+        IdeationUpdate,
+    )
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
+    foreign = _board_scope_graph["foreign"]
+    ideation_id = foreign["ideation_id"]
+    actor = ActorContext(
+        USER_ID,
+        "mcp",
+        board_id=BOARD_ID,
+        realm_id=LOCAL_REALM_ID,
+    )
+    uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
+    before = await _ideation_graph_state(_board_scope_graph)
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await McpGetIdeationUseCase().execute(
+                McpGetIdeationCommand(ideation_id, OTHER_BOARD_ID),
+                actor=actor,
+                uow=uow,
+            )
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await McpUpdateIdeationUseCase().execute(
+                McpUpdateIdeationCommand(
+                    ideation_id,
+                    OTHER_BOARD_ID,
+                    IdeationUpdate(title="must-not-persist"),
+                ),
+                actor=actor,
+                uow=uow,
+            )
+    async with uowf(actor=actor) as uow:
+        snapshot = await McpGetIdeationSnapshotUseCase().execute(
+            McpGetIdeationSnapshotCommand(ideation_id, OTHER_BOARD_ID, 1),
+            actor=actor,
+            uow=uow,
+        )
+        asked = await McpAskIdeationChoiceQuestionUseCase().execute(
+            McpAskIdeationChoiceQuestionCommand(
+                OTHER_BOARD_ID,
+                ideation_id,
+                IdeationQACreate(
+                    question="must-not-create",
+                    question_type="choice",
+                    choices=[IdeationQAChoiceOption(id="opt_0", label="A")],
+                ),
+            ),
+            actor=actor,
+            uow=uow,
+        )
+
+    assert snapshot.snapshot is None
+    assert asked.ideation_not_found is True
+    assert await _ideation_graph_state(_board_scope_graph) == before
+
+
+@pytest.mark.asyncio
+async def test_ideation_qa_rejects_same_board_wrong_parent_without_log(
+    _board_scope_graph,
+):
+    local = _board_scope_graph["local"]
+    sibling = _board_scope_graph["local_sibling"]["ideation_id"]
+    before = await _ideation_graph_state(_board_scope_graph)
+
+    answered = await _call(
+        "okto_pulse_answer_ideation_question",
+        board_id=BOARD_ID,
+        ideation_id=sibling,
+        qa_id=local["qa_id"],
+        selected="opt_0",
+    )
+    deleted = await _call(
+        "okto_pulse_delete_ideation_question",
+        board_id=BOARD_ID,
+        ideation_id=sibling,
+        qa_id=local["qa_id"],
+    )
+
+    assert answered == {"error": "Q&A item not found or invalid selection"}
+    assert deleted == {"error": "Q&A item not found"}
+    assert await _ideation_graph_state(_board_scope_graph) == before
+
+
+@pytest.mark.asyncio
+async def test_ideation_same_board_matrix_preserves_all_capabilities(
+    _board_scope_graph,
+):
+    local = _board_scope_graph["local"]
+    ideation_id = local["ideation_id"]
+
+    snapshot = await _call(
+        "okto_pulse_get_ideation_snapshot",
+        board_id=BOARD_ID,
+        ideation_id=ideation_id,
+        version="1",
+    )
+    history = await _call(
+        "okto_pulse_get_ideation_history",
+        board_id=BOARD_ID,
+        ideation_id=ideation_id,
+    )
+    knowledge = await _call(
+        "okto_pulse_get_ideation_knowledge",
+        board_id=BOARD_ID,
+        ideation_id=ideation_id,
+        knowledge_id=local["kb_id"],
+    )
+    updated = await _call(
+        "okto_pulse_update_ideation",
+        board_id=BOARD_ID,
+        ideation_id=ideation_id,
+        title="Local scoped update",
+    )
+    answered = await _call(
+        "okto_pulse_answer_ideation_question",
+        board_id=BOARD_ID,
+        ideation_id=ideation_id,
+        qa_id=local["qa_id"],
+        selected="opt_0",
+    )
+    deleted_qa = await _call(
+        "okto_pulse_delete_ideation_question",
+        board_id=BOARD_ID,
+        ideation_id=ideation_id,
+        qa_id=local["qa_id"],
+    )
+    deleted_kb = await _call(
+        "okto_pulse_delete_ideation_knowledge",
+        board_id=BOARD_ID,
+        ideation_id=ideation_id,
+        knowledge_id=local["kb_id"],
+    )
+
+    assert snapshot["title"] == "local-secret-snapshot"
+    assert any(item["id"] == local["history_id"] for item in history["history"])
+    assert knowledge["id"] == local["kb_id"]
+    assert updated["ideation"]["title"] == "Local scoped update"
+    assert answered["success"] is True
+    assert deleted_qa == {"success": True}
+    assert deleted_kb == {"success": True}
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,6 @@ Usage:
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,9 +41,17 @@ from okto_pulse.core.kg.interfaces.graph_transaction import GraphTransaction
 from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
     GlobalDiscoveryRuntime,
 )
+from okto_pulse.core.kg.interfaces.global_discovery_recovery import (
+    GlobalDiscoveryRecovery,
+)
 from okto_pulse.core.kg.interfaces.kg_config import KGConfig
 from okto_pulse.core.kg.interfaces.quarantine_restore import QuarantineRestore
 from okto_pulse.core.kg.interfaces.rate_limiter import RateLimiter
+from okto_pulse.core.kg.interfaces.reflective_query import (
+    ReflectiveCriticPort,
+    ReflectiveRetrievalPort,
+    ReflectiveTelemetryPort,
+)
 from okto_pulse.core.kg.interfaces.rebuild_ingestion import RebuildIngestionPort
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
@@ -80,6 +87,7 @@ class KGProviderRegistry:
     graph_lifecycle: GraphLifecycle | None = None
     graph_runtime_store: GraphRuntimeStore | None = None
     global_discovery_runtime: GlobalDiscoveryRuntime | None = None
+    global_discovery_recovery: GlobalDiscoveryRecovery | None = None
     board_source_reader: BoardSourceReader | None = None
     rebuild_ingestion_port: RebuildIngestionPort | None = None
     rebuild_audit_artifact_store: RebuildAuditArtifactStore | None = None
@@ -95,6 +103,12 @@ class KGProviderRegistry:
     # by the Community composition; read-time fail-closed via
     # require_graph_recovery.
     graph_recovery: GraphRecovery | None = None
+    # Reflective query composition.  The state machine is Core-owned; concrete
+    # retrieval/critic/telemetry providers are edition-owned and resolved only
+    # when the reflective surface is invoked.
+    reflective_retrieval: ReflectiveRetrievalPort | None = None
+    reflective_critic: ReflectiveCriticPort | None = None
+    reflective_telemetry: ReflectiveTelemetryPort | None = None
 
     # ------------------------------------------------------------------ R03 IMP1
     # AC3 (base fail-closed): cache_backend, rate_limiter and session_store are
@@ -133,6 +147,9 @@ class KGProviderRegistry:
     def require_global_discovery_runtime(self) -> GlobalDiscoveryRuntime:
         return self._require_provider("global_discovery_runtime")
 
+    def require_global_discovery_recovery(self) -> GlobalDiscoveryRecovery:
+        return self._require_provider("global_discovery_recovery")
+
     def require_board_source_reader(self) -> BoardSourceReader:
         return self._require_provider("board_source_reader")
 
@@ -155,6 +172,15 @@ class KGProviderRegistry:
 
     def require_graph_recovery(self) -> GraphRecovery:
         return self._require_provider("graph_recovery")
+
+    def require_reflective_retrieval(self) -> ReflectiveRetrievalPort:
+        return self._require_provider("reflective_retrieval")
+
+    def require_reflective_critic(self) -> ReflectiveCriticPort:
+        return self._require_provider("reflective_critic")
+
+    def require_reflective_telemetry(self) -> ReflectiveTelemetryPort:
+        return self._require_provider("reflective_telemetry")
 
 
 _lock = runtime_lock("kg.interfaces.registry")

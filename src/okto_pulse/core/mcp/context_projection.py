@@ -353,6 +353,17 @@ class MCPContextProjectionService:
             result, profile=profile, tool_name="okto_pulse_get_spec_context"
         )
 
+    def project_entity_context(
+        self,
+        result: Mapping[str, Any],
+        *,
+        profile: str | None,
+        tool_name: str,
+    ) -> dict[str, Any]:
+        """Apply the same profile/error/metadata contract to another context tool."""
+
+        return self._project(result, profile=profile, tool_name=tool_name)
+
 
 def _count_fields(obj: Any) -> int:
     """Recursively count dict keys + list items, to measure null-omission impact."""
@@ -376,3 +387,13 @@ def project_spec_context(
     result: Mapping[str, Any], *, profile: str | None
 ) -> dict[str, Any]:
     return _SERVICE.project_spec_context(result, profile=profile)
+
+
+def project_entity_context(
+    result: Mapping[str, Any], *, profile: str | None, tool_name: str
+) -> dict[str, Any]:
+    return _SERVICE.project_entity_context(
+        result,
+        profile=profile,
+        tool_name=tool_name,
+    )

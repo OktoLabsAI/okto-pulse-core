@@ -34,6 +34,7 @@ from okto_pulse.core.mcp.helpers import (
     _clean_str_list,
     coerce_to_list_str,
     parse_multi_value,
+    parse_options_json,
 )
 
 
@@ -205,6 +206,26 @@ def test_malformed_json_raises_value_error():
     raw = '["Option A", "Option B"'  # missing closing bracket
     with pytest.raises(ValueError, match="malformed JSON"):
         parse_multi_value(raw)
+
+
+def test_choice_options_use_native_recommended_boolean():
+    out = parse_options_json(
+        [{"label": "Safe path", "recommended": False, "tradeoff": "slower"}]
+    )
+    assert out == [
+        {"label": "Safe path", "recommended": False, "tradeoff": "slower"}
+    ]
+
+
+def test_legacy_false_string_is_not_truthy():
+    out = parse_options_json('[{"label":"A","recommended":"false"}]')
+    assert out == [{"label": "A", "recommended": False, "tradeoff": None}]
+
+
+@pytest.mark.parametrize("value", ["maybe", 2, [], {}])
+def test_invalid_recommended_value_is_rejected(value):
+    with pytest.raises(ValueError, match="expected a boolean"):
+        parse_options_json([{"label": "A", "recommended": value}])
 
 
 def test_json_array_path_only_engaged_when_input_starts_with_bracket():

@@ -32,6 +32,7 @@ from sqlalchemy_test_models import (
     Ideation,
     Refinement,
     RefinementKnowledgeBase,
+    ResourceNotApplicable,
     Spec,
 )
 from okto_pulse.core.mcp.server import _effective_empty_copy_response
@@ -87,7 +88,10 @@ async def _call(name: str, **kwargs) -> dict:
 
 async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=False,
                                   with_architecture=False,
-                                  with_ideation_architecture=False):
+                                  with_ideation_architecture=False,
+                                  with_kb_na_mark=False,
+                                  with_mockup_na_mark=False,
+                                  with_architecture_na_mark=False):
     """A manual/legacy spec (NO direct resources) linked to a refinement that
     DOES carry the requested resource(s) — the effective inherited case."""
     board_id = _id("board")
@@ -121,6 +125,22 @@ async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=Fals
             db.add(RefinementKnowledgeBase(
                 id=ref_kb_id, refinement_id=refinement_id, title="Ref KB",
                 description="d", content="ref content", mime_type="text/markdown",
+                created_by=USER_ID,
+            ))
+        for resource_type, marked in (
+            ("knowledge_base", with_kb_na_mark),
+            ("mockup", with_mockup_na_mark),
+            ("architecture", with_architecture_na_mark),
+        ):
+            if not marked:
+                continue
+            db.add(ResourceNotApplicable(
+                board_id=board_id,
+                entity_type="refinement",
+                entity_id=refinement_id,
+                resource_type=resource_type,
+                justification=f"Historical mark superseded by provided {resource_type}",
+                source_channel="mcp",
                 created_by=USER_ID,
             ))
         if with_architecture:
@@ -180,6 +200,81 @@ async def test_copy_knowledge_falls_back_to_effective_and_gate_is_covered(db_fac
 
 
 @pytest.mark.asyncio
+async def test_copy_knowledge_ignores_ineffective_inherited_na_mark(db_factory):
+    seed = await _legacy_spec_inheriting(
+        db_factory,
+        with_kb=True,
+        with_kb_na_mark=True,
+    )
+
+    result = await _call(
+        "okto_pulse_copy_knowledge_to_card",
+        board_id=seed["board_id"],
+        spec_id=seed["spec_id"],
+        card_id=seed["card_id"],
+    )
+
+    assert result.get("success") is True, result
+    assert result.get("reason") != "not_applicable", result
+    assert result["fallback"] is True
+    assert result["copied"] >= 1
+
+    async with db_factory() as db:
+        coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
+            seed["board_id"], seed["spec_id"]
+        )
+    assert not [
+        item
+        for item in coverage["uncovered_resources"]
+        if item["resource_type"] == "knowledge_base"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_all_copy_tools_ignore_ineffective_inherited_na_marks(db_factory):
+    seed = await _legacy_spec_inheriting(
+        db_factory,
+        with_kb=True,
+        with_mockup=True,
+        with_architecture=True,
+        with_kb_na_mark=True,
+        with_mockup_na_mark=True,
+        with_architecture_na_mark=True,
+    )
+
+    knowledge = await _call(
+        "okto_pulse_copy_knowledge_to_card",
+        board_id=seed["board_id"],
+        spec_id=seed["spec_id"],
+        card_id=seed["card_id"],
+    )
+    mockup = await _call(
+        "okto_pulse_copy_mockups_to_card",
+        board_id=seed["board_id"],
+        spec_id=seed["spec_id"],
+        card_id=seed["card_id"],
+    )
+    architecture = await _call(
+        "okto_pulse_copy_architecture_to_card",
+        board_id=seed["board_id"],
+        spec_id=seed["spec_id"],
+        card_id=seed["card_id"],
+    )
+
+    for result in (knowledge, mockup, architecture):
+        assert result.get("success") is True, result
+        assert result.get("reason") != "not_applicable", result
+        assert int(result.get("total_on_card") or 0) >= 1, result
+
+    async with db_factory() as db:
+        coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
+            seed["board_id"], seed["spec_id"]
+        )
+    assert coverage["allowed"] is True, coverage
+    assert coverage["uncovered_resources"] == [], coverage
+
+
+@pytest.mark.asyncio
 async def test_copy_mockups_falls_back_to_effective(db_factory):
     seed = await _legacy_spec_inheriting(db_factory, with_mockup=True)
 
@@ -195,6 +290,58 @@ async def test_copy_mockups_falls_back_to_effective(db_factory):
         mockups = list(card.screen_mockups or [])
     # Mockup keeps its id (the gate identity) == the effective refinement mockup.
     assert any(m.get("id") == seed["ref_mockup_id"] for m in mockups), mockups
+
+
+@pytest.mark.asyncio
+async def test_copy_knowledge_rejects_mixed_valid_and_foreign_ids_atomically(db_factory):
+    seed = await _legacy_spec_inheriting(db_factory, with_kb=True)
+    foreign_id = _id("foreign-kb")
+
+    result = await _call(
+        "okto_pulse_copy_knowledge_to_card",
+        board_id=seed["board_id"],
+        spec_id=seed["spec_id"],
+        card_id=seed["card_id"],
+        knowledge_ids=[seed["ref_kb_id"], foreign_id],
+    )
+
+    assert result["error"] == "resource_selection_invalid", result
+    assert result["resource_type"] == "knowledge_base"
+    assert result["requested"] == [seed["ref_kb_id"], foreign_id]
+    assert result["matched"] == [seed["ref_kb_id"]]
+    assert result["missing"] == [foreign_id]
+    assert result["retryable"] is False
+
+    # Validation happens before any card write: a mixed valid/foreign request
+    # cannot leave the valid half copied behind.
+    async with db_factory() as db:
+        card = await db.get(Card, seed["card_id"])
+        assert list(card.knowledge_bases or []) == []
+
+
+@pytest.mark.asyncio
+async def test_copy_mockups_rejects_mixed_valid_and_foreign_ids_atomically(db_factory):
+    seed = await _legacy_spec_inheriting(db_factory, with_mockup=True)
+    foreign_id = _id("foreign-mockup")
+
+    result = await _call(
+        "okto_pulse_copy_mockups_to_card",
+        board_id=seed["board_id"],
+        spec_id=seed["spec_id"],
+        card_id=seed["card_id"],
+        screen_ids=[seed["ref_mockup_id"], foreign_id],
+    )
+
+    assert result["error"] == "resource_selection_invalid", result
+    assert result["resource_type"] == "mockup"
+    assert result["requested"] == [seed["ref_mockup_id"], foreign_id]
+    assert result["matched"] == [seed["ref_mockup_id"]]
+    assert result["missing"] == [foreign_id]
+    assert result["retryable"] is False
+
+    async with db_factory() as db:
+        card = await db.get(Card, seed["card_id"])
+        assert list(card.screen_mockups or []) == []
 
 
 @pytest.mark.asyncio

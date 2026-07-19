@@ -52,6 +52,7 @@ from typing import Any, Callable
 from pydantic import ValidationError
 
 from okto_pulse.core.application.scope import ActorScope, QueryScope
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -68,6 +69,7 @@ KIND_BOARD_CONFIG = "board_config"
 # Export reads are unpaginated by design (admin backup surface); the ceiling
 # only guards against a pathological catalog.
 _EXPORT_LIST_LIMIT = 10_000
+_BOARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +161,34 @@ def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) 
     return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
 
 
+def _shared_board_query_scope(actor: ActorContext, board_id: str) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(
+        target_board_id=board_id,
+        allowed_board_ids={board_id},
+        require_ownership=False,
+    )
+
+
+async def _require_board_access(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+    *,
+    write: bool,
+) -> QueryScope:
+    board = await load_accessible_board(
+        uow,
+        board_id,
+        actor,
+        allowed_share_permissions=(
+            _BOARD_WRITE_SHARE_PERMISSIONS if write else None
+        ),
+    )
+    if board is None:
+        raise EntityNotFoundError("board", board_id)
+    return _shared_board_query_scope(actor, board_id)
+
+
 async def _finalize(uow: PulseUnitOfWork, *, dry_run: bool) -> None:
     """Commit a real import; roll a dry-run back explicitly (the request-scoped
     ``get_db`` session commits at request end, so staged writes must not survive)."""
@@ -222,12 +252,12 @@ class ExportGuidelinesUseCase:
             for g in globals_
         ]
         if command.board_id:
-            board_scope = _query_scope_for_actor(actor, board_id=command.board_id)
-            board = await uow.services.boards.get_board(
-                command.board_id, actor.actor_id, query_scope=board_scope
+            board_scope = await _require_board_access(
+                uow,
+                command.board_id,
+                actor,
+                write=False,
             )
-            if not board:
-                raise EntityNotFoundError("board", command.board_id)
             entries = await service.get_board_guidelines(
                 command.board_id, surface="menu_board", query_scope=board_scope
             )
@@ -283,15 +313,37 @@ class ImportGuidelinesUseCase:
             )
         }
         inline_titles: dict[str, set[str]] = {}
+        inline_scopes: dict[str, QueryScope] = {}
+
+        # Preflight every target board before any create call.  A later foreign
+        # inline item therefore cannot leave earlier global/inline writers or
+        # their activity/event side effects behind.
+        for index, item in enumerate(command.items):
+            if (getattr(item, "scope", None) or "global") != "inline":
+                continue
+            target_board = command.board_id or getattr(item, "board_id", None)
+            if not target_board:
+                raise ImportItemError(
+                    index,
+                    "Inline guideline requires a board_id "
+                    "(on the item or as the ?board_id= query parameter).",
+                )
+            if target_board not in inline_scopes:
+                try:
+                    inline_scopes[target_board] = await _require_board_access(
+                        uow,
+                        target_board,
+                        actor,
+                        write=True,
+                    )
+                except EntityNotFoundError:
+                    raise ImportItemError(
+                        index, f"Board '{target_board}' not found."
+                    ) from None
 
         async def _inline_titles_for(board_id: str) -> set[str]:
             if board_id not in inline_titles:
-                board_scope = _query_scope_for_actor(actor, board_id=board_id)
-                board = await uow.services.boards.get_board(
-                    board_id, actor.actor_id, query_scope=board_scope
-                )
-                if not board:
-                    raise EntityNotFoundError("board", board_id)
+                board_scope = inline_scopes[board_id]
                 entries = await service.get_board_guidelines(
                     board_id, surface="menu_board", query_scope=board_scope
                 )
@@ -358,7 +410,7 @@ class ImportGuidelinesUseCase:
                         scope="inline",
                         board_id=target_board,
                     ),
-                    query_scope=_query_scope_for_actor(actor, board_id=target_board),
+                    query_scope=inline_scopes[target_board],
                 )
                 titles.add(title_key)
                 result.created += 1
@@ -388,6 +440,7 @@ def _design_system_export_item(serialized: dict[str, Any]) -> dict[str, Any]:
 @dataclass(frozen=True)
 class ExportDesignSystemsCommand:
     design_system_id: str | None = None
+    board_id: str | None = None
 
 
 class ExportDesignSystemsUseCase:
@@ -404,15 +457,43 @@ class ExportDesignSystemsUseCase:
 
         service = uow.services.design_systems
         if command.design_system_id:
+            board_authorized = bool(command.board_id)
+            if board_authorized:
+                try:
+                    await _require_board_access(
+                        uow,
+                        command.board_id or "",
+                        actor,
+                        write=False,
+                    )
+                except EntityNotFoundError:
+                    from okto_pulse.core.services.design_system import (
+                        DesignSystemError,
+                    )
+
+                    raise DesignSystemError(
+                        "design_system_not_found",
+                        f"Design System '{command.design_system_id}' was not found.",
+                        404,
+                        {"design_system_id": command.design_system_id},
+                    ) from None
             serialized = [
                 serialize_design_system(
-                    await service.require_design_system(command.design_system_id)
+                    await service.require_authorized_design_system(
+                        command.design_system_id,
+                        actor.actor_id,
+                        board_id=command.board_id,
+                        board_access_authorized=board_authorized,
+                    )
                 )
             ]
         else:
             serialized = [
                 serialize_design_system(item)
-                for item in await service.list_catalog(scope="global")
+                for item in await service.list_catalog(
+                    scope="global",
+                    owner_id=actor.actor_id,
+                )
             ]
         return build_envelope(
             KIND_DESIGN_SYSTEMS,
@@ -446,11 +527,52 @@ class ImportDesignSystemsUseCase:
         service = uow.services.design_systems
         result = ImportResult()
         existing: dict[tuple[str, str | None], set[str]] = {}
+        inline_boards: set[str] = set()
+
+        # Resolve every inline board before the first catalog writer.  Foreign,
+        # cross-realm and viewer-only targets therefore have zero downstream
+        # create calls even when they appear after valid global items.
+        for index, item in enumerate(command.items):
+            scope = item.get("scope") or "global"
+            if scope not in ("global", "inline"):
+                raise ImportItemError(
+                    index, f"Unsupported design system scope '{scope}'."
+                )
+            if scope != "inline":
+                continue
+            board_id = item.get("board_id")
+            if not board_id:
+                raise ImportItemError(
+                    index,
+                    {
+                        "error": "design_system_inline_requires_board",
+                        "code": "design_system_inline_requires_board",
+                        "message": "Inline Design Systems require a board_id (AC2).",
+                        "status_code": 422,
+                    },
+                )
+            if board_id not in inline_boards:
+                try:
+                    await _require_board_access(
+                        uow,
+                        board_id,
+                        actor,
+                        write=True,
+                    )
+                except EntityNotFoundError:
+                    raise ImportItemError(
+                        index, f"Board '{board_id}' not found."
+                    ) from None
+                inline_boards.add(board_id)
 
         async def _titles_for(scope: str, board_id: str | None) -> set[str]:
             partition = (scope, board_id)
             if partition not in existing:
-                catalog = await service.list_catalog(scope=scope, board_id=board_id)
+                catalog = await service.list_catalog(
+                    scope=scope,
+                    board_id=board_id,
+                    owner_id=actor.actor_id if scope == "global" else None,
+                )
                 existing[partition] = {_norm_key(item.title) for item in catalog}
             return existing[partition]
 
@@ -620,10 +742,17 @@ class ImportBoardConfigUseCase:
     async def execute(
         self, command: ImportBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ImportResult:
+        # Keep the import path aligned with every other global template writer.
+        # This check deliberately precedes both validation reads and the first
+        # staged create so denied callers have zero downstream mutations.
+        from okto_pulse.core.application.use_cases.admin_catalog import (
+            require_global_catalog_admin,
+        )
         from okto_pulse.core.services.default_board_configuration import (
             DefaultBoardConfigurationError,
         )
 
+        require_global_catalog_admin(actor)
         service = uow.services.default_board_config
         result = ImportResult()
         query_scope = _query_scope_for_actor(actor)

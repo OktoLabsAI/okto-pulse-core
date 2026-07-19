@@ -33,9 +33,12 @@ Layout:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
+import secrets
 import threading
+import time
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -47,6 +50,7 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
 )
+from okto_pulse.core.kg.query_contract import CognitiveOutcomeType
 from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 
@@ -405,21 +409,12 @@ class KGRebuiltEventPublisher:
 # ---------------------------------------------------------------------------
 
 
-class CognitivePendingOutcomeType(str, Enum):
-    """KG-03A.3 — bounded outcome enum for terminal ``consolidated``
-    cognitive pending transitions (br_7500e5f9 + tr_16ec917c).
+CognitivePendingOutcomeType = CognitiveOutcomeType
+"""Backward-compatible domain name for the canonical KG outcome enum.
 
-    Every successful ``consolidated`` mutation MUST attribute one of
-    these outcome types (or use ``no_action_required`` with a
-    justifying reason). Empty consolidations are rejected.
-    """
-
-    RELATION_CREATED = "relation_created"
-    CANDIDATE_CREATED = "candidate_created"
-    FORMAL_DECISION_PROMOTED = "formal_decision_promoted"
-    EXISTING_DECISION_LINKED = "existing_decision_linked"
-    CONTRADICTION_DISMISSED = "contradiction_dismissed"
-    NO_ACTION_REQUIRED = "no_action_required"
+The values now originate in :mod:`okto_pulse.core.kg.query_contract`, which is
+also consumed by MCP schema introspection and contract-parity tests.
+"""
 
 
 class CognitiveItemStatus(str, Enum):
@@ -539,6 +534,253 @@ _materialized_samples = runtime_counter_sample_buffer(
     _MATERIALIZED_LABELS,
     sum_fields=("item_count",),
 )
+
+_COGNITIVE_OVERLAY_REVISION_VERSION = 1
+_COGNITIVE_OVERLAY_REVISION_ARTIFACT_ID = "cognitive_pending_overlay_revision"
+_COGNITIVE_OVERLAY_MAX_BOARDS = 2_000
+_COGNITIVE_OVERLAY_MAX_GENERATIONS_PER_BOARD = 256
+_COGNITIVE_OVERLAY_MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
+_COGNITIVE_OVERLAY_MAX_ITEMS_PER_BOARD = 10_000
+_COGNITIVE_OVERLAY_MAX_CAPTURE_SECONDS = 300.0
+
+
+class CognitivePendingOverlaySnapshotError(RuntimeError):
+    """A bounded cognitive publication-overlay snapshot could not be proven."""
+
+    def __init__(self, code: str, reason: str) -> None:
+        super().__init__(f"{code}: {reason}")
+        self.code = code
+        self.reason = reason
+
+
+def _cognitive_overlay_revision_key() -> RebuildAuditKey:
+    return RebuildAuditKey(
+        namespace="global_discovery_recovery",
+        board_id="_global",
+        artifact_id=_COGNITIVE_OVERLAY_REVISION_ARTIFACT_ID,
+    )
+
+
+def _valid_stable_cognitive_overlay_revision(
+    payload: Mapping[str, Any] | None,
+) -> bool:
+    if not isinstance(payload, Mapping):
+        return False
+    revision = payload.get("revision")
+    nonce = payload.get("nonce")
+    return (
+        payload.get("version") == _COGNITIVE_OVERLAY_REVISION_VERSION
+        and payload.get("state") == "stable"
+        and isinstance(revision, int)
+        and not isinstance(revision, bool)
+        and revision >= 0
+        and isinstance(nonce, str)
+        and 16 <= len(nonce) <= 128
+    )
+
+
+def _cognitive_overlay_revision_fingerprint(payload: Mapping[str, Any]) -> str:
+    binding = {
+        "version": payload["version"],
+        "revision": payload["revision"],
+        "nonce": payload["nonce"],
+    }
+    encoded = json.dumps(
+        binding,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _next_cognitive_overlay_revision(
+    current: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    raw_revision = current.get("revision") if isinstance(current, dict) else None
+    base_revision = (
+        raw_revision
+        if isinstance(raw_revision, int)
+        and not isinstance(raw_revision, bool)
+        and raw_revision >= 0
+        else 0
+    )
+    revision = base_revision + 1
+    nonce = secrets.token_urlsafe(24)
+    common = {
+        "version": _COGNITIVE_OVERLAY_REVISION_VERSION,
+        "revision": revision,
+        "nonce": nonce,
+    }
+    return ({**common, "state": "mutating"}, {**common, "state": "stable"})
+
+
+@dataclass(frozen=True, slots=True)
+class CognitivePendingOverlaySnapshot:
+    """Immutable active-hold projection bound to one durable revision."""
+
+    revision_fingerprint: str
+    exclusions: tuple[tuple[str, tuple[tuple[str, str], ...]], ...]
+
+    def exclusions_for_board(self, board_id: str) -> dict[str, str]:
+        requested = str(board_id)
+        for captured_board_id, rows in self.exclusions:
+            if captured_board_id == requested:
+                return dict(rows)
+        return {}
+
+
+@dataclass(frozen=True, slots=True)
+class CognitivePendingOverlaySnapshotService:
+    """Cheap revision reads plus bounded, drift-checked overlay capture."""
+
+    artifact_store: RebuildAuditArtifactStore
+
+    def current_fingerprint(self) -> str:
+        key = _cognitive_overlay_revision_key()
+        current = self.artifact_store.read_json(key)
+        if _valid_stable_cognitive_overlay_revision(current):
+            return _cognitive_overlay_revision_fingerprint(current)
+        if isinstance(current, Mapping) and current.get("state") == "unfenced":
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_revision_unfenced",
+                "artifact adapter cannot serialize ledger and revision writes",
+            )
+
+        def repair(
+            observed: dict[str, Any] | None,
+        ) -> dict[str, Any]:
+            if _valid_stable_cognitive_overlay_revision(observed):
+                return dict(observed)
+            _pending, stable = _next_cognitive_overlay_revision(observed)
+            return stable
+
+        repaired = self.artifact_store.replace_json(key, repair)
+        if not _valid_stable_cognitive_overlay_revision(repaired):
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_revision_invalid",
+                "overlay revision could not be initialized or repaired",
+            )
+        return _cognitive_overlay_revision_fingerprint(repaired)
+
+    def capture(
+        self,
+        *,
+        board_ids: Sequence[str],
+        deadline_seconds: float,
+    ) -> CognitivePendingOverlaySnapshot:
+        normalized = tuple(sorted({str(board_id).strip() for board_id in board_ids}))
+        if not normalized or any(not board_id for board_id in normalized):
+            raise ValueError("board_ids must contain non-empty identifiers")
+        if len(normalized) > _COGNITIVE_OVERLAY_MAX_BOARDS:
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_board_limit_exceeded",
+                f"board count exceeds {_COGNITIVE_OVERLAY_MAX_BOARDS}",
+            )
+        if any(len(board_id) > 255 for board_id in normalized):
+            raise ValueError("board_id length must not exceed 255 characters")
+        budget = float(deadline_seconds)
+        if not 0 < budget <= _COGNITIVE_OVERLAY_MAX_CAPTURE_SECONDS:
+            raise ValueError(
+                "deadline_seconds must be positive and no greater than 300"
+            )
+        deadline = time.monotonic() + budget
+        before = self.current_fingerprint()
+        captured: list[tuple[str, tuple[tuple[str, str], ...]]] = []
+        from okto_pulse.core.kg.connectivity_guard import (
+            CANONICAL_LEARNING_WORKING_ONLY_REASON,
+        )
+
+        bounded_list = getattr(self.artifact_store, "list_json_bounded", None)
+        bounded_implementation = getattr(
+            type(self.artifact_store), "list_json_bounded", None
+        )
+        if (
+            not callable(bounded_list)
+            or bounded_implementation
+            is RebuildAuditArtifactStore.list_json_bounded
+        ):
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_bounded_reader_unavailable",
+                "artifact adapter does not provide bounded overlay reads",
+            )
+        for board_id in normalized:
+            if time.monotonic() >= deadline:
+                raise CognitivePendingOverlaySnapshotError(
+                    "cognitive_overlay_capture_timeout",
+                    "overlay capture exceeded its explicit deadline",
+                )
+            try:
+                records = bounded_list(
+                    RebuildAuditKey(
+                        namespace="cognitive_pending",
+                        board_id=board_id,
+                    ),
+                    max_results=_COGNITIVE_OVERLAY_MAX_GENERATIONS_PER_BOARD,
+                    max_document_bytes=_COGNITIVE_OVERLAY_MAX_DOCUMENT_BYTES,
+                )
+            except Exception as exc:
+                raise CognitivePendingOverlaySnapshotError(
+                    "cognitive_overlay_capture_failed",
+                    f"bounded overlay read failed for board {board_id!r}",
+                ) from exc
+            latest = max(
+                records,
+                key=lambda row: (
+                    str(row.get("recorded_at", "")),
+                    str(row.get("kg_generation_id", "")),
+                ),
+                default=None,
+            )
+            exclusions: dict[str, str] = {}
+            if latest is not None:
+                items = latest.get("items")
+                if items is not None and not isinstance(items, list):
+                    raise CognitivePendingOverlaySnapshotError(
+                        "cognitive_overlay_record_invalid",
+                        f"overlay items are invalid for board {board_id!r}",
+                    )
+                if isinstance(items, list):
+                    if len(items) > _COGNITIVE_OVERLAY_MAX_ITEMS_PER_BOARD:
+                        raise CognitivePendingOverlaySnapshotError(
+                            "cognitive_overlay_item_limit_exceeded",
+                            f"overlay item limit exceeded for board {board_id!r}",
+                        )
+                    for raw in items:
+                        if not isinstance(raw, Mapping):
+                            raise CognitivePendingOverlaySnapshotError(
+                                "cognitive_overlay_record_invalid",
+                                f"overlay item is invalid for board {board_id!r}",
+                            )
+                        if (
+                            str(raw.get("status") or "") in ACTIVE_ITEM_STATUSES
+                            and str(raw.get("reason_code") or "")
+                            == CANONICAL_LEARNING_WORKING_ONLY_REASON
+                        ):
+                            artifact_id = normalize_cognitive_artifact_id(
+                                str(raw.get("source_ref") or "")
+                            )
+                            if artifact_id:
+                                exclusions[artifact_id] = (
+                                    CANONICAL_LEARNING_WORKING_ONLY_REASON
+                                )
+            captured.append((board_id, tuple(sorted(exclusions.items()))))
+
+        after = self.current_fingerprint()
+        if before != after:
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_snapshot_drift",
+                "cognitive overlay changed while it was captured",
+            )
+        if time.monotonic() >= deadline:
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_capture_timeout",
+                "overlay capture exceeded its explicit deadline",
+            )
+        return CognitivePendingOverlaySnapshot(
+            revision_fingerprint=before,
+            exclusions=tuple(captured),
+        )
 _materialized_samples_lock = runtime_lock("kg.rebuild_audit.materialized.samples")
 
 
@@ -1530,6 +1772,48 @@ class CognitiveConsolidationItemStore:
             ),
         )
 
+    def _replace_record_with_overlay_revision(
+        self,
+        *,
+        key: RebuildAuditKey,
+        transform: Callable[[dict[str, Any] | None], dict[str, Any]],
+    ) -> dict[str, Any]:
+        revisioned_replace = getattr(
+            self.artifact_store, "replace_json_with_revision", None
+        )
+        implementation = getattr(
+            type(self.artifact_store), "replace_json_with_revision", None
+        )
+        if (
+            not callable(revisioned_replace)
+            or implementation
+            is RebuildAuditArtifactStore.replace_json_with_revision
+        ):
+            # Backward-compatible normal ledger operation for an older edition
+            # adapter.  Mark the overlay explicitly *unfenced* so Global
+            # Discovery recovery remains fail-closed until the adapter is
+            # upgraded; never misrepresent three separate writes as atomic.
+            revision_key = _cognitive_overlay_revision_key()
+            pending, _stable = _next_cognitive_overlay_revision(
+                self.artifact_store.read_json(revision_key)
+            )
+            unfenced = {
+                **pending,
+                "state": "unfenced",
+                "reason": "revisioned_replace_unavailable",
+            }
+            self.artifact_store.write_json_atomic(revision_key, unfenced)
+            target = self.artifact_store.replace_json(key, transform)
+            self.artifact_store.write_json_atomic(revision_key, unfenced)
+            return dict(target)
+        target, _committed_revision = revisioned_replace(
+            key=key,
+            transform=transform,
+            revision_key=_cognitive_overlay_revision_key(),
+            revision_transition=_next_cognitive_overlay_revision,
+        )
+        return dict(target)
+
     @staticmethod
     def _record_key(board_id: str, kg_generation_id: str) -> RebuildAuditKey:
         return RebuildAuditKey(
@@ -1983,7 +2267,10 @@ class CognitiveConsolidationItemStore:
                 "items": [i.to_dict() for i in items],
             }
             key = self._record_key(board_id, kg_generation_id)
-            self.artifact_store.write_json_atomic(key, payload)
+            self._replace_record_with_overlay_revision(
+                key=key,
+                transform=lambda _current: payload,
+            )
             record_ref = self.artifact_store.reference(key)
 
         return len(items), items, counts_by_type, record_ref
@@ -2134,9 +2421,9 @@ class CognitiveConsolidationItemStore:
             record["pending_refs"] = active_refs
 
             key = self._record_key(board_id, kg_generation_id)
-            self.artifact_store.replace_json(
-                key,
-                lambda _current: record,
+            self._replace_record_with_overlay_revision(
+                key=key,
+                transform=lambda _current: record,
             )
 
             # NOTE (Codex audit val_036cb81e):
@@ -2944,6 +3231,9 @@ __all__ = [
     "CognitiveItemUpdateOutcome",
     "CognitiveItemUpdateReasonCode",
     "CognitivePendingOutcomeType",
+    "CognitivePendingOverlaySnapshot",
+    "CognitivePendingOverlaySnapshotError",
+    "CognitivePendingOverlaySnapshotService",
     "CognitivePendingReopenOutcome",
     "CognitivePendingReopenReasonCode",
     "CognitiveMarkerErrorCode",

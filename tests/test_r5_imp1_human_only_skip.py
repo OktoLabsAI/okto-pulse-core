@@ -235,9 +235,16 @@ async def test_evaluate_bug_evaluate_branch_stays_agent_facing(db_factory, _tmp_
                       board_id=board_id, bug_id=bug_id,
                       evidence={"root_cause": "rc", "fix_narrative": "fix"},
                       requested_action="evaluate")
-    # Not refused — a pure classification response (no skip persisted).
+    # Not refused — evaluation stays agent-facing.  Without the edition-owned
+    # canonical context assembler this test harness now fails closed instead of
+    # treating caller evidence as the product record.
     assert out.get("code") != "human_control_required"
-    assert out["status"] == "evaluated"
+    assert out["status"] in {
+        "bug_cognitive_context_unavailable",
+        "bug_source_not_found",
+    }
+    assert out["blocking"] is True
+    assert out["evidence_readiness"]["context_verified"] is False
     store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     assert store.latest_generation(board_id) is None
 

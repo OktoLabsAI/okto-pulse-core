@@ -7,7 +7,8 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import select
+import pytest_asyncio
+from sqlalchemy import delete, select
 
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
@@ -17,6 +18,7 @@ from sqlalchemy_test_models import (
     CardStatus,
     CardType,
     DefaultBoardConfiguration,
+    DefaultBoardConfigurationAudit,
     Spec,
     SpecStatus,
 )
@@ -29,6 +31,35 @@ from okto_pulse.core.services.main import CardOperationError, CardService
 
 
 USER_ID = "task-req-gate-user"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolate_default_board_configuration_rows(db_factory):
+    """Keep this module's committed template fixtures function-scoped.
+
+    The suite intentionally shares one SQLite database for the session.  The
+    default-board store itself is rebound for every test, but that does not (and
+    must not) delete persisted templates.  These MCP tests commit template rows,
+    so clean only rows owned by this module before and after each case.
+    """
+
+    async def clear() -> None:
+        async with db_factory() as db:
+            await db.execute(
+                delete(DefaultBoardConfigurationAudit).where(
+                    DefaultBoardConfigurationAudit.actor_id == USER_ID
+                )
+            )
+            await db.execute(
+                delete(DefaultBoardConfiguration).where(
+                    DefaultBoardConfiguration.created_by == USER_ID
+                )
+            )
+            await db.commit()
+
+    await clear()
+    yield
+    await clear()
 
 
 def _id(prefix: str) -> str:
@@ -368,6 +399,7 @@ async def test_mcp_default_board_config_rejects_explicit_task_requirement_skip(d
 @pytest.mark.asyncio
 async def test_mcp_default_board_config_preserves_omitted_human_skip(db_factory):
     board_id = _id("board")
+    scope = _id("scope")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="MCP default config", owner_id=USER_ID))
         db.add(
@@ -376,7 +408,7 @@ async def test_mcp_default_board_config_preserves_omitted_human_skip(db_factory)
                 version=1,
                 status="active",
                 is_active=True,
-                scope="global",
+                scope=scope,
                 settings_payload={"skip_task_requirement_link_gate_global": True},
                 created_by=USER_ID,
             )
@@ -388,7 +420,7 @@ async def test_mcp_default_board_config_preserves_omitted_human_skip(db_factory)
             "okto_pulse_create_default_board_config_version",
             board_id=board_id,
             settings_payload={"skip_test_coverage_global": True},
-            scope="global",
+            scope=scope,
             activate=False,
         )
 
@@ -430,6 +462,7 @@ async def test_mcp_default_board_config_activate_rejects_human_skip_change(db_fa
     board_id = _id("board")
     active_id = _id("active-template")
     target_id = _id("target-template")
+    scope = _id("scope")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="MCP default config", owner_id=USER_ID))
         db.add(
@@ -438,7 +471,7 @@ async def test_mcp_default_board_config_activate_rejects_human_skip_change(db_fa
                 version=1,
                 status="active",
                 is_active=True,
-                scope="global",
+                scope=scope,
                 settings_payload={"skip_task_requirement_link_gate_global": True},
                 created_by=USER_ID,
             )
@@ -449,7 +482,7 @@ async def test_mcp_default_board_config_activate_rejects_human_skip_change(db_fa
                 version=2,
                 status="inactive",
                 is_active=False,
-                scope="global",
+                scope=scope,
                 settings_payload={},
                 created_by=USER_ID,
             )
@@ -474,6 +507,7 @@ async def test_mcp_default_board_config_activate_rejects_human_skip_change(db_fa
 async def test_mcp_default_board_config_deactivate_rejects_human_skip_change(db_factory):
     board_id = _id("board")
     template_id = _id("active-template")
+    scope = _id("scope")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="MCP default config", owner_id=USER_ID))
         db.add(
@@ -482,7 +516,7 @@ async def test_mcp_default_board_config_deactivate_rejects_human_skip_change(db_
                 version=1,
                 status="active",
                 is_active=True,
-                scope="global",
+                scope=scope,
                 settings_payload={"skip_task_requirement_link_gate_global": True},
                 created_by=USER_ID,
             )

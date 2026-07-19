@@ -41,7 +41,8 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 
 | Operation | Effect | Safeguard |
 |---|---|---|
-| `okto_pulse_kg_rebuild_preflight` → `okto_pulse_kg_rebuild_confirm` → `okto_pulse_kg_rebuild_run` | Rebuild **discards the board's current graph generation** and re-derives it from board sources. | Three-step confirm gate: preflight persists an immutable manifest + `preflight_hash`; confirm issues a single-use token bound to that hash; run never mutates if the token is invalid, the manifest changed, or the exclusive lock fails. Refused while `graph_state=quarantined` (`rebuild_refused_quarantined`); `recovery_needed` is admitted — rebuild is the prescribed exit from that state. |
+| `okto_pulse_kg_rebuild_preflight` → `okto_pulse_kg_rebuild_confirm` → `okto_pulse_kg_rebuild_run` | Rebuild **discards the board's current graph generation** and re-derives it from board sources. | Three-step hash/token/lock gate. It handles board `graph_state=recovery_needed`; if the board graph is healthy and only discovery failed, it refuses with `board_rebuild_wrong_recovery_scope`. Generic `overall_state` is not a rebuild signal. |
+| `okto_pulse_kg_global_discovery_recovery_preflight` → `okto_pulse_kg_global_discovery_recovery_confirm` → `okto_pulse_kg_global_discovery_recovery_run` | Replaces the derived global discovery cache, never authoritative board graphs. | Admitted only for healthy board graphs + concrete discovery recovery signal. Before dispatch, `run` persists integrity-bound worker inputs and a durable SQL control row, then returns `accepted`; use the status/cancel/resume tools for the owned background attempt. A fully materialized generation is validated before one hashed pointer switch; legacy bytes and all sidecars remain intact, and failed readback rolls the pointer back. One durable cross-process fence excludes recovery, outbox, schema, search-WAL and GC writers. |
 | `okto_pulse_kg_quarantine_restore` | With `apply=true`, swaps the board's live graph files for a quarantined snapshot. | `apply=false` (default) returns an auditable plan with NO mutation. `apply=true` first moves the live files to a NEW quarantine with manifest (`backup_quarantine_id` in the result), so the swap is reversible; a `partial_restore` error records exact state for rollback. |
 | KG dedup hard-delete (`kg_dedup_hard_delete`) | Physical node delete + bulk edge re-point. | **FORBIDDEN** at every surface by the curation policy — this is the mutation class behind the KGD-01 corruption. Dedup merges (`kg_dedup_entities`) and `kg_unmerge` are propose-only and REVERSIBLE via the equivalence ledger; prefer unmerge, never hard delete. |
 
@@ -54,7 +55,11 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 ## Rules of Engagement
 
 1. **Prefer soft-delete** (`okto_pulse_archive_tree`, `okto_pulse_remove_decision`) whenever the intent is "hide this from normal views". Only use hard delete when the entity must not exist at all (e.g. GDPR erasure, deleting truly broken test cards).
-2. **Before any hard delete, post a comment** on the parent entity with a one-line rationale and @mention the user. If the user objects, you can still recover.
+2. **Before any hard delete, post a one-line rationale with an @mention.** When
+   the target or its parent supports comments, post it there. When that artifact
+   family has no comment surface, post it on a board-scoped audit card and name
+   the exact target type + id. The audit card is the governed fallback; never
+   invent an unsupported comment call or skip the rationale silently.
 3. **Never delete as a shortcut to fix a validation error.** If the system is rejecting a move because an entity exists, fix the entity, don't delete it.
 4. **`okto_pulse_remove_business_rule` / `okto_pulse_remove_api_contract` break coverage** — the spec that depended on them will now fail `okto_pulse_submit_spec_validation`. Use them only when you're replacing the BR/contract with another one in the same action.
 5. **`okto_pulse_delete_ideation` / `okto_pulse_delete_refinement` cascade.** You're deleting the entire sub-tree, not just the ideation. Confirm the blast radius.

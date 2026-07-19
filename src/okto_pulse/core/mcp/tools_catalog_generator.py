@@ -14,15 +14,17 @@ Regenerate with::
 
 Classification is an ORDERED first-match rule list. Every tool MUST land
 in a section — the drift test fails on any unclassified tool, which is
-the forcing function that keeps the catalog complete (one rule line per
-new family). Each section carries its long-form tool-doc URI so agents
-can navigate name → family docs (audit finding: 21 of 28 tool-docs were
-orphans no surface ever pointed to).
+the forcing function that keeps the catalog complete.  Documentation is
+resolved independently from exact ``## `tool_name``` headings across all
+tool-doc resources.  Missing or duplicate headings fail generation, so a
+catalog entry can never point merely at a family file that does not document
+that particular tool.
 """
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Iterable
 
 FRONTMATTER = '---\nversion: "1.0"\ngenerated_by: okto_pulse.core.mcp.tools_catalog_generator\n---\n'
@@ -32,8 +34,8 @@ HEADER = (
     "GENERATED FILE — do not edit by hand. Regenerate with\n"
     "`python -m okto_pulse.core.mcp.tools_catalog_generator`\n"
     "(guarded by tests/test_mcp_tools_catalog_drift.py).\n\n"
-    "Tool schemas arrive lazily via MCP `tools/list`. Each section links its\n"
-    "concrete family docs with args, returns and examples.\n"
+    "Tool schemas arrive lazily via MCP `tools/list`. Every entry links the\n"
+    "exact resource containing that tool's args, returns and examples.\n"
     "Required filters for the consolidated `list_*` tools:\n"
     "`okto-pulse://reference/list_tools`.\n"
 )
@@ -56,7 +58,8 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"list_cognitive_dlq|list_cognitive_pending_items|list_cognitive_readiness_items|"
      r"update_cognitive_pending_item|record_cognitive_skip|clear_cognitive_skip)$"),
     ("KG — Rebuild & recovery", "kg",
-     r"^okto_pulse_kg_(rebuild_preflight|rebuild_confirm|rebuild_run|quarantine_restore)$"),
+     r"^okto_pulse_kg_(rebuild_preflight|rebuild_confirm|rebuild_run|quarantine_restore|"
+     r"global_discovery_recovery_(preflight|confirm|run))$"),
     ("KG — Operational & health", "kg", r"^okto_pulse_kg_"),
     # --- Boards, agents & session -----------------------------------------
     ("Session & Agents", "agent",
@@ -129,6 +132,43 @@ def unclassified(names: Iterable[str]) -> list[str]:
     return sorted(n for n in names if classify(n) is None)
 
 
+_TOOL_HEADING = re.compile(r"^## `(?P<name>okto_pulse_[a-z0-9_]+)`\s*$", re.M)
+_TOOL_DOC_URI_PREFIX = "okto-pulse://reference/tool-docs/"
+
+
+def tool_doc_index() -> dict[str, str]:
+    """Return exact tool → resource URI mapping; reject duplicate headings."""
+
+    from okto_pulse.core.mcp import effective_resource_catalog
+
+    found: dict[str, list[str]] = {}
+    specs = sorted(
+        (
+            spec
+            for spec in effective_resource_catalog().specs()
+            if spec.uri.startswith(_TOOL_DOC_URI_PREFIX)
+        ),
+        key=lambda spec: spec.uri,
+    )
+    for spec in specs:
+        for match in _TOOL_HEADING.finditer(spec.read()):
+            found.setdefault(match.group("name"), []).append(spec.uri)
+    duplicates = {name: uris for name, uris in found.items() if len(uris) != 1}
+    if duplicates:
+        detail = ", ".join(
+            f"{name}={uris}" for name, uris in sorted(duplicates.items())
+        )
+        raise ValueError(f"duplicate tool-doc headings: {detail}")
+    return {name: uris[0] for name, uris in found.items()}
+
+
+def missing_tool_docs(
+    names: Iterable[str], index: dict[str, str] | None = None
+) -> list[str]:
+    index = tool_doc_index() if index is None else index
+    return sorted(set(names) - set(index))
+
+
 def render_catalog(names: Iterable[str]) -> str:
     """Render the catalog text for the given LIVE tool names.
 
@@ -141,12 +181,17 @@ def render_catalog(names: Iterable[str]) -> str:
         raise ValueError(
             "unclassified tools (add a _RULES entry): " + ", ".join(missing)
         )
+    names = sorted(set(names))
+    docs = tool_doc_index()
+    undocumented = missing_tool_docs(names, docs)
+    if undocumented:
+        raise ValueError(
+            "tools missing exact tool-doc heading: " + ", ".join(undocumented)
+        )
     sections: dict[str, list[str]] = {}
-    families: dict[str, str | None] = {}
-    for name in sorted(set(names)):
-        section, family = classify(name)  # type: ignore[misc]
+    for name in names:
+        section, _family = classify(name)  # type: ignore[misc]
         sections.setdefault(section, []).append(name)
-        families[section] = family
     parts = [FRONTMATTER, HEADER]
     ordered = [s for s, _f, _p in _RULES]
     seen: set[str] = set()
@@ -154,10 +199,11 @@ def render_catalog(names: Iterable[str]) -> str:
         if section in seen or section not in sections:
             continue
         seen.add(section)
-        family = families[section]
-        doc = f" — docs: `okto-pulse://reference/tool-docs/{family}`" if family else ""
-        parts.append(f"\n## {section}{doc}\n")
-        parts.append(", ".join(f"`{n}`" for n in sections[section]) + "\n")
+        parts.append(f"\n## {section}\n")
+        parts.extend(
+            f"- `{name}` — docs: `{docs[name]}`\n"
+            for name in sections[section]
+        )
     return "".join(parts)
 
 
@@ -172,8 +218,6 @@ def _live_tool_names() -> list[str]:
 
 def regenerate_file() -> str:
     """Rewrite resources/reference/tools_catalog.md from the live registry."""
-
-    from pathlib import Path
 
     target = Path(__file__).parent / "resources" / "reference" / "tools_catalog.md"
     content = render_catalog(_live_tool_names())

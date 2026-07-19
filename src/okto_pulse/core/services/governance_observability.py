@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 import re
-import threading
 from typing import Any, Mapping
 
 from okto_pulse.core.observability.sample_buffer import runtime_sample_buffer

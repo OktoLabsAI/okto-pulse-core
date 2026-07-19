@@ -10,9 +10,8 @@ against the artifact's consolidation history and current existence:
   or the node is human_curated and its protected content diverged);
 * artifact row absent from the BoardSourceReader → ``artifact_missing``
   (terminal drift — the source was deleted, D5);
-* artifact row ``updated_at`` newer than the latest audit ``committed_at`` →
-  ``content_changed`` (the artifact was edited and no re-consolidation has
-  landed yet).
+Artifact timestamps are deliberately excluded: they are volatile metadata and
+cannot prove semantic drift. The committed canonical hash is the authority.
 
 Both sides of the hash comparison use the SAME session recipe
 (``compute_content_hash`` — persisted on the node at commit and on the
@@ -25,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
@@ -39,23 +37,6 @@ _NODE_FETCH_MAX_ROWS = 5000
 __all__ = ["DRIFT_REPORT_MAX_ITEMS", "provenance_drift_report"]
 
 _CARD_SOURCE_TYPES = frozenset({"task", "test", "bug"})
-
-
-def _parse_dt(value: Any) -> datetime | None:
-    """Best-effort ISO parse to an aware UTC datetime; None on failure."""
-
-    if isinstance(value, datetime):
-        dt = value
-    elif isinstance(value, str) and value:
-        try:
-            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-    else:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 def _fetch_provenance_nodes(
@@ -172,16 +153,6 @@ async def provenance_drift_report(
             entry["reason"] = "content_changed"
             drifted.append(entry)
             continue
-        row_updated = _parse_dt(row.get("updated_at"))
-        audit_committed = _parse_dt(audit.committed_at)
-        if (
-            row_updated is not None
-            and audit_committed is not None
-            and row_updated > audit_committed
-        ):
-            entry["reason"] = "content_changed"
-            entry["detail"] = "artifact_updated_after_last_consolidation"
-            drifted.append(entry)
 
     truncated = len(drifted) > max_items
     report = {

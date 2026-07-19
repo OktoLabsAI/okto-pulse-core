@@ -76,10 +76,9 @@ def test_summary_returns_metadata_and_ids_without_bodies():
     assert out["copied"] == 2
     assert out["design_ids"] == ["ad1", "ad2"]
     assert out["total_on_card"] == 2
+    assert out["success"] is True
     # No architecture bodies echoed under summary.
     assert "architecture_designs" not in out
-    # summary relies on outcome, not a positive success flag.
-    assert "success" not in out
 
     meta = out["projection"]
     for key in ENVELOPE_METADATA_KEYS:

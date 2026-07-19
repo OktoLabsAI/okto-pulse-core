@@ -23,6 +23,7 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 
 
@@ -461,6 +462,22 @@ class McpUpdateBoardGuidelinePriorityUseCase:
 # --- board ↔ design-system links (DesignSystemService) ----------------------
 
 
+async def _require_design_system_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> None:
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    if await load_accessible_board(uow, board_id, actor) is None:
+        raise DesignSystemError(
+            "board_not_found",
+            f"Board '{board_id}' not found.",
+            404,
+            {"board_id": board_id},
+        )
+
+
 class McpLinkBoardDesignSystemCommand:
     __slots__ = ("board_id", "design_system_id")
 
@@ -477,8 +494,12 @@ class McpLinkBoardDesignSystemUseCase:
     async def execute(
         self, command: McpLinkBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
+        await _require_design_system_board(uow, command.board_id, actor)
         link = await uow.services.design_systems.link_design_system_to_board(
-            command.board_id, command.design_system_id
+            command.board_id,
+            command.design_system_id,
+            owner_id=actor.actor_id,
+            board_access_authorized=True,
         )
         await commit(uow)
         return _DataResult(link)
@@ -498,6 +519,7 @@ class McpUnlinkBoardDesignSystemUseCase:
     async def execute(
         self, command: McpUnlinkBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
+        await _require_design_system_board(uow, command.board_id, actor)
         unlinked = await uow.services.design_systems.unlink_design_system_from_board(
             command.board_id
         )
@@ -519,6 +541,7 @@ class McpGetBoardDesignSystemUseCase:
     async def execute(
         self, command: McpGetBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
+        await _require_design_system_board(uow, command.board_id, actor)
         effective = await uow.services.design_systems.get_board_effective_design_system(
             command.board_id
         )
@@ -619,6 +642,13 @@ class McpListByBoardUseCase:
         et = command.entity_type
         f = command.filters
 
+        # The transport authenticates the requested board, but this use case is
+        # also a reusable application boundary.  Reject a spoofed command before
+        # resolving any parent identifier so an actor cannot use a board-scoped
+        # list as an existence oracle for another board.
+        if actor.board_id != command.board_id:
+            return _DataResult([])
+
         if et == "spec":
             items = await uow.services.specs.list_specs(command.board_id, f.get("status"))
             items = _apply_label_filter(items, f)
@@ -635,9 +665,13 @@ class McpListByBoardUseCase:
                 is_derivation_pending_ideation,
             )
         elif et == "refinement":
-            items = await uow.services.refinements.list_refinements(
-                f.get("ideation_id", "")
-            )
+            ideation_id = f.get("ideation_id", "")
+            ideation = await uow.services.ideations.get_ideation(ideation_id)
+            if not ideation or ideation.board_id != command.board_id:
+                return _DataResult([])
+            items = await uow.services.refinements.list_refinements(ideation_id)
+            # Contain corrupt legacy rows as well as cross-board parent probes.
+            items = [r for r in items if r.board_id == command.board_id]
             if f.get("status"):
                 items = [r for r in items if r.status.value == f["status"]]
             items = _apply_label_filter(items, f)
@@ -647,7 +681,14 @@ class McpListByBoardUseCase:
                 is_derivation_pending_refinement,
             )
         elif et == "sprint":
-            items = await uow.services.sprints.list_sprints(f.get("spec_id", ""))
+            spec_id = f.get("spec_id", "")
+            spec = await uow.services.specs.get_spec(spec_id)
+            if not spec or spec.board_id != command.board_id:
+                return _DataResult([])
+            items = await uow.services.sprints.list_sprints(spec_id)
+            # A legacy database can contain relationally valid but cross-board
+            # children; never project those through the authenticated board.
+            items = [s for s in items if s.board_id == command.board_id]
             if f.get("status"):
                 items = [s for s in items if s.status.value == f["status"]]
         elif et == "story":

@@ -113,7 +113,8 @@ jobs:
             "$GITHUB_WORKSPACE/tests/test_f11_telemetry_edition_boundary.py" \
             "$GITHUB_WORKSPACE/tests/test_f12_thin_inbound_boundaries.py" \
             "$GITHUB_WORKSPACE/tests/test_f15_persistence_edition_gate.py" \
-            "$GITHUB_WORKSPACE/tests/test_f16_saas_closure_report.py"
+            "$GITHUB_WORKSPACE/tests/test_f16_saas_closure_report.py" \
+            "$GITHUB_WORKSPACE/tests/test_public_contract_manifest.py"
 
   security:
     name: security + license

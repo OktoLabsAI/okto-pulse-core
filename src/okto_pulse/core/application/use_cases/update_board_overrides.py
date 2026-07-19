@@ -2,10 +2,9 @@
 
 Behavior-preserving, transport-free reimplementation of the owner-only
 ``PATCH /api/v1/agents/{agent_id}/boards/{board_id}``
-(``api/agents.py:update_board_overrides``). Delegates to the existing
-``AgentService`` so the ownership check (404 when not owner), the
-board-access-not-found check (404), the override update, the commit and the
-returned ``AgentBoard`` are unchanged.
+(``api/agents.py:update_board_overrides``). It proves ownership of both the
+agent and board before delegating to ``AgentService``; board-access-not-found,
+the override update, commit and returned ``AgentBoard`` remain unchanged.
 
 As with ``update_agent``, the MCP permission-cache invalidation
 (``invalidate_agent_cache``) stays in the REST adapter AFTER success — this use
@@ -19,6 +18,7 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -60,6 +60,15 @@ class UpdateBoardOverridesUseCase:
     async def execute(
         self, command: UpdateBoardOverridesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardOverridesResult:
+        board = await load_accessible_board(
+            uow,
+            command.board_id,
+            actor,
+            allowed_share_permissions=(),
+        )
+        if board is None or getattr(board, "owner_id", None) != actor.actor_id:
+            raise EntityNotFoundError("board", command.board_id)
+
         service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:

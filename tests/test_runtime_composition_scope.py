@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from okto_pulse.core.composition import (
     RuntimeComposition,
     current_runtime_composition,
+    isolated_runtime_provider_scope,
     reset_runtime_bridge_usage_for_tests,
     runtime_bridge_usage_snapshot,
     runtime_composition_scope,
@@ -19,6 +20,12 @@ from okto_pulse.core.composition import (
 from okto_pulse.core.infra.auth import get_auth_provider
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.storage import get_storage_provider
+from okto_pulse.core.runtime_context import (
+    capture_runtime_values_for_tests,
+    register_runtime_value,
+    resolve_runtime_value,
+    restore_runtime_values_for_tests,
+)
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
 
@@ -56,6 +63,33 @@ def test_nested_scope_restores_the_previous_composition() -> None:
             assert current_runtime_composition() is second
         assert current_runtime_composition() is first
     assert current_runtime_composition() is None
+
+
+def test_isolated_provider_scope_clones_and_restores_on_failure() -> None:
+    class CloneableProvider:
+        def __init__(self, name: str):
+            self.name = name
+
+        def clone_for_runtime(self):
+            return CloneableProvider(f"{self.name}:clone")
+
+    baseline = capture_runtime_values_for_tests()
+    original = CloneableProvider("normal")
+    try:
+        register_runtime_value("test.provider", original)
+
+        with pytest.raises(RuntimeError, match="bounded operation failed"):
+            with isolated_runtime_provider_scope():
+                cloned = resolve_runtime_value("test.provider")
+                assert cloned is not original
+                assert cloned.name == "normal:clone"
+                register_runtime_value("test.scope_only", object())
+                raise RuntimeError("bounded operation failed")
+
+        assert resolve_runtime_value("test.provider") is original
+        assert resolve_runtime_value("test.scope_only") is None
+    finally:
+        restore_runtime_values_for_tests(baseline)
 
 
 def test_concurrent_scopes_resolve_independent_providers_without_fallbacks() -> None:
@@ -103,11 +137,20 @@ def test_runtime_compositions_do_not_share_mcp_catalog_mutations() -> None:
         first_catalog = mcp.resolve()
         first_tools = set(first_catalog._tool_manager._tools)
         assert first_tools
+        assert getattr(first_catalog.tool, "_xml_safety_patched", False) is True
+
+        async def runtime_composition_xml_probe(value: str) -> str:
+            return value
+
+        registered = first_catalog.tool()(runtime_composition_xml_probe)
+        assert getattr(registered.fn, "_xml_safety_wrapped", False) is True
         first_catalog.instructions = "first-only"
 
     with runtime_composition_scope(second):
         second_catalog = mcp.resolve()
         assert set(second_catalog._tool_manager._tools) == first_tools
+        assert getattr(second_catalog.tool, "_xml_safety_patched", False) is True
+        assert "runtime_composition_xml_probe" not in second_catalog._tool_manager._tools
         assert second_catalog.instructions != "first-only"
 
     assert first_catalog is not second_catalog

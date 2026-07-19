@@ -17,6 +17,7 @@ from okto_pulse.core.kg import cognitive_closeout_production as ccp
 from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
     CognitivePendingRecordRef,
 )
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from memory_rebuild_audit_storage import (
     InMemoryCognitivePendingWorkProvider,
@@ -38,54 +39,97 @@ def _require_real_community_graph(_kg_registry_test_fakes):
     configure_real_graph_test_kg_registry()
 
 
-def _seed_node(board_id: str, node_type: str, source_ref: str, *, node_id: str | None = None,
-               graph_layer: str = "canonical") -> str:
+async def _seed_node(
+    board_id: str,
+    node_type: str,
+    source_ref: str,
+    *,
+    node_id: str | None = None,
+    graph_layer: str = "canonical",
+) -> str:
     """Seed a canonical node (Entity provenance root / Decision / Bug) directly."""
-    from kg_schema_testing import open_board_connection
-    from okto_pulse.core.kg.transaction import TransactionOrchestrator
-
     nid = node_id or f"{node_type.lower()}_seed_{uuid.uuid4().hex[:12]}"
-    with open_board_connection(board_id) as (_db, kconn):
-        orch = TransactionOrchestrator(
-            graph_scope=kconn,
-            session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
-        )
-        _apply_graph_node_create(
-            orch, node_type, nid,
-            {
-                "title": f"Seed {node_type}", "content": "", "context": "", "justification": "",
-                "source_artifact_ref": source_ref, "created_at": "2026-06-08T00:00:00+00:00",
-                "created_by_agent": "test", "source_confidence": 1.0, "relevance_score": 0.5,
-                "query_hits": 0, "last_queried_at": None, "priority_boost": 0.0,
-                "human_curated": False, "embedding": [0.0] * 384,
-                "graph_layer": graph_layer, "maturity_status": "canonical_eligible",
-            },
-        )
+
+    def _seed() -> None:
+        from kg_schema_testing import open_board_connection
+        from okto_pulse.core.kg.transaction import TransactionOrchestrator
+
+        with open_board_connection(board_id) as (_db, kconn):
+            orch = TransactionOrchestrator(
+                graph_scope=kconn,
+                session_id=f"seed_{uuid.uuid4().hex[:8]}",
+                board_id=board_id,
+            )
+            _apply_graph_node_create(
+                orch,
+                node_type,
+                nid,
+                {
+                    "title": f"Seed {node_type}",
+                    "content": "",
+                    "context": "",
+                    "justification": "",
+                    "source_artifact_ref": source_ref,
+                    "created_at": "2026-06-08T00:00:00+00:00",
+                    "created_by_agent": "test",
+                    "source_confidence": 1.0,
+                    "relevance_score": 0.5,
+                    "query_hits": 0,
+                    "last_queried_at": None,
+                    "priority_boost": 0.0,
+                    "human_curated": False,
+                    "embedding": [0.0] * 384,
+                    "graph_layer": graph_layer,
+                    "maturity_status": "canonical_eligible",
+                },
+            )
+
+    await run_blocking_graph_io(
+        _seed,
+        task_name=f"test-rkg03-seed-{board_id}-{node_type}-{nid}",
+    )
     return nid
 
 
-def _seed_entity_root(board_id: str, source_ref: str) -> str:
-    return _seed_node(board_id, "Entity", source_ref)
+async def _seed_entity_root(board_id: str, source_ref: str) -> str:
+    return await _seed_node(board_id, "Entity", source_ref)
 
 
-def _count_relates_to_alternative(board_id: str, alt_ref: str) -> int:
-    from kg_schema_testing import open_board_connection
+async def _count_nodes_by_source_ref(
+    board_id: str,
+    node_type: str,
+    source_ref: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: ccp._count_nodes_by_source_ref(board_id, node_type, source_ref),
+        task_name=f"test-rkg03-count-{board_id}-{node_type}",
+    )
 
-    with open_board_connection(board_id) as (_db, kconn):
-        res = kconn.execute(
-            "MATCH (d:Decision)-[:relates_to]->(a:Alternative) "
-            "WHERE a.source_artifact_ref = $ref RETURN count(*)",
-            {"ref": alt_ref},
-        )
-        try:
-            if res.has_next():
-                return int(res.get_next()[0] or 0)
-        finally:
+
+async def _count_relates_to_alternative(board_id: str, alt_ref: str) -> int:
+    def _read() -> int:
+        from kg_schema_testing import open_board_connection
+
+        with open_board_connection(board_id) as (_db, kconn):
+            res = kconn.execute(
+                "MATCH (d:Decision)-[:relates_to]->(a:Alternative) "
+                "WHERE a.source_artifact_ref = $ref RETURN count(*)",
+                {"ref": alt_ref},
+            )
             try:
-                res.close()
-            except Exception:
-                pass
-    return 0
+                if res.has_next():
+                    return int(res.get_next()[0] or 0)
+            finally:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+        return 0
+
+    return await run_blocking_graph_io(
+        _read,
+        task_name=f"test-rkg03-count-relates-to-{board_id}",
+    )
 
 
 @pytest.mark.asyncio
@@ -94,7 +138,7 @@ async def test_real_pipeline_persists_alternative_and_is_queryable(
 ):
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    _seed_entity_root(board_id, spec_ref)
+    await _seed_entity_root(board_id, spec_ref)
 
     persister = ccp.ConsolidationPipelinePersister(db_factory, agent_id=agent_id)
     res = await ccp.run_cognitive_closeout(
@@ -106,7 +150,9 @@ async def test_real_pipeline_persists_alternative_and_is_queryable(
     assert res.persisted_refs
     alt_ref = res.persisted_refs[0]
     # THE PROOF: the candidate actually reached graph.lbug and is queryable.
-    assert ccp._count_nodes_by_source_ref(board_id, "Alternative", alt_ref) == 1
+    assert await _count_nodes_by_source_ref(
+        board_id, "Alternative", alt_ref
+    ) == 1
 
     # AC1 idempotent replay: a second closeout persists nothing new (no duplicate).
     res2 = await ccp.run_cognitive_closeout(
@@ -115,7 +161,9 @@ async def test_real_pipeline_persists_alternative_and_is_queryable(
     )
     assert res2.outcome == "persisted"
     assert res2.skipped_existing_refs  # recognised as already persisted
-    assert ccp._count_nodes_by_source_ref(board_id, "Alternative", alt_ref) == 1
+    assert await _count_nodes_by_source_ref(
+        board_id, "Alternative", alt_ref
+    ) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -148,8 +196,12 @@ async def test_worker_drains_spec_pending_to_alternative_relates_to_and_ledger(
 ):
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    _seed_entity_root(board_id, spec_ref)
-    decision_id = _seed_node(board_id, "Decision", f"{spec_ref}:decision:x")
+    await _seed_entity_root(board_id, spec_ref)
+    decision_id = await _seed_node(
+        board_id,
+        "Decision",
+        f"{spec_ref}:decision:x",
+    )
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
     gen = "gen-rkg03w"
     ccp.open_cognitive_closeout_pending(
@@ -167,8 +219,10 @@ async def test_worker_drains_spec_pending_to_alternative_relates_to_and_ledger(
     assert results and results[0].outcome == "persisted", results
     alt_ref = results[0].persisted_refs[0]
     # candidate -> graph.lbug -> queryable WITH the relates_to edge (AC1).
-    assert ccp._count_nodes_by_source_ref(board_id, "Alternative", alt_ref) == 1
-    assert _count_relates_to_alternative(board_id, alt_ref) == 1
+    assert await _count_nodes_by_source_ref(
+        board_id, "Alternative", alt_ref
+    ) == 1
+    assert await _count_relates_to_alternative(board_id, alt_ref) == 1
     # the SAME ledger advanced to consolidated.
     item = next(i for i in store.list_items(board_id, gen) if i.source_ref == spec_ref)
     assert item.status == "consolidated"
@@ -203,27 +257,37 @@ async def test_worker_persist_failure_marks_ledger_failed(
     item = next(i for i in store.list_items(board_id, gen) if i.source_ref == spec_ref)
     assert item.status == "failed"
     # no partial graph: nothing was written.
-    assert ccp._count_nodes_by_source_ref(board_id, "Alternative", f"{spec_ref}:alternative:") == 0
+    assert await _count_nodes_by_source_ref(
+        board_id,
+        "Alternative",
+        f"{spec_ref}:alternative:",
+    ) == 0
 
 
-def _count_validates_bug(board_id: str, learning_ref: str) -> int:
-    from kg_schema_testing import open_board_connection
+async def _count_validates_bug(board_id: str, learning_ref: str) -> int:
+    def _read() -> int:
+        from kg_schema_testing import open_board_connection
 
-    with open_board_connection(board_id) as (_db, kconn):
-        res = kconn.execute(
-            "MATCH (l:Learning)-[:validates]->(b:Bug) "
-            "WHERE l.source_artifact_ref = $ref RETURN count(*)",
-            {"ref": learning_ref},
-        )
-        try:
-            if res.has_next():
-                return int(res.get_next()[0] or 0)
-        finally:
+        with open_board_connection(board_id) as (_db, kconn):
+            res = kconn.execute(
+                "MATCH (l:Learning)-[:validates]->(b:Bug) "
+                "WHERE l.source_artifact_ref = $ref RETURN count(*)",
+                {"ref": learning_ref},
+            )
             try:
-                res.close()
-            except Exception:
-                pass
-    return 0
+                if res.has_next():
+                    return int(res.get_next()[0] or 0)
+            finally:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+        return 0
+
+    return await run_blocking_graph_io(
+        _read,
+        task_name=f"test-rkg03-count-validates-{board_id}",
+    )
 
 
 @pytest.mark.asyncio
@@ -232,7 +296,12 @@ async def test_worker_drains_bug_pending_to_learning_validates_canonical_bug(
 ):
     bug_uuid = str(uuid.uuid4())
     bug_ref = f"bug:{bug_uuid}"
-    _seed_node(board_id, "Bug", bug_ref, graph_layer="canonical")  # canonical Bug
+    await _seed_node(
+        board_id,
+        "Bug",
+        bug_ref,
+        graph_layer="canonical",
+    )  # canonical Bug
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
     gen = "gen-bug"
     ccp.open_cognitive_closeout_pending(
@@ -258,9 +327,11 @@ async def test_worker_drains_bug_pending_to_learning_validates_canonical_bug(
 
     assert results and results[0].outcome == "persisted", results
     learning_ref = f"bug:{bug_uuid}"
-    assert ccp._count_nodes_by_source_ref(board_id, "Learning", learning_ref) == 1
+    assert await _count_nodes_by_source_ref(
+        board_id, "Learning", learning_ref
+    ) == 1
     # validates -> canonical Bug queryable (AC2).
-    assert _count_validates_bug(board_id, learning_ref) == 1
+    assert await _count_validates_bug(board_id, learning_ref) == 1
     bug_item = next(i for i in store.list_items(board_id, gen) if i.artifact_type == "bug")
     assert bug_item.status == "consolidated"
 
@@ -295,7 +366,9 @@ async def test_persister_failure_at_each_step_no_partial_graph(
     ok = await persister.persist(board_id, "spec", candidate)
     assert ok is False  # any step failure -> not persisted, never raised
     # no partial graph was written.
-    assert ccp._count_nodes_by_source_ref(board_id, "Alternative", alt_ref) == 0
+    assert await _count_nodes_by_source_ref(
+        board_id, "Alternative", alt_ref
+    ) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -304,24 +377,33 @@ async def test_persister_failure_at_each_step_no_partial_graph(
 # ---------------------------------------------------------------------------
 
 
-def _count_alternatives_relates_to_for_spec(board_id: str, spec_id: str) -> int:
-    from kg_schema_testing import open_board_connection
+async def _count_alternatives_relates_to_for_spec(
+    board_id: str,
+    spec_id: str,
+) -> int:
+    def _read() -> int:
+        from kg_schema_testing import open_board_connection
 
-    with open_board_connection(board_id) as (_db, kconn):
-        res = kconn.execute(
-            "MATCH (d:Decision)-[:relates_to]->(a:Alternative) "
-            "WHERE a.source_artifact_ref STARTS WITH $prefix RETURN count(*)",
-            {"prefix": f"spec:{spec_id}:alternative:"},
-        )
-        try:
-            if res.has_next():
-                return int(res.get_next()[0] or 0)
-        finally:
+        with open_board_connection(board_id) as (_db, kconn):
+            res = kconn.execute(
+                "MATCH (d:Decision)-[:relates_to]->(a:Alternative) "
+                "WHERE a.source_artifact_ref STARTS WITH $prefix RETURN count(*)",
+                {"prefix": f"spec:{spec_id}:alternative:"},
+            )
             try:
-                res.close()
-            except Exception:
-                pass
-    return 0
+                if res.has_next():
+                    return int(res.get_next()[0] or 0)
+            finally:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+        return 0
+
+    return await run_blocking_graph_io(
+        _read,
+        task_name=f"test-rkg03-count-spec-alternatives-{board_id}",
+    )
 
 
 @pytest.mark.asyncio
@@ -335,8 +417,8 @@ async def test_cognitive_closeout_worker_real_loader_and_ledger_scan(
             db.add(Board(id=board_id, name="w", owner_id="o"))
         db.add(Spec(id=spec_id, board_id=board_id, title="s", created_by="u", context=ANALYSIS))
         await db.commit()
-    _seed_entity_root(board_id, spec_ref)
-    _seed_node(board_id, "Decision", f"{spec_ref}:decision:x")
+    await _seed_entity_root(board_id, spec_ref)
+    await _seed_node(board_id, "Decision", f"{spec_ref}:decision:x")
 
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
     # Handler-side open (default generation resolution); worker scans the ledger.
@@ -360,7 +442,7 @@ async def test_cognitive_closeout_worker_real_loader_and_ledger_scan(
 
     assert processed >= 1
     # Alternative persisted from the SQL-loaded spec context, with relates_to edge.
-    assert _count_alternatives_relates_to_for_spec(board_id, spec_id) == 1
+    assert await _count_alternatives_relates_to_for_spec(board_id, spec_id) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +482,11 @@ async def test_spec_moved_done_opens_pending_without_card(board_id, board_handle
 
     assert f"spec:{spec_id}" in _pending_spec_refs(board_id)
     # Ledger-only: nothing written to the graph inside the drain.
-    assert ccp._count_nodes_by_source_ref(board_id, "Alternative", f"spec:{spec_id}") == 0
+    assert await _count_nodes_by_source_ref(
+        board_id,
+        "Alternative",
+        f"spec:{spec_id}",
+    ) == 0
 
 
 @pytest.mark.asyncio

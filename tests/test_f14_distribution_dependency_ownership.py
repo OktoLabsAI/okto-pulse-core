@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
 
+import okto_pulse.core.application.boundary.distribution_dependency_ownership as dependency_ownership
 from okto_pulse.core.application.boundary.distribution_dependency_ownership import (
     COMMUNITY_DISTRIBUTION,
     CORE_DISTRIBUTION,
@@ -22,6 +24,20 @@ CORE_WHEEL = CORE_REPO / "dist" / "okto_pulse_core-0.3.0-py3-none-any.whl"
 COMMUNITY_WHEEL = (
     COMMUNITY_REPO / "dist" / "okto_pulse-0.3.0-py3-none-any.whl"
 )
+
+
+def _write_core_wheel(path: Path, members: dict[str, str]) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "okto_pulse_core-0.3.0.dist-info/METADATA",
+            "Metadata-Version: 2.3\n"
+            "Name: okto-pulse-core\n"
+            "Version: 0.3.0\n"
+            "Requires-Dist: pydantic>=2.5,<2.14\n"
+            "Requires-Dist: PyYAML>=6,<7\n",
+        )
+        for member, content in members.items():
+            archive.writestr(member, content)
 
 
 def test_f14_contract_and_all_distribution_surfaces_are_conformant() -> None:
@@ -71,6 +87,138 @@ def test_f14_gate_fails_closed_when_a_runtime_dependency_loses_ownership() -> No
     codes = {(finding.code, finding.dependency) for finding in report.findings}
     assert ("dependency_unowned", "fastapi") in codes
     assert ("source_import_unowned", "fastapi") in codes
+
+
+def test_f14_source_scan_detects_community_imports_without_literal_false_positives(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "core"
+    source_root.mkdir()
+    (source_root / "clean_docs.py").write_text(
+        '"""okto_pulse.community is named only as architecture documentation."""\n'
+        'EXAMPLE = "from okto_pulse.community.docs import Example"\n',
+        encoding="utf-8",
+    )
+    (source_root / "rogue.py").write_text(
+        "import okto_pulse.community.runtime\n"
+        "from okto_pulse.community.adapters import Repository\n"
+        "from okto_pulse import community\n",
+        encoding="utf-8",
+    )
+
+    imports = dependency_ownership._source_imports(
+        source_root,
+        forbidden_prefixes=("okto_pulse.community",),
+    )
+
+    assert set(imports) == {"okto_pulse.community"}
+    assert len(imports["okto_pulse.community"]) == 3
+    assert all("rogue.py:" in row for row in imports["okto_pulse.community"])
+
+
+def test_f14_dependency_graph_rejects_core_to_community_edge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = dependency_ownership._source_imports
+
+    def source_imports_with_forbidden_edge(root: Path, **kwargs):
+        observed = original(root, **kwargs)
+        if root.name == "core":
+            observed = {
+                **observed,
+                "okto_pulse.community": (
+                    "src/okto_pulse/core/rogue.py:1",
+                ),
+            }
+        return observed
+
+    monkeypatch.setattr(
+        dependency_ownership,
+        "_source_imports",
+        source_imports_with_forbidden_edge,
+    )
+
+    report = audit_distribution_dependencies(
+        core_repo=CORE_REPO,
+        community_repo=COMMUNITY_REPO,
+    )
+
+    assert (
+        "forbidden_distribution_edge",
+        "okto_pulse.community",
+    ) in {(finding.code, finding.dependency) for finding in report.findings}
+
+
+def test_f14_tampered_core_wheel_rejects_community_package_member(
+    tmp_path: Path,
+) -> None:
+    wheel = tmp_path / "okto_pulse_core-0.3.0-py3-none-any.whl"
+    _write_core_wheel(
+        wheel,
+        {
+            "okto_pulse/core/clean.py": "VALUE = 'okto_pulse.community docs'\n",
+            "okto_pulse/community/rogue.json": "{}",
+        },
+    )
+
+    report = audit_distribution_dependencies(
+        core_repo=CORE_REPO,
+        community_repo=COMMUNITY_REPO,
+        core_wheel=wheel,
+    )
+
+    assert any(
+        finding.code == "forbidden_wheel_package_path"
+        and finding.surface == "wheel"
+        and finding.detail == "okto_pulse/community/rogue.json"
+        for finding in report.findings
+    )
+    assert not any(
+        finding.code == "forbidden_distribution_edge"
+        and finding.surface == "wheel"
+        for finding in report.findings
+    )
+
+
+def test_f14_tampered_core_wheel_ast_rejects_imports_but_not_literals(
+    tmp_path: Path,
+) -> None:
+    wheel = tmp_path / "okto_pulse_core-0.3.0-py3-none-any.whl"
+    _write_core_wheel(
+        wheel,
+        {
+            "okto_pulse/core/clean_docs.py": (
+                '"""okto_pulse.community is architecture documentation."""\n'
+                'EXAMPLE = "from okto_pulse.community import adapter"\n'
+            ),
+            "okto_pulse/core/rogue.py": (
+                "from typing import TYPE_CHECKING\n"
+                "if TYPE_CHECKING:\n"
+                "    from okto_pulse.community import adapter\n"
+                "from okto_pulse import community\n"
+            ),
+        },
+    )
+
+    report = audit_distribution_dependencies(
+        core_repo=CORE_REPO,
+        community_repo=COMMUNITY_REPO,
+        core_wheel=wheel,
+    )
+
+    wheel_edges = [
+        finding
+        for finding in report.findings
+        if finding.code == "forbidden_distribution_edge"
+        and finding.surface == "wheel"
+    ]
+    assert len(wheel_edges) == 2
+    assert all("okto_pulse/core/rogue.py:" in row.detail for row in wheel_edges)
+    assert not any("clean_docs.py" in row.detail for row in wheel_edges)
+    assert not any(
+        finding.code == "forbidden_wheel_package_path"
+        for finding in report.findings
+    )
 
 
 @pytest.mark.skipif(

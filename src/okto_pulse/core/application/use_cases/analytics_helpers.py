@@ -4,7 +4,8 @@ Transport-free reimplementations of the four ``api/analytics.py`` endpoints whos
 work is already a pure ``compute_*`` helper over the session — blockers, funnel,
 velocity, coverage. Each guards board ownership via the transport-free
 ``board_is_owned_by`` reader (404 mapped by the adapter) and delegates to the
-existing ``compute_*`` so the payload is byte-identical. Read-only — no commit.
+existing ``compute_*`` so the payload is byte-identical. Board reads accept the
+owner or an explicit BoardShare and fail closed across realms. Read-only — no commit.
 Date parsing and the velocity granularity 400 stay in the REST adapter.
 """
 
@@ -19,10 +20,15 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
 )
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 
 
-async def _ensure_board_owner(uow: PulseUnitOfWork, board_id: str, user_id: str):
-    if not await uow.services.analytics.board_is_owned_by(board_id, user_id):
+async def _ensure_board_access(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> None:
+    if await load_accessible_board(uow, board_id, actor) is None:
         raise EntityNotFoundError("board", board_id)
 
 
@@ -52,7 +58,7 @@ class BoardBlockersUseCase:
         self, command: BoardBlockersCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardBlockersResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         return BoardBlockersResult(
             await uow.services.analytics.blockers(command.board_id,
                 stale_hours=command.stale_hours,
@@ -87,7 +93,7 @@ class BoardFunnelUseCase:
         self, command: BoardFunnelCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardFunnelResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         return BoardFunnelResult(
             await uow.services.analytics.funnel(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
@@ -130,7 +136,7 @@ class BoardVelocityUseCase:
         self, command: BoardVelocityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardVelocityResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         return BoardVelocityResult(
             await uow.services.analytics.velocity(command.board_id,
                 granularity=command.granularity,
@@ -168,7 +174,7 @@ class BoardCoverageUseCase:
         self, command: BoardCoverageCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardCoverageResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         return BoardCoverageResult(
             await uow.services.analytics.coverage(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
@@ -236,7 +242,7 @@ class BoardQualityUseCase:
         self, command: BoardQualityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardQualityResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         return BoardQualityResult(
             await uow.services.analytics.quality(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
@@ -266,7 +272,7 @@ class BoardValidationsUseCase:
         self, command: BoardValidationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardValidationsResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         return BoardValidationsResult(
             await uow.services.analytics.validations(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
@@ -295,7 +301,7 @@ class BoardSpecAnalyticsUseCase:
         self, command: BoardSpecAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardSpecAnalyticsResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         data = await uow.services.analytics.spec(command.board_id, command.spec_id)
         if data is None:
             raise EntityNotFoundError("spec", command.spec_id)
@@ -324,7 +330,7 @@ class BoardSprintAnalyticsUseCase:
         self, command: BoardSprintAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardSprintAnalyticsResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         data = await uow.services.analytics.sprint(command.board_id, command.sprint_id)
         if data is None:
             raise EntityNotFoundError("sprint", command.sprint_id)
@@ -357,7 +363,7 @@ class BoardSprintsAnalyticsUseCase:
         self, command: BoardSprintsAnalyticsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardSprintsAnalyticsResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         return BoardSprintsAnalyticsResult(
             await uow.services.analytics.sprints(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
@@ -387,7 +393,7 @@ class BoardAgentsUseCase:
         self, command: BoardAgentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoardAgentsResult:
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         return BoardAgentsResult(
             await uow.services.analytics.agents(command.board_id, dt_from=command.dt_from, dt_to=command.dt_to
             )
@@ -436,7 +442,7 @@ class BoardEntitiesUseCase:
     ) -> BoardEntitiesResult:
         from okto_pulse.core.application.use_cases.base import CommandValidationError
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         if command.type not in {"ideation", "spec", "card"}:
             raise CommandValidationError("type must be one of: ideation, spec, card")
         data = await uow.services.analytics.entities(
@@ -480,7 +486,7 @@ class BoardEntityDetailUseCase:
     ) -> BoardEntityDetailResult:
         from okto_pulse.core.application.use_cases.base import CommandValidationError
 
-        await _ensure_board_owner(uow, command.board_id, actor.actor_id)
+        await _ensure_board_access(uow, command.board_id, actor)
         if command.entity_type not in {
             "spec",
             "ideation",

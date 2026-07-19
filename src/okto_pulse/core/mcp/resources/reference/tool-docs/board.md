@@ -78,7 +78,12 @@ REST twin: POST /default-board-config/versions. Perm: SPECS_UPDATE.
 
 Use this to define the gate/settings defaults that future boards should
 inherit. Creating a version does not activate it unless `activate=true`
-(single-active is enforced).
+(single-active is enforced). New versions default
+`reviewer_separation_mode="enforce"`; pass `warn` or `off` explicitly only when
+that is the intended policy. Historical boards/templates with the field absent
+are not backfilled and resolve through `legacy_absent_compat`.
+The same `enforce` default is materialized when a new board is created before
+any active template exists; an explicitly supplied `warn`/`off` is preserved.
 
 Args:
     board_id: Board ID used for authentication.
@@ -125,8 +130,9 @@ Associate a global design system with the current board.
 
 Args:
     board_id: Board ID.
-    design_system_id: Global design system ID.
-    priority: Optional ordering priority.
+    design_system_id: Active global Design System ID, or an inline Design
+        System owned by this same board. The board has one effective link, so
+        this operation has no priority argument.
 
 Returns:
     JSON with board design-system link details.
@@ -137,7 +143,8 @@ Remove a design system association from the current board.
 
 Args:
     board_id: Board ID.
-    design_system_id: Design system ID to unlink.
+    The board has a single effective link; no design_system_id argument is
+    accepted.
 
 Returns:
     JSON success payload and remaining board design-system count.

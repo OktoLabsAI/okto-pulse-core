@@ -18,12 +18,14 @@ persists across requests):
   strangle
 * assign / unassign ``card_ids required`` 400 + the unassign clear-count;
   history 200; suggest 200
+* owner/share authorization: viewers can read but cannot mutate; editors can
+  create and mutate; inaccessible and missing parents share the same 404 envelope
 * a direct use-case assertion (``GetSprintUseCase`` raises ``EntityNotFoundError``)
   and AST signature guards proving every endpoint — and every registered route —
   takes ``uow`` (``get_unit_of_work``), not a raw ``AsyncSession``.
 
-No agent row is seeded for the test user; the legacy sprint endpoints carried no
-permission gate, so neither do these — denial is out of scope for this oracle.
+No agent row is needed for the test user. Board ownership and ``BoardShare`` are
+the authorization source for this surface.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu7-s2-user"
+OTHER = "r01a-fu7-s2-other"
 PREFIX = "/api/v1"
 
 _ENDPOINTS = (
@@ -82,7 +85,7 @@ def _missing(kind: str = "sprint") -> str:
     return f"{kind}-missing-{uuid.uuid4().hex[:8]}"
 
 
-async def _seed_board() -> str:
+async def _seed_board(owner: str = USER) -> str:
     from sqlalchemy_test_models import Board
 
     bid = f"board-fu7s2-{uuid.uuid4().hex[:8]}"
@@ -91,7 +94,7 @@ async def _seed_board() -> str:
             Board(
                 id=bid,
                 name="fu7s2",
-                owner_id=USER,
+                owner_id=owner,
                 realm_id=LOCAL_REALM_ID,
             )
         )
@@ -99,7 +102,29 @@ async def _seed_board() -> str:
         return bid
 
 
-async def _seed_spec(board_id: str, *, ts_id: str | None = None, br_id: str | None = None) -> str:
+async def _share_board(board_id: str, *, permission: str) -> None:
+    from sqlalchemy_test_models import BoardShare
+
+    async with get_session_factory()() as db:
+        db.add(
+            BoardShare(
+                board_id=board_id,
+                user_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                permission=permission,
+                shared_by=OTHER,
+            )
+        )
+        await db.commit()
+
+
+async def _seed_spec(
+    board_id: str,
+    *,
+    ts_id: str | None = None,
+    br_id: str | None = None,
+    created_by: str = USER,
+) -> str:
     """Seed an in-progress Spec (optionally carrying one test scenario + one
     business rule) via the raw model — these endpoints read/sprint over the spec,
     they do not author it."""
@@ -131,14 +156,19 @@ async def _seed_spec(board_id: str, *, ts_id: str | None = None, br_id: str | No
                 api_contracts=[],
                 technical_requirements=[],
                 decisions=[],
-                created_by=USER,
+                created_by=created_by,
             )
         )
         await db.commit()
         return sid
 
 
-async def _seed_card(board_id: str, spec_id: str) -> str:
+async def _seed_card(
+    board_id: str,
+    spec_id: str,
+    *,
+    created_by: str = USER,
+) -> str:
     from sqlalchemy_test_models import Card, CardStatus, CardType
 
     cid = f"card-fu7s2-{uuid.uuid4().hex[:8]}"
@@ -152,7 +182,7 @@ async def _seed_card(board_id: str, spec_id: str) -> str:
                 status=CardStatus.NOT_STARTED,
                 card_type=CardType.NORMAL,
                 archived=False,
-                created_by=USER,
+                created_by=created_by,
             )
         )
         await db.commit()
@@ -180,13 +210,21 @@ async def _mark_card_done(card_id: str) -> None:
         await db.commit()
 
 
-async def _create_sprint(board_id: str, spec_id: str, **kwargs) -> str:
+async def _create_sprint(
+    board_id: str,
+    spec_id: str,
+    *,
+    user_id: str = USER,
+    **kwargs,
+) -> str:
     from okto_pulse.core.models.schemas import SprintCreate
     from okto_pulse.core.services.main import SprintService
 
     async with get_session_factory()() as db:
         sprint = await SprintService(db).create_sprint(
-            board_id, USER, SprintCreate(title="seed sprint", spec_id=spec_id, **kwargs)
+            board_id,
+            user_id,
+            SprintCreate(title="seed sprint", spec_id=spec_id, **kwargs),
         )
         await db.commit()
         return sprint.id
@@ -487,6 +525,256 @@ async def test_list_history_200(client) -> None:
     assert isinstance(resp.json(), list)
     # creation recorded one history row.
     assert any(h.get("action") == "created" for h in resp.json())
+
+
+@pytest.mark.asyncio
+async def test_direct_sprint_reads_enforce_bound_actor_board() -> None:
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.application.use_cases.sprints_crud import (
+        ListBoardSprintsCommand,
+        ListBoardSprintsUseCase,
+        ListSprintHistoryCommand,
+        ListSprintHistoryUseCase,
+        ListSprintsCommand,
+        ListSprintsUseCase,
+    )
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
+    board_id = await _seed_board()
+    spec_id = await _seed_spec(board_id)
+    sprint_id = await _create_sprint(board_id, spec_id)
+    foreign_board_id = await _seed_board()
+    foreign_spec_id = await _seed_spec(foreign_board_id)
+    foreign_sprint_id = await _create_sprint(foreign_board_id, foreign_spec_id)
+
+    actor = ActorContext(
+        USER,
+        "rest",
+        board_id=board_id,
+        realm_id=LOCAL_REALM_ID,
+    )
+    uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await ListBoardSprintsUseCase().execute(
+                ListBoardSprintsCommand(foreign_board_id),
+                actor=actor,
+                uow=uow,
+            )
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await ListSprintsUseCase().execute(
+                ListSprintsCommand(foreign_spec_id),
+                actor=actor,
+                uow=uow,
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await ListSprintHistoryUseCase().execute(
+                ListSprintHistoryCommand(foreign_sprint_id),
+                actor=actor,
+                uow=uow,
+            )
+
+    async with uowf(actor=actor) as uow:
+        own_board = await ListBoardSprintsUseCase().execute(
+            ListBoardSprintsCommand(board_id),
+            actor=actor,
+            uow=uow,
+        )
+        own_spec = await ListSprintsUseCase().execute(
+            ListSprintsCommand(spec_id),
+            actor=actor,
+            uow=uow,
+        )
+        own_history = await ListSprintHistoryUseCase().execute(
+            ListSprintHistoryCommand(sprint_id),
+            actor=actor,
+            uow=uow,
+        )
+
+    assert sprint_id in {sprint.id for sprint in own_board.sprints}
+    assert sprint_id in {sprint.id for sprint in own_spec.sprints}
+    assert any(entry.sprint_id == sprint_id for entry in own_history.history)
+
+
+@pytest.mark.asyncio
+async def test_rest_sprint_reads_do_not_disclose_cross_board_parents(client) -> None:
+    board_id = await _seed_board()
+    foreign_board_id = await _seed_board()
+    foreign_spec_id = await _seed_spec(foreign_board_id)
+    foreign_sprint_id = await _create_sprint(foreign_board_id, foreign_spec_id)
+
+    by_spec = client.get(
+        f"{PREFIX}/boards/{board_id}/specs/{foreign_spec_id}/sprints"
+    )
+    by_board_filter = client.get(
+        f"{PREFIX}/boards/{board_id}/sprints",
+        params={"spec_id": foreign_spec_id},
+    )
+
+    assert by_spec.status_code == 404, by_spec.text
+    assert by_spec.json()["detail"] == "Spec not found"
+    assert foreign_sprint_id not in by_spec.text
+    assert by_board_filter.status_code == 404, by_board_filter.text
+    assert by_board_filter.json()["detail"] == "Spec not found"
+    assert foreign_sprint_id not in by_board_filter.text
+
+
+@pytest.mark.asyncio
+async def test_rest_history_binds_actor_to_real_parent_board(
+    client,
+    monkeypatch,
+) -> None:
+    board_id = await _seed_board()
+    spec_id = await _seed_spec(board_id)
+    sprint_id = await _create_sprint(board_id, spec_id)
+    captured_board_ids: list[str | None] = []
+    original_execute = sprints_api.ListSprintHistoryUseCase.execute
+
+    async def _capture_actor_board(self, command, *, actor, uow):
+        captured_board_ids.append(actor.board_id)
+        return await original_execute(self, command, actor=actor, uow=uow)
+
+    monkeypatch.setattr(
+        sprints_api.ListSprintHistoryUseCase,
+        "execute",
+        _capture_actor_board,
+    )
+
+    response = client.get(f"{PREFIX}/sprints/{sprint_id}/history")
+    missing = client.get(f"{PREFIX}/sprints/{_missing()}/history")
+
+    assert response.status_code == 200, response.text
+    assert captured_board_ids == [board_id]
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Sprint not found"
+
+
+@pytest.mark.asyncio
+async def test_viewer_share_can_read_every_sprint_surface_but_cannot_mutate(
+    client,
+) -> None:
+    from sqlalchemy_test_models import Card, Sprint
+
+    board_id = await _seed_board(OTHER)
+    await _share_board(board_id, permission="viewer")
+    spec_id = await _seed_spec(board_id, created_by=OTHER)
+    card_id = await _seed_card(board_id, spec_id, created_by=OTHER)
+    sprint_id = await _create_sprint(board_id, spec_id, user_id=OTHER)
+
+    reads = (
+        client.get(f"{PREFIX}/boards/{board_id}/sprints"),
+        client.get(f"{PREFIX}/boards/{board_id}/specs/{spec_id}/sprints"),
+        client.get(f"{PREFIX}/sprints/{sprint_id}"),
+        client.get(f"{PREFIX}/sprints/{sprint_id}/history"),
+        client.get(
+            f"{PREFIX}/boards/{board_id}/specs/{spec_id}/sprints/suggest"
+        ),
+    )
+    assert [response.status_code for response in reads] == [200] * len(reads)
+
+    evaluation = {
+        "breakdown_completeness": 90,
+        "breakdown_justification": "ok",
+        "granularity": 90,
+        "granularity_justification": "ok",
+        "dependency_coherence": 90,
+        "dependency_justification": "ok",
+        "test_coverage_quality": 90,
+        "test_coverage_justification": "ok",
+        "overall_score": 90,
+        "overall_justification": "ok",
+        "recommendation": "approve",
+    }
+    denied = (
+        client.post(
+            f"{PREFIX}/boards/{board_id}/specs/{spec_id}/sprints",
+            json={"title": "forbidden", "spec_id": spec_id},
+        ),
+        client.patch(
+            f"{PREFIX}/sprints/{sprint_id}",
+            json={"title": "forbidden"},
+        ),
+        client.post(
+            f"{PREFIX}/sprints/{sprint_id}/move",
+            json={"status": "active"},
+        ),
+        client.post(
+            f"{PREFIX}/sprints/{sprint_id}/evaluations",
+            json=evaluation,
+        ),
+        client.post(
+            f"{PREFIX}/sprints/{sprint_id}/assign-tasks",
+            json={"card_ids": [card_id]},
+        ),
+        client.post(
+            f"{PREFIX}/sprints/{sprint_id}/unassign-tasks",
+            json={"card_ids": [card_id]},
+        ),
+        client.delete(f"{PREFIX}/sprints/{sprint_id}"),
+    )
+    assert [response.status_code for response in denied] == [404] * len(denied)
+    assert all("not found" in response.text.lower() for response in denied)
+
+    async with get_session_factory()() as db:
+        sprint = await db.get(Sprint, sprint_id)
+        card = await db.get(Card, card_id)
+        assert sprint is not None
+        assert sprint.title == "seed sprint"
+        assert card is not None
+        assert card.sprint_id is None
+
+
+@pytest.mark.asyncio
+async def test_editor_share_can_create_update_and_assign_sprint(client) -> None:
+    board_id = await _seed_board(OTHER)
+    await _share_board(board_id, permission="editor")
+    spec_id = await _seed_spec(board_id, created_by=OTHER)
+    card_id = await _seed_card(board_id, spec_id, created_by=OTHER)
+
+    created = client.post(
+        f"{PREFIX}/boards/{board_id}/specs/{spec_id}/sprints",
+        json={"title": "editor sprint", "spec_id": spec_id},
+    )
+    assert created.status_code == 201, created.text
+    sprint_id = created.json()["id"]
+
+    updated = client.patch(
+        f"{PREFIX}/sprints/{sprint_id}",
+        json={"title": "editor renamed"},
+    )
+    assigned = client.post(
+        f"{PREFIX}/sprints/{sprint_id}/assign-tasks",
+        json={"card_ids": [card_id]},
+    )
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["title"] == "editor renamed"
+    assert assigned.status_code == 200, assigned.text
+    assert assigned.json()["assigned"] == 1
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_path_payload_spec_mismatch_without_disclosure(
+    client,
+) -> None:
+    board_id = await _seed_board()
+    path_spec_id = await _seed_spec(board_id)
+    payload_spec_id = await _seed_spec(board_id)
+
+    response = client.post(
+        f"{PREFIX}/boards/{board_id}/specs/{path_spec_id}/sprints",
+        json={"title": "mismatch", "spec_id": payload_spec_id},
+    )
+
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == "Spec or board not found"
 
 
 @pytest.mark.asyncio

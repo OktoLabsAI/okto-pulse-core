@@ -38,6 +38,9 @@ from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from sqlalchemy_test_models import (
     Board,
+    Card,
+    CardStatus,
+    CardType,
     Spec,
     SpecStatus,
     Sprint,
@@ -87,6 +90,7 @@ async def _seed(db_factory):
     spec_done_id = _id("lane-spec-done")
     sprint_normal_id = _id("lane-sprint-normal")
     sprint_hotfix_id = _id("lane-sprint-hotfix")
+    origin_bug_id = _id("lane-origin-bug")
 
     async with db_factory() as db:
         db.add(
@@ -99,6 +103,16 @@ async def _seed(db_factory):
         )
         db.add(_spec(spec_normal_id, board_id, SpecStatus.IN_PROGRESS))
         db.add(_spec(spec_done_id, board_id, SpecStatus.DONE))
+        db.add(Card(
+            id=origin_bug_id,
+            board_id=board_id,
+            spec_id=spec_done_id,
+            title="Explicit hotfix origin bug",
+            status=CardStatus.NOT_STARTED,
+            card_type=CardType.BUG,
+            archived=False,
+            created_by=USER_ID,
+        ))
         db.add(Sprint(
             id=sprint_normal_id, board_id=board_id, spec_id=spec_normal_id,
             title="Normal Lane Sprint", status=SprintStatus.DRAFT,
@@ -117,6 +131,7 @@ async def _seed(db_factory):
         "spec_done_id": spec_done_id,
         "sprint_normal_id": sprint_normal_id,
         "sprint_hotfix_id": sprint_hotfix_id,
+        "origin_bug_id": origin_bug_id,
     }
 
 
@@ -224,10 +239,14 @@ async def test_ts_lane_05_rest_valid_values_persist(rest_ctx, db_factory):
     assert normal.status_code == 201
     assert normal.json()["lane_type"] == "normal"
 
-    # Hotfix is eligible on a DONE spec (no origin required).
+    # Hotfix is eligible on a DONE spec with explicit bug lineage.
+    hotfix_body = _create_body(
+        ids["spec_done_id"], "hotfix", "REST Hotfix Create"
+    )
+    hotfix_body["origin_bug_id"] = ids["origin_bug_id"]
     hotfix = client.post(
         f"/boards/{ids['board_id']}/specs/{ids['spec_done_id']}/sprints",
-        json=_create_body(ids["spec_done_id"], "hotfix", "REST Hotfix Create"),
+        json=hotfix_body,
     )
     assert hotfix.status_code == 201
     assert hotfix.json()["lane_type"] == "hotfix"
@@ -332,6 +351,14 @@ async def test_ts_lane_05_mcp_valid_values_persist(db_factory):
             "okto_pulse_create_sprint",
             board_id=board_id, spec_id=ids["spec_done_id"],
             title="MCP Hotfix Create", lane_type="hotfix",
+            origin_bug_id=ids["origin_bug_id"],
+        )
+        hotfix_created = json.loads(hotfix_raw)
+        hotfix_to_normal_raw = await _call(
+            "okto_pulse_update_sprint",
+            board_id=board_id,
+            sprint_id=hotfix_created["sprint"]["id"],
+            lane_type="normal",
         )
         update_raw = await _call(
             "okto_pulse_update_sprint",
@@ -340,20 +367,30 @@ async def test_ts_lane_05_mcp_valid_values_persist(db_factory):
 
     normal = json.loads(normal_raw)
     hotfix = json.loads(hotfix_raw)
+    hotfix_to_normal = json.loads(hotfix_to_normal_raw)
     update = json.loads(update_raw)
     assert normal.get("success") is True and normal["sprint"]["lane_type"] == "normal"
     assert hotfix.get("success") is True and hotfix["sprint"]["lane_type"] == "hotfix"
+    assert hotfix_to_normal.get("success") is True
+    assert hotfix_to_normal["sprint"]["lane_type"] == "normal"
+    assert hotfix_to_normal["sprint"]["origin_sprint_id"] is None
+    assert hotfix_to_normal["sprint"]["origin_bug_id"] is None
     assert update.get("success") is True and update["sprint"]["lane_type"] == "normal"
 
     async with db_factory() as db:
         rows = (await db.execute(
-            select(Sprint.title, Sprint.lane_type).where(
+            select(
+                Sprint.title,
+                Sprint.lane_type,
+                Sprint.origin_sprint_id,
+                Sprint.origin_bug_id,
+            ).where(
                 Sprint.title.in_(["MCP Normal Create", "MCP Hotfix Create"])
             )
         )).all()
-    persisted = {title: lane for title, lane in rows}
-    assert persisted["MCP Normal Create"] == SprintLaneType.NORMAL
-    assert persisted["MCP Hotfix Create"] == SprintLaneType.HOTFIX
+    persisted = {title: (lane, origin_sprint, origin_bug) for title, lane, origin_sprint, origin_bug in rows}
+    assert persisted["MCP Normal Create"] == (SprintLaneType.NORMAL, None, None)
+    assert persisted["MCP Hotfix Create"] == (SprintLaneType.NORMAL, None, None)
 
 
 # ============================================================================

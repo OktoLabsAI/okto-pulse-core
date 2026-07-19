@@ -34,11 +34,14 @@ Sprints expose `lane_type` so normal delivery work and post-closure bug work are
 The lane enum is intentionally limited to delivery vs post-closure hotfix
 semantics.
 
-Hotfix lanes carry optional lineage fields:
-- `origin_sprint_id` — the closed original sprint that produced the post-closure work, when applicable.
-- `origin_bug_id` — the bug card that triggered the lane, when available.
+Hotfix lanes carry explicit lineage:
+- `origin_bug_id` is **required** and must identify a bug card in the same board and spec.
+- `origin_sprint_id` is optional; when supplied, it must identify a sprint in the same board and spec. A hotfix is eligible when the spec is done or that origin sprint is closed.
 
-An `active` hotfix lane satisfies the same sprint ownership gate as an `active` normal sprint. It does not bypass bug governance: bug cards in hotfix lanes still need the required linked post-bug test card when the board bug regression gate applies.
+Normal lanes cannot carry either origin field. Updating a hotfix lane to `normal`
+clears both origins atomically.
+
+An `active` hotfix lane satisfies the same sprint ownership gate as an `active` normal sprint. It does not bypass bug governance: bug cards in hotfix lanes still need the required linked post-bug test card when the board bug regression gate applies. Cards remain same-spec by default. The sole cross-spec assignment is a validator-confirmed Path B regression test task whose amendment binds the lane's origin bug, task, scenario and revision spec; incomplete, unconfirmed or unrelated amendments never open that boundary.
 
 ### MANDATORY — Detailed Sprint Fields
 
@@ -91,6 +94,11 @@ For scope to resolve correctly, **you MUST link spec artifacts to cards** using 
 ### Sprint Evaluation (4 Dimensions + Overall)
 
 When a sprint is in `review` status, submit an evaluation via `okto_pulse_submit_sprint_evaluation`. Each dimension scores 0-100 with a mandatory justification:
+
+First read `okto_pulse_get_sprint_context(profile="full")` and inspect the
+current caller's `reviewer_separation` projection. When its mode is `enforce`
+and `allowed=false`, use a different authorized principal; retrying with the
+same creator, assignee, or executor is not a transient recovery action.
 
 | Dimension | What to evaluate |
 |-----------|-----------------|

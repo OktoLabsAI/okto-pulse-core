@@ -59,6 +59,7 @@ class SemanticGraphStore(Protocol):
         top_k: int, min_similarity: float,
         *,
         include_superseded: bool = False,
+        graph_layer: str = "all",
     ) -> list[dict]: ...
 
     def get_constraint_detail(

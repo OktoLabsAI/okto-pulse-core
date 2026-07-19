@@ -23,7 +23,7 @@ from test_kg_dedup_nc8 import (  # noqa: F401  (harness reuse)
 )
 from test_kg_provenance_commit_fill import (  # noqa: F401  (harness reuse)
     _drive_with_provenance,
-    _prov_row,
+    _prov_row_async,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -91,12 +91,12 @@ async def test_s4_identical_begin_counts_attestation_without_reprocessing(
     await _drive_with_provenance(
         session_factory, board_id, artifact_ref, title, content=content
     )
-    assert _prov_row(board_id, artifact_ref)["attestation_count"] == 1
+    assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 1
 
     with caplog.at_level(logging.INFO, logger="okto_pulse.kg.primitives"):
         begin2 = await _begin_identical(board_id, artifact_ref, title, content)
     assert begin2.nothing_changed is True
-    row = _prov_row(board_id, artifact_ref)
+    row = await _prov_row_async(board_id, artifact_ref)
     assert row["attestation_count"] == 2
     # Content untouched by the count-only path.
     assert row["content"] == content
@@ -109,7 +109,7 @@ async def test_s4_identical_begin_counts_attestation_without_reprocessing(
     # still the last committed one — begin does not write audits).
     begin3 = await _begin_identical(board_id, artifact_ref, title, content)
     assert begin3.nothing_changed is True
-    assert _prov_row(board_id, artifact_ref)["attestation_count"] == 3
+    assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 3
 
 
 async def test_s4_full_flow_counts_exactly_once_with_zero_counters(
@@ -134,7 +134,7 @@ async def test_s4_full_flow_counts_exactly_once_with_zero_counters(
     assert commit2.nodes_merged == 0
     assert commit2.nodes_superseded == 0
 
-    assert _prov_row(board_id, artifact_ref)["attestation_count"] == 2
+    assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 2
 
 
 async def test_s4_changed_content_does_not_trigger_count_only(
@@ -152,4 +152,4 @@ async def test_s4_changed_content_does_not_trigger_count_only(
     )
     assert begin2.nothing_changed is False
     # No count-only bump — the changed-content path belongs to NC-8 (FR4).
-    assert _prov_row(board_id, artifact_ref)["attestation_count"] == 1
+    assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 1

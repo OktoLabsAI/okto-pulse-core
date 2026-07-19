@@ -59,6 +59,8 @@ def test_source_content_column_contracts_are_verbatim() -> None:
         "spec_version",
         "status",
         "lane_type",
+        "origin_sprint_id",
+        "origin_bug_id",
         "objective",
         "expected_outcome",
         "test_scenario_ids",
@@ -123,7 +125,7 @@ def test_content_hashes_match_pinned_core_contracts() -> None:
         (
             SPRINT_CONTENT_COLUMNS,
             _sprint_row(),
-            "da417a8366787a6f89a00a0f78a1cc6fe84dbc1d4dc68b4d7ff22fd9d6f42c25",
+            "f04dfc89c7566bf7fb348c463cbb5ac645e6bab2ec327d2a2d084ce5f42beb71",
         ),
         (
             CARD_CONTENT_COLUMNS,
@@ -263,6 +265,8 @@ def _sprint_row() -> dict[str, object]:
         "spec_version": 5,
         "status": "planned",
         "lane_type": "delivery",
+        "origin_sprint_id": "sprint-origin",
+        "origin_bug_id": "bug-origin",
         "objective": "Objective",
         "expected_outcome": "Outcome",
         "test_scenario_ids": '["ts1"]',

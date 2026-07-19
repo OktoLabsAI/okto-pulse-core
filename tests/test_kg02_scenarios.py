@@ -49,6 +49,7 @@ from okto_pulse.core.kg.global_discovery_reindex import (
     ReindexStatus,
     reset_reindex_counter,
 )
+from okto_pulse.core.kg.global_discovery_writer import GlobalDiscoveryWriterLease
 from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingMarker,
     CognitivePendingStatus,
@@ -244,6 +245,28 @@ class _InMemorySingleWriterPort:
 
     def reset_for_tests(self) -> None:
         self._locks.clear()
+
+
+class _AlwaysOwnedGlobalWriterLock:
+    def is_owner(self, _board_id: str, _owner_token: str) -> bool:
+        return True
+
+    def release(self, *, board_id: str, owner_token: str) -> bool:
+        del board_id, owner_token
+        return True
+
+
+def _guarded_reindex(reindexer: GlobalDiscoveryReindexer, **kwargs):
+    lease = GlobalDiscoveryWriterLease(
+        lock=_AlwaysOwnedGlobalWriterLock(),  # type: ignore[arg-type]
+        owner_token="kg02-reindex-test-writer",
+        operation="test_kg02_reindex",
+    )
+    try:
+        with lease.guard():
+            return reindexer.reindex_or_mark_pending(**kwargs)
+    finally:
+        lease.release()
 
 
 @pytest.fixture
@@ -865,7 +888,8 @@ def test_ts_ebf4ed79_discovery_reindex_or_pending(base_dir: Path) -> None:
         ),
     )
     gen_a = generate_kg_generation_id()
-    a = rx_ok.reindex_or_mark_pending(
+    a = _guarded_reindex(
+        rx_ok,
         board_id=BOARD,
         kg_generation_id=gen_a,
         reason=ReindexReason.DISCOVERY_LBUG_AFFECTED.value,
@@ -897,7 +921,8 @@ def test_ts_dee61d05_discovery_reindex_status_visible(base_dir: Path) -> None:
         ),
     )
     gen = generate_kg_generation_id()
-    outcome = reindexer.reindex_or_mark_pending(
+    outcome = _guarded_reindex(
+        reindexer,
         board_id=BOARD,
         kg_generation_id=gen,
         reason=ReindexReason.OPERATOR_REQUESTED.value,

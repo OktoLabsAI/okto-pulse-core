@@ -76,6 +76,9 @@ def _seed_pending(base_dir, board_id: str, sources: list[dict]) -> str:
 
 
 async def _insert_dlq_row(db, board_id: str, artifact_id: str) -> str:
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name="opviz-dlq", owner_id="user-opviz"))
+        await db.flush()
     row_id = f"dlq_{uuid.uuid4().hex[:10]}"
     db.add(
         ConsolidationDeadLetter(

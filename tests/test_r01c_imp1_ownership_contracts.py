@@ -134,9 +134,14 @@ def test_real_schema_round_trips_enum_to_frozen_value():
 def _reset_orchestrator():
     from okto_pulse.core.ports import schema_lifecycle as sl
 
+    previous = sl.resolve_relational_schema_lifecycle_orchestrator()
     sl.reset_relational_schema_lifecycle_orchestrator()
-    yield
-    sl.reset_relational_schema_lifecycle_orchestrator()
+    try:
+        yield
+    finally:
+        sl.reset_relational_schema_lifecycle_orchestrator()
+        if previous is not None:
+            sl.register_relational_schema_lifecycle_orchestrator(previous)
 
 
 def test_resolve_is_none_when_unregistered():

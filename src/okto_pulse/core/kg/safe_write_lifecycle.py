@@ -33,7 +33,6 @@ the owner_token presented to it.
 from __future__ import annotations
 
 import logging
-import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 import uuid
 from dataclasses import dataclass

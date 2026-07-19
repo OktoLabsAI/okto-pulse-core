@@ -461,6 +461,7 @@ async def test_startup_recovery_resets_processing_to_pending(db_factory, clean_t
             occurred_at=datetime.now(timezone.utc),
         )
         session.add(event)
+        await session.flush()
         session.add(DomainEventHandlerExecution(
             event_id="evt-recover",
             handler_name="ConsolidationEnqueuer",
@@ -524,6 +525,7 @@ async def test_retry_then_dlq_after_max_attempts(db_factory, clean_tables):
                 occurred_at=datetime.now(timezone.utc),
             )
             session.add(event)
+            await session.flush()
             session.add(DomainEventHandlerExecution(
                 event_id="evt-dlq",
                 handler_name="_FailingEventHandler",

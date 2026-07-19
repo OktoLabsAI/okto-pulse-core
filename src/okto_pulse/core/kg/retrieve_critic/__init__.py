@@ -39,7 +39,12 @@ from .interfaces import (
     CriticDecision,
     ReflectResult,
 )
-from .orchestrator import critic_evaluate, reflect, reset_critic_cache
+from .orchestrator import (
+    critic_evaluate,
+    reflect,
+    reset_critic_cache,
+    run_reflective_query,
+)
 
 __all__ = [
     "Adequacy",
@@ -49,4 +54,5 @@ __all__ = [
     "critic_evaluate",
     "reflect",
     "reset_critic_cache",
+    "run_reflective_query",
 ]

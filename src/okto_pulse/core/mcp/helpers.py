@@ -52,6 +52,15 @@ all migrations are done and the pre-flip audit (FR7) is recorded.
 from __future__ import annotations
 
 import json
+from typing import NotRequired, TypedDict
+
+
+class ChoiceOptionInput(TypedDict):
+    """Canonical native input for an MCP choice option."""
+
+    label: str
+    recommended: NotRequired[bool]
+    tradeoff: NotRequired[str | None]
 
 
 def _clean_str_list(values: list[str]) -> list[str]:
@@ -208,8 +217,8 @@ def coerce_to_list_str(
 
 
 def parse_options_json(
-    raw: str | None,
-) -> list[dict] | None:
+    raw: list[ChoiceOptionInput] | str | None,
+) -> list[ChoiceOptionInput] | None:
     """Parse the ``options_json`` parameter accepted by the 4 choice handlers.
 
     This is a dedicated parser for **object-typed** option items — distinct
@@ -229,8 +238,9 @@ def parse_options_json(
 
     * ``label`` — required; must be a non-empty string after stripping
       whitespace.  Missing or empty ``label`` raises ``ValueError``.
-    * ``recommended`` — optional; coerced to ``bool`` via truthiness if
-      present; defaults to ``False`` when absent.
+    * ``recommended`` — optional native boolean; the legacy string parser
+      accepts only the explicit literals ``true``/``false`` (and ``1``/``0``)
+      instead of Python truthiness.  Defaults to ``False`` when absent.
     * ``tradeoff`` — optional; must be a string or ``None``/absent; defaults
       to ``None``.  Non-string, non-``None`` values are coerced via ``str()``.
 
@@ -277,7 +287,7 @@ def parse_options_json(
     if not decoded:
         return None
 
-    result: list[dict] = []
+    result: list[ChoiceOptionInput] = []
     for idx, item in enumerate(decoded):
         if not isinstance(item, dict):
             raise ValueError(
@@ -291,8 +301,27 @@ def parse_options_json(
             )
         label = str(raw_label).strip()
 
-        recommended_raw = item.get("recommended")
-        recommended: bool = bool(recommended_raw) if recommended_raw is not None else False
+        recommended_raw = item.get("recommended", False)
+        if isinstance(recommended_raw, bool):
+            recommended = recommended_raw
+        elif isinstance(recommended_raw, int) and recommended_raw in (0, 1):
+            recommended = bool(recommended_raw)
+        elif isinstance(recommended_raw, str):
+            normalized = recommended_raw.strip().lower()
+            if normalized in {"true", "1"}:
+                recommended = True
+            elif normalized in {"false", "0"}:
+                recommended = False
+            else:
+                raise ValueError(
+                    "options_json item at index "
+                    f"{idx} has invalid 'recommended'; expected a boolean"
+                )
+        else:
+            raise ValueError(
+                "options_json item at index "
+                f"{idx} has invalid 'recommended'; expected a boolean"
+            )
 
         tradeoff_raw = item.get("tradeoff")
         if tradeoff_raw is None:
@@ -348,6 +377,7 @@ def _structured_error(
 
 
 __all__ = [
+    "ChoiceOptionInput",
     "parse_multi_value",
     "parse_options_json",
     "coerce_to_list_str",

@@ -37,6 +37,7 @@ async def _seed(db_factory, *, active=False, dlq=False, debt=False):
     board = _id("board")
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp5", owner_id=USER_ID))
+        await db.flush()
         if active:
             db.add(ConsolidationQueue(
                 id=_id("cq"), board_id=board, artifact_type="spec",
@@ -158,6 +159,7 @@ async def test_dead_letter_backlog_is_not_duplicated(db_factory):
     board = _id("board")
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp5", owner_id=USER_ID))
+        await db.flush()
         for _ in range(3):
             db.add(ConsolidationDeadLetter(
                 id=_id("dlq"), board_id=board, artifact_type="card",

@@ -30,11 +30,73 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 
 
-def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
-    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
+_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
+
+
+def _query_scope_for_actor(
+    actor: ActorContext,
+    *,
+    board_id: str | None = None,
+    board_access_granted: bool = False,
+) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(
+        target_board_id=board_id,
+        allowed_board_ids={board_id} if board_access_granted and board_id else None,
+        require_ownership=not board_access_granted,
+    )
+
+
+async def _require_accessible_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+    *,
+    write: bool = False,
+) -> Any:
+    board = await load_accessible_board(
+        uow,
+        board_id,
+        actor,
+        allowed_share_permissions=_WRITE_SHARE_PERMISSIONS if write else None,
+    )
+    if board is None:
+        raise EntityNotFoundError("board", board_id)
+    return board
+
+
+async def _require_accessible_ideation(
+    uow: PulseUnitOfWork,
+    ideation_id: str,
+    actor: ActorContext,
+    *,
+    write: bool = False,
+) -> Any:
+    """Resolve an ideation without exposing records outside the actor's board.
+
+    MCP actors already carry the authenticated board. REST actors do not, so the
+    parent board must be owned by the user before any child read or write runs.
+    """
+
+    ideation = await uow.services.ideations.get_ideation(ideation_id)
+    if ideation is None:
+        raise EntityNotFoundError("ideation", ideation_id)
+    if actor.board_id is not None and ideation.board_id != actor.board_id:
+        raise EntityNotFoundError("ideation", ideation_id)
+    if actor.source == "mcp" and actor.board_id == ideation.board_id:
+        return ideation
+    board = await load_accessible_board(
+        uow,
+        ideation.board_id,
+        actor,
+        allowed_share_permissions=_WRITE_SHARE_PERMISSIONS if write else None,
+    )
+    if board is None:
+        raise EntityNotFoundError("ideation", ideation_id)
+    return ideation
 
 
 # --- create -----------------------------------------------------------------
@@ -64,12 +126,17 @@ class CreateIdeationUseCase:
     async def execute(
         self, command: CreateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateIdeationResult:
+        await _require_accessible_board(uow, command.board_id, actor, write=True)
         service = uow.services.ideations
         ideation = await service.create_ideation(
             command.board_id,
             actor.actor_id,
             command.data,
-            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+            query_scope=_query_scope_for_actor(
+                actor,
+                board_id=command.board_id,
+                board_access_granted=True,
+            ),
         )
         if not ideation:
             raise EntityNotFoundError("board", command.board_id)
@@ -105,13 +172,7 @@ class ListIdeationsUseCase:
     async def execute(
         self, command: ListIdeationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationsResult:
-        board = await uow.services.boards.get_board(
-            command.board_id,
-            actor.actor_id,
-            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
-        )
-        if not board:
-            raise EntityNotFoundError("board", command.board_id)
+        await _require_accessible_board(uow, command.board_id, actor)
         ideations = await uow.services.ideations.list_ideations(
             command.board_id, command.status_filter, include_archived=command.include_archived
         )
@@ -136,14 +197,12 @@ class GetIdeationResult:
 
 
 class GetIdeationUseCase:
-    """Fetch an ideation with nested data (read). 404 when missing."""
+    """Fetch an accessible ideation with nested data; denied and missing are 404."""
 
     async def execute(
         self, command: GetIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetIdeationResult:
-        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
-        if not ideation:
-            raise EntityNotFoundError("ideation", command.ideation_id)
+        ideation = await _require_accessible_ideation(uow, command.ideation_id, actor)
         return GetIdeationResult(ideation)
 
 
@@ -175,6 +234,9 @@ class UpdateIdeationUseCase:
         self, command: UpdateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateIdeationResult:
         service = uow.services.ideations
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         ideation = await service.update_ideation(
             command.ideation_id, actor.actor_id, command.data
         )
@@ -214,6 +276,9 @@ class SetIdeationAmbiguityGateSkipUseCase:
         self, command: SetIdeationAmbiguityGateSkipCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SetIdeationAmbiguityGateSkipResult:
         service = uow.services.ideations
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         ideation = await service.set_ambiguity_gate_skip(
             command.ideation_id, actor.actor_id, command.skip, source="rest"
         )
@@ -245,6 +310,9 @@ class DeleteIdeationUseCase:
     async def execute(
         self, command: DeleteIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteIdeationResult:
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         deleted = await uow.services.ideations.delete_ideation(
             command.ideation_id, actor.actor_id
         )
@@ -290,9 +358,9 @@ class EvaluateComplexityUseCase:
         )
 
         service = uow.services.ideations
-        ideation = await service.get_ideation(command.ideation_id)
-        if not ideation:
-            raise EntityNotFoundError("ideation", command.ideation_id)
+        ideation = await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
 
         body = command.body
         scope = ideation.scope_assessment or {}
@@ -343,10 +411,17 @@ class DeriveSpecUseCase:
     async def execute(
         self, command: DeriveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeriveSpecResult:
+        ideation = await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         spec = await uow.services.ideations.derive_spec(
             command.ideation_id,
             actor.actor_id,
-            query_scope=_query_scope_for_actor(actor),
+            query_scope=_query_scope_for_actor(
+                actor,
+                board_id=ideation.board_id,
+                board_access_granted=True,
+            ),
         )
         if not spec:
             raise EntityNotFoundError("ideation", command.ideation_id)
@@ -372,12 +447,12 @@ class ListIdeationSnapshotsResult:
 
 
 class ListIdeationSnapshotsUseCase:
-    """List an ideation's version snapshots (read, no commit). Mirrors the legacy
-    endpoint: no existence check — an unknown ideation simply yields an empty list."""
+    """List snapshots after a non-enumerable parent board-access preflight."""
 
     async def execute(
         self, command: ListIdeationSnapshotsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationSnapshotsResult:
+        await _require_accessible_ideation(uow, command.ideation_id, actor)
         snapshots = await uow.services.ideations.list_snapshots(command.ideation_id)
         return ListIdeationSnapshotsResult(snapshots)
 
@@ -405,6 +480,7 @@ class GetIdeationSnapshotUseCase:
     async def execute(
         self, command: GetIdeationSnapshotCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetIdeationSnapshotResult:
+        await _require_accessible_ideation(uow, command.ideation_id, actor)
         snapshot = await uow.services.ideations.get_snapshot(
             command.ideation_id, command.version
         )
@@ -437,6 +513,7 @@ class ListIdeationHistoryUseCase:
     async def execute(
         self, command: ListIdeationHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationHistoryResult:
+        await _require_accessible_ideation(uow, command.ideation_id, actor)
         history = await uow.services.ideations.list_history(
             command.ideation_id, command.limit
         )
@@ -466,13 +543,12 @@ class ListIdeationKnowledgeResult:
 
 
 class ListIdeationKnowledgeUseCase:
-    """List an ideation's knowledge base items without content (read, no commit).
-    Mirrors the legacy endpoint: no existence check — an unknown ideation yields an
-    empty list."""
+    """List knowledge metadata after parent board-access preflight."""
 
     async def execute(
         self, command: ListIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationKnowledgeResult:
+        await _require_accessible_ideation(uow, command.ideation_id, actor)
         items = await uow.services.ideation_knowledge.list_knowledge(
             command.ideation_id
         )
@@ -502,6 +578,7 @@ class GetIdeationKnowledgeUseCase:
     async def execute(
         self, command: GetIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetIdeationKnowledgeResult:
+        await _require_accessible_ideation(uow, command.ideation_id, actor)
         kb = await uow.services.ideation_knowledge.get_knowledge(
             command.knowledge_id
         )
@@ -533,6 +610,9 @@ class CreateIdeationKnowledgeUseCase:
     async def execute(
         self, command: CreateIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateIdeationKnowledgeResult:
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         kb = await uow.services.ideation_knowledge.create_knowledge(
             command.ideation_id, actor.actor_id, command.data
         )
@@ -564,6 +644,9 @@ class DeleteIdeationKnowledgeUseCase:
     async def execute(
         self, command: DeleteIdeationKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteIdeationKnowledgeResult:
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         service = uow.services.ideation_knowledge
         kb = await service.get_knowledge(command.knowledge_id)
         if not kb or kb.ideation_id != command.ideation_id:
@@ -598,12 +681,12 @@ class ListIdeationQAResult:
 
 
 class ListIdeationQAUseCase:
-    """List an ideation's Q&A items (read, no commit). Mirrors the legacy endpoint:
-    no existence check — an unknown ideation yields an empty list."""
+    """List Q&A after parent board-access preflight (read, no commit)."""
 
     async def execute(
         self, command: ListIdeationQACommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationQAResult:
+        await _require_accessible_ideation(uow, command.ideation_id, actor)
         items = await uow.services.ideation_qa.list_qa(command.ideation_id)
         return ListIdeationQAResult(items)
 
@@ -631,6 +714,9 @@ class CreateIdeationQuestionUseCase:
     async def execute(
         self, command: CreateIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateIdeationQuestionResult:
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         qa = await uow.services.ideation_qa.create_question(
             command.ideation_id, actor.actor_id, command.data
         )
@@ -641,9 +727,10 @@ class CreateIdeationQuestionUseCase:
 
 
 class AnswerIdeationQuestionCommand:
-    __slots__ = ("qa_id", "data")
+    __slots__ = ("ideation_id", "qa_id", "data")
 
-    def __init__(self, qa_id: str, data: Any) -> None:
+    def __init__(self, ideation_id: str, qa_id: str, data: Any) -> None:
+        self.ideation_id = ideation_id
         self.qa_id = qa_id
         self.data = data
 
@@ -662,14 +749,21 @@ class AnswerIdeationQuestionUseCase:
     authorization audit side-effect persists) and the error re-raised for the
     adapter to map to 403 with its ``{reason, message}`` detail; ``None`` (no such
     Q&A or nothing persisted) → ``EntityNotFoundError("ideation_qa")`` (404 "Q&A
-    item not found"); a successful answer commits."""
+    item not found"); the Q&A item must belong to the path parent before the writer
+    runs; a successful answer commits."""
 
     async def execute(
         self, command: AnswerIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AnswerIdeationQuestionResult:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         service = uow.services.ideation_qa
+        existing = await service.get_question(command.qa_id)
+        if existing is None or existing.ideation_id != command.ideation_id:
+            raise EntityNotFoundError("ideation_qa", command.qa_id)
         try:
             qa = await service.answer_question(
                 command.qa_id, actor.actor_id, command.data,
@@ -685,9 +779,10 @@ class AnswerIdeationQuestionUseCase:
 
 
 class DeleteIdeationQuestionCommand:
-    __slots__ = ("qa_id",)
+    __slots__ = ("ideation_id", "qa_id")
 
-    def __init__(self, qa_id: str) -> None:
+    def __init__(self, ideation_id: str, qa_id: str) -> None:
+        self.ideation_id = ideation_id
         self.qa_id = qa_id
 
 
@@ -703,7 +798,14 @@ class DeleteIdeationQuestionUseCase:
     async def execute(
         self, command: DeleteIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteIdeationQuestionResult:
-        deleted = await uow.services.ideation_qa.delete_question(command.qa_id)
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
+        service = uow.services.ideation_qa
+        existing = await service.get_question(command.qa_id)
+        if existing is None or existing.ideation_id != command.ideation_id:
+            raise EntityNotFoundError("ideation_qa", command.qa_id)
+        deleted = await service.delete_question(command.qa_id)
         if not deleted:
             raise EntityNotFoundError("ideation_qa", command.qa_id)
         await commit(uow)

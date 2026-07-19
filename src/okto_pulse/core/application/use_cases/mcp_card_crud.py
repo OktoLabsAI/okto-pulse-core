@@ -31,6 +31,27 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.domain.enums import CardStatus
+
+
+def _require_actor_board(actor: ActorContext, board_id: str) -> None:
+    """Fail closed when a direct caller spoofs the command board."""
+
+    if actor.board_id is None or actor.board_id != board_id:
+        raise EntityNotFoundError("card", board_id)
+
+
+async def _get_card_in_scope(
+    service: Any,
+    card_id: str,
+    board_id: str,
+    actor: ActorContext,
+) -> Any:
+    _require_actor_board(actor, board_id)
+    card = await service.get_card(card_id)
+    if not card or card.board_id != board_id:
+        raise EntityNotFoundError("card", card_id)
+    return card
 
 
 # --- create (board create + scenario backlink + activity log) ---------------
@@ -62,46 +83,31 @@ class McpCreateCardResult:
 
 
 class McpCreateCardUseCase:
-    """Create a card on a board with the legacy MCP orchestration preserved
-    exactly: ``CardService.create_card(skip_ownership_check=True)`` → commit →
-    (optional) bidirectional ``test_scenarios.linked_task_ids`` backlink on the
-    parent spec → ``card_created`` activity log → commit. Two commits + the flush,
-    same as the legacy tool. ``CardOperationError``/``ValueError`` from
-    ``create_card`` propagate for the adapter to map; ``card=None`` →
-    adapter ``"Failed to create card"`` (no scenario link / no log)."""
+    """Create card, traceability backlinks and activity in one transaction.
+
+    ``CardService.create_card`` invokes the shared idempotent traceability writer
+    for scenario/FR/BR targets.  The MCP-specific activity row is appended before
+    the one and only commit, so any failure rolls the entire operation back.
+    """
 
     async def execute(
         self, command: McpCreateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpCreateCardResult:
+        try:
+            _require_actor_board(actor, command.board_id)
+        except EntityNotFoundError as exc:
+            raise ValueError("Board not found") from exc
+
+        spec = await uow.services.specs.get_spec(command.spec_id)
+        if not spec or spec.board_id != command.board_id:
+            raise ValueError(f"Spec '{command.spec_id}' not found")
+
         service = uow.services.cards
         card = await service.create_card(
             command.board_id, actor.actor_id, command.data, skip_ownership_check=True
         )
-        await commit(uow)
-
         if not card:
             return McpCreateCardResult(None)
-
-        if command.scenario_ids_list:
-            spec_obj = await uow.services.specs.get_spec(command.spec_id)
-            if spec_obj and spec_obj.test_scenarios:
-                from okto_pulse.core.services.persistence_mutation import (
-                    mark_mutable_field_modified,
-                )
-
-                scenarios = list(spec_obj.test_scenarios)
-                changed = False
-                for sc in scenarios:
-                    if sc.get("id") in command.scenario_ids_list:
-                        task_ids = list(sc.get("linked_task_ids") or [])
-                        if card.id not in task_ids:
-                            task_ids.append(card.id)
-                            sc["linked_task_ids"] = task_ids
-                            changed = True
-                if changed:
-                    spec_obj.test_scenarios = scenarios
-                    mark_mutable_field_modified(spec_obj, "test_scenarios")
-                    await uow.synchronize()
 
         await uow.services.boards._log_activity(
             board_id=command.board_id,
@@ -142,9 +148,9 @@ class McpGetCardUseCase:
     async def execute(
         self, command: McpGetCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetCardResult:
-        card = await uow.services.cards.get_card(command.card_id)
-        if not card or card.board_id != command.board_id:
-            raise EntityNotFoundError("card", command.card_id)
+        card = await _get_card_in_scope(
+            uow.services.cards, command.card_id, command.board_id, actor
+        )
         return McpGetCardResult(card)
 
 
@@ -180,9 +186,7 @@ class McpUpdateCardUseCase:
         self, command: McpUpdateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateCardResult:
         service = uow.services.cards
-        card = await service.get_card(command.card_id)
-        if not card or card.board_id != command.board_id:
-            raise EntityNotFoundError("card", command.card_id)
+        await _get_card_in_scope(service, command.card_id, command.board_id, actor)
         updated = await service.update_card(
             command.card_id, actor.actor_id, command.data
         )
@@ -230,9 +234,7 @@ class McpMoveCardUseCase:
         self, command: McpMoveCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpMoveCardResult:
         service = uow.services.cards
-        card = await service.get_card(command.card_id)
-        if not card or card.board_id != command.board_id:
-            raise EntityNotFoundError("card", command.card_id)
+        await _get_card_in_scope(service, command.card_id, command.board_id, actor)
         updated = await service.move_card(
             command.card_id, actor.actor_id, command.data, actor.actor_name
         )
@@ -261,16 +263,20 @@ class McpDeleteCardResult:
 
 
 class McpDeleteCardUseCase:
-    """Delete a board-scoped card, writing the ``card_deleted`` activity row
-    BEFORE the delete in the SAME transaction (legacy MCP order/atomicity).
-    Cross-board/missing → ``EntityNotFoundError`` (adapter ``"Card not found"``)."""
+    """Delete a board-scoped card and atomically write ``card_deleted`` only
+    after the canonical writer accepts the delete. This ordering keeps governed
+    conflicts at zero audit/mutation. Cross-board/missing →
+    ``EntityNotFoundError`` (adapter ``"Card not found"``)."""
 
     async def execute(
         self, command: McpDeleteCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteCardResult:
         service = uow.services.cards
-        card = await service.get_card(command.card_id)
-        if not card or card.board_id != command.board_id:
+        card = await _get_card_in_scope(
+            service, command.card_id, command.board_id, actor
+        )
+        deleted = await service.delete_card(command.card_id, actor.actor_id)
+        if not deleted:
             raise EntityNotFoundError("card", command.card_id)
         await uow.services.boards._log_activity(
             board_id=command.board_id,
@@ -281,7 +287,6 @@ class McpDeleteCardUseCase:
             actor_name=actor.actor_name,
             details={"title": card.title},
         )
-        deleted = await service.delete_card(command.card_id, actor.actor_id)
         await commit(uow)
         return McpDeleteCardResult(deleted)
 
@@ -315,16 +320,35 @@ class McpGetCardDependenciesResult:
 class McpGetCardDependenciesUseCase:
     """List a card's dependencies + dependents + advance-readiness in one read
     (the legacy MCP tool combined three ``CardService`` reads the REST split into
-    separate use cases). No board-scope (the legacy tool had none here). The
-    legacy ``db.commit()`` was a no-op on a read — skipped."""
+    separate use cases). Missing/cross-board source cards are a non-disclosing
+    ``EntityNotFoundError``. Legacy/corrupt cross-board edges are excluded from
+    both projections and readiness so titles cannot leak through
+    ``blocking_titles``. The legacy read-only ``db.commit()`` is skipped."""
 
     async def execute(
         self, command: McpGetCardDependenciesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetCardDependenciesResult:
         service = uow.services.cards
-        deps = await service.get_dependencies(command.card_id)
-        dependents = await service.get_dependents(command.card_id)
-        deps_met, blocking = await service.check_dependencies_met(command.card_id)
+        await _get_card_in_scope(
+            service, command.card_id, actor.board_id or "", actor
+        )
+
+        deps = [
+            dependency
+            for dependency in await service.get_dependencies(command.card_id)
+            if dependency.board_id == actor.board_id
+        ]
+        dependents = [
+            dependent
+            for dependent in await service.get_dependents(command.card_id)
+            if dependent.board_id == actor.board_id
+        ]
+        blocking = [
+            dependency.title
+            for dependency in deps
+            if dependency.status not in (CardStatus.DONE, CardStatus.CANCELLED)
+        ]
+        deps_met = not blocking
         return McpGetCardDependenciesResult(deps, dependents, deps_met, blocking)
 
 
@@ -347,7 +371,10 @@ class McpRemoveCardDependencyUseCase:
     """Remove a card→depends_on edge (write). Unlike the REST
     ``RemoveCardDependencyUseCase`` (which raises ``EntityNotFoundError`` on a
     no-op), the legacy MCP tool returns ``{"success": removed}`` with the raw
-    bool — preserved here (no raise on ``False``)."""
+    bool — preserved here (no raise on ``False``). A missing/cross-board source
+    card is non-disclosing not-found. A missing/cross-board target remains
+    indistinguishable from a missing edge as ``False`` and never reaches the
+    writer."""
 
     async def execute(
         self,
@@ -356,7 +383,20 @@ class McpRemoveCardDependencyUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpRemoveCardDependencyResult:
-        removed = await uow.services.cards.remove_dependency(
+        service = uow.services.cards
+        card = await _get_card_in_scope(
+            service, command.card_id, actor.board_id or "", actor
+        )
+
+        depends_on = await service.get_card(command.depends_on_id)
+        if (
+            not depends_on
+            or depends_on.board_id != card.board_id
+            or depends_on.board_id != actor.board_id
+        ):
+            return McpRemoveCardDependencyResult(False)
+
+        removed = await service.remove_dependency(
             command.card_id, command.depends_on_id
         )
         await commit(uow)
@@ -374,7 +414,7 @@ class McpCopyKnowledgeToCardCommand:
         board_id: str,
         spec_id: str,
         card_id: str,
-        id_filter: set[str] | None,
+        id_filter: list[str] | set[str] | tuple[str, ...] | None,
     ) -> None:
         self.board_id = board_id
         self.spec_id = spec_id
@@ -430,10 +470,15 @@ class McpCopyKnowledgeToCardUseCase:
         uow: PulseUnitOfWork,
     ) -> McpCopyKnowledgeToCardResult:
         spec = await uow.services.specs.get_spec(command.spec_id)
-        if not spec:
+        if (
+            not spec
+            or actor.board_id is None
+            or actor.board_id != command.board_id
+            or spec.board_id != command.board_id
+        ):
             raise EntityNotFoundError("spec", command.spec_id)
         card = await uow.services.cards.get_card(command.card_id)
-        if not card:
+        if not card or card.board_id != command.board_id:
             raise EntityNotFoundError("card", command.card_id)
 
         direct_kbs = await uow.services.spec_knowledge.list_knowledge(
@@ -450,6 +495,8 @@ class McpCopyKnowledgeToCardUseCase:
                     "description": getattr(kb, "description", None),
                     "content": kb.content,
                     "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
+                    "source_kb_id": getattr(kb, "source_kb_id", None),
+                    "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
                 }
                 for kb in direct_kbs
             ]
@@ -470,8 +517,33 @@ class McpCopyKnowledgeToCardUseCase:
             src_type, src_id = plan["source_entity_type"], plan["source_entity_id"]
             fallback = True
 
+        from okto_pulse.core.application.artifact_propagation import (
+            artifact_identity_values,
+            validate_artifact_selections,
+        )
+
+        requested_ids = (
+            sorted(command.id_filter)
+            if isinstance(command.id_filter, set)
+            else list(command.id_filter)
+            if command.id_filter is not None
+            else None
+        )
+        validate_artifact_selections(
+            source_mockups=None,
+            source_knowledge_bases=items,
+            mockup_ids=None,
+            kb_ids=requested_ids,
+            source_type=src_type,
+            source_id=src_id,
+        )
         if command.id_filter is not None:
-            items = [it for it in items if it["id"] in command.id_filter]
+            wanted_ids = set(command.id_filter)
+            items = [
+                item
+                for item in items
+                if artifact_identity_values(item, "knowledge_base") & wanted_ids
+            ]
 
         from okto_pulse.core.services.application_schemas import CardUpdate
 
@@ -501,6 +573,12 @@ class McpCopyKnowledgeToCardUseCase:
                     "mime_type": it.get("mime_type") or "text/markdown",
                     "source": source,
                     "source_kb_id": it["id"],
+                    "root_source_kb_id": (
+                        it.get("root_source_kb_id")
+                        or it.get("source_kb_id")
+                        or it["id"]
+                    ),
+                    "immediate_parent_kb_id": it["id"],
                     "author_id": actor.actor_id,
                 }
             )

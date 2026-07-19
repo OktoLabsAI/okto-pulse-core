@@ -39,6 +39,7 @@ async def _seed_board_with_dlq(db_factory, *, artifact_id=None):
     aid = artifact_id or uuid.uuid4().hex
     async with db_factory() as db:
         db.add(Board(id=board_id, name="rkg05", owner_id="owner"))
+        await db.flush()
         db.add(ConsolidationDeadLetter(
             board_id=board_id, artifact_type="spec", artifact_id=aid, attempts=5,
             errors=[{
@@ -157,6 +158,7 @@ async def test_mcp_health_readiness_tool_exposes_signals(db_factory, monkeypatch
     assert data["readiness"]["would_block_done"] is False
     assert any(i["signal"] == "technical_dlq" for i in data["non_maskable_items"])
 
-    # invalid profile -> invalid_profile error (not silent summary).
+    # Invalid profiles use the shared MCP projection error (not silent summary).
     bad = json.loads(await tool.fn(board_id=board_id, profile="bogus"))
-    assert bad.get("error") == "invalid_profile"
+    assert bad.get("error_code") == "unsupported_projection"
+    assert bad.get("supported_profiles") == ["summary", "detail", "full", "legacy"]

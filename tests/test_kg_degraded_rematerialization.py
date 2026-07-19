@@ -31,6 +31,7 @@ import pytest
 
 import okto_pulse.core.services.kg_health_service as health_service
 from kg_registry_testing import configure_real_graph_test_kg_registry
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import (
     clear_board,
@@ -83,7 +84,12 @@ async def test_recovery_needed_empty_graph_commit_passes_and_rematerializes(
     # Candidato conectável: Learning ligado a um Entity existente no batch?
     # Reusa o seed do guard: Learning com parent pre-existente conectado.
     source_ref = f"learning:rematerialize:{uuid.uuid4()}"
-    _seed_learning_with_optional_parent(board_id, source_ref=source_ref, connected=True)
+    await run_blocking_graph_io(
+        lambda: _seed_learning_with_optional_parent(
+            board_id, source_ref=source_ref, connected=True
+        ),
+        task_name="tests.degraded_rematerialization.seed_learning",
+    )
 
     begin = await _begin_with_learning(
         board_id, agent_id, db_factory,
@@ -105,7 +111,10 @@ async def test_recovery_needed_empty_graph_commit_passes_and_rematerializes(
     # dedup hit no seed conectado → merge conta como candidato processado;
     # o ponto central: NÃO levantou kg_graph_degraded e o grafo foi mutado.
     assert commit.processed_candidates == 1
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 1
+    assert await run_blocking_graph_io(
+        lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+        task_name="tests.degraded_rematerialization.count_learning",
+    ) == 1
 
 
 @pytest.mark.asyncio
@@ -116,7 +125,12 @@ async def test_recovery_needed_with_readable_graph_commit_passes(
     presentes; o retry DEVE passar (grafo legível) — sem isso o feedback
     loop kg.commit.failed → recovery_needed → bloqueio se perpetua."""
     source_ref = f"learning:retry-after-transient:{uuid.uuid4()}"
-    _seed_learning_with_optional_parent(board_id, source_ref=source_ref, connected=True)
+    await run_blocking_graph_io(
+        lambda: _seed_learning_with_optional_parent(
+            board_id, source_ref=source_ref, connected=True
+        ),
+        task_name="tests.degraded_rematerialization.seed_retry_learning",
+    )
     begin = await _begin_with_learning(
         board_id, agent_id, db_factory,
         source_ref=source_ref, candidate_id="learning_retry_transient",
@@ -132,7 +146,10 @@ async def test_recovery_needed_with_readable_graph_commit_passes(
             agent_id=agent_id, db=db,
         )
     assert commit.processed_candidates == 1
-    assert _count_by_source_ref(board_id, "Learning", source_ref) == 1
+    assert await run_blocking_graph_io(
+        lambda: _count_by_source_ref(board_id, "Learning", source_ref),
+        task_name="tests.degraded_rematerialization.count_retry_learning",
+    ) == 1
 
 
 @pytest.mark.asyncio

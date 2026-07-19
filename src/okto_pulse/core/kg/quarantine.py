@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from collections.abc import Mapping
 from dataclasses import dataclass

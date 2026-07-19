@@ -196,6 +196,26 @@ async def test_delete_card_writes_atomic_card_deleted_activity(_seed):
     )
 
 
+# --- typed MCP transition envelope -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invalid_card_edge_is_not_misreported_as_dependency_block(_seed):
+    spec_id, _ = _seed
+    card_id = (await _create_card(spec_id))["card"]["id"]
+
+    payload = await _call(
+        "okto_pulse_move_card",
+        board_id=BOARD_A,
+        card_id=card_id,
+        status="in_progress",
+    )
+
+    assert payload["error"] == "card_transition_not_allowed"
+    assert payload["blocked_by_dependencies"] is False
+    assert payload["remediation"] == "move_card_to_started_first"
+
+
 # --- legacy MCP envelopes ---------------------------------------------------
 
 

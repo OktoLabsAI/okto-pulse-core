@@ -27,6 +27,23 @@ class ActiveQueueStorageSnapshot:
     outbox_oldest_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class GlobalOutboxDeadLetterRowSnapshot:
+    event_id: str
+    board_id: str
+    event_type: str
+    retry_count: int
+    created_at: datetime
+    last_error: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalOutboxDeadLetterStorageSnapshot:
+    total_count: int
+    oldest_created_at: datetime | None
+    rows: tuple[GlobalOutboxDeadLetterRowSnapshot, ...]
+
+
 class QueueHealthReadPort(Protocol):
     async def health_snapshot(
         self, context: object
@@ -41,6 +58,16 @@ class QueueHealthReadPort(Protocol):
         max_outbox_retries: int,
         dead_letter_retry_sentinel: int,
     ) -> ActiveQueueStorageSnapshot: ...
+
+    async def global_outbox_dead_letter_snapshot(
+        self,
+        context: object,
+        *,
+        board_id: str | None,
+        limit: int,
+        max_outbox_retries: int,
+        dead_letter_retry_sentinel: int,
+    ) -> GlobalOutboxDeadLetterStorageSnapshot: ...
 
 
 _RUNTIME_KEY = "ports.queue_health.reader"
@@ -60,6 +87,8 @@ def reset_queue_health_read_port_for_tests() -> None:
 
 __all__ = [
     "ActiveQueueStorageSnapshot",
+    "GlobalOutboxDeadLetterRowSnapshot",
+    "GlobalOutboxDeadLetterStorageSnapshot",
     "QueueHealthReadPort",
     "QueueHealthStorageSnapshot",
     "get_queue_health_read_port",

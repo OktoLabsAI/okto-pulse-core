@@ -226,8 +226,16 @@ async def test_mcp_twins_catalog_link_and_effective():
 
     try:
         listed = await _call("okto_pulse_list_design_systems", board_id=ids["board"], scope="global")
-        assert ids["g"] in {d["id"] for d in listed}
+        assert listed["profile"] == "summary"
+        assert ids["g"] in {d["id"] for d in listed["items"]}
+        assert all("payload" not in item for item in listed["items"])
 
+        linked = await _call(
+            "okto_pulse_link_board_design_system",
+            board_id=ids["board"],
+            design_system_id=ids["g"],
+        )
+        assert linked["design_system_id"] == ids["g"]
         got = await _call("okto_pulse_get_design_system", board_id=ids["board"], design_system_id=ids["g"])
         assert got["id"] == ids["g"] and got["version"] == 1
 
@@ -236,10 +244,6 @@ async def test_mcp_twins_catalog_link_and_effective():
         )
         assert inline["scope"] == "inline" and inline["board_id"] == ids["board"]
 
-        linked = await _call(
-            "okto_pulse_link_board_design_system", board_id=ids["board"], design_system_id=ids["g"]
-        )
-        assert linked["design_system_id"] == ids["g"]
         eff = await _call("okto_pulse_get_board_design_system", board_id=ids["board"])
         assert eff["effective"]["design_system_id"] == ids["g"]
 
@@ -253,4 +257,66 @@ async def test_mcp_twins_catalog_link_and_effective():
             await db.execute(delete(BoardDesignSystem).where(BoardDesignSystem.board_id == ids["board"]))
             await db.execute(delete(DesignSystem).where(DesignSystem.owner_id == USER_ID))
             await db.execute(delete(Board).where(Board.id == ids["board"]))
+            await db.commit()
+
+
+async def test_mcp_catalog_is_paged_summary_and_get_retains_full_payload():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    large_payload = {"tokens": "x" * 50_000}
+    async with get_session_factory()() as db:
+        board = await _board(db)
+        service = DesignSystemService(db)
+        created = []
+        for title in ("A payload", "B payload", "C payload"):
+            created.append(
+                await service.create_design_system(
+                    USER_ID,
+                    title=title,
+                    scope="global",
+                    payload=large_payload,
+                )
+            )
+        await db.commit()
+        board_id = board.id
+
+    created_ids = {item.id for item in created}
+    try:
+        page_one = await _call(
+            "okto_pulse_list_design_systems",
+            board_id=board_id,
+            scope="global",
+            limit=2,
+        )
+        assert page_one["count"] == 2
+        assert page_one["next_cursor"]
+        assert all("payload" not in item for item in page_one["items"])
+        assert len(json.dumps(page_one)) < 5_000
+
+        page_two = await _call(
+            "okto_pulse_list_design_systems",
+            board_id=board_id,
+            scope="global",
+            limit=2,
+            cursor=page_one["next_cursor"],
+        )
+        ids = {item["id"] for item in page_one["items"] + page_two["items"]}
+        assert ids == created_ids
+        assert page_two["next_cursor"] is None
+
+        await _call(
+            "okto_pulse_link_board_design_system",
+            board_id=board_id,
+            design_system_id=created[0].id,
+        )
+        full = await _call(
+            "okto_pulse_get_design_system",
+            board_id=board_id,
+            design_system_id=created[0].id,
+        )
+        assert full["payload"] == large_payload
+    finally:
+        async with get_session_factory()() as db:
+            await db.execute(delete(DesignSystem).where(DesignSystem.id.in_(created_ids)))
+            await db.execute(delete(Board).where(Board.id == board_id))
             await db.commit()

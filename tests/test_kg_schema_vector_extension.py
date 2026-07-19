@@ -14,6 +14,10 @@ def test_board_connection_loads_vector_extension_on_each_fresh_connection(
     dummy_db = object()
     loaded_connections = []
 
+    def record_vector_load(conn, *, install):
+        assert install is False
+        loaded_connections.append(conn)
+
     monkeypatch.setattr(
         kg_runtime, "ensure_board_graph_bootstrapped", lambda board_id: None
     )
@@ -25,7 +29,7 @@ def test_board_connection_loads_vector_extension_on_each_fresh_connection(
     )
     monkeypatch.setattr(kg_runtime.kuzu, "Connection", DummyConnection)
     monkeypatch.setattr(
-        kg_runtime, "load_vector_extension", lambda conn: loaded_connections.append(conn)
+        kg_runtime, "load_vector_extension", record_vector_load
     )
 
     conn = kg_runtime.BoardConnection("board-vector-hot")

@@ -32,7 +32,6 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 import pytest_asyncio
 
 import okto_pulse.community.app as _core_app  # noqa: F401 (register ORM models)

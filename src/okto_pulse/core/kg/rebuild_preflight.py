@@ -34,7 +34,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

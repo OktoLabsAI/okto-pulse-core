@@ -2,10 +2,10 @@
 
 Transport-free reimplementations of the remaining ``api/agents.py`` endpoints
 that still opened a raw ``AsyncSession``/``get_db`` — create / list (user+board) /
-get / regenerate-key / delete / grant / revoke. Each delegates to the existing
-``AgentService`` / ``BoardService`` so ownership checks (404), the structured
-errors, the commit/refetch and the transaction are unchanged; the REST adapter
-maps the transport-neutral errors back to 404/409.
+get / regenerate-key / delete / grant / revoke. Each uses the UoW repositories
+and ``AgentService`` while preserving structured errors, commit/refetch and the
+transaction; the REST adapter maps transport-neutral errors back to 404/409.
+Grant administration explicitly requires ownership of both the agent and board.
 
 Cache invalidation is intentionally NOT added here: only ``update_agent`` and
 ``update_board_overrides`` are proven invalidation points (ac_8e695cf2). Grant /
@@ -19,12 +19,30 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     ConflictError,
     EntityNotFoundError,
     commit,
 )
+
+
+async def _require_owned_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> Any:
+    """Return an actor-owned board; shares never authorize grant management."""
+    board = await load_accessible_board(
+        uow,
+        board_id,
+        actor,
+        allowed_share_permissions=(),
+    )
+    if board is None or getattr(board, "owner_id", None) != actor.actor_id:
+        raise EntityNotFoundError("board", board_id)
+    return board
 
 
 # --- create -----------------------------------------------------------------
@@ -108,9 +126,7 @@ class ListAgentsForBoardUseCase:
     async def execute(
         self, command: ListAgentsForBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListAgentsForBoardResult:
-        board = await uow.services.boards.get_board(command.board_id, actor.actor_id)
-        if not board:
-            raise EntityNotFoundError("board", command.board_id)
+        await _require_owned_board(uow, command.board_id, actor)
         agents = await uow.services.agents.list_agents_for_board(command.board_id)
         return ListAgentsForBoardResult(agents)
 
@@ -237,13 +253,11 @@ class GrantBoardAccessUseCase:
     async def execute(
         self, command: GrantBoardAccessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GrantBoardAccessResult:
+        await _require_owned_board(uow, command.board_id, actor)
         service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:
             raise EntityNotFoundError("agent", command.agent_id)
-        board = await uow.services.boards.get_board(command.board_id, actor.actor_id)
-        if not board:
-            raise EntityNotFoundError("board", command.board_id)
         if await service.agent_has_board_access(command.agent_id, command.board_id):
             raise ConflictError("agent_board", f"{command.agent_id}:{command.board_id}")
         grant = await service.grant_board_access(
@@ -269,7 +283,7 @@ class RevokeBoardAccessResult:
 
 
 class RevokeBoardAccessUseCase:
-    """Revoke an owned agent's board access (write — commits).
+    """Revoke access when the actor owns both the agent and board (commits).
 
     Raises ``EntityNotFoundError`` ("agent") when not owned and ("access") when
     there was no grant to revoke. NO cache invalidation."""
@@ -277,6 +291,7 @@ class RevokeBoardAccessUseCase:
     async def execute(
         self, command: RevokeBoardAccessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RevokeBoardAccessResult:
+        await _require_owned_board(uow, command.board_id, actor)
         service = uow.services.agents
         agent = await service.get_agent(command.agent_id)
         if not agent or agent.created_by != actor.actor_id:

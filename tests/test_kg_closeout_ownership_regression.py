@@ -23,6 +23,7 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     _apply_graph_node_create,
@@ -105,6 +106,24 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
     return 0
 
 
+async def _seed_entity_root_async(board_id: str, source_ref: str) -> str:
+    return await run_blocking_graph_io(
+        lambda: _seed_entity_root(board_id, source_ref),
+        task_name="tests.closeout_ownership.seed_entity_root",
+    )
+
+
+async def _count_by_source_ref_async(
+    board_id: str,
+    node_type: str,
+    source_ref: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_by_source_ref(board_id, node_type, source_ref),
+        task_name="tests.closeout_ownership.count_by_source_ref",
+    )
+
+
 # ---------------------------------------------------------------------------
 # POSITIVE (ts_a43c9874 / TR7 / AC6) — Alternative + Assumption still commit
 # ---------------------------------------------------------------------------
@@ -119,7 +138,9 @@ async def test_allowed_cognitive_candidates_still_commit(
     # commit while deterministic-only Criterion/Constraint remain blocked.
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    _seed_entity_root(board_id, spec_ref)  # provenance root the cognitive node attaches to
+    await _seed_entity_root_async(
+        board_id, spec_ref
+    )  # provenance root the cognitive node attaches to
     alt_ref = f"{spec_ref}:alternative:{uuid.uuid4().hex[:8]}"
     assumption_ref = f"{spec_ref}:assumption:{uuid.uuid4().hex[:8]}"
 
@@ -158,8 +179,10 @@ async def test_allowed_cognitive_candidates_still_commit(
 
     assert commit.connectivity["passed"] is True
     assert commit.nodes_added >= 2
-    assert _count_by_source_ref(board_id, "Alternative", alt_ref) == 1
-    assert _count_by_source_ref(board_id, "Assumption", assumption_ref) == 1
+    assert await _count_by_source_ref_async(board_id, "Alternative", alt_ref) == 1
+    assert await _count_by_source_ref_async(
+        board_id, "Assumption", assumption_ref
+    ) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +236,7 @@ async def test_deterministic_only_candidates_fail_without_mutation(
     )
     assert violation["reason"] == "writer_not_connectivity_owner"
     assert violation["source_resolution_status"] == "source_type_not_supported"
-    assert _count_by_source_ref(board_id, label, source_ref) == 0
+    assert await _count_by_source_ref_async(board_id, label, source_ref) == 0
 
 
 # ---------------------------------------------------------------------------

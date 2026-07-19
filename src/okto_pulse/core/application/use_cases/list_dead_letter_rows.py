@@ -15,11 +15,16 @@ the typed KG capability), so this use case stays inside the purity-/boundary-gat
 
 from __future__ import annotations
 
-from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
-
 from typing import Any
 
-from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
+
+
+class DeadLetterBoardNotFoundError(EntityNotFoundError):
+    def __init__(self, board_id: str) -> None:
+        super().__init__("board", board_id)
 
 
 class ListDeadLetterRowsCommand:
@@ -53,6 +58,8 @@ class ListDeadLetterRowsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ListDeadLetterRowsResult:
+        if await load_accessible_board(uow, command.board_id, actor) is None:
+            raise DeadLetterBoardNotFoundError(command.board_id)
         data = await uow.services.kg.list_dead_letter_rows(
             command.board_id,
             limit=command.limit,

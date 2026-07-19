@@ -14,7 +14,6 @@ loading can be expensive. Tests and integration callers can reset the cache via
 from __future__ import annotations
 
 import logging
-import threading
 from typing import Callable
 
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state

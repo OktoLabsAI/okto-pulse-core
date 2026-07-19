@@ -427,6 +427,11 @@ async def _seed_cross_spec_bug(db, *, amendment_kwargs=None):
         card_type=CardType.TEST, test_scenario_ids=[ids["foreign_scenario"]],
         created_by=USER_ID, created_at=now + timedelta(seconds=1),
     ))
+    # AmendmentHotfixRevision intentionally exposes only scalar lineage fields
+    # (no ORM relationship to Board), so the unit of work cannot infer insert
+    # ordering from an object relationship.  Materialize the real board/spec/card
+    # parents before the FK-backed amendment row is added.
+    await db.flush()
     if amendment_kwargs is not None:
         base = dict(
             id=ids["amendment"], board_id=ids["board"],

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import inspect
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -41,6 +42,7 @@ from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu6-s2-user"
+OTHER = "r01a-fu6-s2-other"
 PREFIX = "/api/v1"
 
 _ENDPOINTS = (
@@ -82,7 +84,7 @@ def _missing() -> str:
     return f"missing-{uuid.uuid4().hex[:8]}"
 
 
-async def _seed_board() -> str:
+async def _seed_board(owner: str = USER) -> str:
     from sqlalchemy_test_models import Board
 
     bid = f"board-fu6s2-{uuid.uuid4().hex[:8]}"
@@ -91,7 +93,7 @@ async def _seed_board() -> str:
             Board(
                 id=bid,
                 name="fu6s2",
-                owner_id=USER,
+                owner_id=owner,
                 realm_id=LOCAL_REALM_ID,
             )
         )
@@ -99,19 +101,43 @@ async def _seed_board() -> str:
     return bid
 
 
-async def _seed_topic(board_id: str, name: str | None = None) -> str:
+async def _share_board(board_id: str, *, permission: str) -> None:
+    from sqlalchemy_test_models import BoardShare
+
+    async with get_session_factory()() as db:
+        db.add(
+            BoardShare(
+                board_id=board_id,
+                user_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                permission=permission,
+                shared_by=OTHER,
+            )
+        )
+        await db.commit()
+
+
+async def _seed_topic(
+    board_id: str, name: str | None = None, *, user_id: str = USER
+) -> str:
     from okto_pulse.core.models.schemas import TopicCreate
     from okto_pulse.core.services import StoryService
 
     async with get_session_factory()() as db:
         topic = await StoryService(db).create_topic(
-            board_id, USER, TopicCreate(name=name or f"topic-{uuid.uuid4().hex[:6]}")
+            board_id, user_id, TopicCreate(name=name or f"topic-{uuid.uuid4().hex[:6]}")
         )
         await db.commit()
         return topic.id
 
 
-async def _seed_story(board_id: str, topic_id: str, *, status: str = "draft") -> str:
+async def _seed_story(
+    board_id: str,
+    topic_id: str,
+    *,
+    status: str = "draft",
+    user_id: str = USER,
+) -> str:
     from sqlalchemy_test_models import StoryStatus
     from okto_pulse.core.models.schemas import StoryCreate
     from okto_pulse.core.services import StoryService
@@ -119,7 +145,7 @@ async def _seed_story(board_id: str, topic_id: str, *, status: str = "draft") ->
     async with get_session_factory()() as db:
         story = await StoryService(db).create_story(
             board_id,
-            USER,
+            user_id,
             StoryCreate(
                 title=f"story-{uuid.uuid4().hex[:6]}",
                 description="seeded story body",
@@ -131,13 +157,15 @@ async def _seed_story(board_id: str, topic_id: str, *, status: str = "draft") ->
         return story.id
 
 
-async def _seed_ideation(board_id: str) -> str:
+async def _seed_ideation(board_id: str, *, user_id: str = USER) -> str:
     from okto_pulse.core.models.schemas import IdeationCreate
     from okto_pulse.core.services import IdeationService
 
     async with get_session_factory()() as db:
         ideation = await IdeationService(db).create_ideation(
-            board_id, USER, IdeationCreate(title=f"ideation-{uuid.uuid4().hex[:6]}")
+            board_id,
+            user_id,
+            IdeationCreate(title=f"ideation-{uuid.uuid4().hex[:6]}"),
         )
         await db.commit()
         return ideation.id
@@ -170,6 +198,63 @@ async def test_topic_create_list_update_delete(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_viewer_share_reads_stories_and_topics_but_cannot_mutate(client) -> None:
+    board_id = await _seed_board(owner=OTHER)
+    topic_id = await _seed_topic(board_id, name="shared topic", user_id=OTHER)
+    story_id = await _seed_story(board_id, topic_id, user_id=OTHER)
+    await _share_board(board_id, permission="viewer")
+
+    assert client.get(f"{PREFIX}/boards/{board_id}/topics").status_code == 200
+    assert client.get(f"{PREFIX}/boards/{board_id}/stories").status_code == 200
+    assert client.get(f"{PREFIX}/stories/{story_id}").status_code == 200
+
+    attempts = (
+        client.post(f"{PREFIX}/boards/{board_id}/topics", json={"name": "blocked"}),
+        client.patch(f"{PREFIX}/topics/{topic_id}", json={"name": "blocked"}),
+        client.post(
+            f"{PREFIX}/boards/{board_id}/stories",
+            json={"title": "blocked", "description": "blocked", "topic_id": topic_id},
+        ),
+        client.patch(f"{PREFIX}/stories/{story_id}", json={"title": "blocked"}),
+    )
+    assert {response.status_code for response in attempts} == {404}
+
+    from sqlalchemy_test_models import Story, Topic
+
+    async with get_session_factory()() as db:
+        assert (await db.get(Topic, topic_id)).name == "shared topic"
+        assert (await db.get(Story, story_id)).title != "blocked"
+
+
+@pytest.mark.asyncio
+async def test_editor_share_can_create_and_update_story_content(client) -> None:
+    board_id = await _seed_board(owner=OTHER)
+    await _share_board(board_id, permission="editor")
+
+    topic_response = client.post(
+        f"{PREFIX}/boards/{board_id}/topics", json={"name": "editor topic"}
+    )
+    assert topic_response.status_code == 201, topic_response.text
+    topic_id = topic_response.json()["id"]
+    story_response = client.post(
+        f"{PREFIX}/boards/{board_id}/stories",
+        json={
+            "title": "editor story",
+            "description": "editor description",
+            "topic_id": topic_id,
+        },
+    )
+    assert story_response.status_code == 201, story_response.text
+    story_id = story_response.json()["id"]
+
+    updated = client.patch(
+        f"{PREFIX}/stories/{story_id}", json={"title": "editor updated"}
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["title"] == "editor updated"
+
+
+@pytest.mark.asyncio
 async def test_create_topic_missing_board_404(client) -> None:
     resp = client.post(f"{PREFIX}/boards/{_missing()}/topics", json={"name": "x"})
     assert resp.status_code == 404
@@ -181,6 +266,28 @@ async def test_update_topic_missing_404(client) -> None:
     resp = client.patch(f"{PREFIX}/topics/{_missing()}", json={"name": "x"})
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Topic not found"
+
+
+@pytest.mark.asyncio
+async def test_foreign_topic_mutations_match_missing_without_writer_effect(client) -> None:
+    foreign_board = await _seed_board(owner=OTHER)
+    foreign_topic = await _seed_topic(foreign_board, name="private", user_id=OTHER)
+
+    foreign_update = client.patch(
+        f"{PREFIX}/topics/{foreign_topic}", json={"name": "leaked"}
+    )
+    missing_update = client.patch(
+        f"{PREFIX}/topics/{_missing()}", json={"name": "leaked"}
+    )
+    foreign_delete = client.delete(f"{PREFIX}/topics/{foreign_topic}")
+    missing_delete = client.delete(f"{PREFIX}/topics/{_missing()}")
+
+    assert foreign_update.content == missing_update.content
+    assert foreign_delete.content == missing_delete.content
+    from sqlalchemy_test_models import Topic
+
+    async with get_session_factory()() as db:
+        assert (await db.get(Topic, foreign_topic)).name == "private"
 
 
 @pytest.mark.asyncio
@@ -207,6 +314,32 @@ async def test_merge_topics_200_and_invalid_400(client) -> None:
     other = await _seed_topic(bid, name="merge-self")
     bad = client.post(f"{PREFIX}/topics/{other}/merge", json={"target_topic_id": other})
     assert bad.status_code == 400, bad.text
+
+
+@pytest.mark.asyncio
+async def test_merge_foreign_target_matches_missing_without_mutating_source(client) -> None:
+    board_id = await _seed_board()
+    source = await _seed_topic(board_id, name="source-kept")
+    foreign_board = await _seed_board(owner=OTHER)
+    foreign_target = await _seed_topic(
+        foreign_board, name="foreign-target", user_id=OTHER
+    )
+
+    foreign = client.post(
+        f"{PREFIX}/topics/{source}/merge",
+        json={"target_topic_id": foreign_target},
+    )
+    missing = client.post(
+        f"{PREFIX}/topics/{source}/merge",
+        json={"target_topic_id": _missing()},
+    )
+
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.content == missing.content
+    from sqlalchemy_test_models import Topic
+
+    async with get_session_factory()() as db:
+        assert (await db.get(Topic, source)).name == "source-kept"
 
 
 # --- stories ----------------------------------------------------------------
@@ -255,6 +388,31 @@ async def test_get_story_missing_404(client) -> None:
     resp = client.get(f"{PREFIX}/stories/{_missing()}")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Story not found"
+
+
+@pytest.mark.asyncio
+async def test_foreign_story_read_and_update_match_missing_without_mutation(client) -> None:
+    foreign_board = await _seed_board(owner=OTHER)
+    foreign_topic = await _seed_topic(foreign_board, user_id=OTHER)
+    foreign_story = await _seed_story(
+        foreign_board, foreign_topic, user_id=OTHER
+    )
+
+    foreign_get = client.get(f"{PREFIX}/stories/{foreign_story}")
+    missing_get = client.get(f"{PREFIX}/stories/{_missing()}")
+    foreign_update = client.patch(
+        f"{PREFIX}/stories/{foreign_story}", json={"title": "leaked"}
+    )
+    missing_update = client.patch(
+        f"{PREFIX}/stories/{_missing()}", json={"title": "leaked"}
+    )
+
+    assert foreign_get.content == missing_get.content
+    assert foreign_update.content == missing_update.content
+    from sqlalchemy_test_models import Story
+
+    async with get_session_factory()() as db:
+        assert (await db.get(Story, foreign_story)).title != "leaked"
 
 
 @pytest.mark.asyncio
@@ -336,6 +494,63 @@ async def test_link_stories_to_ideation_bulk(client) -> None:
     assert body["success"] is True
     assert body["ideation_id"] == ideation_id
     assert body["story_ids"] == [sid]
+
+
+@pytest.mark.asyncio
+async def test_bulk_link_preflights_all_stories_before_any_writer(client) -> None:
+    from okto_pulse.core.services import StoryService
+
+    owned_board = await _seed_board()
+    owned_topic = await _seed_topic(owned_board)
+    owned_story = await _seed_story(owned_board, owned_topic)
+    ideation_id = await _seed_ideation(owned_board)
+
+    foreign_board = await _seed_board(owner=OTHER)
+    foreign_topic = await _seed_topic(foreign_board, user_id=OTHER)
+    foreign_story = await _seed_story(
+        foreign_board, foreign_topic, user_id=OTHER
+    )
+
+    writer = AsyncMock(side_effect=AssertionError("writer must not run"))
+    with patch.object(StoryService, "link_story_to_ideation", writer):
+        foreign = client.post(
+            f"{PREFIX}/ideations/{ideation_id}/stories",
+            json={"story_ids": [owned_story, foreign_story]},
+        )
+        missing = client.post(
+            f"{PREFIX}/ideations/{ideation_id}/stories",
+            json={"story_ids": [owned_story, _missing()]},
+        )
+
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.content == missing.content
+    writer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bulk_link_preflights_ideation_before_any_story_writer(client) -> None:
+    from okto_pulse.core.services import StoryService
+
+    owned_board = await _seed_board()
+    owned_topic = await _seed_topic(owned_board)
+    owned_story = await _seed_story(owned_board, owned_topic)
+    foreign_board = await _seed_board(owner=OTHER)
+    foreign_ideation = await _seed_ideation(foreign_board, user_id=OTHER)
+
+    writer = AsyncMock(side_effect=AssertionError("writer must not run"))
+    with patch.object(StoryService, "link_story_to_ideation", writer):
+        foreign = client.post(
+            f"{PREFIX}/ideations/{foreign_ideation}/stories",
+            json={"story_ids": [owned_story]},
+        )
+        missing = client.post(
+            f"{PREFIX}/ideations/{_missing()}/stories",
+            json={"story_ids": [owned_story]},
+        )
+
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.content == missing.content
+    writer.assert_not_awaited()
 
 
 @pytest.mark.asyncio

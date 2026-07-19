@@ -28,11 +28,14 @@ from sqlalchemy import delete
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
+    ActivityLog,
     Board,
     BoardDesignSystem,
     BoardGuideline,
+    Card,
     DesignSystem,
     Guideline,
+    Spec,
 )
 
 BOARD_ID = "r01a-mcpboard"
@@ -162,6 +165,44 @@ async def _call(tool: str, **kwargs) -> dict:
     return json.loads(await t.fn(**kwargs))
 
 
+async def _seed_archive_tree(*, archived: bool = False) -> tuple[str, str, str]:
+    from okto_pulse.core.infra.database import get_session_factory
+
+    board_id = f"r01a-mcp-archive-{uuid.uuid4().hex[:8]}"
+    spec_id = f"r01a-mcp-spec-{uuid.uuid4().hex[:8]}"
+    card_id = f"r01a-mcp-card-{uuid.uuid4().hex[:8]}"
+    async with get_session_factory()() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name="MCP archive scope",
+                owner_id="human-owner",
+                realm_id=LOCAL_REALM_ID,
+            )
+        )
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="MCP archive spec",
+                created_by="human-owner",
+                archived=archived,
+            )
+        )
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="MCP archive card",
+                created_by="human-owner",
+                archived=archived,
+            )
+        )
+        await db.commit()
+    return board_id, spec_id, card_id
+
+
 # --- aggregations -----------------------------------------------------------
 
 
@@ -177,6 +218,135 @@ async def test_get_board_returns_overview_payload(_seed):
 async def test_get_board_missing_returns_board_not_found():
     payload = await _call("okto_pulse_get_board", board_id="does-not-exist-board")
     assert payload == {"error": "Board not found"}
+
+
+@pytest.mark.asyncio
+async def test_archive_tree_foreign_root_matches_missing_and_has_no_activity():
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy import select
+
+    actor_board, _actor_spec, _actor_card = await _seed_archive_tree()
+    _foreign_board, foreign_spec, foreign_card = await _seed_archive_tree()
+
+    foreign = await _call(
+        "okto_pulse_archive_tree",
+        board_id=actor_board,
+        entity_type="spec",
+        entity_id=foreign_spec,
+    )
+    missing = await _call(
+        "okto_pulse_archive_tree",
+        board_id=actor_board,
+        entity_type="spec",
+        entity_id=f"missing-{uuid.uuid4().hex[:8]}",
+    )
+
+    assert foreign == missing == {"error": "Spec not found"}
+    async with get_session_factory()() as db:
+        assert (await db.get(Spec, foreign_spec)).archived is False
+        assert (await db.get(Card, foreign_card)).archived is False
+        activities = (
+            await db.execute(
+                select(ActivityLog).where(
+                    ActivityLog.board_id == actor_board,
+                    ActivityLog.action == "tree_archived",
+                )
+            )
+        ).scalars().all()
+        assert activities == []
+
+
+@pytest.mark.asyncio
+async def test_restore_tree_foreign_root_matches_missing_and_has_no_activity():
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy import select
+
+    actor_board, _actor_spec, _actor_card = await _seed_archive_tree(archived=True)
+    _foreign_board, foreign_spec, foreign_card = await _seed_archive_tree(
+        archived=True
+    )
+
+    foreign = await _call(
+        "okto_pulse_restore_tree",
+        board_id=actor_board,
+        entity_type="spec",
+        entity_id=foreign_spec,
+    )
+    missing = await _call(
+        "okto_pulse_restore_tree",
+        board_id=actor_board,
+        entity_type="spec",
+        entity_id=f"missing-{uuid.uuid4().hex[:8]}",
+    )
+
+    assert foreign == missing == {"error": "Spec not found"}
+    async with get_session_factory()() as db:
+        assert (await db.get(Spec, foreign_spec)).archived is True
+        assert (await db.get(Card, foreign_card)).archived is True
+        activities = (
+            await db.execute(
+                select(ActivityLog).where(
+                    ActivityLog.board_id == actor_board,
+                    ActivityLog.action == "tree_restored",
+                )
+            )
+        ).scalars().all()
+        assert activities == []
+
+
+@pytest.mark.asyncio
+async def test_archive_tree_permission_denial_precedes_mutation():
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy import select
+
+    board_id, spec_id, _card_id = await _seed_archive_tree()
+    with patch.object(mcp_server, "check_permission", return_value="denied"):
+        payload = await _call(
+            "okto_pulse_archive_tree",
+            board_id=board_id,
+            entity_type="spec",
+            entity_id=spec_id,
+        )
+
+    assert "error" in payload
+    async with get_session_factory()() as db:
+        assert (await db.get(Spec, spec_id)).archived is False
+        assert (
+            await db.execute(
+                select(ActivityLog).where(
+                    ActivityLog.board_id == board_id,
+                    ActivityLog.action == "tree_archived",
+                )
+            )
+        ).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_archive_tree_success_records_one_atomic_activity():
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy import select
+
+    board_id, spec_id, card_id = await _seed_archive_tree()
+    payload = await _call(
+        "okto_pulse_archive_tree",
+        board_id=board_id,
+        entity_type="spec",
+        entity_id=spec_id,
+    )
+
+    assert payload["success"] is True
+    async with get_session_factory()() as db:
+        assert (await db.get(Spec, spec_id)).archived is True
+        assert (await db.get(Card, card_id)).archived is True
+        activities = (
+            await db.execute(
+                select(ActivityLog).where(
+                    ActivityLog.board_id == board_id,
+                    ActivityLog.action == "tree_archived",
+                )
+            )
+        ).scalars().all()
+        assert len(activities) == 1
 
 
 @pytest.mark.asyncio

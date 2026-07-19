@@ -89,6 +89,7 @@ async def _seed_all(db_factory):
     board = _id("board")
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 test2", owner_id=USER_ID))
+        await db.flush()
         db.add(_cq(board, artifact_type="spec", status="pending", age_s=20))
         db.add(_cq(board, artifact_type="card", status="claimed", age_s=15))
         db.add(_cq(board, artifact_type="card", status="done", age_s=5))   # NOT active

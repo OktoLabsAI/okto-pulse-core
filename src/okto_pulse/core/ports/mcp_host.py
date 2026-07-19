@@ -33,7 +33,14 @@ class McpHostProvider(Protocol):
         """Return the current transport credential, or ``None`` outside a request."""
         ...
 
-    def build_asgi_app(self, catalog: Any, *, trace_sink: Any | None = None) -> Any:
+    def build_asgi_app(
+        self,
+        catalog: Any,
+        *,
+        resource_catalog: Any,
+        projection_identity: str,
+        trace_sink: Any | None = None,
+    ) -> Any:
         ...
 
     def wrap_session_middleware(self, app: Any) -> Any:
@@ -45,6 +52,8 @@ class McpHostProvider(Protocol):
         catalog: Any,
         *,
         mount_path: str,
+        resource_catalog: Any,
+        projection_identity: str,
         trace_sink: Any | None = None,
     ) -> None:
         ...

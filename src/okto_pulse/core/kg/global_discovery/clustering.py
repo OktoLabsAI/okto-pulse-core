@@ -198,8 +198,16 @@ def board_delete_cascade(board_id: str) -> dict:
             board_id, exc,
         )
 
+    from okto_pulse.core.kg.global_discovery_writer import (
+        global_discovery_writer_scope,
+    )
+
     global_runtime = get_kg_registry().require_global_discovery_runtime()
-    try:
+    with global_discovery_writer_scope(
+        operation="board_delete_cascade.global",
+        owner_id=f"board-delete:{board_id}",
+        admin_lane=True,
+    ):
         # Delete DecisionDigests for this board
         result = global_runtime.execute(
             "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
@@ -235,9 +243,6 @@ def board_delete_cascade(board_id: str) -> dict:
         except Exception:
             pass
 
-    finally:
-        pass
-
     logger.info(
         "global.cascade board=%s digests=%d",
         board_id, counts["digests_removed"],
@@ -249,48 +254,50 @@ def board_delete_cascade(board_id: str) -> dict:
 def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
     """Garbage collect orphan Topics and Entities from the global graph.
 
-    KG-01.3.1 boundary (val_441ad311 rework): destructive global write
-    path when ``dry_run=False``. Even in ``dry_run=True`` mode we still
-    open a global connection that may bootstrap on first use, so we
-    enforce the barrier unconditionally. Caller MUST enter
-    ``under_global_safe_write`` first; STRICT mode raises before any
-    Cypher MATCH, SOFT mode logs + bumps the counter.
+    Even in ``dry_run=True`` mode the embedded engine may mutate its WAL while
+    opening a connection.  This function therefore acquires the same durable
+    cross-process fence as recovery and outbox writers; callers never mint a
+    context-only token.
     """
+    from okto_pulse.core.kg.global_discovery_writer import (
+        global_discovery_writer_scope,
+    )
     from okto_pulse.core.kg.interfaces import get_kg_registry
-    from okto_pulse.core.kg.write_barrier import require_global_write_token
-
-    require_global_write_token()
-
     counts = {"topics_removed": 0, "entities_removed": 0, "dry_run": dry_run}
 
     global_runtime = get_kg_registry().require_global_discovery_runtime()
     try:
-        # Count orphan topics
-        r = global_runtime.execute(
-            "MATCH (t:Topic) WHERE NOT EXISTS { MATCH ()-[:HAS_TOPIC]->(t) } "
-            "RETURN count(t)"
-        )
-        orphan_topics = r.rows[0][0] if r.rows else 0
-        counts["topics_removed"] = orphan_topics
-
-        r = global_runtime.execute(
-            "MATCH (e:Entity) WHERE NOT EXISTS { MATCH ()-[:MENTIONS_ENTITY]->(e) } "
-            "AND NOT EXISTS { MATCH ()-[:DECISION_MENTIONS_ENTITY]->(e) } "
-            "RETURN count(e)"
-        )
-        orphan_entities = r.rows[0][0] if r.rows else 0
-        counts["entities_removed"] = orphan_entities
-
-        if not dry_run:
-            global_runtime.execute(
+        with global_discovery_writer_scope(
+            operation="gc_orphans",
+            owner_id=f"global-gc:{uuid.uuid4().hex[:12]}",
+            admin_lane=not dry_run,
+        ):
+            # Count orphan topics
+            r = global_runtime.execute(
                 "MATCH (t:Topic) WHERE NOT EXISTS { MATCH ()-[:HAS_TOPIC]->(t) } "
-                "DETACH DELETE t"
+                "RETURN count(t)"
             )
-            global_runtime.execute(
+            orphan_topics = r.rows[0][0] if r.rows else 0
+            counts["topics_removed"] = orphan_topics
+
+            r = global_runtime.execute(
                 "MATCH (e:Entity) WHERE NOT EXISTS { MATCH ()-[:MENTIONS_ENTITY]->(e) } "
                 "AND NOT EXISTS { MATCH ()-[:DECISION_MENTIONS_ENTITY]->(e) } "
-                "DETACH DELETE e"
+                "RETURN count(e)"
             )
+            orphan_entities = r.rows[0][0] if r.rows else 0
+            counts["entities_removed"] = orphan_entities
+
+            if not dry_run:
+                global_runtime.execute(
+                    "MATCH (t:Topic) WHERE NOT EXISTS { MATCH ()-[:HAS_TOPIC]->(t) } "
+                    "DETACH DELETE t"
+                )
+                global_runtime.execute(
+                    "MATCH (e:Entity) WHERE NOT EXISTS { MATCH ()-[:MENTIONS_ENTITY]->(e) } "
+                    "AND NOT EXISTS { MATCH ()-[:DECISION_MENTIONS_ENTITY]->(e) } "
+                    "DETACH DELETE e"
+                )
     except Exception as exc:
         logger.error("gc_orphans.error err=%s", exc)
 
@@ -322,13 +329,19 @@ def rebuild_from_scratch(board_ids: list[str] | None = None) -> dict:
     confused responders.
     """
     from okto_pulse.core.kg.interfaces import get_kg_registry
-    from okto_pulse.core.kg.write_barrier import under_global_safe_write
+    from okto_pulse.core.kg.global_discovery_writer import (
+        global_discovery_writer_scope,
+    )
 
     global_runtime = get_kg_registry().require_global_discovery_runtime()
     purge_response = None
     rebuild_token = f"rebuild-{uuid.uuid4().hex[:12]}"
 
-    with under_global_safe_write(rebuild_token, "rebuild_from_scratch"):
+    with global_discovery_writer_scope(
+        operation="rebuild_from_scratch",
+        owner_id=rebuild_token,
+        admin_lane=True,
+    ):
         if global_runtime.state().exists:
             purge_response = global_runtime.purge(reason="rebuild_from_scratch")
         global_runtime.bootstrap()

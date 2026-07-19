@@ -20,6 +20,9 @@ from typing import Literal
 CORE_DISTRIBUTION = "okto-pulse-core"
 COMMUNITY_DISTRIBUTION = "okto-pulse"
 LEDGER_VERSION = "F14.1"
+CORE_FORBIDDEN_DISTRIBUTION_IMPORT_PREFIXES: tuple[str, ...] = (
+    "okto_pulse.community",
+)
 
 SourceOwner = Literal["core", "community"]
 ImportMode = Literal["direct", "dynamic", "distribution"]
@@ -183,6 +186,20 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             removal_criterion="Remove direct AnyIO use from Community adapters.",
         ),
         _entry(
+            "filelock", community, "community", ("filelock",), "direct",
+            (
+                "src/okto_pulse/community/adapters/rebuild_audit_storage.py",
+            ),
+            rationale=(
+                "Community owns cross-process locking for durable rebuild audit "
+                "artifacts."
+            ),
+            removal_criterion=(
+                "Replace the Community filesystem rebuild artifact store or its "
+                "interprocess locking implementation."
+            ),
+        ),
+        _entry(
             "httpx", community, "community", ("httpx",), "direct",
             ("src/okto_pulse/community/adapters/content_ingestion.py",),
             rationale="The local content ingestion adapter performs outbound HTTP reads.",
@@ -193,6 +210,12 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             ("src/okto_pulse/community/adapters/mcp_host.py",),
             rationale="Community owns the concrete MCP runtime host.",
             removal_criterion="Replace the Community MCP runtime implementation.",
+        ),
+        _entry(
+            "mcp", community, "community", ("mcp",), "direct",
+            ("src/okto_pulse/community/adapters/mcp_host.py",),
+            rationale="Community owns the concrete MCP protocol response adapter.",
+            removal_criterion="Remove direct MCP protocol-type usage from Community source.",
         ),
         _entry(
             "uvicorn", community, "community", ("uvicorn",), "direct",
@@ -289,22 +312,105 @@ def _wheel_dependencies(path: Path) -> dict[str, tuple[str, ...]]:
     return rows
 
 
-def _source_imports(root: Path) -> dict[str, tuple[str, ...]]:
+def _ast_import_tokens(
+    tree: ast.AST,
+    *,
+    forbidden_prefixes: tuple[str, ...] = (),
+) -> tuple[tuple[str, int], ...]:
+    observed: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        modules: list[str] = []
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            modules.append(node.module)
+            modules.extend(
+                prefix
+                for prefix in forbidden_prefixes
+                for parent, separator, child in (prefix.rpartition("."),)
+                if separator
+                and node.module == parent
+                and any(alias.name == child for alias in node.names)
+            )
+        for module in modules:
+            forbidden_prefix = next(
+                (
+                    prefix
+                    for prefix in forbidden_prefixes
+                    if module == prefix or module.startswith(prefix + ".")
+                ),
+                None,
+            )
+            token = forbidden_prefix or module.split(".")[0]
+            if token in sys.stdlib_module_names or token == "okto_pulse":
+                continue
+            observed.append((token, node.lineno))
+    return tuple(observed)
+
+
+def _wheel_imports(
+    path: Path,
+    *,
+    package_prefix: str,
+    forbidden_prefixes: tuple[str, ...] = (),
+) -> dict[str, tuple[str, ...]]:
+    """AST-scan packaged Python, independent of the source checkout."""
+
+    observed: dict[str, list[str]] = {}
+    with zipfile.ZipFile(path) as archive:
+        for member in sorted(archive.namelist()):
+            normalized = member.replace("\\", "/")
+            if not (
+                normalized.startswith(package_prefix.rstrip("/") + "/")
+                and normalized.endswith(".py")
+            ):
+                continue
+            source = archive.read(member).decode("utf-8")
+            tree = ast.parse(source, filename=normalized)
+            for token, line in _ast_import_tokens(
+                tree,
+                forbidden_prefixes=forbidden_prefixes,
+            ):
+                observed.setdefault(token, []).append(f"{normalized}:{line}")
+    return {token: tuple(rows) for token, rows in sorted(observed.items())}
+
+
+def _wheel_forbidden_package_paths(
+    path: Path,
+    *,
+    forbidden_prefixes: tuple[str, ...],
+) -> tuple[str, ...]:
+    with zipfile.ZipFile(path) as archive:
+        return tuple(
+            sorted(
+                member
+                for member in archive.namelist()
+                if any(
+                    member.replace("\\", "/") == prefix.rstrip("/")
+                    or member.replace("\\", "/").startswith(
+                        prefix.rstrip("/") + "/"
+                    )
+                    for prefix in forbidden_prefixes
+                )
+            )
+        )
+
+
+def _source_imports(
+    root: Path,
+    *,
+    forbidden_prefixes: tuple[str, ...] = (),
+) -> dict[str, tuple[str, ...]]:
     observed: dict[str, list[str]] = {}
     for path in sorted(root.rglob("*.py")):
         if "__pycache__" in path.parts:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            roots: list[str] = []
-            if isinstance(node, ast.Import):
-                roots.extend(alias.name.split(".")[0] for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                roots.append(node.module.split(".")[0])
-            for token in roots:
-                if token in sys.stdlib_module_names or token == "okto_pulse":
-                    continue
-                observed.setdefault(token, []).append(f"{path.as_posix()}:{node.lineno}")
+        for token, line in _ast_import_tokens(
+            tree,
+            forbidden_prefixes=forbidden_prefixes,
+        ):
+            observed.setdefault(token, []).append(f"{path.as_posix()}:{line}")
     return {token: tuple(locations) for token, locations in sorted(observed.items())}
 
 
@@ -392,9 +498,53 @@ def audit_distribution_dependencies(
                 wheel_dependencies = _wheel_dependencies(wheel)
                 observed[distribution]["wheel"] = tuple(sorted(wheel_dependencies))
                 _compare_surface(owner=distribution, surface="wheel", expected=expected, actual=wheel_dependencies, findings=findings)
+                if distribution == CORE_DISTRIBUTION:
+                    forbidden_paths = _wheel_forbidden_package_paths(
+                        wheel,
+                        forbidden_prefixes=("okto_pulse/community",),
+                    )
+                    observed[distribution]["wheel_forbidden_paths"] = forbidden_paths
+                    for forbidden_path in forbidden_paths:
+                        findings.append(
+                            DependencyFinding(
+                                "forbidden_wheel_package_path",
+                                distribution,
+                                "wheel",
+                                "okto_pulse.community",
+                                forbidden_path,
+                            )
+                        )
+                    wheel_imports = _wheel_imports(
+                        wheel,
+                        package_prefix="okto_pulse/core",
+                        forbidden_prefixes=(
+                            CORE_FORBIDDEN_DISTRIBUTION_IMPORT_PREFIXES
+                        ),
+                    )
+                    observed[distribution]["wheel_imports"] = tuple(
+                        sorted(wheel_imports)
+                    )
+                    for prefix in CORE_FORBIDDEN_DISTRIBUTION_IMPORT_PREFIXES:
+                        for location in wheel_imports.get(prefix, ()):
+                            findings.append(
+                                DependencyFinding(
+                                    "forbidden_distribution_edge",
+                                    distribution,
+                                    "wheel",
+                                    prefix,
+                                    location,
+                                )
+                            )
 
     for owner, source_root in owners.items():
-        imports = _source_imports(source_root)
+        imports = _source_imports(
+            source_root,
+            forbidden_prefixes=(
+                CORE_FORBIDDEN_DISTRIBUTION_IMPORT_PREFIXES
+                if owner == "core"
+                else ()
+            ),
+        )
         observed.setdefault(owner, {})["source_imports"] = tuple(sorted(imports))
         import_index = {
             token: entry
@@ -403,6 +553,20 @@ def audit_distribution_dependencies(
             for token in entry.import_tokens
         }
         for token, locations in imports.items():
+            if (
+                owner == "core"
+                and token in CORE_FORBIDDEN_DISTRIBUTION_IMPORT_PREFIXES
+            ):
+                findings.append(
+                    DependencyFinding(
+                        "forbidden_distribution_edge",
+                        owner,
+                        "source",
+                        token,
+                        locations[0],
+                    )
+                )
+                continue
             entry = import_index.get(token)
             if entry is None:
                 findings.append(DependencyFinding("source_import_unowned", owner, "source", token, locations[0]))

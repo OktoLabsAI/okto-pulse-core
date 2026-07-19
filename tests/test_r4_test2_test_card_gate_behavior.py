@@ -141,13 +141,20 @@ async def test_ts_154b86fb_gate_releases_once_scenarios_passed(db_factory):
                           status="done")
     assert blocked.get("code") == "test_card_completion_blocked"
 
-    # Remediate: mark both linked scenarios passed (the authoritative state the gate
-    # reads). Done at the spec level to keep this test focused on the move_card gate.
+    # Remediate: mark both linked scenarios passed with persisted run evidence
+    # (the authoritative state the gate reads). Done at the spec level to keep
+    # this test focused on the move_card gate.
     async with db_factory() as db:
         spec = await db.get(Spec, spec_id)
         spec.test_scenarios = [
-            {**s, "status": "passed", "last_run_at": "2026-06-18T00:00:00Z",
-             "test_run_id": "r4-test2"}
+            {
+                **s,
+                "status": "passed",
+                "evidence": {
+                    "last_run_at": "2026-06-18T00:00:00Z",
+                    "test_run_id": "r4-test2",
+                },
+            }
             for s in spec.test_scenarios
         ]
         await db.commit()

@@ -40,6 +40,7 @@ from okto_pulse.community.api.kg_tick import (
     run_tick_now,
 )
 from okto_pulse.core.infra.database import get_session_factory
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.kg.cognitive_closeout_gate import (
     CognitiveCloseoutGate,
@@ -67,6 +68,7 @@ from okto_pulse.core.ports.coordination import (
     register_coordination_providers,
     reset_coordination_providers_for_tests,
 )
+from okto_pulse.core.ports.authentication import Principal
 
 
 @pytest.fixture(autouse=True)
@@ -387,9 +389,13 @@ class _FakeSession:
     def __init__(self) -> None:
         self.committed = False
         self.rolled_back = False
+        self.boards = SimpleNamespace(get=self._get_board)
         self.services = SimpleNamespace(
             kg=SimpleNamespace(dispatch_manual_tick=self._dispatch_manual_tick)
         )
+
+    async def _get_board(self, board_id: str):
+        return SimpleNamespace(id=board_id, owner_id="op")
 
     async def _dispatch_manual_tick(self, **kwargs) -> None:
         await kg_tick_policy.dispatch_manual_tick(relational_context=self, **kwargs)
@@ -412,6 +418,14 @@ def _install_tick_health(monkeypatch, graph_state):
     monkeypatch.setattr(kg_tick, "get_kg_health", _stub)
     monkeypatch.setattr(kg_tick_policy, "get_kg_health", _stub)
     return calls
+
+
+def _tick_principal() -> Principal:
+    return Principal(
+        "op",
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
 
 
 def _request_without_scheduler():
@@ -471,7 +485,12 @@ async def test_ts_de1c347a_degraded_board_refused_409(monkeypatch):
     payload = TickRunNowRequest(board_id="board-degraded", force_full_rebuild=False)
 
     with pytest.raises(HTTPException) as exc_info:
-        await run_tick_now(payload, _request_without_scheduler(), user="op", db=db)
+        await run_tick_now(
+            payload,
+            _request_without_scheduler(),
+            principal=_tick_principal(),
+            db=db,
+        )
 
     assert exc_info.value.status_code == 409
     detail = exc_info.value.detail
@@ -489,7 +508,12 @@ async def test_ts_23ae75b2_healthy_board_proceeds_202(monkeypatch):
     db = _FakeSession()
     payload = TickRunNowRequest(board_id="board-healthy", force_full_rebuild=False)
 
-    resp = await run_tick_now(payload, _request_without_scheduler(), user="op", db=db)
+    resp = await run_tick_now(
+        payload,
+        _request_without_scheduler(),
+        principal=_tick_principal(),
+        db=db,
+    )
 
     assert isinstance(resp, TickRunNowResponse)
     assert resp.status == "running"
@@ -521,7 +545,7 @@ async def test_ts_58aac88a_lock_contention_wins_over_health(monkeypatch):
             await run_tick_now(
                 payload,
                 _request_without_scheduler(),
-                user="op",
+                principal=_tick_principal(),
                 db=_FakeSession(),
             )
     finally:
@@ -539,7 +563,12 @@ async def test_ts_21f124dd_global_tick_not_health_refused(monkeypatch):
     db = _FakeSession()
     payload = TickRunNowRequest(board_id=None, force_full_rebuild=False)
 
-    resp = await run_tick_now(payload, _request_without_scheduler(), user="op", db=db)
+    resp = await run_tick_now(
+        payload,
+        _request_without_scheduler(),
+        principal=_tick_principal(),
+        db=db,
+    )
 
     assert resp.status == "running"
     assert len(published) == 1

@@ -231,6 +231,7 @@ async def test_ts_85e18262_dlq_visible_and_blocking_with_active_skip(db_factory)
     board, source_ref = _id("board"), f"bug:{UUID_A}"
     async with db_factory() as db:
         db.add(Board(id=board, name="r5 test3", owner_id=USER_ID))
+        await db.flush()
         db.add(ConsolidationDeadLetter(
             id=_id("dlq"), board_id=board, artifact_type="card", artifact_id=UUID_A,
             original_queue_id="q1", attempts=3,

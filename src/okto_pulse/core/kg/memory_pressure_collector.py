@@ -23,7 +23,6 @@ Design constraints (from the spec):
 
 from __future__ import annotations
 
-import threading
 from collections import deque
 from typing import TYPE_CHECKING
 

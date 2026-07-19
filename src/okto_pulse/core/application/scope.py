@@ -7,7 +7,7 @@ runtime-specific context before the service layer builds persistence queries.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 

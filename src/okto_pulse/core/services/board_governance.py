@@ -21,6 +21,7 @@ GOVERNANCE_SETTING_KEYS = (
 )
 LEGACY_ABSENT_SETTING_KEYS = (
     "skip_task_requirement_link_gate_global",
+    "reviewer_separation_mode",
 )
 QA_SELF_ANSWER_DENIED_ACTION = "qa_self_answer_denied"
 QA_SELF_ANSWER_DENIED_METRIC = METRIC_QA_SELF_ANSWER_DENIED

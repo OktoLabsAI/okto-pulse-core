@@ -30,6 +30,7 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -67,11 +68,87 @@ def _query_scope_for_actor(
     *,
     board_id: str | None = None,
     require_ownership: bool = True,
+    allowed_board_ids: set[str] | None = None,
 ) -> QueryScope:
     return ActorScope.from_context(actor).query_scope(
         target_board_id=board_id,
+        allowed_board_ids=allowed_board_ids,
         require_ownership=require_ownership,
     )
+
+
+async def _load_readable_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> Any | None:
+    """Load a board only after owner/share access has been established.
+
+    ``BoardService.get_board`` intentionally defaults to owner-only queries.  A
+    verified share therefore receives an explicit one-board allowlist rather
+    than weakening the service's default ownership contract globally.
+    """
+
+    if await load_accessible_board(uow, board_id, actor) is None:
+        return None
+    return await uow.services.boards.get_board(
+        board_id,
+        actor.actor_id,
+        query_scope=_query_scope_for_actor(
+            actor,
+            board_id=board_id,
+            require_ownership=False,
+            allowed_board_ids={board_id},
+        ),
+    )
+
+
+async def _require_owned_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> Any:
+    """Preflight an owner-only REST board mutation.
+
+    Missing, cross-realm and merely shared boards deliberately collapse to the
+    same not-found error before a mutating service is called.
+    """
+
+    board = await load_accessible_board(
+        uow,
+        board_id,
+        actor,
+        allowed_share_permissions=(),
+    )
+    if board is None or getattr(board, "owner_id", None) != actor.actor_id:
+        raise EntityNotFoundError("board", board_id)
+    return board
+
+
+async def _require_readable_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> Any:
+    """Preflight a share operation without exposing inaccessible boards."""
+
+    board = await load_accessible_board(uow, board_id, actor)
+    if board is None:
+        raise EntityNotFoundError("board", board_id)
+    return board
+
+
+async def _require_share_on_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    share_id: str,
+) -> Any:
+    """Resolve a share only inside its already-authorized parent board."""
+
+    for share in await uow.services.shares.list_shares(board_id):
+        if getattr(share, "id", None) == share_id:
+            return share
+    raise EntityNotFoundError("share", share_id)
 
 
 # --- list -------------------------------------------------------------------
@@ -141,11 +218,7 @@ class GetBoardUseCase:
     async def execute(
         self, command: GetBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetBoardResult:
-        board = await uow.services.boards.get_board(
-            command.board_id,
-            actor.actor_id,
-            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
-        )
+        board = await _load_readable_board(uow, command.board_id, actor)
         if not board:
             raise EntityNotFoundError("board", command.board_id)
         board_agents = await uow.services.agents.list_agents_for_board(command.board_id)
@@ -190,6 +263,7 @@ class UpdateBoardUseCase:
     async def execute(
         self, command: UpdateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardResult:
+        await _require_owned_board(uow, command.board_id, actor)
         service = uow.services.boards
         board = await service.update_board(
             command.board_id,
@@ -235,6 +309,7 @@ class DeleteBoardUseCase:
     async def execute(
         self, command: DeleteBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteBoardResult:
+        await _require_owned_board(uow, command.board_id, actor)
         deleted = await uow.services.boards.delete_board(
             command.board_id, actor.actor_id
         )
@@ -274,6 +349,7 @@ class CreateCardInBoardUseCase:
     async def execute(
         self, command: CreateCardInBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateCardInBoardResult:
+        await _require_owned_board(uow, command.board_id, actor)
         service = uow.services.cards
         card = await service.create_card(
             command.board_id,
@@ -314,11 +390,7 @@ class GetBoardColumnsUseCase:
     async def execute(
         self, command: GetBoardColumnsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetBoardColumnsResult:
-        board = await uow.services.boards.get_board(
-            command.board_id,
-            actor.actor_id,
-            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
-        )
+        board = await _load_readable_board(uow, command.board_id, actor)
         if not board:
             raise EntityNotFoundError("board", command.board_id)
         return GetBoardColumnsResult(board)
@@ -327,12 +399,114 @@ class GetBoardColumnsUseCase:
 # --- archive / restore tree -------------------------------------------------
 
 
-class ArchiveTreeCommand:
-    __slots__ = ("entity_type", "entity_id")
+_ARCHIVE_ENTITY_TYPES = {"ideation", "refinement", "spec"}
 
-    def __init__(self, entity_type: str, entity_id: str) -> None:
+
+def _validate_archive_entity_type(entity_type: str) -> None:
+    if entity_type not in _ARCHIVE_ENTITY_TYPES:
+        raise ValueError(
+            f"Invalid entity_type: {entity_type}. Must be ideation, refinement, or spec."
+        )
+
+
+async def _archive_board_write_allowed(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> bool:
+    """Authorize the board before resolving the globally addressed tree root.
+
+    MCP authentication already proves the agent's board grant and carries that
+    board in ``ActorContext``.  REST users must own the board or hold an
+    editor/admin share; viewer shares remain read-only.
+    """
+
+    return (
+        await load_accessible_board(
+            uow,
+            board_id,
+            actor,
+            allowed_share_permissions={"editor", "admin"},
+        )
+        is not None
+    )
+
+
+async def _resolve_archive_root(
+    uow: PulseUnitOfWork,
+    *,
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+) -> Any | None:
+    if entity_type == "ideation":
+        root = await uow.services.ideations.get_ideation(entity_id)
+    elif entity_type == "refinement":
+        root = await uow.services.refinements.get_refinement(entity_id)
+    else:
+        root = await uow.services.specs.get_spec(entity_id)
+    if root is None or getattr(root, "board_id", None) != board_id:
+        return None
+    return root
+
+
+async def _preflight_archive_root(
+    uow: PulseUnitOfWork,
+    command: Any,
+    actor: ActorContext,
+) -> None:
+    _validate_archive_entity_type(command.entity_type)
+    if not await _archive_board_write_allowed(uow, command.board_id, actor):
+        raise EntityNotFoundError(command.entity_type, command.entity_id)
+    if await _resolve_archive_root(
+        uow,
+        board_id=command.board_id,
+        entity_type=command.entity_type,
+        entity_id=command.entity_id,
+    ) is None:
+        raise EntityNotFoundError(command.entity_type, command.entity_id)
+
+
+async def _record_tree_activity(
+    uow: PulseUnitOfWork,
+    *,
+    board_id: str,
+    actor: ActorContext,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    counts: dict[str, int],
+) -> None:
+    await uow.services.boards._log_activity(
+        board_id=board_id,
+        card_id=None,
+        action=action,
+        actor_type="agent" if actor.source == "mcp" else "user",
+        actor_id=actor.actor_id,
+        actor_name=actor.actor_name or actor.actor_id,
+        details={
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "counts": counts,
+        },
+    )
+
+
+class ArchiveTreeCommand:
+    __slots__ = ("board_id", "entity_type", "entity_id", "record_activity")
+
+    def __init__(
+        self,
+        board_id: str,
+        entity_type: str,
+        entity_id: str,
+        *,
+        record_activity: bool = False,
+    ) -> None:
+        self.board_id = board_id
         self.entity_type = entity_type
         self.entity_id = entity_id
+        self.record_activity = record_activity
 
 
 class ArchiveTreeResult:
@@ -351,20 +525,39 @@ class ArchiveTreeUseCase:
     async def execute(
         self, command: ArchiveTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ArchiveTreeResult:
-
+        await _preflight_archive_root(uow, command, actor)
         counts = await uow.services.archives.archive_tree(
             command.entity_type, command.entity_id
         )
+        if command.record_activity:
+            await _record_tree_activity(
+                uow,
+                board_id=command.board_id,
+                actor=actor,
+                action="tree_archived",
+                entity_type=command.entity_type,
+                entity_id=command.entity_id,
+                counts=counts,
+            )
         await commit(uow)
         return ArchiveTreeResult(counts)
 
 
 class RestoreTreeCommand:
-    __slots__ = ("entity_type", "entity_id")
+    __slots__ = ("board_id", "entity_type", "entity_id", "record_activity")
 
-    def __init__(self, entity_type: str, entity_id: str) -> None:
+    def __init__(
+        self,
+        board_id: str,
+        entity_type: str,
+        entity_id: str,
+        *,
+        record_activity: bool = False,
+    ) -> None:
+        self.board_id = board_id
         self.entity_type = entity_type
         self.entity_id = entity_id
+        self.record_activity = record_activity
 
 
 class RestoreTreeResult:
@@ -383,10 +576,20 @@ class RestoreTreeUseCase:
     async def execute(
         self, command: RestoreTreeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RestoreTreeResult:
-
+        await _preflight_archive_root(uow, command, actor)
         counts = await uow.services.archives.restore_tree(
             command.entity_type, command.entity_id
         )
+        if command.record_activity:
+            await _record_tree_activity(
+                uow,
+                board_id=command.board_id,
+                actor=actor,
+                action="tree_restored",
+                entity_type=command.entity_type,
+                entity_id=command.entity_id,
+                counts=counts,
+            )
         await commit(uow)
         return RestoreTreeResult(counts)
 
@@ -419,6 +622,7 @@ class ShareBoardUseCase:
     async def execute(
         self, command: ShareBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ShareBoardResult:
+        await _require_readable_board(uow, command.board_id, actor)
         share = await uow.services.shares.share_board(
             command.board_id,
             actor.actor_id,
@@ -469,9 +673,10 @@ class ListBoardSharesUseCase:
 
 
 class UpdateBoardShareCommand:
-    __slots__ = ("share_id", "data")
+    __slots__ = ("board_id", "share_id", "data")
 
-    def __init__(self, share_id: str, data: Any) -> None:
+    def __init__(self, board_id: str, share_id: str, data: Any) -> None:
+        self.board_id = board_id
         self.share_id = share_id
         self.data = data
 
@@ -492,6 +697,8 @@ class UpdateBoardShareUseCase:
     async def execute(
         self, command: UpdateBoardShareCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardShareResult:
+        await _require_readable_board(uow, command.board_id, actor)
+        await _require_share_on_board(uow, command.board_id, command.share_id)
         share = await uow.services.shares.update_share(
             command.share_id,
             actor.actor_id,
@@ -505,9 +712,10 @@ class UpdateBoardShareUseCase:
 
 
 class RevokeBoardShareCommand:
-    __slots__ = ("share_id",)
+    __slots__ = ("board_id", "share_id")
 
-    def __init__(self, share_id: str) -> None:
+    def __init__(self, board_id: str, share_id: str) -> None:
+        self.board_id = board_id
         self.share_id = share_id
 
 
@@ -524,6 +732,8 @@ class RevokeBoardShareUseCase:
     async def execute(
         self, command: RevokeBoardShareCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RevokeBoardShareResult:
+        await _require_readable_board(uow, command.board_id, actor)
+        await _require_share_on_board(uow, command.board_id, command.share_id)
         revoked = await uow.services.shares.revoke_share(
             command.share_id,
             actor.actor_id,

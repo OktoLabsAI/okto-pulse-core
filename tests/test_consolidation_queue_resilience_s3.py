@@ -88,8 +88,10 @@ async def health_client():
     """Minimal ASGI client wrapping just the queue_health router."""
     from fastapi import FastAPI
     from okto_pulse.community.api.queue_health import router
-    from okto_pulse.community.api.auth_deps import require_user
+    from okto_pulse.community.api.auth_deps import require_principal, require_user
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
     from okto_pulse.core.infra.database import get_db, get_session_factory
+    from okto_pulse.core.ports.authentication import Principal
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
@@ -103,6 +105,11 @@ async def health_client():
             yield session
 
     app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        "user-test",
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
     app.dependency_overrides[get_db] = _override_db
 
     transport = ASGITransport(app=app)
@@ -111,7 +118,7 @@ async def health_client():
 
 
 # ----------------------------------------------------------------------
-# AC9 — Health endpoint returns the 13 expected keys
+# AC9 — Health endpoint returns all expected keys
 # ----------------------------------------------------------------------
 
 
@@ -119,7 +126,7 @@ async def health_client():
 async def test_ac9_health_endpoint_returns_all_expected_keys(
     health_client, s3_clean,
 ):
-    """AC9: GET /api/v1/kg/queue/health returns the 13 keys with the
+    """AC9: GET /api/v1/kg/queue/health returns the health keys with the
     correct types (queue_depth INT, claimed_boards LIST, alert_active BOOL,
     etc.)."""
     resp = await health_client.get("/api/v1/kg/queue/health")
@@ -127,7 +134,8 @@ async def test_ac9_health_endpoint_returns_all_expected_keys(
     body = resp.json()
     expected_keys = {
         "queue_depth", "oldest_pending_age_s", "claimed_count", "claimed_boards",
-        "dead_letter_count", "claims_per_min_1m", "claims_per_min_5m",
+        "dead_letter_count", "global_outbox_dead_letter_count",
+        "claims_per_min_1m", "claims_per_min_5m",
         "alert_threshold", "alert_active", "alert_fired_total",
         "workers_active", "workers_idle", "workers_draining_count",
         "kuzu_lock_retries_5m",
@@ -138,6 +146,7 @@ async def test_ac9_health_endpoint_returns_all_expected_keys(
     assert isinstance(body["claimed_count"], int)
     assert isinstance(body["claimed_boards"], list)
     assert isinstance(body["dead_letter_count"], int)
+    assert isinstance(body["global_outbox_dead_letter_count"], int)
     assert isinstance(body["alert_threshold"], int)
     assert isinstance(body["alert_active"], bool)
     assert isinstance(body["alert_fired_total"], int)
@@ -251,6 +260,32 @@ def test_claims_per_min_sliding_window():
 # ----------------------------------------------------------------------
 # AC3 — Per-board serialization (structural — claim filter)
 # ----------------------------------------------------------------------
+
+
+def test_ac3_batch_selector_never_tops_up_with_same_or_claimed_board():
+    """Every claim in a sequential batch represents immediately runnable work."""
+
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.processors.consolidation import (
+        _select_board_aware_entries,
+    )
+
+    ready = [
+        SimpleNamespace(id="a-1", board_id="board-a"),
+        SimpleNamespace(id="a-2", board_id="board-a"),
+        SimpleNamespace(id="b-1", board_id="board-b"),
+        SimpleNamespace(id="c-1", board_id="board-claimed"),
+        SimpleNamespace(id="b-2", board_id="board-b"),
+    ]
+
+    selected = _select_board_aware_entries(
+        ready,
+        claimed_board_ids=frozenset({"board-claimed"}),
+        limit=5,
+    )
+
+    assert [entry.id for entry in selected] == ["a-1", "b-1"]
 
 
 @pytest.mark.asyncio

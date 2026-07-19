@@ -117,6 +117,32 @@ def test_critic_evaluate_lru_cache_hit():
     assert counter["count"] == 2
 
 
+def test_critic_evaluate_cache_supports_unhashable_callable_identity():
+    reset_critic_cache()
+
+    class UnhashableCritic:
+        __hash__ = None
+
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self, query, rows):
+            self.calls += 1
+            return {
+                "adequacy": "sufficient",
+                "reason": "ok",
+                "suggested_action": "accept",
+            }
+
+    critic = UnhashableCritic()
+    rows = [{"node_id": "n1", "similarity": 0.9}]
+
+    critic_evaluate("same", rows, critic)
+    critic_evaluate("same", rows, critic)
+
+    assert critic.calls == 1
+
+
 # ===========================================================================
 # reflect — stop conditions
 # ===========================================================================
@@ -257,19 +283,37 @@ def test_reflect_fallback_semantic_kwarg():
     assert spy.calls[1].get("fallback_semantic") is True
 
 
-def test_reflect_change_intent_stops_v1():
+def test_reflect_change_intent_executes_then_accepts():
     reset_critic_cache()
-    spy = _RetrievalSpy()
+    spy = _RetrievalSpy(rows_per_call=[
+        [{"node_id": "generic"}],
+        [{"node_id": "decision"}],
+    ])
+    decisions = iter(
+        (
+            {
+                "adequacy": Adequacy.IRRELEVANT.value,
+                "reason": "wrong_intent",
+                "suggested_action": CriticAction.CHANGE_INTENT.value,
+                "target_intent": "Decision",
+            },
+            {
+                "adequacy": Adequacy.SUFFICIENT.value,
+                "reason": "intent_evidence",
+                "suggested_action": CriticAction.ACCEPT.value,
+            },
+        )
+    )
+
     result = reflect(
         "q",
         retrieval_fn=spy,
-        critic_fn=_critic_script(
-            (Adequacy.IRRELEVANT, CriticAction.CHANGE_INTENT),
-        ),
+        critic_fn=lambda _query, _rows: next(decisions),
     )
-    assert len(result.iterations) == 1
-    assert result.stopped_reason == "change_intent_v1_not_implemented"
-    assert len(spy.calls) == 1  # no retry
+
+    assert len(result.iterations) == 2
+    assert result.stopped_reason == "accepted"
+    assert spy.calls == [{}, {"target_intent": "Decision"}]
 
 
 # ===========================================================================

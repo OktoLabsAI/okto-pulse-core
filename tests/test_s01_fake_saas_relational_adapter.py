@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -33,6 +34,10 @@ from okto_pulse.core.testing import FakeSaaSRelationalApplicationAdapter
 
 class _OpaqueSaaSUow:
     def __init__(self, adapter: FakeSaaSRelationalApplicationAdapter) -> None:
+        async def _get_board(board_id: str):
+            return SimpleNamespace(id=board_id, owner_id="saas-agent")
+
+        self.boards = SimpleNamespace(get=_get_board)
         self.services = type(
             "FakeServices",
             (),

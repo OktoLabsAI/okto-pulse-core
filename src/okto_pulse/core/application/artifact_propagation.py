@@ -19,6 +19,125 @@ _KB_ENTITY_BY_TYPE_NAME = {
 }
 
 
+class ArtifactResourceSelectionError(ValueError):
+    """An explicit mockup/KB token did not resolve on the source artifact."""
+
+    code = "resource_selection_invalid"
+
+    def __init__(
+        self,
+        *,
+        resource_type: str,
+        source_type: str | None,
+        source_id: str | None,
+        requested: list[str],
+        matched: list[str],
+        missing: list[str],
+    ) -> None:
+        self.resource_type = resource_type
+        self.source_type = source_type
+        self.source_id = source_id
+        self.requested = tuple(requested)
+        self.matched = tuple(matched)
+        self.missing = tuple(missing)
+        super().__init__(self.code)
+
+    def to_error_dict(self) -> dict[str, Any]:
+        return {
+            "error": self.code,
+            "code": self.code,
+            "detail": (
+                f"One or more {self.resource_type} selection tokens do not "
+                "resolve on the requested source artifact."
+            ),
+            "resource_type": self.resource_type,
+            "source_parent_type": self.source_type,
+            "source_parent_id": self.source_id,
+            "requested": list(self.requested),
+            "matched": list(self.matched),
+            "missing": list(self.missing),
+            "retryable": False,
+        }
+
+
+def _value(item: Any, key: str) -> Any:
+    return item.get(key) if isinstance(item, dict) else getattr(item, key, None)
+
+
+def artifact_identity_values(item: Any, resource_type: str) -> set[str]:
+    values: set[str] = set()
+
+    def add(value: Any) -> None:
+        if value in (None, ""):
+            return
+        token = str(value).strip()
+        if not token:
+            return
+        values.add(token)
+        tail = token
+        for separator in (":", "/", "\\"):
+            if separator in tail:
+                tail = tail.rsplit(separator, 1)[-1]
+        if tail:
+            values.add(tail)
+            values.add(f"{resource_type}:{tail}")
+            if resource_type == "knowledge_base":
+                values.add(f"kb:{tail}")
+
+    for key in (
+        "id",
+        "root_source_mockup_id",
+        "root_source_kb_id",
+        "origin_id",
+        "source_mockup_id",
+        "source_kb_id",
+        "immediate_parent_kb_id",
+        "source_ref",
+        "origin_ref",
+        "source",
+    ):
+        add(_value(item, key))
+    return values
+
+
+def validate_artifact_selections(
+    *,
+    source_mockups: list[Any] | None,
+    source_knowledge_bases: list[Any] | None,
+    mockup_ids: list[str] | None,
+    kb_ids: list[str] | None,
+    source_type: str | None,
+    source_id: str | None,
+) -> None:
+    for resource_type, items, requested_values in (
+        ("mockup", source_mockups or [], mockup_ids),
+        ("knowledge_base", source_knowledge_bases or [], kb_ids),
+    ):
+        if requested_values is None:
+            continue
+        requested = list(
+            dict.fromkeys(
+                str(item).strip()
+                for item in requested_values
+                if str(item).strip()
+            )
+        )
+        identities = [artifact_identity_values(item, resource_type) for item in items]
+        matched = [
+            token for token in requested if any(token in identity for identity in identities)
+        ]
+        missing = [token for token in requested if token not in matched]
+        if missing:
+            raise ArtifactResourceSelectionError(
+                resource_type=resource_type,
+                source_type=source_type,
+                source_id=source_id,
+                requested=requested,
+                matched=matched,
+                missing=missing,
+            )
+
+
 def _kb_entity_name(identifier: str | type[Any]) -> str:
     """Normalize the legacy model-class identifier without depending on an ORM."""
     if isinstance(identifier, str):
@@ -41,12 +160,23 @@ def _filter_mockups(
     source = (
         mockups
         if mockup_ids is None
-        else [item for item in mockups if item.get("id") in mockup_ids]
+        else [
+            item
+            for item in mockups
+            if artifact_identity_values(item, "mockup") & set(mockup_ids)
+        ]
     )
     copied: list[dict] = []
     for item in source:
         new_item = dict(item)
-        new_item["origin_id"] = item.get("id")
+        # Preserve the canonical root across every snapshot hop.  The direct
+        # parent remains available separately for audit/debugging.
+        new_item["origin_id"] = (
+            item.get("origin_id")
+            or item.get("source_mockup_id")
+            or item.get("id")
+        )
+        new_item["source_mockup_id"] = item.get("id")
         origin_token = f"{item.get('id')}{id(new_item)}"
         new_item["id"] = f"sm_{hashlib.md5(origin_token.encode()).hexdigest()[:8]}"
         copied.append(new_item)
@@ -75,9 +205,20 @@ async def propagate_artifacts(
     source_id: str | None = None,
     source_title: str | None = None,
     source_version: int | None = None,
-) -> None:
+) -> dict[str, int]:
     """Apply additive mockup, knowledge and answered-Q&A propagation rules."""
     persistence = get_application_persistence_port()
+    copied_kb_count = 0
+    copied_qa_count = 0
+
+    validate_artifact_selections(
+        source_mockups=source_mockups,
+        source_knowledge_bases=source_knowledge_bases,
+        mockup_ids=mockup_ids,
+        kb_ids=kb_ids,
+        source_type=source_type,
+        source_id=source_id,
+    )
 
     copied_mockups = _filter_mockups(source_mockups, mockup_ids)
     if copied_mockups:
@@ -102,12 +243,7 @@ async def propagate_artifacts(
             else [
                 item
                 for item in source_knowledge_bases
-                if (
-                    item.get("id")
-                    if isinstance(item, dict)
-                    else getattr(item, "id", None)
-                )
-                in kb_ids
+                if artifact_identity_values(item, "knowledge_base") & set(kb_ids)
             ]
         )
         target_id_field = {
@@ -152,6 +288,7 @@ async def propagate_artifacts(
                         },
                     ),
                 )
+                copied_kb_count += 1
             await persistence.flush(db)
 
     if source_qa_items:
@@ -193,7 +330,19 @@ async def propagate_artifacts(
                     db,
                     ApplicationRecord(entity=target_qa_entity, values=payload),
                 )
+                copied_qa_count += 1
             await persistence.flush(db)
 
+    return {
+        "mockup": len(copied_mockups),
+        "knowledge_base": copied_kb_count,
+        "qa": copied_qa_count,
+    }
 
-__all__ = ["propagate_artifacts"]
+
+__all__ = [
+    "ArtifactResourceSelectionError",
+    "artifact_identity_values",
+    "propagate_artifacts",
+    "validate_artifact_selections",
+]

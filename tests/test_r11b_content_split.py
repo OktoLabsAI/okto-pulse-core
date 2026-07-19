@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from okto_pulse.core.ports.mcp_resources import (
     CompositeMcpResourceCatalog,
+    McpResourceCatalogError,
+    McpResourceReplacementTarget,
     McpResourceSpec,
     StaticMcpResourceCatalog,
     catalog_link_integrity,
@@ -95,7 +97,7 @@ def test_ts_d17282f5_rogue_backend_term_in_common_reproves():
 # ===========================================================================
 # ts_5b73ba44 (TS05) — catalog-aware gates over the effective catalog.
 # ===========================================================================
-def test_ts_5b73ba44_authorized_overlay_merges_unauthorized_duplicate_conflicts():
+def test_ts_5b73ba44_explicit_replacement_wins_undeclared_duplicate_fails():
     URI = "okto-pulse://workflows/kg"
     common = StaticMcpResourceCatalog(
         "core",
@@ -103,35 +105,36 @@ def test_ts_5b73ba44_authorized_overlay_merges_unauthorized_duplicate_conflicts(
                          edition="core", kind="common",
                          content="The KG uses the embedded graph database."),),
     )
-    overlay = StaticMcpResourceCatalog(
-        "community",
+    replacement = StaticMcpResourceCatalog(
+        "extension",
         (McpResourceSpec(uri=URI, description="ov", category="workflows",
-                         edition="community", kind="operational", provider="p",
-                         capability="kg", same_uri_overlay=True,
+                         edition="extension", kind="operational", provider="p",
+                         capability="kg",
+                         replace_target=McpResourceReplacementTarget(edition="core"),
                          content="The KG uses LadybugDB at ~/.okto-pulse/graph.lbug."),),
+        precedence=10,
     )
-    comp = CompositeMcpResourceCatalog([common, overlay])
+    comp = CompositeMcpResourceCatalog([common, replacement])
     merged = {s.uri: s for s in comp.specs()}[URI]
 
-    # authorized overlay MERGES (operational content wins), public desc kept.
+    # The explicit higher-precedence declaration replaces the complete spec.
     assert merged.read() == "The KG uses LadybugDB at ~/.okto-pulse/graph.lbug."
-    assert merged.description == "KG workflow" and merged.kind == "operational"
-    # NOT a raw conflict; effective scan exempts the operational merge.
+    assert merged.description == "ov" and merged.kind == "operational"
+    assert merged.replaced_source_identity == common.specs()[0].source_identity
     assert catalog_uri_conflicts(comp) == ()
     assert scan_forbidden_terms(comp) == ()
     assert catalog_link_integrity(comp) == ()
 
-    # an UNAUTHORIZED same-URI duplicate (no overlay flag) is STILL a conflict
-    # and first-wins (R11-A guard not loosened).
+    # An undeclared same-URI cross-edition claim fails during resolution.
     dup = StaticMcpResourceCatalog(
-        "community",
+        "extension",
         (McpResourceSpec(uri=URI, description="d", category="workflows",
-                         edition="community", kind="common", content="dup"),),
+                         edition="extension", kind="common", content="dup"),),
+        precedence=10,
     )
-    comp2 = CompositeMcpResourceCatalog([common, dup])
-    assert len(catalog_uri_conflicts(comp2)) == 1
-    # first-wins: the core common spec content is served, not the duplicate.
-    assert {s.uri: s for s in comp2.specs()}[URI].read() == common.specs()[0].read()
+    with pytest.raises(McpResourceCatalogError) as exc_info:
+        CompositeMcpResourceCatalog([common, dup])
+    assert exc_info.value.code == "undeclared_replace"
 
 
 # ===========================================================================

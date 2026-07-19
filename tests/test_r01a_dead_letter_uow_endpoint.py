@@ -47,22 +47,15 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
-def test_dead_letter_endpoint_uses_uow_and_preserves_payload() -> None:
-    """The real endpoint returns the DeadLetterListResponse payload unchanged,
-    flowing through get_unit_of_work -> use case (the get_db override applies)."""
+def test_dead_letter_endpoint_hides_missing_board_before_reader() -> None:
+    """The real endpoint now rejects a missing board before the DLQ reader."""
     client = _client()
     resp = client.get(
         "/api/v1/kg/queue/dead-letter",
         params={"board_id": "r01a-imp2-no-such-board", "limit": 25, "offset": 0},
     )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    # DeadLetterListResponse shape preserved exactly.
-    assert set(body) == {"rows", "total", "limit", "offset"}
-    assert body["rows"] == []  # board with no DLQ rows
-    assert body["total"] == 0
-    assert body["limit"] == 25  # query echoed back unchanged
-    assert body["offset"] == 0
+    assert resp.status_code == 404, resp.text
+    assert resp.json() == {"detail": "Board not found"}
 
 
 def test_dead_letter_handler_depends_on_unit_of_work_not_raw_session() -> None:

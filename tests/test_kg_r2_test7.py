@@ -60,14 +60,18 @@ async def test_bug_derived_canonical_learning_preserved_and_routed_to_debt(db_fa
     # Bug source regressed (draft -> classifies working, not canonical).
     await insert_bug_card(db_factory, board_id, bug_id, status="draft")
     learning_ref = f"card:bug:{bug_id}:learning:{uuid.uuid4().hex}"
-    learning_id = seed_canonical_cognitive(board_id, "Learning", source_ref=learning_ref)
+    learning_id = await seed_canonical_cognitive(
+        board_id, "Learning", source_ref=learning_ref
+    )
 
     async with db_factory() as db:
         result = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
 
     # PRESERVED: the canonical Learning is never demoted ...
-    assert node_layer(board_id, "Learning", learning_id) == GRAPH_LAYER_CANONICAL
+    assert await node_layer(
+        board_id, "Learning", learning_id
+    ) == GRAPH_LAYER_CANONICAL
     assert all(d["node_id"] != learning_id for d in result.demoted)
     # ... and the material irregularity is routed to the EXISTING R7 CanonicalDebt.
     routed = [r for r in result.routed_to_debt if r["node_id"] == learning_id]
@@ -78,7 +82,9 @@ async def test_bug_derived_canonical_learning_preserved_and_routed_to_debt(db_fa
         result2 = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
     assert all(d["node_id"] != learning_id for d in result2.demoted)
-    assert node_layer(board_id, "Learning", learning_id) == GRAPH_LAYER_CANONICAL
+    assert await node_layer(
+        board_id, "Learning", learning_id
+    ) == GRAPH_LAYER_CANONICAL
 
 
 # ===========================================================================
@@ -95,7 +101,7 @@ async def test_carveout_is_selective_cognitive_preserved_deterministic_demoted(d
     await set_spec_status(db_factory, spec_id, "draft")
     # ... alongside a non-bug-derived canonical cognitive Assumption that MUST be
     # preserved (carve-out) and create NO debt.
-    assumption_id = seed_canonical_cognitive(
+    assumption_id = await seed_canonical_cognitive(
         board_id, "Assumption", source_ref=f"spec:{spec_id}:assumption:1",
     )
 
@@ -105,9 +111,11 @@ async def test_carveout_is_selective_cognitive_preserved_deterministic_demoted(d
 
     # Deterministic stale canonical WAS demoted (proves the sweep is live) ...
     assert result.demoted
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0
     # ... but the cognitive Assumption is preserved as a skip, with no auto-debt.
-    assert node_layer(board_id, "Assumption", assumption_id) == GRAPH_LAYER_CANONICAL
+    assert await node_layer(
+        board_id, "Assumption", assumption_id
+    ) == GRAPH_LAYER_CANONICAL
     assert any(s["node_id"] == assumption_id for s in result.skipped_cognitive)
     assert all(d["node_id"] != assumption_id for d in result.demoted)
     assert all(r["node_id"] != assumption_id for r in result.routed_to_debt)

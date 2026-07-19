@@ -24,6 +24,9 @@ AttachmentKind = Literal["direct", "inherited_reference", "not_applicable"]
 ENTITY_TYPES: tuple[str, ...] = ("ideation", "refinement", "spec", "card")
 RESOURCE_TYPES: tuple[str, ...] = ("architecture", "mockup", "knowledge_base")
 ORIGIN_FIELD_ORDER: tuple[str, ...] = (
+    "root_source_design_id",
+    "root_source_kb_id",
+    "root_source_mockup_id",
     "source_ref",
     "origin_ref",
     "source",
@@ -772,7 +775,9 @@ class ResolvedResourceLineageService:
             origin_evidence,
             ("source_ref", "origin_ref", "source"),
         )
-        canonical_origin_ids = _canonical_origin_ids(origin_evidence)
+        canonical_origin_ids = _canonical_origin_ids(
+            origin_evidence, resource_type=resource_type
+        )
         if len(canonical_origin_ids) > 1:
             raise AmbiguousResourceOrigin(
                 resource_type=resource_type,
@@ -895,7 +900,31 @@ def _first_present(values: Mapping[str, Any], keys: Iterable[str]) -> str | None
     return None
 
 
-def _canonical_origin_ids(values: Mapping[str, Any]) -> list[str]:
+def _canonical_origin_ids(
+    values: Mapping[str, Any], *, resource_type: str | None = None
+) -> list[str]:
+    root_ids: list[str] = []
+    for key in (
+        "root_source_design_id",
+        "root_source_kb_id",
+        "root_source_mockup_id",
+    ):
+        value = values.get(key)
+        if not value:
+            continue
+        text = str(value)
+        if text not in root_ids:
+            root_ids.append(text)
+    if root_ids:
+        return root_ids
+
+    # Mockup snapshots intentionally carry both the canonical ``origin_id`` and
+    # their immediate ``source_mockup_id``.  Across multiple hops those values
+    # differ by design; the former is the logical Resource Gate identity.
+    if resource_type == "mockup":
+        canonical = values.get("origin_id") or values.get("source_mockup_id")
+        return [str(canonical)] if canonical else []
+
     ids: list[str] = []
     for key in ("source_design_id", "source_kb_id", "source_mockup_id", "origin_id"):
         value = values.get(key)

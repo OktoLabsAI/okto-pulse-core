@@ -88,8 +88,10 @@ async def test_create_board_without_template_uses_defaults_no_snapshot():
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
-        # Effective settings = BoardSettings() default; NO snapshot; no error.
-        assert board.settings == BoardSettings().model_dump(mode="json")
+        # Forward-safe new-board default; NO snapshot and no error.
+        expected = BoardSettings().model_dump(mode="json")
+        expected["reviewer_separation_mode"] = "enforce"
+        assert board.settings == expected
         assert board.default_config_snapshot is None
         # board-scoped fallback audit recorded.
         assert BOARD_EVENT_FALLBACK in await _activity_actions(db, board.id)
@@ -357,12 +359,17 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
         assert desc_a["is_outdated"] is True
 
         desc_b = await svc.describe_board_config(board_b)
-        assert desc_b == {"state": "legacy_no_snapshot", "board_id": board_b.id}
+        assert desc_b == {
+            "state": "legacy_no_snapshot",
+            "board_id": board_b.id,
+            "configuration_presence": "absent",
+            "comparable": False,
+        }
 
 
 async def test_ts_3312f7bd_bootstrap_fallback_no_template_no_error():
     """ts_3312f7bd (TR11/AC11): with NO template ever created (bootstrap), creating
-    a board without explicit settings succeeds with BoardSettings() defaults, no
+    a board without explicit settings succeeds with forward-safe defaults, no
     snapshot, and a non-error fallback audit signal."""
     from okto_pulse.core.infra.database import get_session_factory
 
@@ -372,7 +379,9 @@ async def test_ts_3312f7bd_bootstrap_fallback_no_template_no_error():
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
-        assert board.settings == BoardSettings().model_dump(mode="json")
+        expected = BoardSettings().model_dump(mode="json")
+        expected["reviewer_separation_mode"] = "enforce"
+        assert board.settings == expected
         assert board.default_config_snapshot is None
         assert BOARD_EVENT_FALLBACK in await _activity_actions(db, board.id)
 

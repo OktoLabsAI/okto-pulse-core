@@ -47,7 +47,7 @@ from okto_pulse.core.kg.global_discovery import metrics as gdm
 from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
 from global_graph_testing import (
     bootstrap_global_discovery,
-    open_global_connection,
+    execute_global_read,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
@@ -210,6 +210,29 @@ def _delete_node(board_id, node_type, node_id):
         )
 
 
+async def _ensure_outbox_audit_parent(db, board_id: str, session_id: str) -> None:
+    """Persist the relational parents required by KuzuNodeRef fixtures."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy_test_models import ConsolidationAudit
+
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name=f"R7 IMP5 {board_id}", owner_id=USER_ID))
+        await db.flush()
+    if await db.get(ConsolidationAudit, session_id) is None:
+        now = datetime.now(timezone.utc)
+        db.add(ConsolidationAudit(
+            session_id=session_id,
+            board_id=board_id,
+            artifact_id=f"outbox-{session_id[-16:]}",
+            artifact_type="test_fixture",
+            agent_id=USER_ID,
+            started_at=now,
+            committed_at=now,
+        ))
+        await db.flush()
+
+
 async def _run_outbox(db_factory, board_id, refs) -> int:
     """Insert KuzuNodeRef add-rows + one outbox event, then process it.
 
@@ -217,6 +240,7 @@ async def _run_outbox(db_factory, board_id, refs) -> int:
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     async with db_factory() as db:
         await db.execute(delete(GlobalUpdateOutbox))  # isolate from other modules
+        await _ensure_outbox_audit_parent(db, board_id, session_id)
         for node_type, node_id in refs:
             db.add(KuzuNodeRef(
                 session_id=session_id, board_id=board_id,
@@ -233,16 +257,12 @@ async def _run_outbox(db_factory, board_id, refs) -> int:
 
 
 def _digest_layer(board_id, node_id) -> str | None:
-    _gdb, gconn = open_global_connection()
-    try:
-        res = gconn.execute(
-            "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
-            "RETURN d.graph_layer",
-            {"b": board_id, "n": node_id},
-        )
-        return str(res.get_next()[0]) if res.has_next() else None
-    finally:
-        del gconn, _gdb
+    res = execute_global_read(
+        "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
+        "RETURN d.graph_layer",
+        {"b": board_id, "n": node_id},
+    )
+    return str(res.rows[0][0]) if res.rows else None
 
 
 def _source_layer(board_id, learning_id) -> str | None:

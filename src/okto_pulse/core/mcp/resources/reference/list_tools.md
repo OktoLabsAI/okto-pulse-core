@@ -17,6 +17,8 @@ The 15 entity-specific `list_*` MCP tools are no longer registered.
 
 - `entity_type='refinement'` requires `filters={'ideation_id': '...'}` in `list_by_board`.
 - `entity_type='sprint'` requires `filters={'spec_id': '...'}` in `list_by_board`.
+- Parent filters are resolved inside `board_id`. A missing parent or a parent from
+  another board yields an empty list and never projects that board's children.
 
 ## Filters by entity_type (`list_by_board`)
 
@@ -42,8 +44,19 @@ okto_pulse_list_by_board(board_id, entity_type="refinement", filters={"ideation_
 okto_pulse_list_by_board(board_id, entity_type="sprint", filters={"spec_id": "..."})
 ```
 
-`filters` may also be passed as a JSON string (`'{"status": "draft"}'`); it is
-auto-decoded by the handler.
+Send `filters` as a native object. The JSON string form
+(`'{"status": "draft"}'`) is an explicit legacy compatibility path: it must
+decode to an object and malformed/non-object JSON is rejected.
+
+## Q&A and knowledge filters
+
+The other polymorphic list tools expose the same typed object contract.
+
+| Tool | entity_type | Allowed filter keys |
+|---|---|---|
+| `okto_pulse_list_qa` | `spec`, `ideation`, `refinement` | `status`, `asked_by` |
+| `okto_pulse_list_knowledge` | `spec`, `ideation`, `refinement`, `card` | `mime_type` |
+| `okto_pulse_list_snapshots` | `ideation`, `refinement` | none |
 
 ## Derivation pending
 

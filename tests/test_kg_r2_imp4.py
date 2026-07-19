@@ -26,6 +26,7 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
@@ -72,7 +73,10 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 
 async def _new_board(db_factory) -> str:
     board_id = f"r2i4-{uuid.uuid4().hex[:10]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.r2_imp4.bootstrap_board_graph",
+    )
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
             db.add(Board(id=board_id, name="r2 imp4", owner_id=USER_ID))
@@ -140,7 +144,7 @@ async def _commit_worker_result(db_factory, board_id, agent_id, result):
         )
 
 
-def _count_canonical(board_id, node_type) -> int:
+def _count_canonical_sync(board_id, node_type) -> int:
     with open_board_connection(board_id) as (_db, conn):
         res = conn.execute(
             f"MATCH (n:{node_type}) WHERE n.graph_layer = $c RETURN count(n)",
@@ -149,12 +153,19 @@ def _count_canonical(board_id, node_type) -> int:
         return int(res.get_next()[0]) if res.has_next() else 0
 
 
+async def _count_canonical(board_id, node_type) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_canonical_sync(board_id, node_type),
+        task_name="tests.r2_imp4.count_canonical",
+    )
+
+
 async def _make_stale_spec(db_factory, board_id):
     spec_id = f"spec-{uuid.uuid4().hex[:10]}"
     await _insert_spec(db_factory, board_id, spec_id, status="done")
     result = DeterministicWorker().process_spec(_spec_dict(spec_id, board_id, "done"))
     await _commit_worker_result(db_factory, board_id, "system:layer1_worker", result)
-    assert _count_canonical(board_id, "Requirement") >= 1
+    assert await _count_canonical(board_id, "Requirement") >= 1
     await _set_spec_status(db_factory, spec_id, "draft")  # regress (real maturity signal)
     return spec_id
 
@@ -172,7 +183,7 @@ def _issues(health, code):
 async def test_board_graph_stale_exposed_read_only(db_factory):
     board_id = await _new_board(db_factory)
     await _make_stale_spec(db_factory, board_id)
-    canonical_before = _count_canonical(board_id, "Requirement")
+    canonical_before = await _count_canonical(board_id, "Requirement")
     assert canonical_before >= 1
 
     async with db_factory() as db:
@@ -188,7 +199,7 @@ async def test_board_graph_stale_exposed_read_only(db_factory):
     assert result["global_discovery_evaluation"] in (GD_EVALUATED, GD_NOT_EVALUATED)
 
     # NO-MUTATING PATH: the diagnostic did NOT demote — the node is still canonical.
-    assert _count_canonical(board_id, "Requirement") == canonical_before
+    assert await _count_canonical(board_id, "Requirement") == canonical_before
 
 
 @pytest.mark.asyncio
@@ -249,7 +260,8 @@ async def test_gd_evaluation_is_safe_when_unavailable(db_factory, monkeypatch):
 
     import okto_pulse.core.kg.global_discovery.layer_parity as lp
 
-    async def _boom(db, *, board_id):
+    async def _boom(db, *, board_id, blocking_execution=None):
+        del blocking_execution
         raise RuntimeError("simulated R1 digest layer unavailable")
 
     monkeypatch.setattr(lp, "detect_digest_layer_mismatches", _boom)

@@ -174,25 +174,22 @@ def test_rest_and_mcp_principals_feed_the_same_actor_policy_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_board_access_denial_is_forbidden_without_a_mutation(monkeypatch) -> None:
+async def test_board_access_denial_is_not_found_without_a_mutation(monkeypatch) -> None:
     from fastapi import HTTPException
 
     from okto_pulse.community.api.kg_routes import _ensure_board_access
 
-    class _ReadOnlyBoardService:
+    class _ReadOnlyBoardRepository:
         calls = 0
 
-        async def get_board(self, *args, **kwargs):
+        async def get(self, *args, **kwargs):
             self.calls += 1
             return None
 
-    service = _ReadOnlyBoardService()
-
-    class _Services:
-        boards = service
+    repository = _ReadOnlyBoardRepository()
 
     class _UnitOfWork:
-        services = _Services()
+        boards = repository
 
     actor = actor_context_from_principal(
         Principal("saas-user", realm_id="tenant-01"),
@@ -203,5 +200,6 @@ async def test_board_access_denial_is_forbidden_without_a_mutation(monkeypatch) 
     with pytest.raises(HTTPException) as raised:
         await _ensure_board_access(board_id="board-01", actor=actor, uow=_UnitOfWork())
 
-    assert raised.value.status_code == 403
-    assert service.calls == 1
+    assert raised.value.status_code == 404
+    assert raised.value.detail == "Board not found"
+    assert repository.calls == 1

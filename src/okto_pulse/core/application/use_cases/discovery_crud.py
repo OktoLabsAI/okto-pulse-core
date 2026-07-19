@@ -28,6 +28,7 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
@@ -171,7 +172,8 @@ class ListDiscoverySavedSearchesUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ListDiscoverySavedSearchesResult:
-
+        if await load_accessible_board(uow, command.board_id, actor) is None:
+            raise EntityNotFoundError("board", command.board_id)
         items = await uow.services.discovery_catalog.list_saved_searches(
             command.board_id
         )
@@ -207,7 +209,8 @@ class ListDiscoverySearchHistoryUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ListDiscoverySearchHistoryResult:
-
+        if await load_accessible_board(uow, command.board_id, actor) is None:
+            raise EntityNotFoundError("board", command.board_id)
         items = await uow.services.discovery_catalog.list_search_history(
             command.board_id, actor.actor_id
         )
@@ -259,6 +262,9 @@ class ExecuteDiscoveryIntentUseCase:
         intent = await uow.services.discovery_catalog.get_intent(command.intent_id)
         if intent is None or not intent.active:
             raise EntityNotFoundError("intent", command.intent_id)
+
+        if await load_accessible_board(uow, command.board_id, actor) is None:
+            raise EntityNotFoundError("board", command.board_id)
 
         result = await uow.services.execute_discovery_intent(
             identity=actor.actor_id,

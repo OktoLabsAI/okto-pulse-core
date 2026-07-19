@@ -234,16 +234,16 @@ def test_fr10_preflight_nonexistent_board_returns_404(_rebuild_scope_board):
     )
 
 
-def test_fr10_preflight_unauthorized_user_returns_403(_rebuild_scope_board):
-    """FR10 BEHAVIORAL: preflight by user with no board access → HTTP 403."""
+def test_fr10_preflight_unauthorized_user_returns_404(_rebuild_scope_board):
+    """FR10 BEHAVIORAL: denied and missing boards share the 404 envelope."""
     board_id = _rebuild_scope_board
     client, _ = _make_rebuild_client(_OTHER_ID)
     resp = client.post(
         "/api/v1/kg/rebuild/preflight",
         params={"board_id": board_id},
     )
-    assert resp.status_code == 403, (
-        f"Expected 403 for unauthorized user, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 404, (
+        f"Expected 404 for unauthorized user, got {resp.status_code}: {resp.text}"
     )
 
 
@@ -297,8 +297,8 @@ def test_fr10_confirm_nonexistent_board_returns_404(_rebuild_scope_board):
     )
 
 
-def test_fr10_confirm_unauthorized_user_returns_403(_rebuild_scope_board):
-    """FR10 BEHAVIORAL: confirm by user with no board access → HTTP 403."""
+def test_fr10_confirm_unauthorized_user_returns_404(_rebuild_scope_board):
+    """FR10 BEHAVIORAL: denied and missing boards share the 404 envelope."""
     board_id = _rebuild_scope_board
     client, _ = _make_rebuild_client(_OTHER_ID)
     resp = client.post(
@@ -310,8 +310,8 @@ def test_fr10_confirm_unauthorized_user_returns_403(_rebuild_scope_board):
             "manifest_ref": _DUMMY_MANIFEST,
         },
     )
-    assert resp.status_code == 403, (
-        f"Expected 403 for unauthorized user, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 404, (
+        f"Expected 404 for unauthorized user, got {resp.status_code}: {resp.text}"
     )
 
 
@@ -357,8 +357,8 @@ def test_fr10_run_nonexistent_board_returns_404(_rebuild_scope_board):
     )
 
 
-def test_fr10_run_unauthorized_user_returns_403(_rebuild_scope_board):
-    """FR10 BEHAVIORAL: run by user with no board access → HTTP 403."""
+def test_fr10_run_unauthorized_user_returns_404(_rebuild_scope_board):
+    """FR10 BEHAVIORAL: denied and missing boards share the 404 envelope."""
     board_id = _rebuild_scope_board
     client, _ = _make_rebuild_client(_OTHER_ID)
     resp = client.post(
@@ -372,8 +372,8 @@ def test_fr10_run_unauthorized_user_returns_403(_rebuild_scope_board):
             "reason": "test",
         },
     )
-    assert resp.status_code == 403, (
-        f"Expected 403 for unauthorized user, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 404, (
+        f"Expected 404 for unauthorized user, got {resp.status_code}: {resp.text}"
     )
 
 

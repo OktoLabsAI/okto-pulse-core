@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -443,6 +443,16 @@ class GlobalDiscoveryReindexer:
 
         refs = tuple(affected_refs) if affected_refs is not None else ()
 
+        if self.reindex_adapter is not _default_reindex_adapter:
+            # An injected adapter is allowed to mutate the global graph.  It
+            # must therefore execute under the exact durable writer lease
+            # shared with outbox and physical recovery; a mere process-local
+            # callable is never sufficient authority.
+            from okto_pulse.core.kg.global_discovery_writer import (
+                assert_global_discovery_writer_fence,
+            )
+
+            assert_global_discovery_writer_fence()
         try:
             attempt = self.reindex_adapter(board_id, kg_generation_id, refs)
         except Exception as exc:

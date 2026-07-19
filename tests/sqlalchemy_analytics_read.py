@@ -67,6 +67,10 @@ def _predicate(model: Any, item: AnalyticsFilter):
         return column >= item.value
     if item.operator == "lte":
         return column <= item.value
+    if item.operator == "gt":
+        return column > item.value
+    if item.operator == "lt":
+        return column < item.value
     if item.operator == "is_true":
         return column.is_(True)
     if item.operator == "is_false":
@@ -137,4 +141,3 @@ class TestSqlAlchemyAnalyticsReader:
 
 
 __all__ = ["TestSqlAlchemyAnalyticsReader"]
-

@@ -26,7 +26,14 @@ class WorkerClockPort(Protocol):
 
 @runtime_checkable
 class BlockingExecutionPort(Protocol):
-    """Edition-owned execution of a blocking durability operation."""
+    """Edition-owned execution of a blocking durability operation.
+
+    Callers may depend on active ``contextvars`` (notably graph write guards
+    and composed runtime ownership). Core blocking bridges capture that
+    context before invoking this port. Implementations must execute the
+    supplied callable as received and must not replace it with an unwrapped
+    original callable.
+    """
 
     async def run(self, operation: Callable[[], Any]) -> Any:
         ...
@@ -34,6 +41,38 @@ class BlockingExecutionPort(Protocol):
     async def join(self, timeout: float) -> int:
         """Wait for owned operations and return the number still pending."""
         ...
+
+
+class WorkerDrainIncomplete(RuntimeError):
+    """A bounded worker shutdown could not prove native-operation quiescence.
+
+    This is a fail-closed lifecycle signal: graph and relational runtimes must
+    remain open because a retained worker task may still complete durability
+    work against them.
+    """
+
+    code = "worker_native_drain_incomplete"
+
+    def __init__(
+        self,
+        *,
+        family: str,
+        phase: str,
+        pending_tasks: int,
+        pending_operations: int,
+        timeout_seconds: float,
+    ) -> None:
+        self.family = family
+        self.phase = phase
+        self.pending_tasks = max(0, int(pending_tasks))
+        self.pending_operations = max(0, int(pending_operations))
+        self.timeout_seconds = max(0.0, float(timeout_seconds))
+        super().__init__(
+            f"{self.code}: family={family} phase={phase} "
+            f"pending_tasks={self.pending_tasks} "
+            f"pending_operations={self.pending_operations} "
+            f"timeout_seconds={self.timeout_seconds:g}"
+        )
 
 
 @runtime_checkable
@@ -95,6 +134,7 @@ class RuntimeWorkerStopFailure:
     family: str
     error_class: str
     message: str
+    resource_close_unsafe: bool = False
 
 
 class RuntimeWorkerRegistry:
@@ -219,7 +259,7 @@ class RuntimeWorkerRegistry:
             if family not in self._active:
                 continue
             spec = self._specs[family]
-            handle = self._active.pop(family)
+            handle = self._active[family]
             try:
                 await _maybe_await(spec.stop(handle))
             except Exception as exc:  # noqa: BLE001 - shutdown must drain all families
@@ -228,8 +268,18 @@ class RuntimeWorkerRegistry:
                         family=family,
                         error_class=exc.__class__.__name__,
                         message=str(exc),
+                        resource_close_unsafe=isinstance(
+                            exc,
+                            WorkerDrainIncomplete,
+                        ),
                     )
                 )
+            else:
+                # A failed stop may retain in-flight native work. Keep the
+                # edition handle observable/retryable until quiescence is
+                # actually proven instead of reporting a false inactive state.
+                if self._active.get(family) is handle:
+                    self._active.pop(family, None)
         return tuple(failures)
 
     async def stop_all(self) -> tuple[RuntimeWorkerStopFailure, ...]:
@@ -262,5 +312,6 @@ __all__ = [
     "RuntimeWorkerSpec",
     "RuntimeWorkerStartFailure",
     "RuntimeWorkerStopFailure",
+    "WorkerDrainIncomplete",
     "WorkerClockPort",
 ]

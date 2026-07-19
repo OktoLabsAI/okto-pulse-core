@@ -248,7 +248,21 @@ Returns:
 
 ## `okto_pulse_kg_explain_constraint`
 
-Covered fully by the live tool description.
+Explain the origin, related constraints, and registered violations for one
+canonical graph Constraint.
+
+The live tool description remains canonical for the complete permission and
+response-envelope contract; this reference adds the deterministic discovery recipe.
+
+Args:
+    board_id: Board ID.
+    constraint_id: Canonical `Constraint.id` returned by the graph. This is not a
+        technical-requirement id and not a deterministic-worker candidate id.
+
+Discovery for the mandatory Stage 3 sweep is documented in
+`okto-pulse://workflows/kg`: use the parameterized read-only Cypher lookup over
+`source_artifact_ref`, with `include_working=true` while the spec is still a draft;
+reject missing or duplicate refs rather than guessing an id.
 
 ## `okto_pulse_kg_find_contradictions`
 
@@ -294,7 +308,9 @@ a specific edge set or direction.
 
 Args:
     board_id: Board ID
-    artifact_id: Source artifact reference (source_artifact_ref)
+    artifact_id: Typed source reference: ``spec:<uuid>`` or ``card:<uuid>``.
+        A raw UUID is rejected as ``invalid_artifact_ref``; historical
+        non-UUID source refs remain readable for compatibility.
     min_confidence: Minimum confidence (default 0.5)
     max_rows: Maximum results (default 100)
     rel_types: Comma- or pipe-separated edge types to restrict the
@@ -302,8 +318,10 @@ Args:
         ``"tests|relates_to"``). Empty = any type.
     direction: ``"both"`` (default), ``"outgoing"``, or ``"incoming"``.
         Applied to hop1 only; hop2 is always undirected.
-    max_depth: ``1`` returns center+hop1 only (hop2 fields null);
+    max_depth: Closed set ``1|2``. ``1`` returns center+hop1 only (hop2 fields null);
         ``2`` (default) returns the full 2-hop context.
+    graph_layer: ``canonical`` (default), ``working``, or ``all``. Invalid
+        values fail closed and the response echoes ``applied_graph_layer``.
 
 Returns:
     JSON with 2-hop neighborhood context
@@ -344,6 +362,53 @@ Args:
 
 Returns:
     JSON with mismatch rows, expected/actual layer fields, and counts.
+
+## `okto_pulse_kg_digest_layer_reconcile`
+
+Administrative board-scoped WRITE for the specific case where
+`okto_pulse_kg_digest_layer_mismatch_list` still reports DecisionDigest layer
+drift while `okto_pulse_kg_queue_drilldown` reports an idle queue. It enqueues a
+durable `consolidation_committed` event with `nodes_added=0`; the event contains
+no graph-node reference rows and does not require a consolidation-session audit
+parent (its `session_id` is correlation metadata only). It reuses the normal
+Global Discovery parity reconciler, does not rebuild the graph, and does not
+change either read-only diagnostic tool.
+
+The worker treats the per-board graph as authoritative and keyset-paginates
+every publishable digest source type (`embedding IS NOT NULL`), grouped by ID;
+any physical source count other than one fails closed. It rechecks that source
+inventory after reconciliation and again after flush before ACK, so concurrent
+insert/remove or embedding eligibility changes are retried rather than pruned
+from an inconsistent snapshot. It prunes vanished/unembedded global rows only
+after a complete guard proves no `DECISION_MENTIONS_ENTITY` or
+`DECISION_DERIVES_FROM` relationship would be lost, repairs duplicate or corrupt
+physical identities, and backfills missing identities.
+
+A repair is acknowledged only after close/fsync/reopen and a fresh-handle read verifies
+exactly one stable digest, one edge from the correct Board, and one total inbound `CONTAINS_DECISION`
+edge per source; invalid cross-board links are
+removed without deleting digest or clustering relationships. Verification is
+isolated per board after the batch-global flush, so one corrupt board does not
+retry healthy boards. Board `decision_count` is written from the absolute
+authoritative inventory and remains idempotent across retries. Structured logs
+report `duplicate_count`, `repaired_count`, `backfilled_count`,
+`layer_corrected_count`, `link_repaired_count`,
+`invalid_link_pruned_count` and `verified_count`.
+
+Repeated calls are idempotent by effect: each request receives a distinct audit
+event ID, while a converged source/global set produces no further graph change.
+Requires `kg.admin.historical_consolidation`.
+
+Args:
+    board_id: Board ID. Authentication, board access, realm and command scope
+        must all resolve to this same board.
+    reason: Required 3-128 character audit code. Use lowercase letters, digits,
+        `.`, `:`, `_` or `-`; do not put free-form prose or sensitive data here.
+
+Returns:
+    MCP Outcome V2 success with board_id, event_id, session_id, normalized
+    reason, enqueued=true and effect_idempotent=true. Authentication, permission,
+    board-scope and validation failures use structured error outcomes.
 
 ## `okto_pulse_kg_stale_canonical_parity_list`
 
@@ -607,7 +672,9 @@ Covered fully by the live tool description.
 Execute a read-only Cypher query directly against a board's graph.
 
 Safety rails applied automatically:
-- Parser whitelist rejects write keywords (CREATE/DELETE/SET/etc)
+- Canonical read subset accepts root operations MATCH, OPTIONAL, UNWIND,
+  WITH, or RETURN. Other safe roots fail as ``unsupported_operation``.
+- Parser rejects write keywords (CREATE/DELETE/SET/etc) as ``unsafe_cypher``
 - Comment stripping + unicode normalization
 - Auto-inject LIMIT if missing; variable-length paths bounded to *..20
 - Timeout 5s default, 30s max; rate limit 30 queries/min per agent
@@ -679,7 +746,29 @@ Returns:
 
 ## `okto_pulse_kg_query_reflective`
 
-Covered fully by the live tool description.
+Run the real bounded ``retrieve → critic → corrective action`` loop. The
+Community composition supplies both retrieval and deterministic critic ports;
+Core only defines the public contracts and orchestrates them. No LLM is needed.
+
+Args:
+    board_id: Accessible board UUID. ACL is checked before embedding or graph IO.
+    nl_query: Natural-language query (same size guard as natural query).
+    limit: 1..100, default 20.
+    min_confidence: 0.0..1.0, default 0.5.
+    graph_layer: ``canonical|working|all``; default canonical.
+    max_iterations: 1..8, default 3.
+    deadline_ms: 50..30000, default 5000.
+    budget_units: 1..10000, default 10.
+
+Returns:
+    A structured terminal result with ``accepted``, ``terminal_reason``,
+    ``iterations``, ``rows``, bounded critic trace and
+    ``applied_graph_layer``. Acceptance occurs only when the critic returns
+    adequate+sufficient and action=accept. Other terminal reasons include
+    ``rejected``, ``max_iterations``, ``deadline``, ``budget``,
+    ``no_progress``, ``malformed_critic_output``, ``retrieval_error`` and
+    ``critic_error``. Cache identity includes board, query, graph version,
+    parameters, critic identity/version and the ACL scope hash.
 
 ## `okto_pulse_kg_schema_info`
 
@@ -687,7 +776,8 @@ Summary and Args covered by the live tool description. Delta:
 
 Returns:
     JSON with schema_version, stable_node_types, stable_rel_types,
-    vector_indexes, label_properties, optionally internal_*_types.
+    vector_indexes, label_properties, query_contract, optionally
+    internal_*_types.
 
     `label_properties` (R6-IMP3) maps each canonical node label to its
     `stable_properties` (the schema-guaranteed scalar properties — the SAME set
@@ -695,6 +785,14 @@ Returns:
     `has_vector_index`. Query ONLY these stable properties; never assume an
     ad-hoc/universal property. There is no `name` property — use `title`/`content`.
     Use this map to write schema-safe Cypher (okto_pulse_kg_query_cypher).
+
+    ``query_contract.version == "1.0"`` is the machine-readable canonical
+    corpus shared by runtime validators and wire schemas. It declares typed
+    artifact kinds, node/edge types and endpoint pairs, graph layers,
+    related-context directions/depths, the 0..1 similarity range, cognitive
+    outcome types, and the supported read-only Cypher subset. Safe operations
+    outside that subset return ``unsupported_operation``; write keywords return
+    ``unsafe_cypher``.
 
 ## `okto_pulse_kg_tick_run_now`
 
@@ -747,6 +845,139 @@ exactly one bounded sample per call with labels
 ``(board_id, target_status, outcome, reason_code)``. Free-text
 ``reason`` is NEVER labelled; ``reason_code`` is bounded.
 
+## `okto_pulse_kg_global_outbox_dead_letter_list`
+
+List terminal Global Discovery outbox deliveries for global-admin recovery.
+This read-only operation returns only rows whose delivery remains unprocessed
+and whose retry state is the dead-letter sentinel or has exhausted the shared
+retry ceiling. Errors are bounded/redacted.
+
+Args:
+- `limit`: 1-100, default 50.
+- `cursor`: optional opaque keyset cursor. Ordering is deterministic by
+  `(created_at, dead_letter_id)`; never construct or edit the cursor.
+- `classification`: optional `global_open_failure`, `board_source_failure`, or
+  `unclassified_failure`.
+
+The classification filter is evaluated over each bounded physical page. A
+filtered page can therefore return `count=0` together with a non-null
+`next_cursor`; continue from that cursor until it is null. Returns
+`{items, count, next_cursor}`. Each item includes the immutable
+`dead_letter_id`, event/board identity, retry count, classification, redacted
+last error and creation time.
+
+## `okto_pulse_kg_global_outbox_dead_letter_reprocess`
+
+Atomically requeue an explicit terminal Global Discovery outbox selection.
+There is no broad or implicit "all" mode.
+
+Args:
+- `dead_letter_ids`: required native list of 1-100 unique immutable IDs from
+  the list operation.
+- `reason`: required bounded operator audit reason.
+- `process_now`: optional boolean; after a successful commit, signal the owned
+  outbox worker. The signal is never sent before commit.
+
+The entire selection is validated before its guarded update in one dedicated
+transaction. Empty, duplicate, over-limit, unknown, non-terminal,
+superseded, or mixed selections fail closed with `mutated=false`; a row changed
+between validation and update returns `selection_changed`, and relational-store
+lock contention returns `global_outbox_busy` without backend details. Replaying a
+valid request is idempotent. Success returns `selected_ids`, `requeued_ids`,
+`already_queued_ids`, `already_applied_ids`, `rejected_ids`, and
+`worker_signaled`.
+
+## `okto_pulse_kg_global_outbox_dead_letter_verify`
+
+Read the authoritative post-reprocess state for 1-100 explicit immutable IDs.
+Returns one item per requested ID with state `absent`, `still_dead_lettered`,
+`queued`, `processing`, `applied`, or `superseded`, plus event identity,
+`authoritative_id`, ordered `supersedence_chain`, and a bounded `reason_code`.
+Broken lineage never invents authority: a missing successor yields
+`authoritative_id=null` and `supersedence_target_absent`; cycles and the bounded
+chain ceiling likewise return typed reason codes.
+
+## `okto_pulse_kg_global_discovery_recovery_preflight`
+
+Global-admin admission for an unreadable Global Discovery cache. The request
+has a closed, empty input schema. It atomically reserves the single global
+recovery slot and durably dispatches preparation; it never scans boards, opens
+graph files, or materializes the candidate inside the MCP request. Replaying
+the incumbent prepared reservation returns that same run. Another active run
+is refused with the typed global-slot conflict.
+
+Returns within the bounded control-plane window with `run_id`, `state`,
+`phase`, `preparation_state`, monotonic `progress_seq`, and `action_required`.
+Poll the status tool while `phase=preparing`. When `phase=prepared`, status
+also exposes the immutable `manifest_ref` and `preflight_hash` required by
+confirm. A prepared run remains `state=pending` and is not worker-adoptable
+until it is confirmed.
+
+## `okto_pulse_kg_global_discovery_recovery_confirm`
+
+Issue a TTL-bound, single-use token for the exact prepared run, manifest and
+preflight hash. The call rechecks preparation expiry and the persisted source
+fingerprint and fails closed with `manifest_stale` if either changed. It never
+rescans all boards or performs graph/filesystem mutation.
+
+Args: `run_id`, `manifest_ref`, and `preflight_hash` from the prepared status.
+Returns `outcome=confirmation_issued`, `action_required`, `confirmation_id`,
+and `expires_at`.
+
+## `okto_pulse_kg_global_discovery_recovery_run`
+
+Consume the exact confirmation binding, recheck the prepared manifest's TTL
+and fingerprint, and durably dispatch the already-prepared run. It performs no
+all-board inventory, health, source, or candidate-seed scan in the MCP request.
+The call returns without waiting for native work, cutover, or delivery drain.
+Use the status tool to follow monotonic checkpoints and the closed terminal
+state. A stale binding fails closed with `manifest_stale` and requires a new
+preflight.
+
+Args: `confirmation_id`, `manifest_ref`, `preflight_hash`, and bounded audit
+`reason` (1-512 characters). The accepted response contains `run_id`,
+`attempt_id`, epoch, current state, `preparation_state`, progress/heartbeat
+fields, `idempotent_replay=false|true`, `status_tool`, and
+`action_required=call_okto_pulse_kg_global_discovery_recovery_status`. Replaying
+the exact immutable binding returns the existing run and never dispatches a
+second attempt; a different manifest/hash/reason for that run id fails closed.
+
+## `okto_pulse_kg_global_discovery_recovery_status`
+
+Return the authoritative durable control-plane projection for one explicit
+`run_id`. The response includes the current epoch, closed lifecycle state,
+`attempt_id`, `preparation_state`, monotonic `progress_seq`, phase, progress
+counts, heartbeat/deadline timestamps, active and cumulative budget
+consumption, cancellation time, `terminal_outcome`, reason code, retryability,
+and `status_tool`. Any authorized global admin may inspect the global run;
+admitting, confirming, cancelling, and resuming actors remain immutable audit
+facts on their respective transitions.
+
+## `okto_pulse_kg_global_discovery_recovery_cancel`
+
+Request durable cancellation for one explicit `run_id` and its current
+`expected_epoch`. A stale epoch returns `recovery_epoch_conflict` with the
+expected/actual epoch and progress sequence and performs no mutation. The
+bounded request acknowledges the durable intent; the fenced worker reports the
+terminal `cancelled` state only after native work drains safely. `reason` is
+optional and, when supplied, is limited to 512 characters. Cancelling a
+prepared run terminalizes it and releases the global slot without dispatching
+physical work. The authenticated caller is persisted separately as
+`cancel_requested_by_actor_id`; the original admitting actor never changes.
+Prepared manifests and staged inputs remain immutable audit evidence and are
+revoked by append-only evidence rather than deletion.
+
+## `okto_pulse_kg_global_discovery_recovery_resume`
+
+Explicitly resume a resumable terminal attempt or take over an expired worker
+lease for one `run_id` and `expected_epoch`. Admission preserves the same run
+identity, increments the epoch exactly once and enqueues owned work off-request.
+Typed denials include active lease, non-retryable terminal outcome and exhausted
+attempt/cumulative budgets; timeout and success are never resumable. `reason`
+is optional and, when supplied, is limited to 512 characters. Successful
+admission persists `resume_requested_at`, `resume_requested_by_actor_id`, and
+the optional resume reason without changing the original actor binding.
+
 ## `okto_pulse_kg_rebuild_preflight`
 
 Run the KG rebuild preflight for a board — gemelar do REST POST /api/v1/kg/rebuild/preflight.
@@ -756,12 +987,14 @@ via BoardSourceStore (the relational store), classifies the KG health state, and
 the immutable manifest needed for /confirm.
 
 **Admission gate (FR8):** refuses with `rebuild_refused_quarantined` when
-`graph_state == 'quarantined'`. `recovery_needed` IS ADMITTED — rebuild is
-the prescribed exit from that state (see the stop-rule exception in
-`agent_instructions.md`).
+`graph_state == 'quarantined'`. Board `graph_state=recovery_needed` is admitted.
+When the board graph is healthy and only Global Discovery requires recovery,
+this tool refuses with `board_rebuild_wrong_recovery_scope` and points to the
+global discovery recovery preflight; a board rebuild cannot repair that cache.
 
-**Flow:** call `okto_pulse_kg_health` first. If `overall_state == quarantined`
-stop. Otherwise: preflight → confirm → run.
+**Flow:** call `okto_pulse_kg_health` first and branch on the component state,
+not generic `overall_state`: board-graph recovery uses this flow; discovery-only
+recovery uses the global flow above.
 
 Args:
     board_id: UUID of the board to preflight.
@@ -773,6 +1006,7 @@ Returns:
     `okto_pulse_kg_rebuild_confirm`.
 
 Errors:
+    `board_rebuild_wrong_recovery_scope` — graph healthy, discovery-only failure.
     `rebuild_refused_quarantined` — graph is quarantined; use KG reset flow first.
     `preflight_enumerate_failed` — source enumeration failed (detail in response).
     `preflight_service_failed` — preflight service error (detail in response).

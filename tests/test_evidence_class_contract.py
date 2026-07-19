@@ -87,7 +87,7 @@ def test_automated_test_pointer_valid():  # ts_f89dcf2c
     assert ok is False and "test_function" in missing
 
 
-def test_replay_command_and_manifest_accepted():  # ts_bf3a5210
+def test_replay_command_accepted_but_legacy_manifest_is_unverified():  # ts_bf3a5210
     cmd = {
         "evidence_class": "replay_command",
         "replay_command": "pytest tests/test_x.py::test_y",
@@ -99,7 +99,9 @@ def test_replay_command_and_manifest_accepted():  # ts_bf3a5210
         "mcp_replay_manifest": "manifests/replay_x.json",
         "expected_output_snapshot": "node materialized",
     }
-    assert _ok("passed", manifest) == (True, [])
+    ok, missing = _ok("passed", manifest)
+    assert ok is False
+    assert "evidence_v2.legacy_mcp_replay_manifest_unverified" in missing
     # replay_command without expected_output_snapshot → rejected
     ok, missing = _ok(
         "passed", {"evidence_class": "replay_command", "replay_command": "pytest x"}

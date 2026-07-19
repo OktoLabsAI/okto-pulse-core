@@ -346,6 +346,26 @@ def test_package_manifest_unexpected_runtime_file_in_record_blocks(tmp_path) -> 
     assert "rogue_runtime.py" in report.observed_value
 
 
+def test_package_manifest_blocks_community_package_path_in_core_wheel(
+    tmp_path,
+) -> None:
+    record = tmp_path / "RECORD"
+    record.write_text(
+        "okto_pulse/__init__.py,sha256=abc,12\n"
+        "okto_pulse/core/app.py,sha256=def,3400\n"
+        "okto_pulse/community/adapters/rogue.py,sha256=zzz,50\n",
+        encoding="utf-8",
+    )
+
+    report = PackageManifestGate().run(
+        PackageManifestGateInput(wheel_record_path=record)
+    )
+
+    assert report.status == "blocking"
+    assert report.evidence["error"] == "unexpected_runtime_file"
+    assert "okto_pulse/community/adapters/rogue.py" in report.observed_value
+
+
 def test_dependency_audit_bootstrap_records_forbidden_as_baseline() -> None:
     # Bootstrap still records an explicitly forbidden direct dependency.
     report = DependencyAuditGate().run(
@@ -419,6 +439,42 @@ def test_import_boundary_skips_type_checking_guarded_imports() -> None:
     imported = {v.imported for v in violations}
     assert "fastapi" in imported  # runtime import flagged
     assert not any("sqlalchemy" in i for i in imported)  # TYPE_CHECKING import skipped
+
+
+def test_import_boundary_blocks_community_import_nodes_but_ignores_literals() -> None:
+    import ast
+
+    from okto_pulse.core.application.boundary.gates import ImportBoundaryGate
+    from okto_pulse.core.application.boundary.import_matrix import rule_for
+
+    source = '''"""Documentation may name okto_pulse.community without coupling."""
+from typing import TYPE_CHECKING
+
+COMMUNITY_EXAMPLE = "from okto_pulse.community.docs import Example"
+import okto_pulse.community.runtime
+from okto_pulse.community.adapters import Repository
+from okto_pulse import community
+
+if TYPE_CHECKING:
+    from okto_pulse.community.types import CommunityType
+'''
+    violations = ImportBoundaryGate()._scan_file(
+        "okto_pulse/core/services/legacy.py",
+        "legacy_application_transitional_debt",
+        ast.parse(source),
+        rule_for("legacy_application_transitional_debt"),
+    )
+
+    assert {violation.imported for violation in violations} == {
+        "okto_pulse.community.adapters",
+        "okto_pulse.community",
+        "okto_pulse.community.runtime",
+        "okto_pulse.community.types",
+    }
+    assert {violation.rule for violation in violations} == {
+        "forbidden_core_edition_import"
+    }
+    assert {violation.status for violation in violations} == {"blocking"}
 
 
 def test_import_boundary_prohibited_import_reports_full_evidence() -> None:

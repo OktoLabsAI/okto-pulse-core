@@ -20,6 +20,9 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.ideations_crud import (
+    _require_accessible_ideation,
+)
 from okto_pulse.core.models import IdeationMove
 
 
@@ -54,6 +57,9 @@ class MoveIdeationUseCase:
         # adapter unchanged — mirrors api/ideations.py:move_ideation ordering.
         # actor.actor_name is None for REST (the service resolves it) and the MCP
         # agent name for MCP — preserving both surfaces' audit behavior.
+        await _require_accessible_ideation(
+            uow, command.ideation_id, actor, write=True
+        )
         ideation = await service.move_ideation(
             command.ideation_id,
             actor.actor_id,

@@ -75,45 +75,6 @@ def _lookup_spec_decision_node(board_id: str, spec_id: str) -> str | None:
     return None
 
 
-def _graph_bug_probe(board_id: str):
-    """A canonical-bug probe backed by the live board graph (RKG-02)."""
-    from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
-    from okto_pulse.core.kg.interfaces import get_kg_registry
-    from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
-
-    keys: set[str] = set()
-    loaded = False
-
-    def _ensure_loaded() -> None:
-        nonlocal loaded
-        if loaded:
-            return
-        loaded = True
-        try:
-            result = get_kg_registry().cypher_executor.execute_read_only(
-                board_id,
-                "MATCH (b:Bug) WHERE b.graph_layer = 'canonical' "
-                "RETURN b.id, b.source_artifact_ref",
-                {},
-                max_rows=10000,
-            )
-            for bid, bsref in result.get("rows") or []:
-                if bid:
-                    keys.add(normalize_cognitive_artifact_id(f"card:{bid}"))
-                if bsref:
-                    keys.add(normalize_cognitive_artifact_id(
-                        strip_concept_suffix(str(bsref))
-                    ))
-        except Exception:
-            pass
-
-    def _probe(uuid: str) -> bool:
-        _ensure_loaded()
-        return normalize_cognitive_artifact_id(f"card:{uuid}") in keys
-
-    return _probe
-
-
 def build_closeout_input_loader(relational_scope_factory):
     """The production input loader: derives the closeout inputs for a pending
     ledger item from SQL (Card/Spec/Board settings) + the live graph (bug probe,
@@ -122,27 +83,38 @@ def build_closeout_input_loader(relational_scope_factory):
     from okto_pulse.core.ports.domain_event_delivery import (
         get_domain_event_fact_reader,
     )
+    from okto_pulse.core.ports.bug_cognitive_context import (
+        resolve_bug_cognitive_context_assembler,
+    )
 
     async def _loader(board_id: str, item) -> dict:
         kind = (item.source_ref.split(":", 1)[0] or "").lower()
         ident = item.source_ref.split(":", 1)[-1]
         reader = get_domain_event_fact_reader()
         if item.artifact_type == "bug" or kind == "bug":
+            assembler = resolve_bug_cognitive_context_assembler()
+            if assembler is None:
+                raise RuntimeError("bug_cognitive_context_assembler_not_configured")
             async with relational_scope_factory() as db:
-                card = await reader.load_cognitive_card_facts(db, card_id=ident)
+                bug_context = await assembler.assemble(
+                    db,
+                    board_id=board_id,
+                    bug_id=ident,
+                )
                 settings = await reader.load_board_settings(db, board_id=board_id)
             settings = settings or {}
             llm_config = settings.get("cognitive_llm_config")
             summariser = _summariser_factory(llm_config) if llm_config else None
             return {
                 "bug_card_id": ident,
-                "bug_title": card.title if card and card.title else "",
-                "bug_action_plan": (
-                    card.action_plan if card and card.action_plan else ""
-                ),
+                "bug_title": bug_context.title or "",
+                "bug_action_plan": bug_context.action_plan or "",
+                "bug_context": bug_context,
                 "llm_config": llm_config,
                 "summariser": summariser,
-                "bug_probe": _graph_bug_probe(board_id),
+                "bug_probe": lambda uuid: (
+                    uuid == ident and bug_context.canonical_bug_present is True
+                ),
             }
         if item.artifact_type == "spec" or kind == "spec":
             async with relational_scope_factory() as db:

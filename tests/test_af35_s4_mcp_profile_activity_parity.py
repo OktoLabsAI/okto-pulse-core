@@ -178,6 +178,14 @@ async def test_profile_activity_success_envelopes_are_compatible(db_factory) -> 
             },
         }
 
+        cleared = json.loads(
+            await mcp_server.okto_pulse_update_my_profile.fn(
+                description="",
+            )
+        )
+        assert cleared["profile"]["description"] == ""
+        assert cleared["profile"]["objective"] == "new objective"
+
         boards = json.loads(await mcp_server.okto_pulse_list_my_boards.fn())
         assert boards["agent_id"] == agent_id
         assert boards["agent_name"] == AGENT_NAME

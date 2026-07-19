@@ -72,8 +72,9 @@ class TestMCPToolSignature:
         target = getattr(fn, "fn", fn)
         sig = inspect.signature(target)
         assert "include_superseded" in sig.parameters
-        # Default MUST be "false" — this is the whole point of the change.
-        assert sig.parameters["include_superseded"].default == "false"
+        # Native MCP booleans are exposed as bools; false keeps superseded
+        # decisions excluded unless the caller explicitly opts in.
+        assert sig.parameters["include_superseded"].default is False
 
     def test_get_task_context_has_include_superseded(self):
         from okto_pulse.core.mcp import server as mcp_server
@@ -81,4 +82,4 @@ class TestMCPToolSignature:
         target = getattr(fn, "fn", fn)
         sig = inspect.signature(target)
         assert "include_superseded" in sig.parameters
-        assert sig.parameters["include_superseded"].default == "false"
+        assert sig.parameters["include_superseded"].default is False

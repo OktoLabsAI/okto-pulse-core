@@ -15,7 +15,8 @@ from okto_pulse.community.api import presets as presets_api
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.me import router as me_router
 from okto_pulse.community.api.presets import router as presets_router
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "fcc01c-user"
@@ -36,6 +37,7 @@ def client() -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -118,6 +120,12 @@ def test_handlers_take_uow_and_do_not_bind_direct_database_session() -> None:
 async def test_me_permissions_preserves_effective_permission_response(
     client: TestClient,
 ) -> None:
+    from sqlalchemy_test_models import Board
+
+    async with get_session_factory()() as db:
+        db.add(Board(id="board-fcc01c", name="FCC01C", owner_id=USER))
+        await db.commit()
+
     preset_id = await _seed_preset(
         owner_id=None,
         name="FCC01C Preset",

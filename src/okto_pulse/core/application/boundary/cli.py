@@ -75,13 +75,17 @@ def _run_audit(
             ImportBoundaryGateInput(source_root=source_root, mode=mode)
         ),
         PackageManifestGate().run(
-            PackageManifestGateInput(source_root=source_root, wheel_record_path=wheel_record)
+            PackageManifestGateInput(
+                source_root=source_root, wheel_record_path=wheel_record
+            )
         ),
         DependencyAuditGate().run(
             DependencyAuditGateInput(
                 allowed_dependencies=allowed,
                 forbidden_dependencies=forbidden,
-                dependency_policy_ref=str(dependency_policy) if dependency_policy else "default-core-pure-policy",
+                dependency_policy_ref=str(dependency_policy)
+                if dependency_policy
+                else "default-core-pure-policy",
                 mode=mode,
             )
         ),
@@ -112,7 +116,10 @@ def main(argv: list[str] | None = None) -> int:
     audit.add_argument("--wheel-record", type=Path, default=None)
     audit.add_argument("--dependency-policy", type=Path, default=None)
     audit.add_argument(
-        "--side-effect-module", action="append", default=None, dest="side_effect_modules"
+        "--side-effect-module",
+        action="append",
+        default=None,
+        dest="side_effect_modules",
     )
 
     # spec R05-E (card 0c066d12): fail-closed dependency conformance auditor over
@@ -127,7 +134,11 @@ def main(argv: list[str] | None = None) -> int:
     dep.add_argument("--pyproject", type=Path, default=None)
     dep.add_argument("--lock", type=Path, default=None)
     dep.add_argument("--source-root", type=Path, default=None)
-    dep.add_argument("--wheel-metadata", type=Path, default=None)
+    metadata_help = (
+        "Path to a .whl archive, extracted dist-info/METADATA file, or "
+        "dist-info directory."
+    )
+    dep.add_argument("--wheel-metadata", type=Path, default=None, help=metadata_help)
     dep.add_argument("--no-wheel", action="store_true", help="Skip the wheel surface.")
 
     mcp_runtime = sub.add_parser(
@@ -140,7 +151,9 @@ def main(argv: list[str] | None = None) -> int:
     mcp_runtime.add_argument("--pyproject", type=Path, default=None)
     mcp_runtime.add_argument("--lock", type=Path, default=None)
     mcp_runtime.add_argument("--source-root", type=Path, default=None)
-    mcp_runtime.add_argument("--wheel-metadata", type=Path, default=None)
+    mcp_runtime.add_argument(
+        "--wheel-metadata", type=Path, default=None, help=metadata_help
+    )
     mcp_runtime.add_argument(
         "--lock-package-name",
         default="okto-pulse-core",
@@ -157,8 +170,10 @@ def main(argv: list[str] | None = None) -> int:
     matrix.add_argument("--pyproject", type=Path, default=None)
     matrix.add_argument("--lock", type=Path, default=None)
     matrix.add_argument("--source-root", type=Path, default=None)
-    matrix.add_argument("--wheel-metadata", type=Path, default=None)
-    matrix.add_argument("--no-wheel", action="store_true", help="Skip the wheel surface.")
+    matrix.add_argument("--wheel-metadata", type=Path, default=None, help=metadata_help)
+    matrix.add_argument(
+        "--no-wheel", action="store_true", help="Skip the wheel surface."
+    )
 
     # FCC-07C-IMP1: packaging ownership gate — REUSES the FCC-07A matrix to fail
     # closed on out-of-core ownership in the core packaging surfaces.
@@ -172,8 +187,10 @@ def main(argv: list[str] | None = None) -> int:
     owner.add_argument("--pyproject", type=Path, default=None)
     owner.add_argument("--lock", type=Path, default=None)
     owner.add_argument("--source-root", type=Path, default=None)
-    owner.add_argument("--wheel-metadata", type=Path, default=None)
-    owner.add_argument("--no-wheel", action="store_true", help="Skip the wheel surface.")
+    owner.add_argument("--wheel-metadata", type=Path, default=None, help=metadata_help)
+    owner.add_argument(
+        "--no-wheel", action="store_true", help="Skip the wheel surface."
+    )
     owner.add_argument(
         "--no-import-boundary",
         action="store_true",
@@ -192,7 +209,9 @@ def main(argv: list[str] | None = None) -> int:
             audit_wheel=not args.no_wheel,
         )
         if args.format == "json":
-            sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
+            sys.stdout.write(
+                json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n"
+            )
         else:
             sys.stdout.write(render_report(report) + "\n")
         return 0 if report.ok else 1
@@ -207,7 +226,9 @@ def main(argv: list[str] | None = None) -> int:
             lock_package_name=args.lock_package_name,
         )
         if args.format == "json":
-            sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
+            sys.stdout.write(
+                json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n"
+            )
         else:
             sys.stdout.write(render_mcp_runtime_ownership_report(report) + "\n")
         return 0 if report.ok else 1
@@ -222,7 +243,9 @@ def main(argv: list[str] | None = None) -> int:
             audit_wheel=not args.no_wheel,
         )
         if args.format == "json":
-            sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
+            sys.stdout.write(
+                json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n"
+            )
         else:
             sys.stdout.write(render_matrix_report(report) + "\n")
         return 0 if report.ok else 1
@@ -240,7 +263,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         if args.format == "json":
-            sys.stdout.write(json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n")
+            sys.stdout.write(
+                json.dumps(report.as_dict(), indent=2, sort_keys=True) + "\n"
+            )
         else:
             sys.stdout.write(render_packaging_ownership_report(report) + "\n")
         return 0 if report.ok else 1

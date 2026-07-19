@@ -65,18 +65,18 @@ def client():
     return TestClient(app)
 
 
-async def _seed_spec() -> str:
+async def _seed_spec(owner: str = USER) -> str:
     from sqlalchemy_test_models import Board
     from okto_pulse.core.models.schemas import SpecCreate
     from okto_pulse.core.services import SpecService
 
     bid = f"board-fu3ds4-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name="fu3ds4", owner_id=USER))
+        db.add(Board(id=bid, name="fu3ds4", owner_id=owner))
         await db.commit()
     async with get_session_factory()() as db:
         spec = await SpecService(db).create_spec(
-            bid, USER, SpecCreate(title=f"fu3ds4-{uuid.uuid4().hex[:6]}")
+            bid, owner, SpecCreate(title=f"fu3ds4-{uuid.uuid4().hex[:6]}")
         )
         await db.commit()
         return spec.id
@@ -176,11 +176,10 @@ async def test_delete_knowledge_missing_404(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_knowledge_unknown_spec_is_empty(client) -> None:
-    # Legacy: no existence check — an unknown spec yields an empty list, not 404.
+async def test_list_knowledge_unknown_spec_is_not_found(client) -> None:
     resp = client.get(f"{PREFIX}/specs/{_missing()}/knowledge")
-    assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Spec not found"}
 
 
 # --- q&a --------------------------------------------------------------------
@@ -252,6 +251,119 @@ async def test_delete_question_and_missing_404(client) -> None:
     assert miss.json()["detail"] == "Q&A item not found"
 
 
+@pytest.mark.asyncio
+async def test_foreign_spec_qa_fails_closed_without_audit(client) -> None:
+    from sqlalchemy import func, select
+    from sqlalchemy_test_models import ActivityLog, Spec, SpecQAItem
+
+    spec_id = await _seed_spec(owner=OTHER)
+    qa_id = await _seed_question(spec_id, asked_by=OTHER)
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, spec_id)
+        board_id = spec.board_id
+
+    async def _state() -> tuple[list[tuple], int]:
+        async with get_session_factory()() as db:
+            items = list(
+                await db.scalars(
+                    select(SpecQAItem)
+                    .where(SpecQAItem.spec_id == spec_id)
+                    .order_by(SpecQAItem.id)
+                )
+            )
+            activity = await db.scalar(
+                select(func.count())
+                .select_from(ActivityLog)
+                .where(ActivityLog.board_id == board_id)
+            )
+            return [
+                (
+                    item.id,
+                    item.answer,
+                    tuple(item.selected or []),
+                    item.answered_by,
+                    item.answered_at,
+                )
+                for item in items
+            ], activity
+
+    before = await _state()
+    listed = client.get(f"{PREFIX}/specs/{spec_id}/qa")
+    created = client.post(
+        f"{PREFIX}/specs/{spec_id}/qa", json={"question": "private?"}
+    )
+    answered = client.post(
+        f"{PREFIX}/specs/{spec_id}/qa/{qa_id}/answer",
+        json={"answer": "must not persist"},
+    )
+    deleted = client.delete(f"{PREFIX}/specs/{spec_id}/qa/{qa_id}")
+
+    assert listed.status_code == 404
+    assert listed.json() == {"detail": "Spec not found"}
+    assert created.status_code == 404
+    assert created.json()["detail"] == "Spec not found"
+    assert answered.status_code == 404
+    assert answered.json()["detail"] == "Q&A item not found"
+    assert deleted.status_code == 404
+    assert deleted.json()["detail"] == "Q&A item not found"
+    assert await _state() == before
+
+
+@pytest.mark.asyncio
+async def test_spec_qa_wrong_parent_same_board_fails_closed_without_audit(
+    client,
+) -> None:
+    from sqlalchemy import func, select
+    from sqlalchemy_test_models import ActivityLog, Spec, SpecQAItem
+    from okto_pulse.core.models.schemas import SpecCreate
+    from okto_pulse.core.services import SpecService
+
+    requested_spec_id = await _seed_spec()
+    async with get_session_factory()() as db:
+        requested_spec = await db.get(Spec, requested_spec_id)
+        other_spec = await SpecService(db).create_spec(
+            requested_spec.board_id,
+            USER,
+            SpecCreate(title=f"qa-other-parent-{uuid.uuid4().hex[:6]}"),
+        )
+        await db.commit()
+        board_id = requested_spec.board_id
+        other_spec_id = other_spec.id
+    qa_id = await _seed_question(other_spec_id, asked_by=OTHER)
+
+    async def _state() -> tuple:
+        async with get_session_factory()() as db:
+            qa = await db.get(SpecQAItem, qa_id)
+            activity_count = await db.scalar(
+                select(func.count())
+                .select_from(ActivityLog)
+                .where(ActivityLog.board_id == board_id)
+            )
+            return (
+                qa is not None,
+                qa.answer if qa else None,
+                tuple(qa.selected or []) if qa else (),
+                qa.answered_by if qa else None,
+                qa.answered_at if qa else None,
+                activity_count,
+            )
+
+    before = await _state()
+    answered = client.post(
+        f"{PREFIX}/specs/{requested_spec_id}/qa/{qa_id}/answer",
+        json={"answer": "must not persist"},
+    )
+    deleted = client.delete(
+        f"{PREFIX}/specs/{requested_spec_id}/qa/{qa_id}"
+    )
+
+    assert answered.status_code == 404
+    assert answered.json()["detail"] == "Q&A item not found"
+    assert deleted.status_code == 404
+    assert deleted.json()["detail"] == "Q&A item not found"
+    assert await _state() == before
+
+
 # --- evaluation -------------------------------------------------------------
 
 
@@ -282,6 +394,68 @@ async def test_list_evaluations_200_and_missing_404(client) -> None:
 
     miss = client.get(f"{PREFIX}/specs/{_missing()}/evaluations")
     assert miss.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_foreign_spec_knowledge_and_evaluations_are_fail_closed(client) -> None:
+    from sqlalchemy import func, select
+    from sqlalchemy_test_models import ActivityLog, Spec, SpecKnowledgeBase
+
+    spec_id = await _seed_spec(owner=OTHER)
+    kb_id = f"kb-foreign-{uuid.uuid4().hex[:8]}"
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, spec_id)
+        spec.evaluations = [
+            {
+                "id": "eval_foreign",
+                "evaluator_id": OTHER,
+                "overall_score": 90,
+                "recommendation": "approve",
+                "stale": False,
+            }
+        ]
+        db.add(
+            SpecKnowledgeBase(
+                id=kb_id,
+                spec_id=spec_id,
+                title="foreign",
+                content="private",
+                mime_type="text/markdown",
+                created_by=OTHER,
+            )
+        )
+        await db.commit()
+        board_id = spec.board_id
+
+    async def _state() -> tuple[list, list, int]:
+        async with get_session_factory()() as db:
+            spec = await db.get(Spec, spec_id)
+            kb_ids = list(
+                await db.scalars(
+                    select(SpecKnowledgeBase.id).where(
+                        SpecKnowledgeBase.spec_id == spec_id
+                    )
+                )
+            )
+            activity = await db.scalar(
+                select(func.count())
+                .select_from(ActivityLog)
+                .where(ActivityLog.board_id == board_id)
+            )
+            return list(spec.evaluations or []), kb_ids, activity
+
+    before = await _state()
+    responses = (
+        client.get(f"{PREFIX}/specs/{spec_id}/knowledge"),
+        client.get(f"{PREFIX}/specs/{spec_id}/knowledge/{kb_id}"),
+        client.post(f"{PREFIX}/specs/{spec_id}/knowledge", json=_kb_payload()),
+        client.delete(f"{PREFIX}/specs/{spec_id}/knowledge/{kb_id}"),
+        client.get(f"{PREFIX}/specs/{spec_id}/evaluations"),
+        client.post(f"{PREFIX}/specs/{spec_id}/evaluations", json=_eval_payload()),
+    )
+
+    assert all(response.status_code == 404 for response in responses)
+    assert await _state() == before
 
 
 # --- use case + AST ---------------------------------------------------------

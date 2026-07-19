@@ -18,7 +18,6 @@ from .af35_s5_relational_final_gate import run_af35_s5_relational_final_gate
 from .conformance_matrix import build_conformance_matrix
 from .dependency_ledger import CANONICAL_TEMPORARY_EXCEPTION_TOKENS
 from .distribution_dependency_ownership import (
-    COMMUNITY_DISTRIBUTION,
     CORE_DISTRIBUTION,
     DistributionDependency,
     audit_distribution_dependencies,

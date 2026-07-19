@@ -34,6 +34,10 @@ from okto_pulse.core.ports.analytics_read import (
     AnalyticsQuery,
     get_analytics_read_port,
 )
+from okto_pulse.core.services.analytics_contract import (
+    classify_analytics_card,
+    partition_analytics_cards,
+)
 from okto_pulse.core.services.coverage_calculator import (
     spec_saturation_envelope_from_coverage,
 )
@@ -104,7 +108,7 @@ def _artifact_filters(
     if dt_from:
         filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        filters.append(_af("created_at", "lte", dt_to))
+        filters.append(_af("created_at", "lt", dt_to))
     return tuple(filters)
 
 
@@ -587,9 +591,10 @@ async def compute_funnel(
     )
 
     # Card types (Python-side on JSON column)
-    counts["cards_impl"] = sum(1 for c in all_cards if _is_normal_card(c))
-    counts["cards_test"] = sum(1 for c in all_cards if _is_test_card(c))
-    counts["cards_bug"] = sum(1 for c in all_cards if _is_bug_card(c))
+    card_partitions = partition_analytics_cards(all_cards)
+    counts["cards_impl"] = len(card_partitions["implementation"])
+    counts["cards_test"] = len(card_partitions["test"])
+    counts["cards_bug"] = len(card_partitions["bug"])
 
     # Specs (para BR/Contract + breakdown)
     counts["rules_count"] = sum(len(s.business_rules or []) for s in spec_objs)
@@ -611,7 +616,7 @@ async def compute_funnel(
     counts["sprint_status_breakdown"] = _status_breakdown(sprint_objs, SprintStatus)
 
     # Bug metrics
-    bug_cards = [c for c in all_cards if _is_bug_card(c)]
+    bug_cards = card_partitions["bug"]
     counts["bugs_total"] = len(bug_cards)
     counts["bugs_open"] = sum(
         1 for c in bug_cards if c.status not in (CardStatus.DONE, CardStatus.CANCELLED)
@@ -1135,7 +1140,7 @@ async def compute_blockers(
 
     test_card_scenarios: set[str] = set()
     for c in cards:
-        if _is_test_card(c):
+        if classify_analytics_card(c) == "test":
             for sid in (c.test_scenario_ids or []):
                 test_card_scenarios.add(sid)
     for s in specs:
@@ -1196,10 +1201,6 @@ async def compute_mcp_board_analytics(
     if not board:
         return {"error": "Board not found"}
 
-    def _legacy_is_test(card) -> bool:
-        ids = card.test_scenario_ids
-        return bool(ids and isinstance(ids, list) and len(ids) > 0)
-
     def _last_conclusion(card) -> dict | None:
         conclusions = card.conclusions
         if not conclusions or not isinstance(conclusions, list):
@@ -1220,10 +1221,11 @@ async def compute_mcp_board_analytics(
         sprints = await _analytics_list(db, "sprint", filters=filters)
         cards = await _analytics_list(db, "card", filters=filters)
 
-        impl_cards = [card for card in cards if not _legacy_is_test(card)]
-        test_cards = [card for card in cards if _legacy_is_test(card)]
+        card_partitions = partition_analytics_cards(cards)
+        impl_cards = card_partitions["implementation"]
+        test_cards = card_partitions["test"]
         done_cards = [card for card in cards if card.status == CardStatus.DONE]
-        bug_cards = [card for card in cards if getattr(card, "card_type", "normal") == "bug"]
+        bug_cards = card_partitions["bug"]
 
         comp_vals = []
         drift_vals = []
@@ -1931,9 +1933,10 @@ def _build_velocity_buckets(
             updated = updated.replace(tzinfo=timezone.utc)
         key = _bucket_key(updated, granularity)
         if key in buckets:
-            if _is_bug_card(c):
+            category = classify_analytics_card(c)
+            if category == "bug":
                 buckets[key]["bug"] += 1
-            elif _is_test_card(c):
+            elif category == "test":
                 buckets[key]["test"] += 1
             else:
                 buckets[key]["impl"] += 1
@@ -2038,7 +2041,7 @@ async def compute_overview(
     if dt_from:
         filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        filters.append(_af("created_at", "lte", dt_to))
+        filters.append(_af("created_at", "lt", dt_to))
     artifact_filters = tuple(filters)
 
     ideations = await _analytics_list(db, "ideation", filters=artifact_filters)
@@ -2046,9 +2049,10 @@ async def compute_overview(
     specs = await _analytics_list(db, "spec", filters=artifact_filters)
     cards = await _analytics_list(db, "card", filters=artifact_filters)
 
-    impl_cards = [c for c in cards if _is_normal_card(c)]
-    test_cards = [c for c in cards if _is_test_card(c)]
-    bug_cards_all = [c for c in cards if _is_bug_card(c)]
+    card_partitions = partition_analytics_cards(cards)
+    impl_cards = card_partitions["implementation"]
+    test_cards = card_partitions["test"]
+    bug_cards_all = card_partitions["bug"]
 
     sprints = await _analytics_list(db, "sprint", filters=artifact_filters)
 
@@ -2087,7 +2091,7 @@ async def compute_overview(
     for b in boards:
         b_cards = [c for c in cards if c.board_id == b.id]
         b_done = [c for c in b_cards if c.status == CardStatus.DONE]
-        b_bugs = [c for c in b_cards if _is_bug_card(c)]
+        b_bugs = [c for c in b_cards if classify_analytics_card(c) == "bug"]
         b_sprints = [sp for sp in sprints if sp.board_id == b.id]
         board_stats.append({
             "board_id": b.id,
@@ -2129,7 +2133,7 @@ async def compute_overview(
     # --- Validation Gate aggregations ---
     spec_validation_gate = aggregate_spec_validation_gate(specs)
     task_validation_gate = aggregate_task_validation_gate(
-        [c for c in cards if _is_normal_card(c) or _is_bug_card(c)]
+        [c for c in cards if classify_analytics_card(c) != "test"]
     )
     spec_evaluation = _aggregate_spec_evaluation(specs)
     sprint_evaluation = _aggregate_sprint_evaluation(sprints)
@@ -2146,7 +2150,7 @@ async def compute_overview(
     bug_rate_per_spec = []
     for s in specs:
         s_cards = [c for c in cards if c.spec_id == s.id]
-        s_bugs = [c for c in s_cards if _is_bug_card(c)]
+        s_bugs = [c for c in s_cards if classify_analytics_card(c) == "bug"]
         if s_cards and s_bugs:
             bug_rate_per_spec.append({
                 "spec_id": s.id,
@@ -2469,6 +2473,7 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
             "active": v.get("id") == getattr(spec, "current_validation_id", None),
         })
 
+    card_partitions = partition_analytics_cards(cards)
     return {
         "spec_id": spec_id,
         "title": spec.title,
@@ -2498,9 +2503,9 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
             "total": len(cards),
             "by_status": _card_status_breakdown(cards),
             "by_type": {
-                "normal": sum(1 for c in cards if _is_normal_card(c)),
-                "test": sum(1 for c in cards if _is_test_card(c)),
-                "bug": sum(1 for c in cards if _is_bug_card(c)),
+                "normal": len(card_partitions["implementation"]),
+                "test": len(card_partitions["test"]),
+                "bug": len(card_partitions["bug"]),
             },
         },
     }
@@ -2552,6 +2557,7 @@ async def compute_sprint_analytics(db, board_id: str, sprint_id: str) -> dict | 
     # Weekly velocity during the sprint window (or last 4 weeks if window missing)
     velocity = _compute_velocity(done_cards, 4, all_cards=cards)
 
+    card_partitions = partition_analytics_cards(cards)
     return {
         "sprint_id": sprint_id,
         "title": sprint.title,
@@ -2563,9 +2569,9 @@ async def compute_sprint_analytics(db, board_id: str, sprint_id: str) -> dict | 
             "done": len(done_cards),
             "completion_rate": round(len(done_cards) / len(cards) * 100, 1) if cards else 0.0,
             "by_type": {
-                "normal": sum(1 for c in cards if _is_normal_card(c)),
-                "test": sum(1 for c in cards if _is_test_card(c)),
-                "bug": sum(1 for c in cards if _is_bug_card(c)),
+                "normal": len(card_partitions["implementation"]),
+                "test": len(card_partitions["test"]),
+                "bug": len(card_partitions["bug"]),
             },
         },
         "task_validation_gate": aggregate_task_validation_gate(cards),
@@ -2585,6 +2591,9 @@ async def compute_sprints_analytics(db, board_id: str, *, dt_from=None, dt_to=No
     )
     sprints = await _analytics_list(db, "sprint", filters=filters)
     all_cards = await _analytics_list(db, "card", filters=filters)
+    specs = await _analytics_list(db, "spec", filters=filters)
+    specs_by_id = {spec.id: spec for spec in specs}
+    from okto_pulse.core.services.sprint_scope import SprintScopeResolver
 
     per_sprint: list[dict] = []
     normal_sprints_total = 0
@@ -2617,6 +2626,12 @@ async def compute_sprints_analytics(db, board_id: str, *, dt_from=None, dt_to=No
                 "created_at": evals[-1].get("created_at"),
             }
         task_gate = aggregate_task_validation_gate(sp_cards)
+        spec = specs_by_id.get(sp.spec_id)
+        scope = (
+            SprintScopeResolver.resolve(sprint=sp, spec=spec, cards=sp_cards)
+            if spec is not None
+            else None
+        )
 
         # Self-reported quality from card.conclusions on this sprint's cards.
         # Falls back to the validation gate's reviewer-reported avg_scores when
@@ -2661,6 +2676,17 @@ async def compute_sprints_analytics(db, board_id: str, *, dt_from=None, dt_to=No
                 "rejection_reasons": task_gate["rejection_reasons"],
                 "first_pass_rate": task_gate["first_pass_rate"],
             },
+            "scope": (
+                {
+                    "sprint_version": scope.sprint_version,
+                    "spec_version": scope.spec_version,
+                    "counts": {
+                        name: len(items) for name, items in scope.items.items()
+                    },
+                }
+                if scope is not None
+                else None
+            ),
         })
     per_sprint.sort(key=lambda x: x["total_cards"], reverse=True)
 
@@ -2814,7 +2840,7 @@ async def _list_ideation_entities(
     if dt_from:
         filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        filters.append(_af("created_at", "lte", dt_to))
+        filters.append(_af("created_at", "lt", dt_to))
 
     total = await _analytics_count(
         db,
@@ -2882,7 +2908,7 @@ async def _list_spec_entities(
     if dt_from:
         filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        filters.append(_af("created_at", "lte", dt_to))
+        filters.append(_af("created_at", "lt", dt_to))
 
     total = await _analytics_count(
         db,
@@ -2946,7 +2972,7 @@ async def _list_card_entities(
     if dt_from:
         filters.append(_af("created_at", "gte", dt_from))
     if dt_to:
-        filters.append(_af("created_at", "lte", dt_to))
+        filters.append(_af("created_at", "lt", dt_to))
 
     total = await _analytics_count(
         db,
@@ -2975,7 +3001,7 @@ async def _list_card_entities(
             "id": c.id,
             "title": c.title,
             "status": c.status.value if c.status else None,
-            "is_test": _is_test_card(c),
+            "is_test": classify_analytics_card(c) == "test",
             "card_type": ct if hasattr(ct, "value") else ct,
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "completeness": concl.get("completeness") if concl else None,
@@ -3064,7 +3090,7 @@ async def _spec_detail(db: Any, board_id: str, spec_id: str) -> dict:
             "id": c.id,
             "title": c.title,
             "status": c.status.value if c.status else None,
-            "is_test": _is_test_card(c),
+            "is_test": classify_analytics_card(c) == "test",
             "card_type": ct if hasattr(ct, "value") else ct,
             "completeness": concl.get("completeness") if concl else None,
             "drift": concl.get("drift") if concl else None,
@@ -3124,7 +3150,7 @@ async def _spec_detail(db: Any, board_id: str, spec_id: str) -> dict:
         })
 
     # Bug stats for this spec
-    bug_cards = [c for c in cards if getattr(c, "card_type", "normal") == "bug"]
+    bug_cards = [c for c in cards if classify_analytics_card(c) == "bug"]
 
     # Sprint breakdown
     sprints = await _analytics_list(
@@ -3260,7 +3286,7 @@ async def _card_detail(db: Any, board_id: str, card_id: str) -> dict:
         "card_id": card.id,
         "title": card.title,
         "status": card.status.value if card.status else None,
-        "is_test": _is_test_card(card),
+        "is_test": classify_analytics_card(card) == "test",
         "card_type": card_type,
         "spec_id": card.spec_id,
         "sprint_id": card.sprint_id,

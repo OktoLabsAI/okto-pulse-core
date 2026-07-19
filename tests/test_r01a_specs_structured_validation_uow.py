@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import inspect
 import uuid
+from copy import deepcopy
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 
 from okto_pulse.community.api import specs as specs_api
 from okto_pulse.community.api.specs import router as specs_router
@@ -25,6 +27,7 @@ from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu3b-s1-user"
+OTHER = "r01a-fu3b-s1-other"
 PREFIX = "/api/v1"
 _ENDPOINTS = (
     "create_structured_spec_entity",
@@ -70,21 +73,40 @@ def client(monkeypatch):
     return TestClient(app)
 
 
-async def _seed_spec() -> str:
+async def _seed_spec(owner: str = USER) -> str:
     from sqlalchemy_test_models import Board
     from okto_pulse.core.models.schemas import SpecCreate
     from okto_pulse.core.services import SpecService
 
     bid = f"board-fu3bs1-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name="fu3bs1", owner_id=USER))
+        db.add(Board(id=bid, name="fu3bs1", owner_id=owner))
         await db.commit()
     async with get_session_factory()() as db:
         spec = await SpecService(db).create_spec(
-            bid, USER, SpecCreate(title=f"fu3bs1-{uuid.uuid4().hex[:6]}")
+            bid, owner, SpecCreate(title=f"fu3bs1-{uuid.uuid4().hex[:6]}")
         )
         await db.commit()
         return spec.id
+
+
+async def _validation_state(spec_id: str) -> dict:
+    from sqlalchemy_test_models import ActivityLog, Spec
+
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, spec_id)
+        activity_count = await db.scalar(
+            select(func.count())
+            .select_from(ActivityLog)
+            .where(ActivityLog.board_id == spec.board_id)
+        )
+        return {
+            "status": spec.status,
+            "version": spec.version,
+            "validations": deepcopy(spec.validations),
+            "current_validation_id": spec.current_validation_id,
+            "activity_count": activity_count,
+        }
 
 
 def _missing() -> str:
@@ -117,6 +139,24 @@ async def test_structured_spec_404(client) -> None:
     )
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Spec not found"
+
+
+@pytest.mark.asyncio
+async def test_structured_spec_foreign_board_has_no_mutation(client) -> None:
+    from sqlalchemy_test_models import Spec
+
+    spec_id = await _seed_spec(owner=OTHER)
+    response = client.post(
+        _struct_url(spec_id, "business_rule"),
+        json={"payload": _BUSINESS_RULE, "expected_spec_version": 1},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Spec not found"
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, spec_id)
+        assert spec.business_rules in (None, [])
+        assert spec.version == 1
 
 
 @pytest.mark.asyncio
@@ -165,6 +205,25 @@ async def test_list_validations_200_and_404(client) -> None:
     assert body["spec_id"] == spec_id and "validations" in body
     miss = client.get(f"{PREFIX}/specs/{_missing()}/validations")
     assert miss.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_validation_read_and_submit_foreign_board_fail_closed_without_audit(
+    client,
+) -> None:
+    spec_id = await _seed_spec(owner=OTHER)
+    before = await _validation_state(spec_id)
+
+    listed = client.get(f"{PREFIX}/specs/{spec_id}/validations")
+    submitted = client.post(
+        f"{PREFIX}/specs/{spec_id}/validation", json=_valid_submit_data()
+    )
+
+    assert listed.status_code == 404, listed.text
+    assert listed.json()["detail"] == "Spec not found"
+    assert submitted.status_code == 404, submitted.text
+    assert submitted.json()["detail"] == "Spec not found"
+    assert await _validation_state(spec_id) == before
 
 
 # --- use case + AST ---------------------------------------------------------

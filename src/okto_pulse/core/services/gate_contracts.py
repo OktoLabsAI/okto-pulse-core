@@ -28,7 +28,7 @@ when relevant) are always populated.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 # gate_type vocabulary (structured contract field, NOT a persisted enum).
 GATE_SPEC_VALIDATION = "spec_validation"
@@ -276,16 +276,43 @@ _SCENARIO_EVIDENCE_FIELDS = (
 )
 
 
-def _scenario_evidence_present(scenario: dict[str, Any]) -> bool:
-    # Evidence may live as top-level fields OR (more commonly in Pulse contexts)
-    # nested under scenario["evidence"].
-    if any(scenario.get(f) for f in _SCENARIO_EVIDENCE_FIELDS):
-        return True
-    ev = scenario.get("evidence")
-    if isinstance(ev, dict):
-        return bool(ev)
-    if isinstance(ev, str):
-        return bool(ev.strip())
+def _scenario_evidence_present(
+    scenario: dict[str, Any],
+    *,
+    evidence_validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> bool:
+    # Keep the proactive task context aligned with the actual card/sprint gate:
+    # a non-empty object is not proof. Canonical Evidence V2 must pass the same
+    # semantic verifier used by every mutation path.
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        GATED_STATUSES,
+        scenario_has_required_evidence,
+    )
+
+    status = str(scenario.get("status") or "")
+    if status in GATED_STATUSES:
+        candidate = scenario
+        if not isinstance(scenario.get("evidence"), dict):
+            legacy_top_level = {
+                field: scenario.get(field)
+                for field in _SCENARIO_EVIDENCE_FIELDS
+                if scenario.get(field)
+            }
+            candidate = {**scenario, "evidence": legacy_top_level or None}
+        evidence = candidate.get("evidence") or candidate.get("latest_evidence")
+        claims_v2 = bool(
+            isinstance(evidence, dict)
+            and (
+                evidence.get("manifest_ref") is not None
+                or evidence.get("execution_attestation") is not None
+                or evidence.get("execution_receipt") is not None
+            )
+        )
+        if evidence_validator is not None:
+            return evidence_validator(candidate)
+        if claims_v2:
+            return False
+        return scenario_has_required_evidence(candidate)
     return False
 
 
@@ -296,6 +323,7 @@ def operational_flow_for_test_card(
     spec_id: str | None,
     current_status: str | None,
     linked_scenarios: list[dict[str, Any]],
+    evidence_validator: Callable[[dict[str, Any]], bool] | None = None,
 ) -> dict[str, Any]:
     """R4-IMP3 — read-only PROACTIVE operational-flow block for a test card in
     get_task_context. Reuses the R4-IMP1 test_card_completion contract fields so the
@@ -306,14 +334,22 @@ def operational_flow_for_test_card(
             "id": s.get("id"),
             "title": s.get("title"),
             "status": s.get("status"),
-            "evidence_present": _scenario_evidence_present(s),
+            "evidence_present": _scenario_evidence_present(
+                s, evidence_validator=evidence_validator
+            ),
         }
         for s in linked_scenarios
     ]
     pending = [
         {"id": s["id"], "title": s["title"], "status": s["status"]}
         for s in scenarios
-        if str(s["status"] or "") in _BLOCKING_SCENARIO_STATUSES
+        if (
+            str(s["status"] or "") in _BLOCKING_SCENARIO_STATUSES
+            or (
+                str(s["status"] or "") in {"automated", "passed", "failed"}
+                and not s["evidence_present"]
+            )
+        )
     ]
     would_block_done = bool(pending)
     if would_block_done:

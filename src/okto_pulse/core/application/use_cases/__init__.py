@@ -101,6 +101,11 @@ from okto_pulse.core.application.use_cases.base import (
     UseCaseError,
     commit,
 )
+from okto_pulse.core.application.use_cases.card_traceability import (
+    LinkCardTraceabilityCommand,
+    LinkCardTraceabilityResult,
+    LinkCardTraceabilityUseCase,
+)
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.application.use_cases.cognitive_readiness import (
     EvaluateBugCognitiveClosureCommand,
@@ -672,6 +677,9 @@ from okto_pulse.core.application.use_cases.mcp_kg_crud import (
     ListDigestLayerMismatchCommand,
     ListDigestLayerMismatchResult,
     ListDigestLayerMismatchUseCase,
+    ReconcileDigestLayerCommand,
+    ReconcileDigestLayerResult,
+    ReconcileDigestLayerUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_sprint_crud import (
     McpCreateSprintCommand,
@@ -913,6 +921,9 @@ from okto_pulse.core.application.use_cases.spec_crud import (
     SetTestScenarioStatusCommand,
     SetTestScenarioStatusResult,
     SetTestScenarioStatusUseCase,
+    ExecuteTestScenarioEvidenceCommand,
+    ExecuteTestScenarioEvidenceResult,
+    ExecuteTestScenarioEvidenceUseCase,
     CreateSpecCommand,
     CreateSpecResult,
     CreateSpecUseCase,
@@ -958,6 +969,9 @@ from okto_pulse.core.application.use_cases.update_board_overrides import (
 )
 
 __all__ = [
+    "LinkCardTraceabilityCommand",
+    "LinkCardTraceabilityResult",
+    "LinkCardTraceabilityUseCase",
     # base
     "ActorContext",
     "ActorScope",
@@ -1399,6 +1413,9 @@ __all__ = [
     "ListDigestLayerMismatchCommand",
     "ListDigestLayerMismatchResult",
     "ListDigestLayerMismatchUseCase",
+    "ReconcileDigestLayerCommand",
+    "ReconcileDigestLayerResult",
+    "ReconcileDigestLayerUseCase",
     "AuditOriginatesFromContractCommand",
     "AuditOriginatesFromContractResult",
     "AuditOriginatesFromContractUseCase",
@@ -1831,6 +1848,9 @@ __all__ = [
     "SetTestScenarioStatusCommand",
     "SetTestScenarioStatusResult",
     "SetTestScenarioStatusUseCase",
+    "ExecuteTestScenarioEvidenceCommand",
+    "ExecuteTestScenarioEvidenceResult",
+    "ExecuteTestScenarioEvidenceUseCase",
     "GetCardCommand",
     "GetCardResult",
     "GetCardUseCase",

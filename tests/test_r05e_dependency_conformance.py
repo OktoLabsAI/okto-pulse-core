@@ -33,7 +33,6 @@ import pytest
 import okto_pulse.core.application.boundary.dependency_conformance as _conf_mod
 import okto_pulse.core.application.boundary.dependency_ledger as _ledger_mod
 from okto_pulse.core.application.boundary.dependency_conformance import (
-    DIAG_INVALID_AF40_CARRY_FORWARD_TOKEN,
     GOVERNED_TECHNICAL_TOKENS,
     audit_dependency_conformance,
     render_report,
@@ -190,8 +189,6 @@ def test_ts_3a5d3275_fail_closed_on_reintroduced_removed_token(tmp_path):
 
 def test_ts_3a5d3275_incomplete_ledger_entry_fails_closed(tmp_path):
     # A ledger entry missing a required field makes the ledger itself non-conformant.
-    from dataclasses import replace
-
     broken = list(build_dependency_ledger())
     broken[0] = replace(broken[0], validation_oracle="   ")  # blank required field
     report = _synthetic_audit(tmp_path, pyproject_text='[project]\nname="x"\nversion="0"\n', ledger=tuple(broken))

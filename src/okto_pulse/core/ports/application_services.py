@@ -8,6 +8,7 @@ construction.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
@@ -242,7 +243,16 @@ class ApplicationServiceCatalog(Protocol):
         kb_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
+        resolved_lineage: object | None = None,
     ) -> dict[str, object]: ...
+
+    async def resolve_effective_spec_parent_lineage(
+        self,
+        *,
+        board_id: str,
+        ideation_id: str | None = None,
+        refinement_id: str | None = None,
+    ) -> object | None: ...
 
     async def list_my_mentions(
         self,
@@ -612,6 +622,23 @@ class KnowledgeGraphOperations(Protocol):
     async def list_digest_layer_mismatches(
         self, *, board_id: str, limit: int, offset: int
     ) -> object: ...
+
+    async def enqueue_digest_layer_reconciliation(
+        self, *, board_id: str, reason: str
+    ) -> dict[str, object]: ...
+
+    async def build_global_discovery_recovery_seeds(
+        self,
+        *,
+        boards: list[tuple[str, str, str]],
+        captured_cognitive_pending_exclusions: Mapping[
+            str, Mapping[str, str]
+        ],
+    ) -> tuple[object, ...]: ...
+
+    async def recover_global_discovery_delivery(
+        self, *, run_id: str, board_ids: list[str], dead_letter_limit: int
+    ) -> dict[str, object]: ...
 
     async def queue_health(self) -> dict[str, object]: ...
 

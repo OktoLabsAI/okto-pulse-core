@@ -36,7 +36,6 @@ MCP-owned.
 from __future__ import annotations
 
 import hashlib
-import threading
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum

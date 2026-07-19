@@ -10,14 +10,16 @@ from __future__ import annotations
 
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from okto_pulse.core.application.scope import ActorScope
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
 )
+from okto_pulse.core.services.analytics_contract import parse_analytics_datetime
 
 
 class _DataResult:
@@ -27,16 +29,10 @@ class _DataResult:
         self.data = data
 
 
-def _parse_dt(value: str) -> datetime | None:
-    if not value:
-        return None
-    try:
-        dt = datetime.fromisoformat(value)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-    except (TypeError, ValueError):
-        return None
+def _parse_dt(value: str, *, end_exclusive: bool = False) -> datetime | None:
+    """Compatibility wrapper over the canonical UTC half-open contract."""
+
+    return parse_analytics_datetime(value, end_exclusive=end_exclusive)
 
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> Any:
@@ -74,7 +70,7 @@ class McpGetAnalyticsUseCase:
                 command.board_id,
                 metric_type=command.metric_type,
                 dt_from=_parse_dt(command.from_date),
-                dt_to=_parse_dt(command.to_date),
+                dt_to=_parse_dt(command.to_date, end_exclusive=True),
             )
         )
 
@@ -204,31 +200,82 @@ class McpSetDefaultDesignSystemUseCase:
 
 
 class McpListDesignSystemsCommand:
-    __slots__ = ("board_id", "scope")
+    __slots__ = ("board_id", "scope", "limit", "cursor", "profile")
 
-    def __init__(self, board_id: str, *, scope: str = "global") -> None:
+    def __init__(
+        self,
+        board_id: str,
+        *,
+        scope: str = "global",
+        limit: int = 50,
+        cursor: str | None = None,
+        profile: str = "summary",
+    ) -> None:
         self.board_id = board_id
         self.scope = scope
+        self.limit = limit
+        self.cursor = cursor
+        self.profile = profile
+
+
+async def _require_mcp_design_system_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+    *,
+    design_system_id: str | None = None,
+) -> None:
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    if await load_accessible_board(uow, board_id, actor) is not None:
+        return
+    if design_system_id is not None:
+        raise DesignSystemError(
+            "design_system_not_found",
+            f"Design System '{design_system_id}' was not found.",
+            404,
+            {"design_system_id": design_system_id},
+        )
+    raise DesignSystemError(
+        "board_not_found",
+        f"Board '{board_id}' not found.",
+        404,
+        {"board_id": board_id},
+    )
 
 
 class McpListDesignSystemsUseCase:
     async def execute(
         self, command: McpListDesignSystemsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-        from okto_pulse.core.services.design_system import (
-            serialize_design_system,
-        )
+        from okto_pulse.core.services.design_system import DesignSystemError
 
-        items = await uow.services.design_systems.list_catalog(
-            scope=command.scope, board_id=command.board_id
+        await _require_mcp_design_system_board(
+            uow,
+            command.board_id,
+            actor,
         )
-        return _DataResult([serialize_design_system(item) for item in items])
+        if command.profile != "summary":
+            raise DesignSystemError(
+                "design_system_invalid_profile",
+                "Catalog lists support only profile='summary'; use get_design_system for the full payload.",
+                422,
+            )
+        page = await uow.services.design_systems.list_catalog_page(
+            scope=command.scope,
+            board_id=command.board_id,
+            limit=command.limit,
+            cursor=command.cursor,
+            owner_id=actor.actor_id if command.scope == "global" else None,
+        )
+        return _DataResult(page)
 
 
 class McpGetDesignSystemCommand:
-    __slots__ = ("design_system_id",)
+    __slots__ = ("board_id", "design_system_id")
 
-    def __init__(self, design_system_id: str) -> None:
+    def __init__(self, board_id: str, design_system_id: str) -> None:
+        self.board_id = board_id
         self.design_system_id = design_system_id
 
 
@@ -240,8 +287,17 @@ class McpGetDesignSystemUseCase:
             serialize_design_system,
         )
 
-        item = await uow.services.design_systems.require_design_system(
-            command.design_system_id
+        await _require_mcp_design_system_board(
+            uow,
+            command.board_id,
+            actor,
+            design_system_id=command.design_system_id,
+        )
+        item = await uow.services.design_systems.require_authorized_design_system(
+            command.design_system_id,
+            actor.actor_id,
+            board_id=command.board_id,
+            board_access_authorized=True,
         )
         return _DataResult(serialize_design_system(item))
 
@@ -273,6 +329,11 @@ class McpCreateDesignSystemUseCase:
             serialize_design_system,
         )
 
+        await _require_mcp_design_system_board(
+            uow,
+            command.board_id,
+            actor,
+        )
         item = await uow.services.design_systems.create_design_system(
             actor.actor_id,
             title=command.title,
@@ -286,16 +347,18 @@ class McpCreateDesignSystemUseCase:
 
 
 class McpUpdateDesignSystemCommand:
-    __slots__ = ("design_system_id", "title", "payload", "status")
+    __slots__ = ("board_id", "design_system_id", "title", "payload", "status")
 
     def __init__(
         self,
+        board_id: str,
         design_system_id: str,
         *,
         title: str | None = None,
         payload: dict | None = None,
         status: str | None = None,
     ) -> None:
+        self.board_id = board_id
         self.design_system_id = design_system_id
         self.title = title
         self.payload = payload
@@ -310,6 +373,12 @@ class McpUpdateDesignSystemUseCase:
             serialize_design_system,
         )
 
+        await _require_mcp_design_system_board(
+            uow,
+            command.board_id,
+            actor,
+            design_system_id=command.design_system_id,
+        )
         kwargs = {
             key: value
             for key, value in (
@@ -320,16 +389,21 @@ class McpUpdateDesignSystemUseCase:
             if value is not None
         }
         item = await uow.services.design_systems.update_design_system(
-            command.design_system_id, actor.actor_id, **kwargs
+            command.design_system_id,
+            actor.actor_id,
+            board_id=command.board_id,
+            board_access_authorized=True,
+            **kwargs,
         )
         await commit(uow)
         return _DataResult(serialize_design_system(item))
 
 
 class McpDeleteDesignSystemCommand:
-    __slots__ = ("design_system_id",)
+    __slots__ = ("board_id", "design_system_id")
 
-    def __init__(self, design_system_id: str) -> None:
+    def __init__(self, board_id: str, design_system_id: str) -> None:
+        self.board_id = board_id
         self.design_system_id = design_system_id
 
 
@@ -337,9 +411,17 @@ class McpDeleteDesignSystemUseCase:
     async def execute(
         self, command: McpDeleteDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
-
+        await _require_mcp_design_system_board(
+            uow,
+            command.board_id,
+            actor,
+            design_system_id=command.design_system_id,
+        )
         deleted = await uow.services.design_systems.delete_design_system(
-            command.design_system_id, actor.actor_id
+            command.design_system_id,
+            actor.actor_id,
+            board_id=command.board_id,
+            board_access_authorized=True,
         )
         if not deleted:
             return _DataResult(

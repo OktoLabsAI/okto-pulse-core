@@ -97,3 +97,79 @@ async def test_copy_qa_to_card_treats_choice_selection_as_answered(db_factory):
     assert len(comments) == 1
     assert "Which implementation path?" in comments[0].content
     assert "Use existing adapter" in comments[0].content
+
+
+@pytest.mark.asyncio
+async def test_copy_qa_to_card_without_answers_is_idempotent_noop(db_factory):
+    board_id = f"board-{uuid.uuid4().hex[:8]}"
+    spec_id = f"spec-{uuid.uuid4().hex[:8]}"
+    card_id = f"card-{uuid.uuid4().hex[:8]}"
+    agent_id = "qa-copy-noop-agent"
+
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="Q&A copy no-op", owner_id=agent_id))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec without answered Q&A",
+                status=SpecStatus.DRAFT,
+                created_by=agent_id,
+                functional_requirements=["FR"],
+                acceptance_criteria=[],
+                test_scenarios=[],
+                business_rules=[],
+                api_contracts=[],
+            )
+        )
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Task",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                created_by=agent_id,
+            )
+        )
+        db.add(
+            SpecQAItem(
+                spec_id=spec_id,
+                question="Still unanswered?",
+                question_type="text",
+                answer=None,
+                asked_by=agent_id,
+            )
+        )
+        await db.commit()
+
+    ctx = type(
+        "Ctx",
+        (),
+        {"agent_id": agent_id, "agent_name": agent_id, "permissions": None},
+    )()
+    register_mcp_test_runtime(db_factory)
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
+        results = [
+            json.loads(
+                await mcp_server.okto_pulse_copy_qa_to_card.fn(
+                    board_id=board_id,
+                    spec_id=spec_id,
+                    card_id=card_id,
+                )
+            )
+            for _ in range(2)
+        ]
+
+    assert results == [
+        {"success": True, "copied": 0, "reason": "no_answered_qa"},
+        {"success": True, "copied": 0, "reason": "no_answered_qa"},
+    ]
+
+    async with db_factory() as db:
+        comments = (
+            await db.execute(select(Comment).where(Comment.card_id == card_id))
+        ).scalars().all()
+
+    assert comments == []

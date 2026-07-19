@@ -28,6 +28,7 @@ from okto_pulse.core.composition import RuntimeComposition, RuntimeProviderMissi
 from okto_pulse.core.ports.runtime_workers import (
     RuntimeWorkerRegistry,
     RuntimeWorkerSpec,
+    WorkerDrainIncomplete,
 )
 
 _STARTUP_EVENTS = [
@@ -457,6 +458,38 @@ async def test_runtime_worker_registry_stop_priority_preserves_dispatcher_first(
         "stop:cleanup_worker",
         "stop:consolidation_worker",
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_registry_retains_handle_on_native_drain_timeout() -> None:
+    handle = object()
+
+    async def _stop(_handle: object) -> None:
+        raise WorkerDrainIncomplete(
+            family="consolidation_worker",
+            phase="test_drain",
+            pending_tasks=1,
+            pending_operations=1,
+            timeout_seconds=0.01,
+        )
+
+    registry = RuntimeWorkerRegistry(
+        (
+            RuntimeWorkerSpec(
+                family="consolidation_worker",
+                start=lambda: handle,
+                stop=_stop,
+            ),
+        )
+    )
+    await registry.start_all()
+
+    failures = await registry.stop_all()
+
+    assert len(failures) == 1
+    assert failures[0].resource_close_unsafe is True
+    assert registry.get_handle("consolidation_worker") is handle
+    assert registry.active_families == ("consolidation_worker",)
 
 
 def test_runtime_worker_boundary_gate_real_core_tree_passes() -> None:

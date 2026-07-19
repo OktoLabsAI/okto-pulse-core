@@ -1,0 +1,92 @@
+"""Transport-neutral MCP Outcome V2 contract."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from okto_pulse.core.mcp.outcome import (
+    McpToolOutcome,
+    coerce_mcp_tool_outcome,
+)
+
+
+@pytest.mark.parametrize(
+    ("payload", "code", "retryable"),
+    [
+        ({"error": "API key authentication required"}, "authentication_required", False),
+        ({"error": "Invalid status; value is required"}, "validation_failed", False),
+        ({"error": "Card not found"}, "not_found", False),
+        ({"error": "Spec is locked"}, "resource_locked", True),
+        ({"error": "Validation gate blocked"}, "gate_blocked", False),
+        ({"error": "Expected version conflict"}, "version_conflict", True),
+    ],
+)
+def test_legacy_failures_map_to_stable_error_codes(payload, code, retryable):
+    outcome = coerce_mcp_tool_outcome(json.dumps(payload), tool_name="probe")
+    assert outcome.is_error is True
+    assert outcome.code == code
+    assert outcome.retryable is retryable
+    assert outcome.structured_content(tool_name="probe")["data"] == payload
+
+
+def test_nested_structured_error_preserves_domain_code_and_message():
+    payload = {
+        "error": {
+            "code": "invalid_artifact_ref",
+            "message": "Use spec:<uuid> or card:<uuid>.",
+        }
+    }
+
+    outcome = coerce_mcp_tool_outcome(payload, tool_name="related_context")
+
+    assert outcome.is_error is True
+    assert outcome.code == "invalid_artifact_ref"
+    assert outcome.message == "Use spec:<uuid> or card:<uuid>."
+
+
+def test_action_required_is_not_protocol_error_and_has_replay_instruction():
+    outcome = coerce_mcp_tool_outcome(
+        json.dumps(
+            {
+                "error": "architecture_warning_acknowledgement_required",
+                "ack_token": "ack-1",
+            }
+        ),
+        tool_name="okto_pulse_update_architecture",
+    )
+    body = outcome.structured_content(tool_name="okto_pulse_update_architecture")
+    assert outcome.is_error is False
+    assert body["outcome"] == "action_required"
+    assert body["retryable"] is True
+    assert body["next_action"] == {
+        "rel": "retry_with_confirmation",
+        "tool": "okto_pulse_update_architecture",
+        "arguments": {"ack_token": "ack-1"},
+    }
+
+
+def test_direct_action_outcome_derives_next_action_at_projection_time():
+    outcome = McpToolOutcome.action_required(
+        {"confirmation_id": "confirm-1"},
+        code="confirmation_required",
+    )
+    assert outcome.structured_content(tool_name="destructive_tool")["next_action"] == {
+        "rel": "retry_with_confirmation",
+        "tool": "destructive_tool",
+        "arguments": {"confirmation_id": "confirm-1"},
+    }
+
+
+def test_plain_text_and_malformed_json_remain_success_data():
+    for raw in ("ordinary prose", "{not-json"):
+        outcome = coerce_mcp_tool_outcome(raw)
+        assert outcome.is_error is False
+        assert outcome.payload == raw
+
+
+def test_explicit_legacy_text_is_preserved_byte_for_byte():
+    raw = '{"success":true,"value":1}'
+    outcome = coerce_mcp_tool_outcome(raw)
+    assert outcome.legacy_content() == raw

@@ -18,16 +18,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api import default_board_config as default_board_config_api
 from okto_pulse.community.api import guidelines as guidelines_api
 from okto_pulse.community.api.default_board_config import router as default_board_config_router
 from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.core.application.scope import QueryScope
-from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.community.api.auth_deps import (
+    get_realm_id,
+    require_principal,
+    require_user,
+)
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.models.schemas import GuidelineUpdate
+from okto_pulse.core.ports.authentication import Principal
 
 USER = "af23-guidelines-user"
 OTHER = "af23-guidelines-other"
@@ -56,6 +60,11 @@ def client() -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        subject=USER,
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
     app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
@@ -116,6 +125,22 @@ async def _link_guideline(board_id: str, guideline_id: str, priority: int = 1) -
         await db.commit()
 
 
+async def _share_board(board_id: str, *, permission: str) -> None:
+    from sqlalchemy_test_models import BoardShare
+
+    async with get_session_factory()() as db:
+        db.add(
+            BoardShare(
+                board_id=board_id,
+                user_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                permission=permission,
+                shared_by=OTHER,
+            )
+        )
+        await db.commit()
+
+
 @pytest.mark.asyncio
 async def test_ts1_foreign_global_guideline_get_is_fail_closed(client: TestClient) -> None:
     guideline_id = await _seed_guideline(OTHER)
@@ -142,6 +167,55 @@ async def test_ts1_foreign_board_unlink_and_priority_are_fail_closed(client: Tes
     assert unlink.json()["detail"] == "Board not found"
     assert priority.status_code == 404
     assert priority.json()["detail"] == "Board not found"
+
+
+@pytest.mark.asyncio
+async def test_shared_viewer_reads_guidelines_but_cannot_mutate(client: TestClient) -> None:
+    from sqlalchemy import select
+
+    from sqlalchemy_test_models import BoardGuideline
+
+    board_id = await _seed_board(OTHER)
+    guideline_id = await _seed_guideline(OTHER)
+    await _link_guideline(board_id, guideline_id, priority=1)
+    await _share_board(board_id, permission="viewer")
+
+    listing = client.get(f"{PREFIX}/boards/{board_id}/guidelines")
+    mutation = client.patch(
+        f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}",
+        json={"priority": 9},
+    )
+
+    assert listing.status_code == 200, listing.text
+    assert {item["id"] for item in listing.json()} == {guideline_id}
+    assert mutation.status_code == 404
+    assert mutation.json()["detail"] == "Board not found"
+    async with get_session_factory()() as db:
+        persisted = (
+            await db.execute(
+                select(BoardGuideline).where(
+                    BoardGuideline.board_id == board_id,
+                    BoardGuideline.guideline_id == guideline_id,
+                )
+            )
+        ).scalar_one()
+        assert persisted.priority == 1
+
+
+@pytest.mark.asyncio
+async def test_shared_editor_can_update_guideline_priority(client: TestClient) -> None:
+    board_id = await _seed_board(OTHER)
+    guideline_id = await _seed_guideline(OTHER)
+    await _link_guideline(board_id, guideline_id, priority=1)
+    await _share_board(board_id, permission="editor")
+
+    response = client.patch(
+        f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}",
+        json={"priority": 7},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["priority"] == 7
 
 
 @pytest.mark.asyncio

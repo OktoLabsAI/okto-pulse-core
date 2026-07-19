@@ -19,19 +19,22 @@ working e a asserção canonical-only (predicado fail-closed centralizado) falha
 
 from __future__ import annotations
 
-import asyncio
+import math
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.cypher_templates import layer_filter_clause
 from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
 from kg_schema_testing import bootstrap_board_graph, open_board_connection
+from okto_pulse.core.application.domain_event_delivery import DRAIN_BATCH_SIZE
 from okto_pulse.core.application.processors.consolidation import _process_queue_entry
 from sqlalchemy_test_models import (
     Board,
     ConsolidationQueue,
+    DomainEventHandlerExecution,
     DomainEventRow,
     Spec,
     SpecStatus,
@@ -102,8 +105,13 @@ async def _approve_via_validation_gate(db_factory, board_id: str, card_id: str) 
         rg = ResourceGateService(db)
         for rt in ("architecture", "mockup", "knowledge_base"):
             await rg.mark_not_applicable(
-                board_id, "card", card_id, rt, "owner-valdone",
-                justification=f"{rt} n/a nesta regressão", source_channel="ui",
+                board_id,
+                "card",
+                card_id,
+                rt,
+                "owner-valdone",
+                justification=f"{rt} n/a nesta regressão",
+                source_channel="ui",
             )
         result = await svc.submit_task_validation(
             card_id,
@@ -124,23 +132,34 @@ async def _approve_via_validation_gate(db_factory, board_id: str, card_id: str) 
     return result
 
 
-def _count_nodes(board_id: str, ref_prefix: str, *, canonical_only: bool) -> int:
-    cypher = "MATCH (n) WHERE n.source_artifact_ref STARTS WITH $ref "
-    params: dict = {"ref": ref_prefix}
-    if canonical_only:
-        # Mesmo predicado fail-closed de produção (bug 07bdf670).
-        cypher += f"AND {layer_filter_clause('n')} "
-        params["graph_layer"] = "canonical"
-    cypher += "RETURN count(n)"
-    with open_board_connection(board_id) as (_db, conn):
-        res = conn.execute(cypher, params)
-        try:
-            return int(res.get_next()[0]) if res.has_next() else 0
-        finally:
+async def _count_nodes(
+    board_id: str,
+    ref_prefix: str,
+    *,
+    canonical_only: bool,
+) -> int:
+    def _query() -> int:
+        cypher = "MATCH (n) WHERE n.source_artifact_ref STARTS WITH $ref "
+        params: dict = {"ref": ref_prefix}
+        if canonical_only:
+            # Mesmo predicado fail-closed de produção (bug 07bdf670).
+            cypher += f"AND {layer_filter_clause('n')} "
+            params["graph_layer"] = "canonical"
+        cypher += "RETURN count(n)"
+        with open_board_connection(board_id) as (_db, conn):
+            res = conn.execute(cypher, params)
             try:
-                res.close()
-            except Exception:
-                pass
+                return int(res.get_next()[0]) if res.has_next() else 0
+            finally:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+
+    return await run_blocking_graph_io(
+        _query,
+        task_name="test.validation-done.count-nodes",
+    )
 
 
 @pytest.mark.asyncio
@@ -156,16 +175,21 @@ async def test_validation_gate_emits_card_moved_done(db_factory):
 
     async with db_factory() as db:
         rows = (
-            await db.execute(
-                select(DomainEventRow).where(
-                    DomainEventRow.board_id == board_id,
-                    DomainEventRow.event_type == "card.moved",
+            (
+                await db.execute(
+                    select(DomainEventRow).where(
+                        DomainEventRow.board_id == board_id,
+                        DomainEventRow.event_type == "card.moved",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     done_moves = [
-        r for r in rows
+        r
+        for r in rows
         if (r.payload_json or {}).get("from_status") == "validation"
         and (r.payload_json or {}).get("to_status") == "done"
         and (r.payload_json or {}).get("card_id") == card_id
@@ -183,29 +207,45 @@ async def test_validation_gate_promotes_card_to_canonical(db_factory):
     configure_real_graph_test_kg_registry()
     board_id = f"valdone-{uuid.uuid4().hex[:10]}"
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="test.validation-done.bootstrap-board",
+    )
     card_id = await _seed_board_spec_card(db_factory, board_id, spec_id)
 
     await _approve_via_validation_gate(db_factory, board_id, card_id)
 
     # O ConsolidationEnqueuer consome os DomainEventRow via dispatcher.
     dispatcher = build_test_event_processor(db_factory)
-    try:
-        await dispatcher.recover_orphans()
-        await dispatcher.process_batch()
-        await asyncio.sleep(0.5)
-    finally:
-        pass
+    await dispatcher.recover_orphans()
+    async with db_factory() as db:
+        initial_pending = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(DomainEventHandlerExecution)
+                    .where(DomainEventHandlerExecution.status == "pending")
+                )
+            ).scalar_one()
+        )
+    max_batches = max(1, math.ceil(initial_pending / DRAIN_BATCH_SIZE))
+    for _ in range(max_batches):
+        if await dispatcher.process_batch() == 0:
+            break
     async with db_factory() as db:
         card_q = (
-            await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_type == "card",
-                    ConsolidationQueue.artifact_id == card_id,
+            (
+                await db.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.artifact_type == "card",
+                        ConsolidationQueue.artifact_id == card_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert card_q, (
         "ConsolidationEnqueuer não enfileirou o card após card.moved "
         "(defeito de re-enfileiramento na transição via validation gate)"
@@ -214,20 +254,24 @@ async def test_validation_gate_promotes_card_to_canonical(db_factory):
     # Drena a entry do card pelo worker real.
     async with db_factory() as db:
         entry = (
-            await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_type == "card",
-                    ConsolidationQueue.artifact_id == card_id,
+            (
+                await db.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.artifact_type == "card",
+                        ConsolidationQueue.artifact_id == card_id,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         ok = await _process_queue_entry(db, entry)
     assert ok is True, "worker falhou ao consolidar o card done"
 
     ref_prefix = f"card:{card_id}"
-    total = _count_nodes(board_id, ref_prefix, canonical_only=False)
-    canonical = _count_nodes(board_id, ref_prefix, canonical_only=True)
+    total = await _count_nodes(board_id, ref_prefix, canonical_only=False)
+    canonical = await _count_nodes(board_id, ref_prefix, canonical_only=True)
 
     assert total > 0, "o card não materializou nenhum node (teste vacuoso)"
     assert canonical > 0, (
@@ -261,7 +305,9 @@ def test_ts2_manifest_includes_done_card_as_canonical():
             "status": "in_progress",
         },
     ]
-    result = RebuildSourceEnumerator(source_store=lambda _b: rows).enumerate(board_id="b1")
+    result = RebuildSourceEnumerator(source_store=lambda _b: rows).enumerate(
+        board_id="b1"
+    )
 
     canonical = {r.source_ref: r for r in result.sources}
     assert "task:t-done" in canonical, "card done não entrou em canonical_sources"

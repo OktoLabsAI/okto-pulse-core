@@ -117,6 +117,82 @@ def test_resource_file_has_frontmatter(rel_path: str) -> None:
     )
 
 
+def test_cards_workflow_defers_to_typed_transition_read_model() -> None:
+    content = (RESOURCES_DIR / "workflows" / "cards.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "A normal card follows `not_started → started → in_progress`" in content
+    assert "only when the transition tool advertises that edge" in content
+    assert (
+        '`okto_pulse_move_card(status="in_progress")` → begin work'
+        not in content
+    )
+
+
+def test_destructive_ops_documents_auditable_fallback_without_fake_comments() -> None:
+    content = (RESOURCES_DIR / "reference" / "destructive_ops.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "board-scoped audit card" in content
+    assert "exact target type + id" in content
+    assert "never" in content and "unsupported comment call" in content
+
+
+def test_design_system_board_docs_match_live_single_link_schema() -> None:
+    content = (
+        RESOURCES_DIR / "reference" / "tool-docs" / "board.md"
+    ).read_text(encoding="utf-8")
+    link = content.split("## `okto_pulse_link_board_design_system`", 1)[1].split(
+        "## `okto_pulse_unlink_board_design_system`", 1
+    )[0]
+    unlink = content.split("## `okto_pulse_unlink_board_design_system`", 1)[1].split(
+        "## `okto_pulse_get_board_design_system`", 1
+    )[0]
+
+    assert "no priority argument" in link
+    assert "inline Design" in link and "same board" in link
+    assert "no design_system_id argument" in unlink
+
+
+def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() -> None:
+    for filename, short_name in (
+        ("qa_ask.md", "ask"),
+        ("spec_entity_remove.md", "remove_spec_entity"),
+    ):
+        content = (
+            RESOURCES_DIR / "reference" / "tool-families" / filename
+        ).read_text(encoding="utf-8")
+        assert f"Registry-only short name: `{short_name}`" in content
+        assert "not** an MCP" in content
+        assert "does not appear in `tools/list`" in content
+
+
+@pytest.mark.parametrize(
+    ("filename", "tool_name"),
+    (
+        ("comment.md", "okto_pulse_add_choice_comment"),
+        ("ideation.md", "okto_pulse_ask_ideation_choice_question"),
+        ("refinement.md", "okto_pulse_ask_refinement_choice_question"),
+        ("spec.md", "okto_pulse_ask_spec_choice_question"),
+    ),
+)
+def test_choice_tool_docs_explain_structured_options_json(
+    filename: str,
+    tool_name: str,
+) -> None:
+    content = (
+        RESOURCES_DIR / "reference" / "tool-docs" / filename
+    ).read_text(encoding="utf-8")
+    section = content.split(f"## `{tool_name}`", 1)[1].split("\n## `", 1)[0]
+
+    assert "options_json: Preferred structured options" in section
+    assert "native array" in section
+    assert '"recommended":true' in section
+    assert "takes precedence over options" in section
+
+
 # ---------------------------------------------------------------------------
 # 3. Root agent_instructions.md must be ≤500 lines
 # ---------------------------------------------------------------------------
@@ -229,6 +305,42 @@ def test_load_resource_file_cache_idempotent() -> None:
         "_load_resource_file() should return identical content on repeat calls."
     )
     assert len(first) > 0, "stories.md returned empty content — file may be missing."
+
+
+def test_related_context_resources_require_typed_artifact_references() -> None:
+    """Workflow examples must match the boundary's typed-anchor contract."""
+    from okto_pulse.core.mcp import server as _srv
+
+    specs = _srv._load_resource_file("workflows/specs.md")
+    refinements = _srv._load_resource_file("workflows/refinements.md")
+    kg_workflow = _srv._load_resource_file("workflows/kg.md")
+    kg_tool_docs = _srv._load_resource_file("reference/tool-docs/kg.md")
+
+    assert 'artifact_id="spec:<uuid>"' in specs
+    assert "`spec:<uuid>` or `card:<uuid>`" in refinements
+    assert 'artifact_id="spec:<uuid>"' in kg_workflow
+    assert '"card:<uuid>"' in kg_workflow
+    assert "Typed source reference: ``spec:<uuid>`` or ``card:<uuid>``" in kg_tool_docs
+
+    stale_examples = ("artifact_id=<spec_id>", "<formalized_node_or_artifact_id>")
+    for body in (specs, refinements, kg_workflow, kg_tool_docs):
+        assert not any(stale in body for stale in stale_examples)
+
+
+def test_stage3_resources_document_canonical_constraint_id_discovery() -> None:
+    """Stage 3 must not force clients to guess worker-local constraint ids."""
+    from okto_pulse.core.mcp import server as _srv
+
+    specs = _srv._load_resource_file("workflows/specs.md")
+    kg_workflow = _srv._load_resource_file("workflows/kg.md")
+    kg_tool_docs = _srv._load_resource_file("reference/tool-docs/kg.md")
+
+    for body in (specs, kg_workflow, kg_tool_docs):
+        assert "canonical graph" in body
+        assert "source_artifact_ref" in body
+        assert "include_working=true" in body
+    assert "RETURN c.id AS id" in kg_workflow
+    assert 'params={"prefix":"spec:<spec-id>:"}' in kg_workflow
 
 
 # ---------------------------------------------------------------------------

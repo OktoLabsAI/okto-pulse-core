@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ContextManager, Protocol, runtime_checkable
 
 from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphHandle
 from okto_pulse.core.kg.interfaces.graph_runtime_store import (
@@ -12,11 +12,15 @@ from okto_pulse.core.kg.interfaces.graph_runtime_store import (
 from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 
 
+GLOBAL_DISCOVERY_WRITER_SCOPE = "_global"
+GLOBAL_DISCOVERY_WRITER_ARTIFACT_ID = "kg_single_writer"
+
+
 @runtime_checkable
 class GlobalDiscoveryRuntime(Protocol):
     """Edition-owned runtime for the cross-board discovery graph."""
 
-    def state(self) -> GraphRuntimeState: ...
+    def state(self, *, generation: str | None = None) -> GraphRuntimeState: ...
 
     def bootstrap(self) -> GraphHandle: ...
 
@@ -54,7 +58,7 @@ class GlobalDiscoveryRuntime(Protocol):
         name: str,
         summary: str,
         summary_embedding: list[float],
-        decision_delta: int,
+        decision_count: int,
         synced_at: str,
     ) -> None: ...
 
@@ -72,7 +76,55 @@ class GlobalDiscoveryRuntime(Protocol):
         created_at: str,
     ) -> str: ...
 
+    def replace_decision_digest_identity(
+        self,
+        *,
+        digest_id: str,
+        board_id: str,
+        original_node_id: str,
+        title: str,
+        summary: str,
+        node_type: str,
+        graph_layer: str,
+        embedding: list[float],
+        created_at: str,
+    ) -> int:
+        """Converge one semantic source identity to one physical digest row."""
+        ...
+
+    def delete_decision_digests_guarded(
+        self,
+        *,
+        board_id: str,
+        original_node_ids: tuple[str, ...],
+        include_malformed: bool = False,
+    ) -> int:
+        """Delete stale identities only when no derived relations would be lost."""
+        ...
+
     def link_board_digest(self, *, board_id: str, digest_id: str) -> None: ...
+
+    def normalize_board_digest_link(
+        self,
+        *,
+        board_id: str,
+        digest_id: str,
+    ) -> int:
+        """Converge all inbound Board links for one digest to the correct one."""
+        ...
+
+    def delete_invalid_board_digest_links(
+        self,
+        *,
+        board_id: str,
+        expected_digest_ids: tuple[str, ...],
+    ) -> int:
+        """Remove only invalid outgoing Board links, preserving digest nodes."""
+        ...
+
+    def post_write_verification_scope(self) -> ContextManager[None]:
+        """Serialize flush, close/reopen and fresh verification with writers."""
+        ...
 
     def flush_after_write_batch(self) -> None: ...
 
@@ -81,4 +133,8 @@ class GlobalDiscoveryRuntime(Protocol):
     def purge(self, *, reason: str = "manual") -> GraphPurgeResult: ...
 
 
-__all__ = ["GlobalDiscoveryRuntime"]
+__all__ = [
+    "GLOBAL_DISCOVERY_WRITER_ARTIFACT_ID",
+    "GLOBAL_DISCOVERY_WRITER_SCOPE",
+    "GlobalDiscoveryRuntime",
+]

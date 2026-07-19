@@ -40,7 +40,7 @@ returns `unsupported_projection` with the 3-value `supported_profiles` list.
 
 ## Envelope metadata (shared contract SC1)
 
-Every projected response carries:
+`summary` and `detail` responses carry a nested `projection` object with:
 
 - `profile` — the profile that produced this shape.
 - `outcome` — `ok` or `error` (canonical success key).
@@ -51,7 +51,20 @@ Every projected response carries:
 - `follow_up` — compact, machine-readable next-step affordances, e.g.
   `{ "rel": "read_full_context", "target_ref": "okto_pulse_get_task_context" }`.
 
-## Context dedup in `summary` (`get_task_context` / `get_spec_context`)
+`full` returns the complete modern payload and `legacy` preserves the prior
+payload exactly, so those two profiles do not inject the nested projection
+object. At the MCP transport boundary, every non-legacy call is still wrapped
+once by the `okto-pulse.mcp-tool-outcome` V2 envelope, whose `meta` identifies
+the contract and tool.
+
+## Context tools
+
+`get_task_context` and `get_spec_context` default to `summary` for exploration.
+`get_ideation_context`, `get_refinement_context`, and `get_sprint_context`
+default to `full` for backward compatibility, but now accept the same four
+profiles and return the same `unsupported_projection` error for invalid values.
+
+## Context dedup in `summary`
 
 Under `summary`/`detail` the two high-frequency context tools deduplicate the
 largest repeated blocks. **Nothing is lost** — every body stays reachable via

@@ -14,9 +14,20 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
+async def _ensure_board(db, board_id: str) -> None:
+    """Materialize the board parent used by FK-backed operational rows."""
+    from sqlalchemy_test_models import Board
+
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name=f"DLQ fixture {board_id}", owner_id="dlq-agent"))
+        await db.flush()
+
+
 async def _insert_dlq_row(db, board_id: str, idx: int) -> str:
     """Insert one fabricated DLQ row + return its id."""
     from sqlalchemy_test_models import ConsolidationDeadLetter
+
+    await _ensure_board(db, board_id)
     row_id = f"dlq_test_{uuid.uuid4().hex[:8]}_{idx}"
     row = ConsolidationDeadLetter(
         id=row_id,
@@ -91,6 +102,7 @@ async def test_ts2_empty_board_returns_empty_rows():
     board_id = f"board-empty-{uuid.uuid4().hex[:8]}"
     factory = get_session_factory()
     async with factory() as db:
+        await _ensure_board(db, board_id)
         result = await list_dead_letter_rows(db, board_id)
 
     # `items` is the additive AC6 alias of `rows` (spec 007d1308, c5dec85a) —
@@ -146,6 +158,7 @@ async def test_malformed_error_payload_is_normalised():
     board_id = f"board-malformed-{uuid.uuid4().hex[:8]}"
     factory = get_session_factory()
     async with factory() as db:
+        await _ensure_board(db, board_id)
         db.add(
             ConsolidationDeadLetter(
                 id=f"dlq-malformed-{uuid.uuid4().hex[:8]}",
@@ -192,6 +205,7 @@ async def test_reprocess_moves_dlq_row_back_to_queue():
     dlq_id = f"dlq-reprocess-{uuid.uuid4().hex[:8]}"
     factory = get_session_factory()
     async with factory() as db:
+        await _ensure_board(db, board_id)
         db.add(
             ConsolidationDeadLetter(
                 id=dlq_id,

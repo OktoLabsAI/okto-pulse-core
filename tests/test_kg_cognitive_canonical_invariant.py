@@ -20,6 +20,7 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     _apply_graph_node_create,
@@ -131,6 +132,26 @@ def _get_decision_layer_maturity(
     return None, None
 
 
+async def _seed_spec_root_and_decision_async(
+    board_id: str,
+    spec_ref: str,
+) -> tuple[str, str]:
+    return await run_blocking_graph_io(
+        lambda: _seed_spec_root_and_decision(board_id, spec_ref),
+        task_name="tests.cognitive_canonical.seed_spec_root_and_decision",
+    )
+
+
+async def _get_decision_layer_maturity_async(
+    board_id: str,
+    source_ref: str,
+) -> tuple[str | None, str | None]:
+    return await run_blocking_graph_io(
+        lambda: _get_decision_layer_maturity(board_id, source_ref),
+        task_name="tests.cognitive_canonical.get_decision_layer_maturity",
+    )
+
+
 # ---------------------------------------------------------------------------
 # ts_4fa16fe7 (card 5ba8555a) — cognitive working fails WITHOUT mutating session
 # ---------------------------------------------------------------------------
@@ -189,7 +210,9 @@ async def test_accepted_cognitive_candidate_persists_canonical_eligible(
     configure_real_graph_test_kg_registry()
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     spec_ref = f"spec:{spec_id}"
-    _root_id, existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
+    _root_id, existing_decision_id = await _seed_spec_root_and_decision_async(
+        board_id, spec_ref
+    )
     decision_ref = f"{spec_ref}:decision:canon"
 
     async with db_factory() as db:
@@ -251,7 +274,9 @@ async def test_accepted_cognitive_candidate_persists_canonical_eligible(
         )
 
     assert commit.connectivity["passed"] is True
-    layer, maturity = _get_decision_layer_maturity(board_id, decision_ref)
+    layer, maturity = await _get_decision_layer_maturity_async(
+        board_id, decision_ref
+    )
     assert layer == "canonical"
     assert maturity == MATURITY_CANONICAL_ELIGIBLE
 

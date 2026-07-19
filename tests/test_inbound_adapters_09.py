@@ -37,7 +37,7 @@ from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.models import BoardCreate, IdeationMove
 from sqlalchemy_test_models import Board, Ideation, IdeationStatus
-from okto_pulse.core.services import BoardService, IdeationService
+from okto_pulse.core.services import BoardService
 from okto_pulse.core.services.board_governance import BoardGovernanceService
 from okto_pulse.core.services.main import AmbiguityGateError
 from okto_pulse.core.services.resource_gate import ResourceGateError
@@ -376,4 +376,4 @@ async def test_mcp_submit_spec_validation_missing_spec_envelope(db_factory, _stu
     )
     # Inline MCP validation passes; the use case pre-check raises EntityNotFoundError
     # which the tool maps to the JSON error envelope (uniform not-found wording).
-    assert "error" in result
+    assert result == {"error": "Spec not found"}

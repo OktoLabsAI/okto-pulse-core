@@ -184,9 +184,10 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
         family_id="test_scenario",
         eligible=False,
         target_types=("test_scenario",),
-        operations=("add", "update_status", "list"),
+        operations=("add", "execute_evidence", "update_status", "list"),
         legacy_aliases=(
             "okto_pulse_add_test_scenario",
+            "okto_pulse_execute_test_scenario_evidence",
             "okto_pulse_update_test_scenario_status",
             "okto_pulse_list_test_scenarios",
         ),

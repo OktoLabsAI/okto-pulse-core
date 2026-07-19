@@ -221,9 +221,8 @@ async def test_ac16_priority_high_for_cancelled_cards(db_factory, s2_clean):
 # ----------------------------------------------------------------------
 
 
-def test_ac17_attempt_entry_schema_has_5_keys():
-    """AC17: each entry in the DLQ errors[] array has EXACTLY the 5 fixed
-    keys (attempt, occurred_at, error_type, message, traceback)."""
+def test_ac17_attempt_entry_schema_includes_recovery_contract():
+    """DLQ entries preserve the legacy fields plus typed recovery metadata."""
     entry = build_attempt_entry(
         attempt=3,
         error_type="RuntimeError",
@@ -232,11 +231,15 @@ def test_ac17_attempt_entry_schema_has_5_keys():
     )
     assert set(entry.keys()) == {
         "attempt", "occurred_at", "error_type", "message", "traceback",
+        "recovery_class", "reason_code", "replay_safe", "correlation_id",
     }
     assert entry["attempt"] == 3
     assert entry["error_type"] == "RuntimeError"
     assert entry["message"] == "something went wrong"
     assert entry["traceback"] is None
+    assert entry["recovery_class"] == "invalid_payload"
+    assert entry["reason_code"] == "kg_recovery.invalid_payload"
+    assert entry["replay_safe"] is False
     # ISO8601 UTC parseable by datetime.fromisoformat
     parsed = datetime.fromisoformat(entry["occurred_at"])
     assert parsed.tzinfo is not None
@@ -303,10 +306,18 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
     set_barrier_mode(BarrierMode.STRICT)
     events: list[str] = []
 
-    async def fake_commit(req, *, agent_id, db):
+    class RecordingBlockingExecution:
+        async def run(self, operation):
+            events.append("executor")
+            return operation()
+
+    executor = RecordingBlockingExecution()
+
+    async def fake_commit(req, *, agent_id, db, blocking_execution):
         guard = require_write_token(BOARD_ID_S2)
         assert guard is not None
         assert guard.operation == worker.CONSOLIDATION_COMMIT_OPERATION
+        assert blocking_execution is executor
         events.append(f"commit:{req.session_id}")
         return SimpleNamespace(nodes_added=1, edges_added=2)
 
@@ -335,6 +346,7 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
             session_id="session-guarded",
             summary_text="guarded commit",
             db=object(),
+            blocking_execution=executor,
         )
     finally:
         registry.graph_lifecycle.apply_step = original_step_adapter
@@ -345,7 +357,7 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
     # (checkpoint/flush/fsync) — o close_reopen_probe sai do hot path e fica
     # exclusivo das lanes de rebuild/recovery (DEFAULT_REQUIRED_STEPS).
     assert events == (
-        ["commit:session-guarded"]
+        ["commit:session-guarded", "executor"]
         + [f"step:{step}" for step in worker.WORKER_COMMIT_LIFECYCLE_STEPS]
     )
 
@@ -366,7 +378,8 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
         LifecycleStepResult,
     )
 
-    async def fake_commit(req, *, agent_id, db):
+    async def fake_commit(req, *, agent_id, db, blocking_execution):
+        assert blocking_execution is None
         return SimpleNamespace(nodes_added=1, edges_added=0)
 
     def fake_lifecycle_step(board_id: str, graph_type: str, step: str):
@@ -442,6 +455,7 @@ async def test_ac7_route_to_dead_letter_moves_row_with_history(
             assert err["attempt"] == i
             assert set(err.keys()) == {
                 "attempt", "occurred_at", "error_type", "message", "traceback",
+                "recovery_class", "reason_code", "replay_safe", "correlation_id",
             }
         assert dlq_row.errors[-1]["message"] == "final failure on attempt 5"
         assert dlq_row.errors[-1]["error_type"] == "ValueError"

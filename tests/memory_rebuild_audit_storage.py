@@ -18,6 +18,7 @@ from okto_pulse.core.kg.interfaces.cognitive_pending_work import (
     CognitivePendingWorkProvider,
 )
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    AtomicConsumeOutcome,
     RebuildAuditArtifactStore,
     RebuildAuditArtifactStoreResolver,
     RebuildAuditKey,
@@ -88,6 +89,43 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
                     rows.append(copy.deepcopy(payload))
             return rows
 
+    def list_json_bounded(
+        self,
+        prefix: RebuildAuditKey,
+        *,
+        max_results: int,
+        max_document_bytes: int,
+    ) -> Sequence[dict[str, Any]]:
+        if max_results < 1:
+            raise ValueError("max_results must be positive")
+        if max_document_bytes < 1:
+            raise ValueError("max_document_bytes must be positive")
+        with self._lock:
+            rows: list[dict[str, Any]] = []
+            for raw_key, payload in sorted(self._records.items()):
+                key = RebuildAuditKey(
+                    namespace=raw_key[0],
+                    board_id=raw_key[1],
+                    kg_generation_id=raw_key[2],
+                    artifact_id=raw_key[3],
+                )
+                if not self._matches(prefix, key):
+                    continue
+                if len(rows) >= max_results:
+                    raise RuntimeError(
+                        "rebuild_audit_result_limit_exceeded: "
+                        f"more than {max_results} documents match {prefix.to_ref()}"
+                    )
+                encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
+                if len(encoded) > max_document_bytes:
+                    raise RuntimeError(
+                        "rebuild_audit_document_limit_exceeded: "
+                        f"document is {len(encoded)} bytes; "
+                        f"limit={max_document_bytes}"
+                    )
+                rows.append(copy.deepcopy(payload))
+            return rows
+
     def replace_json(
         self,
         key: RebuildAuditKey,
@@ -101,6 +139,71 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             )
             self._records[identity] = copy.deepcopy(dict(next_payload))
             return copy.deepcopy(next_payload)
+
+    def replace_json_with_revision(
+        self,
+        *,
+        key: RebuildAuditKey,
+        transform: Callable[[dict[str, Any] | None], dict[str, Any]],
+        revision_key: RebuildAuditKey,
+        revision_transition: Callable[
+            [dict[str, Any] | None],
+            tuple[dict[str, Any], dict[str, Any]],
+        ],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        with self._lock:
+            identity = self._identity(key)
+            revision_identity = self._identity(revision_key)
+            current = self._records.get(identity)
+            current_revision = self._records.get(revision_identity)
+            next_payload = dict(
+                transform(copy.deepcopy(current) if current is not None else None)
+            )
+            pending_revision, committed_revision = revision_transition(
+                copy.deepcopy(current_revision)
+                if current_revision is not None
+                else None
+            )
+            self._records[revision_identity] = copy.deepcopy(
+                dict(pending_revision)
+            )
+            self._records[identity] = copy.deepcopy(next_payload)
+            self._records[revision_identity] = copy.deepcopy(
+                dict(committed_revision)
+            )
+            return (
+                copy.deepcopy(next_payload),
+                copy.deepcopy(dict(committed_revision)),
+            )
+
+    def consume_json_with_receipt(
+        self,
+        *,
+        source_key: RebuildAuditKey,
+        expected_source: Mapping[str, Any],
+        receipt_key: RebuildAuditKey,
+        receipt_payload: Mapping[str, Any],
+    ) -> AtomicConsumeOutcome:
+        with self._lock:
+            source_identity = self._identity(source_key)
+            receipt_identity = self._identity(receipt_key)
+            expected = dict(expected_source)
+            receipt = dict(receipt_payload)
+            current_receipt = self._records.get(receipt_identity)
+            if current_receipt is not None:
+                if current_receipt != receipt:
+                    return "receipt_conflict"
+                if self._records.get(source_identity) == expected:
+                    self._records.pop(source_identity, None)
+                return "receipt_exists"
+            current_source = self._records.get(source_identity)
+            if current_source is None:
+                return "source_missing"
+            if current_source != expected:
+                return "source_mismatch"
+            self._records[receipt_identity] = copy.deepcopy(receipt)
+            self._records.pop(source_identity, None)
+            return "consumed"
 
     def quarantine_storage(
         self,

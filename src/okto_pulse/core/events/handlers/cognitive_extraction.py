@@ -148,8 +148,12 @@ class CognitiveExtractionHandler:
         *,
         content_hash: str | None = None,
     ) -> None:
-        """Ledger-only (RKG-03 / FR2): open pending cognitive closeout work the
-        dedicated worker will drain. Best-effort — never fails the event drain."""
+        """Open ledger work without hiding an enqueue failure.
+
+        The event drain remains resilient, while the structured warning is an
+        observable technical signal.  The readiness evaluator independently
+        detects the resulting missing work item and fails closed.
+        """
         try:
             from okto_pulse.core.kg.cognitive_closeout_production import (
                 open_cognitive_closeout_pending,
@@ -164,9 +168,17 @@ class CognitiveExtractionHandler:
                 content_hash=content_hash,
             )
         except Exception as exc:  # pragma: no cover - defensive
-            logger.debug(
+            logger.exception(
                 "cognitive.closeout.open_pending_failed source_ref=%s err=%s",
-                source_ref, exc,
+                source_ref,
+                exc,
+                extra={
+                    "event": "cognitive.closeout.open_pending_failed",
+                    "board_id": board_id,
+                    "source_ref": source_ref,
+                    "artifact_type": artifact_type,
+                    "error_type": type(exc).__name__,
+                },
             )
 
     # ------------------------------------------------------------------

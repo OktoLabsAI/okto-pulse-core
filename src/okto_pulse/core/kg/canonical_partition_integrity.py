@@ -35,7 +35,6 @@ and the connectivity guard is never bypassed (no new edge, no mutation).
 
 from __future__ import annotations
 
-import threading
 from typing import Any
 
 
@@ -333,6 +332,27 @@ def evaluate_canonical_learning_publication(
     return (False, classification)
 
 
+async def canonical_debt_exclusions(
+    db: object, *, board_id: str
+) -> dict[str, str]:
+    """Map the board's open relational canonical debt by artifact id."""
+
+    out: dict[str, str] = {}
+    try:
+        debt = await list_canonical_debt(db, board_id=board_id, limit=200)
+        for row in debt.items:
+            if str(row.get("failure_reason") or "") != HISTORICAL_DEBT_REASON:
+                continue
+            if str(row.get("canonical_state") or "") not in OPEN_STATES:
+                continue
+            aid = normalize_cognitive_artifact_id(str(row.get("source_ref") or ""))
+            if aid:
+                out[aid] = HISTORICAL_DEBT_REASON
+    except Exception:  # pragma: no cover - compatibility read remains best-effort
+        pass
+    return out
+
+
 async def pending_or_debt_exclusions(
     db: object, *, board_id: str
 ) -> dict[str, str]:
@@ -347,21 +367,7 @@ async def pending_or_debt_exclusions(
     completeness check still excludes genuine working-only Learnings, so a missing
     overlay never *masks* an incomplete fact, it only narrows the #3 belt.
     """
-    out: dict[str, str] = {}
-
-    # canonical_debt (open) — outranks.
-    try:
-        debt = await list_canonical_debt(db, board_id=board_id, limit=200)
-        for row in debt.items:
-            if str(row.get("failure_reason") or "") != HISTORICAL_DEBT_REASON:
-                continue
-            if str(row.get("canonical_state") or "") not in OPEN_STATES:
-                continue
-            aid = normalize_cognitive_artifact_id(str(row.get("source_ref") or ""))
-            if aid:
-                out[aid] = HISTORICAL_DEBT_REASON
-    except Exception:  # pragma: no cover - defensive; overlay is best-effort
-        pass
+    out = await canonical_debt_exclusions(db, board_id=board_id)
 
     # cognitive_pending holds (working-only reason, still active).
     try:
@@ -871,6 +877,7 @@ __all__ = [
     "STATUS_MIXED_DEFERRED",
     "STATUS_PROVENANCE_ONLY",
     "classify_canonical_learning",
+    "canonical_debt_exclusions",
     "emit_canonical_partition_integrity_sample",
     "evaluate_canonical_learning_publication",
     "get_canonical_partition_integrity_count",

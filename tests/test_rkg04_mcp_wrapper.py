@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
-from sqlalchemy_test_models import ConsolidationDeadLetter, ConsolidationQueue
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter, ConsolidationQueue
 from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
     CONNECTIVITY_GUARD_SIGNATURE,
 )
@@ -45,6 +45,15 @@ async def _call(mcp_server, name, **kwargs):
 async def _seed_dlq(db_factory, board_id, *, error=CONNECTIVITY_GUARD_SIGNATURE) -> str:
     aid = uuid.uuid4().hex
     async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name="RKG-04 MCP fixture",
+                    owner_id="rkg04-mcp-test-agent",
+                )
+            )
+            await db.flush()
         row = ConsolidationDeadLetter(
             board_id=board_id, artifact_type="spec", artifact_id=aid, attempts=5,
             errors=[{"attempt": 5, "error_type": "KGPrimitiveError", "message": error}],

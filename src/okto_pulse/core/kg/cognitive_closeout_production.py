@@ -43,6 +43,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
     require_rebuild_audit_artifact_store,
 )
+from okto_pulse.core.ports.bug_cognitive_context import BugCognitiveContext
 
 # Stable generation id used to open cognitive-closeout pending work when a board
 # has no rebuild generation yet (#4: latest when it exists, this otherwise — one
@@ -252,6 +253,7 @@ async def run_cognitive_closeout(
     summariser: Any = None,
     bug_probe: Any = None,
     decision_ref: str | None = None,
+    bug_context: BugCognitiveContext | None = None,
 ) -> CloseoutResult:
     """Produce + persist cognitive closeout for one done artifact, returning an
     honest outcome. ``persister`` owns the candidate→board graph→queryable step."""
@@ -270,6 +272,22 @@ async def run_cognitive_closeout(
         return result
 
     if artifact_type == "bug":
+        if bug_context is not None:
+            from okto_pulse.core.kg.bug_cognitive_closure import (
+                classify_bug_evidence,
+            )
+
+            evidence = classify_bug_evidence(None, context=bug_context)
+            if not evidence["evidence_ready"]:
+                result.outcome = (
+                    CloseoutOutcome.EXTRACTOR_TRIGGERED_BUT_NOT_PERSISTED.value
+                )
+                missing = ",".join(evidence["missing_categories"])
+                result.detail = (
+                    "bug cognitive context is not closeout-ready "
+                    f"(missing={missing or 'context_verification'})"
+                )
+                return result
         action_plan = (bug_action_plan or "").strip()
         if len(action_plan) < LEARNING_MIN_ACTION_PLAN_CHARS:
             result.outcome = CloseoutOutcome.NOT_APPLICABLE.value

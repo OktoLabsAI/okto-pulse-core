@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from okto_pulse.core.kg.curation_policy import CurationPolicyError
@@ -35,6 +35,31 @@ class CoreKnowledgeGraphOperations:
         from okto_pulse.core.services.application_kg import (
             evaluate_bug_cognitive_closure,
         )
+        from okto_pulse.core.ports.bug_cognitive_context import (
+            BugCognitiveContext,
+            resolve_bug_cognitive_context_assembler,
+        )
+
+        # The edition owns all relational/graph reads.  Both REST and MCP enter
+        # through this operation, so they receive the exact same immutable
+        # snapshot.  Direct Core policy tests may inject ``bug_context``.
+        if "bug_context" not in request:
+            assembler = resolve_bug_cognitive_context_assembler()
+            if assembler is not None:
+                board_id = str(request.get("board_id") or "")
+                bug_id = str(request.get("bug_id") or "")
+                try:
+                    request["bug_context"] = await assembler.assemble(
+                        self.__relational_context,
+                        board_id=board_id,
+                        bug_id=bug_id,
+                    )
+                except Exception as exc:
+                    request["bug_context"] = BugCognitiveContext.unavailable(
+                        board_id=board_id,
+                        bug_id=bug_id,
+                        error=f"context_assembly_failed:{type(exc).__name__}",
+                    )
 
         return await evaluate_bug_cognitive_closure(
             readiness_service,
@@ -448,6 +473,184 @@ class CoreKnowledgeGraphOperations:
             limit=limit,
             offset=offset,
         )
+
+    async def enqueue_digest_layer_reconciliation(
+        self, *, board_id: str, reason: str
+    ) -> dict[str, object]:
+        """Request board/digest layer convergence through the durable outbox.
+
+        The relational context stays private to this transaction-scoped service;
+        the application use case depends only on this Core-owned capability.
+        """
+        from okto_pulse.core.kg.canonical_demotion_global_sync import (
+            enqueue_digest_layer_reconciliation,
+        )
+
+        return await enqueue_digest_layer_reconciliation(
+            self.__relational_context,
+            board_id=board_id,
+            reason=reason,
+        )
+
+    async def build_global_discovery_recovery_seeds(
+        self,
+        *,
+        boards: list[tuple[str, str, str]],
+        captured_cognitive_pending_exclusions: Mapping[
+            str, Mapping[str, str]
+        ],
+    ) -> tuple[object, ...]:
+        """Build candidate inputs from the UoW-bound relational snapshot."""
+
+        from okto_pulse.core.ports.global_discovery_recovery_control import (
+            GlobalDiscoveryRecoveryBoardSeedService,
+        )
+
+        board_rows = sorted(boards)
+        board_ids = [str(row[0]) for row in board_rows]
+        if len(set(board_ids)) != len(board_ids):
+            raise ValueError("recovery boards must be unique")
+        if set(captured_cognitive_pending_exclusions) != set(board_ids):
+            raise ValueError(
+                "captured cognitive exclusions must cover every recovery board"
+            )
+        seed_service = GlobalDiscoveryRecoveryBoardSeedService()
+        rows = []
+        for board_id, board_name, board_summary in board_rows:
+            rows.append(
+                await seed_service.build_board_seed(
+                    self.__relational_context,
+                    board_id=board_id,
+                    board_name=board_name,
+                    board_summary=board_summary,
+                    captured_cognitive_pending_exclusions=(
+                        captured_cognitive_pending_exclusions[board_id]
+                    ),
+                )
+            )
+        return tuple(rows)
+
+    async def list_global_outbox_dead_letters(
+        self,
+        *,
+        limit: int,
+        cursor: str | None,
+        classification: str | None,
+    ) -> dict[str, object]:
+        from okto_pulse.core.application.global_outbox_dead_letter import (
+            GlobalOutboxDeadLetterOperations,
+        )
+        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
+
+        return await GlobalOutboxDeadLetterOperations(
+            store=get_global_outbox_store()
+        ).list(
+            context=self.__relational_context,
+            limit=limit,
+            cursor=cursor,
+            classification=classification,
+        )
+
+    async def reprocess_global_outbox_dead_letters(
+        self,
+        *,
+        dead_letter_ids: list[str],
+        reason: str,
+    ) -> dict[str, object]:
+        from okto_pulse.core.application.global_outbox_dead_letter import (
+            GlobalOutboxDeadLetterOperations,
+        )
+        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
+
+        return await GlobalOutboxDeadLetterOperations(
+            store=get_global_outbox_store()
+        ).reprocess(
+            context=self.__relational_context,
+            dead_letter_ids=dead_letter_ids,
+            reason=reason,
+        )
+
+    async def verify_global_outbox_dead_letters(
+        self,
+        *,
+        dead_letter_ids: list[str],
+    ) -> dict[str, object]:
+        from okto_pulse.core.application.global_outbox_dead_letter import (
+            GlobalOutboxDeadLetterOperations,
+        )
+        from okto_pulse.core.ports.global_outbox import get_global_outbox_store
+
+        return await GlobalOutboxDeadLetterOperations(
+            store=get_global_outbox_store()
+        ).verify(
+            context=self.__relational_context,
+            dead_letter_ids=dead_letter_ids,
+        )
+
+    async def recover_global_discovery_delivery(
+        self, *, run_id: str, board_ids: list[str], dead_letter_limit: int
+    ) -> dict[str, object]:
+        """Requeue only global-open DLQ rows and reconcile every manifest board."""
+
+        from okto_pulse.core.application.processors.global_outbox import (
+            GLOBAL_OPEN_ERROR_CODES,
+            _is_retryable_global_open_error,
+        )
+        from okto_pulse.core.kg.canonical_demotion_global_sync import (
+            enqueue_digest_layer_reconciliation,
+        )
+        from okto_pulse.core.ports.global_outbox import (
+            GlobalOutboxDeadLetterCursor,
+            get_global_outbox_store,
+        )
+
+        limit = max(1, min(int(dead_letter_limit), 5000))
+        store = get_global_outbox_store()
+        cursor = None
+        selected = []
+        while len(selected) < limit:
+            page_limit = min(100, limit - len(selected))
+            rows = list(
+                await store.list_dead_letters(
+                    self.__relational_context,
+                    limit=page_limit,
+                    error_markers=GLOBAL_OPEN_ERROR_CODES,
+                    after=cursor,
+                )
+            )
+            if not rows:
+                break
+            selected.extend(
+                row for row in rows if _is_retryable_global_open_error(row.last_error)
+            )
+            cursor = GlobalOutboxDeadLetterCursor(
+                created_at=rows[-1].created_at,
+                id=rows[-1].id,
+            )
+            if len(rows) < page_limit:
+                break
+        selected = selected[:limit]
+        for row in selected:
+            row.retry_count = 0
+            row.last_error = None
+        if selected:
+            await store.save_events(self.__relational_context, selected)
+
+        enqueued = 0
+        for board_id in sorted(set(board_ids)):
+            await enqueue_digest_layer_reconciliation(
+                self.__relational_context,
+                board_id=board_id,
+                reason="global_discovery_recovery",
+                idempotency_key=f"{run_id}:{board_id}",
+            )
+            enqueued += 1
+        return {
+            "run_id": run_id,
+            "dead_letters_requeued": len(selected),
+            "board_reconciliations_enqueued": enqueued,
+            "selective_error_class": "global_open",
+        }
 
     async def queue_health(self) -> dict[str, object]:
         from okto_pulse.core.services.queue_health_service import get_queue_health

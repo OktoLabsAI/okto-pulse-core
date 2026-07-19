@@ -20,6 +20,7 @@ from okto_pulse.community.api import analytics as analytics_api
 from okto_pulse.community.api.analytics import router as analytics_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu2a-user"
@@ -112,6 +113,30 @@ async def test_all_helpers_404_for_non_owned_board() -> None:
         resp = client.get(_url(board_id, leaf))
         assert resp.status_code == 404, (leaf, resp.text)
         assert resp.json()["detail"] == "Board not found", leaf
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("permission", ["viewer", "editor", "admin"])
+async def test_all_helpers_read_shared_board(permission: str) -> None:
+    from sqlalchemy_test_models import BoardShare
+
+    board_id = await _seed_board(owner=OTHER)
+    async with get_session_factory()() as db:
+        db.add(
+            BoardShare(
+                board_id=board_id,
+                user_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                permission=permission,
+                shared_by=OTHER,
+            )
+        )
+        await db.commit()
+
+    client = _client(USER)
+    for leaf in ("blockers", "funnel", "velocity", "coverage"):
+        resp = client.get(_url(board_id, leaf))
+        assert resp.status_code == 200, (leaf, resp.text)
 
 
 @pytest.mark.asyncio

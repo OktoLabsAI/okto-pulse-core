@@ -8,9 +8,10 @@ coercion, the board-scoping envelopes, and the MCP aggregation projections (the
 ``get_ideation`` refinements/specs/qa_items shape is built by the inbound adapter while
 the lazy ORM relationships are live — the Codex-approved get_spec_context precedent).
 
-Ideation family traits (from the inventory): board-scope is ASYMMETRIC — present on
-the read/aggregation + mutate-by-id tools (get/update/delete/get_context/...), absent
-on create; create uses ``skip_ownership_check=True`` like the MCP spec create.
+Ideation family traits: every path carrying a board requires actor, command, and the
+canonical parent to agree before a read payload, mutation, commit, or activity log.
+Create still uses ``skip_ownership_check=True`` like the MCP spec create, but only
+after validating the actor/command board pair.
 """
 
 from __future__ import annotations
@@ -24,6 +25,15 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+
+
+def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
+    """Require the MCP actor, command, and canonical parent to share a board."""
+    return bool(
+        record
+        and actor.board_id == board_id
+        and record.board_id == board_id
+    )
 
 
 # --- create (skip_ownership; adapter keeps the IdeationCreate build + envelope) -
@@ -53,6 +63,9 @@ class McpCreateIdeationUseCase:
     async def execute(
         self, command: McpCreateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpCreateIdeationResult:
+        if actor.board_id != command.board_id:
+            return McpCreateIdeationResult(None)
+
         ideation = await uow.services.ideations.create_ideation(
             command.board_id,
             actor.actor_id,
@@ -93,19 +106,20 @@ class McpGetIdeationUseCase:
         ideation = await uow.services.ideations.get_ideation(
             command.ideation_id
         )
-        if not ideation or ideation.board_id != command.board_id:
+        if not _in_board_scope(ideation, command.board_id, actor):
             raise EntityNotFoundError("ideation", command.ideation_id)
         return McpGetIdeationResult(ideation)
 
 
-# --- update (no board-scope, like update_spec) -------------------------------
+# --- update -----------------------------------------------------------------
 
 
 class McpUpdateIdeationCommand:
-    __slots__ = ("ideation_id", "payload")
+    __slots__ = ("ideation_id", "board_id", "payload")
 
-    def __init__(self, ideation_id: str, payload: Any) -> None:
+    def __init__(self, ideation_id: str, board_id: str, payload: Any) -> None:
         self.ideation_id = ideation_id
+        self.board_id = board_id
         self.payload = payload
 
 
@@ -117,16 +131,17 @@ class McpUpdateIdeationResult:
 
 
 class McpUpdateIdeationUseCase:
-    """Update an ideation (write). A ``None`` result (missing) is
-    ``EntityNotFoundError`` -> the adapter's ``"Ideation not found"``. NO board-scope
-    (matches the legacy ``update_ideation``, which scopes only by id). The adapter
-    builds the ``IdeationUpdate`` (non-empty fields + ``"No fields to update"``) and
-    the id/title/status/version/complexity envelope."""
+    """Update a board-scoped ideation after a canonical-parent preflight."""
 
     async def execute(
         self, command: McpUpdateIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateIdeationResult:
-        ideation = await uow.services.ideations.update_ideation(
+        service = uow.services.ideations
+        existing = await service.get_ideation(command.ideation_id)
+        if not _in_board_scope(existing, command.board_id, actor):
+            raise EntityNotFoundError("ideation", command.ideation_id)
+
+        ideation = await service.update_ideation(
             command.ideation_id, actor.actor_id, command.payload
         )
         if not ideation:
@@ -135,14 +150,15 @@ class McpUpdateIdeationUseCase:
         return McpUpdateIdeationResult(ideation)
 
 
-# --- delete (cascade refinements/Q&A; commit always for legacy parity) -------
+# --- delete (cascade refinements/Q&A) ---------------------------------------
 
 
 class McpDeleteIdeationCommand:
-    __slots__ = ("ideation_id",)
+    __slots__ = ("ideation_id", "board_id")
 
-    def __init__(self, ideation_id: str) -> None:
+    def __init__(self, ideation_id: str, board_id: str) -> None:
         self.ideation_id = ideation_id
+        self.board_id = board_id
 
 
 class McpDeleteIdeationResult:
@@ -153,28 +169,33 @@ class McpDeleteIdeationResult:
 
 
 class McpDeleteIdeationUseCase:
-    """Delete an ideation and CASCADE its refinements/Q&A. Commits regardless (legacy
-    parity — a missing ideation is a no-op commit); the adapter maps
-    ``deleted=False`` -> ``"Ideation not found"``."""
+    """Delete a board-scoped ideation and CASCADE its refinements/Q&A."""
 
     async def execute(
         self, command: McpDeleteIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteIdeationResult:
-        deleted = await uow.services.ideations.delete_ideation(
+        service = uow.services.ideations
+        existing = await service.get_ideation(command.ideation_id)
+        if not _in_board_scope(existing, command.board_id, actor):
+            return McpDeleteIdeationResult(False)
+
+        deleted = await service.delete_ideation(
             command.ideation_id, actor.actor_id
         )
-        await commit(uow)
+        if deleted:
+            await commit(uow)
         return McpDeleteIdeationResult(deleted)
 
 
-# --- snapshot / history (reads, no board-scope, no commit) -------------------
+# --- snapshot / history -----------------------------------------------------
 
 
 class McpGetIdeationSnapshotCommand:
-    __slots__ = ("ideation_id", "version")
+    __slots__ = ("ideation_id", "board_id", "version")
 
-    def __init__(self, ideation_id: str, version: int) -> None:
+    def __init__(self, ideation_id: str, board_id: str, version: int) -> None:
         self.ideation_id = ideation_id
+        self.board_id = board_id
         self.version = version
 
 
@@ -186,25 +207,28 @@ class McpGetIdeationSnapshotResult:
 
 
 class McpGetIdeationSnapshotUseCase:
-    """Fetch the immutable ideation snapshot at a version (read, no commit). A ``None``
-    result maps to the adapter's ``"Snapshot v<version> not found"``. No board-scope
-    (legacy parity — the snapshot is keyed by ideation_id + version). The adapter
-    coerces ``version`` to int and builds the snapshot envelope."""
+    """Fetch an immutable snapshot after validating its ideation parent."""
 
     async def execute(
         self, command: McpGetIdeationSnapshotCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetIdeationSnapshotResult:
-        snapshot = await uow.services.ideations.get_snapshot(
+        service = uow.services.ideations
+        ideation = await service.get_ideation(command.ideation_id)
+        if not _in_board_scope(ideation, command.board_id, actor):
+            return McpGetIdeationSnapshotResult(None)
+
+        snapshot = await service.get_snapshot(
             command.ideation_id, command.version
         )
         return McpGetIdeationSnapshotResult(snapshot)
 
 
 class McpGetIdeationHistoryCommand:
-    __slots__ = ("ideation_id", "limit")
+    __slots__ = ("ideation_id", "board_id", "limit")
 
-    def __init__(self, ideation_id: str, limit: int) -> None:
+    def __init__(self, ideation_id: str, board_id: str, limit: int) -> None:
         self.ideation_id = ideation_id
+        self.board_id = board_id
         self.limit = limit
 
 
@@ -216,13 +240,17 @@ class McpGetIdeationHistoryResult:
 
 
 class McpGetIdeationHistoryUseCase:
-    """List an ideation's change history (read, no commit). No board-scope (legacy
-    parity). The adapter coerces ``limit`` to int and builds the history envelope."""
+    """List an ideation's history after validating its canonical parent."""
 
     async def execute(
         self, command: McpGetIdeationHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetIdeationHistoryResult:
-        entries = await uow.services.ideations.list_history(
+        service = uow.services.ideations
+        ideation = await service.get_ideation(command.ideation_id)
+        if not _in_board_scope(ideation, command.board_id, actor):
+            raise EntityNotFoundError("ideation", command.ideation_id)
+
+        entries = await service.list_history(
             command.ideation_id, command.limit
         )
         return McpGetIdeationHistoryResult(entries)
@@ -261,7 +289,7 @@ class McpGetIdeationKnowledgeUseCase:
     ) -> McpGetIdeationKnowledgeResult:
 
         ideation = await uow.services.ideations.get_ideation(command.ideation_id)
-        if not ideation or ideation.board_id != command.board_id:
+        if not _in_board_scope(ideation, command.board_id, actor):
             raise EntityNotFoundError("ideation", command.ideation_id)
         kb = await uow.services.ideation_knowledge.get_knowledge(command.knowledge_id)
         if not kb or kb.ideation_id != command.ideation_id:
@@ -295,7 +323,7 @@ class McpAddIdeationKnowledgeUseCase:
     ) -> McpAddIdeationKnowledgeResult:
 
         ideation = await uow.services.ideations.get_ideation(command.ideation_id)
-        if not ideation or ideation.board_id != command.board_id:
+        if not _in_board_scope(ideation, command.board_id, actor):
             raise EntityNotFoundError("ideation", command.ideation_id)
         kb = await uow.services.ideation_knowledge.create_knowledge(
             command.ideation_id, actor.actor_id, command.kb_data
@@ -329,7 +357,7 @@ class McpDeleteIdeationKnowledgeUseCase:
     ) -> McpDeleteIdeationKnowledgeResult:
 
         ideation = await uow.services.ideations.get_ideation(command.ideation_id)
-        if not ideation or ideation.board_id != command.board_id:
+        if not _in_board_scope(ideation, command.board_id, actor):
             raise EntityNotFoundError("ideation", command.ideation_id)
         kservice = uow.services.ideation_knowledge
         kb = await kservice.get_knowledge(command.knowledge_id)
@@ -370,7 +398,12 @@ class McpAskIdeationChoiceQuestionUseCase:
     async def execute(
         self, command: McpAskIdeationChoiceQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAskIdeationChoiceQuestionResult:
-
+        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
+        if not _in_board_scope(ideation, command.board_id, actor):
+            return McpAskIdeationChoiceQuestionResult(
+                None,
+                ideation_not_found=True,
+            )
         qa = await uow.services.ideation_qa.create_question(
             command.ideation_id, actor.actor_id, command.data
         )
@@ -443,6 +476,13 @@ class McpAnswerIdeationQuestionUseCase:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
         service = uow.services.ideation_qa
+        qa_item = await service.get_question(command.qa_id)
+        if not qa_item or qa_item.ideation_id != command.ideation_id:
+            return McpAnswerIdeationQuestionResult(None, qa_not_found=True)
+        ideation = await uow.services.ideations.get_ideation(qa_item.ideation_id)
+        if not _in_board_scope(ideation, command.board_id, actor):
+            return McpAnswerIdeationQuestionResult(None, qa_not_found=True)
+
         try:
             qa = await service.answer_question(
                 command.qa_id,
@@ -457,13 +497,13 @@ class McpAnswerIdeationQuestionUseCase:
         if not qa:
             return McpAnswerIdeationQuestionResult(None, qa_not_found=True)
         await uow.services.boards._log_activity(
-            board_id=command.board_id,
+            board_id=ideation.board_id,
             action="ideation_question_answered",
             actor_type="agent",
             actor_id=actor.actor_id,
             actor_name=actor.actor_name,
             details={
-                "ideation_id": command.ideation_id,
+                "ideation_id": qa_item.ideation_id,
                 "qa_id": command.qa_id,
                 "answer": (command.answer_text or "")[:100],
                 "selected": command.selected_list,
@@ -496,17 +536,24 @@ class McpDeleteIdeationQuestionUseCase:
     async def execute(
         self, command: McpDeleteIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteIdeationQuestionResult:
+        service = uow.services.ideation_qa
+        qa_item = await service.get_question(command.qa_id)
+        if not qa_item or qa_item.ideation_id != command.ideation_id:
+            return McpDeleteIdeationQuestionResult(qa_not_found=True)
+        ideation = await uow.services.ideations.get_ideation(qa_item.ideation_id)
+        if not _in_board_scope(ideation, command.board_id, actor):
+            return McpDeleteIdeationQuestionResult(qa_not_found=True)
 
-        deleted = await uow.services.ideation_qa.delete_question(command.qa_id)
+        deleted = await service.delete_question(command.qa_id)
         if not deleted:
             return McpDeleteIdeationQuestionResult(qa_not_found=True)
         await uow.services.boards._log_activity(
-            board_id=command.board_id,
+            board_id=ideation.board_id,
             action="ideation_question_deleted",
             actor_type="agent",
             actor_id=actor.actor_id,
             actor_name=actor.actor_name,
-            details={"ideation_id": command.ideation_id, "qa_id": command.qa_id},
+            details={"ideation_id": qa_item.ideation_id, "qa_id": command.qa_id},
         )
         await commit(uow)
         return McpDeleteIdeationQuestionResult()
@@ -547,11 +594,11 @@ class McpEvaluateIdeationUseCase:
         )
 
         service = uow.services.ideations
+        ideation = await service.get_ideation(command.ideation_id)
+        if not _in_board_scope(ideation, command.board_id, actor):
+            raise EntityNotFoundError("ideation", command.ideation_id)
 
         if command.scope:
-            ideation = await service.get_ideation(command.ideation_id)
-            if not ideation or ideation.board_id != command.board_id:
-                raise EntityNotFoundError("ideation", command.ideation_id)
             existing_scope = ideation.scope_assessment or {}
             existing_scope.update(command.scope)
             ideation.scope_assessment = existing_scope

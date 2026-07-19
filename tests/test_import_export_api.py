@@ -18,7 +18,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import require_principal, require_user
 from okto_pulse.community.api.default_board_config import (
     router as default_board_config_router,
 )
@@ -27,13 +27,19 @@ from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.community.api.presets import router as presets_router
 from okto_pulse.core.infra.database import get_session_factory
+from okto_pulse.core.ports.authentication import Principal
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from sqlalchemy_test_models import Board
 
 PREFIX = "/api/v1"
 
 
-def _client(user_id: str) -> TestClient:
+def _client(
+    user_id: str,
+    *,
+    roles: tuple[str, ...] = ("admin",),
+    permissions: dict | None = None,
+) -> TestClient:
     app = FastAPI()
     # Same registration order as api/router.py: default_board_config BEFORE
     # guidelines so literal /guidelines/* routes are not shadowed.
@@ -56,6 +62,14 @@ def _client(user_id: str) -> TestClient:
 
     app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[require_user] = lambda: user_id
+    claims: dict = {"roles": list(roles)}
+    if permissions is not None:
+        claims["permissions"] = permissions
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        subject=user_id,
+        realm_id="local",
+        claims=claims,
+    )
     return TestClient(app)
 
 
@@ -440,6 +454,66 @@ def test_presets_import_dry_run_and_invalid_item():
 # ===========================================================================
 # Default board configuration
 # ===========================================================================
+
+
+def test_board_config_global_writes_require_real_admin_principal():
+    user = _uid("impexp-dbc-denied")
+    client = _client(user, roles=())
+    before = len(client.get(f"{PREFIX}/default-board-config/versions").json()["versions"])
+    template_id = f"missing-{uuid.uuid4().hex}"
+    calls = (
+        (
+            f"{PREFIX}/default-board-config/versions",
+            {"json": {"settings_payload": {"max_scenarios_per_card": 7}}},
+        ),
+        (
+            f"{PREFIX}/default-board-config/import",
+            {
+                "json": {
+                    "schema_version": "1",
+                    "kind": "board_config",
+                    "items": [
+                        {
+                            "scope": "global",
+                            "settings_payload": {"max_scenarios_per_card": 7},
+                            "is_active": False,
+                        }
+                    ],
+                }
+            },
+        ),
+        (f"{PREFIX}/default-board-config/versions/{template_id}/activate", {}),
+        (f"{PREFIX}/default-board-config/versions/{template_id}/deactivate", {}),
+        (
+            f"{PREFIX}/default-board-configurations/{template_id}/guidelines",
+            {"json": {"guideline_default_refs": []}},
+        ),
+        (
+            f"{PREFIX}/default-board-configurations/{template_id}/design-system",
+            {"json": {"design_system_id": f"missing-{uuid.uuid4().hex}"}},
+        ),
+    )
+    for url, kwargs in calls:
+        denied = client.post(url, **kwargs)
+        assert denied.status_code == 403, denied.text
+        assert "admin or operator capability" in denied.json()["detail"]
+
+    after = len(client.get(f"{PREFIX}/default-board-config/versions").json()["versions"])
+    assert after == before
+
+    capability_client = _client(
+        _uid("impexp-dbc-capability"),
+        roles=(),
+        permissions={"admin": {"catalog": {"write": True}}},
+    )
+    allowed = capability_client.post(
+        f"{PREFIX}/default-board-config/versions",
+        json={
+            "scope": f"capability-{uuid.uuid4().hex}",
+            "settings_payload": {"max_scenarios_per_card": 6},
+        },
+    )
+    assert allowed.status_code == 200, allowed.text
 
 
 def test_board_config_roundtrip_versions_and_active():

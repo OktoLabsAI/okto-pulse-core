@@ -109,7 +109,7 @@ def _seed_items(store, board, gen, specs):
 async def _board(db_factory, board_id):
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
-            db.add(Board(id=board_id, name="action-center", owner_id="owner-ac"))
+            db.add(Board(id=board_id, name="action-center", owner_id="rest-user"))
             await db.commit()
 
 

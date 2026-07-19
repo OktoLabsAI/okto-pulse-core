@@ -49,6 +49,7 @@ from okto_pulse.core.application.use_cases.base import (
     PermissionDeniedError,
     commit,
 )
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
@@ -56,26 +57,45 @@ from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 # --- shared transport-free guards (legacy _ensure_board / _require_permissions)
 
 
-def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
-    return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
+_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
+
+
+def _query_scope_for_actor(
+    actor: ActorContext,
+    *,
+    board_id: str | None = None,
+    board_access_granted: bool = False,
+) -> QueryScope:
+    return ActorScope.from_context(actor).query_scope(
+        target_board_id=board_id,
+        allowed_board_ids={board_id} if board_access_granted and board_id else None,
+        require_ownership=not board_access_granted,
+    )
 
 
 async def _ensure_board(
-    services: ApplicationServiceCatalog,
+    uow: PulseUnitOfWork,
     board_id: str,
-    user_id: str,
+    actor: ActorContext,
     *,
-    query_scope: QueryScope | None = None,
-) -> None:
+    write: bool = False,
+    denied_entity_type: str | None = None,
+    denied_entity_id: str | None = None,
+) -> Any:
     """Reproduce the legacy ``_ensure_board``: raise ``EntityNotFoundError("board")``
     (adapter → 404 "Board not found") when the board is missing / not owned."""
-    board = await services.boards.get_board(
+    board = await load_accessible_board(
+        uow,
         board_id,
-        user_id,
-        query_scope=query_scope,
+        actor,
+        allowed_share_permissions=_WRITE_SHARE_PERMISSIONS if write else None,
     )
     if not board:
-        raise EntityNotFoundError("board", board_id)
+        raise EntityNotFoundError(
+            denied_entity_type or "board",
+            denied_entity_id or board_id,
+        )
+    return board
 
 
 async def _require_permissions(
@@ -142,12 +162,15 @@ class CreateTopicUseCase:
     async def execute(
         self, command: CreateTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateTopicResult:
-        await _ensure_board(uow.services, command.board_id, actor.actor_id)
+        await _ensure_board(uow, command.board_id, actor, write=True)
         await _require_permissions(
             uow.services, actor.actor_id, command.board_id, "topic.entity.create"
         )
         topic = await uow.services.stories.create_topic(
-            command.board_id, actor.actor_id, command.data
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            skip_ownership_check=True,
         )
         if not topic:
             raise EntityNotFoundError("board", command.board_id)
@@ -180,7 +203,7 @@ class ListTopicsUseCase:
     async def execute(
         self, command: ListTopicsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListTopicsResult:
-        await _ensure_board(uow.services, command.board_id, actor.actor_id)
+        await _ensure_board(uow, command.board_id, actor)
         await _require_permissions(
             uow.services, actor.actor_id, command.board_id, "topic.entity.read"
         )
@@ -227,7 +250,14 @@ class UpdateTopicUseCase:
         topic = await service.get_topic(command.topic_id)
         if not topic:
             raise EntityNotFoundError("topic", command.topic_id)
-        await _ensure_board(uow.services, topic.board_id, actor.actor_id)
+        await _ensure_board(
+            uow,
+            topic.board_id,
+            actor,
+            write=True,
+            denied_entity_type="topic",
+            denied_entity_id=command.topic_id,
+        )
         update_data = command.data.model_dump(exclude_unset=True)
         await _require_permissions(
             uow.services,
@@ -271,7 +301,14 @@ class DeleteTopicUseCase:
         topic = await service.get_topic(command.topic_id)
         if not topic:
             raise EntityNotFoundError("topic", command.topic_id)
-        await _ensure_board(uow.services, topic.board_id, actor.actor_id)
+        await _ensure_board(
+            uow,
+            topic.board_id,
+            actor,
+            write=True,
+            denied_entity_type="topic",
+            denied_entity_id=command.topic_id,
+        )
         await _require_permissions(
             uow.services, actor.actor_id, topic.board_id, "topic.entity.delete"
         )
@@ -317,7 +354,17 @@ class MergeTopicsUseCase:
         source = await service.get_topic(command.source_topic_id)
         if not source:
             raise EntityNotFoundError("topic", command.source_topic_id)
-        await _ensure_board(uow.services, source.board_id, actor.actor_id)
+        await _ensure_board(
+            uow,
+            source.board_id,
+            actor,
+            write=True,
+            denied_entity_type="topic",
+            denied_entity_id=command.source_topic_id,
+        )
+        target = await service.get_topic(command.target_topic_id)
+        if target is None or target.board_id != source.board_id:
+            raise EntityNotFoundError("topic", command.target_topic_id)
         await _require_permissions(
             uow.services, actor.actor_id, source.board_id, "topic.entity.merge"
         )
@@ -363,12 +410,17 @@ class CreateStoryUseCase:
     async def execute(
         self, command: CreateStoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateStoryResult:
-        await _ensure_board(uow.services, command.board_id, actor.actor_id)
+        await _ensure_board(uow, command.board_id, actor, write=True)
         await _require_permissions(
             uow.services, actor.actor_id, command.board_id, "story.entity.create"
         )
         service = uow.services.stories
-        story = await service.create_story(command.board_id, actor.actor_id, command.data)
+        story = await service.create_story(
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            skip_ownership_check=True,
+        )
         if not story:
             raise EntityNotFoundError("board", command.board_id)
         await commit(uow)
@@ -424,7 +476,7 @@ class ListStoriesUseCase:
     async def execute(
         self, command: ListStoriesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListStoriesResult:
-        await _ensure_board(uow.services, command.board_id, actor.actor_id)
+        await _ensure_board(uow, command.board_id, actor)
         await _require_permissions(
             uow.services, actor.actor_id, command.board_id, "story.entity.read"
         )
@@ -468,7 +520,13 @@ class GetStoryUseCase:
         story = await uow.services.stories.get_story(command.story_id)
         if not story:
             raise EntityNotFoundError("story", command.story_id)
-        await _ensure_board(uow.services, story.board_id, actor.actor_id)
+        await _ensure_board(
+            uow,
+            story.board_id,
+            actor,
+            denied_entity_type="story",
+            denied_entity_id=command.story_id,
+        )
         await _require_permissions(
             uow.services, actor.actor_id, story.board_id, "story.entity.read"
         )
@@ -511,7 +569,14 @@ class UpdateStoryUseCase:
         existing = await service.get_story(command.story_id)
         if not existing:
             raise EntityNotFoundError("story", command.story_id)
-        await _ensure_board(uow.services, existing.board_id, actor.actor_id)
+        await _ensure_board(
+            uow,
+            existing.board_id,
+            actor,
+            write=True,
+            denied_entity_type="story",
+            denied_entity_id=command.story_id,
+        )
         update_data = command.data.model_dump(exclude_unset=True)
         await _require_permissions(
             uow.services,
@@ -565,7 +630,14 @@ class MoveStoryUseCase:
         existing = await service.get_story(command.story_id)
         if not existing:
             raise EntityNotFoundError("story", command.story_id)
-        await _ensure_board(uow.services, existing.board_id, actor.actor_id)
+        await _ensure_board(
+            uow,
+            existing.board_id,
+            actor,
+            write=True,
+            denied_entity_type="story",
+            denied_entity_id=command.story_id,
+        )
         await _require_permissions(
             uow.services,
             actor.actor_id,
@@ -615,7 +687,14 @@ class ArchiveStoryUseCase:
         existing = await service.get_story(command.story_id)
         if not existing:
             raise EntityNotFoundError("story", command.story_id)
-        await _ensure_board(uow.services, existing.board_id, actor.actor_id)
+        await _ensure_board(
+            uow,
+            existing.board_id,
+            actor,
+            write=True,
+            denied_entity_type="story",
+            denied_entity_id=command.story_id,
+        )
         permission = "story.entity.archive" if command.archived else "story.entity.restore"
         await _require_permissions(
             uow.services,
@@ -668,7 +747,14 @@ class LinkStoryToIdeationUseCase:
         story = await service.get_story(command.story_id)
         if not story:
             raise EntityNotFoundError("story_or_ideation", command.story_id)
-        await _ensure_board(uow.services, story.board_id, actor.actor_id)
+        await _ensure_board(
+            uow,
+            story.board_id,
+            actor,
+            write=True,
+            denied_entity_type="story_or_ideation",
+            denied_entity_id=command.story_id,
+        )
         await _require_permissions(
             uow.services,
             actor.actor_id,
@@ -706,25 +792,73 @@ class LinkStoriesToIdeationResult:
 
 
 class LinkStoriesToIdeationUseCase:
-    """Contract-compatible bulk link of Stories to an existing Ideation (write).
-    Iterates the ``story_ids`` in order, applying the SAME per-story gate as the
-    single-link endpoint (missing story / ``None`` link →
-    ``EntityNotFoundError("story_or_ideation")``; board ownership;
-    ``story.links.ideation`` with the ``story`` state; ``ValueError`` → 400). A
-    single commit at the end, exactly as the legacy endpoint."""
+    """Atomically link several Stories to one Ideation.
+
+    Every board/ownership, permission, lifecycle, existing-link and duplicate
+    check is completed before the first service writer is called.  Besides
+    keeping the transaction atomic, that ordering prevents activity/event side
+    effects for a request whose later item is invalid.  Missing and inaccessible
+    Stories/Ideations deliberately share the ``story_or_ideation`` not-found
+    contract.
+    """
 
     async def execute(
         self, command: LinkStoriesToIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> LinkStoriesToIdeationResult:
+        from okto_pulse.core.domain.enums import IdeationStatus
         from okto_pulse.core.services.story_permissions import story_state
 
         service = uow.services.stories
-        linked_story_ids: list[str] = []
+        if len(set(command.story_ids)) != len(command.story_ids):
+            raise ValueError("Duplicate Story IDs are not allowed.")
+
+        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
+        if not ideation:
+            raise EntityNotFoundError("story_or_ideation", command.ideation_id)
+        await _ensure_board(
+            uow,
+            ideation.board_id,
+            actor,
+            write=True,
+            denied_entity_type="story_or_ideation",
+            denied_entity_id=command.ideation_id,
+        )
+
+        editable_statuses = (
+            IdeationStatus.DRAFT,
+            IdeationStatus.REVIEW,
+            IdeationStatus.APPROVED,
+            IdeationStatus.EVALUATING,
+        )
+        ideation_status = ideation.status
+        try:
+            normalized_status = IdeationStatus(ideation_status)
+        except ValueError:
+            normalized_status = None
+        if normalized_status not in editable_statuses:
+            allowed = ", ".join(status.value for status in editable_statuses)
+            current = getattr(ideation_status, "value", ideation_status)
+            raise ValueError(
+                "Story can only be linked to editable Ideations. "
+                f"Current ideation status is '{current}'. Allowed statuses: {allowed}."
+            )
+
+        # Phase 1: validate the complete request without invoking a writer.
+        preflighted_story_ids: list[str] = []
         for story_id in command.story_ids:
             story = await service.get_story(story_id)
             if not story:
                 raise EntityNotFoundError("story_or_ideation", story_id)
-            await _ensure_board(uow.services, story.board_id, actor.actor_id)
+            await _ensure_board(
+                uow,
+                story.board_id,
+                actor,
+                write=True,
+                denied_entity_type="story_or_ideation",
+                denied_entity_id=story_id,
+            )
+            if story.board_id != ideation.board_id:
+                raise EntityNotFoundError("story_or_ideation", story_id)
             await _require_permissions(
                 uow.services,
                 actor.actor_id,
@@ -733,6 +867,20 @@ class LinkStoriesToIdeationUseCase:
                 entity="story",
                 entity_status=story_state(story.status, archived=bool(story.archived)),
             )
+
+            links = list(getattr(story, "ideation_links", None) or [])
+            if links:
+                if getattr(links[0], "ideation_id", None) == command.ideation_id:
+                    raise ValueError("Story is already linked to this Ideation.")
+                raise ValueError(
+                    "Story is already linked to another Ideation. "
+                    "A Story can only link to one Ideation."
+                )
+            preflighted_story_ids.append(story_id)
+
+        # Phase 2: all inputs are known-good, so mutation may begin.
+        linked_story_ids: list[str] = []
+        for story_id in preflighted_story_ids:
             link = await service.link_story_to_ideation(
                 story_id, command.ideation_id, actor.actor_id
             )
@@ -778,12 +926,16 @@ class ConvertStoriesUseCase:
     ) -> ConvertStoriesResult:
         from okto_pulse.core.services.story_permissions import story_state
 
-        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
         await _ensure_board(
-            uow.services,
+            uow,
             command.board_id,
-            actor.actor_id,
-            query_scope=query_scope,
+            actor,
+            write=True,
+        )
+        query_scope = _query_scope_for_actor(
+            actor,
+            board_id=command.board_id,
+            board_access_granted=True,
         )
         await _require_permissions(
             uow.services, actor.actor_id, command.board_id, "story.conversion.to_ideation"

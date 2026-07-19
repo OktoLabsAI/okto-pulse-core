@@ -10,6 +10,7 @@ not a rebuild. Exercises the REAL board graph + REAL outbox + REAL global graph.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
 import sys
 import tempfile
@@ -38,7 +39,12 @@ from kg_schema_testing import (
     bootstrap_board_graph,
     open_board_connection,
 )
-from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import (
+    Board,
+    ConsolidationAudit,
+    GlobalUpdateOutbox,
+    KuzuNodeRef,
+)
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     configure_test_kg_registry,
@@ -86,6 +92,28 @@ async def _run_outbox(db_factory, board_id, refs):
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     async with db_factory() as db:
         await db.execute(delete(GlobalUpdateOutbox))
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Global Discovery Health {board_id}",
+                    owner_id="global-discovery-health-test",
+                )
+            )
+            await db.flush()
+        now = datetime.now(timezone.utc)
+        db.add(
+            ConsolidationAudit(
+                session_id=session_id,
+                board_id=board_id,
+                artifact_id="global-discovery-health",
+                artifact_type="test",
+                agent_id="global-discovery-health-test",
+                started_at=now,
+                committed_at=now,
+            )
+        )
+        await db.flush()
         for node_type, node_id in refs:
             db.add(KuzuNodeRef(
                 session_id=session_id, board_id=board_id,

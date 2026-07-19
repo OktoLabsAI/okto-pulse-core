@@ -38,6 +38,10 @@ class FakeRuntime:
         finally:
             await self._session.close()
 
+    @asynccontextmanager
+    async def cancel_safe_session_scope(self, session_factory=None):
+        yield (session_factory or self.session_factory)()
+
 
 @pytest.mark.asyncio
 async def test_get_db_delegates_cancelled_cleanup_to_runtime():

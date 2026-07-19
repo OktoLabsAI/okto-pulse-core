@@ -25,6 +25,7 @@ from okto_pulse.core.kg.canonical_stale_reconciler import (
     ACTION_ROUTED_DEBT,
     reconcile_stale_canonical,
 )
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
     _apply_graph_node_create,
     add_edge_candidate,
@@ -81,7 +82,10 @@ def _real_board_graph_registry(_kg_registry_test_fakes):
 
 async def _new_board(db_factory) -> str:
     board_id = f"r2i1-{uuid.uuid4().hex[:10]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="test.kg.r2_imp1.bootstrap_board_graph",
+    )
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
             db.add(Board(id=board_id, name="r2 imp1", owner_id=USER_ID))
@@ -171,25 +175,39 @@ async def _commit_worker_result(db_factory, board_id, agent_id, result):
         )
 
 
-def _count_canonical(board_id, node_type) -> int:
-    with open_board_connection(board_id) as (_db, conn):
-        res = conn.execute(
-            f"MATCH (n:{node_type}) WHERE n.graph_layer = $c RETURN count(n)",
-            {"c": GRAPH_LAYER_CANONICAL},
-        )
-        return int(res.get_next()[0]) if res.has_next() else 0
+async def _count_canonical(board_id, node_type) -> int:
+    def _read() -> int:
+        with open_board_connection(board_id) as (_db, conn):
+            res = conn.execute(
+                f"MATCH (n:{node_type}) WHERE n.graph_layer = $c RETURN count(n)",
+                {"c": GRAPH_LAYER_CANONICAL},
+            )
+            return int(res.get_next()[0]) if res.has_next() else 0
+
+    return await run_blocking_graph_io(
+        _read,
+        task_name="test.kg.r2_imp1.count_canonical",
+    )
 
 
-def _node_layer(board_id, node_type, node_id) -> str | None:
-    with open_board_connection(board_id) as (_db, conn):
-        res = conn.execute(
-            f"MATCH (n:{node_type} {{id: $id}}) RETURN n.graph_layer",
-            {"id": node_id},
-        )
-        return str(res.get_next()[0]) if res.has_next() else None
+async def _node_layer(board_id, node_type, node_id) -> str | None:
+    def _read() -> str | None:
+        with open_board_connection(board_id) as (_db, conn):
+            res = conn.execute(
+                f"MATCH (n:{node_type} {{id: $id}}) RETURN n.graph_layer",
+                {"id": node_id},
+            )
+            return str(res.get_next()[0]) if res.has_next() else None
+
+    return await run_blocking_graph_io(
+        _read,
+        task_name="test.kg.r2_imp1.node_layer",
+    )
 
 
-def _seed_canonical_cognitive(board_id, node_type, *, source_ref, title="cognitive node"):
+async def _seed_canonical_cognitive(
+    board_id, node_type, *, source_ref, title="cognitive node"
+):
     """Materialize a canonical cognitive node via the consolidation orchestrator
     (the R7-validated write primitive, not a raw digest seed)."""
     node_id = f"r2i1c_{uuid.uuid4().hex[:12]}"
@@ -201,12 +219,19 @@ def _seed_canonical_cognitive(board_id, node_type, *, source_ref, title="cogniti
         "priority_boost": 0.0, "human_curated": False, "embedding": [0.0] * 384,
         "graph_layer": GRAPH_LAYER_CANONICAL, "maturity_status": MATURITY_CANONICAL_ELIGIBLE,
     }
-    with open_board_connection(board_id) as (_db, kconn):
-        orch = TransactionOrchestrator(
-            graph_scope=kconn,
-            session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
-        )
-        _apply_graph_node_create(orch, node_type, node_id, attrs)
+    def _write() -> None:
+        with open_board_connection(board_id) as (_db, kconn):
+            orch = TransactionOrchestrator(
+                graph_scope=kconn,
+                session_id=f"seed_{uuid.uuid4().hex[:8]}",
+                board_id=board_id,
+            )
+            _apply_graph_node_create(orch, node_type, node_id, attrs)
+
+    await run_blocking_graph_io(
+        _write,
+        task_name="test.kg.r2_imp1.seed_canonical_cognitive",
+    )
     return node_id
 
 
@@ -229,7 +254,9 @@ async def _seed_done_spec_canonical(db_factory, board_id):
 async def test_reconcile_demotes_stale_deterministic_nodes_and_is_idempotent(db_factory):
     board_id = await _new_board(db_factory)
     spec_id, _ref = await _seed_done_spec_canonical(db_factory, board_id)
-    assert _count_canonical(board_id, "Requirement") >= 1, "pipeline must produce canonical"
+    assert await _count_canonical(board_id, "Requirement") >= 1, (
+        "pipeline must produce canonical"
+    )
 
     # Source regresses done -> draft (the real maturity signal).
     await _set_spec_status(db_factory, spec_id, "draft")
@@ -243,7 +270,7 @@ async def test_reconcile_demotes_stale_deterministic_nodes_and_is_idempotent(db_
     assert rec["source_artifact_ref"].startswith("spec:")
     assert rec["correlation_id"]
     # The deterministic canonical children are no longer canonical.
-    assert _count_canonical(board_id, "Requirement") == 0
+    assert await _count_canonical(board_id, "Requirement") == 0
 
     # Idempotent: a second sweep finds nothing to demote (already working).
     async with db_factory() as db:
@@ -263,7 +290,7 @@ async def test_fast_path_and_sweep_demote_the_same_state(db_factory):
             db, board_id=board_id, source_refs=[spec_ref],
         )
     assert fast.demoted, fast.to_dict()
-    assert _count_canonical(board_id, "Requirement") == 0
+    assert await _count_canonical(board_id, "Requirement") == 0
     # A following full sweep is a NOOP (fast-path already converged) — AC8.
     async with db_factory() as db:
         sweep = await reconcile_stale_canonical(db, board_id=board_id)
@@ -283,14 +310,16 @@ async def test_cognitive_nodes_are_never_demoted(db_factory):
     await _set_spec_status(db_factory, spec_id, "draft")
     # ... alongside a canonical cognitive Alternative whose (absent) source could
     # look stale. It must be PRESERVED, never demoted, and create NO debt.
-    alt_id = _seed_canonical_cognitive(
+    alt_id = await _seed_canonical_cognitive(
         board_id, "Alternative", source_ref=f"spec:{spec_id}:alternative:1",
     )
 
     async with db_factory() as db:
         result = await reconcile_stale_canonical(db, board_id=board_id)
 
-    assert _node_layer(board_id, "Alternative", alt_id) == GRAPH_LAYER_CANONICAL
+    assert await _node_layer(
+        board_id, "Alternative", alt_id
+    ) == GRAPH_LAYER_CANONICAL
     assert any(s["node_id"] == alt_id for s in result.skipped_cognitive)
     assert all(d["node_id"] != alt_id for d in result.demoted)
     assert result.routed_to_debt == []  # non-bug-derived -> no auto-debt (ressalva 2)
@@ -303,7 +332,7 @@ async def test_bug_derived_learning_preserved_and_routed_to_debt(db_factory):
     # Bug source is regressed (draft -> classifies working, not canonical).
     await _insert_bug_card(db_factory, board_id, bug_id, status="draft")
     learning_ref = f"card:bug:{bug_id}:learning:{uuid.uuid4().hex}"
-    learning_id = _seed_canonical_cognitive(
+    learning_id = await _seed_canonical_cognitive(
         board_id, "Learning", source_ref=learning_ref,
     )
 
@@ -311,7 +340,9 @@ async def test_bug_derived_learning_preserved_and_routed_to_debt(db_factory):
         result = await reconcile_stale_canonical(db, board_id=board_id)
 
     # The bug-derived canonical Learning is PRESERVED (never demoted) ...
-    assert _node_layer(board_id, "Learning", learning_id) == GRAPH_LAYER_CANONICAL
+    assert await _node_layer(
+        board_id, "Learning", learning_id
+    ) == GRAPH_LAYER_CANONICAL
     assert all(d["node_id"] != learning_id for d in result.demoted)
     # ... and the material irregularity is routed to R7 CanonicalDebt.
     routed = [r for r in result.routed_to_debt if r["node_id"] == learning_id]
@@ -322,4 +353,6 @@ async def test_bug_derived_learning_preserved_and_routed_to_debt(db_factory):
     async with db_factory() as db:
         result2 = await reconcile_stale_canonical(db, board_id=board_id)
     assert all(d["node_id"] != learning_id for d in result2.demoted)
-    assert _node_layer(board_id, "Learning", learning_id) == GRAPH_LAYER_CANONICAL
+    assert await _node_layer(
+        board_id, "Learning", learning_id
+    ) == GRAPH_LAYER_CANONICAL

@@ -16,6 +16,11 @@ Args:
     question: The question or prompt text displayed above the options
     options: Option labels — multi-value; formats:
         okto-pulse://reference/multivalue.
+    options_json: Preferred structured options. Pass a native array such as
+        [{"label":"Safer path","recommended":true,"tradeoff":"More setup"}].
+        A JSON-array string is accepted for compatibility. Each item requires
+        label; recommended defaults to false and tradeoff to null. A non-empty
+        options_json takes precedence over options.
     comment_type: "choice" for single-select (default) or "multi_choice" for multi-select
     allow_free_text: "true" to allow a free-text response in addition to selections
 

@@ -2178,6 +2178,57 @@ class ArchitecturePropagationBlocked(ValueError):
         return self.eligibility.to_dict()
 
 
+class ArchitectureDesignSelectionError(ValueError):
+    """An explicit Architecture selection did not resolve on the source parent.
+
+    Selection tokens are part of the public propagation contract.  Callers may use
+    a physical snapshot id, the canonical ``source_design_id``, a ``source_ref`` or
+    the Resource Gate ``architecture:<root-id>`` token.  A supplied token that does
+    not resolve is never treated as an empty successful copy: the whole operation
+    fails before eligibility checks or target writes.
+    """
+
+    code = "architecture_design_selection_invalid"
+
+    def __init__(
+        self,
+        *,
+        source_parent_type: str,
+        source_parent_id: str,
+        requested: list[str],
+        matched: list[str],
+        missing: list[str],
+    ) -> None:
+        self.source_parent_type = source_parent_type
+        self.source_parent_id = source_parent_id
+        self.requested = tuple(requested)
+        self.matched = tuple(matched)
+        self.missing = tuple(missing)
+        super().__init__(self.code)
+
+    def to_error_dict(self) -> dict[str, Any]:
+        return {
+            "error": self.code,
+            "code": self.code,
+            "detail": (
+                "One or more Architecture Design selection tokens do not resolve "
+                "on the requested source parent."
+            ),
+            "source_parent_type": self.source_parent_type,
+            "source_parent_id": self.source_parent_id,
+            "requested": list(self.requested),
+            "matched": list(self.matched),
+            "missing": list(self.missing),
+            "accepted_identity_fields": [
+                "id",
+                "source_design_id",
+                "source_ref",
+                "architecture:<root-id>",
+            ],
+            "retryable": False,
+        }
+
+
 def _propagation_remediation(
     *, blocked: bool, verdict_status: str, finding_keys: list[str]
 ) -> str | None:
@@ -2978,6 +3029,7 @@ class ArchitectureDesignRepository:
             title=design.title,
             version=design.version,
             source_ref=design.source_ref,
+            source_design_id=design.source_design_id,
             source_version=design.source_version,
             stale=False,
             breaking_change_flag=False,
@@ -3687,6 +3739,39 @@ class ArchitectureDesignRepository:
             )
 
 
+def architecture_design_identity_values(design: ArchitectureRecord) -> set[str]:
+    """Return every supported public selection token for ``design``.
+
+    ``id`` changes at every snapshot hop while ``source_design_id`` remains the
+    canonical root.  Resource Gate callers commonly hold ``architecture:<root>``
+    or ``architecture_design:<root>`` rather than the physical intermediate id,
+    so all forms intentionally converge here.
+    """
+
+    values: set[str] = set()
+
+    def add(value: Any) -> None:
+        if value in (None, ""):
+            return
+        token = str(value).strip()
+        if not token:
+            return
+        values.add(token)
+        tail = token
+        for separator in (":", "/", "\\"):
+            if separator in tail:
+                tail = tail.rsplit(separator, 1)[-1]
+        if tail:
+            values.add(tail)
+            values.add(f"architecture:{tail}")
+            values.add(f"architecture_design:{tail}")
+
+    add(design.id)
+    add(design.source_design_id)
+    add(design.source_ref)
+    return values
+
+
 class ArchitecturePropagationService:
     """Copy architecture snapshots between ceremony artifacts."""
 
@@ -3698,6 +3783,65 @@ class ArchitecturePropagationService:
     ):
         self.db = db
         self.repository = repository or ArchitectureDesignRepository(db)
+
+    async def preflight_copy_from_parent(
+        self,
+        *,
+        source_parent_type: str,
+        source_parent_id: str,
+        design_ids: list[str] | None = None,
+    ) -> list[ArchitectureRecord]:
+        """Resolve and gate a propagation selection without writing a target.
+
+        Derive flows call this before creating their target artifact, which keeps
+        invalid/foreign explicit selections and blocked sources transactionally
+        fail-closed even when a transport converts the exception to a response.
+        """
+
+        source_parent = await self._get_parent(source_parent_type, source_parent_id)
+        if source_parent is None:
+            raise ValueError(f"{source_parent_type} parent not found: {source_parent_id}")
+
+        source_designs = await self.repository.list(
+            source_parent_type,
+            source_parent_id,
+            include_payloads=True,
+        )
+        if design_ids is not None:
+            requested = list(
+                dict.fromkeys(
+                    str(item).strip()
+                    for item in design_ids
+                    if str(item).strip()
+                )
+            )
+            identities = {
+                design.id: architecture_design_identity_values(design)
+                for design in source_designs
+            }
+            matched = [
+                token
+                for token in requested
+                if any(token in design_tokens for design_tokens in identities.values())
+            ]
+            missing = [token for token in requested if token not in matched]
+            if missing:
+                raise ArchitectureDesignSelectionError(
+                    source_parent_type=source_parent_type,
+                    source_parent_id=source_parent_id,
+                    requested=requested,
+                    matched=matched,
+                    missing=missing,
+                )
+            wanted = set(requested)
+            source_designs = [
+                design
+                for design in source_designs
+                if architecture_design_identity_values(design) & wanted
+            ]
+
+        await self.assert_sources_eligible(source_designs, flow="copy_from_parent")
+        return source_designs
 
     async def copy_from_parent(
         self,
@@ -3718,21 +3862,22 @@ class ArchitecturePropagationService:
         if getattr(source_parent, "board_id") != getattr(target_parent, "board_id"):
             raise ValueError("source and target parents must belong to the same board")
 
-        source_designs = await self.repository.list(source_parent_type, source_parent_id, include_payloads=True)
-        if design_ids is not None:
-            wanted = set(design_ids)
-            source_designs = [design for design in source_designs if design.id in wanted]
-
-        # Spec B: enforce canonical propagation eligibility against every REAL source
-        # BEFORE any create/update, so a blocking source never yields a partial target
-        # snapshot. ``architecture_warning_acknowledgement`` stays audit-only here.
-        await self.assert_sources_eligible(source_designs, flow="copy_from_parent")
+        source_designs = await self.preflight_copy_from_parent(
+            source_parent_type=source_parent_type,
+            source_parent_id=source_parent_id,
+            design_ids=design_ids,
+        )
 
         copied: list[ArchitectureRecord] = []
         for source_design in source_designs:
             source_ref = self.repository.source_ref_for(source_design)
-            existing = await self._find_existing_copy(target_parent_type, target_parent_id, source_ref)
             payload = self._payload_from_source(source_design, source_ref)
+            existing = await self._find_existing_copy(
+                target_parent_type,
+                target_parent_id,
+                source_ref,
+                source_design_id=payload.get("source_design_id"),
+            )
             if architecture_warning_acknowledgement is not None:
                 payload["architecture_warning_acknowledgement"] = architecture_warning_acknowledgement
             if existing is None:
@@ -3936,16 +4081,23 @@ class ArchitecturePropagationService:
         target_parent_type: str,
         target_parent_id: str,
         source_ref: str,
+        *,
+        source_design_id: str | None = None,
     ) -> ArchitectureRecord | None:
         _, target_field = self.repository._parent_config(target_parent_type)
+        origin_filters = [_arf("source_ref", "eq", source_ref)]
+        if source_design_id:
+            origin_filters.append(
+                _arf("source_design_id", "eq", source_design_id)
+            )
         rows = await _architecture_list(
             self.db,
             "architecture_design",
             filters=(
                 _arf("parent_type", "eq", target_parent_type),
                 _arf(target_field, "eq", target_parent_id),
-                _arf("source_ref", "eq", source_ref),
             ),
+            any_filters=tuple(origin_filters),
             limit=1,
         )
         return rows[0] if rows else None

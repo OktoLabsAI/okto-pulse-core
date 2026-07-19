@@ -103,6 +103,8 @@ When the **Task Validation Gate** is enabled (`validation_config.required == tru
 
 The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"`, `"spec"`, or `"sprint"`).
 
+**Independent reviewer policy:** `reviewer_separation_mode` is resolved from the board before any task-validation mutation. The full task context projects the current caller's `reviewer_separation` decision against card creator, assignee, and executor identities. `enforce` blocks with the action-required code `reviewer_separation_required`; `warn` and `off` proceed and persist the decision in the append-only validation. Legacy persisted boards with the setting absent resolve explicitly to `off` / `legacy_absent_compat`; new boards and new default-board template versions use `enforce` unless configured otherwise.
+
 **Coverage summary tools:**
 - `okto_pulse_list_spec_evaluations(board_id, spec_id)` — evaluations history.
 - `okto_pulse_get_spec_evaluation(board_id, spec_id, evaluation_id)` — single evaluation detail.

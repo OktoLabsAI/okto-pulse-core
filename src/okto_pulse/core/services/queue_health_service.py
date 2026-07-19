@@ -16,7 +16,6 @@ hit graph backend (alert_active is computed on-read from queue_depth + alert_thr
 
 from __future__ import annotations
 
-import threading
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -30,6 +29,7 @@ from okto_pulse.core.runtime_context import (
 )
 
 from okto_pulse.core.domain.queue_health import (
+    ACTIVE_QUEUE_RANK,
     active_queue_next_action as _active_queue_next_action,
     age_seconds as _age_seconds,
     classify_active_queue,
@@ -129,6 +129,10 @@ async def get_queue_health(db: object) -> dict[str, Any]:
     claimed_count = storage.claimed_count
     claimed_boards = list(storage.claimed_boards)
     dead_letter_count = storage.dead_letter_count
+    global_outbox_dead_letter = await get_global_outbox_dead_letter_drilldown(
+        db,
+        limit=0,
+    )
 
     # Worker pool snapshot — gracefully degrades when the singleton is
     # absent or hasn't been started yet (e.g. unit tests with no lifespan).
@@ -153,6 +157,9 @@ async def get_queue_health(db: object) -> dict[str, Any]:
         "claimed_count": int(claimed_count),
         "claimed_boards": claimed_boards,
         "dead_letter_count": int(dead_letter_count),
+        "global_outbox_dead_letter_count": int(
+            global_outbox_dead_letter["total_count"]
+        ),
         "claims_per_min_1m": claims_per_min(60, now=now),
         "claims_per_min_5m": claims_per_min(300, now=now),
         "alert_threshold": int(alert_threshold),
@@ -175,6 +182,140 @@ async def get_queue_health(db: object) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _ACTIVE_CQ_STATUSES = ("pending", "claimed")
+_ACTIVE_SOURCE_WORKERS = {
+    "consolidation_queue": "consolidation_worker",
+    "global_update_outbox": "outbox_worker",
+}
+_WORKER_MODE_RANK = {"running": 0, "unknown": 1, "stopped": 2}
+_GLOBAL_OUTBOX_DLQ_LIMIT_MAX = 200
+_GLOBAL_OPEN_ERROR_MARKERS = (
+    "graph_corruption",
+    "graph_unavailable",
+    "graph_lock_contention",
+    # The Community embedded backend can surface allocation failure without a
+    # GraphError wrapper while opening a corrupt discovery artifact.
+    "memoryerror",
+    "bad allocation",
+)
+
+
+def _runtime_worker_mode(worker_family: str) -> str:
+    """Return a bounded app-runner state for one queue source."""
+
+    try:
+        from okto_pulse.core.application.runtime_workers import (
+            runtime_worker_is_running,
+        )
+
+        return "running" if runtime_worker_is_running(worker_family) else "stopped"
+    except Exception:
+        return "unknown"
+
+
+def _source_next_action(
+    source: str,
+    classification: str,
+    worker_mode: str,
+) -> str:
+    """Derive an action from the worker that actually drains ``source``."""
+
+    if classification == "stuck":
+        if worker_mode == "unknown":
+            return f"inspect_{_ACTIVE_SOURCE_WORKERS[source]}_state"
+        if source == "global_update_outbox":
+            return (
+                "start_outbox_worker"
+                if worker_mode == "stopped"
+                else "inspect_stuck_outbox_check_worker"
+            )
+    return _active_queue_next_action(classification, worker_mode)
+
+
+def _bounded_error(value: str | None, *, max_chars: int = 240) -> str | None:
+    from okto_pulse.core.services.kg_health_service import safe_health_error
+
+    return safe_health_error(
+        value,
+        sensitive_reason="global_outbox_error_redacted",
+        max_chars=max_chars,
+    )
+
+
+def _classify_global_outbox_dead_letter(last_error: str | None) -> str:
+    from okto_pulse.core.application.global_outbox_dead_letter import (
+        classify_global_outbox_dead_letter,
+    )
+
+    return classify_global_outbox_dead_letter(last_error)
+
+
+def _global_outbox_dead_letter_next_action(classification: str) -> str:
+    if classification == "global_open_failure":
+        return "inspect_global_discovery_health_before_requeue"
+    if classification == "board_source_failure":
+        return "inspect_board_source_graph"
+    return "inspect_global_outbox_event_failure"
+
+
+async def get_global_outbox_dead_letter_drilldown(
+    db: object,
+    board_id: str | None = None,
+    *,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Return a bounded, read-only view of terminal global-outbox rows.
+
+    This is deliberately separate from :func:`get_active_queue_drilldown`:
+    terminal rows cannot be drained by the active retry-window worker and must
+    never inflate ``total_active_depth``.
+    """
+
+    from okto_pulse.core.kg.health import (
+        DEAD_LETTER_RETRY_SENTINEL,
+        MAX_OUTBOX_RETRIES,
+    )
+
+    bounded_limit = max(0, min(int(limit), _GLOBAL_OUTBOX_DLQ_LIMIT_MAX))
+    storage = await get_queue_health_read_port().global_outbox_dead_letter_snapshot(
+        db,
+        board_id=board_id,
+        limit=bounded_limit,
+        max_outbox_retries=MAX_OUTBOX_RETRIES,
+        dead_letter_retry_sentinel=DEAD_LETTER_RETRY_SENTINEL,
+    )
+    now = datetime.now(timezone.utc)
+    items = []
+    for row in storage.rows:
+        classification = _classify_global_outbox_dead_letter(row.last_error)
+        items.append(
+            {
+                "event_id": row.event_id,
+                "board_id": row.board_id,
+                "event_type": row.event_type,
+                "retry_count": row.retry_count,
+                "created_at": row.created_at.isoformat(),
+                "age_seconds": round(_age_seconds(row.created_at, now), 3),
+                "last_error": _bounded_error(row.last_error),
+                "classification": classification,
+                "next_action": _global_outbox_dead_letter_next_action(
+                    classification
+                ),
+            }
+        )
+    return {
+        "domain": "global_outbox_dead_letter",
+        "semantics": "terminal_global_discovery_delivery_failure",
+        "board_id": board_id,
+        "read_only": True,
+        "total_count": int(storage.total_count),
+        "returned_count": len(items),
+        "limit": bounded_limit,
+        "truncated": int(storage.total_count) > len(items),
+        "oldest_age_seconds": round(
+            _age_seconds(storage.oldest_created_at, now), 3
+        ),
+        "items": items,
+    }
 
 
 async def get_active_queue_drilldown(
@@ -196,19 +337,12 @@ async def get_active_queue_drilldown(
     stuck_age_s = int(settings.kg_queue_stuck_age_seconds)
     now = datetime.now(timezone.utc)
 
-    # worker_mode comes from the active app-scoped runner registry.
-    worker_mode = "unknown"
-    try:
-        from okto_pulse.core.application.runtime_workers import (
-            runtime_worker_is_running,
-        )
-        worker_mode = (
-            "running"
-            if runtime_worker_is_running("consolidation_worker")
-            else "stopped"
-        )
-    except Exception:
-        worker_mode = "unknown"
+    # Each source has a different app-scoped runner. Reporting one shared mode
+    # hid an outbox worker outage behind a healthy consolidation worker.
+    worker_modes = {
+        source: _runtime_worker_mode(worker)
+        for source, worker in _ACTIVE_SOURCE_WORKERS.items()
+    }
 
     storage = await get_queue_health_read_port().active_snapshot(
         db,
@@ -238,36 +372,77 @@ async def get_active_queue_drilldown(
         alert_threshold=alert_threshold, stuck_age_s=stuck_age_s,
     )
 
+    sources = [
+        {
+            "source": "consolidation_queue",
+            "worker_family": _ACTIVE_SOURCE_WORKERS["consolidation_queue"],
+            "worker_mode": worker_modes["consolidation_queue"],
+            "queue_depth": cq_depth,
+            "by_status": cq_by_status,
+            "by_category": cq_by_category,
+            "oldest_age_seconds": round(cq_age, 3),
+            "classification": cq_class,
+            "next_action": _source_next_action(
+                "consolidation_queue",
+                cq_class,
+                worker_modes["consolidation_queue"],
+            ),
+        },
+        {
+            "source": "global_update_outbox",
+            "worker_family": _ACTIVE_SOURCE_WORKERS["global_update_outbox"],
+            "worker_mode": worker_modes["global_update_outbox"],
+            "queue_depth": ob_depth,
+            "by_status": {"pending": ob_depth},
+            "by_category": {},
+            "oldest_age_seconds": round(ob_age, 3),
+            "classification": ob_class,
+            "next_action": _source_next_action(
+                "global_update_outbox",
+                ob_class,
+                worker_modes["global_update_outbox"],
+            ),
+        },
+    ]
     total_active_depth = cq_depth + ob_depth
     overall = worst_active_queue_classification(cq_class, ob_class)
+    worst_source = max(
+        sources,
+        key=lambda item: (
+            ACTIVE_QUEUE_RANK[item["classification"]],
+            _WORKER_MODE_RANK[item["worker_mode"]],
+            item["oldest_age_seconds"],
+            item["queue_depth"],
+            item["source"],
+        ),
+    )
+    diagnostic_reason = {
+        "idle": "no_active_work",
+        "transient": "active_work_within_operational_thresholds",
+        "stuck": "oldest_active_item_exceeds_stuck_threshold",
+        "backpressure": "source_depth_reaches_alert_threshold",
+    }[worst_source["classification"]]
 
     return {
         "board_id": board_id,
-        "worker_mode": worker_mode,
+        # Backward-compatible scalar now follows the worst source rather than
+        # incorrectly mirroring the consolidation worker for both sources.
+        "worker_mode": worst_source["worker_mode"],
+        "worker_modes": worker_modes,
         "total_active_depth": total_active_depth,
         "classification": overall,
         # SPEC4 (card 2e913ac3, AC ac_26acf1db): bounded suggested next action so
         # the active-queue drill-down is actionable from the payload alone.
-        "next_action": _active_queue_next_action(overall, worker_mode),
+        "next_action": worst_source["next_action"],
+        "diagnostic": {
+            "bounded": True,
+            "worst_source": worst_source["source"],
+            "classification": worst_source["classification"],
+            "worker_mode": worst_source["worker_mode"],
+            "reason": diagnostic_reason,
+        },
         "alert_threshold": alert_threshold,
         "stuck_age_seconds": stuck_age_s,
         "drill_down_tool": "okto_pulse_kg_queue_drilldown",
-        "sources": [
-            {
-                "source": "consolidation_queue",
-                "queue_depth": cq_depth,
-                "by_status": cq_by_status,
-                "by_category": cq_by_category,
-                "oldest_age_seconds": round(cq_age, 3),
-                "classification": cq_class,
-            },
-            {
-                "source": "global_update_outbox",
-                "queue_depth": ob_depth,
-                "by_status": {"pending": ob_depth},
-                "by_category": {},
-                "oldest_age_seconds": round(ob_age, 3),
-                "classification": ob_class,
-            },
-        ],
+        "sources": sources,
     }

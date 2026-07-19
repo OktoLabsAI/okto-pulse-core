@@ -33,7 +33,11 @@ Returns:
 
 ## `okto_pulse_assign_tasks_to_sprint`
 
-Assign cards to a sprint. Cards must belong to the same spec as the sprint.
+Assign cards to a sprint. Cards normally belong to the same spec as the sprint.
+For a hotfix lane only, the origin bug's exact cross-spec Path B regression test
+task is accepted after a complete, non-blocking amendment and persisted validator
+coverage confirmation bind the bug, task, scenario and revision spec. Any
+unconfirmed or unrelated cross-spec card remains rejected.
 
 Args:
     board_id: Board ID
@@ -58,11 +62,12 @@ Args:
     lane_type: One of `normal` or `hotfix`. `release_validation` is not a lane;
         use `normal` with release-validation title/objective/labels.
     origin_sprint_id: Optional (empty = unset) — origin sprint lineage for
-        `lane_type=hotfix` (the closed sprint that blocked bug execution).
+        `lane_type=hotfix`; it must belong to the same board/spec. A closed
+        origin sprint makes the lane eligible when the spec is not yet done.
         See okto-pulse://workflows/sprints and Path C in
         okto-pulse://reference/tool-docs/card.
-    origin_bug_id: Optional (empty = unset) — origin bug lineage for
-        `lane_type=hotfix`.
+    origin_bug_id: Required for `lane_type=hotfix` — same-board/spec bug card
+        that triggered the lane. Omit it for `lane_type=normal`.
     test_scenario_ids: Multi-value spec test scenario IDs scoped to this sprint —
         formats: okto-pulse://reference/multivalue. (optional)
     business_rule_ids: Multi-value spec business rule IDs scoped to this sprint —
@@ -124,7 +129,7 @@ Args:
     include_spec: Include parent spec context with all structured data (default "true")
 
 Returns:
-    JSON with complete sprint context: details + cards + evaluations + Q&A + parent spec + scope
+    JSON with complete sprint context: details + cards + evaluations + Q&A + parent spec + scope + `reviewer_separation` for the current caller
 
 ## `okto_pulse_get_sprint_evaluation`
 
@@ -167,6 +172,12 @@ Returns:
 ## `okto_pulse_submit_sprint_evaluation`
 
 Submit a qualitative evaluation for a sprint in 'review' status.
+
+Read `okto_pulse_get_sprint_context(profile="full")` immediately before this
+operation and inspect `reviewer_separation`. In `enforce` mode, a creator,
+assignee, or executor conflict must be handed to an independent reviewer; in
+`warn` and `off`, the decision remains visible and is persisted with the
+evaluation.
 
 Args:
     board_id: Board ID
@@ -214,10 +225,11 @@ Args:
         okto-pulse://reference/multivalue. (optional)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional)
     lane_type: One of `normal` or `hotfix`. `release_validation` is not a lane.
-    origin_sprint_id: Optional (empty = unset) — origin sprint lineage for
-        `lane_type=hotfix`.
-    origin_bug_id: Optional (empty = unset) — origin bug lineage for
-        `lane_type=hotfix`.
+    origin_sprint_id: Optional origin sprint lineage for `lane_type=hotfix`;
+        when supplied it must belong to the same board/spec.
+    origin_bug_id: Required when switching to `lane_type=hotfix`; on an existing
+        hotfix, omission retains the current valid bug lineage. Switching to
+        `lane_type=normal` clears both origin fields atomically.
     skip_test_coverage: "true" or "false" (optional)
     skip_rules_coverage: "true" or "false" (optional)
     skip_qualitative_validation: "true" or "false" (optional)

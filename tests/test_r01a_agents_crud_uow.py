@@ -22,7 +22,8 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api import agents as agents_api
 from okto_pulse.community.api.agents import router as agents_router
 from okto_pulse.community.api.deps import get_unit_of_work
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import get_realm_id, require_user
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
 
 USER = "r01a-fu1-user"
@@ -51,6 +52,7 @@ def _client(user: str = USER) -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: user
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
     return TestClient(app)
 
 
@@ -203,9 +205,10 @@ async def test_grant_board_access_409_when_already_granted() -> None:
 
 @pytest.mark.asyncio
 async def test_grant_board_access_404_agent_then_board() -> None:
-    # missing agent
+    # An owned board is preflighted before the missing agent is resolved.
+    board_id = await _seed_board()
     miss_agent = _client().post(
-        f"/api/v1/agents/missing-{uuid.uuid4().hex[:6]}/boards/x"
+        f"/api/v1/agents/missing-{uuid.uuid4().hex[:6]}/boards/{board_id}"
     )
     assert miss_agent.status_code == 404
     assert miss_agent.json()["detail"] == "Agent not found"

@@ -102,7 +102,17 @@ async def kg_rel_board(db_factory):
 
 def test_ts29_schema_version_is_0_3_3():
     """SCHEMA_VERSION remains monotonic after last_recomputed_at bootstrap."""
-    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7", "0.3.8", "0.3.9", "0.3.10"}
+    assert SCHEMA_VERSION in {
+        "0.3.2",
+        "0.3.3",
+        "0.3.4",
+        "0.3.5",
+        "0.3.6",
+        "0.3.7",
+        "0.3.8",
+        "0.3.9",
+        "0.3.10",
+    }
 
 
 def test_ts29_last_recomputed_columns_constant_exposes_string_type():
@@ -202,9 +212,7 @@ class _BatchStubConn:
             self.fetch_calls += 1
             # source_conf, out_deg, in_deg, query_hits, last_queried_at,
             # score_before, raw_penalty, priority_boost
-            return GraphStatementResult.from_rows(
-                [[1.0, 0, 0, 0, None, 0.5, 0.0, 0.0]]
-            )
+            return GraphStatementResult.from_rows([[1.0, 0, 0, 0, None, 0.5, 0.0, 0.0]])
 
         # The batch UPDATE is the UNWIND path.
         if cypher.startswith("UNWIND"):
@@ -224,7 +232,10 @@ def test_ts31_recompute_batch_unwind_persists_last_recomputed_at():
     fixed_now = datetime(2026, 4, 27, 11, 0, 0, tzinfo=timezone.utc)
 
     persisted = _recompute_relevance_batch(
-        conn, KG_REL_BOARD_ID, endpoints, now=fixed_now,
+        conn,
+        KG_REL_BOARD_ID,
+        endpoints,
+        now=fixed_now,
     )
     assert persisted == len(endpoints)
     assert len(conn.unwind_calls) == 1
@@ -322,7 +333,8 @@ async def test_ts32_kg_tick_run_persists_and_queries(db_factory):
 
 @pytest.mark.asyncio
 async def test_ts33_kg_health_returns_zero_state_when_no_tick(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """Fresh board with no tick rows reports None + 0 (additive defaults)."""
     async with db_factory() as session:
@@ -334,7 +346,8 @@ async def test_ts33_kg_health_returns_zero_state_when_no_tick(
 
 @pytest.mark.asyncio
 async def test_ts33_kg_health_surfaces_latest_completed_tick(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """After a tick row is inserted, kg_health reports its completion data."""
     completed = datetime(2026, 4, 27, 9, 30, 0, tzinfo=timezone.utc)
@@ -384,14 +397,13 @@ async def test_ts33_kg_health_surfaces_latest_completed_tick(
 
 
 # ---------------------------------------------------------------------------
-# TS34 — HEALTH_SCHEMA_VERSION stays "1.0" (additive change)
+# TS34 — health schema advances atomically across public surfaces
 # ---------------------------------------------------------------------------
 
 
-def test_ts34_health_schema_version_unchanged():
-    """Adding fields without changing existing semantics keeps the version
-    pinned — clients written for "1.0" still parse the response."""
-    assert HEALTH_SCHEMA_VERSION == "1.0"
+def test_ts34_health_schema_version_is_1_1():
+    """The coordinated REST/MCP/Pydantic/frontend contract is version 1.1."""
+    assert HEALTH_SCHEMA_VERSION == "1.1"
 
 
 # ---------------------------------------------------------------------------
@@ -597,8 +609,14 @@ def test_ts5_card_to_dict_carries_severity_field_none_and_populated():
                 setattr(self, k, v)
 
     bug_with_severity = _Card(
-        id="b1", board_id="board-1", title="B", description="d", card_type=CardType.BUG,
-        spec_id=None, sprint_id=None, origin_task_id=None,
+        id="b1",
+        board_id="board-1",
+        title="B",
+        description="d",
+        card_type=CardType.BUG,
+        spec_id=None,
+        sprint_id=None,
+        origin_task_id=None,
         priority=CardPriority.HIGH,
         severity=BugSeverity.CRITICAL,
     )
@@ -607,9 +625,16 @@ def test_ts5_card_to_dict_carries_severity_field_none_and_populated():
     assert payload["priority"] == "high"
 
     bug_no_severity = _Card(
-        id="b2", board_id="board-1", title="B2", description="",
-        card_type=CardType.BUG, spec_id=None, sprint_id=None,
-        origin_task_id=None, priority=None, severity=None,
+        id="b2",
+        board_id="board-1",
+        title="B2",
+        description="",
+        card_type=CardType.BUG,
+        spec_id=None,
+        sprint_id=None,
+        origin_task_id=None,
+        priority=None,
+        severity=None,
     )
     payload2 = _card_to_dict(bug_no_severity)
     assert "severity" in payload2  # field always present
@@ -692,13 +717,16 @@ def test_emit_hit_flushed_event_swallows_missing_session_factory():
     ):
         # Should not raise — the publish is fire-and-forget.
         asyncio.run(
-            _emit_hit_flushed_event("b", "Decision", "n", 3, "2026-01-01T00:00:00+00:00"),
+            _emit_hit_flushed_event(
+                "b", "Decision", "n", 3, "2026-01-01T00:00:00+00:00"
+            ),
         )
 
 
 @pytest.mark.asyncio
 async def test_emit_hit_flushed_event_persists_domain_event_row(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """Helper writes a domain_events row + handler executions per registered handler."""
     from sqlalchemy import select as _select
@@ -714,7 +742,10 @@ async def test_emit_hit_flushed_event_persists_domain_event_row(
         await session.commit()
 
     await _emit_hit_flushed_event(
-        kg_rel_board, "Decision", "dec-test-b", 5,
+        kg_rel_board,
+        "Decision",
+        "dec-test-b",
+        5,
         "2026-04-27T10:00:00+00:00",
     )
 
@@ -732,14 +763,18 @@ async def test_emit_hit_flushed_event_persists_domain_event_row(
         assert row.payload_json["flushed_at"] == "2026-04-27T10:00:00+00:00"
 
         # Handler execution row created (KGHitRecomputeHandler is registered).
-        execs = (await session.execute(
-            _select(DomainEventHandlerExecution).where(
-                DomainEventHandlerExecution.event_id == row.id,
+        execs = (
+            (
+                await session.execute(
+                    _select(DomainEventHandlerExecution).where(
+                        DomainEventHandlerExecution.event_id == row.id,
+                    )
+                )
             )
-        )).scalars().all()
-        assert any(
-            e.handler_name.endswith("KGHitRecomputeHandler") for e in execs
+            .scalars()
+            .all()
         )
+        assert any(e.handler_name.endswith("KGHitRecomputeHandler") for e in execs)
 
     # Cleanup so re-runs are isolated.
     async with db_factory() as session:
@@ -766,9 +801,12 @@ def test_impl_c_card_priority_changed_event_class_registered():
     assert resolve_event_class("card.priority_changed") is CardPriorityChanged
 
     event = CardPriorityChanged(
-        board_id="b-1", card_id="c-1",
-        old_priority="low", new_priority="critical",
-        spec_id="s-1", changed_by="u-1",
+        board_id="b-1",
+        card_id="c-1",
+        old_priority="low",
+        new_priority="critical",
+        spec_id="s-1",
+        changed_by="u-1",
     )
     payload = event.payload_for_storage()
     assert payload == {
@@ -820,9 +858,7 @@ def test_impl_c_decision_audit_delta_matches_priority_step():
     )
 
     sorted_values = sorted(set(PRIORITY_BOOST_BY_LEVEL.values()))
-    smallest_gap = min(
-        b - a for a, b in zip(sorted_values, sorted_values[1:])
-    )
+    smallest_gap = min(b - a for a, b in zip(sorted_values, sorted_values[1:]))
     # Floating-point tolerance — Python returns 0.04999... due to binary repr.
     assert abs(DECISION_AUDIT_DELTA - smallest_gap) < 1e-9
 
@@ -856,13 +892,16 @@ def test_impl_c_node_type_resolution():
 
 @pytest.mark.asyncio
 async def test_impl_c_update_card_emits_priority_change_event(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """CardService.update_card with new priority emits CardPriorityChanged."""
     from sqlalchemy import select as _select
     from okto_pulse.core.services.main import CardService
     from sqlalchemy_test_models import (
-        Card, CardPriority, DomainEventHandlerExecution,
+        Card,
+        CardPriority,
+        DomainEventHandlerExecution,
         DomainEventRow,
     )
     from okto_pulse.core.models.schemas import CardUpdate
@@ -875,7 +914,8 @@ async def test_impl_c_update_card_emits_priority_change_event(
         card = Card(
             id="card-impl-c-priority-001",
             board_id=kg_rel_board,
-            spec_id=None, sprint_id=None,
+            spec_id=None,
+            sprint_id=None,
             title="Test card C",
             description="body",
             priority=CardPriority.LOW,
@@ -887,18 +927,25 @@ async def test_impl_c_update_card_emits_priority_change_event(
     async with db_factory() as session:
         service = CardService(db=session)
         await service.update_card(
-            "card-impl-c-priority-001", "user-c-test",
+            "card-impl-c-priority-001",
+            "user-c-test",
             CardUpdate(priority=CardPriority.CRITICAL),
         )
         await session.commit()
 
     async with db_factory() as session:
-        events = (await session.execute(
-            _select(DomainEventRow).where(
-                DomainEventRow.board_id == kg_rel_board,
-                DomainEventRow.event_type == "card.priority_changed",
+        events = (
+            (
+                await session.execute(
+                    _select(DomainEventRow).where(
+                        DomainEventRow.board_id == kg_rel_board,
+                        DomainEventRow.event_type == "card.priority_changed",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(events) == 1
         ev = events[0]
         assert ev.payload_json["card_id"] == "card-impl-c-priority-001"
@@ -918,14 +965,17 @@ async def test_impl_c_update_card_emits_priority_change_event(
 
 @pytest.mark.asyncio
 async def test_impl_c_update_card_no_priority_change_no_event(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """Updating fields other than priority must NOT emit CardPriorityChanged."""
     from sqlalchemy import select as _select
     from okto_pulse.core.services.main import CardService
     from sqlalchemy_test_models import (
-        Card, CardPriority,
-        DomainEventHandlerExecution, DomainEventRow,
+        Card,
+        CardPriority,
+        DomainEventHandlerExecution,
+        DomainEventRow,
     )
     from okto_pulse.core.models.schemas import CardUpdate
 
@@ -935,7 +985,8 @@ async def test_impl_c_update_card_no_priority_change_no_event(
         card = Card(
             id="card-impl-c-noevent-001",
             board_id=kg_rel_board,
-            spec_id=None, sprint_id=None,
+            spec_id=None,
+            sprint_id=None,
             title="Test card C2",
             description="body",
             priority=CardPriority.MEDIUM,
@@ -947,18 +998,25 @@ async def test_impl_c_update_card_no_priority_change_no_event(
     async with db_factory() as session:
         service = CardService(db=session)
         await service.update_card(
-            "card-impl-c-noevent-001", "user-c-test",
+            "card-impl-c-noevent-001",
+            "user-c-test",
             CardUpdate(title="Renamed only"),
         )
         await session.commit()
 
     async with db_factory() as session:
-        events = (await session.execute(
-            _select(DomainEventRow).where(
-                DomainEventRow.board_id == kg_rel_board,
-                DomainEventRow.event_type == "card.priority_changed",
+        events = (
+            (
+                await session.execute(
+                    _select(DomainEventRow).where(
+                        DomainEventRow.board_id == kg_rel_board,
+                        DomainEventRow.event_type == "card.priority_changed",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert events == []
 
     async with db_factory() as session:
@@ -974,14 +1032,18 @@ async def test_impl_c_update_card_no_priority_change_no_event(
 
 @pytest.mark.asyncio
 async def test_impl_c_severity_event_only_for_bug_cards(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """Non-bug cards must not emit CardSeverityChanged even when severity set."""
     from sqlalchemy import select as _select
     from okto_pulse.core.services.main import CardService
     from sqlalchemy_test_models import (
-        BugSeverity, Card, CardType,
-        DomainEventHandlerExecution, DomainEventRow,
+        BugSeverity,
+        Card,
+        CardType,
+        DomainEventHandlerExecution,
+        DomainEventRow,
     )
     from okto_pulse.core.models.schemas import CardUpdate
 
@@ -992,7 +1054,8 @@ async def test_impl_c_severity_event_only_for_bug_cards(
         bug = Card(
             id="card-impl-c-bug-001",
             board_id=kg_rel_board,
-            spec_id=None, sprint_id=None,
+            spec_id=None,
+            sprint_id=None,
             title="Bug under test",
             description="body",
             card_type=CardType.BUG,
@@ -1003,7 +1066,8 @@ async def test_impl_c_severity_event_only_for_bug_cards(
         normal = Card(
             id="card-impl-c-feat-001",
             board_id=kg_rel_board,
-            spec_id=None, sprint_id=None,
+            spec_id=None,
+            sprint_id=None,
             title="Feature with stale severity",
             description="body",
             card_type=CardType.NORMAL,
@@ -1017,23 +1081,31 @@ async def test_impl_c_severity_event_only_for_bug_cards(
         service = CardService(db=session)
         # Bug severity transition emits the event.
         await service.update_card(
-            "card-impl-c-bug-001", "u",
+            "card-impl-c-bug-001",
+            "u",
             CardUpdate(severity=BugSeverity.CRITICAL),
         )
         # Non-bug severity transition is suppressed.
         await service.update_card(
-            "card-impl-c-feat-001", "u",
+            "card-impl-c-feat-001",
+            "u",
             CardUpdate(severity=BugSeverity.CRITICAL),
         )
         await session.commit()
 
     async with db_factory() as session:
-        events = (await session.execute(
-            _select(DomainEventRow).where(
-                DomainEventRow.board_id == kg_rel_board,
-                DomainEventRow.event_type == "card.severity_changed",
+        events = (
+            (
+                await session.execute(
+                    _select(DomainEventRow).where(
+                        DomainEventRow.board_id == kg_rel_board,
+                        DomainEventRow.event_type == "card.severity_changed",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(events) == 1
         assert events[0].payload_json["card_id"] == "card-impl-c-bug-001"
         assert events[0].payload_json["new_severity"] == "critical"
@@ -1043,10 +1115,12 @@ async def test_impl_c_severity_event_only_for_bug_cards(
         await session.execute(DomainEventRow.__table__.delete())
         await session.execute(
             Card.__table__.delete().where(
-                Card.id.in_([
-                    "card-impl-c-bug-001",
-                    "card-impl-c-feat-001",
-                ])
+                Card.id.in_(
+                    [
+                        "card-impl-c-bug-001",
+                        "card-impl-c-feat-001",
+                    ]
+                )
             )
         )
         await session.commit()
@@ -1074,7 +1148,9 @@ def test_impl_c_frozen_on_insert_doc_updated_to_mutable_semantics():
 def test_impl_d_kg_daily_tick_event_class_registered():
     """KGDailyTick is registered in the current 29-event registry."""
     from okto_pulse.core.events.types import (
-        EVENT_TYPES, KGDailyTick, resolve_event_class,
+        EVENT_TYPES,
+        KGDailyTick,
+        resolve_event_class,
     )
 
     assert KGDailyTick.event_type == "kg.tick.daily"
@@ -1157,7 +1233,8 @@ async def test_impl_d_persist_tick_run_inserts_row(db_factory):
 
 @pytest.mark.asyncio
 async def test_impl_d_run_daily_tick_emits_log_and_persists(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """End-to-end: _run_daily_tick walks boards, persists a tick_run row.
 
@@ -1198,7 +1275,8 @@ async def test_impl_d_run_daily_tick_emits_log_and_persists(
 
 @pytest.mark.asyncio
 async def test_impl_d_kg_health_reflects_tick_run_after_handler(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """After _run_daily_tick completes, kg_health surfaces the new state."""
     from okto_pulse.core.events.handlers.kg_decay_tick import _run_daily_tick
@@ -1415,7 +1493,8 @@ def test_doc_g_drift_review_invariants_preserved():
     import re as _re
 
     matches = _re.findall(
-        r"ORDER\s+BY\s+\w+\.relevance_score\s+DESC", src_tpl,
+        r"ORDER\s+BY\s+\w+\.relevance_score\s+DESC",
+        src_tpl,
     )
     assert len(matches) >= 3, (
         f"Ideação #5 BR4 violated — at least 3 templates must keep "
@@ -1444,7 +1523,8 @@ def test_doc_g_drift_review_invariants_preserved():
     # SET clause. Multi-line f-strings break a SET-anchored regex, so we
     # match the assignment snippet directly.
     write_matches = _re.findall(
-        r"n\.last_queried_at\s*=\s*\$ts", svc_src,
+        r"n\.last_queried_at\s*=\s*\$ts",
+        svc_src,
     )
     assert len(write_matches) == 1, (
         f"Ideação #5 invariant violated — n.last_queried_at must be "
@@ -1470,7 +1550,8 @@ def test_doc_g_three_event_driven_entry_points_documented():
 
 @pytest.mark.asyncio
 async def test_ts42_nodes_with_stale_score_pre_tick_in_summary(
-    db_factory, kg_rel_board,
+    db_factory,
+    kg_rel_board,
 ):
     """AC41 / TS42: tick summary reports nodes_with_stale_score_pre_tick."""
     from okto_pulse.core.events.handlers.kg_decay_tick import _run_daily_tick

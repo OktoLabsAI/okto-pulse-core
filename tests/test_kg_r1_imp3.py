@@ -32,10 +32,10 @@ from okto_pulse.core.kg.embedding import get_embedding_provider
 from global_graph_testing import (
     bootstrap_global_discovery,
     ensure_global_discovery_layer_schema,
-    open_global_connection,
+    execute_global_read,
+    execute_global_write,
     reset_global_discovery_runtime_for_tests,
 )
-from okto_pulse.core.kg.write_barrier import under_global_safe_write
 
 LEGACY_UNKNOWN = "legacy_unknown"
 _NULL_SENTINEL = "<null>"
@@ -56,49 +56,55 @@ def _emb():
 def _create_digest(*, digest_id, original_node_id, node_type="Decision", layer=...):
     """Direct global CREATE (AC6 legacy fixture). ``layer=...`` (Ellipsis) omits
     graph_layer entirely -> NULL, i.e. a pre-column legacy row."""
-    _gdb, gconn = open_global_connection()
-    try:
-        if layer is ...:
-            gconn.execute(
-                "CREATE (d:DecisionDigest {id:$did, board_id:'r1i3-board', "
-                "original_node_id:$oid, title:'legacy', one_line_summary:'legacy', "
-                "node_type:$nt, embedding:$e, "
-                "created_at:timestamp('2026-06-15T00:00:00')})",
-                {"did": digest_id, "oid": original_node_id, "nt": node_type, "e": _emb()},
-            )
-        else:
-            gconn.execute(
-                "CREATE (d:DecisionDigest {id:$did, board_id:'r1i3-board', "
-                "original_node_id:$oid, title:'seeded', one_line_summary:'seeded', "
-                "node_type:$nt, graph_layer:$l, embedding:$e, "
-                "created_at:timestamp('2026-06-15T00:00:00')})",
-                {"did": digest_id, "oid": original_node_id, "nt": node_type,
-                 "l": layer, "e": _emb()},
-            )
-    finally:
-        del gconn, _gdb
+    if layer is ...:
+        statement = (
+            "CREATE (d:DecisionDigest {id:$did, board_id:'r1i3-board', "
+            "original_node_id:$oid, title:'legacy', one_line_summary:'legacy', "
+            "node_type:$nt, embedding:$e, "
+            "created_at:timestamp('2026-06-15T00:00:00')})"
+        )
+        params = {
+            "did": digest_id,
+            "oid": original_node_id,
+            "nt": node_type,
+            "e": _emb(),
+        }
+    else:
+        statement = (
+            "CREATE (d:DecisionDigest {id:$did, board_id:'r1i3-board', "
+            "original_node_id:$oid, title:'seeded', one_line_summary:'seeded', "
+            "node_type:$nt, graph_layer:$l, embedding:$e, "
+            "created_at:timestamp('2026-06-15T00:00:00')})"
+        )
+        params = {
+            "did": digest_id,
+            "oid": original_node_id,
+            "nt": node_type,
+            "l": layer,
+            "e": _emb(),
+        }
+    execute_global_write(
+        statement,
+        params,
+        operation="test_r1_imp3_seed_legacy_digest",
+    )
 
 
 def _digest(digest_id) -> tuple[str, str]:
-    _gdb, gconn = open_global_connection()
-    try:
-        res = gconn.execute(
-            "MATCH (d:DecisionDigest {id:$did}) "
-            "RETURN d.graph_layer, d.original_node_id",
-            {"did": digest_id},
-        )
-        if not res.has_next():
-            return (None, None)
-        row = res.get_next()
-        layer = row[0] if row[0] is not None else _NULL_SENTINEL
-        return (str(layer), str(row[1]))
-    finally:
-        del gconn, _gdb
+    res = execute_global_read(
+        "MATCH (d:DecisionDigest {id:$did}) "
+        "RETURN d.graph_layer, d.original_node_id",
+        {"did": digest_id},
+    )
+    if not res.rows:
+        return (None, None)
+    row = res.rows[0]
+    layer = row[0] if row[0] is not None else _NULL_SENTINEL
+    return (str(layer), str(row[1]))
 
 
 def _run_migration():
-    with under_global_safe_write("r1i3-test", "ensure_layer_schema"):
-        ensure_global_discovery_layer_schema()
+    ensure_global_discovery_layer_schema()
 
 
 def test_migration_backfills_null_to_legacy_unknown_not_canonical():
@@ -136,25 +142,20 @@ def test_legacy_unknown_excluded_from_canonical_filter_included_in_all():
     _run_migration()
 
     # Use the SAME fail-closed clause/projection query_global uses.
-    def _match(conn, layer_param):
+    def _match(layer_param):
         cypher = (
             "MATCH (d:DecisionDigest) WHERE d.id = $did AND "
             f"{layer_filter_clause('d')} "
             f"RETURN d.id, {layer_label_projection('d')}"
         )
-        res = conn.execute(cypher, {"did": did, "graph_layer": layer_param})
-        rows = []
-        while res.has_next():
-            row = res.get_next()
-            rows.append((str(row[0]), str(row[1])))
-        return rows
+        res = execute_global_read(
+            cypher,
+            {"did": did, "graph_layer": layer_param},
+        )
+        return [(str(row[0]), str(row[1])) for row in res.rows]
 
-    _gdb, gconn = open_global_connection()
-    try:
-        canonical_rows = _match(gconn, "canonical")
-        all_rows = _match(gconn, "all")
-    finally:
-        del gconn, _gdb
+    canonical_rows = _match("canonical")
+    all_rows = _match("all")
 
     assert canonical_rows == [], "legacy_unknown digest leaked into a canonical filter"
     assert len(all_rows) == 1, "all query must still surface the legacy digest"

@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.session_manager import compute_content_hash
 
 from test_kg_dedup_nc8 import (  # noqa: F401  (harness reuse)
@@ -202,6 +203,25 @@ def _set_curated(board_id: str, node_id: str) -> None:
         )
 
 
+async def _prov_row_async(
+    board_id: str,
+    artifact_ref: str,
+    *,
+    active_only: bool = True,
+):
+    return await run_blocking_graph_io(
+        lambda: _prov_row(board_id, artifact_ref, active_only=active_only),
+        task_name="tests.provenance_commit_fill.prov_row",
+    )
+
+
+async def _set_curated_async(board_id: str, node_id: str) -> None:
+    await run_blocking_graph_io(
+        lambda: _set_curated(board_id, node_id),
+        task_name="tests.provenance_commit_fill.set_curated",
+    )
+
+
 async def test_s2_create_fills_provenance_and_seeds_attestation(
     prov_tempdir, monkeypatch
 ):
@@ -215,7 +235,7 @@ async def test_s2_create_fills_provenance_and_seeds_attestation(
     )
     assert commit.nodes_added >= 1
 
-    row = _prov_row(board_id, artifact_ref)
+    row = await _prov_row_async(board_id, artifact_ref)
     assert row["source_span_start"] == 10
     assert row["source_span_end"] == 42
     assert row["source_span_quote"] == "trecho literal extraído"
@@ -236,7 +256,7 @@ async def test_s2_create_without_provenance_stays_null_but_seeds_attestation(
         session_factory, board_id, artifact_ref,
         "[MKG-B] Sem provenance", content="conteudo",
     )
-    row = _prov_row(board_id, artifact_ref)
+    row = await _prov_row_async(board_id, artifact_ref)
     assert row["source_span_start"] is None
     assert row["source_span_quote"] is None
     assert row["extraction_model_id"] is None
@@ -256,7 +276,7 @@ async def test_s2_quote_truncated_at_500_chars(prov_tempdir, monkeypatch):
         "[MKG-B] Quote longa", content="conteudo",
         provenance={**PROV_FIELDS, "source_span_quote": long_quote},
     )
-    row = _prov_row(board_id, artifact_ref)
+    row = await _prov_row_async(board_id, artifact_ref)
     assert row["source_span_quote"] == "q" * 500
 
 
@@ -270,7 +290,7 @@ async def test_s2_nc8_reuse_increments_attestation_non_curated(
         session_factory, board_id, artifact_ref,
         "[MKG-B] Mesmo titulo", content="conteudo v1",
     )
-    first = _prov_row(board_id, artifact_ref)
+    first = await _prov_row_async(board_id, artifact_ref)
     assert first["attestation_count"] == 1
 
     commit2, hash2 = await _drive_with_provenance(
@@ -279,7 +299,7 @@ async def test_s2_nc8_reuse_increments_attestation_non_curated(
     )
     assert commit2.nodes_superseded == 0
 
-    row = _prov_row(board_id, artifact_ref)
+    row = await _prov_row_async(board_id, artifact_ref)
     assert row["id"] == first["id"]
     assert row["attestation_count"] == 2
     assert row["last_attested_at"] >= first["last_attested_at"]
@@ -301,14 +321,14 @@ async def test_s2_nc8_reuse_increments_attestation_curated_branch(
         session_factory, board_id, artifact_ref,
         "[MKG-B] Curado", content="conteudo humano",
     )
-    first = _prov_row(board_id, artifact_ref)
-    _set_curated(board_id, first["id"])
+    first = await _prov_row_async(board_id, artifact_ref)
+    await _set_curated_async(board_id, first["id"])
 
     await _drive_with_provenance(
         session_factory, board_id, artifact_ref,
         "[MKG-B] Curado", content="tentativa do agente",
     )
-    row = _prov_row(board_id, artifact_ref)
+    row = await _prov_row_async(board_id, artifact_ref)
     assert row["id"] == first["id"]
     # Curated content untouched, but the re-attestation still counts.
     assert row["content"] == "conteudo humano"
@@ -330,7 +350,7 @@ async def test_s2_trail_successor_restarts_attestation(prov_tempdir, monkeypatch
     )
     assert commit2.nodes_superseded == 1
 
-    successor = _prov_row(board_id, artifact_ref, active_only=True)
+    successor = await _prov_row_async(board_id, artifact_ref, active_only=True)
     assert successor["attestation_count"] == 1
     assert successor["source_content_hash"] == hash2
     assert successor["source_span_quote"] == "trecho literal extraído"

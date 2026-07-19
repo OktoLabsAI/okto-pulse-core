@@ -90,7 +90,7 @@ def _make_rebuild_test_app(board_id: str = "b-test"):
 
     class _Shares:
         async def get_user_permission(self, candidate_board_id, _user_id):
-            return "owner" if candidate_board_id == board_id else None
+            return "editor" if candidate_board_id == board_id else None
 
     async def _fake_uow():
         yield SimpleNamespace(

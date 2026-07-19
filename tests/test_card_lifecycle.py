@@ -285,6 +285,22 @@ class TestCardStatusTransitions:  # noqa: F811
             assert moved is not None
             assert moved.status == CardStatus.STARTED
 
+    async def test_same_status_move_is_idempotent_reorder(self, db_factory):
+        """A lateral move preserves status while accepting a new position."""
+        card, _ = await self._create_card_for_transition(
+            db_factory, CardStatus.NOT_STARTED
+        )
+        async with db_factory() as db:
+            svc = CardService(db)
+            moved = await svc.move_card(
+                card.id,
+                USER_ID,
+                CardMove(status=CardStatus.NOT_STARTED, position=7),
+            )
+            assert moved is not None
+            assert moved.status == CardStatus.NOT_STARTED
+            assert moved.position == 7
+
     async def test_transition_started_to_in_progress(self, db_factory):
         """started → in_progress is a valid forward transition."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.STARTED)
@@ -918,6 +934,14 @@ class TestCardDependencies:
             await _mark_all_resources_na(db, "card", card_a.id)
 
             # Move card_a through the validation gate first.
+            await svc.move_card(
+                card_a.id, USER_ID,
+                CardMove(status=CardStatus.STARTED),
+            )
+            await svc.move_card(
+                card_a.id, USER_ID,
+                CardMove(status=CardStatus.IN_PROGRESS),
+            )
             await svc.move_card(
                 card_a.id, USER_ID,
                 CardMove(

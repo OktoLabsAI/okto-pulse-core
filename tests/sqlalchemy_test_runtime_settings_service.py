@@ -33,6 +33,19 @@ from okto_pulse.core.infra.config import (
     configure_settings,
     get_settings,
 )
+from okto_pulse.core.ports.coordination import (
+    CoordinationProviderMissing,
+    get_config_validation_port,
+    get_runtime_settings_provider,
+    get_write_lock_port,
+)
+from okto_pulse.core.ports.runtime_settings import (
+    KG_TICK_RESCHEDULE_FAILED_SIGNAL,
+    RuntimeEffectResult,
+    build_reschedule_failed_signal,
+)
+from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
+from okto_pulse.core.services.settings_service import ConfigChangeBlocked
 
 GRAPH_DB_MAX_SIZE_GB_VALUES = (2, 4, 8, 16, 32, 64)
 
@@ -41,19 +54,6 @@ def validate_graph_db_max_size_gb(value: int) -> int:
     if value not in GRAPH_DB_MAX_SIZE_GB_VALUES:
         raise ValueError("invalid graph max database size")
     return value
-from okto_pulse.core.ports.runtime_settings import (
-    KG_TICK_RESCHEDULE_FAILED_SIGNAL,
-    RuntimeEffectResult,
-    build_reschedule_failed_signal,
-)
-from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
-from okto_pulse.core.ports.coordination import (
-    CoordinationProviderMissing,
-    get_config_validation_port,
-    get_runtime_settings_provider,
-    get_write_lock_port,
-)
-from okto_pulse.core.services.settings_service import ConfigChangeBlocked
 
 logger = logging.getLogger("okto_pulse.services.settings")
 

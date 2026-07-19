@@ -10,8 +10,8 @@ NOT covered by the versioned dependency ledger (``dependency_ledger``):
   3. ``source``   — an AST import scan of ``src/okto_pulse/core`` only (RUNTIME
                     imports), never ``tests/`` / ``docs/`` / frontend dist text.
   4. ``wheel``    — the installed/declared wheel metadata (``Requires-Dist``),
-                    parsed via ``importlib.metadata`` or an explicit dist-info
-                    ``METADATA`` path.
+                    parsed via ``importlib.metadata`` or an explicit ``.whl``,
+                    dist-info ``METADATA`` file, or dist-info directory.
 
 Fail-closed (br_3796a542 / fr_73119bd6): a concrete edition dependency/import
 that appears in the core WITHOUT a complete ledger entry yields a deterministic
@@ -50,6 +50,7 @@ from .dependency_ledger import (
     ledger_index,
     normalize_token,
 )
+from .wheel_metadata import read_distribution_metadata
 
 #: PyPI / import tokens that are NON-AGNOSTIC technology (edition concerns) and
 #: therefore REQUIRE a ledger entry when present as a core direct dep / import.
@@ -270,27 +271,23 @@ def _wheel_requires(
 ) -> tuple[dict[str, bool] | None, str]:
     """Direct deps declared by the installed/built wheel -> ``{norm: is_optional}``.
 
-    Parses ``Requires-Dist`` from an explicit dist-info ``METADATA`` file (or a
-    dist-info directory) when given; otherwise from the installed distribution via
-    ``importlib.metadata``. Returns ``(deps_or_None, source_descriptor)``; ``None``
-    means the wheel metadata could not be located (surface skipped, never a silent
-    pass).
+    Parses ``Requires-Dist`` from an explicit wheel archive, dist-info
+    ``METADATA`` file, or dist-info directory when given; otherwise from the
+    installed distribution via ``importlib.metadata``. Returns
+    ``(deps_or_None, source_descriptor)``; ``None`` means the wheel surface is
+    unavailable and must fail closed.
     """
     requires: list[str] | None = None
     source = ""
     if wheel_metadata_path is not None:
-        meta = Path(wheel_metadata_path)
-        if meta.is_dir():
-            meta = meta / "METADATA"
-        if meta.exists():
-            requires = [
-                line[len("Requires-Dist:"):].strip()
-                for line in meta.read_text(encoding="utf-8").splitlines()
-                if line.startswith("Requires-Dist:")
-            ]
-            source = f"metadata:{meta.as_posix()}"
-        else:
-            return None, f"metadata_not_found:{meta.as_posix()}"
+        text, source = read_distribution_metadata(Path(wheel_metadata_path))
+        if text is None:
+            return None, source
+        requires = [
+            line[len("Requires-Dist:") :].strip()
+            for line in text.splitlines()
+            if line.startswith("Requires-Dist:")
+        ]
     else:
         try:
             requires = importlib_metadata.distribution(distribution_name).requires
@@ -304,7 +301,9 @@ def _wheel_requires(
         name = _dependency_name(spec)
         if name:
             prev = result.get(normalize_token(name))
-            result[normalize_token(name)] = is_optional if prev is None else (prev and is_optional)
+            result[normalize_token(name)] = (
+                is_optional if prev is None else (prev and is_optional)
+            )
     return result, source
 
 
@@ -338,7 +337,9 @@ def audit_dependency_conformance(
 
     led = ledger if ledger is not None else build_dependency_ledger()
     index = ledger_index(led)
-    governed = governed_tokens if governed_tokens is not None else GOVERNED_TECHNICAL_TOKENS
+    governed = (
+        governed_tokens if governed_tokens is not None else GOVERNED_TECHNICAL_TOKENS
+    )
 
     findings: list[AuditFinding] = []
     surfaces: list[str] = []
@@ -437,9 +438,7 @@ def audit_dependency_conformance(
     if pyproject.exists():
         surfaces.append("manifest")
         analyzed.append(pyproject.as_posix())
-        _audit_dependency_surface(
-            "manifest", manifest_deps, governed, index, findings
-        )
+        _audit_dependency_surface("manifest", manifest_deps, governed, index, findings)
 
     # --- lock surface ----------------------------------------------------------
     lock_deps = _lock_core_direct_dependencies(lock, lock_package_name)
@@ -531,14 +530,16 @@ def audit_dependency_conformance(
             wheel_metadata_path=wheel_metadata_path,
             distribution_name=distribution_name,
         )
+        surfaces.append("wheel")
+        analyzed.append(wheel_source)
         if wheel_deps is not None:
-            surfaces.append("wheel")
-            analyzed.append(wheel_source)
             for token, is_optional in sorted(wheel_deps.items()):
                 if token not in governed:
                     continue
                 entry = index.get(token)
-                origin = "wheel_optional_dependency" if is_optional else "wheel_metadata"
+                origin = (
+                    "wheel_optional_dependency" if is_optional else "wheel_metadata"
+                )
                 if entry is None:
                     findings.append(
                         AuditFinding(
@@ -553,14 +554,14 @@ def audit_dependency_conformance(
                         )
                     )
                 elif entry.classification == "removed":
-                    # An EXPLICIT wheel/dist-info METADATA artifact (``metadata:``
-                    # source) is AUTHORITATIVE: a ``removed`` token in its
+                    # An EXPLICIT wheel/dist-info METADATA artifact is
+                    # AUTHORITATIVE: a ``removed`` token in its
                     # ``Requires-Dist`` is a real published-boundary breach and
                     # fails closed. Only ``importlib.metadata`` of an installed
                     # distribution may be STALE (editable install before reinstall),
                     # so THAT case stays a non-blocking warning — the authoritative
                     # removal is proven by the manifest + lock.
-                    if wheel_source.startswith("metadata:"):
+                    if wheel_metadata_path is not None:
                         findings.append(
                             AuditFinding(
                                 surface="wheel",
@@ -626,16 +627,30 @@ def audit_dependency_conformance(
                         )
                     )
         else:
-            analyzed.append(f"wheel_skipped({wheel_source})")
+            findings.append(
+                AuditFinding(
+                    surface="wheel",
+                    token="wheel_metadata",
+                    diagnostic_code="wheel_metadata_unavailable",
+                    severity="blocking",
+                    origin="wheel_metadata_input",
+                    location=wheel_source,
+                    classification=None,
+                    remediation=(
+                        "Provide one readable, valid dist-info METADATA file or "
+                        "wheel archive with exactly one safe metadata member."
+                    ),
+                )
+            )
 
     # --- aggregation -----------------------------------------------------------
     violations = tuple(f for f in findings if f.severity == "blocking")
     warnings = tuple(f for f in findings if f.severity == "warning")
 
     # removed deps confirmed absent from the authoritative surfaces (manifest+lock+source)
-    present_tokens = set(manifest_deps) | set(lock_deps or {}) | {
-        r for r, _ in source_imports
-    }
+    present_tokens = (
+        set(manifest_deps) | set(lock_deps or {}) | {r for r, _ in source_imports}
+    )
     removed_dependencies = tuple(
         sorted(
             normalize_token(e.token)

@@ -50,7 +50,13 @@ class DesignSystemStore(Protocol):
     ) -> DesignSystemRecord: ...
 
     async def list_catalog(
-        self, context: Any, *, scope: str, board_id: str | None
+        self,
+        context: Any,
+        *,
+        scope: str,
+        board_id: str | None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> tuple[DesignSystemRecord, ...]: ...
 
     async def get(

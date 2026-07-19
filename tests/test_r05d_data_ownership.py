@@ -249,7 +249,6 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
 
     sentinel_bus = _SentinelBus()
     sentinel_audit = _SentinelAudit()
-    sf = _SF()
     try:
         # R-P2-02/R-P2-03D: data slots and config are required — the composition
         # must supply them and the core must not overwrite them.

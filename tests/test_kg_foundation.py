@@ -57,6 +57,7 @@ from okto_pulse.core.kg.schemas import (
 from okto_pulse.core.kg.session_manager import get_session_manager
 from okto_pulse.core.application.processors import SessionCleanupProcessor
 from sqlalchemy import text
+from sqlalchemy_test_models import Board
 
 
 SYSTEM_KG_WRITER = "system:layer1_worker"
@@ -75,6 +76,16 @@ async def _commit_connected_learning_session(
     learning_content: str = "",
 ):
     configure_real_graph_and_data_test_kg_registry(db_factory)
+    async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"KG Foundation {board_id}",
+                    owner_id=SYSTEM_KG_WRITER,
+                )
+            )
+            await db.commit()
     root = NodeCandidate(
         candidate_id="tech_root",
         node_type=KGNodeType.ENTITY,

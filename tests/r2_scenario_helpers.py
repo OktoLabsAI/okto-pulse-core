@@ -20,6 +20,7 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
@@ -50,7 +51,10 @@ WORKER_AGENT = "system:layer1_worker"
 
 async def new_board(db_factory, prefix: str = "r2t") -> str:
     board_id = f"{prefix}-{uuid.uuid4().hex[:10]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.r2.bootstrap_board_graph",
+    )
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
             db.add(Board(id=board_id, name="r2 scenario", owner_id=USER_ID))
@@ -175,7 +179,9 @@ def _cognitive_attrs(source_ref, *, title="cognitive node"):
     }
 
 
-def seed_canonical_cognitive(board_id, node_type, *, source_ref, title="cognitive node"):
+def _seed_canonical_cognitive(
+    board_id, node_type, *, source_ref, title="cognitive node"
+):
     """Materialize a canonical cognitive node via the orchestrator write primitive
     (the R7-validated path, not a raw digest seed). Returns the node id."""
     node_id = f"r2cog_{uuid.uuid4().hex[:12]}"
@@ -190,7 +196,21 @@ def seed_canonical_cognitive(board_id, node_type, *, source_ref, title="cognitiv
     return node_id
 
 
-def seed_learning_with_canonical_bug(board_id, *, learning_ref):
+async def seed_canonical_cognitive(
+    board_id, node_type, *, source_ref, title="cognitive node"
+):
+    return await run_blocking_graph_io(
+        lambda: _seed_canonical_cognitive(
+            board_id,
+            node_type,
+            source_ref=source_ref,
+            title=title,
+        ),
+        task_name="tests.r2.seed_canonical_cognitive",
+    )
+
+
+def _seed_learning_with_canonical_bug(board_id, *, learning_ref):
     """Canonical bug-derived Learning + canonical Bug + validates edge via the
     orchestrator. Returns ``(learning_id, bug_id)``."""
     learning_id = f"r2lng_{uuid.uuid4().hex[:12]}"
@@ -214,12 +234,22 @@ def seed_learning_with_canonical_bug(board_id, *, learning_ref):
     return learning_id, bug_id
 
 
+async def seed_learning_with_canonical_bug(board_id, *, learning_ref):
+    return await run_blocking_graph_io(
+        lambda: _seed_learning_with_canonical_bug(
+            board_id,
+            learning_ref=learning_ref,
+        ),
+        task_name="tests.r2.seed_learning_with_canonical_bug",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Board graph inspection (read-only)
 # ---------------------------------------------------------------------------
 
 
-def count_canonical(board_id, node_type) -> int:
+def _count_canonical(board_id, node_type) -> int:
     with open_board_connection(board_id) as (_db, conn):
         res = conn.execute(
             f"MATCH (n:{node_type}) WHERE n.graph_layer = $c RETURN count(n)",
@@ -228,7 +258,14 @@ def count_canonical(board_id, node_type) -> int:
         return int(res.get_next()[0]) if res.has_next() else 0
 
 
-def count_layer(board_id, node_type, layer) -> int:
+async def count_canonical(board_id, node_type) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_canonical(board_id, node_type),
+        task_name="tests.r2.count_canonical",
+    )
+
+
+def _count_layer(board_id, node_type, layer) -> int:
     with open_board_connection(board_id) as (_db, conn):
         res = conn.execute(
             f"MATCH (n:{node_type}) WHERE n.graph_layer = $l RETURN count(n)",
@@ -237,7 +274,14 @@ def count_layer(board_id, node_type, layer) -> int:
         return int(res.get_next()[0]) if res.has_next() else 0
 
 
-def node_layer(board_id, node_type, node_id) -> str | None:
+async def count_layer(board_id, node_type, layer) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_layer(board_id, node_type, layer),
+        task_name="tests.r2.count_layer",
+    )
+
+
+def _node_layer(board_id, node_type, node_id) -> str | None:
     with open_board_connection(board_id) as (_db, conn):
         res = conn.execute(
             f"MATCH (n:{node_type} {{id: $id}}) RETURN n.graph_layer",
@@ -246,7 +290,14 @@ def node_layer(board_id, node_type, node_id) -> str | None:
         return str(res.get_next()[0]) if res.has_next() else None
 
 
-def first_canonical_node(board_id, node_type) -> tuple[str, str] | None:
+async def node_layer(board_id, node_type, node_id) -> str | None:
+    return await run_blocking_graph_io(
+        lambda: _node_layer(board_id, node_type, node_id),
+        task_name="tests.r2.node_layer",
+    )
+
+
+def _first_canonical_node(board_id, node_type) -> tuple[str, str] | None:
     with open_board_connection(board_id) as (_db, conn):
         res = conn.execute(
             f"MATCH (n:{node_type}) WHERE n.graph_layer = $c "
@@ -257,6 +308,13 @@ def first_canonical_node(board_id, node_type) -> tuple[str, str] | None:
             row = res.get_next()
             return str(row[0]), str(row[1] or "")
     return None
+
+
+async def first_canonical_node(board_id, node_type) -> tuple[str, str] | None:
+    return await run_blocking_graph_io(
+        lambda: _first_canonical_node(board_id, node_type),
+        task_name="tests.r2.first_canonical_node",
+    )
 
 
 def requirement_ids_from_result(result) -> list[str]:

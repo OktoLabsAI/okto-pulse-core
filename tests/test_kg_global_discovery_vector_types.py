@@ -21,6 +21,7 @@ inspection — TR6/validator bar):
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
 import sys
 import tempfile
@@ -34,10 +35,11 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gdvt_"))
 
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.global_discovery import metrics as gdm
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
 from global_graph_testing import (
     bootstrap_global_discovery,
-    open_global_connection,
+    execute_global_read,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.primitives import (
@@ -62,7 +64,12 @@ from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import (
+    Board,
+    ConsolidationAudit,
+    GlobalUpdateOutbox,
+    KuzuNodeRef,
+)
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     RealBoardGraphTransactionForTests,
@@ -98,35 +105,63 @@ def _reset_gd_metrics():
 # ---------------------------------------------------------------------------
 
 
-def _new_board() -> str:
+async def _new_board() -> str:
     board_id = f"gdvt-{uuid.uuid4().hex[:10]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name=f"test-gdvt-bootstrap-{board_id}",
+    )
     return board_id
 
 
-def _seed_node(board_id, node_type, node_id, *, with_embedding, layer="canonical"):
+async def _seed_node(
+    board_id,
+    node_type,
+    node_id,
+    *,
+    with_embedding,
+    layer="canonical",
+):
     """CREATE one board-graph node, optionally with an embedding."""
-    with open_board_connection(board_id) as (_db, conn):
-        if with_embedding:
-            emb = get_embedding_provider().encode(f"{node_type} {node_id}")
-            conn.execute(
-                f"CREATE (n:{node_type} {{id: $id, title: $t, "
-                f"embedding: $e, graph_layer: $l}})",
-                {"id": node_id, "t": f"{node_type} {node_id}", "e": emb, "l": layer},
-            )
-        else:
-            conn.execute(
-                f"CREATE (n:{node_type} {{id: $id, title: $t, graph_layer: $l}})",
-                {"id": node_id, "t": f"{node_type} {node_id}", "l": layer},
-            )
+    def _seed() -> None:
+        with open_board_connection(board_id) as (_db, conn):
+            if with_embedding:
+                emb = get_embedding_provider().encode(f"{node_type} {node_id}")
+                conn.execute(
+                    f"CREATE (n:{node_type} {{id: $id, title: $t, "
+                    f"embedding: $e, graph_layer: $l}})",
+                    {
+                        "id": node_id,
+                        "t": f"{node_type} {node_id}",
+                        "e": emb,
+                        "l": layer,
+                    },
+                )
+            else:
+                conn.execute(
+                    f"CREATE (n:{node_type} {{id: $id, title: $t, "
+                    f"graph_layer: $l}})",
+                    {"id": node_id, "t": f"{node_type} {node_id}", "l": layer},
+                )
+
+    await run_blocking_graph_io(
+        _seed,
+        task_name=f"test-gdvt-seed-{board_id}-{node_type}-{node_id}",
+    )
 
 
-def _delete_node(board_id, node_type, node_id):
-    with open_board_connection(board_id) as (_db, conn):
-        conn.execute(
-            f"MATCH (n:{node_type} {{id: $id}}) DETACH DELETE n",
-            {"id": node_id},
-        )
+async def _delete_node(board_id, node_type, node_id):
+    def _delete() -> None:
+        with open_board_connection(board_id) as (_db, conn):
+            conn.execute(
+                f"MATCH (n:{node_type} {{id: $id}}) DETACH DELETE n",
+                {"id": node_id},
+            )
+
+    await run_blocking_graph_io(
+        _delete,
+        task_name=f"test-gdvt-delete-{board_id}-{node_type}-{node_id}",
+    )
 
 
 async def _run_outbox(db_factory, board_id, refs):
@@ -139,6 +174,28 @@ async def _run_outbox(db_factory, board_id, refs):
         # so process_once() handles exactly this test's event (the global
         # outbox/DB is a process singleton shared across modules).
         await db.execute(delete(GlobalUpdateOutbox))
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Global Discovery Vector Types {board_id}",
+                    owner_id="global-discovery-vector-test",
+                )
+            )
+            await db.flush()
+        now = datetime.now(timezone.utc)
+        db.add(
+            ConsolidationAudit(
+                session_id=session_id,
+                board_id=board_id,
+                artifact_id="global-discovery-vector",
+                artifact_type="test",
+                agent_id="global-discovery-vector-test",
+                started_at=now,
+                committed_at=now,
+            )
+        )
+        await db.flush()
         for node_type, node_id in refs:
             db.add(KuzuNodeRef(
                 session_id=session_id,
@@ -159,27 +216,28 @@ async def _run_outbox(db_factory, board_id, refs):
     return await worker.process_once()
 
 
-def _read_digests(board_id) -> list[dict]:
-    _gdb, gconn = open_global_connection()
-    try:
-        res = gconn.execute(
+async def _read_digests(board_id) -> list[dict]:
+    def _read() -> list[dict]:
+        res = execute_global_read(
             "MATCH (d:DecisionDigest) WHERE d.board_id = $b "
             "RETURN d.id, d.node_type, d.original_node_id, d.graph_layer "
             "ORDER BY d.node_type, d.original_node_id",
             {"b": board_id},
         )
-        out = []
-        while res.has_next():
-            row = res.get_next()
-            out.append({
+        return [
+            {
                 "id": row[0],
                 "node_type": row[1],
                 "original_node_id": row[2],
                 "graph_layer": row[3],
-            })
-        return out
-    finally:
-        del gconn, _gdb
+            }
+            for row in res.rows
+        ]
+
+    return await run_blocking_graph_io(
+        _read,
+        task_name=f"test-gdvt-read-digests-{board_id}",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -192,15 +250,15 @@ NEW_TYPES = ("Requirement", "APIContract", "TestScenario", "Bug")
 
 @pytest.mark.asyncio
 async def test_outbox_digests_new_vector_types(db_factory):
-    board_id = _new_board()
+    board_id = await _new_board()
     refs = [(nt, f"{nt.lower()}_1") for nt in NEW_TYPES]
     for nt, nid in refs:
-        _seed_node(board_id, nt, nid, with_embedding=True)
+        await _seed_node(board_id, nt, nid, with_embedding=True)
 
     processed = await _run_outbox(db_factory, board_id, refs)
     assert processed == 1
 
-    digests = _read_digests(board_id)
+    digests = await _read_digests(board_id)
     by_type = {d["node_type"]: d for d in digests}
     # One digest per new vector type, with identity + layer preserved.
     for nt, nid in refs:
@@ -225,13 +283,13 @@ async def test_outbox_digests_new_vector_types(db_factory):
 
 @pytest.mark.asyncio
 async def test_reprocess_updates_digest_without_duplicate(db_factory):
-    board_id = _new_board()
+    board_id = await _new_board()
     node_id = "requirement_stable"
-    _seed_node(board_id, "Requirement", node_id, with_embedding=True)
+    await _seed_node(board_id, "Requirement", node_id, with_embedding=True)
 
     # First pass creates the digest.
     assert await _run_outbox(db_factory, board_id, [("Requirement", node_id)]) == 1
-    first = _read_digests(board_id)
+    first = await _read_digests(board_id)
     assert len(first) == 1
     digest_id = first[0]["id"]
     assert digest_id == f"dd_{board_id[:8]}_{node_id}"
@@ -241,7 +299,7 @@ async def test_reprocess_updates_digest_without_duplicate(db_factory):
 
     # Second pass (reprocess / rebuild keeps original_node_id) updates in place.
     assert await _run_outbox(db_factory, board_id, [("Requirement", node_id)]) == 1
-    second = _read_digests(board_id)
+    second = await _read_digests(board_id)
     assert len(second) == 1  # NO duplicate
     assert second[0]["id"] == digest_id  # identity stable under rebuild
     assert second[0]["original_node_id"] == node_id
@@ -252,19 +310,21 @@ async def test_reprocess_updates_digest_without_duplicate(db_factory):
 
 @pytest.mark.asyncio
 async def test_outbox_prunes_stale_digest_after_board_node_disappears(db_factory):
-    board_id = _new_board()
+    board_id = await _new_board()
     old_id = "decision_before_rebuild"
     new_id = "decision_after_rebuild"
 
-    _seed_node(board_id, "Decision", old_id, with_embedding=True)
+    await _seed_node(board_id, "Decision", old_id, with_embedding=True)
     assert await _run_outbox(db_factory, board_id, [("Decision", old_id)]) == 1
-    assert {d["original_node_id"] for d in _read_digests(board_id)} == {old_id}
+    assert {
+        d["original_node_id"] for d in await _read_digests(board_id)
+    } == {old_id}
 
-    _delete_node(board_id, "Decision", old_id)
-    _seed_node(board_id, "Decision", new_id, with_embedding=True)
+    await _delete_node(board_id, "Decision", old_id)
+    await _seed_node(board_id, "Decision", new_id, with_embedding=True)
     assert await _run_outbox(db_factory, board_id, [("Decision", new_id)]) == 1
 
-    digests = _read_digests(board_id)
+    digests = await _read_digests(board_id)
     assert {d["original_node_id"] for d in digests} == {new_id}
     assert all(d["id"] != f"dd_{board_id[:8]}_{old_id}" for d in digests)
 
@@ -276,10 +336,10 @@ async def test_outbox_prunes_stale_digest_after_board_node_disappears(db_factory
 
 @pytest.mark.asyncio
 async def test_legacy_node_missing_embedding_is_skipped_with_diagnostic(db_factory):
-    board_id = _new_board()
+    board_id = await _new_board()
     # A legacy canonical Bug WITHOUT embedding + a healthy Requirement WITH one.
-    _seed_node(board_id, "Bug", "bug_legacy", with_embedding=False)
-    _seed_node(board_id, "Requirement", "req_ok", with_embedding=True)
+    await _seed_node(board_id, "Bug", "bug_legacy", with_embedding=False)
+    await _seed_node(board_id, "Requirement", "req_ok", with_embedding=True)
 
     processed = await _run_outbox(
         db_factory, board_id,
@@ -288,7 +348,7 @@ async def test_legacy_node_missing_embedding_is_skipped_with_diagnostic(db_facto
     # The event is NOT blocked — it processes, skipping only the bad node.
     assert processed == 1
 
-    digests = _read_digests(board_id)
+    digests = await _read_digests(board_id)
     types = {d["node_type"] for d in digests}
     # The healthy node was digested; the embedding-less one was NOT.
     assert "Requirement" in types
@@ -365,6 +425,50 @@ async def _commit_worker_result(db_factory, board_id, agent_id, result):
         )
 
 
+async def _read_vector_embedding_counts(
+    board_id: str,
+) -> dict[str, tuple[int, int, int]]:
+    """Read total, missing, and embedded counts without blocking the loop."""
+
+    def _read() -> dict[str, tuple[int, int, int]]:
+        counts: dict[str, tuple[int, int, int]] = {}
+        with open_board_connection(board_id) as (_db, conn):
+            for node_type in VECTOR_INDEX_TYPES:
+                total_result = conn.execute(
+                    f"MATCH (n:{node_type}) RETURN count(n)"
+                )
+                total = (
+                    int(total_result.get_next()[0])
+                    if total_result.has_next()
+                    else 0
+                )
+                missing_result = conn.execute(
+                    f"MATCH (n:{node_type}) WHERE n.embedding IS NULL "
+                    f"RETURN count(n)"
+                )
+                missing = (
+                    int(missing_result.get_next()[0])
+                    if missing_result.has_next()
+                    else 0
+                )
+                embedded_result = conn.execute(
+                    f"MATCH (n:{node_type}) WHERE n.embedding IS NOT NULL "
+                    f"RETURN count(n)"
+                )
+                embedded = (
+                    int(embedded_result.get_next()[0])
+                    if embedded_result.has_next()
+                    else 0
+                )
+                counts[node_type] = (total, missing, embedded)
+        return counts
+
+    return await run_blocking_graph_io(
+        _read,
+        task_name=f"test-gdvt-read-vector-counts-{board_id}",
+    )
+
+
 @pytest.mark.asyncio
 async def test_deterministic_vector_nodes_have_embeddings(
     db_factory, board_handle, board_id,
@@ -385,31 +489,17 @@ async def test_deterministic_vector_nodes_have_embeddings(
 
     # Regression guard: EVERY vector-index-type node now in the board graph
     # must carry a non-null embedding (else it can never be globally digested).
-    with open_board_connection(board_id) as (_db, conn):
-        for node_type in VECTOR_INDEX_TYPES:
-            total = conn.execute(
-                f"MATCH (n:{node_type}) RETURN count(n)"
-            )
-            total_n = int(total.get_next()[0]) if total.has_next() else 0
-            if total_n == 0:
-                continue
-            missing = conn.execute(
-                f"MATCH (n:{node_type}) WHERE n.embedding IS NULL "
-                f"RETURN count(n)"
-            )
-            missing_n = int(missing.get_next()[0]) if missing.has_next() else 0
-            assert missing_n == 0, (
-                f"REGRESSION: {missing_n}/{total_n} {node_type} nodes produced "
-                f"by the deterministic worker have NULL embedding — they would "
-                f"be silently undiscoverable in Global Discovery (FR4/AC4)."
-            )
+    counts = await _read_vector_embedding_counts(board_id)
+    for node_type, (total_n, missing_n, _embedded_n) in counts.items():
+        if total_n == 0:
+            continue
+        assert missing_n == 0, (
+            f"REGRESSION: {missing_n}/{total_n} {node_type} nodes produced "
+            f"by the deterministic worker have NULL embedding — they would "
+            f"be silently undiscoverable in Global Discovery (FR4/AC4)."
+        )
 
     # And the three spec vector children specifically materialized with embeddings.
-    with open_board_connection(board_id) as (_db, conn):
-        for node_type in ("Requirement", "APIContract", "TestScenario"):
-            res = conn.execute(
-                f"MATCH (n:{node_type}) WHERE n.embedding IS NOT NULL "
-                f"RETURN count(n)"
-            )
-            count = int(res.get_next()[0]) if res.has_next() else 0
-            assert count >= 1, f"no embedded {node_type} node materialized"
+    for node_type in ("Requirement", "APIContract", "TestScenario"):
+        embedded_n = counts[node_type][2]
+        assert embedded_n >= 1, f"no embedded {node_type} node materialized"

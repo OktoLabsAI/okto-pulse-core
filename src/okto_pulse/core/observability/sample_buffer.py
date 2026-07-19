@@ -70,9 +70,7 @@ class BoundedCounterSampleBuffer:
 
     def count(self, **filters: Any) -> int:
         normalized = {
-            key: str(value)
-            for key, value in filters.items()
-            if value is not None
+            key: str(value) for key, value in filters.items() if value is not None
         }
         with self._lock:
             total = 0
@@ -87,9 +85,7 @@ class BoundedCounterSampleBuffer:
 
     def sum(self, field: str, **filters: Any) -> int:
         normalized = {
-            key: str(value)
-            for key, value in filters.items()
-            if value is not None
+            key: str(value) for key, value in filters.items() if value is not None
         }
         with self._lock:
             total = 0
@@ -105,6 +101,22 @@ class BoundedCounterSampleBuffer:
     def snapshot(self) -> list[dict[str, Any]]:
         with self._lock:
             return [dict(sample) for sample in self._samples]
+
+    def counter_snapshot(self) -> list[dict[str, Any]]:
+        """Return all monotonic label counters independent of sample retention."""
+
+        with self._lock:
+            return [
+                {
+                    "labels": dict(key),
+                    "count": int(count),
+                    "sums": {
+                        field: int(counter.get(key, 0))
+                        for field, counter in self._sums.items()
+                    },
+                }
+                for key, count in sorted(self._counts.items())
+            ]
 
     def clear(self) -> None:
         with self._lock:
@@ -136,6 +148,12 @@ class RuntimeSampleBuffer:
 
     def snapshot(self) -> list[Any]:
         return self._resolve().snapshot()
+
+    def counter_snapshot(self) -> list[dict[str, Any]]:
+        buffer = self._resolve()
+        if not isinstance(buffer, BoundedCounterSampleBuffer):
+            raise TypeError(f"sample buffer {self.key!r} has no counters")
+        return buffer.counter_snapshot()
 
     def clear(self) -> None:
         self._resolve().clear()

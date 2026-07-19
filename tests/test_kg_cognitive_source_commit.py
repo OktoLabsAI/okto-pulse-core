@@ -19,6 +19,7 @@ import pytest
 from kg_registry_testing import configure_real_graph_test_kg_registry
 from sqlalchemy import select
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.node_identity import derive_natural_key, mint_node_id
 from okto_pulse.core.kg.primitives import KGPrimitiveError
 from okto_pulse.core.ports.kg_cognitive_source import (
@@ -89,7 +90,13 @@ class _BrokenStore:
         return ()
 
 
-async def _drive_learning_session(session_factory, board_id: str, title: str):
+async def _drive_learning_session(
+    session_factory,
+    board_id: str,
+    title: str,
+    *,
+    source_artifact_ref: str = "",
+):
     from okto_pulse.core.kg.primitives import (
         add_edge_candidate,
         begin_consolidation,
@@ -121,6 +128,7 @@ async def _drive_learning_session(session_factory, board_id: str, title: str):
         title=title,
         content="lesson body",
         justification="observed in test",
+        source_artifact_ref=source_artifact_ref,
         source_confidence=0.9,
     )
     begin = await begin_consolidation(
@@ -163,7 +171,7 @@ async def _drive_learning_session(session_factory, board_id: str, title: str):
         )
 
 
-def _count_learnings(board_id: str) -> int:
+def _count_learnings_sync(board_id: str) -> int:
     from kg_schema_testing import open_board_connection
 
     conn = open_board_connection(board_id)
@@ -176,6 +184,58 @@ def _count_learnings(board_id: str) -> int:
                 res.close()
             except Exception:
                 pass
+
+
+async def _count_learnings(board_id: str) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_learnings_sync(board_id),
+        task_name="tests.cognitive_source_commit.count_learnings",
+    )
+
+
+def _create_graph_ahead_learning_sync(
+    board_id: str,
+    *,
+    node_id: str,
+    title: str,
+    source_ref: str = "",
+) -> None:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_db, connection):
+        result = connection.execute(
+            "CREATE (n:Learning {id: $id, title: $title, content: $content, "
+            "context: '', justification: $justification, "
+            "source_artifact_ref: $source_ref, source_confidence: 0.9, "
+            "relevance_score: 0.5, priority_boost: 0.0, "
+            "human_curated: false, generation: 0})",
+            {
+                "id": node_id,
+                "title": title,
+                "content": "lesson body",
+                "justification": "observed in test",
+                "source_ref": source_ref,
+            },
+        )
+        result.close()
+
+
+async def _create_graph_ahead_learning(
+    board_id: str,
+    *,
+    node_id: str,
+    title: str,
+    source_ref: str = "",
+) -> None:
+    await run_blocking_graph_io(
+        lambda: _create_graph_ahead_learning_sync(
+            board_id,
+            node_id=node_id,
+            title=title,
+            source_ref=source_ref,
+        ),
+        task_name="tests.cognitive_source_commit.create_graph_ahead_learning",
+    )
 
 
 async def test_commit_appends_durable_record_before_success(
@@ -232,7 +292,7 @@ async def test_store_outage_aborts_commit_fail_closed_then_retry_works(
 
     # Fail-closed: NO Learning node landed in the graph (S3/AC3 —
     # the graph is never ahead of the durable source).
-    assert _count_learnings(board_id) == 0
+    assert await _count_learnings(board_id) == 0
 
     # Retry after recovery: register the healthy store and rerun.
     register_cognitive_source_store(
@@ -240,4 +300,296 @@ async def test_store_outage_aborts_commit_fail_closed_then_retry_works(
     )
     commit = await _drive_learning_session(session_factory, board_id, title)
     assert commit.nodes_added >= 1
-    assert _count_learnings(board_id) == 1
+    assert await _count_learnings(board_id) == 1
+
+
+async def test_explicit_supersede_replay_repairs_missing_durable_record(
+    cogsrc_tempdir, monkeypatch
+):
+    """A graph-ahead replay must restore the MKG-A source ledger.
+
+    This models interruption after Ladybug materialized the deterministic
+    successor but before its durable append/ACK survived.  The explicit
+    SUPERSEDE replay takes the ``existing_successor`` branch; success is valid
+    only when that branch re-appends the generation-1 source record.
+    """
+
+    from sqlalchemy import delete
+
+    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
+        CommunitySqlAlchemyCognitiveSourceStore,
+    )
+    from okto_pulse.community.adapters.sqlalchemy_models import KGCognitiveSource
+    from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
+        begin_consolidation,
+        commit_consolidation,
+        propose_reconciliation,
+    )
+    from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
+        BeginConsolidationRequest,
+        CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
+        KGNodeType,
+        NodeCandidate,
+        ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
+    )
+
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    await _ensure_community_tables()
+    register_cognitive_source_store(
+        CommunitySqlAlchemyCognitiveSourceStore(session_factory)
+    )
+
+    original_title = "[MKG-A C4] durable predecessor"
+    successor_title = "[MKG-A C4] durable successor"
+    await _drive_learning_session(session_factory, board_id, original_title)
+    old_id = mint_node_id(
+        board_id,
+        "Learning",
+        derive_natural_key("", "Learning", original_title),
+        0,
+    )
+    successor_id = mint_node_id(
+        board_id,
+        "Learning",
+        derive_natural_key("", "Learning", successor_title),
+        1,
+    )
+    candidate_id = "mkga_c4_supersede_replay"
+    candidate = NodeCandidate(
+        candidate_id=candidate_id,
+        node_type=KGNodeType.LEARNING,
+        title=successor_title,
+        content="successor lesson body",
+        justification="observed in replay-repair test",
+        source_confidence=0.9,
+    )
+    root_candidate = NodeCandidate(
+        candidate_id="mkga_c4_supersede_root",
+        node_type=KGNodeType.ENTITY,
+        title="MKG-A C4 technical root",
+        content="Allowlisted deterministic source root.",
+        source_artifact_ref="tech_entities.yml",
+        source_confidence=1.0,
+    )
+
+    async def _force_supersede(summary: str):
+        begin = await begin_consolidation(
+            BeginConsolidationRequest(
+                board_id=board_id,
+                artifact_type="spec",
+                artifact_id=str(uuid.uuid4()),
+                raw_content=summary,
+                deterministic_candidates=[root_candidate, candidate],
+            ),
+            agent_id="system:layer1_worker",
+            db=None,
+        )
+        await add_edge_candidate(
+            AddEdgeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=EdgeCandidate(
+                    candidate_id="mkga_c4_supersede_belongs_to_root",
+                    edge_type=KGEdgeType.BELONGS_TO,
+                    from_candidate_id=candidate_id,
+                    to_candidate_id=root_candidate.candidate_id,
+                    confidence=1.0,
+                ),
+            ),
+            agent_id="system:layer1_worker",
+        )
+        await propose_reconciliation(
+            ProposeReconciliationRequest(session_id=begin.session_id),
+            agent_id="system:layer1_worker",
+            db=None,
+        )
+        override = ReconciliationHint(
+            candidate_id=candidate_id,
+            operation=ReconciliationOperation.SUPERSEDE,
+            target_node_id=old_id,
+            confidence=0.9,
+            reason="test forces replayable cognitive SUPERSEDE",
+        )
+        async with session_factory() as db:
+            return await commit_consolidation(
+                CommitConsolidationRequest(
+                    session_id=begin.session_id,
+                    summary_text=summary,
+                    agent_overrides={candidate_id: override},
+                ),
+                agent_id="system:layer1_worker",
+                db=db,
+            )
+
+    first = await _force_supersede("first cognitive supersede")
+    assert first.nodes_superseded == 1
+    assert await _count_learnings(board_id) == 2
+
+    # Test-only crash image: graph successor remains, durable generation-1
+    # record did not survive.
+    async with session_factory() as db:
+        await db.execute(
+            delete(KGCognitiveSource).where(
+                KGCognitiveSource.node_id == successor_id,
+                KGCognitiveSource.generation == 1,
+            )
+        )
+        await db.commit()
+    async with session_factory() as db:
+        missing = (
+            await db.execute(
+                select(KGCognitiveSource).where(
+                    KGCognitiveSource.node_id == successor_id,
+                    KGCognitiveSource.generation == 1,
+                )
+            )
+        ).scalar_one_or_none()
+    assert missing is None
+
+    replay = await _force_supersede("replayed cognitive supersede")
+    assert any(
+        item["operation"] == "MERGE_SUPERSEDE_BY_DETERMINISTIC_ID"
+        and item["reused_node_id"] == successor_id
+        for item in replay.merge_audit_items
+    )
+    assert await _count_learnings(board_id) == 2
+
+    async with session_factory() as db:
+        repaired = (
+            await db.execute(
+                select(KGCognitiveSource).where(
+                    KGCognitiveSource.node_id == successor_id,
+                    KGCognitiveSource.generation == 1,
+                )
+            )
+        ).scalar_one()
+    assert repaired.board_id == board_id
+    assert repaired.node_type == "Learning"
+    assert repaired.payload["title"] == successor_title
+
+
+async def test_fresh_identity_replay_repairs_missing_generation_zero_record(
+    cogsrc_tempdir, monkeypatch
+):
+    """The deterministic CREATE guard must heal a graph-ahead gen0 node."""
+
+    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
+        CommunitySqlAlchemyCognitiveSourceStore,
+    )
+    from okto_pulse.community.adapters.sqlalchemy_models import KGCognitiveSource
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    await _ensure_community_tables()
+    register_cognitive_source_store(
+        CommunitySqlAlchemyCognitiveSourceStore(session_factory)
+    )
+
+    title = "[MKG-A C4] graph-ahead generation zero"
+    node_id = mint_node_id(
+        board_id,
+        "Learning",
+        derive_natural_key("", "Learning", title),
+        0,
+    )
+    await _create_graph_ahead_learning(
+        board_id,
+        node_id=node_id,
+        title=title,
+    )
+
+    async with session_factory() as db:
+        missing = (
+            await db.execute(
+                select(KGCognitiveSource).where(
+                    KGCognitiveSource.node_id == node_id,
+                    KGCognitiveSource.generation == 0,
+                )
+            )
+        ).scalar_one_or_none()
+    assert missing is None
+
+    replay = await _drive_learning_session(session_factory, board_id, title)
+    assert any(
+        item["operation"] == "MERGE_BY_DETERMINISTIC_ID"
+        and item["reused_node_id"] == node_id
+        for item in replay.merge_audit_items
+    )
+    assert await _count_learnings(board_id) == 1
+
+    async with session_factory() as db:
+        repaired = (
+            await db.execute(
+                select(KGCognitiveSource).where(
+                    KGCognitiveSource.node_id == node_id,
+                    KGCognitiveSource.generation == 0,
+                )
+            )
+        ).scalar_one()
+    assert repaired.board_id == board_id
+    assert repaired.node_type == "Learning"
+    assert repaired.payload["title"] == title
+
+
+async def test_nc8_reuse_repairs_missing_generation_zero_record(
+    cogsrc_tempdir, monkeypatch
+):
+    """NC-8 source-ref reuse must heal the same graph-ahead condition."""
+
+    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
+        CommunitySqlAlchemyCognitiveSourceStore,
+    )
+    from okto_pulse.community.adapters.sqlalchemy_models import KGCognitiveSource
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    await _ensure_community_tables()
+    register_cognitive_source_store(
+        CommunitySqlAlchemyCognitiveSourceStore(session_factory)
+    )
+
+    title = "[MKG-A C4] graph-ahead NC-8 reuse"
+    source_ref = "spec:mkga-c4-graph-ahead-nc8"
+    node_id = mint_node_id(
+        board_id,
+        "Learning",
+        derive_natural_key(source_ref, "Learning", title),
+        0,
+    )
+    await _create_graph_ahead_learning(
+        board_id,
+        node_id=node_id,
+        title=title,
+        source_ref=source_ref,
+    )
+
+    replay = await _drive_learning_session(
+        session_factory,
+        board_id,
+        title,
+        source_artifact_ref=source_ref,
+    )
+    assert any(
+        item["operation"] == "MERGE"
+        and item["reused_node_id"] == node_id
+        for item in replay.merge_audit_items
+    )
+    assert await _count_learnings(board_id) == 1
+
+    async with session_factory() as db:
+        repaired = (
+            await db.execute(
+                select(KGCognitiveSource).where(
+                    KGCognitiveSource.node_id == node_id,
+                    KGCognitiveSource.generation == 0,
+                )
+            )
+        ).scalar_one()
+    assert repaired.board_id == board_id
+    assert repaired.node_type == "Learning"
+    assert repaired.generation == 0
+    assert repaired.payload["title"] == title
+    assert repaired.payload["source_artifact_ref"] == source_ref
+    assert repaired.payload["generation"] == 0
+    assert "embedding" in repaired.payload

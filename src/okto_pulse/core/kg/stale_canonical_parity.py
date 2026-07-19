@@ -17,17 +17,18 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-
 from okto_pulse.core.kg.canonical_stale_reconciler import (
     COGNITIVE_NODE_TYPES,
     _owning_source_id,
 )
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
     MATURITY_WORKING_STALE,
     classify_source_for_kg,
 )
+from okto_pulse.core.ports.runtime_workers import BlockingExecutionPort
 
 logger = logging.getLogger("okto_pulse.kg.stale_canonical_parity")
 
@@ -129,7 +130,12 @@ def detect_board_graph_stale(board_id: str) -> list[dict[str, Any]]:
 
 
 async def list_stale_canonical_parity(
-    db: object, *, board_id: str, limit: int = 50, offset: int = 0
+    db: object,
+    *,
+    board_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    blocking_execution: BlockingExecutionPort | None = None,
 ) -> dict[str, Any]:
     """Read-only unified stale-canonical parity drilldown (MCP/REST).
 
@@ -142,7 +148,11 @@ async def list_stale_canonical_parity(
     bounded_limit = max(1, min(int(limit), 200))
     bounded_offset = max(0, int(offset))
 
-    board_stale = detect_board_graph_stale(board_id)
+    board_stale = await run_blocking_graph_io(
+        lambda: detect_board_graph_stale(board_id),
+        task_name="core.kg.stale_canonical_parity.board_read",
+        blocking_execution=blocking_execution,
+    )
 
     # Reuse the R1-IMP2 digest-vs-board detector (no digest repair here).
     gd_evaluation = GD_EVALUATED
@@ -151,7 +161,11 @@ async def list_stale_canonical_parity(
         from okto_pulse.core.kg.global_discovery.layer_parity import (
             detect_digest_layer_mismatches,
         )
-        mismatches = await detect_digest_layer_mismatches(db, board_id=board_id)
+        mismatches = await detect_digest_layer_mismatches(
+            db,
+            board_id=board_id,
+            blocking_execution=blocking_execution,
+        )
         stale_digest_node_ids = {str(m.get("original_node_id") or "") for m in mismatches}
     except Exception as exc:  # never claim healthy on an unreadable GD layer
         gd_evaluation = GD_NOT_EVALUATED

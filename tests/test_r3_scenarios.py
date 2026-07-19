@@ -28,7 +28,15 @@ from r3_scenario_helpers import (
     seed_refinement,
 )
 
-from sqlalchemy_test_models import Card, ResourceNotApplicable, Spec, SpecKnowledgeBase
+from sqlalchemy_test_models import (
+    ArchitectureDesign,
+    Card,
+    Ideation,
+    IdeationStatus,
+    ResourceNotApplicable,
+    Spec,
+    SpecKnowledgeBase,
+)
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
@@ -38,6 +46,97 @@ async def _no_na_marks(db_factory, board_id) -> bool:
             select(ResourceNotApplicable).where(ResourceNotApplicable.board_id == board_id)
         )).scalars().all()
     return len(rows) == 0
+
+
+async def _seed_done_derive_parent(db_factory, board_id, source: str) -> str:
+    if source == "refinement":
+        seed = await seed_refinement(db_factory, board_id, status="done")
+        return seed["refinement_id"]
+
+    from r3_scenario_helpers import sid
+
+    ideation_id = sid("idea")
+    async with db_factory() as db:
+        db.add(Ideation(
+            id=ideation_id,
+            board_id=board_id,
+            title="Done derive parent",
+            status=IdeationStatus.DONE,
+            created_by=USER_ID,
+        ))
+        await db.commit()
+    return ideation_id
+
+
+def _derive_tool(source: str) -> str:
+    return f"okto_pulse_derive_spec_from_{source}"
+
+
+def _derive_id_argument(source: str, source_id: str) -> dict[str, str]:
+    return {f"{source}_id": source_id}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["ideation", "refinement"])
+async def test_derive_spec_rejects_cross_board_parent_before_write(db_factory, source):
+    authenticated_board_id = await new_board(db_factory)
+    foreign_board_id = await new_board(db_factory)
+    source_id = await _seed_done_derive_parent(db_factory, foreign_board_id, source)
+
+    result = await call_tool(
+        _derive_tool(source),
+        board_id=authenticated_board_id,
+        **_derive_id_argument(source, source_id),
+    )
+
+    assert result == {"error": f"{source.title()} not found"}
+    source_column = Spec.ideation_id if source == "ideation" else Spec.refinement_id
+    async with db_factory() as db:
+        specs = (await db.execute(
+            select(Spec).where(source_column == source_id)
+        )).scalars().all()
+    assert specs == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["ideation", "refinement"])
+async def test_derive_spec_missing_parent_is_governed_and_writes_nothing(
+    db_factory, source
+):
+    board_id = await new_board(db_factory)
+    source_id = f"missing-{source}"
+
+    result = await call_tool(
+        _derive_tool(source),
+        board_id=board_id,
+        **_derive_id_argument(source, source_id),
+    )
+
+    assert result == {"error": f"{source.title()} not found"}
+    async with db_factory() as db:
+        specs = (await db.execute(
+            select(Spec).where(Spec.board_id == board_id)
+        )).scalars().all()
+    assert specs == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["ideation", "refinement"])
+async def test_derive_spec_accepts_same_board_parent(db_factory, source):
+    board_id = await new_board(db_factory)
+    source_id = await _seed_done_derive_parent(db_factory, board_id, source)
+
+    result = await call_tool(
+        _derive_tool(source),
+        board_id=board_id,
+        **_derive_id_argument(source, source_id),
+    )
+
+    assert result.get("success") is True, result
+    async with db_factory() as db:
+        spec = await db.get(Spec, result["spec"]["id"])
+    assert spec is not None and spec.board_id == board_id
+    assert getattr(spec, f"{source}_id") == source_id
 
 
 # ===========================================================================
@@ -193,6 +292,117 @@ async def test_ts_e59fe6ad_derive_spec_from_refinement_still_propagates(db_facto
         getattr(kb, "source_kb_id", None) for kb in kbs
     ]
     assert any(m.get("origin_id") == ref["mockup_id"] for m in mockups), mockups
+
+
+@pytest.mark.asyncio
+async def test_derive_spec_returns_canonical_resource_propagation_summary(db_factory):
+    board_id = await new_board(db_factory)
+    ref = await seed_refinement(
+        db_factory,
+        board_id,
+        status="done",
+        kb=True,
+        mockup=True,
+        architecture=True,
+    )
+
+    result = await call_tool(
+        "okto_pulse_derive_spec_from_refinement",
+        board_id=board_id,
+        refinement_id=ref["refinement_id"],
+    )
+
+    assert result.get("success") is True, result
+    propagation = result["resource_propagation"]
+    assert propagation["status"] == "created_with_resources"
+    assert propagation["source"] == {
+        "entity_type": "refinement",
+        "entity_id": ref["refinement_id"],
+    }
+    assert propagation["target"]["entity_type"] == "spec"
+    assert propagation["target"]["entity_id"] == result["spec"]["id"]
+    assert propagation["counts"] == {
+        "mockup": 1,
+        "knowledge_base": 1,
+        "architecture": 1,
+    }
+    assert propagation["by_type"]["architecture"]["source_design_ids"] == [
+        ref["design_id"]
+    ]
+
+    # Reopen the target so the assertion covers persisted snapshots, not only
+    # the transient write response.
+    async with db_factory() as db:
+        spec = await db.get(Spec, result["spec"]["id"])
+        mockups = list(spec.screen_mockups or [])
+        kbs = (await db.execute(
+            select(SpecKnowledgeBase).where(
+                SpecKnowledgeBase.spec_id == result["spec"]["id"]
+            )
+        )).scalars().all()
+        designs = (await db.execute(
+            select(ArchitectureDesign).where(
+                ArchitectureDesign.parent_type == "spec",
+                ArchitectureDesign.spec_id == result["spec"]["id"],
+            )
+        )).scalars().all()
+
+    assert len(mockups) == 1
+    assert mockups[0]["origin_id"] == ref["mockup_id"]
+    assert mockups[0]["source_mockup_id"] == ref["mockup_id"]
+    assert len(kbs) == 1
+    assert kbs[0].root_source_kb_id == ref["kb_id"]
+    assert kbs[0].immediate_parent_kb_id == ref["kb_id"]
+    assert len(designs) == 1
+    assert designs[0].source_design_id == ref["design_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("argument_name", "resource_type", "valid_id_key", "foreign_prefix"),
+    [
+        ("mockup_ids", "mockup", "mockup_id", "foreign-mockup"),
+        ("kb_ids", "knowledge_base", "kb_id", "foreign-kb"),
+    ],
+)
+async def test_derive_spec_rejects_mixed_foreign_selection_before_target_write(
+    db_factory,
+    argument_name,
+    resource_type,
+    valid_id_key,
+    foreign_prefix,
+):
+    board_id = await new_board(db_factory)
+    ref = await seed_refinement(
+        db_factory,
+        board_id,
+        status="done",
+        kb=True,
+        mockup=True,
+    )
+    foreign_id = f"{foreign_prefix}-outside-source"
+
+    result = await call_tool(
+        "okto_pulse_derive_spec_from_refinement",
+        board_id=board_id,
+        refinement_id=ref["refinement_id"],
+        **{argument_name: [ref[valid_id_key], foreign_id]},
+    )
+
+    assert result["error"] == "resource_selection_invalid", result
+    assert result["resource_type"] == resource_type
+    assert result["requested"] == [ref[valid_id_key], foreign_id]
+    assert result["matched"] == [ref[valid_id_key]]
+    assert result["missing"] == [foreign_id]
+    assert result["source_parent_type"] == "refinement"
+    assert result["source_parent_id"] == ref["refinement_id"]
+    assert result["retryable"] is False
+
+    async with db_factory() as db:
+        specs = (await db.execute(
+            select(Spec).where(Spec.refinement_id == ref["refinement_id"])
+        )).scalars().all()
+    assert specs == []
 
 
 @pytest.mark.asyncio

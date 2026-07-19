@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -34,6 +35,7 @@ from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.router import api_router
 from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemListOutcome,
@@ -80,7 +82,19 @@ def client() -> TestClient:
     async def _fake_user() -> str:
         return "user-kg03-4-test"
 
+    async def _fake_uow():
+        async def _get_board(board_id: str):
+            return SimpleNamespace(
+                id=board_id,
+                owner_id="user-kg03-4-test",
+            )
+
+        yield SimpleNamespace(
+            boards=SimpleNamespace(get=_get_board),
+        )
+
     app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return TestClient(app)
 
 

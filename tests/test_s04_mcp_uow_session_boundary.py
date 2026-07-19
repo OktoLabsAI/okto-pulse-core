@@ -5,6 +5,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
+
 def _server_tree() -> ast.Module:
     source = (
         Path(__file__).resolve().parents[1]

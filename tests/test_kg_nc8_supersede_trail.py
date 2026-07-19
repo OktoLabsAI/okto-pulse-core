@@ -16,12 +16,13 @@ from pathlib import Path
 import pytest
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.node_identity import derive_natural_key, mint_node_id
 
 from test_kg_dedup_nc8 import (  # noqa: F401  (harness reuse)
     _bootstrap_test_board,
     _drive_one_session,
-    _query_one,
+    _query_one_async,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -89,6 +90,33 @@ def _entities_for_ref(board_id: str, ref: str) -> list[dict]:
         return rows
 
 
+async def _entities_for_ref_async(board_id: str, ref: str) -> list[dict]:
+    return await run_blocking_graph_io(
+        lambda: _entities_for_ref(board_id, ref),
+        task_name="tests.nc8_supersede_trail.entities_for_ref",
+    )
+
+
+def _count_supersedes_edge_sync(
+    board_id: str,
+    *,
+    successor_id: str,
+    predecessor_id: str,
+) -> int:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_db, connection):
+        result = connection.execute(
+            "MATCH (a:Entity)-[r:supersedes]->(b:Entity) "
+            "WHERE a.id = $new AND b.id = $old RETURN count(r)",
+            {"new": successor_id, "old": predecessor_id},
+        )
+        try:
+            return int(result.get_next()[0])
+        finally:
+            result.close()
+
+
 async def test_s7_title_change_supersedes_with_trail(trail_tempdir, monkeypatch):
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
     artifact_ref = f"spec:{spec_id}"
@@ -96,7 +124,7 @@ async def test_s7_title_change_supersedes_with_trail(trail_tempdir, monkeypatch)
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "[MKG-D] Titulo original"
     )
-    old_id = _query_one(board_id, artifact_ref)["id"]
+    old_id = (await _query_one_async(board_id, artifact_ref))["id"]
 
     commit2 = await _drive_one_session(
         session_factory, board_id, artifact_ref, "[MKG-D] Titulo NOVO"
@@ -104,7 +132,7 @@ async def test_s7_title_change_supersedes_with_trail(trail_tempdir, monkeypatch)
     assert commit2.nodes_superseded == 1
     assert commit2.nodes_added == 0
 
-    nodes = _entities_for_ref(board_id, artifact_ref)
+    nodes = await _entities_for_ref_async(board_id, artifact_ref)
     by_id = {n["id"]: n for n in nodes}
     old = by_id[old_id]
     successor_id = mint_node_id(
@@ -119,17 +147,72 @@ async def test_s7_title_change_supersedes_with_trail(trail_tempdir, monkeypatch)
     assert successor["generation"] == 1
 
     # Walkable trail edge exists (universal :supersedes).
-    from kg_schema_testing import open_board_connection
+    assert await run_blocking_graph_io(
+        lambda: _count_supersedes_edge_sync(
+            board_id,
+            successor_id=successor_id,
+            predecessor_id=old_id,
+        ),
+        task_name="tests.nc8_supersede_trail.count_edge",
+    ) == 1
 
-    conn = open_board_connection(board_id)
-    with conn as (_kdb, kconn):
-        res = kconn.execute(
-            "MATCH (a:Entity)-[r:supersedes]->(b:Entity) "
-            "WHERE a.id = $new AND b.id = $old RETURN count(r)",
-            {"new": successor_id, "old": old_id},
-        )
-        assert int(res.get_next()[0]) == 1
-        res.close()
+
+async def test_s7_replay_uses_active_successor_without_duplicate_pk(
+    trail_tempdir, monkeypatch
+):
+    """An at-least-once replay must resolve generation 1, not stale generation 0.
+
+    Both generations intentionally retain the same source_artifact_ref.  If
+    NC-8 uses an unordered ``LIMIT 1``, Ladybug returns generation 0 again and
+    the replay tries to CREATE the deterministic generation-1 primary key a
+    second time.
+    """
+
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}"
+    original_title = "[MKG-D] Titulo antes do replay"
+    successor_title = "[MKG-D] Titulo depois do replay"
+
+    await _drive_one_session(
+        session_factory, board_id, artifact_ref, original_title
+    )
+    old_id = (await _query_one_async(board_id, artifact_ref))["id"]
+    first_successor = await _drive_one_session(
+        session_factory, board_id, artifact_ref, successor_title
+    )
+    assert first_successor.nodes_superseded == 1
+
+    replay = await _drive_one_session(
+        session_factory,
+        board_id,
+        artifact_ref,
+        successor_title,
+        force_add=True,
+    )
+    assert replay.nodes_superseded == 0
+    assert replay.nodes_merged >= 1
+
+    expected_successor_id = mint_node_id(
+        board_id,
+        "Entity",
+        derive_natural_key(artifact_ref, "Entity", successor_title),
+        1,
+    )
+    nodes = await _entities_for_ref_async(board_id, artifact_ref)
+    assert len(nodes) == 2
+    by_id = {node["id"]: node for node in nodes}
+    assert by_id[old_id]["superseded_by"] == expected_successor_id
+    assert by_id[expected_successor_id]["superseded_by"] is None
+    assert by_id[expected_successor_id]["generation"] == 1
+
+    assert await run_blocking_graph_io(
+        lambda: _count_supersedes_edge_sync(
+            board_id,
+            successor_id=expected_successor_id,
+            predecessor_id=old_id,
+        ),
+        task_name="tests.nc8_supersede_trail.count_replay_edge",
+    ) == 1
 
 
 async def test_s7_same_title_content_change_stays_inplace_update(
@@ -147,7 +230,7 @@ async def test_s7_same_title_content_change_stays_inplace_update(
         content="conteudo v2 refinado",
     )
     assert commit2.nodes_superseded == 0
-    nodes = _entities_for_ref(board_id, artifact_ref)
+    nodes = await _entities_for_ref_async(board_id, artifact_ref)
     assert len(nodes) == 1
     assert nodes[0]["superseded_by"] is None
 
@@ -167,4 +250,4 @@ async def test_s7_case_and_unicode_variants_do_not_supersede(
         session_factory, board_id, artifact_ref, "[MKG-D] TÍTULO É ESTÁVEL"
     )
     assert commit2.nodes_superseded == 0
-    assert len(_entities_for_ref(board_id, artifact_ref)) == 1
+    assert len(await _entities_for_ref_async(board_id, artifact_ref)) == 1

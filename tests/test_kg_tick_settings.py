@@ -280,6 +280,8 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
         run_tick_now,
     )
     from fastapi import HTTPException
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+    from okto_pulse.core.ports.authentication import Principal
 
     payload = TickRunNowRequest(
         board_id="board-does-not-exist-uuid",
@@ -290,9 +292,13 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
         def __init__(self) -> None:
             self.committed = False
             self.rolled_back = False
+            self.boards = SimpleNamespace(get=self._get_board)
             self.services = SimpleNamespace(
                 kg=SimpleNamespace(dispatch_manual_tick=self._dispatch_manual_tick)
             )
+
+        async def _get_board(self, board_id: str):
+            return SimpleNamespace(id=board_id, owner_id="test-user")
 
         async def _dispatch_manual_tick(self, **kwargs) -> None:
             from okto_pulse.core.application.kg_tick import dispatch_manual_tick
@@ -327,12 +333,17 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
 
     monkeypatch.setattr(kg_tick, "get_kg_health", _healthy_health)
     fake_db = _FakeSession()
+    principal = Principal(
+        "test-user",
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
 
     # First call: 202 success.
     response = await run_tick_now(
         payload,
         _request_without_scheduler(),
-        user="test-user",
+        principal=principal,
         db=fake_db,
     )
     assert isinstance(response, TickRunNowResponse)
@@ -352,7 +363,7 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
             await run_tick_now(
                 payload,
                 _request_without_scheduler(),
-                user="test-user-2",
+                principal=principal,
                 db=_FakeSession(),
             )
         assert exc_info.value.status_code == 409

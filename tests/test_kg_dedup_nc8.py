@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 
 pytestmark = pytest.mark.asyncio
 
@@ -74,6 +75,8 @@ async def _drive_one_session(
     title: str,
     content: str = "",
     agent_id: str = "system:layer1_worker",
+    *,
+    force_add: bool = False,
 ):
     """Run one begin -> propose -> commit cycle for one Entity candidate.
 
@@ -100,6 +103,8 @@ async def _drive_one_session(
         KGNodeType,
         NodeCandidate,
         ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
     )
 
     root_cand = NodeCandidate(
@@ -147,11 +152,24 @@ async def _drive_one_session(
         agent_id=agent_id,
         db=None,
     )
+    overrides = (
+        {
+            cand.candidate_id: ReconciliationHint(
+                candidate_id=cand.candidate_id,
+                operation=ReconciliationOperation.ADD,
+                confidence=1.0,
+                reason="test forces the NC-8 ADD/replay path",
+            )
+        }
+        if force_add
+        else {}
+    )
     async with session_factory() as db:
         commit = await commit_consolidation(
             CommitConsolidationRequest(
                 session_id=begin.session_id,
                 summary_text=f"NC-8 commit — {title}",
+                agent_overrides=overrides,
             ),
             agent_id=agent_id,
             db=db,
@@ -356,7 +374,10 @@ async def _bootstrap_test_board(monkeypatch):
 
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.dedup_nc8.bootstrap_board_graph",
+    )
     gc.collect()
 
     # Same trick as the e2e test — fresh boards have no HNSW data, the
@@ -453,6 +474,65 @@ def _query_one(board_id: str, source_artifact_ref: str):
                 pass
 
 
+async def _count_entities_async(board_id: str, source_artifact_ref: str) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_entities(board_id, source_artifact_ref),
+        task_name="tests.dedup_nc8.count_entities",
+    )
+
+
+async def _count_nodes_by_source_prefix_async(
+    board_id: str,
+    node_type: str,
+    source_prefix: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_nodes_by_source_prefix(board_id, node_type, source_prefix),
+        task_name="tests.dedup_nc8.count_nodes_by_source_prefix",
+    )
+
+
+async def _count_nodes_async(board_id: str, node_type: str) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_nodes(board_id, node_type),
+        task_name="tests.dedup_nc8.count_nodes",
+    )
+
+
+async def _query_one_async(board_id: str, source_artifact_ref: str):
+    return await run_blocking_graph_io(
+        lambda: _query_one(board_id, source_artifact_ref),
+        task_name="tests.dedup_nc8.query_one",
+    )
+
+
+def _set_human_curated_sync(board_id: str, node_id: str) -> None:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_kdb, kconn):
+        kconn.execute(
+            "MATCH (n:Entity) WHERE n.id = $id SET n.human_curated = true",
+            {"id": node_id},
+        )
+
+
+def _count_named_entities_sync(board_id: str, title: str) -> int:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_kdb, kconn):
+        res = kconn.execute(
+            "MATCH (n:Entity) WHERE n.title = $t RETURN count(n)",
+            {"t": title},
+        )
+        try:
+            return int(res.get_next()[0])
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # TC-3 (spec eca49df9, AC6 + AC7) — merge contado/auditado + soma de counters
 # ---------------------------------------------------------------------------
@@ -507,7 +587,7 @@ async def test_tc3_reconsolidation_counts_and_audits_merge(
     assert commit2.processed_candidates >= 1
 
     # AC8 invariant: structural Entity dedup intact — still exactly 1 node.
-    assert _count_entities(board_id, artifact_ref) == 1
+    assert await _count_entities_async(board_id, artifact_ref) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +629,7 @@ async def test_tc3_update_op_increments_nodes_updated_not_merged(
         session_factory, board_id, artifact_ref, "[TC-3 UPDATE] original", content="v1"
     )
     assert commit1.nodes_added >= 1
-    original = _query_one(board_id, artifact_ref)
+    original = await _query_one_async(board_id, artifact_ref)
     existing_id = original["id"]
 
     # Session 2: force op==UPDATE on the candidate via agent_overrides.
@@ -633,8 +713,8 @@ async def test_tc3_update_op_increments_nodes_updated_not_merged(
         + commit2.nodes_noop
     )
     # In-place: still exactly one Entity, with the updated title.
-    assert _count_entities(board_id, artifact_ref) == 1
-    updated = _query_one(board_id, artifact_ref)
+    assert await _count_entities_async(board_id, artifact_ref) == 1
+    updated = await _query_one_async(board_id, artifact_ref)
     assert updated["title"] == "[TC-3 UPDATE] revised"
     assert updated["source_content_hash"] == begin.content_hash
     assert updated["source_content_hash"] != original["source_content_hash"]
@@ -676,7 +756,7 @@ async def test_cross_artifact_update_preserves_source_provenance(
         "[cross-artifact] parent",
         content="parent v1",
     )
-    original = _query_one(board_id, parent_ref)
+    original = await _query_one_async(board_id, parent_ref)
 
     child_card_id = str(uuid.uuid4())
     candidate_id = "cross_artifact_parent_ref"
@@ -744,7 +824,7 @@ async def test_cross_artifact_update_preserves_source_provenance(
         )
 
     assert commit.nodes_updated == 1
-    updated = _query_one(board_id, parent_ref)
+    updated = await _query_one_async(board_id, parent_ref)
     assert updated["title"] == "[cross-artifact] parent reference"
     assert updated["source_content_hash"] == original["source_content_hash"]
     assert updated["source_content_hash"] != begin.content_hash
@@ -776,7 +856,7 @@ async def test_ts1_reconsolidation_does_not_duplicate_entity(
         f"expected 0 new nodes on re-consolidation, got {commit2.nodes_added}"
     )
 
-    count = _count_entities(board_id, artifact_ref)
+    count = await _count_entities_async(board_id, artifact_ref)
     assert count == 1, f"expected exactly 1 Entity for {artifact_ref}, got {count}"
 
 
@@ -800,23 +880,27 @@ async def test_kgdet_multi_item_refs_preserve_siblings_on_reprocess(
     source_prefix = f"spec:{spec_id}:"
     for node_type, expected in expected_counts.items():
         assert (
-            _count_nodes_by_source_prefix(board_id, node_type, source_prefix)
+            await _count_nodes_by_source_prefix_async(
+                board_id, node_type, source_prefix
+            )
             == expected
         )
-    assert _count_entities(board_id, f"spec:{spec_id}") == 1
-    assert _count_nodes(board_id, "Learning") == 0
-    assert _count_nodes(board_id, "Alternative") == 0
+    assert await _count_entities_async(board_id, f"spec:{spec_id}") == 1
+    assert await _count_nodes_async(board_id, "Learning") == 0
+    assert await _count_nodes_async(board_id, "Alternative") == 0
 
     commit2 = await _drive_spec_worker_session(session_factory, board_id, spec_payload)
     assert commit2.nodes_added == 0
     for node_type, expected in expected_counts.items():
         assert (
-            _count_nodes_by_source_prefix(board_id, node_type, source_prefix)
+            await _count_nodes_by_source_prefix_async(
+                board_id, node_type, source_prefix
+            )
             == expected
         )
-    assert _count_entities(board_id, f"spec:{spec_id}") == 1
-    assert _count_nodes(board_id, "Learning") == 0
-    assert _count_nodes(board_id, "Alternative") == 0
+    assert await _count_entities_async(board_id, f"spec:{spec_id}") == 1
+    assert await _count_nodes_async(board_id, "Learning") == 0
+    assert await _count_nodes_async(board_id, "Alternative") == 0
 
 
 # ---------------------------------------------------------------------------
@@ -833,7 +917,7 @@ async def test_ts2_reconsolidation_updates_attrs_preserves_history(
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "Original", "A"
     )
-    snapshot_before = _query_one(board_id, artifact_ref)
+    snapshot_before = await _query_one_async(board_id, artifact_ref)
     assert snapshot_before["title"] == "Original"
     assert snapshot_before["content"] == "A"
 
@@ -842,7 +926,7 @@ async def test_ts2_reconsolidation_updates_attrs_preserves_history(
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "Original", "B"
     )
-    snapshot_after = _query_one(board_id, artifact_ref)
+    snapshot_after = await _query_one_async(board_id, artifact_ref)
     # Attrs updated:
     assert snapshot_after["title"] == "Original"
     assert snapshot_after["content"] == "B"
@@ -867,24 +951,21 @@ async def test_ts3_human_curated_preserves_node(dedup_tempdir, monkeypatch):
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "Custom", "human-edited"
     )
-    snapshot = _query_one(board_id, artifact_ref)
+    snapshot = await _query_one_async(board_id, artifact_ref)
     node_id = snapshot["id"]
 
     # Mark as human_curated=true via direct Cypher (simulating a back-office
     # action). The fix must honour this flag in the dedup branch.
-    from kg_schema_testing import open_board_connection
-    conn = open_board_connection(board_id)
-    with conn as (_kdb, kconn):
-        kconn.execute(
-            "MATCH (n:Entity) WHERE n.id = $id SET n.human_curated = true",
-            {"id": node_id},
-        )
+    await run_blocking_graph_io(
+        lambda: _set_human_curated_sync(board_id, node_id),
+        task_name="tests.dedup_nc8.set_human_curated",
+    )
 
     # Re-consolidate with a different title — must NOT alter the curated node.
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "AutoGen", "auto-content"
     )
-    snapshot_after = _query_one(board_id, artifact_ref)
+    snapshot_after = await _query_one_async(board_id, artifact_ref)
     assert snapshot_after["title"] == "Custom", (
         "human_curated=true must block UPDATE in the dedup branch"
     )
@@ -1022,20 +1103,10 @@ async def test_ts7_tech_entity_dedup_cross_spec(dedup_tempdir, monkeypatch):
     for sid in spec_ids:
         await _emit_python_mention(sid)
 
-    from kg_schema_testing import open_board_connection
-    conn = open_board_connection(board_id)
-    with conn as (_kdb, kconn):
-        res = kconn.execute(
-            "MATCH (n:Entity) WHERE n.title = $t RETURN count(n)",
-            {"t": "Python"},
-        )
-        try:
-            count = int(res.get_next()[0])
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+    count = await run_blocking_graph_io(
+        lambda: _count_named_entities_sync(board_id, "Python"),
+        task_name="tests.dedup_nc8.count_named_entities",
+    )
     assert count == 1, (
         f"expected 1 Python Entity node across 3 specs (cross-spec dedup), "
         f"got {count}"

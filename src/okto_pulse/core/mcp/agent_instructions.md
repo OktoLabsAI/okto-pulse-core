@@ -75,7 +75,7 @@ High-volume reads can be returned under a projection profile — see `okto-pulse
 
 ## KG health and operational signals (stop-rule)
 
-Before any KG mutation call `okto_pulse_kg_health(board_id=...)` — **read-only**. **Stop-rule:** `overall_state == quarantined` → STOP and surface; do not write. `recovery_needed` stops every mutation EXCEPT the rebuild family — `okto_pulse_kg_rebuild_preflight` → `okto_pulse_kg_rebuild_confirm` → `okto_pulse_kg_rebuild_run` is its prescribed exit (guard refuses only on `graph_state == quarantined`). `metric_status=unavailable` ≠ healthy — treat as `at_risk`. Full contract (incl. at_risk/backpressure must-not-dos): **`okto-pulse://reference/kg-health`**.
+Before any KG mutation call `okto_pulse_kg_health(board_id=...)` — **read-only**. **Stop-rule:** `overall_state == quarantined` → STOP and surface; do not write. For `recovery_needed`, branch on the component; generic `overall_state` never selects a repair. Board `graph_state=recovery_needed` uses `okto_pulse_kg_rebuild_preflight` → `okto_pulse_kg_rebuild_confirm` → `okto_pulse_kg_rebuild_run`. If `graph_state=healthy`, `discovery_state=recovery_needed`, and `discovery_recovery_required=true`, use `okto_pulse_kg_global_discovery_recovery_preflight` → `okto_pulse_kg_global_discovery_recovery_confirm` → `okto_pulse_kg_global_discovery_recovery_run`; board rebuild refuses this scope. `metric_status=unavailable` ≠ healthy — treat as `at_risk`. Full contract: **`okto-pulse://reference/kg-health`**.
 
 ---
 

@@ -186,11 +186,10 @@ async def test_activity_200_newest_first(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_activity_200_empty_for_unknown_card(client) -> None:
-    # Unknown card id yields an empty list (no 404), exactly as the legacy endpoint.
+async def test_activity_404_for_unknown_card(client) -> None:
     resp = client.get(f"{PREFIX}/{_missing()}/activity")
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == []
+    assert resp.status_code == 404, resp.text
+    assert resp.json() == {"detail": "Card not found"}
 
 
 @pytest.mark.asyncio
@@ -236,8 +235,8 @@ async def test_seen_200_empty_when_no_items(client) -> None:
     assert resp.json() == {"items": {}}
 
     unknown = client.get(f"{PREFIX}/{_missing()}/seen")
-    assert unknown.status_code == 200, unknown.text
-    assert unknown.json() == {"items": {}}
+    assert unknown.status_code == 404, unknown.text
+    assert unknown.json() == {"detail": "Card not found"}
 
 
 # --- knowledge: list --------------------------------------------------------

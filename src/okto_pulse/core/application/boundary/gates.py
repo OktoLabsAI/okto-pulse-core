@@ -41,6 +41,17 @@ from .report import GateException, GateReport, GateStatus, enforce_exception_pol
 #: ``okto_pulse.tools`` is edition-owned and must not ship in the Core package.
 TOOLS_LOC_BASELINE = 0
 
+#: Core must never import an edition implementation, including underneath
+#: ``TYPE_CHECKING``.  This is deliberately matched only on AST Import and
+#: ImportFrom nodes; prose, docstrings and example string literals are inert.
+_CORE_FORBIDDEN_EDITION_IMPORT_PREFIXES: tuple[str, ...] = (
+    "okto_pulse.community",
+)
+_CORE_EDITION_IMPORT_RULE = AllowDenyRule(
+    status_on_violation="blocking",
+    owner="okto-pulse-core/architecture",
+)
+
 #: Versioned default dependency policy for the core-pure target (api_591b0aeb).
 #: ``forbidden`` are transport/persistence/scheduler frameworks the core-pure
 #: package must move behind adapter editions; until then they are bootstrap debt.
@@ -161,9 +172,10 @@ class ImportBoundaryGate:
             resolution = self._resolver.resolve(rel)
             if resolution.layer == UNCLASSIFIED:
                 unclassified.add(rel)
-            rule = rule_for(resolution.layer)
-            if rule is None:
-                continue
+            # Even otherwise-unclassified/ungoverned Core paths must obey the
+            # absolute edition-import fence.  An empty layer rule lets the AST
+            # scanner enforce that fence without inventing other restrictions.
+            rule = rule_for(resolution.layer) or AllowDenyRule()
             violations.extend(self._scan_file(rel, resolution.layer, tree, rule))
         if gate_input.mode == "bootstrap":
             violations = [self._bootstrap_downgrade(v) for v in violations]
@@ -211,28 +223,90 @@ class ImportBoundaryGate:
         out: list[ImportViolation] = []
         # Imports guarded by ``if TYPE_CHECKING:`` are compile-time only — they are
         # type-hint references, not runtime coupling — so a pure layer may use a
-        # concrete type purely for annotations without violating the matrix.
+        # concrete type purely for annotations without violating the matrix.  The
+        # Core-to-edition fence is stricter and applies even under TYPE_CHECKING.
         type_checking_imports = self._type_checking_import_nodes(tree)
         for node in ast.walk(tree):
-            if id(node) in type_checking_imports:
-                continue
+            runtime_import = id(node) not in type_checking_imports
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    out.extend(self._check_module(rel, layer, rule, alias.name, node.lineno))
+                    if self._is_forbidden_core_edition_import(alias.name):
+                        out.append(
+                            self._violation(
+                                rel,
+                                layer,
+                                _CORE_EDITION_IMPORT_RULE,
+                                alias.name,
+                                node.lineno,
+                                "forbidden_core_edition_import",
+                            )
+                        )
+                    elif runtime_import:
+                        out.extend(
+                            self._check_module(
+                                rel, layer, rule, alias.name, node.lineno
+                            )
+                        )
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 if node.level == 0 and module:
-                    out.extend(self._check_module(rel, layer, rule, module, node.lineno))
-                for alias in node.names:
-                    if alias.name in rule.forbidden_symbols:
-                        out.append(
-                            self._violation(
-                                rel, layer, rule,
-                                f"from {module} import {alias.name}",
-                                node.lineno, "forbidden_symbol",
+                    forbidden_targets = self._forbidden_core_edition_import_from(
+                        module,
+                        node.names,
+                    )
+                    if forbidden_targets:
+                        for target in forbidden_targets:
+                            out.append(
+                                self._violation(
+                                    rel,
+                                    layer,
+                                    _CORE_EDITION_IMPORT_RULE,
+                                    target,
+                                    node.lineno,
+                                    "forbidden_core_edition_import",
+                                )
                             )
+                    elif runtime_import:
+                        out.extend(
+                            self._check_module(rel, layer, rule, module, node.lineno)
                         )
+                if runtime_import:
+                    for alias in node.names:
+                        if alias.name in rule.forbidden_symbols:
+                            out.append(
+                                self._violation(
+                                    rel,
+                                    layer,
+                                    rule,
+                                    f"from {module} import {alias.name}",
+                                    node.lineno,
+                                    "forbidden_symbol",
+                                )
+                            )
         return out
+
+    @staticmethod
+    def _is_forbidden_core_edition_import(dotted: str) -> bool:
+        return any(
+            dotted == prefix or dotted.startswith(prefix + ".")
+            for prefix in _CORE_FORBIDDEN_EDITION_IMPORT_PREFIXES
+        )
+
+    @staticmethod
+    def _forbidden_core_edition_import_from(
+        module: str,
+        names: list[ast.alias],
+    ) -> tuple[str, ...]:
+        if ImportBoundaryGate._is_forbidden_core_edition_import(module):
+            return (module,)
+        targets = {
+            f"{module}.{alias.name}"
+            for alias in names
+            if ImportBoundaryGate._is_forbidden_core_edition_import(
+                f"{module}.{alias.name}"
+            )
+        }
+        return tuple(sorted(targets))
 
     @staticmethod
     def _type_checking_import_nodes(tree: ast.AST) -> set[int]:
@@ -278,7 +352,11 @@ class ImportBoundaryGate:
         Pure layers (domain/application/ports) are never downgraded — they must be
         clean from day one.
         """
-        if v.status != "blocking" or v.layer in _PURE_LAYERS:
+        if (
+            v.status != "blocking"
+            or v.layer in _PURE_LAYERS
+            or v.rule == "forbidden_core_edition_import"
+        ):
             return v
         key = ImportBoundaryGate._baseline_key(v)
         category = ImportBoundaryGate._violation_category(v)
@@ -390,6 +468,8 @@ class ImportBoundaryGate:
             return "permissions"
         if imported.startswith("sqlalchemy"):
             return "sqlalchemy"
+        if v.rule == "forbidden_core_edition_import":
+            return "community_import"
         if v.rule.startswith("forbidden_target_layer:"):
             return v.rule.removeprefix("forbidden_target_layer:")
         if v.rule == "forbidden_import_root":
@@ -481,12 +561,16 @@ class PackageManifestGate:
                 status="blocking",
                 severity="high",
                 owner="okto-pulse-core/architecture",
-                evidence={**evidence, "error": "unexpected_runtime_file"},
+                evidence={
+                    **evidence,
+                    "error": "unexpected_runtime_file",
+                    "unexpected_runtime_files": unexpected,
+                },
                 observed_value=unexpected,
                 expected_value=[],
                 remediation_hint=(
-                    "A non-okto_pulse runtime file was included in the core wheel; "
-                    "exclude it or declare it as an explicit force-include exception."
+                    "A Community package path or non-okto_pulse runtime file was "
+                    "included in the Core wheel; exclude it from the distribution."
                 ),
             )
         if observed_loc != expected:
@@ -550,10 +634,16 @@ class PackageManifestGate:
 
     @staticmethod
     def _unexpected_runtime_files(wheel_files: list[str]) -> list[str]:
-        """Runtime ``.py`` shipped outside the ``okto_pulse`` package / metadata."""
+        """Community paths or runtime ``.py`` outside Core package metadata."""
         out: list[str] = []
         for entry in wheel_files:
-            top = entry.replace("\\", "/").split("/", 1)[0]
+            normalized = entry.replace("\\", "/")
+            if normalized == "okto_pulse/community" or normalized.startswith(
+                "okto_pulse/community/"
+            ):
+                out.append(entry)
+                continue
+            top = normalized.split("/", 1)[0]
             if top.startswith("okto_pulse") or top.endswith((".dist-info", ".data")):
                 continue
             if entry.endswith(".py"):

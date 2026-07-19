@@ -380,7 +380,6 @@ def test_rebuilder_includes_working_artifacts_and_filters_decision_rows() -> Non
 
 def test_rebuilder_step_adapter_returns_rebuild_step_result() -> None:
     from okto_pulse.core.kg.rebuild_service import (
-        RebuildStepInput,
         RebuildStepResult,
     )
 

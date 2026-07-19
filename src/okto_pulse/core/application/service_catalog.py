@@ -625,6 +625,7 @@ class CoreApplicationServiceCatalog:
         kb_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
+        resolved_lineage: object | None = None,
     ) -> dict[str, object]:
         from okto_pulse.core.services.effective_resource_propagation import (
             propagate_effective_resources_to_spec,
@@ -640,6 +641,25 @@ class CoreApplicationServiceCatalog:
             kb_ids=kb_ids,
             architecture_design_ids=architecture_design_ids,
             architecture_propagation_mode=architecture_propagation_mode,
+            resolved_lineage=resolved_lineage,
+        )
+
+    async def resolve_effective_spec_parent_lineage(
+        self,
+        *,
+        board_id: str,
+        ideation_id: str | None = None,
+        refinement_id: str | None = None,
+    ) -> object | None:
+        from okto_pulse.core.services.effective_resource_propagation import (
+            resolve_effective_spec_parent_lineage,
+        )
+
+        return await resolve_effective_spec_parent_lineage(
+            self.__relational_context,
+            board_id=board_id,
+            ideation_id=ideation_id,
+            refinement_id=refinement_id,
         )
 
     async def list_my_mentions(

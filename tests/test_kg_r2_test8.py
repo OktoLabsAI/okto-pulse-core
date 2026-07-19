@@ -40,7 +40,7 @@ from okto_pulse.core.kg.cypher_templates import layer_filter_clause
 from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
 from global_graph_testing import (
     bootstrap_global_discovery,
-    open_global_connection,
+    execute_global_read,
     reset_global_discovery_runtime_for_tests,
 )
 from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
@@ -73,11 +73,35 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+async def _ensure_outbox_audit_parent(db, board_id: str, session_id: str) -> None:
+    """Persist the relational parents required by KuzuNodeRef fixtures."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy_test_models import Board, ConsolidationAudit
+
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name=f"R2 TEST8 {board_id}", owner_id="r2-test8"))
+        await db.flush()
+    if await db.get(ConsolidationAudit, session_id) is None:
+        now = datetime.now(timezone.utc)
+        db.add(ConsolidationAudit(
+            session_id=session_id,
+            board_id=board_id,
+            artifact_id=f"outbox-{session_id[-16:]}",
+            artifact_type="test_fixture",
+            agent_id="r2-test8",
+            started_at=now,
+            committed_at=now,
+        ))
+        await db.flush()
+
+
 async def _digest_node_via_gd_worker(db_factory, board_id, node_id, node_type) -> int:
     """Create the DecisionDigest through the REAL GD outbox pipeline."""
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     async with db_factory() as db:
         await db.execute(delete(GlobalUpdateOutbox))
+        await _ensure_outbox_audit_parent(db, board_id, session_id)
         db.add(KuzuNodeRef(
             session_id=session_id, board_id=board_id,
             kuzu_node_id=node_id, kuzu_node_type=node_type, operation="add",
@@ -96,35 +120,24 @@ async def _drain_gd_worker(db_factory) -> int:
 
 
 def _digest_layer(board_id, node_id) -> str | None:
-    _gdb, gconn = open_global_connection()
-    try:
-        res = gconn.execute(
-            "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
-            "RETURN coalesce(d.graph_layer, 'legacy_unknown')",
-            {"b": board_id, "n": node_id},
-        )
-        return str(res.get_next()[0]) if res.has_next() else None
-    finally:
-        del gconn, _gdb
+    res = execute_global_read(
+        "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
+        "RETURN coalesce(d.graph_layer, 'legacy_unknown')",
+        {"b": board_id, "n": node_id},
+    )
+    return str(res.rows[0][0]) if res.rows else None
 
 
 def _query_ids(board_id, layer):
     """Deterministic canonical/all selection via the SAME fail-closed
     layer_filter_clause query_global applies (no embedding-similarity flakiness)."""
-    _gdb, gconn = open_global_connection()
-    try:
-        cypher = (
-            "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
-            "WHERE b.board_id = $bid AND " + layer_filter_clause("d") + " "
-            "RETURN d.original_node_id"
-        )
-        res = gconn.execute(cypher, {"bid": board_id, "graph_layer": layer})
-        out = set()
-        while res.has_next():
-            out.add(str(res.get_next()[0]))
-        return out
-    finally:
-        del gconn, _gdb
+    cypher = (
+        "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
+        "WHERE b.board_id = $bid AND " + layer_filter_clause("d") + " "
+        "RETURN d.original_node_id"
+    )
+    res = execute_global_read(cypher, {"bid": board_id, "graph_layer": layer})
+    return {str(row[0]) for row in res.rows}
 
 
 # ===========================================================================
@@ -136,7 +149,7 @@ def _query_ids(board_id, layer):
 async def test_demotion_syncs_global_discovery_via_r1(db_factory):
     board_id = await new_board(db_factory, "r2t8")
     spec_id, _ref = await seed_done_spec_canonical(db_factory, board_id)
-    req = first_canonical_node(board_id, "Requirement")
+    req = await first_canonical_node(board_id, "Requirement")
     assert req is not None, "real pipeline must produce a canonical Requirement"
     req_id, _src = req
 
@@ -172,7 +185,7 @@ async def test_demotion_sync_is_idempotent(db_factory):
     digest stays converged (no churn)."""
     board_id = await new_board(db_factory, "r2t8")
     spec_id, _ref = await seed_done_spec_canonical(db_factory, board_id)
-    req = first_canonical_node(board_id, "Requirement")
+    req = await first_canonical_node(board_id, "Requirement")
     assert req is not None
     req_id, _src = req
     assert await _digest_node_via_gd_worker(db_factory, board_id, req_id, "Requirement") == 1

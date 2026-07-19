@@ -213,6 +213,8 @@ class _BoardGraphPortConnection:
                 params or {},
                 max_rows=10000,
             )
+            if result.get("truncated"):
+                raise RuntimeError("orphan integrity graph read was truncated")
             return GraphStatementResult.from_rows(result.get("rows", []))
 
         async def _run() -> Any:
@@ -447,6 +449,17 @@ class _NodeRow:
     writer_path: str
 
 
+class OrphanScanQueryError(RuntimeError):
+    """Fail-closed signal for an incomplete orphan-integrity graph read."""
+
+    def __init__(self, *, phase: str, node_type: str) -> None:
+        self.phase = phase
+        self.node_type = node_type
+        super().__init__(
+            f"orphan integrity {phase} query failed for node type {node_type}"
+        )
+
+
 class OrphanNodeScanner:
     """Scan graph nodes for non-allowlisted zero-degree nodes."""
 
@@ -512,8 +525,24 @@ class OrphanNodeScanner:
         allowlisted_root_count = 0
 
         for current_type in node_types:
-            for row in _iter_node_rows(graph_scope, current_type):
-                if _node_degree(graph_scope, row.node_type, row.node_id) != 0:
+            try:
+                node_rows = tuple(_iter_node_rows(graph_scope, current_type))
+            except Exception as exc:
+                raise OrphanScanQueryError(
+                    phase="enumeration",
+                    node_type=current_type,
+                ) from exc
+
+            try:
+                connected_node_ids = _connected_node_ids(graph_scope, current_type)
+            except Exception as exc:
+                raise OrphanScanQueryError(
+                    phase="connectivity",
+                    node_type=current_type,
+                ) from exc
+
+            for row in node_rows:
+                if row.node_id in connected_node_ids:
                     continue
                 if self._is_allowlisted_root(row):
                     allowlisted_root_count += 1
@@ -1212,6 +1241,28 @@ def _iter_node_rows(graph_scope: Any, node_type: str) -> Iterable[_NodeRow]:
         )
 
 
+def _connected_node_ids(graph_scope: Any, node_type: str) -> frozenset[str]:
+    """Return connected ids for one label with one board-scoped graph query.
+
+    Outgoing and incoming degree are aggregated separately so direction is
+    explicit and each node is classified once. Query count is therefore bound
+    by the selected schema labels, never by the number of nodes or edges.
+    """
+
+    result = graph_scope.execute(
+        f"MATCH (n:{node_type}) "
+        "OPTIONAL MATCH (n)-[r_out]->() "
+        "WITH n, COUNT(r_out) AS out_degree "
+        "OPTIONAL MATCH (n)<-[r_in]-() "
+        "RETURN n.id, out_degree, COUNT(r_in) AS in_degree"
+    )
+    return frozenset(
+        str(row[0])
+        for row in result.rows
+        if int(row[1] or 0) > 0 or int(row[2] or 0) > 0
+    )
+
+
 def _node_degree(graph_scope: Any, node_type: str, node_id: str) -> int:
     degree = 0
     for rel_name, from_type, to_type in _relationship_pairs():
@@ -1315,6 +1366,7 @@ __all__ = [
     "OrphanMetricSinkProtocol",
     "OrphanNodeSample",
     "OrphanNodeScanner",
+    "OrphanScanQueryError",
     "OrphanScanReport",
     "SAFE_ORPHAN_AUDIT_FIELDS",
     "SAFE_ORPHAN_METRIC_LABELS",

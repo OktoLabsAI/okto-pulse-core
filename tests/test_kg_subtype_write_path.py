@@ -7,7 +7,6 @@ intact); candidates WITHOUT kind_of keep the current flow byte-compatible.
 
 from __future__ import annotations
 
-import asyncio
 import gc
 import shutil
 import tempfile
@@ -16,6 +15,7 @@ from pathlib import Path
 import pytest
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import KGPrimitiveError
 from okto_pulse.core.ports.kg_subtype_registry import (
     SubtypeDeclaration,
@@ -81,6 +81,13 @@ def _kind_of_of(board_id: str, artifact_ref: str):
                 pass
 
 
+async def _kind_of_of_async(board_id: str, artifact_ref: str):
+    return await run_blocking_graph_io(
+        lambda: _kind_of_of(board_id, artifact_ref),
+        task_name="tests.subtype_write_path.kind_of",
+    )
+
+
 async def test_s3_declared_kind_of_persists(subtype_tempdir, monkeypatch):
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
     artifact_ref = f"spec:{spec_id}"
@@ -97,7 +104,7 @@ async def test_s3_declared_kind_of_persists(subtype_tempdir, monkeypatch):
         "[MKG-E] Subtipo declarado", content="c",
         provenance={"kind_of": "security_control"},
     )
-    assert _kind_of_of(board_id, artifact_ref) == "security_control"
+    assert await _kind_of_of_async(board_id, artifact_ref) == "security_control"
 
 
 async def test_s3_undeclared_kind_of_rejects_commit_graph_intact(
@@ -124,7 +131,7 @@ async def test_s3_undeclared_kind_of_rejects_commit_graph_intact(
     assert details.get("kind_of") == "compliance_req"
     assert details.get("declared_subtypes") == ["security_control"]
     # Graph intact — the node never landed.
-    assert _kind_of_of(board_id, artifact_ref) == "__absent__"
+    assert await _kind_of_of_async(board_id, artifact_ref) == "__absent__"
 
 
 async def test_s3_absent_kind_of_keeps_current_flow(subtype_tempdir, monkeypatch):
@@ -136,4 +143,4 @@ async def test_s3_absent_kind_of_keeps_current_flow(subtype_tempdir, monkeypatch
         "[MKG-E] Sem subtipo", content="c",
     )
     assert commit.nodes_added >= 1
-    assert _kind_of_of(board_id, artifact_ref) is None
+    assert await _kind_of_of_async(board_id, artifact_ref) is None

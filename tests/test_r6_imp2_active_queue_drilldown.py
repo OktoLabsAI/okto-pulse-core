@@ -134,6 +134,7 @@ async def test_drilldown_separates_sources_and_excludes_terminal(db_factory):
     board = _id(BOARD_PREFIX)
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
+        await db.flush()
         # ConsolidationQueue: 2 pending (spec, card) + 1 claimed (card) ACTIVE; an
         # oldest pending at 400s (=> stuck); 1 done is NOT active.
         db.add(_cq(board, artifact_type="spec", status="pending", age_s=400))
@@ -178,12 +179,58 @@ async def test_drilldown_idle_when_no_active_work(db_factory):
     board = _id(BOARD_PREFIX)
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
+        await db.flush()
         db.add(_cq(board, artifact_type="card", status="done", age_s=5))
         db.add(_outbox(board, retry_count=5))  # dead_letter only
         await db.commit()
         dd = await get_active_queue_drilldown(db, board)
     assert dd["total_active_depth"] == 0
     assert dd["classification"] == "idle"
+
+
+@pytest.mark.asyncio
+async def test_drilldown_uses_source_worker_and_worst_source_action(
+    db_factory,
+    monkeypatch,
+):
+    from okto_pulse.core.services import queue_health_service as qhs
+
+    board = _id(BOARD_PREFIX)
+    async with db_factory() as db:
+        db.add(Board(id=board, name="r6 source workers", owner_id=USER_ID))
+        await db.flush()
+        db.add(_cq(board, artifact_type="card", status="pending", age_s=20))
+        db.add(_outbox(board, retry_count=0, age_s=400))
+        await db.commit()
+
+        monkeypatch.setattr(
+            qhs,
+            "_runtime_worker_mode",
+            lambda family: "running"
+            if family == "consolidation_worker"
+            else "stopped",
+        )
+        dd = await get_active_queue_drilldown(db, board)
+
+    assert dd["worker_modes"] == {
+        "consolidation_queue": "running",
+        "global_update_outbox": "stopped",
+    }
+    by_source = {source["source"]: source for source in dd["sources"]}
+    assert by_source["consolidation_queue"]["worker_family"] == (
+        "consolidation_worker"
+    )
+    assert by_source["global_update_outbox"]["worker_family"] == "outbox_worker"
+    assert by_source["global_update_outbox"]["classification"] == "stuck"
+    assert dd["diagnostic"] == {
+        "bounded": True,
+        "worst_source": "global_update_outbox",
+        "classification": "stuck",
+        "worker_mode": "stopped",
+        "reason": "oldest_active_item_exceeds_stuck_threshold",
+    }
+    assert dd["next_action"] == "start_outbox_worker"
+    assert dd["worker_mode"] == "stopped"
 
 
 # ===========================================================================
@@ -198,6 +245,7 @@ async def test_kg_health_surfaces_active_queue_issue_and_counts(db_factory):
     board = _id(BOARD_PREFIX)
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
+        await db.flush()
         db.add(_cq(board, artifact_type="spec", status="pending", age_s=400))
         db.add(_outbox(board, retry_count=0, age_s=30))
         await db.commit()
@@ -230,6 +278,7 @@ async def test_mcp_queue_drilldown_tool(db_factory):
     board = _id(BOARD_PREFIX)
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
+        await db.flush()
         db.add(_cq(board, artifact_type="card", status="pending", age_s=20))
         await db.commit()
 

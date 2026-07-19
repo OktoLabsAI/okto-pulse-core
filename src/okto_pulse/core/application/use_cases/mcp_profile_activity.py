@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
-import base64
-import json
 from datetime import datetime
 from typing import Any
 
@@ -20,12 +18,18 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.services.analytics_contract import encode_activity_cursor
 
 
 class McpUpdateMyProfileCommand:
     __slots__ = ("description", "objective")
 
-    def __init__(self, *, description: str = "", objective: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        description: str | None = None,
+        objective: str | None = None,
+    ) -> None:
         self.description = description
         self.objective = objective
 
@@ -47,9 +51,11 @@ class McpUpdateMyProfileUseCase:
         if not agent:
             raise EntityNotFoundError("agent", actor.actor_id)
 
-        if command.description:
+        # ``None`` means omitted while an empty string is an intentional clear.
+        # MCP callers therefore can round-trip a reversible profile mutation.
+        if command.description is not None:
             agent.description = command.description
-        if command.objective:
+        if command.objective is not None:
             agent.objective = command.objective
 
         await commit(uow)
@@ -229,8 +235,7 @@ class McpGetActivityLogResult:
 
 
 def _encode_activity_cursor(created_at: datetime, row_id: str) -> str:
-    payload = json.dumps({"ts": created_at.isoformat(), "id": row_id})
-    return base64.urlsafe_b64encode(payload.encode()).decode()
+    return encode_activity_cursor(created_at, row_id)
 
 
 class McpGetActivityLogUseCase:
@@ -250,6 +255,10 @@ class McpGetActivityLogUseCase:
 
         next_cursor: str | None = None
         if next_cursor_pair:
-            next_cursor = _encode_activity_cursor(*next_cursor_pair)
+            next_cursor = encode_activity_cursor(
+                *next_cursor_pair,
+                action=command.action,
+                card_id=command.card_id,
+            )
 
         return McpGetActivityLogResult(rows=rows, next_cursor=next_cursor)

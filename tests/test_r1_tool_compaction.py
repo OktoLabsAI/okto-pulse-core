@@ -76,7 +76,7 @@ def test_tool_names_stable_after_compaction():
     # 2026-07-12 (auditoria MCP): re-pinned 259→265 (pin apodrecido enquanto 6
     # tools entraram); o delta exato agora é nomeado por
     # test_mcp_tools_catalog_drift.py.
-    assert len(names) == 265
+    assert len(names) == 276
     assert all(n.startswith("okto_pulse_") for n in names)
 
 
@@ -207,7 +207,8 @@ def test_tool_docs_resources_registered_and_nonempty(family):
     assert uri in registered
     content = mcp_server._load_resource_file(f"reference/tool-docs/{family}.md")
     assert content.startswith("---")  # frontmatter
-    assert 'version: "1.0"' in content
+    expected_version = "2.0" if family == "test-scenario" else "1.0"
+    assert f'version: "{expected_version}"' in content
 
 
 def test_all_tool_doc_uris_are_registered_and_resolvable():

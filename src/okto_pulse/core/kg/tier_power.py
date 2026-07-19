@@ -21,6 +21,11 @@ import re
 import unicodedata
 from typing import Any
 
+from okto_pulse.core.kg.query_contract import (
+    CYPHER_SUPPORTED_CLAUSES,
+    CYPHER_SUPPORTED_ROOT_OPERATIONS,
+    query_contract_document,
+)
 from okto_pulse.core.kg.schema_contract import (
     NODE_TYPES,
     SCHEMA_VERSION,
@@ -50,14 +55,7 @@ class TierPowerError(Exception):
 # Cypher parser whitelist (FR-3, FR-4)
 # ---------------------------------------------------------------------------
 
-CYPHER_WHITELIST = frozenset({
-    "MATCH", "WHERE", "RETURN", "WITH", "ORDER", "BY",
-    "LIMIT", "UNWIND", "OPTIONAL", "UNION", "AS", "AND",
-    "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE",
-    "CONTAINS", "STARTS", "ENDS", "DISTINCT", "COUNT",
-    "COLLECT", "SUM", "AVG", "MIN", "MAX", "CALL",
-    "CASE", "WHEN", "THEN", "ELSE", "END", "DESC", "ASC",
-})
+CYPHER_WHITELIST = frozenset(CYPHER_SUPPORTED_CLAUSES)
 
 CYPHER_BLACKLIST = frozenset({
     "CREATE", "MERGE", "DELETE", "DETACH", "SET",
@@ -156,9 +154,12 @@ def _mask_literals_and_comments(cypher: str) -> str:
 
 
 def validate_cypher_read_only(cypher: str) -> None:
-    """Validate that Cypher is read-only by checking against whitelist/blacklist.
+    """Validate the canonical read-only Cypher subset.
 
-    Raises TierPowerError(unsafe_cypher) on violation.
+    Write keywords are security violations (``unsafe_cypher``). A non-mutating
+    root operation outside the documented subset fails distinctly as
+    ``unsupported_operation`` so clients can correct the query without
+    treating it as an attempted write.
     """
     cleaned = _strip_comments(cypher)
     cleaned = _normalize_unicode(cleaned)
@@ -172,6 +173,18 @@ def validate_cypher_read_only(cypher: str) -> None:
                 f"Blacklisted keyword detected: {token}",
                 details={"keyword": token},
             )
+
+    root_operation = tokens[0] if tokens else ""
+    if root_operation not in CYPHER_SUPPORTED_ROOT_OPERATIONS:
+        raise TierPowerError(
+            "unsupported_operation",
+            f"Unsupported Cypher root operation: {root_operation or '<empty>'}",
+            details={
+                "operation": root_operation or None,
+                "supported_operations": list(CYPHER_SUPPORTED_ROOT_OPERATIONS),
+                "query_contract_version": query_contract_document()["version"],
+            },
+        )
 
 
 def _auto_inject_limit(cypher: str, max_rows: int) -> str:
@@ -1259,6 +1272,7 @@ def get_schema_info(
     # the same guaranteed set on each label; per-label variation is carried by
     # has_vector_index. Additive — the global keys above are unchanged.
     result["label_properties"] = _label_properties_map()
+    result["query_contract"] = query_contract_document()
     return result
 
 

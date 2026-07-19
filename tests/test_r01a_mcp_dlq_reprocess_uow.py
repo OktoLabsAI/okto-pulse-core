@@ -48,6 +48,7 @@ async def _seed_dlq_row(board_id: str) -> str:
     from okto_pulse.core.infra.database import get_session_factory
     from sqlalchemy_test_models import ConsolidationDeadLetter
 
+    await _seed_board(board_id)
     row_id = f"dlq-fu2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
         db.add(
@@ -169,6 +170,7 @@ async def test_dead_letter_reprocess_rolls_back_on_mid_flow_failure() -> None:
     from sqlalchemy_test_models import ConsolidationDeadLetter
 
     board_id = _board()
+    await _seed_board(board_id)
     marker_id = f"dlq-marker-{uuid.uuid4().hex[:8]}"
 
     async def _failing(session, board, **kwargs):

@@ -43,7 +43,19 @@ class DefaultBoardConfigApiService:
 
     async def get_active(self, *, scope: str = "global") -> dict[str, Any]:
         template = await self._svc.resolve_active(scope)
-        return {"scope": scope, "active": self._serialize(template) if template else None}
+        if template is None:
+            return {"scope": scope, "presence": "absent", "active": None}
+        serialized = self._serialize(template)
+        configured = bool(
+            serialized["settings_payload"]
+            or serialized["guideline_default_refs"]
+            or serialized["design_system_default_ref"]
+        )
+        return {
+            "scope": scope,
+            "presence": "configured" if configured else "empty",
+            "active": serialized,
+        }
 
     async def list_versions(self, *, scope: str = "global") -> dict[str, Any]:
         versions = await self._svc.list_versions(scope)
@@ -182,6 +194,9 @@ class DefaultBoardConfigApiService:
             "is_active": template.is_active,
             "scope": template.scope,
             "settings_payload": dict(template.settings_payload or {}),
+            "settings_presence": (
+                "configured" if template.settings_payload else "empty"
+            ),
             "guideline_default_refs": list(template.guideline_default_refs or []),
             "design_system_default_ref": template.design_system_default_ref,
             "created_by": template.created_by,

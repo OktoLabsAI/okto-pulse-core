@@ -36,6 +36,12 @@ from typing import Any
 from okto_pulse.core.kg import cypher_templates as tpl
 from okto_pulse.core.kg.cursor_codec import decode_cursor
 from okto_pulse.core.kg.interfaces.graph_store import QueryFilters
+from okto_pulse.core.kg.query_contract import (
+    GRAPH_LAYER_CANONICAL,
+    GRAPH_LAYER_VALUES,
+    RELATED_CONTEXT_DEPTHS,
+    RELATED_CONTEXT_DIRECTIONS,
+)
 from okto_pulse.core.kg.schema_contract import SCHEMA_VERSION
 
 logger = logging.getLogger("okto_pulse.kg.service")
@@ -260,14 +266,7 @@ class KGToolError(Exception):
         return f"KGToolError({self.code}): {self.message}"
 
 
-GRAPH_LAYER_CANONICAL = "canonical"
-GRAPH_LAYER_WORKING = "working"
-GRAPH_LAYER_ALL = "all"
-GRAPH_LAYER_CHOICES = {
-    GRAPH_LAYER_CANONICAL,
-    GRAPH_LAYER_WORKING,
-    GRAPH_LAYER_ALL,
-}
+GRAPH_LAYER_CHOICES = frozenset(GRAPH_LAYER_VALUES)
 
 
 def normalize_graph_layer(graph_layer: str | None) -> str:
@@ -913,11 +912,11 @@ class KGService:
         propagated into the store Cypher (center+hop1+hop2), not filtered
         post-hoc, so the non-leakage guarantee holds at the data layer.
         """
-        if direction not in ("both", "incoming", "outgoing"):
+        if direction not in RELATED_CONTEXT_DIRECTIONS:
             raise ValueError(
                 f"invalid direction {direction!r}: expected 'both', 'incoming', 'outgoing'"
             )
-        if max_depth not in (1, 2):
+        if max_depth not in RELATED_CONTEXT_DEPTHS:
             raise ValueError(f"invalid max_depth {max_depth!r}: expected 1 or 2")
 
         layer = normalize_graph_layer(graph_layer)
@@ -1298,24 +1297,34 @@ class KGService:
         search_k = max(top_k, min(top_k * 5, 500))
 
         try:
-            from okto_pulse.core.kg.write_barrier import under_global_safe_write
+            from okto_pulse.core.kg.global_discovery_writer import (
+                global_discovery_writer_scope,
+            )
 
-            with under_global_safe_write(
-                "kg-query-global-layer-schema",
-                "query_global.layer_schema_migrate",
+            with global_discovery_writer_scope(
+                operation="query_global.layer_schema_migrate",
+                owner_id="kg-query-global-layer-schema",
             ):
                 global_runtime.ensure_layer_schema()
         except Exception as exc:
             logger.debug("kg.query_global.layer_schema_migrate_failed err=%s", exc)
 
         try:
-            results = global_runtime.search_decision_digests(
-                query_vec,
-                board_ids=tuple(scope),
-                graph_layer=layer,
-                top_k=search_k,
-                min_similarity=min_similarity,
+            from okto_pulse.core.kg.global_discovery_writer import (
+                global_discovery_writer_scope,
             )
+
+            with global_discovery_writer_scope(
+                operation="query_global.vector_search",
+                owner_id="kg-query-global-vector-search",
+            ):
+                results = global_runtime.search_decision_digests(
+                    query_vec,
+                    board_ids=tuple(scope),
+                    graph_layer=layer,
+                    top_k=search_k,
+                    min_similarity=min_similarity,
+                )
         except Exception as exc:
             logger.debug("kg.query_global.failed err=%s", exc)
             return []
@@ -1332,14 +1341,22 @@ class KGService:
                 return filtered_hnsw[:top_k]
 
         try:
-            exhaustive = global_runtime.search_decision_digests(
-                query_vec,
-                board_ids=tuple(scope),
-                graph_layer=layer,
-                top_k=max(search_k, 500),
-                min_similarity=min_similarity,
-                exhaustive=True,
+            from okto_pulse.core.kg.global_discovery_writer import (
+                global_discovery_writer_scope,
             )
+
+            with global_discovery_writer_scope(
+                operation="query_global.exhaustive_search",
+                owner_id="kg-query-global-exhaustive-search",
+            ):
+                exhaustive = global_runtime.search_decision_digests(
+                    query_vec,
+                    board_ids=tuple(scope),
+                    graph_layer=layer,
+                    top_k=max(search_k, 500),
+                    min_similarity=min_similarity,
+                    exhaustive=True,
+                )
             return self._filter_global_results_to_existing_nodes(exhaustive)[:top_k]
         except Exception as exc:
             logger.debug("kg.query_global.fallback_failed err=%s", exc)

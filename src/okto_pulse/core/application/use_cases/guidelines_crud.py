@@ -41,8 +41,8 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.scope import ActorScope, QueryScope
-from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.services.application_schemas import GuidelineCreate
 
 # Exact legacy 422 detail for the inline-create validation branch.
@@ -57,21 +57,27 @@ def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) 
 
 
 async def _ensure_board(
-    services: ApplicationServiceCatalog,
+    uow: PulseUnitOfWork,
     board_id: str,
-    user_id: str,
+    actor: ActorContext,
     *,
-    query_scope: QueryScope | None = None,
-) -> None:
-    """Reproduce the legacy board guard: raise ``EntityNotFoundError("board")``
-    (adapter → 404 "Board not found") when the board is missing / not owned."""
-    board = await services.boards.get_board(
+    write: bool = False,
+) -> QueryScope:
+    """Resolve owner/share access and return a scope safe for downstream reads."""
+    allowed_permissions = {"editor", "admin"} if write else None
+    board = await load_accessible_board(
+        uow,
         board_id,
-        user_id,
-        query_scope=query_scope,
+        actor,
+        allowed_share_permissions=allowed_permissions,
     )
     if not board:
         raise EntityNotFoundError("board", board_id)
+    return ActorScope.from_context(actor).query_scope(
+        target_board_id=board_id,
+        allowed_board_ids={board_id},
+        require_ownership=False,
+    )
 
 
 # ===========================================================================
@@ -145,12 +151,7 @@ class CreateGuidelineUseCase:
         board_id = getattr(command.data, "board_id", None)
         query_scope = _query_scope_for_actor(actor, board_id=board_id)
         if board_id:
-            await _ensure_board(
-                uow.services,
-                board_id,
-                actor.actor_id,
-                query_scope=query_scope,
-            )
+            query_scope = await _ensure_board(uow, board_id, actor, write=True)
         guideline = await uow.services.guidelines.create_guideline(
             actor.actor_id,
             command.data,
@@ -303,13 +304,7 @@ class GetBoardGuidelinesUseCase:
     async def execute(
         self, command: GetBoardGuidelinesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetBoardGuidelinesResult:
-        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
-        await _ensure_board(
-            uow.services,
-            command.board_id,
-            actor.actor_id,
-            query_scope=query_scope,
-        )
+        query_scope = await _ensure_board(uow, command.board_id, actor)
         items = await uow.services.guidelines.get_board_guidelines(
             command.board_id,
             surface="menu_board",
@@ -349,13 +344,7 @@ class LinkOrCreateBoardGuidelineUseCase:
     async def execute(
         self, command: LinkOrCreateBoardGuidelineCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> LinkOrCreateBoardGuidelineResult:
-        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
-        await _ensure_board(
-            uow.services,
-            command.board_id,
-            actor.actor_id,
-            query_scope=query_scope,
-        )
+        query_scope = await _ensure_board(uow, command.board_id, actor, write=True)
         service = uow.services.guidelines
         data = command.data
 
@@ -435,13 +424,7 @@ class UnlinkBoardGuidelineUseCase:
     async def execute(
         self, command: UnlinkBoardGuidelineCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UnlinkBoardGuidelineResult:
-        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
-        await _ensure_board(
-            uow.services,
-            command.board_id,
-            actor.actor_id,
-            query_scope=query_scope,
-        )
+        query_scope = await _ensure_board(uow, command.board_id, actor, write=True)
         unlinked = await uow.services.guidelines.unlink_guideline_from_board(
             command.board_id,
             command.guideline_id,
@@ -484,13 +467,7 @@ class UpdateBoardGuidelinePriorityUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> UpdateBoardGuidelinePriorityResult:
-        query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
-        await _ensure_board(
-            uow.services,
-            command.board_id,
-            actor.actor_id,
-            query_scope=query_scope,
-        )
+        query_scope = await _ensure_board(uow, command.board_id, actor, write=True)
         updated = await uow.services.guidelines.update_priority(
             command.board_id,
             command.guideline_id,

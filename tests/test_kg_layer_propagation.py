@@ -30,7 +30,7 @@ from okto_pulse.community.api.kg_routes import get_subgraph
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from global_graph_testing import (
     bootstrap_global_discovery,
-    open_global_connection,
+    execute_global_write,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
@@ -123,36 +123,42 @@ def _seed_global_digests() -> str:
                     "emb": emb,
                 },
             )
-    _gdb, gconn = open_global_connection()
-    try:
-        gconn.execute(
-            "CREATE (b:Board {board_id:$bid, name:$bid, summary:'', "
-            "summary_embedding:$emb, topic_count:0, entity_count:0, "
-            "decision_count:3, last_sync_at:timestamp($ts)})",
-            {"bid": board_id, "emb": emb, "ts": ts},
+    execute_global_write(
+        "CREATE (b:Board {board_id:$bid, name:$bid, summary:'', "
+        "summary_embedding:$emb, topic_count:0, entity_count:0, "
+        "decision_count:3, last_sync_at:timestamp($ts)})",
+        {"bid": board_id, "emb": emb, "ts": ts},
+        operation="test_layer_propagation_seed_board",
+    )
+    for did, layer in (
+        ("dd_canon", "canonical"),
+        ("dd_work", "working"),
+        ("dd_stale", "canonical"),
+    ):
+        execute_global_write(
+            "CREATE (d:DecisionDigest {id:$did, board_id:$bid, "
+            "original_node_id:$oid, title:$title, one_line_summary:$s, "
+            "node_type:'Decision', graph_layer:$layer, embedding:$emb, "
+            "created_at:timestamp($ts)})",
+            {
+                "did": f"{did}_{board_id[:8]}",
+                "bid": board_id,
+                "oid": did,
+                "title": f"{layer} digest",
+                "s": QUERY_TEXT,
+                "layer": layer,
+                "emb": emb,
+                "ts": ts,
+            },
+            operation="test_layer_propagation_seed_digest",
         )
-        for did, layer in (
-            ("dd_canon", "canonical"),
-            ("dd_work", "working"),
-            ("dd_stale", "canonical"),
-        ):
-            gconn.execute(
-                "CREATE (d:DecisionDigest {id:$did, board_id:$bid, "
-                "original_node_id:$oid, title:$title, one_line_summary:$s, "
-                "node_type:'Decision', graph_layer:$layer, embedding:$emb, "
-                "created_at:timestamp($ts)})",
-                {"did": f"{did}_{board_id[:8]}", "bid": board_id,
-                 "oid": did, "title": f"{layer} digest", "s": QUERY_TEXT,
-                 "layer": layer, "emb": emb, "ts": ts},
-            )
-            gconn.execute(
-                "MATCH (b:Board {board_id:$bid}), "
-                "(d:DecisionDigest {id:$did}) "
-                "MERGE (b)-[:CONTAINS_DECISION]->(d)",
-                {"bid": board_id, "did": f"{did}_{board_id[:8]}"},
-            )
-    finally:
-        del gconn, _gdb
+        execute_global_write(
+            "MATCH (b:Board {board_id:$bid}), "
+            "(d:DecisionDigest {id:$did}) "
+            "MERGE (b)-[:CONTAINS_DECISION]->(d)",
+            {"bid": board_id, "did": f"{did}_{board_id[:8]}"},
+            operation="test_layer_propagation_link_digest",
+        )
     return board_id
 
 

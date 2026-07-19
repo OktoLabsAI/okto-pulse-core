@@ -54,6 +54,7 @@ def test_real_rest_manifest_classifies_current_productive_residue() -> None:
 
 
 def test_manifest_has_closed_taxonomy_and_required_metadata() -> None:
+    assert AF35_S3_REST_MANIFEST_SCHEMA_VERSION == 1
     assert AF35_S3_REST_RESIDUAL_TAXONOMY == {
         CLASS_MIGRATED_CLEAN_TARGET,
         CLASS_DEFERRED_WITH_OWNER,

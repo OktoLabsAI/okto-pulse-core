@@ -22,6 +22,7 @@ from okto_pulse.core.kg.rebuild_audit import emit_cognitive_technical_signal_sam
 from okto_pulse.core.ports.scheduler import SchedulerControl
 
 _DLQ_TOOL = "okto_pulse_kg_dead_letter_list"
+_GLOBAL_OUTBOX_DLQ_TOOL = "okto_pulse_kg_global_outbox_dead_letter_list"
 _DEBT_TOOL = "okto_pulse_kg_canonical_debt_list"
 _HEALTH_TOOL = "okto_pulse_kg_health"
 
@@ -37,7 +38,10 @@ def _is_full(profile: str) -> bool:
 
 
 def _persistence_present(health: dict) -> tuple[bool, str | None]:
-    categories = (health.get("root_cause") or {}).get("categories") or {}
+    root_cause = health.get("root_cause") or {}
+    if root_cause.get("scope", "graph") != "graph":
+        return False, None
+    categories = root_cause.get("categories") or {}
     wal = categories.get("wal_or_commit_errors") or {}
     drain = categories.get("safe_write_drain_failure") or {}
     present = bool(wal.get("present") or drain.get("present"))
@@ -45,15 +49,25 @@ def _persistence_present(health: dict) -> tuple[bool, str | None]:
 
 
 def build_technical_signal_counters(health: dict) -> dict[str, int]:
-    """The 4 scalar counters — SEPARATE operational domains (tr_22d4434d).
+    """Scalar counters with terminal queue domains kept explicitly separate.
+
     ``active_queue_count`` is NOT inferred from ``dead_letter_count``."""
     domains = health.get("operational_domains") or {}
     dlq = int(health.get("dead_letter_count") or 0)
+    global_outbox_dlq = int(
+        (
+            domains.get("global_outbox_dead_letter")
+            or {}
+        ).get("count")
+        or health.get("global_outbox_dead_letter_count")
+        or 0
+    )
     cdebt_open = int((health.get("canonical_debt") or {}).get("open_count") or 0)
     active_queue = int((domains.get("active_queue") or {}).get("count") or 0)
     return {
         "dead_letter_count": dlq,
-        "technical_dlq_count": dlq,
+        "global_outbox_dead_letter_count": global_outbox_dlq,
+        "technical_dlq_count": dlq + global_outbox_dlq,
         "canonical_debt_open_count": cdebt_open,
         "active_queue_count": active_queue,
     }
@@ -90,6 +104,44 @@ async def _non_maskable_items(
                            "okto_pulse_kg_dead_letter_reprocess after the root cause is fixed",
             "drill_down_tool": _DLQ_TOOL,
         })
+
+    global_outbox_count = int(
+        (
+            (health.get("operational_domains") or {}).get(
+                "global_outbox_dead_letter"
+            )
+            or {}
+        ).get("count")
+        or health.get("global_outbox_dead_letter_count")
+        or 0
+    )
+    if global_outbox_count > 0:
+        from okto_pulse.core.services.queue_health_service import (
+            get_global_outbox_dead_letter_drilldown,
+        )
+
+        global_outbox = await get_global_outbox_dead_letter_drilldown(
+            db,
+            board_id,
+            limit=200,
+        )
+        for row in global_outbox["items"]:
+            ref = f"global_update_outbox:{row['event_id']}"
+            items.append({
+                "artifact_ref": ref,
+                "source_ref": f"board:{row['board_id']}",
+                "signal": "global_outbox_dead_letter",
+                "last_error": row.get("last_error"),
+                "error_text": row.get("last_error"),
+                "classification": row.get("classification"),
+                "retry_count": row.get("retry_count"),
+                "next_action": row.get("next_action"),
+                "remediation": (
+                    "diagnose the terminal global-discovery delivery failure; "
+                    "do not requeue until its classified root cause is fixed"
+                ),
+                "drill_down_tool": _GLOBAL_OUTBOX_DLQ_TOOL,
+            })
 
     debt = await list_canonical_debt(db, board_id=board_id, limit=200)
     for row in getattr(debt, "items", []):
@@ -179,7 +231,16 @@ async def build_health_readiness(
     enforcement_active = await _enforcement_active(db, board_id)
     would_block_done = blocking and enforcement_active
     mode = "blocking" if enforcement_active else "advisory"
-    reasons = sorted({it["signal"] for it in items})
+    reasons_set = {it["signal"] for it in items}
+    if counters["dead_letter_count"] > 0:
+        reasons_set.add("technical_dlq")
+    if counters["global_outbox_dead_letter_count"] > 0:
+        reasons_set.add("global_outbox_dead_letter")
+    if counters["canonical_debt_open_count"] > 0:
+        reasons_set.add("canonical_debt_open")
+    if present:
+        reasons_set.add("persistence_error")
+    reasons = sorted(reasons_set)
 
     if would_block_done:
         policy_reason = (

@@ -282,6 +282,7 @@ def _build_test_relational_runtime(url: str, *, echo: bool = False):
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA busy_timeout=30000")
                 cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.execute("PRAGMA foreign_keys=ON")
             finally:
                 cursor.close()
 
@@ -1599,6 +1600,43 @@ def _test_logging(request: pytest.FixtureRequest):
 # ============================================================================
 
 _DEFAULT_TIMEOUT = 120.0  # seconds
+_KG_HEALTH_PROBE_TEST_DRAIN_TIMEOUT_S = 30.0
+
+
+def _assert_kg_health_probes_drained(*, nodeid: str, phase: str) -> None:
+    """Fail closed when a test leaves runtime-owned KG health work behind.
+
+    The public application lifecycle facade is intentional here: tests exercise
+    the same ownership boundary used by an edition before it closes graph
+    handles. A finite deadline keeps a broken probe from hanging the suite,
+    while the explicit failure prevents the deadline from hiding a leak.
+    """
+
+    from okto_pulse.core.services.application_kg import drain_kg_health_probes
+
+    try:
+        remaining = drain_kg_health_probes(
+            timeout_s=_KG_HEALTH_PROBE_TEST_DRAIN_TIMEOUT_S,
+        )
+    except Exception as exc:
+        pytest.fail(
+            "kg_health_probe_test_isolation_failed:"
+            f"phase={phase}:nodeid={nodeid}:error={type(exc).__name__}",
+            pytrace=False,
+        )
+    if remaining:
+        pytest.fail(
+            "kg_health_probe_test_isolation_timeout:"
+            f"phase={phase}:nodeid={nodeid}:remaining={remaining}:"
+            f"timeout_s={_KG_HEALTH_PROBE_TEST_DRAIN_TIMEOUT_S}",
+            pytrace=False,
+        )
+
+    logging.getLogger("test.kg.health_probe_isolation").debug(
+        "KG_HEALTH_PROBE_DRAIN phase=%s nodeid=%s remaining=0",
+        phase,
+        nodeid,
+    )
 
 
 def _get_timeout(request: pytest.FixtureRequest) -> float:
@@ -2077,20 +2115,33 @@ def _application_test_persistence():
 
 
 @pytest.fixture(autouse=True)
-def _kg_registry_test_fakes():
+def _kg_registry_test_fakes(request: pytest.FixtureRequest):
     """R-P2-03: the KG registry no longer lazy-builds implicit Onda A defaults.
 
     The test suite configures the embedded fakes EXPLICITLY via ``defaults_factory``
     (the sanctioned test/fake route) so it is literal that tests run on fakes; a
     test that needs a specific composition just reconfigures the registry. Real
     runtime must supply a ``base_registry`` (Community adapters) instead.
+
+    Health jobs are drained on both sides of every test before this fixture
+    replaces or discards the graph registry. This ordering prevents a probe
+    spawned by one test from opening or holding a graph handle during the next
+    test, without turning a stuck job into a silent cleanup success.
     """
     from kg_registry_testing import configure_test_kg_registry
     from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
 
+    _assert_kg_health_probes_drained(
+        nodeid=request.node.nodeid,
+        phase="before_registry_setup",
+    )
     reset_registry_for_tests()
     configure_test_kg_registry()
     yield
+    _assert_kg_health_probes_drained(
+        nodeid=request.node.nodeid,
+        phase="before_registry_teardown",
+    )
     reset_registry_for_tests()
 
 
@@ -2259,18 +2310,39 @@ def _register_test_mcp_host_provider():
         def active_credential(self):
             return None
 
-        def build_asgi_app(self, catalog, *, trace_sink=None):
-            _ = (catalog, trace_sink)
+        def build_asgi_app(
+            self,
+            catalog,
+            *,
+            resource_catalog,
+            projection_identity,
+            trace_sink=None,
+        ):
+            _ = (catalog, resource_catalog, projection_identity, trace_sink)
 
             async def _catalog_unavailable(scope, receive, send):
                 _ = (scope, receive, send)
 
             return self.wrap_session_middleware(_catalog_unavailable)
 
-        def mount(self, app, catalog, *, mount_path, trace_sink=None):
+        def mount(
+            self,
+            app,
+            catalog,
+            *,
+            mount_path,
+            resource_catalog,
+            projection_identity,
+            trace_sink=None,
+        ):
             app.mount(
                 mount_path,
-                self.build_asgi_app(catalog, trace_sink=trace_sink),
+                self.build_asgi_app(
+                    catalog,
+                    resource_catalog=resource_catalog,
+                    projection_identity=projection_identity,
+                    trace_sink=trace_sink,
+                ),
             )
 
         def wrap_session_middleware(self, app):

@@ -306,7 +306,9 @@ def test_agent_instructions_require_qna_for_ambiguity_and_artifacts():
     assert "Be aggressive about clarification" in instructions
     assert "Every inferred requirement becomes latent rework" in instructions
     assert "Prefer `okto_pulse_ask_ideation_choice_question` whenever" in instructions
-    assert "mark the safest or most likely option as **Recommended**" in instructions
+    assert "set `recommended: true` on the safest or most likely option" in instructions
+    assert "do not encode it in the label" in instructions
+    assert "mark the safest or most likely option as **Recommended**" not in instructions
     assert "set `allow_free_text=true`" in instructions
     assert "Question shape requirements" in instructions
     assert "Bias toward multiple choice" in instructions

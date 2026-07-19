@@ -1,9 +1,9 @@
 """Relational runtime port owned by the application core.
 
 Concrete engine, session factory, pool and lifecycle behavior belongs to an
-edition adapter. Core requires only an opaque transactional work scope. Legacy
-facades remain callable for installed integrations, but they are not members of
-the port and a new edition does not have to implement them.
+edition adapter. Core requires opaque transactional and cancellation-safe work
+scopes. Engine, pool and local-path compatibility facades remain callable for
+installed integrations, but they are not members of the port.
 """
 
 from __future__ import annotations
@@ -28,10 +28,16 @@ class RelationalDatabasePathUnavailable(RuntimeError):
 
 @runtime_checkable
 class RelationalRuntime(Protocol):
-    """Edition-owned transactional work-scope behavior."""
+    """Edition-owned transactional and cancellation-safe scope behavior."""
 
     def transactional_session(self) -> AsyncContextManager[Any]:
         """Return a commit/rollback/close managed session scope."""
+
+    def cancel_safe_session_scope(
+        self,
+        session_factory: Callable[[], Any] | None = None,
+    ) -> AsyncContextManager[Any]:
+        """Return a scope whose rollback/close survives caller cancellation."""
 
 
 
@@ -40,6 +46,11 @@ def configure_database_runtime(*, runtime: RelationalRuntime) -> None:
 
     if runtime is None:
         raise ValueError("runtime is required")
+    if not isinstance(runtime, RelationalRuntime):
+        raise TypeError(
+            "runtime must implement RelationalRuntime, including "
+            "transactional_session and cancel_safe_session_scope"
+        )
     register_runtime_value(_RELATIONAL_RUNTIME_KEY, runtime)
 
 
@@ -125,10 +136,9 @@ async def cancel_safe_session_scope(
 ) -> AsyncIterator[Any]:
     """Delegate cancellation-safe cleanup to the edition adapter."""
 
-    scope = getattr(resolve_database_runtime(), "cancel_safe_session_scope", None)
-    if not callable(scope):
-        raise RuntimeError("active edition does not expose cancellation-safe sessions")
-    async with scope(session_factory) as session:
+    async with resolve_database_runtime().cancel_safe_session_scope(
+        session_factory
+    ) as session:
         yield session
 
 
@@ -136,10 +146,7 @@ async def cancel_safe_session_scope(
 async def cancel_safe_session() -> AsyncIterator[Any]:
     """Open an edition session whose cleanup survives cancellation."""
 
-    scope = getattr(resolve_database_runtime(), "cancel_safe_session_scope", None)
-    if not callable(scope):
-        raise RuntimeError("active edition does not expose cancellation-safe sessions")
-    async with scope() as session:
+    async with resolve_database_runtime().cancel_safe_session_scope() as session:
         yield session
 
 

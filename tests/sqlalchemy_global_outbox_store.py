@@ -3,10 +3,11 @@
 import copy
 from typing import Any, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 
 from sqlalchemy_test_models import GlobalUpdateOutbox, KuzuNodeRef
 from okto_pulse.core.ports.global_outbox import (
+    GlobalOutboxDeadLetterCursor,
     GlobalOutboxEventRecord,
     GlobalOutboxNodeRefFact,
 )
@@ -18,6 +19,7 @@ def _record(row: Any) -> GlobalOutboxEventRecord:
         session_id=str(row.session_id) if row.session_id else None,
         payload=copy.deepcopy(row.payload or {}), retry_count=int(row.retry_count),
         last_error=row.last_error, processed_at=row.processed_at,
+        created_at=row.created_at,
     )
 
 
@@ -33,16 +35,44 @@ class TestSqlAlchemyGlobalOutboxStore:
         )
 
     async def list_dead_letters(
-        self, context, *, limit: int
+        self,
+        context,
+        *,
+        limit: int,
+        error_markers: Sequence[str],
+        after: GlobalOutboxDeadLetterCursor | None = None,
     ) -> tuple[GlobalOutboxEventRecord, ...]:
+        predicates = [
+            func.instr(
+                func.lower(GlobalUpdateOutbox.last_error),
+                marker.lower(),
+            )
+            > 0
+            for marker in error_markers
+            if marker
+        ]
+        query = select(GlobalUpdateOutbox).where(
+            GlobalUpdateOutbox.processed_at.is_(None),
+            GlobalUpdateOutbox.retry_count == -1,
+        )
+        if predicates:
+            query = query.where(or_(*predicates))
+        if after is not None:
+            query = query.where(
+                or_(
+                    GlobalUpdateOutbox.created_at > after.created_at,
+                    and_(
+                        GlobalUpdateOutbox.created_at == after.created_at,
+                        GlobalUpdateOutbox.id > after.id,
+                    ),
+                )
+            )
         rows = (
             await context.execute(
-                select(GlobalUpdateOutbox)
-                .where(
-                    GlobalUpdateOutbox.processed_at.is_(None),
-                    GlobalUpdateOutbox.retry_count == -1,
+                query.order_by(
+                    GlobalUpdateOutbox.created_at.asc(),
+                    GlobalUpdateOutbox.id.asc(),
                 )
-                .order_by(GlobalUpdateOutbox.created_at.asc())
                 .limit(limit)
             )
         ).scalars().all()

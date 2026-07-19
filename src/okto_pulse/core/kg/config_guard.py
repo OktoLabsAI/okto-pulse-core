@@ -34,7 +34,6 @@ cardinality bounded.
 from __future__ import annotations
 
 import logging
-import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass
 from enum import Enum

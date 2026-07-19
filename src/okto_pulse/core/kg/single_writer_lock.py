@@ -7,7 +7,6 @@ through ``WriteLockPort``.
 
 from __future__ import annotations
 
-import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,6 +17,9 @@ from okto_pulse.core.ports.coordination import (
     WriteLockHandle,
     WriteLockPort,
     get_write_lock_port,
+)
+from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
+    GLOBAL_DISCOVERY_WRITER_ARTIFACT_ID,
 )
 
 
@@ -179,7 +181,7 @@ class KGSingleWriterLock:
     filesystem contract.
     """
 
-    artifact_id = "kg_single_writer"
+    artifact_id = GLOBAL_DISCOVERY_WRITER_ARTIFACT_ID
 
     def __init__(
         self,
@@ -280,6 +282,37 @@ class KGSingleWriterLock:
         )
         return released
 
+    def renew(
+        self,
+        *,
+        board_id: str,
+        owner_token: str,
+        ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    ) -> bool:
+        """Extend only the exact live token; never resurrect an expired lease."""
+
+        if ttl_seconds < 1:
+            raise ValueError("ttl_seconds must be >= 1")
+        if ttl_seconds > MAX_TTL_SECONDS:
+            raise ValueError(
+                f"ttl_seconds={ttl_seconds} exceeds MAX_TTL_SECONDS={MAX_TTL_SECONDS}"
+            )
+        renew = getattr(self._port(), "renew_single_writer_sync", None)
+        if not callable(renew):
+            # Compatibility ports without TTL support cannot extend a lease;
+            # they still must prove exact ownership.
+            return self.is_owner(board_id, owner_token)
+        return bool(
+            renew(
+                board_id=board_id,
+                artifact_id=self.artifact_id,
+                owner_token=owner_token,
+                ttl_seconds=ttl_seconds,
+                base_dir_hint=self._base_dir_hint,
+                board_dir_resolver=self._board_dir_resolver,
+            )
+        )
+
     def inspect(self, *, board_id: str) -> LockManifest | None:
         port = self._port()
         if not hasattr(port, "inspect_single_writer_sync"):
@@ -294,7 +327,11 @@ class KGSingleWriterLock:
 
     def is_owner(self, board_id: str, owner_token: str) -> bool:
         manifest = self.inspect(board_id=board_id)
-        return manifest is not None and manifest.owner_token == owner_token
+        return bool(
+            manifest is not None
+            and manifest.owner_token == owner_token
+            and manifest.expires_at_epoch > datetime.now(timezone.utc).timestamp()
+        )
 
     def _port(self) -> WriteLockPort:
         return self._write_lock_port or get_write_lock_port()

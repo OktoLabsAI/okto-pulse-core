@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import ast
 import tomllib
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from .report import GateReport
+from .wheel_metadata import read_distribution_metadata
 
 FORBIDDEN_CORE_MCP_RUNTIME_DEPENDENCIES: tuple[str, ...] = (
     "fastmcp",
@@ -78,11 +78,7 @@ class McpRuntimeOwnershipReport:
             evidence=self.as_dict(),
             observed_value=[finding.as_dict() for finding in self.findings],
             expected_value=[],
-            remediation_hint=(
-                self.findings[0].remediation
-                if self.findings
-                else None
-            ),
+            remediation_hint=(self.findings[0].remediation if self.findings else None),
         )
 
 
@@ -166,7 +162,11 @@ def _lock_dependency_entries(
         return None
     data = tomllib.loads(lock_path.read_text(encoding="utf-8"))
     package = next(
-        (pkg for pkg in data.get("package", []) or [] if pkg.get("name") == package_name),
+        (
+            pkg
+            for pkg in data.get("package", []) or []
+            if pkg.get("name") == package_name
+        ),
         None,
     )
     if package is None:
@@ -183,36 +183,14 @@ def _lock_dependency_entries(
     return tuple(entries)
 
 
-def _wheel_requires_dist_names(wheel_metadata_path: Path) -> tuple[set[str] | None, str]:
-    path = Path(wheel_metadata_path)
-    if path.is_dir():
-        path = path / "METADATA"
-    if path.suffix == ".whl":
-        if not path.exists():
-            return None, f"wheel_not_found:{path.as_posix()}"
-        try:
-            with zipfile.ZipFile(path) as wheel:
-                metadata_name = next(
-                    (
-                        name
-                        for name in wheel.namelist()
-                        if name.endswith(".dist-info/METADATA")
-                    ),
-                    None,
-                )
-                if metadata_name is None:
-                    return None, f"wheel_metadata_not_found:{path.as_posix()}"
-                text = wheel.read(metadata_name).decode("utf-8")
-        except (OSError, zipfile.BadZipFile, UnicodeDecodeError) as exc:
-            return None, f"wheel_metadata_unreadable:{path.as_posix()}:{type(exc).__name__}"
-        source = f"wheel:{path.as_posix()}!{metadata_name}"
-    else:
-        if not path.exists():
-            return None, f"metadata_not_found:{path.as_posix()}"
-        text = path.read_text(encoding="utf-8")
-        source = f"metadata:{path.as_posix()}"
+def _wheel_requires_dist_names(
+    wheel_metadata_path: Path,
+) -> tuple[set[str] | None, str]:
+    text, source = read_distribution_metadata(Path(wheel_metadata_path))
+    if text is None:
+        return None, source
     names = {
-        _dependency_name(line[len("Requires-Dist:"):].strip())
+        _dependency_name(line[len("Requires-Dist:") :].strip())
         for line in text.splitlines()
         if line.startswith("Requires-Dist:")
     }
@@ -234,7 +212,9 @@ def _location(path: Path, source_root: Path, line: int) -> str:
     return f"{rel}:{line}"
 
 
-def _scan_source_imports(source_root: Path) -> tuple[list[_ImportReference], tuple[str, ...]]:
+def _scan_source_imports(
+    source_root: Path,
+) -> tuple[list[_ImportReference], tuple[str, ...]]:
     core_dir = _core_dir_from_source_root(source_root)
     references: list[_ImportReference] = []
     analyzed: list[str] = []

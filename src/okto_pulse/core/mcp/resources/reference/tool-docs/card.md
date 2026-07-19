@@ -116,7 +116,10 @@ Bug regression decision rule:
     amendment lineage. When a done spec or closed origin sprint blocks bug
     execution, use the returned next_action (`assign_hotfix_lane` or
     `activate_hotfix_lane`) to put the bug and its regression test card on an
-    active `lane_type="hotfix"` sprint. The lane only unblocks execution; the
+    active `lane_type="hotfix"` sprint. Cards are same-spec by default. The exact
+    cross-spec Path B test task may join the original-spec lane only after its
+    non-blocking complete amendment and persisted validator attestation bind the
+    bug, task, scenario and revision spec. The lane only unblocks execution; the
     regression must still satisfy Path A reuse or the Path B amendment lineage
     above. Keep the original closed sprint unchanged.
 

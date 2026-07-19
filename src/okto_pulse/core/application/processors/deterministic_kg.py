@@ -377,6 +377,24 @@ def _extract_decisions_from_context(context: str) -> list[str]:
     return [b.group(1).strip() for b in _BULLET_LINE.finditer(section)]
 
 
+def _inherits_refinement_decision_context(spec: dict[str, Any]) -> bool:
+    """Return whether ``context`` contains refinement-owned decisions.
+
+    ``RefinementService.derive_spec`` deliberately copies the refinement's
+    ``decisions`` into the child context under a ``## Decisions`` heading.  The
+    refinement is independently materialized in the KG, so parsing that heading
+    as legacy *spec* decisions duplicates ownership and can create ungrounded
+    Decision nodes before (or after) the spec is populated.
+
+    A spec derived directly from an ideation does not receive such a heading;
+    direct/legacy and ideation-derived specs therefore retain the compatibility
+    parser.  A refinement-derived spec expresses its own decisions through the
+    structured ``spec.decisions`` collection, which is handled separately.
+    """
+
+    return bool(spec.get("refinement_id"))
+
+
 # =====================================================================
 # Core extractor
 # =====================================================================
@@ -1072,7 +1090,11 @@ class DeterministicWorker:
         #    okto_pulse_migrate_spec_decisions). Skips titles already emitted
         #    from the formalized path above to avoid duplicate candidates in
         #    the same session.
-        decisions_text = _extract_decisions_from_context(spec.get("context") or "")
+        decisions_text = (
+            []
+            if _inherits_refinement_decision_context(spec)
+            else _extract_decisions_from_context(spec.get("context") or "")
+        )
         decisions_text = [t for t in decisions_text if t.strip() not in formal_titles]
         for i, dec_text in enumerate(decisions_text):
             raw_parts.append(dec_text)

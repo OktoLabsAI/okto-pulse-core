@@ -124,13 +124,17 @@ async def test_list_cognitive_readiness_items_parity() -> None:
 
 
 @pytest.mark.asyncio
-async def test_evaluate_bug_cognitive_closure_error_parity() -> None:
-    """Error parity: empty evidence fails closed with ``missing_bug_evidence`` in
-    BOTH the central service and the use case (the use case propagates the same
-    CognitiveReadinessError the adapter maps)."""
+async def test_evaluate_bug_cognitive_closure_context_aware_fail_closed() -> None:
+    """A direct policy call without context preserves the bounded legacy error;
+    the transport use case assembles canonical context and reports the more
+    precise missing source blocker without trusting caller evidence."""
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.kg.bug_cognitive_closure import evaluate_bug_cognitive_closure
     from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
+    from okto_pulse.core.ports.bug_cognitive_context import (
+        BugCognitiveContext,
+        register_bug_cognitive_context_assembler,
+    )
 
     board_id = _board()
     await _seed_board(board_id)
@@ -144,14 +148,27 @@ async def test_evaluate_bug_cognitive_closure_error_parity() -> None:
                 justification=None, evidence_refs=None, revisit_at=None,
             )
 
-    with pytest.raises(CognitiveReadinessError) as uc_exc:
-        async with _uowf()(actor=ACTOR) as uow:
-            await EvaluateBugCognitiveClosureUseCase().execute(
-                EvaluateBugCognitiveClosureCommand(board_id, bug_id),
-                actor=ACTOR, uow=uow,
+    class _AbsentContextAssembler:
+        async def assemble(self, _db, *, board_id, bug_id):  # noqa: ANN001
+            return BugCognitiveContext(
+                board_id=board_id,
+                bug_id=bug_id,
+                card_exists=False,
             )
 
-    assert svc_exc.value.code == uc_exc.value.code == "missing_bug_evidence"
+    register_bug_cognitive_context_assembler(_AbsentContextAssembler())
+
+    async with _uowf()(actor=ACTOR) as uow:
+        result = await EvaluateBugCognitiveClosureUseCase().execute(
+            EvaluateBugCognitiveClosureCommand(board_id, bug_id),
+            actor=ACTOR,
+            uow=uow,
+        )
+
+    assert svc_exc.value.code == "missing_bug_evidence"
+    assert result.data["status"] == "bug_source_not_found"
+    assert result.data["blocking"] is True
+    assert result.data["readiness_effect"] == "blocking_technical"
 
 
 # --- AST strangler + enforcement extraction --------------------------------

@@ -15,6 +15,7 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.use_cases.board_access import load_accessible_card
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
@@ -22,6 +23,81 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+
+
+_CARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
+
+
+async def _load_card_for_actor(
+    uow: PulseUnitOfWork,
+    card_id: str,
+    actor: ActorContext,
+    *,
+    expected_board_id: str | None = None,
+    allowed_share_permissions: set[str] | None = None,
+) -> Any | None:
+    return await load_accessible_card(
+        uow,
+        card_id,
+        actor,
+        expected_board_id=expected_board_id,
+        allowed_share_permissions=allowed_share_permissions,
+    )
+
+
+async def _get_card_for_actor(
+    uow: PulseUnitOfWork,
+    card_id: str,
+    actor: ActorContext,
+    *,
+    missing_as_value_error: bool = False,
+    expected_board_id: str | None = None,
+    allowed_share_permissions: set[str] | None = None,
+) -> Any:
+    """Load ``card -> board -> actor`` before any child read or write."""
+
+    card = await _load_card_for_actor(
+        uow,
+        card_id,
+        actor,
+        expected_board_id=expected_board_id,
+        allowed_share_permissions=allowed_share_permissions,
+    )
+    if not card:
+        if missing_as_value_error and actor.source == "rest":
+            raise ValueError("Card not found")
+        raise EntityNotFoundError("card", card_id)
+    return card
+
+
+class RequireCardWriteAccessCommand:
+    __slots__ = ("card_id",)
+
+    def __init__(self, card_id: str) -> None:
+        self.card_id = card_id
+
+
+class RequireCardWriteAccessResult:
+    __slots__ = ()
+
+
+class RequireCardWriteAccessUseCase:
+    """Authorize a REST write surface that is blocked before domain mutation."""
+
+    async def execute(
+        self,
+        command: RequireCardWriteAccessCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> RequireCardWriteAccessResult:
+        await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        return RequireCardWriteAccessResult()
 
 
 # --- get --------------------------------------------------------------------
@@ -47,9 +123,7 @@ class GetCardUseCase:
     async def execute(
         self, command: GetCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardResult:
-        card = await uow.services.cards.get_card(command.card_id)
-        if not card:
-            raise EntityNotFoundError("card", command.card_id)
+        card = await _get_card_for_actor(uow, command.card_id, actor)
         return GetCardResult(card)
 
 
@@ -82,6 +156,12 @@ class UpdateCardUseCase:
         self, command: UpdateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateCardResult:
         service = uow.services.cards
+        await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
         card = await service.update_card(command.card_id, actor.actor_id, command.data)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
@@ -111,6 +191,12 @@ class DeleteCardUseCase:
         self, command: DeleteCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteCardResult:
         service = uow.services.cards
+        await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
         deleted = await service.delete_card(command.card_id, actor.actor_id)
         if not deleted:
             raise EntityNotFoundError("card", command.card_id)
@@ -161,6 +247,12 @@ class MoveCardUseCase:
         self, command: MoveCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> MoveCardResult:
         service = uow.services.cards
+        await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
         card = await service.move_card(command.card_id, actor.actor_id, command.data)
         if not card:
             raise EntityNotFoundError("card", command.card_id)
@@ -192,8 +284,11 @@ class GetCardDependenciesUseCase:
     async def execute(
         self, command: GetCardDependenciesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardDependenciesResult:
+        card = await _get_card_for_actor(uow, command.card_id, actor)
         deps = await uow.services.cards.get_dependencies(command.card_id)
-        return GetCardDependenciesResult(deps)
+        return GetCardDependenciesResult(
+            [dep for dep in deps if getattr(dep, "board_id", None) == card.board_id]
+        )
 
 
 class GetCardDependentsCommand:
@@ -217,8 +312,11 @@ class GetCardDependentsUseCase:
     async def execute(
         self, command: GetCardDependentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardDependentsResult:
+        card = await _get_card_for_actor(uow, command.card_id, actor)
         deps = await uow.services.cards.get_dependents(command.card_id)
-        return GetCardDependentsResult(deps)
+        return GetCardDependentsResult(
+            [dep for dep in deps if getattr(dep, "board_id", None) == card.board_id]
+        )
 
 
 # --- dependencies (write) ---------------------------------------------------
@@ -241,15 +339,33 @@ class AddCardDependencyResult:
 
 class AddCardDependencyUseCase:
     """Add ``card_id`` depends-on ``depends_on_id`` (write). ``CardService``
-    returns ``None`` on a self-reference or a cycle — that becomes
-    ``ConflictError`` the adapter maps to the legacy 409 detail. Captures the
-    generated id before the commit (the Python-side default is set at
-    construction) and returns it for the adapter envelope."""
+    returns ``None`` on a duplicate, self-reference, or cycle — that becomes
+    ``ConflictError``. Missing or out-of-scope endpoints are indistinguishable
+    ``EntityNotFoundError`` results. Captures the generated id before the commit
+    (the Python-side default is set at construction) and returns it for the
+    adapter envelope."""
 
     async def execute(
         self, command: AddCardDependencyCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> AddCardDependencyResult:
         service = uow.services.cards
+        card = await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+
+        depends_on = await _load_card_for_actor(
+            uow,
+            command.depends_on_id,
+            actor,
+            expected_board_id=card.board_id,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        if not depends_on:
+            raise EntityNotFoundError("card", command.depends_on_id)
+
         dep = await service.add_dependency(command.card_id, command.depends_on_id)
         if not dep:
             raise ConflictError("card_dependency", command.card_id)
@@ -280,6 +396,23 @@ class RemoveCardDependencyUseCase:
         self, command: RemoveCardDependencyCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> RemoveCardDependencyResult:
         service = uow.services.cards
+        source = await _load_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        target = None
+        if source is not None:
+            target = await _load_card_for_actor(
+                uow,
+                command.depends_on_id,
+                actor,
+                expected_board_id=source.board_id,
+                allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+            )
+        if source is None or target is None:
+            raise EntityNotFoundError("dependency", command.card_id)
         removed = await service.remove_dependency(command.card_id, command.depends_on_id)
         if not removed:
             raise EntityNotFoundError("dependency", command.card_id)
@@ -313,10 +446,11 @@ class SubmitTaskValidationUseCase:
     Resolves the reviewer display name via ``resolve_actor_name`` with the legacy
     fallback to the actor id on any error, then delegates to
     ``CardService.submit_task_validation`` (threshold check + persistence +
-    card routing stay in the service). ``GateContractError`` (→ 409),
-    ``ResourceGateError`` (→ 409) and ``ValueError`` (→ 422) propagate for the
-    adapter to map; a missing card is ``EntityNotFoundError`` (→ 404). Commits
-    after the service mutation, exactly as the legacy endpoint did."""
+    card routing stay in the service). ``CardOperationError`` (including the
+    reviewer-separation action-required contract), ``GateContractError`` and
+    ``ResourceGateError`` propagate for the adapter to map; a missing card is
+    ``EntityNotFoundError`` (→ 404). Commits only after the service mutation,
+    exactly as the legacy endpoint did."""
 
     _REQUIRED = (
         "confidence",
@@ -332,6 +466,14 @@ class SubmitTaskValidationUseCase:
     async def execute(
         self, command: SubmitTaskValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> SubmitTaskValidationResult:
+        service = uow.services.cards
+        card = await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+
         data = command.data
         missing = [f for f in self._REQUIRED if f not in data or data[f] is None]
         if missing:
@@ -343,10 +485,6 @@ class SubmitTaskValidationUseCase:
                 "recommendation must be 'approve' or 'reject'"
             )
 
-        service = uow.services.cards
-        card = await service.get_card(command.card_id)
-        if not card:
-            raise EntityNotFoundError("card", command.card_id)
         if actor.actor_name:
             reviewer_name = actor.actor_name
         else:
@@ -391,9 +529,14 @@ class ListTaskValidationsUseCase:
     async def execute(
         self, command: ListTaskValidationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListTaskValidationsResult:
-        validations = await uow.services.cards.list_task_validations(
-            command.card_id
+        service = uow.services.cards
+        await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            missing_as_value_error=True,
         )
+        validations = await service.list_task_validations(command.card_id)
         return ListTaskValidationsResult(validations)
 
 
@@ -422,7 +565,14 @@ class GetTaskValidationUseCase:
     async def execute(
         self, command: GetTaskValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetTaskValidationResult:
-        validation = await uow.services.cards.get_task_validation(
+        service = uow.services.cards
+        await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            missing_as_value_error=True,
+        )
+        validation = await service.get_task_validation(
             command.card_id, command.validation_id
         )
         if not validation:
@@ -454,6 +604,19 @@ class DeleteTaskValidationUseCase:
         self, command: DeleteTaskValidationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteTaskValidationResult:
         service = uow.services.cards
+        await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            missing_as_value_error=True,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        validation = await service.get_task_validation(
+            command.card_id,
+            command.validation_id,
+        )
+        if not validation:
+            raise EntityNotFoundError("task_validation", command.validation_id)
         deleted = await service.delete_task_validation(
             command.card_id, command.validation_id, actor.actor_id
         )
@@ -517,7 +680,22 @@ class GetBugRegressionScenarioCandidatesUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> GetBugRegressionScenarioCandidatesResult:
+        from okto_pulse.core.services.bug_regression_preview import (
+            BugRegressionScenarioPreviewError,
+        )
 
+        card = await _load_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            expected_board_id=command.board_id,
+        )
+        if card is None:
+            raise BugRegressionScenarioPreviewError(
+                code="bug_not_found",
+                message="Card was not found on this board",
+                status_code=404,
+            )
         payload = await uow.services.bug_regression_preview.resolve(
             board_id=command.board_id,
             bug_id=command.card_id,
@@ -576,24 +754,38 @@ class LinkTestTaskToBugUseCase:
             mark_mutable_field_modified,
         )
 
+        bug_card = await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+
         if not command.test_task_id:
             raise CommandValidationError("test_task_id is required")
-
-        service = uow.services.cards
-        bug_card = await service.get_card(command.card_id)
-        if not bug_card:
-            raise EntityNotFoundError("card", command.card_id)
 
         if getattr(bug_card, "card_type", "normal") != "bug":
             raise CommandValidationError("Card is not a bug card")
 
-        test_task = await service.get_card(command.test_task_id)
+        test_task = await _load_card_for_actor(
+            uow,
+            command.test_task_id,
+            actor,
+            expected_board_id=bug_card.board_id,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
         if not test_task:
             raise EntityNotFoundError("test_task", command.test_task_id)
 
         # Validate same spec.
         if test_task.spec_id != bug_card.spec_id:
             raise ValueError("Test task does not belong to the same spec as the bug")
+
+        spec = None
+        if bug_card.spec_id:
+            spec = await uow.services.specs.get_spec(bug_card.spec_id)
+            if not spec or getattr(spec, "board_id", None) != bug_card.board_id:
+                raise EntityNotFoundError("card", command.card_id)
 
         # Validate the regression test task was created after the bug. The task
         # may reference an existing scenario on a validated/locked spec.
@@ -605,16 +797,14 @@ class LinkTestTaskToBugUseCase:
                 )
 
         # Validate test task references scenarios that still exist on the spec.
-        if bug_card.spec_id and test_task.test_scenario_ids:
-            spec = await uow.services.specs.get_spec(bug_card.spec_id)
-            if spec:
-                all_scenarios = {s["id"]: s for s in (spec.test_scenarios or [])}
-                for sid in test_task.test_scenario_ids:
-                    if sid not in all_scenarios:
-                        raise ValueError(
-                            f"Test task references scenario '{sid}' that does not "
-                            "exist on the bug spec"
-                        )
+        if spec and test_task.test_scenario_ids:
+            all_scenarios = {s["id"]: s for s in (spec.test_scenarios or [])}
+            for sid in test_task.test_scenario_ids:
+                if sid not in all_scenarios:
+                    raise ValueError(
+                        f"Test task references scenario '{sid}' that does not "
+                        "exist on the bug spec"
+                    )
 
         # Add test task to linked_test_task_ids.
         linked = list(bug_card.linked_test_task_ids or [])
@@ -656,10 +846,21 @@ class UnlinkTestTaskFromBugUseCase:
             mark_mutable_field_modified,
         )
 
-        service = uow.services.cards
-        bug_card = await service.get_card(command.card_id)
-        if not bug_card:
-            raise EntityNotFoundError("card", command.card_id)
+        bug_card = await _get_card_for_actor(
+            uow,
+            command.card_id,
+            actor,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        test_task = await _load_card_for_actor(
+            uow,
+            command.test_task_id,
+            actor,
+            expected_board_id=bug_card.board_id,
+            allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
+        )
+        if not test_task or getattr(test_task, "spec_id", None) != bug_card.spec_id:
+            raise EntityNotFoundError("test_task", command.test_task_id)
 
         linked = list(bug_card.linked_test_task_ids or [])
         if command.test_task_id in linked:
@@ -712,6 +913,7 @@ class GetCardActivityUseCase:
     async def execute(
         self, command: GetCardActivityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardActivityResult:
+        await _get_card_for_actor(uow, command.card_id, actor)
         activity = await uow.services.compute_card_activity(
             command.card_id,
             limit=command.limit,
@@ -746,6 +948,7 @@ class GetCardSeenStatusUseCase:
     async def execute(
         self, command: GetCardSeenStatusCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardSeenStatusResult:
+        await _get_card_for_actor(uow, command.card_id, actor)
         data = await uow.services.compute_card_seen_status(command.card_id)
         return GetCardSeenStatusResult(data)
 
@@ -777,9 +980,7 @@ class ListCardKnowledgeUseCase:
     async def execute(
         self, command: ListCardKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCardKnowledgeResult:
-        card = await uow.services.cards.get_card(command.card_id)
-        if not card:
-            raise EntityNotFoundError("card", command.card_id)
+        card = await _get_card_for_actor(uow, command.card_id, actor)
         return ListCardKnowledgeResult(list(card.knowledge_bases or []))
 
 
@@ -810,9 +1011,7 @@ class GetCardKnowledgeUseCase:
     async def execute(
         self, command: GetCardKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardKnowledgeResult:
-        card = await uow.services.cards.get_card(command.card_id)
-        if not card:
-            raise EntityNotFoundError("card", command.card_id)
+        card = await _get_card_for_actor(uow, command.card_id, actor)
         for kb in card.knowledge_bases or []:
             if kb.get("id") == command.kb_id:
                 return GetCardKnowledgeResult(kb)

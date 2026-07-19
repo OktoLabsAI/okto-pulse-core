@@ -226,6 +226,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
             ),
             agent_id=AGENT_ID,
             db=db,
+            blocking_execution=blocking_execution,
         )
         executor = blocking_execution or _DirectBlockingExecution()
         await executor.run(
@@ -1025,6 +1026,129 @@ async def _resolve_missing_link_candidates(
 # ---------------------------------------------------------------------------
 
 
+async def _rollback_post_commit_maintenance_failure(
+    db: Any,
+    *,
+    stage: str,
+    entry: ConsolidationQueueRecord,
+) -> None:
+    """Restore the relational context after a best-effort hook fails.
+
+    A SQLAlchemy flush error leaves its transaction unusable until rollback.
+    The consolidation processor only depends on the persistence port here so
+    edition-specific session behavior stays outside Core.  A rollback failure
+    is deliberately re-raised: ``process_batch`` will then abandon this scope
+    and perform its normal at-least-once retry with a fresh session.
+    """
+
+    try:
+        await get_consolidation_persistence_port().rollback(db)
+    except Exception:
+        logger.exception(
+            "kg.post_commit.rollback_failed stage=%s board=%s artifact=%s:%s",
+            stage,
+            entry.board_id,
+            entry.artifact_type,
+            entry.artifact_id,
+        )
+        raise
+
+
+async def _run_post_commit_maintenance(
+    db: Any,
+    *,
+    entry: ConsolidationQueueRecord,
+    session_id: str,
+) -> None:
+    """Run relational maintenance without carrying a poisoned transaction.
+
+    Each hook remains best effort after the graph commit: a hook failure is
+    logged, rolled back through the Core persistence port, and the next hook
+    may proceed.  If transactional recovery itself fails, the exception must
+    reach the outer worker so the context is discarded and retried safely.
+    """
+
+    try:
+        debt_result = await mark_canonical_debt_committed_for_artifact(
+            db,
+            board_id=entry.board_id,
+            artifact_type=entry.artifact_type,
+            artifact_id=entry.artifact_id,
+            actor_id=AGENT_ID,
+            evidence_ref=f"kg_session:{session_id}",
+        )
+        if debt_result["committed_count"]:
+            logger.info(
+                "canonical_debt.resolved board=%s artifact=%s:%s count=%d",
+                entry.board_id, entry.artifact_type, entry.artifact_id,
+                debt_result["committed_count"],
+            )
+    except Exception:
+        logger.exception(
+            "canonical_debt.resolve_failed board=%s artifact=%s:%s",
+            entry.board_id, entry.artifact_type, entry.artifact_id,
+        )
+        await _rollback_post_commit_maintenance_failure(
+            db,
+            stage="canonical_debt.resolve",
+            entry=entry,
+        )
+
+    # R7 IMP2: keep the canonical Learning partition-integrity ledger current.
+    try:
+        from okto_pulse.core.kg.canonical_learning_partition import (
+            run_canonical_learning_partition_maintenance,
+        )
+
+        await run_canonical_learning_partition_maintenance(
+            db, board_id=entry.board_id, actor_id=AGENT_ID
+        )
+    except Exception:
+        logger.exception(
+            "kg.clp.maintenance_failed board=%s artifact=%s:%s",
+            entry.board_id, entry.artifact_type, entry.artifact_id,
+        )
+        await _rollback_post_commit_maintenance_failure(
+            db,
+            stage="canonical_learning_partition.maintenance",
+            entry=entry,
+        )
+
+    # Use the propagating replay primitive here.  The convenience
+    # ``replay_canonical_debt_post_commit`` wrapper intentionally swallows
+    # errors, which prevents this worker from rolling back a failed flush.
+    try:
+        from okto_pulse.core.kg.canonical_debt_replay import (
+            replay_canonical_debt_by_maturity,
+        )
+
+        replay_result = await replay_canonical_debt_by_maturity(
+            db, board_id=entry.board_id
+        )
+        if replay_result.get("committed_count"):
+            logger.info(
+                "kg.canonical_debt_replay.committed board=%s count=%d",
+                entry.board_id,
+                replay_result["committed_count"],
+                extra={
+                    "event": "kg.canonical_debt_replay.committed",
+                    "board_id": entry.board_id,
+                    "committed_count": replay_result["committed_count"],
+                },
+            )
+    except Exception:
+        logger.exception(
+            "kg.canonical_debt_replay.post_commit_failed board=%s "
+            "artifact=%s:%s",
+            entry.board_id, entry.artifact_type, entry.artifact_id,
+        )
+        await _rollback_post_commit_maintenance_failure(
+            db,
+            stage="canonical_debt.replay",
+            entry=entry,
+        )
+
+
 async def _process_queue_entry(
     db: Any,
     entry: ConsolidationQueueRecord,
@@ -1138,63 +1262,11 @@ async def _process_queue_entry(
         entry.artifact_type, entry.artifact_id,
         commit_resp.nodes_added, commit_resp.edges_added,
     )
-    try:
-        debt_result = await mark_canonical_debt_committed_for_artifact(
-            db,
-            board_id=entry.board_id,
-            artifact_type=entry.artifact_type,
-            artifact_id=entry.artifact_id,
-            actor_id=AGENT_ID,
-            evidence_ref=f"kg_session:{session_id}",
-        )
-        if debt_result["committed_count"]:
-            logger.info(
-                "canonical_debt.resolved board=%s artifact=%s:%s count=%d",
-                entry.board_id, entry.artifact_type, entry.artifact_id,
-                debt_result["committed_count"],
-            )
-    except Exception:
-        logger.exception(
-            "canonical_debt.resolve_failed board=%s artifact=%s:%s",
-            entry.board_id, entry.artifact_type, entry.artifact_id,
-        )
-
-    # R7 IMP2: keep the canonical Learning partition-integrity ledger current —
-    # open CanonicalDebt for historical violations (canonical bug-derived
-    # Learning without a canonical Bug) and close debt whose bug evidence is now
-    # canonical (canonical-only evidence pre-filter). Reuses canonical_debt_service;
-    # never cognitive pending/DLQ. Best effort — must never fail a good commit.
-    try:
-        from okto_pulse.core.kg.canonical_learning_partition import (
-            run_canonical_learning_partition_maintenance,
-        )
-
-        await run_canonical_learning_partition_maintenance(
-            db, board_id=entry.board_id, actor_id=AGENT_ID
-        )
-    except Exception:
-        logger.exception(
-            "kg.clp.maintenance_failed board=%s artifact=%s:%s",
-            entry.board_id, entry.artifact_type, entry.artifact_id,
-        )
-
-    # R2-IMP3: maturity replay of CanonicalDebt — close open debts whose canonical
-    # evidence is now available after this commit (a status/maturity move that
-    # re-consolidated, or a rebuild drain). Concrete trigger over the existing
-    # verified reconcile contract; never cognitive pending/DLQ. Best effort — must
-    # never fail a good commit, and a replay failure is logged, not silently
-    # treated as success (only the verified contract commits anything).
-    try:
-        from okto_pulse.core.kg.canonical_debt_replay import (
-            replay_canonical_debt_post_commit,
-        )
-
-        await replay_canonical_debt_post_commit(db, board_id=entry.board_id)
-    except Exception:
-        logger.exception(
-            "kg.canonical_debt_replay.post_commit_failed board=%s artifact=%s:%s",
-            entry.board_id, entry.artifact_type, entry.artifact_id,
-        )
+    await _run_post_commit_maintenance(
+        db,
+        entry=entry,
+        session_id=session_id,
+    )
     return True
 
 
@@ -1259,6 +1331,38 @@ async def _classify_queue_entry_source_for_debt(
     )
 
 
+def _select_board_aware_entries(
+    ready_entries: list[ConsolidationQueueRecord],
+    *,
+    claimed_board_ids: frozenset[str],
+    limit: int,
+) -> list[ConsolidationQueueRecord]:
+    """Select at most one ready entry for each board without stealing claims.
+
+    A single processor executes its returned entries sequentially. Claiming
+    multiple rows for one board up front therefore lets later rows expire
+    while they merely wait behind the first graph commit. The old "top-up"
+    path also selected a pending row for a board that was already claimed by
+    another owner, contradicting the per-board serialization contract.
+
+    Keeping same-board backlog pending makes every lease represent work that
+    can start in this batch. Successful/attempted batches are immediately
+    followed by another bounded runner iteration, so throughput is preserved
+    without stale-claim churn.
+    """
+
+    selected: list[ConsolidationQueueRecord] = []
+    unavailable_boards = set(claimed_board_ids)
+    for entry in ready_entries:
+        if entry.board_id in unavailable_boards:
+            continue
+        selected.append(entry)
+        unavailable_boards.add(entry.board_id)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 # ---------------------------------------------------------------------------
 # Worker class
 # ---------------------------------------------------------------------------
@@ -1290,6 +1394,7 @@ class ConsolidationProcessor:
         self._stale_claim_minutes = stale_claim_minutes or self.STALE_CLAIM_MINUTES
         self._clock = clock
         self._blocking_execution = blocking_execution or _DirectBlockingExecution()
+        self._last_attempted_count = 0
         # FR5/FR6 (spec R2c): per-board DLQ auto-drain state.
         # _dlq_drain_last_run: board_id -> datetime of last drain attempt.
         # _dlq_drain_last_requeued: board_id -> requeued_count of last run.
@@ -1302,6 +1407,12 @@ class ConsolidationProcessor:
             if self._clock is not None
             else datetime.now(timezone.utc)
         )
+
+    @property
+    def last_attempted_count(self) -> int:
+        """Number of queue rows claimed by the latest batch invocation."""
+
+        return self._last_attempted_count
 
     def get_dlq_drain_stats(self, board_id: str) -> dict:
         """Return DLQ auto-drain stats for ``board_id`` (FR6, spec R2c).
@@ -1366,10 +1477,10 @@ class ConsolidationProcessor:
         """Process up to batch_size pending entries. Returns count processed.
 
         Spec bdcda842 (Sprint 2):
-            * **Claim board-aware** — prefer items whose board_id is NOT
-              already claimed by another worker (so distinct boards process
-              in parallel; same-board items still serialise on the per-board
-              graph backend file lock via commit_coordinator).
+            * **Claim board-aware** — claim at most one item per board and
+              never select a board already claimed by another owner. Distinct
+              boards may share a batch; same-board backlog remains pending
+              until the current lease is ACKed or re-pended.
             * **Backoff-aware claim** — skip items where ``next_retry_at``
               hasn't elapsed yet (BR Dead-letter / exp backoff).
             * **DELETE-on-ack** — successful processing removes the row from
@@ -1388,6 +1499,7 @@ class ConsolidationProcessor:
         from okto_pulse.core.infra.config import get_settings
 
         processed = 0
+        self._last_attempted_count = 0
         settings = get_settings()
         claim_timeout_s = settings.kg_queue_claim_timeout_s
 
@@ -1415,23 +1527,11 @@ class ConsolidationProcessor:
 
             claimed_boards = await store.list_claimed_board_ids(db)
             ready_entries = await store.list_ready_pending(db, now=now)
-            entries = [
-                entry
-                for entry in ready_entries
-                if entry.board_id not in claimed_boards
-            ][:effective_batch]
-
-            if len(entries) < effective_batch:
-                # Top up with FIFO from the remaining boards (boards that
-                # already had a claim but still have backlog). Ensures
-                # progress when there is exactly one board doing work.
-                already = {e.id for e in entries}
-                for fb in ready_entries:
-                    if fb.id in already:
-                        continue
-                    entries.append(fb)
-                    if len(entries) >= effective_batch:
-                        break
+            entries = _select_board_aware_entries(
+                list(ready_entries),
+                claimed_board_ids=claimed_boards,
+                limit=effective_batch,
+            )
 
             claim_timeout_at = now + timedelta(seconds=claim_timeout_s)
             for entry in entries:
@@ -1445,6 +1545,7 @@ class ConsolidationProcessor:
                 entry.claimed_by_session_id = worker_id
             await store.save_queue_entries(db, entries)
             await store.commit(db)
+            self._last_attempted_count = len(entries)
 
             # Spec bdcda842 (TR13): claims_per_min sliding window for
             # /api/v1/kg/queue/health. Recorded after a successful claim
@@ -1490,7 +1591,6 @@ class ConsolidationProcessor:
                             error_text=fresh.last_error or "processing returned False",
                             max_attempts=max_attempts,
                         )
-                        await store.save_queue_entries(db, (fresh,))
                     await store.commit(db)
                 if success:
                     processed += 1
@@ -1510,7 +1610,6 @@ class ConsolidationProcessor:
                                 error_text=f"{type(exc).__name__}: {str(exc)[:480]}",
                                 max_attempts=max_attempts,
                             )
-                            await store.save_queue_entries(db, (fresh,))
                         await store.commit(db)
                 except Exception:
                     pass
@@ -1528,7 +1627,10 @@ class ConsolidationProcessor:
         """Common failure handler: increment attempts, schedule exp backoff,
         re-pending the row. When ``attempts >= max_attempts`` the row is
         instead routed to ``ConsolidationDeadLetter`` (IMPL-3 wiring) and
-        deleted from the queue. Caller is responsible for the commit.
+        deleted from the queue. This method persists the effective queue
+        record (including a record reloaded after rollback) whenever a
+        persistence context is supplied; the caller is responsible only for
+        committing the surrounding transaction.
 
         FR3 (spec R2c): when the entry is routed to the dead-letter queue,
         a FailureEvent with ``event_kind="kg.commit.failed"`` is recorded
@@ -1559,6 +1661,11 @@ class ConsolidationProcessor:
                 entry.worker_id = None
                 entry.claimed_at = None
                 entry.claimed_by_session_id = None
+                if db is not None:
+                    await get_consolidation_persistence_port().save_queue_entries(
+                        db,
+                        (entry,),
+                    )
                 logger.info(
                     "consolidation.schema_layer_recovered artifact=%s:%s "
                     "board=%s columns_added=%s",
@@ -1674,6 +1781,10 @@ class ConsolidationProcessor:
         entry.worker_id = None
         entry.claimed_at = None
         entry.claimed_by_session_id = None
+        await get_consolidation_persistence_port().save_queue_entries(
+            db,
+            (entry,),
+        )
         logger.info(
             "consolidation.attempt_failed artifact=%s:%s attempts=%d "
             "next_retry_in=%ds",

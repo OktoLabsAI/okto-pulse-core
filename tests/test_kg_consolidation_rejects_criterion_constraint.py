@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.connectivity_guard import (
     KGNodeConnectivityGuard,
     SourceResolutionStatus,
@@ -71,6 +72,17 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
             except Exception:
                 pass
     return 0
+
+
+async def _count_by_source_ref_async(
+    board_id: str,
+    node_type: str,
+    source_ref: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_by_source_ref(board_id, node_type, source_ref),
+        task_name="tests.consolidation_rejects.count_by_source_ref",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -198,4 +210,4 @@ async def test_commit_rejects_cognitive_criterion_constraint_before_mutation(
     # no content leak in the safe payload.
     assert "content" not in violation
     # AC4/AC5 + TR3: nothing was durably written to the graph.
-    assert _count_by_source_ref(board_id, label, source_ref) == 0
+    assert await _count_by_source_ref_async(board_id, label, source_ref) == 0

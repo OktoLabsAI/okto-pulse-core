@@ -31,11 +31,20 @@ class _Agent:
 
 async def _seed_agent_boards(agent_id: str, n: int = 2) -> list[str]:
     from okto_pulse.core.infra.database import get_session_factory
-    from sqlalchemy_test_models import AgentBoard, Board
+    from sqlalchemy_test_models import Agent, AgentBoard, Board
 
     factory = get_session_factory()
     board_ids: list[str] = []
     async with factory() as db:
+        if await db.get(Agent, agent_id) is None:
+            db.add(Agent(
+                id=agent_id,
+                name="fu4-query-agent",
+                api_key=f"fixture-{agent_id}",
+                api_key_hash=f"fixture-hash-{agent_id}",
+                created_by="fu4-owner",
+            ))
+            await db.flush()
         for i in range(n):
             bid = f"fu4q-board-{uuid.uuid4().hex[:8]}"
             db.add(
@@ -46,6 +55,7 @@ async def _seed_agent_boards(agent_id: str, n: int = 2) -> list[str]:
                     realm_id=LOCAL_REALM_ID,
                 )
             )
+            await db.flush()
             db.add(AgentBoard(agent_id=agent_id, board_id=bid, granted_by="fu4-owner"))
             board_ids.append(bid)
         await db.commit()

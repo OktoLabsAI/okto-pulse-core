@@ -142,7 +142,7 @@ def test_callable_names_and_schema_keys_stable():
     # 6 tools landed (chain node_type era +0; kg_provenance_drift, export et
     # al. +6). Set-level drift is now ALSO guarded by
     # test_mcp_tools_catalog_drift.py, which names the exact delta.
-    assert len(tools) == 265
+    assert len(tools) == 276
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

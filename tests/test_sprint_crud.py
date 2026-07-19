@@ -777,7 +777,8 @@ class TestSprintUpdate:
         assert sprint.skip_rules_coverage is True
         assert sprint.skip_qualitative_validation is True
         assert sprint.validation_threshold == 85
-        assert sprint.version == 1  # skip flags are not content fields
+        # Gate-policy changes participate in optimistic locking/cache invalidation.
+        assert sprint.version == 2
 
 
 # ============================================================================
@@ -2005,6 +2006,7 @@ class TestSprintHistory:
                 title="Post-closure regression",
                 card_type=CardType.TEST,
             )
+            bug.linked_test_task_ids = [regression.id]
             await db.flush()
             original_cards_before = set((await db.execute(
                 select(Card.id).where(Card.sprint_id == origin.id)
@@ -2120,7 +2122,15 @@ class TestSprintAnalyticsLaneBreakdown:
         async with db_factory() as db:
             spec = await db.get(Spec, SPEC_ID)
             spec.status = SpecStatus.DONE
+            await _put_card(
+                db,
+                card_id=HOTFIX_BUG_CARD_ID,
+                spec_id=SPEC_ID,
+                title="Analytics hotfix bug",
+                card_type=CardType.BUG,
+            )
             normal_one = Sprint(
+                id="closed-origin",
                 board_id=BOARD_ID,
                 spec_id=SPEC_ID,
                 title="Normal delivery sprint 1",

@@ -107,12 +107,14 @@ def _parameters_for(fn: Callable[..., Any]) -> dict[str, Any]:
         description = None
         if get_origin(annotation) is Annotated:
             args = get_args(annotation)
-            annotation = args[0]
             for meta in args[1:]:
                 meta_description = getattr(meta, "description", None)
                 if meta_description:
                     description = meta_description
                     break
+        # Preserve the complete Annotated type when building the schema.  The
+        # metadata contains numeric/list constraints as well as descriptions;
+        # stripping it made server-side bounds invisible to MCP clients.
         schema = _json_schema_for(annotation)
         if description:
             schema["description"] = description
@@ -142,6 +144,16 @@ class CoreMcpCatalog:
         self.instructions = instructions
         self._tool_manager = CoreMcpToolManager()
         self._resource_manager = CoreMcpResourceManager()
+        self._runtime_clone_hooks: list[Callable[[CoreMcpCatalog], None]] = []
+
+    def register_runtime_clone_hook(
+        self,
+        hook: Callable[[CoreMcpCatalog], None],
+    ) -> None:
+        """Reapply instance-bound behavior whenever this catalog is cloned."""
+
+        if hook not in self._runtime_clone_hooks:
+            self._runtime_clone_hooks.append(hook)
 
     def clone_for_runtime(self) -> "CoreMcpCatalog":
         """Clone catalog indexes so compositions cannot share mutations."""
@@ -153,6 +165,8 @@ class CoreMcpCatalog:
         )
         clone._tool_manager._tools.update(self._tool_manager._tools)
         clone._resource_manager._resources.update(self._resource_manager._resources)
+        for hook in self._runtime_clone_hooks:
+            hook(clone)
         return clone
 
     def _register_tool(

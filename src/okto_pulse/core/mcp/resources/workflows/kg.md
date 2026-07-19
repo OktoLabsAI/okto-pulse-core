@@ -11,6 +11,19 @@ version: "1.0"
 - **Relational operational tables**: `consolidation_queue`, `consolidation_audit`, node back-references for undo, `global_update_outbox`
 - **Agent-as-LLM premise**: the platform NEVER invokes LLM. All cognitive work (extraction, reasoning, reconciliation decisions) is done by YOU, the code agent.
 
+When KG Health reports `digest_vs_board_layer_mismatch` after all operational
+queues are idle, inspect the rows with
+`okto_pulse_kg_digest_layer_mismatch_list`. An authorized KG administrator may
+then call `okto_pulse_kg_digest_layer_reconcile` with a bounded audit reason and
+wait for the outbox to return to idle before verifying the mismatch list again.
+This is a parity sync, not a rebuild. The worker keyset-inventories authoritative
+publishable board sources with physical duplicate detection, guards stale prune
+against derived clustering relationships, repairs identities and Board links,
+and backfills missing identities. It revalidates the source inventory before a
+board-isolated ACK and requires a post-flush fresh-handle proof of one stable
+digest, the correct Board edge, and exactly one total inbound Board edge per
+source.
+
 ## Consolidation Primitives (7 tools)
 
 > Args/returns for every `okto_pulse_kg_*` tool live in `okto-pulse://reference/tool-docs/kg` — the tables in this workflow list purpose only.
@@ -36,15 +49,55 @@ version: "1.0"
 1. okto_pulse_kg_begin_consolidation(board_id, artifact_type, artifact_id, raw_content, deterministic_candidates=[...])
    → if nothing_changed=true → STOP, abort and move on
 2. For every candidate:
-     a. okto_pulse_kg_get_similar_nodes(session_id, candidate_id, top_k=5, min_similarity=0.85)
+     a. okto_pulse_kg_add_node_candidate(session_id, candidate)
+     b. okto_pulse_kg_get_similar_nodes(session_id, candidate_id, top_k=5, min_similarity=0.85)
         → if match ≥ 0.95: plan UPDATE; if 0.85..0.95: plan SUPERSEDE; else: plan ADD
-     b. okto_pulse_kg_add_node_candidate(session_id, candidate)
 3. okto_pulse_kg_add_edge_candidate only for cognitive rels
 4. okto_pulse_kg_propose_reconciliation(session_id)
 5. okto_pulse_kg_commit_consolidation(session_id, summary_text="<1-2 sentences>", agent_overrides={...})
 6. Verify with okto_pulse_kg_health + okto_pulse_kg_query_natural + okto_pulse_kg_query_cypher
 7. On any unrecoverable error: okto_pulse_kg_abort_consolidation(session_id, reason=...)
 ```
+
+`candidate_id` is session-local: calling `get_similar_nodes` before
+`add_node_candidate` deterministically returns `candidate_not_found`.
+
+## Global Discovery recovery (component-scoped)
+
+Never infer the remedy from generic `overall_state=recovery_needed`. If
+`graph_state` is healthy while `discovery_state=recovery_needed` and
+`discovery_recovery_required=true`, use only
+`okto_pulse_kg_global_discovery_recovery_preflight` →
+`okto_pulse_kg_global_discovery_recovery_confirm` →
+`okto_pulse_kg_global_discovery_recovery_run`. Board rebuild preflight refuses
+this discovery-only case. The global preflight requires all board graphs to be
+healthy; healthy/quarantined discovery is not admitted.
+
+`run` persists integrity-bound worker inputs, creates the durable control row,
+dispatches owned background work, and returns `accepted` without waiting for
+the native candidate/cutover. Poll
+`okto_pulse_kg_global_discovery_recovery_status` for authoritative progress and
+the terminal outcome. Retrying the exact confirmation/run binding returns the
+existing run; do not issue a new recovery while the existing run is `pending`
+or `running`.
+
+### Terminal Global Discovery outbox recovery
+
+Use the global-outbox dead-letter family only after the delivery root cause is
+fixed; it is distinct from the board consolidation DLQ family:
+
+1. Page `okto_pulse_kg_global_outbox_dead_letter_list` with `limit<=100` and
+   retain the returned immutable IDs. With `classification`, an empty page may
+   still carry `next_cursor`; follow it until null.
+2. Call `okto_pulse_kg_global_outbox_dead_letter_reprocess` with 1-100 explicit,
+   unique IDs and an audit reason. Never interpret an empty selection as all.
+3. Call `okto_pulse_kg_global_outbox_dead_letter_verify` with those exact IDs.
+   Treat `still_dead_lettered`, dangling/cyclic lineage reason codes, or a busy
+   response as unresolved; queued/applied are idempotent replay outcomes.
+
+Each operation owns a dedicated relational transaction. Selection validation
+and guarded requeue are atomic; `process_now=true` wakes the outbox worker only
+after commit.
 
 ## Query Timing — MANDATORY at Every Stage
 
@@ -72,7 +125,7 @@ version: "1.0"
 | Query | Why it's required |
 |---|---|
 | `okto_pulse_kg_find_similar_decisions(board_id, topic=<refinement topic>)` | Find prior decisions the refinement may extend, supersede, or contradict |
-| `okto_pulse_kg_get_related_context(board_id, artifact_id=<formalized_node_or_artifact_id>)` | Use only when anchored to an existing formalized KG node |
+| `okto_pulse_kg_get_related_context(board_id, artifact_id="spec:<uuid>")` or `artifact_id="card:<uuid>"` | Use only when anchored to an existing formalized spec/card; the type discriminator is mandatory |
 | `okto_pulse_kg_find_contradictions(board_id, node_id=<relevant decision>)` | Detect contradictions before they reach spec |
 | `okto_pulse_kg_list_alternatives(board_id, decision_id=<anchor decision>)` | Surface "why not X" rationale |
 
@@ -80,10 +133,20 @@ version: "1.0"
 
 | Query | Why it's required |
 |---|---|
-| `okto_pulse_kg_get_related_context(board_id, artifact_id=<spec_id>)` | Final sweep of 2-hop neighbors |
+| `okto_pulse_kg_get_related_context(board_id, artifact_id="spec:<uuid>")` | Final sweep of 2-hop neighbors; a raw spec UUID is rejected |
 | `okto_pulse_kg_find_contradictions(board_id)` (board-wide) | Detects contradictions the spec itself may have introduced |
 | `okto_pulse_kg_find_similar_decisions(board_id, topic=<each major FR/BR>)` | Check every significant FR/BR for similarity |
-| `okto_pulse_kg_explain_constraint(board_id, constraint_id=<each relevant constraint>)` | Fetch origin + related constraints + prior violations |
+| `okto_pulse_kg_explain_constraint(board_id, constraint_id=<each relevant canonical Constraint.id>)` | Fetch origin + related constraints + prior violations. Do not fabricate this id from a TR id or worker candidate id; use the discovery recipe below. |
+
+**Constraint-ID discovery for Stage 3.** `constraint_id` is the canonical graph
+node id. For a current draft, resolve it through the read-only MCP boundary with
+`okto_pulse_kg_query_cypher(board_id, cypher="MATCH (c:Constraint) WHERE
+c.source_artifact_ref STARTS WITH $prefix RETURN c.id AS id,
+c.source_artifact_ref AS ref", params={"prefix":"spec:<spec-id>:"},
+include_working=true)`. Match the returned `source_artifact_ref` to the spec child
+refs, reject missing or duplicate refs, and pass only the returned `c.id` values to
+`okto_pulse_kg_explain_constraint`. `include_working=true` is required here because
+the mandatory sweep happens before the spec leaves `draft`.
 
 ## Tier Primary Query Tools (9 tools)
 
@@ -107,7 +170,7 @@ version: "1.0"
 | `okto_pulse_kg_query_natural` | Natural language search via embedding + HNSW |
 | `okto_pulse_kg_schema_info` | Schema introspection: node types, rel types, vector indexes |
 
-**Safety rails:** Timeout: 5s default, 30s max. Max rows: 1000 default, 10000 max. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
+**Safety rails:** Timeout: 5s default, 30s max. Max rows: 50 by default and 1000 hard cap. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
 
 **Layer contract:** Graph nodes expose `graph_layer` (`canonical` or `working`). `kg_layer_counts` is a health payload aggregate, not a node property. `okto_pulse_kg_query_cypher` enforces canonical-only visibility by default and should be called with `include_working=true` for working graph checks, rebuild validation, or E2E ingestion tests.
 

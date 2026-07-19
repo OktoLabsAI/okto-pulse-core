@@ -40,7 +40,6 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditKey,
 )
 from okto_pulse.core.kg.rebuild_audit import (
-    require_rebuild_audit_artifact_store,
     resolve_rebuild_audit_artifact_store,
 )
 

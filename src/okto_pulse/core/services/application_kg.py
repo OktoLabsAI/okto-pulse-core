@@ -49,6 +49,21 @@ def configure_write_barrier(mode: str) -> None:
     configure_write_barrier_runtime(WriteBarrierRuntime(mode))
 
 
+def drain_kg_health_probes(*, timeout_s: float = 30.0) -> int:
+    """Drain health jobs owned by the current runtime composition.
+
+    Editions call this public lifecycle facade before closing their concrete
+    graph handles.  The daemon-pool implementation remains private to Core;
+    the edition only observes the number of jobs left at the deadline.
+    """
+
+    from okto_pulse.core.services.kg_health_service import (
+        drain_health_probe_runtime,
+    )
+
+    return drain_health_probe_runtime(timeout_s=timeout_s)
+
+
 async def migrate_board_graph_schema(board_id: str) -> dict[str, Any]:
     """Apply the composed graph schema manager to one board."""
 

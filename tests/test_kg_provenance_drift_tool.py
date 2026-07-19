@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.provenance_drift import provenance_drift_report
 
 from test_kg_dedup_nc8 import (  # noqa: F401  (harness reuse)
@@ -62,9 +63,18 @@ def drift_tempdir(monkeypatch):
 
 
 async def _insert_spec_row(session_factory, board_id: str, spec_id: str) -> None:
-    from okto_pulse.community.adapters.sqlalchemy_models import Spec
+    from okto_pulse.community.adapters.sqlalchemy_models import Board, Spec
 
     async with session_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Provenance Drift {board_id}",
+                    owner_id="mkgb-drift-test",
+                )
+            )
+            await db.flush()
         db.add(
             Spec(
                 id=spec_id,
@@ -127,8 +137,11 @@ async def _insert_card_row(
         await db.commit()
 
 
-def _graph_snapshot(board_id: str, artifact_ref: str) -> dict:
-    return _prov_row(board_id, artifact_ref)
+async def _graph_snapshot(board_id: str, artifact_ref: str) -> dict:
+    return await run_blocking_graph_io(
+        lambda: _prov_row(board_id, artifact_ref),
+        task_name="test.kg.provenance_drift.graph_snapshot",
+    )
 
 
 async def test_s6_clean_board_reports_no_drift(drift_tempdir, monkeypatch):
@@ -150,7 +163,7 @@ async def test_s6_clean_board_reports_no_drift(drift_tempdir, monkeypatch):
     assert report["skipped_count"] == 0
 
 
-async def test_s6_artifact_edited_after_consolidation_is_drifted(
+async def test_s6_timestamp_only_edit_with_equal_committed_hash_is_not_drift(
     drift_tempdir, monkeypatch
 ):
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
@@ -165,13 +178,11 @@ async def test_s6_artifact_edited_after_consolidation_is_drifted(
 
     report = await provenance_drift_report(board_id)
     drifted = {d["node_id"]: d for d in report["drifted"]}
-    node = _prov_row(board_id, artifact_ref)
-    assert node["id"] in drifted
-    entry = drifted[node["id"]]
-    assert entry["reason"] == "content_changed"
-    assert entry["detail"] == "artifact_updated_after_last_consolidation"
-    assert entry["persisted_hash"] == node["source_content_hash"]
-    assert report["drifted_by_reason"]["content_changed"] >= 1
+    node = await _graph_snapshot(board_id, artifact_ref)
+    # updated_at is volatile metadata. Persisted and latest committed canonical
+    # hashes still match, so the report must not invent true drift.
+    assert node["id"] not in drifted
+    assert report["drifted_by_reason"]["content_changed"] == 0
 
 
 async def test_s6_stale_anchor_vs_latest_consolidation_is_drifted(
@@ -185,18 +196,24 @@ async def test_s6_stale_anchor_vs_latest_consolidation_is_drifted(
         session_factory, board_id, artifact_ref, "[MKG-B] Ancora velha",
         content="conteudo",
     )
-    node = _prov_row(board_id, artifact_ref)
+    node = await _graph_snapshot(board_id, artifact_ref)
     # Diverge the persisted anchor from the latest audit (models a curated
     # node whose protected content no longer matches the source state).
     from kg_schema_testing import open_board_connection
 
-    conn_ctx = open_board_connection(board_id)
-    with conn_ctx as (_kdb, kconn):
-        kconn.execute(
-            "MATCH (n:Entity) WHERE n.id = $id "
-            "SET n.source_content_hash = 'deadbeef'",
-            {"id": node["id"]},
-        )
+    def _diverge_persisted_anchor() -> None:
+        conn_ctx = open_board_connection(board_id)
+        with conn_ctx as (_kdb, kconn):
+            kconn.execute(
+                "MATCH (n:Entity) WHERE n.id = $id "
+                "SET n.source_content_hash = 'deadbeef'",
+                {"id": node["id"]},
+            )
+
+    await run_blocking_graph_io(
+        _diverge_persisted_anchor,
+        task_name="test.kg.provenance_drift.diverge_anchor",
+    )
 
     report = await provenance_drift_report(board_id, "Entity")
     drifted = {d["node_id"]: d for d in report["drifted"]}
@@ -219,9 +236,9 @@ async def test_s6_deleted_artifact_is_terminal_drift_and_readonly(
     )
     await _delete_spec_row(session_factory, spec_id)
 
-    before = _graph_snapshot(board_id, artifact_ref)
+    before = await _graph_snapshot(board_id, artifact_ref)
     report = await provenance_drift_report(board_id)
-    after = _graph_snapshot(board_id, artifact_ref)
+    after = await _graph_snapshot(board_id, artifact_ref)
 
     node_id = before["id"]
     drifted = {d["node_id"]: d for d in report["drifted"]}
@@ -255,7 +272,7 @@ async def test_s6_generic_card_ref_resolves_semantic_source_alias(
 
     report = await provenance_drift_report(board_id, "Entity")
     drifted = {d["node_id"]: d for d in report["drifted"]}
-    node = _prov_row(board_id, artifact_ref)
+    node = await _graph_snapshot(board_id, artifact_ref)
     assert node["id"] not in drifted
 
 

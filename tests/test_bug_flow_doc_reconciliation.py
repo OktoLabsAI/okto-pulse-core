@@ -216,28 +216,43 @@ def test_ac5_error_guidance_routes_semantic_gap_without_spec_editing() -> None:
 
 def test_ac6_edited_files_valid_registered_resources() -> None:
     edited = {
-        "okto-pulse://workflows/cards": (CARDS_MD, "workflows/cards.md"),
-        "okto-pulse://reference/card_types": (CARD_TYPES_MD, "reference/card_types.md"),
-        "okto-pulse://reference/errors": (ERRORS_MD, "reference/errors.md"),
+        "okto-pulse://workflows/cards": (
+            CARDS_MD,
+            "workflows/cards.md",
+            "1.1",
+        ),
+        "okto-pulse://reference/card_types": (
+            CARD_TYPES_MD,
+            "reference/card_types.md",
+            "1.0",
+        ),
+        "okto-pulse://reference/errors": (
+            ERRORS_MD,
+            "reference/errors.md",
+            "1.0",
+        ),
         "okto-pulse://reference/tool-docs/card": (
             CANONICAL_CARD_DOC,
             "reference/tool-docs/card.md",
+            "1.0",
         ),
     }
 
     # Frontmatter intact on every edited file.
-    for uri, (path, _rel) in edited.items():
+    for uri, (path, _rel, version) in edited.items():
         content = _read(path)
         assert content.startswith("---"), f"{path.name}: missing leading frontmatter block."
         match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
         assert match is not None, f"{path.name}: frontmatter block not closed."
-        assert 'version: "1.0"' in match.group(1), f"{path.name}: frontmatter missing version."
+        assert f'version: "{version}"' in match.group(1), (
+            f"{path.name}: frontmatter missing version {version}."
+        )
 
     # URIs still resolve to the edited files in the live registry.
     from okto_pulse.core.mcp import server as _srv
 
     registered = {entry[0]: entry[1] for entry in _srv._RESOURCE_REGISTRY}
-    for uri, (_path, rel) in edited.items():
+    for uri, (_path, rel, _version) in edited.items():
         assert registered.get(uri) == rel, (
             f"Registry entry for {uri!r} is {registered.get(uri)!r}, expected {rel!r}."
         )
@@ -319,9 +334,9 @@ def test_ac8_every_registered_resource_serves_nonempty_content() -> None:
     from okto_pulse.core.mcp import server as _srv
 
     empty = [
-        (uri, rel)
-        for uri, rel, _desc in _srv._RESOURCE_REGISTRY
-        if not _srv._load_resource_file(rel).strip()
+        spec.uri
+        for spec in _srv.effective_resource_catalog().specs()
+        if not spec.read().strip()
     ]
     assert not empty, f"Registered resources served EMPTY (missing from package?): {empty}"
 

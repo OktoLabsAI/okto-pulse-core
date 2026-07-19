@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from mcp_runtime_testing import register_mcp_test_runtime
 
-import asyncio
 import json
 import uuid
 from datetime import datetime, timedelta, timezone

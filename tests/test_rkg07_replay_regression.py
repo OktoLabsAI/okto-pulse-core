@@ -31,6 +31,7 @@ from okto_pulse.core.kg.cognitive_source_ref_resolver import (
 )
 from sqlalchemy import select
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from kg_schema_testing import open_board_connection
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
@@ -73,20 +74,46 @@ async def _not_quarantined(_b, _d):
     return False
 
 
-def _seed_node(board_id, node_type, source_ref, *, node_id=None, graph_layer="canonical"):
+async def _run_test_graph_io(operation, *, task_name: str):
+    return await run_blocking_graph_io(
+        operation,
+        task_name=f"test.rkg07.{task_name}",
+    )
+
+
+def _seed_node(
+    board_id, node_type, source_ref, *, node_id=None, graph_layer="canonical"
+):
     nid = node_id or f"{node_type.lower()}_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
             graph_scope=kconn,
-            session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id)
+            session_id=f"seed_{uuid.uuid4().hex[:8]}",
+            board_id=board_id,
+        )
         _apply_graph_node_create(
-            orch, node_type, nid, {
-                "title": f"Seed {node_type}", "content": "", "context": "", "justification": "",
-                "source_artifact_ref": source_ref, "created_at": "2026-06-08T00:00:00+00:00",
-                "created_by_agent": "test", "source_confidence": 1.0, "relevance_score": 0.5,
-                "query_hits": 0, "last_queried_at": None, "priority_boost": 0.0,
-                "human_curated": False, "embedding": [0.0] * 384,
-                "graph_layer": graph_layer, "maturity_status": "canonical_eligible"})
+            orch,
+            node_type,
+            nid,
+            {
+                "title": f"Seed {node_type}",
+                "content": "",
+                "context": "",
+                "justification": "",
+                "source_artifact_ref": source_ref,
+                "created_at": "2026-06-08T00:00:00+00:00",
+                "created_by_agent": "test",
+                "source_confidence": 1.0,
+                "relevance_score": 0.5,
+                "query_hits": 0,
+                "last_queried_at": None,
+                "priority_boost": 0.0,
+                "human_curated": False,
+                "embedding": [0.0] * 384,
+                "graph_layer": graph_layer,
+                "maturity_status": "canonical_eligible",
+            },
+        )
     return nid
 
 
@@ -98,7 +125,8 @@ def _count_containing(board_id, needle):
     with open_board_connection(board_id) as (_db, conn):
         res = conn.execute(
             "MATCH (n) WHERE n.source_artifact_ref CONTAINS $needle RETURN count(n)",
-            {"needle": needle})
+            {"needle": needle},
+        )
         try:
             return int(res.get_next()[0]) if res.has_next() else 0
         finally:
@@ -155,31 +183,73 @@ async def test_ts1_spec_replay_persists_alternative_and_assumption_queryable(
 ):
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    _seed_node(board_id, "Entity", spec_ref)  # provenance root
-    decision_id = _seed_node(board_id, "Decision", f"{spec_ref}:decision:x")
+    await _run_test_graph_io(
+        lambda: _seed_node(board_id, "Entity", spec_ref),
+        task_name="seed-spec-root",
+    )
+    decision_id = await _run_test_graph_io(
+        lambda: _seed_node(board_id, "Decision", f"{spec_ref}:decision:x"),
+        task_name="seed-spec-decision",
+    )
     persister = ccp.ConsolidationPipelinePersister(db_factory, agent_id=agent_id)
 
     res = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="spec", artifact_ref=spec_ref,
-        spec_context=ANALYSIS, decision_ref=decision_id, persister=persister)
+        board_id=board_id,
+        artifact_type="spec",
+        artifact_ref=spec_ref,
+        spec_context=ANALYSIS,
+        decision_ref=decision_id,
+        persister=persister,
+    )
 
     assert res.outcome == "persisted", res.detail
     alts = [r for r in res.persisted_refs if ":alternative:" in r]
     assums = [r for r in res.persisted_refs if ":assumption:" in r]
     assert alts and assums, res.persisted_refs
-    assert _count(board_id, "Alternative", alts[0]) == 1   # node persisted + queryable
-    assert _count(board_id, "Assumption", assums[0]) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count(board_id, "Alternative", alts[0]),
+            task_name="count-alternative",
+        )
+        == 1
+    )
+    assert (
+        await _run_test_graph_io(
+            lambda: _count(board_id, "Assumption", assums[0]),
+            task_name="count-assumption",
+        )
+        == 1
+    )
     # AC0bc6dfae: Alternative carries the relates_to edge.
-    assert _count_edge(
-        board_id,
-        "MATCH (d:Decision)-[:relates_to]->(a:Alternative) WHERE a.source_artifact_ref = $ref "
-        "RETURN count(*)", alts[0]) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_edge(
+                board_id,
+                "MATCH (d:Decision)-[:relates_to]->(a:Alternative) "
+                "WHERE a.source_artifact_ref = $ref RETURN count(*)",
+                alts[0],
+            ),
+            task_name="count-decision-alternative-edge",
+        )
+        == 1
+    )
     # source_ref canonical (spec child ref) + idempotent replay.
     res2 = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="spec", artifact_ref=spec_ref,
-        spec_context=ANALYSIS, decision_ref=decision_id, persister=persister)
+        board_id=board_id,
+        artifact_type="spec",
+        artifact_ref=spec_ref,
+        spec_context=ANALYSIS,
+        decision_ref=decision_id,
+        persister=persister,
+    )
     assert res2.skipped_existing_refs
-    assert _count(board_id, "Alternative", alts[0]) == 1  # no duplicate on replay
+    assert (
+        await _run_test_graph_io(
+            lambda: _count(board_id, "Alternative", alts[0]),
+            task_name="count-replayed-alternative",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -188,23 +258,46 @@ async def test_ts1_bug_replay_persists_learning_with_validates_edge(
 ):
     bug_uuid = str(uuid.uuid4())
     bug_ref = f"bug:{bug_uuid}"
-    _seed_node(board_id, "Bug", bug_ref, graph_layer="canonical")
+    await _run_test_graph_io(
+        lambda: _seed_node(board_id, "Bug", bug_ref, graph_layer="canonical"),
+        task_name="seed-canonical-bug",
+    )
     persister = ccp.ConsolidationPipelinePersister(db_factory, agent_id=agent_id)
 
     res = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="bug", artifact_ref=bug_ref, bug_card_id=bug_uuid,
+        board_id=board_id,
+        artifact_type="bug",
+        artifact_ref=bug_ref,
+        bug_card_id=bug_uuid,
         bug_title="Regex misfires",
         bug_action_plan="Repro; root cause missing NFC; fixed + added a regression test.",
-        llm_config={"provider": "openai"}, summariser=_Summ(),
-        bug_probe=(lambda u: u == bug_uuid), persister=persister)
+        llm_config={"provider": "openai"},
+        summariser=_Summ(),
+        bug_probe=(lambda u: u == bug_uuid),
+        persister=persister,
+    )
 
     assert res.outcome == "persisted", res.detail
     learning_ref = f"bug:{bug_uuid}"
-    assert _count(board_id, "Learning", learning_ref) == 1
-    assert _count_edge(
-        board_id,
-        "MATCH (l:Learning)-[:validates]->(b:Bug) WHERE l.source_artifact_ref = $ref "
-        "RETURN count(*)", learning_ref) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count(board_id, "Learning", learning_ref),
+            task_name="count-bug-learning",
+        )
+        == 1
+    )
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_edge(
+                board_id,
+                "MATCH (l:Learning)-[:validates]->(b:Bug) "
+                "WHERE l.source_artifact_ref = $ref RETURN count(*)",
+                learning_ref,
+            ),
+            task_name="count-learning-validates-edge",
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -216,27 +309,42 @@ async def test_ts1_classification_no_material_not_applicable_skipped(
     # spec done with NO cognitive material -> no_material, nothing persisted.
     spec_ref = f"spec:{uuid.uuid4()}"
     r1 = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="spec", artifact_ref=spec_ref,
+        board_id=board_id,
+        artifact_type="spec",
+        artifact_ref=spec_ref,
         spec_context="just prose, no considered alternative or assumption",
-        persister=persister)
+        persister=persister,
+    )
     assert r1.outcome == "no_material"
 
     # bug with too-short action_plan -> not_applicable.
     bug_uuid = str(uuid.uuid4())
     r2 = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="bug", artifact_ref=f"bug:{bug_uuid}",
-        bug_card_id=bug_uuid, bug_action_plan="too short",
-        llm_config={"provider": "openai"}, summariser=_Summ(),
-        bug_probe=(lambda u: True), persister=persister)
+        board_id=board_id,
+        artifact_type="bug",
+        artifact_ref=f"bug:{bug_uuid}",
+        bug_card_id=bug_uuid,
+        bug_action_plan="too short",
+        llm_config={"provider": "openai"},
+        summariser=_Summ(),
+        bug_probe=(lambda u: True),
+        persister=persister,
+    )
     assert r2.outcome == "not_applicable"
 
     # bug with material but NO llm_config -> skipped_no_llm_config (honest skip).
     bug_uuid2 = str(uuid.uuid4())
     r3 = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="bug", artifact_ref=f"bug:{bug_uuid2}",
+        board_id=board_id,
+        artifact_type="bug",
+        artifact_ref=f"bug:{bug_uuid2}",
         bug_card_id=bug_uuid2,
         bug_action_plan="A real root cause and fix narrative long enough to pass the gate.",
-        llm_config=None, summariser=None, bug_probe=(lambda u: True), persister=persister)
+        llm_config=None,
+        summariser=None,
+        bug_probe=(lambda u: True),
+        persister=persister,
+    )
     assert r3.outcome == "skipped_no_llm_config"
 
 
@@ -258,8 +366,12 @@ async def test_ts2_candidate_without_persistence_is_extractor_triggered_but_not_
 
     spec_ref = f"spec:{uuid.uuid4()}"
     res = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="spec", artifact_ref=spec_ref,
-        spec_context=ANALYSIS, persister=_FailPersister())
+        board_id=board_id,
+        artifact_type="spec",
+        artifact_ref=spec_ref,
+        spec_context=ANALYSIS,
+        persister=_FailPersister(),
+    )
 
     # tr_74d68275: applicable material existed -> a candidate was emitted, but with
     # no persistence the outcome is the honest failure, NOT a false success.
@@ -267,7 +379,13 @@ async def test_ts2_candidate_without_persistence_is_extractor_triggered_but_not_
     assert res.outcome == "extractor_triggered_but_not_persisted"
     assert not res.persisted_refs
     # ...and no node was written (no silent partial), and no DLQ was fabricated.
-    assert _count(board_id, "Alternative", f"{spec_ref}:alternative:") == 0
+    assert (
+        await _run_test_graph_io(
+            lambda: _count(board_id, "Alternative", f"{spec_ref}:alternative:"),
+            task_name="count-unpersisted-alternative",
+        )
+        == 0
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -278,10 +396,19 @@ async def test_ts2_candidate_without_persistence_is_extractor_triggered_but_not_
 async def _seed_connectivity_dlq(db_factory, board_id, *, artifact_id):
     async with db_factory() as db:
         row = ConsolidationDeadLetter(
-            board_id=board_id, artifact_type="spec", artifact_id=artifact_id, attempts=5,
-            errors=[{"attempt": 5, "error_type": "KGPrimitiveError",
-                     "message": CONNECTIVITY_GUARD_SIGNATURE}],
-            dead_lettered_at=datetime.now(timezone.utc))
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=artifact_id,
+            attempts=5,
+            errors=[
+                {
+                    "attempt": 5,
+                    "error_type": "KGPrimitiveError",
+                    "message": CONNECTIVITY_GUARD_SIGNATURE,
+                }
+            ],
+            dead_lettered_at=datetime.now(timezone.utc),
+        )
         db.add(row)
         await db.flush()
         dlq_id = row.id
@@ -298,26 +425,52 @@ async def test_ts3_dlq_reprocess_drains_to_graph_and_preserves_cognition(
     # (A) A pre-existing canonical cognitive Alternative — the cognition to preserve.
     cog_spec = f"spec-cog-{uuid.uuid4().hex[:8]}"
     cog_ref = f"spec:{cog_spec}"
-    _seed_node(board_id, "Entity", cog_ref)
-    cog_decision = _seed_node(board_id, "Decision", f"{cog_ref}:decision:x")
+    await _run_test_graph_io(
+        lambda: _seed_node(board_id, "Entity", cog_ref),
+        task_name="seed-cognitive-root",
+    )
+    cog_decision = await _run_test_graph_io(
+        lambda: _seed_node(board_id, "Decision", f"{cog_ref}:decision:x"),
+        task_name="seed-cognitive-decision",
+    )
     cog_res = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="spec", artifact_ref=cog_ref,
-        spec_context=ANALYSIS, decision_ref=cog_decision, persister=persister)
+        board_id=board_id,
+        artifact_type="spec",
+        artifact_ref=cog_ref,
+        spec_context=ANALYSIS,
+        decision_ref=cog_decision,
+        persister=persister,
+    )
     alt_ref = next(r for r in cog_res.persisted_refs if ":alternative:" in r)
-    assert _count(board_id, "Alternative", alt_ref) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count(board_id, "Alternative", alt_ref),
+            task_name="count-cognitive-alternative",
+        )
+        == 1
+    )
 
     # (B) A REAL reprocessable spec (SQL) + its connectivity-guard DLQ.
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
             db.add(Board(id=board_id, name="rkg07", owner_id="owner"))
-        db.add(Spec(
-            id=spec_id, board_id=board_id, title="reprocessable", status=SpecStatus.DONE,
-            created_by="owner",
-            functional_requirements=["FR1: the system shall reprocess safely"],
-            acceptance_criteria=["AC1: given a DLQ then it drains to the graph"],
-            test_scenarios=[], business_rules=[], api_contracts=[],
-            technical_requirements=[], decisions=[]))
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="reprocessable",
+                status=SpecStatus.DONE,
+                created_by="owner",
+                functional_requirements=["FR1: the system shall reprocess safely"],
+                acceptance_criteria=["AC1: given a DLQ then it drains to the graph"],
+                test_scenarios=[],
+                business_rules=[],
+                api_contracts=[],
+                technical_requirements=[],
+                decisions=[],
+            )
+        )
         await db.commit()
     dlq_id = await _seed_connectivity_dlq(db_factory, board_id, artifact_id=spec_id)
 
@@ -327,30 +480,56 @@ async def test_ts3_dlq_reprocess_drains_to_graph_and_preserves_cognition(
     assert dlq_id in diag["dead_letter_ids"]
     async with db_factory() as db:
         rr = await reprocess_connectivity_guard_dlq(
-            db, board_id, [dlq_id], quarantine_probe=_not_quarantined)
+            db, board_id, [dlq_id], quarantine_probe=_not_quarantined
+        )
         await db.commit()
     assert rr["blocked"] is False and rr["success"] is True
     async with db_factory() as db:
-        q = (await db.execute(select(ConsolidationQueue).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.artifact_id == spec_id))).scalars().all()
+        q = (
+            (
+                await db.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.artifact_id == spec_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
     assert len(q) == 1  # queued, no duplicate
 
     # DRAIN through the REAL worker -> graph.lbug. A broken worker FAILS here (this is
     # the strengthening codex asked for: validate the chain, not just the DLQ removal).
     async with db_factory() as db:
-        entry = (await db.execute(select(ConsolidationQueue).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.artifact_id == spec_id))).scalars().first()
+        entry = (
+            (
+                await db.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.artifact_id == spec_id,
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
         ok = await _process_queue_entry(db, entry)
         await db.commit()
     assert ok is True
-    assert _count_containing(board_id, spec_id) > 0  # the spec materialised in graph.lbug
+    assert (
+        await _run_test_graph_io(
+            lambda: _count_containing(board_id, spec_id),
+            task_name="count-reprocessed-spec",
+        )
+        > 0
+    )
 
     # After the drain: NO return to DLQ AND NO canonical debt for the scope.
     async with db_factory() as db:
         verify = await verify_connectivity_class_cleared(
-            db, board_id, artifact_refs=[f"spec:{spec_id}"])
+            db, board_id, artifact_refs=[f"spec:{spec_id}"]
+        )
         debt = await list_canonical_debt(db, board_id=board_id, limit=200)
     assert verify["class_cleared"] is True
     assert all(d.get("artifact_id") != spec_id for d in debt.items)  # explicit: no debt
@@ -360,12 +539,29 @@ async def test_ts3_dlq_reprocess_drains_to_graph_and_preserves_cognition(
     # neither drops nor duplicates it. (A full source-rebuild is intentionally NOT
     # used: cognitive nodes are DERIVED, not deterministic SQL sources — re-deriving
     # them is the closeout's job, covered by TS1; replay is the in-scope preservation.)
-    assert _count(board_id, "Alternative", alt_ref) == 1
+    assert (
+        await _run_test_graph_io(
+            lambda: _count(board_id, "Alternative", alt_ref),
+            task_name="count-preserved-alternative",
+        )
+        == 1
+    )
     replay = await ccp.run_cognitive_closeout(
-        board_id=board_id, artifact_type="spec", artifact_ref=cog_ref,
-        spec_context=ANALYSIS, decision_ref=cog_decision, persister=persister)
+        board_id=board_id,
+        artifact_type="spec",
+        artifact_ref=cog_ref,
+        spec_context=ANALYSIS,
+        decision_ref=cog_decision,
+        persister=persister,
+    )
     assert replay.skipped_existing_refs
-    assert _count(board_id, "Alternative", alt_ref) == 1  # preserved, no duplicate
+    assert (
+        await _run_test_graph_io(
+            lambda: _count(board_id, "Alternative", alt_ref),
+            task_name="count-replayed-preserved-alternative",
+        )
+        == 1
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +580,11 @@ def test_aliases_resolver_canonical_and_negatives():
     r_card = resolve_cognitive_source_ref(f"card:{u}")
     assert r_card.is_bug_derived is False
     # card:<id> confirmed canonical bug by probe -> bug-derived.
-    assert resolve_cognitive_source_ref(
-        f"card:{u}", canonical_bug_probe=lambda x: x == u).is_bug_derived is True
+    assert (
+        resolve_cognitive_source_ref(
+            f"card:{u}", canonical_bug_probe=lambda x: x == u
+        ).is_bug_derived
+        is True
+    )
     # spec child ref strips its per-concept suffix to the canonical spec ref.
     assert strip_concept_suffix(f"spec:{u}:alternative:abcd1234") == f"spec:{u}"

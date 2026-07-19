@@ -31,10 +31,13 @@ def _uowf():
 
 async def _seed_dlq(board_id: str, n: int) -> list[str]:
     from okto_pulse.core.infra.database import get_session_factory
-    from sqlalchemy_test_models import ConsolidationDeadLetter
+    from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 
     ids: list[str] = []
     async with get_session_factory()() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(Board(id=board_id, name="fu3b", owner_id="fu3b-owner"))
+            await db.flush()
         for i in range(n):
             row_id = f"dlq-fu3b-{i}-{uuid.uuid4().hex[:8]}"
             db.add(

@@ -39,7 +39,6 @@ from __future__ import annotations
 
 import logging
 import secrets
-import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass
 from datetime import datetime, timezone

@@ -29,6 +29,7 @@ import pytest
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.mcp.context_projection import (
+    project_entity_context,
     project_spec_context,
     project_task_context,
 )
@@ -248,6 +249,31 @@ def test_projection_metadata_uses_r5_canonical_names():
     assert meta["follow_up"] == [
         {"rel": "read_full_context", "target_ref": "okto_pulse_get_task_context"}
     ]
+
+
+def test_other_context_families_share_profiles_metadata_and_error_contract():
+    source = {"id": "i1", "description": "body", "empty": None}
+    out = project_entity_context(
+        source,
+        profile="summary",
+        tool_name="okto_pulse_get_ideation_context",
+    )
+    assert out["projection"]["profile"] == "summary"
+    assert out["projection"]["outcome"] == "ok"
+    assert out["projection"]["follow_up"] == [
+        {
+            "rel": "read_full_context",
+            "target_ref": "okto_pulse_get_ideation_context",
+        }
+    ]
+
+    bad = project_entity_context(
+        source,
+        profile="verbose",
+        tool_name="okto_pulse_get_ideation_context",
+    )
+    assert bad["error_code"] == "unsupported_projection"
+    assert bad["supported_profiles"] == ["summary", "detail", "full", "legacy"]
 
 
 # ---------------------------------------------------------------------------

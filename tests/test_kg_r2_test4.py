@@ -56,7 +56,7 @@ async def _make_stale_spec(db_factory, board_id):
 async def test_stale_parity_mcp_tool_is_read_only(db_factory, monkeypatch):
     board_id = await new_board(db_factory, "r2t4")
     await _make_stale_spec(db_factory, board_id)
-    canonical_before = count_canonical(board_id, "Requirement")
+    canonical_before = await count_canonical(board_id, "Requirement")
     assert canonical_before >= 1
 
     async def _fake_ctx(board_id: str):
@@ -81,7 +81,7 @@ async def test_stale_parity_mcp_tool_is_read_only(db_factory, monkeypatch):
     assert payload["count"] >= 1
     assert payload["health_issue_code"] == "stale_canonical_parity"
     # TEETH: a diagnostic that secretly demoted would drop the canonical count.
-    assert count_canonical(board_id, "Requirement") == canonical_before
+    assert await count_canonical(board_id, "Requirement") == canonical_before
 
 
 # ===========================================================================

@@ -12,12 +12,21 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 import hashlib
 import re
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.application.scope import ActorScope
-from okto_pulse.core.application.use_cases.base import ActorContext, commit
 from okto_pulse.core.application.use_cases._service_payload import ServicePayload
+from okto_pulse.core.application.use_cases.board_access import (
+    load_accessible_board,
+    load_accessible_card,
+)
+from okto_pulse.core.application.use_cases.base import (
+    ActorContext,
+    PermissionDeniedError,
+    commit,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 
@@ -37,6 +46,69 @@ class ScreenMockupUseCaseError(Exception):
 
 def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> Any:
     return ActorScope.from_context(actor).query_scope(target_board_id=board_id)
+
+
+_BOARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
+_GLOBAL_CATALOG_WRITE_PERMISSIONS = (
+    "default_board_config.write",
+    "default.board_config.write",
+    "admin.catalog.write",
+)
+
+
+def _permission_enabled(permissions: Any, required: str) -> bool:
+    if isinstance(permissions, Mapping):
+        if permissions.get("*") is True or permissions.get(required) is True:
+            return True
+        cursor: Any = permissions
+        for part in required.split("."):
+            if not isinstance(cursor, Mapping) or part not in cursor:
+                return False
+            cursor = cursor[part]
+        return cursor is True
+    checker = getattr(permissions, "check", None)
+    if callable(checker):
+        try:
+            return checker(required) is None
+        except Exception:
+            return False
+    if isinstance(permissions, (list, tuple, set, frozenset)):
+        return required in permissions or "*" in permissions
+    return False
+
+
+def require_global_catalog_admin(actor: ActorContext) -> None:
+    """Require an authenticated administrative role or explicit capability."""
+
+    roles = {str(role).lower() for role in actor.roles}
+    if roles.intersection({"admin", "operator"}) or any(
+        _permission_enabled(actor.permissions, permission)
+        for permission in _GLOBAL_CATALOG_WRITE_PERMISSIONS
+    ):
+        return
+    raise PermissionDeniedError(
+        "Global default-board configuration write requires an admin or operator capability"
+    )
+
+
+async def _has_board_access(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+    *,
+    write: bool,
+) -> bool:
+    return (
+        await load_accessible_board(
+            uow,
+            board_id,
+            actor,
+            allowed_share_permissions=(
+                _BOARD_WRITE_SHARE_PERMISSIONS if write else None
+            ),
+        )
+        is not None
+    )
 
 
 # --- amendment revisions ----------------------------------------------------
@@ -78,11 +150,85 @@ class TransitionAmendmentRevisionCommand:
     payload: dict[str, Any]
 
 
+def _amendment_bug_not_found(board_id: str, bug_id: str) -> Exception:
+    from okto_pulse.core.services.amendment_revision_api import (
+        AmendmentRevisionApiError,
+    )
+
+    return AmendmentRevisionApiError(
+        "bug_not_found",
+        f"Bug '{bug_id}' was not found on this board.",
+        404,
+    )
+
+
+def _amendment_not_found(amendment_id: str) -> Exception:
+    from okto_pulse.core.services.amendment_revision_api import (
+        AmendmentRevisionApiError,
+    )
+
+    return AmendmentRevisionApiError(
+        "amendment_not_found",
+        f"Amendment revision '{amendment_id}' was not found.",
+        404,
+    )
+
+
+async def _require_amendment_bug_access(
+    uow: PulseUnitOfWork,
+    *,
+    board_id: str,
+    bug_id: str,
+    actor: ActorContext,
+    write: bool,
+) -> None:
+    card = await load_accessible_card(
+        uow,
+        bug_id,
+        actor,
+        expected_board_id=board_id,
+        allowed_share_permissions=(
+            _BOARD_WRITE_SHARE_PERMISSIONS if write else None
+        ),
+    )
+    if card is None:
+        raise _amendment_bug_not_found(board_id, bug_id)
+
+
+async def _preflight_amendment(
+    uow: PulseUnitOfWork,
+    *,
+    board_id: str,
+    bug_id: str,
+    amendment_id: str,
+) -> Any:
+    from okto_pulse.core.services.amendment_revision_api import (
+        AmendmentRevisionApiError,
+    )
+
+    try:
+        return await uow.services.amendments.get(
+            board_id=board_id,
+            bug_id=bug_id,
+            amendment_id=amendment_id,
+        )
+    except AmendmentRevisionApiError as exc:
+        if exc.code in {"amendment_not_found", "amendment_bug_mismatch"}:
+            raise _amendment_not_found(amendment_id) from exc
+        raise
+
+
 class CreateAmendmentRevisionUseCase:
     async def execute(
         self, command: CreateAmendmentRevisionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-
+        await _require_amendment_bug_access(
+            uow,
+            board_id=command.board_id,
+            bug_id=command.bug_id,
+            actor=actor,
+            write=True,
+        )
         data = await uow.services.amendments.create(
             board_id=command.board_id,
             bug_id=command.bug_id,
@@ -97,7 +243,13 @@ class ListAmendmentRevisionsUseCase:
     async def execute(
         self, command: ListAmendmentRevisionsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-
+        await _require_amendment_bug_access(
+            uow,
+            board_id=command.board_id,
+            bug_id=command.bug_id,
+            actor=actor,
+            write=False,
+        )
         return DataResult(
             await uow.services.amendments.list_for_bug(
                 board_id=command.board_id, bug_id=command.bug_id
@@ -109,9 +261,16 @@ class GetAmendmentRevisionUseCase:
     async def execute(
         self, command: GetAmendmentRevisionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
-
+        await _require_amendment_bug_access(
+            uow,
+            board_id=command.board_id,
+            bug_id=command.bug_id,
+            actor=actor,
+            write=False,
+        )
         return DataResult(
-            await uow.services.amendments.get(
+            await _preflight_amendment(
+                uow,
                 board_id=command.board_id,
                 bug_id=command.bug_id,
                 amendment_id=command.amendment_id,
@@ -127,7 +286,19 @@ class AssociateAmendmentRevisionUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DataResult:
-
+        await _require_amendment_bug_access(
+            uow,
+            board_id=command.board_id,
+            bug_id=command.bug_id,
+            actor=actor,
+            write=True,
+        )
+        await _preflight_amendment(
+            uow,
+            board_id=command.board_id,
+            bug_id=command.bug_id,
+            amendment_id=command.amendment_id,
+        )
         data = await uow.services.amendments.associate(
             board_id=command.board_id,
             bug_id=command.bug_id,
@@ -147,7 +318,19 @@ class TransitionAmendmentRevisionUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> DataResult:
-
+        await _require_amendment_bug_access(
+            uow,
+            board_id=command.board_id,
+            bug_id=command.bug_id,
+            actor=actor,
+            write=True,
+        )
+        await _preflight_amendment(
+            uow,
+            board_id=command.board_id,
+            bug_id=command.bug_id,
+            amendment_id=command.amendment_id,
+        )
         data = await uow.services.amendments.transition_lifecycle(
             board_id=command.board_id,
             bug_id=command.bug_id,
@@ -188,6 +371,7 @@ class CreateDefaultBoardConfigVersionUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        require_global_catalog_admin(actor)
         data = await uow.services.default_board_config.create_version(
             actor=actor.actor_id,
             query_scope=_query_scope_for_actor(actor),
@@ -201,6 +385,7 @@ class ActivateDefaultBoardConfigVersionUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        require_global_catalog_admin(actor)
         data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -214,6 +399,7 @@ class DeactivateDefaultBoardConfigVersionUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        require_global_catalog_admin(actor)
         data = await uow.services.default_board_config.deactivate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -226,6 +412,21 @@ class GetBoardDefaultConfigDiffUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        from okto_pulse.core.services.default_board_configuration import (
+            DefaultBoardConfigurationError,
+        )
+
+        if not await _has_board_access(
+            uow,
+            command.board_id,
+            actor,
+            write=False,
+        ):
+            raise DefaultBoardConfigurationError(
+                "board_not_found",
+                f"Board '{command.board_id}' was not found or is not accessible.",
+                404,
+            )
         return DataResult(
             await uow.services.default_board_config.get_board_diff(board_id=command.board_id)
         )
@@ -248,6 +449,7 @@ class UpdateDefaultGuidelineRefsUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        require_global_catalog_admin(actor)
         data = await uow.services.default_board_config.update_template_guidelines(
             template_id=command.template_id,
             guideline_default_refs=(command.payload or {}).get("guideline_default_refs"),
@@ -262,6 +464,7 @@ class SetDefaultDesignSystemUseCase:
     async def execute(
         self, command: DefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
+        require_global_catalog_admin(actor)
         data = await uow.services.default_board_config.set_template_design_system(
             template_id=command.template_id,
             actor=actor.actor_id,
@@ -282,6 +485,53 @@ class DesignSystemCommand:
     payload: dict[str, Any] | None = None
 
 
+def _design_system_board_not_found(board_id: str) -> Exception:
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    return DesignSystemError(
+        "board_not_found",
+        f"Board '{board_id}' was not found or is not accessible.",
+        404,
+        {"board_id": board_id},
+    )
+
+
+def _design_system_not_found(design_system_id: str) -> Exception:
+    from okto_pulse.core.services.design_system import DesignSystemError
+
+    return DesignSystemError(
+        "design_system_not_found",
+        f"Design System '{design_system_id}' was not found.",
+        404,
+        {"design_system_id": design_system_id},
+    )
+
+
+async def _require_design_system_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+    *,
+    write: bool,
+) -> None:
+    if not await _has_board_access(uow, board_id, actor, write=write):
+        raise _design_system_board_not_found(board_id)
+
+
+async def _require_design_system_detail_board(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    design_system_id: str,
+    actor: ActorContext,
+    *,
+    write: bool,
+) -> None:
+    """Hide the board authorization outcome behind the detail resource's 404."""
+
+    if not await _has_board_access(uow, board_id, actor, write=write):
+        raise _design_system_not_found(design_system_id)
+
+
 class CreateDesignSystemUseCase:
     async def execute(
         self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
@@ -290,9 +540,22 @@ class CreateDesignSystemUseCase:
             serialize_design_system,
         )
 
+        payload = command.payload or {}
+        if (payload.get("scope") or "global") == "inline":
+            board_id = payload.get("board_id")
+            if not board_id:
+                # Preserve the service's structured inline-without-board error.
+                board_id = ""
+            if board_id:
+                await _require_design_system_board(
+                    uow,
+                    board_id,
+                    actor,
+                    write=True,
+                )
         item = await uow.services.design_systems.create_design_system(
             actor.actor_id,
-            **(command.payload or {}),
+            **payload,
         )
         await commit(uow)
         return DataResult(serialize_design_system(item))
@@ -306,9 +569,17 @@ class ListDesignSystemsUseCase:
             serialize_design_system,
         )
 
+        if command.scope == "inline":
+            await _require_design_system_board(
+                uow,
+                command.board_id,
+                actor,
+                write=False,
+            )
         items = await uow.services.design_systems.list_catalog(
             scope=command.scope,
             board_id=command.board_id or None,
+            owner_id=actor.actor_id if command.scope == "global" else None,
         )
         return DataResult([serialize_design_system(item) for item in items])
 
@@ -321,8 +592,20 @@ class GetDesignSystemUseCase:
             serialize_design_system,
         )
 
-        item = await uow.services.design_systems.require_design_system(
-            command.design_system_id
+        board_authorized = bool(command.board_id)
+        if board_authorized:
+            await _require_design_system_detail_board(
+                uow,
+                command.board_id,
+                command.design_system_id,
+                actor,
+                write=False,
+            )
+        item = await uow.services.design_systems.require_authorized_design_system(
+            command.design_system_id,
+            actor.actor_id,
+            board_id=command.board_id or None,
+            board_access_authorized=board_authorized,
         )
         return DataResult(serialize_design_system(item))
 
@@ -335,9 +618,20 @@ class UpdateDesignSystemUseCase:
             serialize_design_system,
         )
 
+        board_authorized = bool(command.board_id)
+        if board_authorized:
+            await _require_design_system_detail_board(
+                uow,
+                command.board_id,
+                command.design_system_id,
+                actor,
+                write=True,
+            )
         item = await uow.services.design_systems.update_design_system(
             command.design_system_id,
             actor.actor_id,
+            board_id=command.board_id or None,
+            board_access_authorized=board_authorized,
             **(command.payload or {}),
         )
         await commit(uow)
@@ -349,9 +643,20 @@ class DeleteDesignSystemUseCase:
         self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
+        board_authorized = bool(command.board_id)
+        if board_authorized:
+            await _require_design_system_detail_board(
+                uow,
+                command.board_id,
+                command.design_system_id,
+                actor,
+                write=True,
+            )
         deleted = await uow.services.design_systems.delete_design_system(
             command.design_system_id,
             actor.actor_id,
+            board_id=command.board_id or None,
+            board_access_authorized=board_authorized,
         )
         if deleted:
             await commit(uow)
@@ -363,9 +668,17 @@ class LinkBoardDesignSystemUseCase:
         self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
+        await _require_design_system_board(
+            uow,
+            command.board_id,
+            actor,
+            write=True,
+        )
         link = await uow.services.design_systems.link_design_system_to_board(
             command.board_id,
             (command.payload or {})["design_system_id"],
+            owner_id=actor.actor_id,
+            board_access_authorized=True,
         )
         await commit(uow)
         return DataResult(link)
@@ -376,6 +689,12 @@ class UnlinkBoardDesignSystemUseCase:
         self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
+        await _require_design_system_board(
+            uow,
+            command.board_id,
+            actor,
+            write=True,
+        )
         unlinked = await uow.services.design_systems.unlink_design_system_from_board(
             command.board_id
         )
@@ -389,6 +708,12 @@ class GetBoardDesignSystemUseCase:
         self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
 
+        await _require_design_system_board(
+            uow,
+            command.board_id,
+            actor,
+            write=False,
+        )
         effective = await uow.services.design_systems.get_board_effective_design_system(
             command.board_id
         )
@@ -456,6 +781,33 @@ def _validate_mockup_target(entity_type: str) -> None:
         raise ScreenMockupUseCaseError(409, CARD_RESOURCE_READ_ONLY_MESSAGE)
 
 
+def _screen_entity_not_found(entity_type: str, entity_id: str) -> ScreenMockupUseCaseError:
+    return ScreenMockupUseCaseError(
+        404,
+        {
+            "error": "not_found",
+            "message": f"{entity_type} '{entity_id}' not found",
+        },
+    )
+
+
+async def _require_mockup_entity_write_access(
+    uow: PulseUnitOfWork,
+    *,
+    entity: Any,
+    entity_type: str,
+    entity_id: str,
+    actor: ActorContext,
+) -> None:
+    if entity is None or not await _has_board_access(
+        uow,
+        getattr(entity, "board_id", ""),
+        actor,
+        write=True,
+    ):
+        raise _screen_entity_not_found(entity_type, entity_id)
+
+
 @dataclass(frozen=True)
 class CreateScreenMockupCommand:
     entity_type: str
@@ -483,14 +835,13 @@ class CreateScreenMockupUseCase:
         entity, service, update_name, update_class = await _load_mockup_entity(
             uow.services, command.entity_type, command.entity_id
         )
-        if not entity:
-            raise ScreenMockupUseCaseError(
-                404,
-                {
-                    "error": "not_found",
-                    "message": f"{command.entity_type} '{command.entity_id}' not found",
-                },
-            )
+        await _require_mockup_entity_write_access(
+            uow,
+            entity=entity,
+            entity_type=command.entity_type,
+            entity_id=command.entity_id,
+            actor=actor,
+        )
 
         screen = {
             "id": "sm_"
@@ -537,14 +888,13 @@ class UpdateScreenMockupUseCase:
         entity, service, update_name, update_class = await _load_mockup_entity(
             uow.services, command.entity_type, command.entity_id
         )
-        if not entity:
-            raise ScreenMockupUseCaseError(
-                404,
-                {
-                    "error": "not_found",
-                    "message": f"{command.entity_type} '{command.entity_id}' not found",
-                },
-            )
+        await _require_mockup_entity_write_access(
+            uow,
+            entity=entity,
+            entity_type=command.entity_type,
+            entity_id=command.entity_id,
+            actor=actor,
+        )
 
         screens = [dict(item) for item in (entity.screen_mockups or [])]
         screen = next((item for item in screens if item.get("id") == command.screen_id), None)

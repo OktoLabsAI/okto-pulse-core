@@ -34,12 +34,11 @@ import hashlib
 import json
 import logging
 import secrets
-import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Iterable, Mapping
 
 from okto_pulse.core.kg.source_maturity import (
     CANONICAL_ARTIFACT_TYPES,
@@ -455,6 +454,7 @@ class RebuildSourceEnumerator:
 
     source_store: SourceStore
     working_ttl_days: int = DEFAULT_WORKING_TTL_DAYS
+    cognitive_digest_provider: Callable[[str], dict[str, Any]] | None = None
 
     def enumerate(self, *, board_id: str) -> RebuildSourceSet:
         if not board_id:
@@ -511,12 +511,6 @@ class RebuildSourceEnumerator:
             row_model = _row_from_raw(row, classification=classification)
             if classification.disposition == DISPOSITION_LEGACY_UNKNOWN:
                 non_deterministic = True
-                logger.warning(
-                    "kg.rebuild_sources.legacy_unknown board=%s type=%s reason=%s",
-                    board_id,
-                    artifact_type,
-                    classification.reason_code,
-                )
                 legacy_unknown_rows.append(row_model)
                 continue
             if classification.disposition == DISPOSITION_CANONICAL:
@@ -538,6 +532,41 @@ class RebuildSourceEnumerator:
             legacy_unknown_rows,
         ):
             _sort_source_rows(bucket)
+
+        if legacy_unknown_rows:
+            # One bounded warning per enumeration.  Large legacy boards used to
+            # emit one line per row here (often hundreds of identical warnings),
+            # obscuring the actual worker failure that triggered the health
+            # enumeration.  Keep the full rows in ``RebuildSourceSet`` and retain
+            # an exact, deterministic type+reason breakdown in structured log
+            # metadata, while making log volume independent of row count.
+            grouped: dict[tuple[str, str], int] = {}
+            for legacy_row in legacy_unknown_rows:
+                key = (
+                    legacy_row.artifact_type or "unknown",
+                    legacy_row.reason_code or "unknown",
+                )
+                grouped[key] = grouped.get(key, 0) + 1
+            breakdown = [
+                {
+                    "artifact_type": artifact_type,
+                    "reason_code": reason_code,
+                    "count": count,
+                }
+                for (artifact_type, reason_code), count in sorted(grouped.items())
+            ]
+            logger.warning(
+                "kg.rebuild_sources.legacy_unknown board=%s count=%d breakdown=%s",
+                board_id,
+                len(legacy_unknown_rows),
+                json.dumps(breakdown, sort_keys=True, separators=(",", ":")),
+                extra={
+                    "event": "kg.rebuild_sources.legacy_unknown",
+                    "board_id": board_id,
+                    "legacy_unknown_count": len(legacy_unknown_rows),
+                    "legacy_unknown_breakdown": breakdown,
+                },
+            )
 
         if skipped_by_maturity_rows or skipped_expired_rows:
             logger.info(
@@ -565,8 +594,76 @@ class RebuildSourceEnumerator:
             skipped_by_maturity=tuple(skipped_by_maturity_rows),
             skipped_expired_working=tuple(skipped_expired_rows),
             legacy_unknown=tuple(legacy_unknown_rows),
-            cognitive_durable_digest=_cognitive_durable_digest(board_id),
+            cognitive_durable_digest=(
+                self.cognitive_digest_provider(board_id)
+                if self.cognitive_digest_provider is not None
+                else _cognitive_durable_digest(board_id)
+            ),
         )
+
+
+def cognitive_durable_digest_from_rows(
+    records: Iterable[object],
+) -> dict[str, Any]:
+    """Hash preloaded durable cognitive rows using Core's canonical policy.
+
+    Community recovery captures these rows in its one relational snapshot.
+    Accepting mappings as well as the Core DTO keeps that snapshot payload
+    edition-neutral without duplicating classification or hashing rules.
+    """
+
+    def value(record: object, field: str) -> object:
+        if isinstance(record, Mapping):
+            return record.get(field)
+        return getattr(record, field)
+
+    normalized: list[dict[str, object]] = []
+    for record in records:
+        raw_payload = value(record, "payload")
+        if isinstance(raw_payload, str):
+            raw_payload = json.loads(raw_payload)
+        if not isinstance(raw_payload, Mapping):
+            raise ValueError("cognitive source payload must be a mapping")
+        normalized.append(
+            {
+                "committed_at": str(value(record, "committed_at") or ""),
+                "node_id": str(value(record, "node_id") or ""),
+                "node_type": str(value(record, "node_type") or ""),
+                "generation": int(value(record, "generation") or 0),
+                "payload_hash": hashlib.sha256(
+                    json.dumps(
+                        dict(raw_payload),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ).encode("utf-8")
+                ).hexdigest(),
+            }
+        )
+    if not normalized:
+        return {}
+    normalized.sort(
+        key=lambda row: (
+            str(row["committed_at"]),
+            str(row["node_id"]),
+            int(row["generation"]),
+        )
+    )
+    canonical = [
+        {
+            "node_id": row["node_id"],
+            "node_type": row["node_type"],
+            "generation": row["generation"],
+            "payload_hash": row["payload_hash"],
+        }
+        for row in normalized
+    ]
+    digest = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    return {"count": len(canonical), "digest": digest}
 
 
 def _cognitive_durable_digest(board_id: str) -> dict[str, Any]:
@@ -590,28 +687,7 @@ def _cognitive_durable_digest(board_id: str) -> dict[str, Any]:
     from okto_pulse.core.kg.async_bridge import run_async_blocking
 
     records = run_async_blocking(store.enumerate(board_id))
-    if not records:
-        return {}
-    canonical = [
-        {
-            "node_id": record.node_id,
-            "node_type": record.node_type,
-            "generation": record.generation,
-            "payload_hash": hashlib.sha256(
-                json.dumps(
-                    dict(record.payload),
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    default=str,
-                ).encode("utf-8")
-            ).hexdigest(),
-        }
-        for record in records
-    ]
-    digest = hashlib.sha256(
-        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    return {"count": len(canonical), "digest": digest}
+    return cognitive_durable_digest_from_rows(records)
 
 
 # --- Manifest builder + store -----------------------------------------------
@@ -1054,6 +1130,7 @@ __all__ = [
     "RevalidationResult",
     "SourceSetRevalidation",
     "SourceStore",
+    "cognitive_durable_digest_from_rows",
     "get_enumeration_count",
     "get_enumeration_counter_labels",
     "get_enumeration_samples",

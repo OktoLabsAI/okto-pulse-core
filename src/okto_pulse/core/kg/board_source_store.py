@@ -79,6 +79,8 @@ SPRINT_CONTENT_COLUMNS: tuple[str, ...] = (
     "spec_version",
     "status",
     "lane_type",
+    "origin_sprint_id",
+    "origin_bug_id",
     "objective",
     "expected_outcome",
     "test_scenario_ids",

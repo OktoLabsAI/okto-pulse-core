@@ -146,6 +146,7 @@ async def seeded_board(db_factory):
         from okto_pulse.core.services.main import AgentService
         from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
         db.add(Board(id=BOARD_ID, name="Consolidated List Test Board", owner_id="owner-1"))
+        await db.flush()
         db.add(Agent(
             id=AGENT_ID,
             name="test-agent",
@@ -156,6 +157,7 @@ async def seeded_board(db_factory):
             is_active=True,
             created_by="system",
         ))
+        await db.flush()
         db.add(AgentBoard(
             agent_id=AGENT_ID,
             board_id=BOARD_ID,
@@ -169,6 +171,7 @@ async def seeded_board(db_factory):
             status=IdeationStatus.DRAFT,
             created_by=AGENT_ID,
         ))
+        await db.flush()
         db.add(Refinement(
             id=refinement_id,
             ideation_id=ideation_id,
@@ -910,6 +913,7 @@ async def test_list_by_board_sprint_includes_lane_metadata(seeded_board, db_fact
             card_type=CardType.BUG,
             created_by=AGENT_ID,
         ))
+        await db.flush()
         db.add(Sprint(
             id=hotfix_sprint_id,
             board_id=BOARD_ID,

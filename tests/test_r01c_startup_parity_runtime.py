@@ -40,9 +40,14 @@ def _no_orchestrator():
     # registered Community orchestrator.
     from okto_pulse.core.ports import schema_lifecycle as sl
 
+    previous = sl.resolve_relational_schema_lifecycle_orchestrator()
     sl.reset_relational_schema_lifecycle_orchestrator()
-    yield
-    sl.reset_relational_schema_lifecycle_orchestrator()
+    try:
+        yield
+    finally:
+        sl.reset_relational_schema_lifecycle_orchestrator()
+        if previous is not None:
+            sl.register_relational_schema_lifecycle_orchestrator(previous)
 
 
 async def test_create_database_applies_sqlite_pragmas_and_pool_at_runtime(tmp_path, _preserve_global_engine):

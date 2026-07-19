@@ -32,9 +32,22 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import func, select
 
 from okto_pulse.core.mcp import server as mcp_server
-from sqlalchemy_test_models import Board, Spec, SpecStatus, Sprint, SprintStatus
+from sqlalchemy_test_models import (
+    ActivityLog,
+    Board,
+    Card,
+    CardStatus,
+    CardType,
+    Spec,
+    SpecStatus,
+    Sprint,
+    SprintHistory,
+    SprintQAItem,
+    SprintStatus,
+)
 
 BOARD_ID = "r01a-mcpsprint"
 OTHER_BOARD_ID = "r01a-mcpsprint-other"
@@ -175,6 +188,158 @@ async def _seed():
     return sid
 
 
+@pytest.fixture
+async def _foreign_sprint(_seed):
+    """A Sprint graph whose full lineage belongs to the other board."""
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        spec = Spec(
+            board_id=OTHER_BOARD_ID,
+            title="Foreign Spec",
+            status=SpecStatus.IN_PROGRESS,
+            created_by=USER_ID,
+        )
+        db.add(spec)
+        await db.flush()
+        sprint = Sprint(
+            board_id=OTHER_BOARD_ID,
+            spec_id=spec.id,
+            title="Foreign Sprint",
+            status=SprintStatus.REVIEW,
+            created_by=USER_ID,
+            evaluations=[
+                {
+                    "id": "foreign-eval",
+                    "evaluator_id": USER_ID,
+                    "recommendation": "approve",
+                    "overall_score": 9,
+                }
+            ],
+        )
+        db.add(sprint)
+        await db.flush()
+        unassigned = Card(
+            board_id=OTHER_BOARD_ID,
+            spec_id=spec.id,
+            title="Foreign unassigned card",
+            status=CardStatus.NOT_STARTED,
+            card_type=CardType.NORMAL,
+            created_by=USER_ID,
+        )
+        assigned = Card(
+            board_id=OTHER_BOARD_ID,
+            spec_id=spec.id,
+            sprint_id=sprint.id,
+            title="Foreign assigned card",
+            status=CardStatus.NOT_STARTED,
+            card_type=CardType.NORMAL,
+            created_by=USER_ID,
+        )
+        seeded_sprint = await db.get(Sprint, _seed)
+        assert seeded_sprint is not None
+        inconsistent = Card(
+            board_id=OTHER_BOARD_ID,
+            spec_id=seeded_sprint.spec_id,
+            sprint_id=seeded_sprint.id,
+            title="Cross-board card with matching spec and sprint FKs",
+            status=CardStatus.NOT_STARTED,
+            card_type=CardType.NORMAL,
+            created_by=USER_ID,
+        )
+        qa = SprintQAItem(
+            sprint_id=sprint.id,
+            question="Foreign sprint question",
+            asked_by=OTHER_USER,
+        )
+        db.add_all([unassigned, assigned, inconsistent, qa])
+        await db.flush()
+        result = {
+            "spec_id": spec.id,
+            "sprint_id": sprint.id,
+            "unassigned_card_id": unassigned.id,
+            "assigned_card_id": assigned.id,
+            "inconsistent_card_id": inconsistent.id,
+            "qa_id": qa.id,
+        }
+        await db.commit()
+    return result
+
+
+async def _sprint_count() -> int:
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        return int(await db.scalar(select(func.count()).select_from(Sprint)) or 0)
+
+
+async def _sprint_snapshot(sprint_id: str) -> tuple[str, int]:
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        sprint = await db.get(Sprint, sprint_id)
+        assert sprint is not None
+        return sprint.title, sprint.version
+
+
+async def _foreign_graph_snapshot(graph: dict[str, str]) -> dict:
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        sprint = await db.get(Sprint, graph["sprint_id"])
+        qa = await db.get(SprintQAItem, graph["qa_id"])
+        unassigned = await db.get(Card, graph["unassigned_card_id"])
+        assigned = await db.get(Card, graph["assigned_card_id"])
+        inconsistent = await db.get(Card, graph["inconsistent_card_id"])
+        history_count = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(SprintHistory)
+                .where(SprintHistory.sprint_id == graph["sprint_id"])
+            )
+            or 0
+        )
+        activity_counts_list = []
+        for board_id in (BOARD_ID, OTHER_BOARD_ID):
+            activity_counts_list.append(
+                int(
+                    await db.scalar(
+                        select(func.count())
+                        .select_from(ActivityLog)
+                        .where(ActivityLog.board_id == board_id)
+                    )
+                    or 0
+                )
+            )
+        activity_counts = tuple(activity_counts_list)
+        return {
+            "sprint": None
+            if sprint is None
+            else (
+                sprint.status,
+                sprint.version,
+                tuple(
+                    (entry.get("id"), entry.get("evaluator_id"))
+                    for entry in (sprint.evaluations or [])
+                ),
+            ),
+            "qa": None
+            if qa is None
+            else (qa.sprint_id, qa.answer, qa.answered_by, qa.answered_at),
+            "unassigned_card_sprint": unassigned.sprint_id if unassigned else None,
+            "assigned_card_sprint": assigned.sprint_id if assigned else None,
+            "inconsistent_card_sprint": (
+                inconsistent.sprint_id if inconsistent else None
+            ),
+            "history_count": history_count,
+            "activity_counts": activity_counts,
+        }
+
+
 async def _call(tool: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
@@ -192,6 +357,394 @@ async def test_get_sprint_roundtrip(_seed):
 
 
 @pytest.mark.asyncio
+async def test_get_sprint_cross_board_is_indistinguishable_from_missing(_foreign_sprint):
+    got = await _call(
+        "okto_pulse_get_sprint",
+        board_id=BOARD_ID,
+        sprint_id=_foreign_sprint["sprint_id"],
+    )
+    assert got == {"error": "Sprint not found"}
+
+
+@pytest.mark.asyncio
+async def test_cross_board_sprint_mutators_are_not_found_and_zero_write(_foreign_sprint):
+    sprint_id = _foreign_sprint["sprint_id"]
+    before = await _foreign_graph_snapshot(_foreign_sprint)
+
+    moved = await _call(
+        "okto_pulse_move_sprint",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        status="cancelled",
+        cancellation_reason="must not persist",
+    )
+    assigned = await _call(
+        "okto_pulse_assign_tasks_to_sprint",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        card_ids=[_foreign_sprint["unassigned_card_id"]],
+    )
+    evaluated = await _call(
+        "okto_pulse_submit_sprint_evaluation",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        breakdown_completeness=8,
+        breakdown_justification="blocked",
+        granularity=8,
+        granularity_justification="blocked",
+        dependency_coherence=8,
+        dependency_justification="blocked",
+        test_coverage_quality=8,
+        test_coverage_justification="blocked",
+        overall_score=8,
+        overall_justification="blocked",
+        recommendation="approve",
+    )
+
+    assert moved == {"error": "Sprint not found"}
+    assert assigned == {"error": "Sprint not found"}
+    assert evaluated == {"error": "Sprint not found"}
+    assert await _foreign_graph_snapshot(_foreign_sprint) == before
+
+
+@pytest.mark.asyncio
+async def test_assign_foreign_card_ids_is_missing_without_oracle_or_reparent(
+    _seed,
+    _foreign_sprint,
+):
+    before = await _foreign_graph_snapshot(_foreign_sprint)
+
+    for card_id in (
+        _foreign_sprint["unassigned_card_id"],
+        _foreign_sprint["inconsistent_card_id"],
+    ):
+        out = await _call(
+            "okto_pulse_assign_tasks_to_sprint",
+            board_id=BOARD_ID,
+            sprint_id=_seed,
+            card_ids=[card_id],
+        )
+        assert out["error"] == "card_not_found"
+        assert out["code"] == "card_not_found"
+        rendered = json.dumps(out)
+        assert "Foreign unassigned card" not in rendered
+        assert "Cross-board card with matching spec" not in rendered
+        assert _foreign_sprint["spec_id"] not in rendered
+        assert OTHER_BOARD_ID not in rendered
+
+    assert await _foreign_graph_snapshot(_foreign_sprint) == before
+
+
+@pytest.mark.asyncio
+async def test_unassign_foreign_card_id_is_legacy_zero_and_zero_mutation(
+    _seed,
+    _foreign_sprint,
+):
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.sprints_crud import (
+        UnassignSprintTasksCommand,
+        UnassignSprintTasksUseCase,
+    )
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
+    before = await _foreign_graph_snapshot(_foreign_sprint)
+    actor = ActorContext(
+        USER_ID,
+        "mcp",
+        board_id=BOARD_ID,
+        realm_id=LOCAL_REALM_ID,
+    )
+    uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
+    async with uowf(actor=actor) as uow:
+        result = await UnassignSprintTasksUseCase().execute(
+            UnassignSprintTasksCommand(
+                _seed,
+                [_foreign_sprint["inconsistent_card_id"]],
+            ),
+            actor=actor,
+            uow=uow,
+        )
+
+    assert result.unassigned == 0
+    assert await _foreign_graph_snapshot(_foreign_sprint) == before
+
+
+@pytest.mark.asyncio
+async def test_cross_board_evaluation_reads_and_delete_are_not_found(_foreign_sprint):
+    sprint_id = _foreign_sprint["sprint_id"]
+    before = await _foreign_graph_snapshot(_foreign_sprint)
+
+    listed = await _call(
+        "okto_pulse_list_sprint_evaluations",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+    )
+    got = await _call(
+        "okto_pulse_get_sprint_evaluation",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        evaluation_id="foreign-eval",
+    )
+    deleted = await _call(
+        "okto_pulse_delete_sprint_evaluation",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        evaluation_id="foreign-eval",
+    )
+
+    assert listed == {"error": "Sprint not found"}
+    assert got == {"error": "Sprint not found"}
+    assert deleted == {"error": "Sprint not found"}
+    assert await _foreign_graph_snapshot(_foreign_sprint) == before
+
+
+@pytest.mark.asyncio
+async def test_cross_board_sprint_qa_is_not_found_without_state_or_log(_foreign_sprint):
+    sprint_id = _foreign_sprint["sprint_id"]
+    qa_id = _foreign_sprint["qa_id"]
+    before = await _foreign_graph_snapshot(_foreign_sprint)
+
+    asked = await _call(
+        "okto_pulse_ask_sprint_question",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        question="must not be created",
+    )
+    answered = await _call(
+        "okto_pulse_answer_sprint_question",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        qa_id=qa_id,
+        answer="must not persist",
+    )
+    deleted = await _call(
+        "okto_pulse_delete_sprint_question",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        qa_id=qa_id,
+    )
+
+    assert asked == {"error": "Sprint not found"}
+    assert answered == {"error": "Q&A item not found"}
+    assert deleted == {"error": "Q&A item not found"}
+    assert await _foreign_graph_snapshot(_foreign_sprint) == before
+
+
+@pytest.mark.asyncio
+async def test_update_sprint_cross_board_and_missing_are_zero_mutation(_foreign_sprint):
+    sprint_id = _foreign_sprint["sprint_id"]
+    before = await _sprint_snapshot(sprint_id)
+    count_before = await _sprint_count()
+
+    cross = await _call(
+        "okto_pulse_update_sprint",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+        title="must not persist",
+    )
+    missing = await _call(
+        "okto_pulse_update_sprint",
+        board_id=BOARD_ID,
+        sprint_id="missing-sprint",
+        title="must not persist either",
+    )
+
+    assert cross == {"error": "Sprint not found"}
+    assert missing == {"error": "Sprint not found"}
+    assert await _sprint_snapshot(sprint_id) == before
+    assert await _sprint_count() == count_before
+
+
+@pytest.mark.asyncio
+async def test_create_sprint_rejects_foreign_spec_without_writing(_foreign_sprint):
+    count_before = await _sprint_count()
+    out = await _call(
+        "okto_pulse_create_sprint",
+        board_id=BOARD_ID,
+        spec_id=_foreign_sprint["spec_id"],
+        title="Cross-board Sprint",
+    )
+    assert out == {
+        "error": "Failed to create sprint (spec not found or wrong board)"
+    }
+    assert await _sprint_count() == count_before
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_sprint_same_board_still_succeed(_seed):
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        seeded = await db.get(Sprint, _seed)
+        assert seeded is not None
+        spec_id = seeded.spec_id
+
+    created = await _call(
+        "okto_pulse_create_sprint",
+        board_id=BOARD_ID,
+        spec_id=spec_id,
+        title="Same-board Sprint",
+    )
+    assert created["success"] is True
+    assert created["sprint"]["spec_id"] == spec_id
+
+    updated = await _call(
+        "okto_pulse_update_sprint",
+        board_id=BOARD_ID,
+        sprint_id=_seed,
+        title="Same-board Update",
+    )
+    assert updated["success"] is True
+    assert updated["sprint"]["title"] == "Same-board Update"
+    assert (await _sprint_snapshot(_seed))[0] == "Same-board Update"
+
+
+@pytest.mark.asyncio
+async def test_shared_sprint_use_cases_enforce_actor_board(_foreign_sprint):
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.application.use_cases.sprints_crud import (
+        AssignSprintTasksCommand,
+        AssignSprintTasksUseCase,
+        CreateSprintCommand,
+        CreateSprintUseCase,
+        DeleteSprintCommand,
+        DeleteSprintUseCase,
+        GetSprintCommand,
+        GetSprintUseCase,
+        MoveSprintCommand,
+        MoveSprintUseCase,
+        SubmitSprintEvaluationCommand,
+        SubmitSprintEvaluationUseCase,
+        UnassignSprintTasksCommand,
+        UnassignSprintTasksUseCase,
+        UpdateSprintCommand,
+        UpdateSprintUseCase,
+    )
+    from okto_pulse.core.application.use_cases.mcp_sprint_crud import (
+        McpGetSprintContextCommand,
+        McpGetSprintContextUseCase,
+    )
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.models.schemas import SprintCreate, SprintMove, SprintUpdate
+    from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
+    actor = ActorContext(
+        USER_ID,
+        "mcp",
+        board_id=BOARD_ID,
+        realm_id=LOCAL_REALM_ID,
+    )
+    uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
+    sprint_id = _foreign_sprint["sprint_id"]
+    before = await _sprint_snapshot(sprint_id)
+    count_before = await _sprint_count()
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await GetSprintUseCase().execute(
+                GetSprintCommand(sprint_id), actor=actor, uow=uow
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await McpGetSprintContextUseCase().execute(
+                McpGetSprintContextCommand(sprint_id, OTHER_BOARD_ID, True),
+                actor=actor,
+                uow=uow,
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await UpdateSprintUseCase().execute(
+                UpdateSprintCommand(sprint_id, SprintUpdate(title="blocked")),
+                actor=actor,
+                uow=uow,
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await CreateSprintUseCase().execute(
+                CreateSprintCommand(
+                    OTHER_BOARD_ID,
+                    SprintCreate(
+                        spec_id=_foreign_sprint["spec_id"],
+                        title="blocked",
+                    ),
+                ),
+                actor=actor,
+                uow=uow,
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await MoveSprintUseCase().execute(
+                MoveSprintCommand(
+                    sprint_id,
+                    SprintMove(
+                        status=SprintStatus.CANCELLED,
+                        cancellation_reason="blocked",
+                    ),
+                ),
+                actor=actor,
+                uow=uow,
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await SubmitSprintEvaluationUseCase().execute(
+                SubmitSprintEvaluationCommand(
+                    sprint_id,
+                    {"overall_score": 8, "recommendation": "approve"},
+                ),
+                actor=actor,
+                uow=uow,
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await AssignSprintTasksUseCase().execute(
+                AssignSprintTasksCommand(
+                    sprint_id,
+                    [_foreign_sprint["unassigned_card_id"]],
+                ),
+                actor=actor,
+                uow=uow,
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await UnassignSprintTasksUseCase().execute(
+                UnassignSprintTasksCommand(
+                    sprint_id,
+                    [_foreign_sprint["assigned_card_id"]],
+                ),
+                actor=actor,
+                uow=uow,
+            )
+
+    with pytest.raises(EntityNotFoundError):
+        async with uowf(actor=actor) as uow:
+            await DeleteSprintUseCase().execute(
+                DeleteSprintCommand(sprint_id),
+                actor=actor,
+                uow=uow,
+            )
+
+    assert await _sprint_snapshot(sprint_id) == before
+    assert await _sprint_count() == count_before
+    graph_after = await _foreign_graph_snapshot(_foreign_sprint)
+    assert graph_after["unassigned_card_sprint"] is None
+    assert graph_after["assigned_card_sprint"] == sprint_id
+
+
+@pytest.mark.asyncio
 async def test_get_sprint_context_cross_board_not_found(_seed):
     cross = await _call(
         "okto_pulse_get_sprint_context", board_id=OTHER_BOARD_ID, sprint_id=_seed
@@ -202,6 +755,38 @@ async def test_get_sprint_context_cross_board_not_found(_seed):
         "okto_pulse_get_sprint_context", board_id=BOARD_ID, sprint_id=_seed
     )
     assert ok["id"] == _seed and "spec" in ok  # include_spec defaults true
+    assert ok["reviewer_separation"] == {
+        "mode": "off",
+        "allowed": True,
+        "warning": False,
+        "conflicts": ["sprint_creator"],
+        "source": "legacy_absent_compat",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_sprint_context_rejects_cross_board_parent_spec(_foreign_sprint):
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    async with factory() as db:
+        inconsistent = Sprint(
+            board_id=BOARD_ID,
+            spec_id=_foreign_sprint["spec_id"],
+            title="Inconsistent parent board",
+            status=SprintStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        db.add(inconsistent)
+        await db.commit()
+        sprint_id = inconsistent.id
+
+    out = await _call(
+        "okto_pulse_get_sprint_context",
+        board_id=BOARD_ID,
+        sprint_id=sprint_id,
+    )
+    assert out == {"error": "Sprint not found"}
 
 
 @pytest.mark.asyncio
@@ -279,12 +864,34 @@ async def test_suggest_sprints_runs(_seed):
 
 
 @pytest.mark.asyncio
+async def test_suggest_sprints_cross_board_spec_is_not_found(_foreign_sprint):
+    out = await _call(
+        "okto_pulse_suggest_sprints",
+        board_id=BOARD_ID,
+        spec_id=_foreign_sprint["spec_id"],
+    )
+    assert out == {"error": "Spec not found"}
+
+
+@pytest.mark.asyncio
 async def test_qa_ask_answer_delete(_seed):
     asked = await _call(
         "okto_pulse_ask_sprint_question", board_id=BOARD_ID, sprint_id=_seed,
         question="Is X in scope?",
     )
     qa_id = asked["qa"]["id"] if "qa" in asked else asked["id"]
+
+    wrong_parent_answer = await _call(
+        "okto_pulse_answer_sprint_question", board_id=BOARD_ID,
+        sprint_id="another-sprint", qa_id=qa_id, answer="must not persist",
+    )
+    assert wrong_parent_answer == {"error": "Q&A item not found"}
+
+    wrong_parent_delete = await _call(
+        "okto_pulse_delete_sprint_question", board_id=BOARD_ID,
+        sprint_id="another-sprint", qa_id=qa_id,
+    )
+    assert wrong_parent_delete == {"error": "Q&A item not found"}
 
     answered = await _call(
         "okto_pulse_answer_sprint_question", board_id=BOARD_ID, sprint_id=_seed,

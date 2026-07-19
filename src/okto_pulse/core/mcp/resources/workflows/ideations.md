@@ -69,7 +69,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
 
 | Symptom of ambiguity | Example | Required action |
 |---|---|---|
-| The user used a vague verb ("improve", "optimize", "support", "handle") | "improve onboarding" | Ask `okto_pulse_ask_ideation_choice_question` with concrete options such as "Reduce drop-off (Recommended)", "Shorten time-to-first-value", "Add new onboarding steps", and `allow_free_text=true` so the user can add a metric or override. |
+| The user used a vague verb ("improve", "optimize", "support", "handle") | "improve onboarding" | Ask `okto_pulse_ask_ideation_choice_question` with native option objects such as `{"label":"Reduce drop-off","recommended":true}` plus alternatives, and `allow_free_text=true` so the user can add a metric or override. |
 | The user used a noun without a definition or scope ("the dashboard", "the system", "users") | "users should see their data" | Ask which user role, which surface, which data slice. Use `okto_pulse_ask_ideation_choice_question` when there is a finite list. |
 | Multiple plausible interpretations of the same sentence | "send notifications when something changes" | Enumerate the interpretations and let the user pick. |
 | The success criterion is implicit | "make it faster" | Ask for a measurable target (latency p95, throughput, perceived load time, etc.). |
@@ -82,7 +82,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
 **Operational protocol:**
 
 1. After receiving the user's request and BEFORE writing `problem_statement` / `proposed_approach`, do an honest ambiguity scan against the table above.
-2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Prefer `okto_pulse_ask_ideation_choice_question` whenever the answer can be picked from a known set. Use 2-5 mutually exclusive options, mark the safest or most likely option as **Recommended** when you can justify it, include concise tradeoffs in option labels or the question body, and set `allow_free_text=true` so the user has an additional comment field for overrides, combinations, missing options, or constraints. Use `okto_pulse_ask_ideation_question` only when the answer is genuinely open-ended and a finite option set would be misleading.
+2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Prefer `okto_pulse_ask_ideation_choice_question` whenever the answer can be picked from a known set. Use 2-5 mutually exclusive option objects, set `recommended: true` on the safest or most likely option when you can justify it, keep the label free of presentation suffixes, put concise rationale in `tradeoff` or the question body, and set `allow_free_text=true` so the user has an additional comment field for overrides, combinations, missing options, or constraints. Use `okto_pulse_ask_ideation_question` only when the answer is genuinely open-ended and a finite option set would be misleading.
 3. Use Q&A before creating or finalizing mockups when the visual surface is ambiguous. Use Q&A before creating or finalizing architecture designs when entities, interfaces, contracts, boundaries, or diagrams are ambiguous.
 4. Wait for answers. Do NOT fill the gap with a guess and proceed silently.
 5. After answers come in, re-read the full ideation context (`okto_pulse_get_ideation_context`) and confirm your understanding by either:
@@ -93,7 +93,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
 **Question shape requirements:**
 
 - Bias toward multiple choice. If you can name plausible options, ask a structured choice question instead of embedding "A/B/C" inside a free-text prompt.
-- Include a recommendation whenever you can responsibly make one. Put "(Recommended)" in the option label and explain the reason briefly; the user can still pick another path.
+- Include a recommendation whenever you can responsibly make one. Set the option object's native `recommended` boolean to `true`; do not encode it in the label. Explain the reason briefly in `tradeoff` or the question; the user can still pick another path.
 - Always enable the additional free-text/comment field (`allow_free_text=true`) on choice questions so the user can qualify the selection.
 - Avoid yes/no questions when the real decision has three or more viable paths; enumerate the paths and let the user choose.
 - Do not collapse unrelated ambiguity into one poll. Ask separate Q&A items so each decision can be answered, audited, and reused downstream.

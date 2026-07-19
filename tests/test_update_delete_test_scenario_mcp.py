@@ -25,7 +25,13 @@ from okto_pulse.core.services.main import SpecService
 pytestmark = pytest.mark.asyncio
 
 USER = "udts-agent"
-_EV = {"last_run_at": "2026-05-30T00:00:00", "output_snippet": "1 passed"}
+_EV = {
+    "evidence_class": "automated_test_pointer",
+    "test_file_path": "tests/test_update_delete_test_scenario_mcp.py",
+    "test_function": "test_update_tool_cosmetic_edit_preserves_evidence",
+    "last_run_at": "2026-05-30T00:00:00",
+    "output_snippet": "1 passed",
+}
 
 db_factory_ref: list = [None]
 

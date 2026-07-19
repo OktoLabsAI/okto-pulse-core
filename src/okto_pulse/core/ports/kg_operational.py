@@ -10,7 +10,66 @@ from __future__ import annotations
 from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Any, Literal, Mapping, Protocol, Sequence, runtime_checkable
+
+
+KGRecoveryClass = Literal["connectivity", "invalid_payload", "true_drift"]
+
+
+@dataclass(frozen=True, slots=True)
+class KGRecoveryClassification:
+    recovery_class: KGRecoveryClass
+    reason_code: str
+    replay_safe: bool
+
+
+def classify_kg_recovery_failure(
+    error_type: str,
+    message: str,
+) -> KGRecoveryClassification:
+    """Classify DLQ failures into the canonical, versioned recovery corpus."""
+
+    kind = str(error_type or "").casefold()
+    detail = str(message or "").casefold()
+    joined = f"{kind} {detail}"
+    if any(
+        token in joined
+        for token in (
+            "true_drift",
+            "content_changed",
+            "content hash mismatch",
+            "content_hash_mismatch",
+            "artifact_missing",
+            "provenance drift",
+        )
+    ):
+        return KGRecoveryClassification(
+            "true_drift", "kg_recovery.true_drift", True
+        )
+    if any(
+        token in joined
+        for token in (
+            "connection",
+            "connectivity",
+            "graph_unavailable",
+            "graph unavailable",
+            "connection refused",
+            "cannot open",
+            "closed connection",
+            "timeout",
+            "timed out",
+            "lock contention",
+            "disk i/o",
+        )
+    ):
+        return KGRecoveryClassification(
+            "connectivity", "kg_recovery.connectivity", True
+        )
+    # Unknown/malformed failures are fail-closed as payload defects; they are
+    # never silently promoted to connectivity or true drift.
+    return KGRecoveryClassification(
+        "invalid_payload", "kg_recovery.invalid_payload", False
+    )
 
 
 class KGOperationalProviderMissing(RuntimeError):
@@ -332,8 +391,11 @@ __all__ = [
     "KGOperationalReadModelPort",
     "KGOutboxCounts",
     "KGQueueEntrySnapshot",
+    "KGRecoveryClass",
+    "KGRecoveryClassification",
     "KGWorkerAuditPort",
     "KGWorkerQueuePort",
+    "classify_kg_recovery_failure",
     "get_kg_governance_effects_port",
     "get_kg_operational_read_model_port",
     "get_kg_worker_audit_port",

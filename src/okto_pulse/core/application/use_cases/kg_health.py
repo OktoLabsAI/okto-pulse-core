@@ -18,8 +18,19 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.application.errors import BoardNotFoundError
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.ports.scheduler import SchedulerControl
+
+
+async def _require_health_board_access(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    actor: ActorContext,
+) -> None:
+    if await load_accessible_board(uow, board_id, actor) is None:
+        raise BoardNotFoundError("Board not found")
 
 
 class GetKgHealthCommand:
@@ -52,6 +63,7 @@ class GetKgHealthUseCase:
     async def execute(
         self, command: GetKgHealthCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetKgHealthResult:
+        await _require_health_board_access(uow, command.board_id, actor)
         data = await uow.services.kg.health(
             command.board_id,
             scheduler_control=command.scheduler_control,
@@ -102,6 +114,7 @@ class GetKgHealthReadinessUseCase:
     async def execute(
         self, command: GetKgHealthReadinessCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetKgHealthReadinessResult:
+        await _require_health_board_access(uow, command.board_id, actor)
         data = await uow.services.kg.health_readiness(
             command.board_id,
             profile=command.profile,

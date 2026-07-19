@@ -54,6 +54,7 @@ PUBLIC_FACADE_SYMBOLS: dict[str, tuple[str, ...]] = {
         "create_consolidation_processor",
         "create_deterministic_worker",
         "create_provider_registry",
+        "drain_kg_health_probes",
         "get_current_provider_registry",
         "signal_consolidation_worker",
         "start_historical_consolidation",

@@ -18,7 +18,9 @@ import asyncio
 from pathlib import Path
 
 from okto_pulse.core.mcp.tools_catalog_generator import (
+    missing_tool_docs,
     render_catalog,
+    tool_doc_index,
     unclassified,
 )
 
@@ -51,6 +53,12 @@ def test_catalog_file_matches_live_registry():
         "tools_catalog.md drifted from the live registry — regenerate with "
         "`python -m okto_pulse.core.mcp.tools_catalog_generator`"
     )
+
+
+def test_every_live_tool_has_one_exact_tool_doc_heading():
+    index = tool_doc_index()
+    assert missing_tool_docs(_live_names(), index) == []
+    assert set(_live_names()) <= set(index)
 
 
 def test_catalog_covers_exact_tool_set():

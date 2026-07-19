@@ -12,7 +12,6 @@ import pytest
 
 from okto_pulse.core.kg.config_guard import (
     ConfigBlockReason,
-    ConfigChangeDecision,
     ConfigGuardError,
     ConfigGuardErrorCode,
     GraphSettingPolicy,
@@ -23,7 +22,6 @@ from okto_pulse.core.kg.config_guard import (
     SETTING_GROUP_CONNECTION_POOL,
     SETTING_GROUP_INDEX,
     SETTING_GROUP_STORAGE,
-    SETTING_GROUP_UNRELATED,
     SETTING_GROUP_WAL,
     get_config_block_count,
     get_config_block_counter_labels,

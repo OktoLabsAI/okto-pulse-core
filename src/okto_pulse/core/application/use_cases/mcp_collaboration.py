@@ -47,6 +47,78 @@ async def _log_card_activity(
     )
 
 
+async def _get_card_in_scope(
+    services: ApplicationServiceCatalog,
+    card_id: str,
+    board_id: str,
+    actor: ActorContext,
+) -> Any | None:
+    """Resolve a card only after command and actor agree on the board."""
+
+    if actor.board_id is None or actor.board_id != board_id:
+        return None
+    card = await services.cards.get_card(card_id)
+    if not card or card.board_id != board_id:
+        return None
+    return card
+
+
+async def _get_question_parent_in_scope(
+    services: ApplicationServiceCatalog,
+    target_type: str,
+    parent_id: str,
+    board_id: str,
+    actor: ActorContext,
+) -> Any | None:
+    """Resolve a non-card Q&A parent before create or activity logging."""
+
+    if actor.board_id is None or actor.board_id != board_id:
+        return None
+    if target_type == "ideation":
+        parent = await services.ideations.get_ideation(parent_id)
+    elif target_type == "refinement":
+        parent = await services.refinements.get_refinement(parent_id)
+    else:
+        parent = await services.specs.get_spec(parent_id)
+    if not parent or parent.board_id != board_id:
+        return None
+    return parent
+
+
+async def _get_qa_in_scope(
+    services: ApplicationServiceCatalog,
+    qa_id: str,
+    board_id: str | None,
+    actor: ActorContext,
+) -> Any | None:
+    """Resolve Q&A -> card before exposing or mutating the child row."""
+
+    if board_id is None or actor.board_id != board_id:
+        return None
+    qa = await services.qa.get_question(qa_id)
+    if not qa:
+        return None
+    card = await _get_card_in_scope(services, qa.card_id, board_id, actor)
+    return qa if card else None
+
+
+async def _get_comment_in_scope(
+    services: ApplicationServiceCatalog,
+    comment_id: str,
+    board_id: str | None,
+    actor: ActorContext,
+) -> Any | None:
+    """Resolve comment/choice -> card before exposing or mutating it."""
+
+    if board_id is None or actor.board_id != board_id:
+        return None
+    comment = await services.comments.get_comment(comment_id)
+    if not comment:
+        return None
+    card = await _get_card_in_scope(services, comment.card_id, board_id, actor)
+    return comment if card else None
+
+
 def _qa_payload(qa: Any) -> dict[str, Any]:
     return {
         "id": qa.id,
@@ -120,6 +192,17 @@ class McpAskQuestionUseCase:
 
         if command.target_type == "card":
 
+            card = await _get_card_in_scope(
+                uow.services,
+                command.parent_id,
+                command.board_id,
+                actor,
+            )
+            if not card:
+                return McpPayloadResult(
+                    {"error": "Failed to create question (card not found)"}
+                )
+
             qa = await uow.services.qa.create_question(
                 command.parent_id,
                 actor.actor_id,
@@ -170,6 +253,16 @@ class McpAskQuestionUseCase:
                 key = "spec_id"
                 qa_service = uow.services.spec_qa
 
+            parent = await _get_question_parent_in_scope(
+                uow.services,
+                command.target_type,
+                command.parent_id,
+                command.board_id,
+                actor,
+            )
+            if not parent:
+                return McpPayloadResult({"error": not_found})
+
             qa = await qa_service.create_question(
                 command.parent_id,
                 actor.actor_id,
@@ -183,7 +276,7 @@ class McpAskQuestionUseCase:
             if not qa:
                 return McpPayloadResult({"error": not_found})
             await uow.services.boards._log_activity(
-                board_id=command.board_id,
+                board_id=parent.board_id,
                 action=action,
                 actor_type="agent",
                 actor_id=actor.actor_id,
@@ -202,15 +295,22 @@ class McpAskQuestionUseCase:
                 }
             )
 
+        sprint = await uow.services.sprints.get_sprint(command.parent_id)
+        if (
+            not sprint
+            or actor.board_id != command.board_id
+            or sprint.board_id != actor.board_id
+        ):
+            return McpPayloadResult({"error": "Sprint not found"})
 
         qa = await uow.services.sprint_qa.create_question(
             command.parent_id,
             actor.actor_id,
             command.question,
         )
-        await commit(uow)
         if not qa:
             return McpPayloadResult({"error": "Sprint not found"})
+        await commit(uow)
         return McpPayloadResult(
             {
                 "success": True,
@@ -235,6 +335,15 @@ class McpAnswerQuestionUseCase:
         self, command: McpAnswerQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
+
+        existing = await _get_qa_in_scope(
+            uow.services,
+            command.qa_id,
+            command.board_id,
+            actor,
+        )
+        if not existing:
+            return McpPayloadResult({"error": "Failed to answer question (not found)"})
 
         try:
             qa = await uow.services.qa.answer_question(
@@ -273,6 +382,7 @@ class McpAnswerQuestionUseCase:
 
 @dataclass(frozen=True)
 class McpDeleteQuestionCommand:
+    board_id: str
     qa_id: str
 
 
@@ -281,10 +391,19 @@ class McpDeleteQuestionUseCase:
         self, command: McpDeleteQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
 
+        qa = await _get_qa_in_scope(
+            uow.services,
+            command.qa_id,
+            command.board_id,
+            actor,
+        )
+        if not qa:
+            return McpPayloadResult({"error": "Q&A item not found"})
+
         deleted = await uow.services.qa.delete_question(command.qa_id)
-        await commit(uow)
         if not deleted:
             return McpPayloadResult({"error": "Q&A item not found"})
+        await commit(uow)
         return McpPayloadResult({"success": True})
 
 
@@ -299,6 +418,17 @@ class McpAddCommentUseCase:
     async def execute(
         self, command: McpAddCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
+
+        card = await _get_card_in_scope(
+            uow.services,
+            command.card_id,
+            command.board_id,
+            actor,
+        )
+        if not card:
+            return McpPayloadResult(
+                {"error": "Failed to create comment (card not found)"}
+            )
 
         comment = await uow.services.comments.create_comment(
             command.card_id,
@@ -349,6 +479,17 @@ class McpAddChoiceCommentUseCase:
         self, command: McpAddChoiceCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
 
+        card = await _get_card_in_scope(
+            uow.services,
+            command.card_id,
+            command.board_id,
+            actor,
+        )
+        if not card:
+            return McpPayloadResult(
+                {"error": "Failed to create choice comment (card not found)"}
+            )
+
         comment_type = (
             command.comment_type
             if command.comment_type in ("choice", "multi_choice")
@@ -398,6 +539,7 @@ class McpAddChoiceCommentUseCase:
 
 @dataclass(frozen=True)
 class McpRespondToChoiceCommand:
+    board_id: str
     comment_id: str
     selected_ids: list[str]
     free_text: str
@@ -407,6 +549,17 @@ class McpRespondToChoiceUseCase:
     async def execute(
         self, command: McpRespondToChoiceCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
+
+        existing = await _get_comment_in_scope(
+            uow.services,
+            command.comment_id,
+            command.board_id,
+            actor,
+        )
+        if not existing:
+            return McpPayloadResult(
+                {"error": "Choice comment not found or invalid selection"}
+            )
 
         comment = await uow.services.comments.respond_to_choice(
             comment_id=command.comment_id,
@@ -436,6 +589,7 @@ class McpRespondToChoiceUseCase:
 
 @dataclass(frozen=True)
 class McpGetChoiceResponsesCommand:
+    board_id: str
     comment_id: str
 
 
@@ -444,8 +598,12 @@ class McpGetChoiceResponsesUseCase:
         self, command: McpGetChoiceResponsesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
 
-        comment = await uow.services.comments.get_comment(command.comment_id)
-        await commit(uow)
+        comment = await _get_comment_in_scope(
+            uow.services,
+            command.comment_id,
+            command.board_id,
+            actor,
+        )
         if not comment or comment.comment_type == "text":
             return McpPayloadResult({"error": "Choice comment not found"})
         return McpPayloadResult(
@@ -472,9 +630,13 @@ class McpListCommentsUseCase:
         self, command: McpListCommentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
 
-        card = await uow.services.cards.get_card(command.card_id)
-        await commit(uow)
-        if not card or card.board_id != command.board_id:
+        card = await _get_card_in_scope(
+            uow.services,
+            command.card_id,
+            command.board_id,
+            actor,
+        )
+        if not card:
             return McpPayloadResult({"error": "Card not found"})
 
         rows: list[dict[str, Any]] = []
@@ -506,6 +668,17 @@ class McpUpdateCommentUseCase:
     async def execute(
         self, command: McpUpdateCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
+
+        existing = await _get_comment_in_scope(
+            uow.services,
+            command.comment_id,
+            command.board_id,
+            actor,
+        )
+        if not existing:
+            return McpPayloadResult(
+                {"error": "Comment not found or not owned by this agent"}
+            )
 
         comment = await uow.services.comments.update_comment(
             command.comment_id,
@@ -554,8 +727,17 @@ class McpDeleteCommentUseCase:
     ) -> McpPayloadResult:
 
         comment_service = uow.services.comments
-        comment = await comment_service.get_comment(command.comment_id)
-        card_id = comment.card_id if comment else None
+        comment = await _get_comment_in_scope(
+            uow.services,
+            command.comment_id,
+            command.board_id,
+            actor,
+        )
+        if not comment:
+            return McpPayloadResult(
+                {"error": "Comment not found or not owned by this agent"}
+            )
+        card_id = comment.card_id
         deleted = await comment_service.delete_comment(
             command.comment_id,
             actor.actor_id,
@@ -564,20 +746,20 @@ class McpDeleteCommentUseCase:
             return McpPayloadResult(
                 {"error": "Comment not found or not owned by this agent"}
             )
-        if card_id:
-            await _log_card_activity(
-                uow.services,
-                command.board_id,
-                card_id,
-                "comment_deleted",
-                actor,
-            )
+        await _log_card_activity(
+            uow.services,
+            command.board_id,
+            card_id,
+            "comment_deleted",
+            actor,
+        )
         await commit(uow)
         return McpPayloadResult({"success": True})
 
 
 @dataclass(frozen=True)
 class McpUploadAttachmentCommand:
+    board_id: str
     card_id: str
     filename: str
     content: bytes
@@ -589,6 +771,17 @@ class McpUploadAttachmentUseCase:
         self, command: McpUploadAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
 
+        card = await _get_card_in_scope(
+            uow.services,
+            command.card_id,
+            command.board_id,
+            actor,
+        )
+        if not card:
+            return McpPayloadResult(
+                {"error": "Failed to upload attachment (card not found)"}
+            )
+
         attachment = await uow.services.attachments.upload_attachment(
             card_id=command.card_id,
             user_id=actor.actor_id,
@@ -596,11 +789,11 @@ class McpUploadAttachmentUseCase:
             content=command.content,
             mime_type=command.mime_type,
         )
-        await commit(uow)
         if not attachment:
             return McpPayloadResult(
                 {"error": "Failed to upload attachment (card not found)"}
             )
+        await commit(uow)
         return McpPayloadResult(
             {
                 "success": True,
@@ -625,9 +818,13 @@ class McpListAttachmentsUseCase:
         self, command: McpListAttachmentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
 
-        card = await uow.services.cards.get_card(command.card_id)
-        await commit(uow)
-        if not card or card.board_id != command.board_id:
+        card = await _get_card_in_scope(
+            uow.services,
+            command.card_id,
+            command.board_id,
+            actor,
+        )
+        if not card:
             return McpPayloadResult({"error": "Card not found"})
         return McpPayloadResult(
             [
@@ -646,6 +843,7 @@ class McpListAttachmentsUseCase:
 
 @dataclass(frozen=True)
 class McpDeleteAttachmentCommand:
+    board_id: str
     attachment_id: str
 
 
@@ -654,12 +852,25 @@ class McpDeleteAttachmentUseCase:
         self, command: McpDeleteAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
 
-        deleted = await uow.services.attachments.delete_attachment(
+        attachment = await uow.services.attachments.get_attachment(
             command.attachment_id
         )
-        await commit(uow)
+        if not attachment:
+            return McpPayloadResult({"error": "Attachment not found"})
+
+        card = await _get_card_in_scope(
+            uow.services,
+            attachment.card_id,
+            command.board_id,
+            actor,
+        )
+        if not card:
+            return McpPayloadResult({"error": "Attachment not found"})
+
+        deleted = await uow.services.attachments.delete_attachment(command.attachment_id)
         if not deleted:
             return McpPayloadResult({"error": "Attachment not found"})
+        await commit(uow)
         return McpPayloadResult({"success": True})
 
 

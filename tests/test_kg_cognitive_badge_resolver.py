@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +26,7 @@ from fastapi.testclient import TestClient
 
 from okto_pulse.community.api.router import api_router
 from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.core.kg.cognitive_badge_resolver import (
     BADGE_LABEL_ACTIVE,
     CognitiveBadgeReason,
@@ -76,7 +78,24 @@ def client() -> TestClient:
     async def _fake_user() -> str:
         return "user-kg03-6-test"
 
+    class _Boards:
+        async def get(self, board_id: str):
+            if board_id != BOARD:
+                return None
+            return SimpleNamespace(id=BOARD, owner_id="user-kg03-6-test")
+
+    class _Shares:
+        async def get_user_permission(self, _board_id: str, _user_id: str):
+            return None
+
+    async def _fake_uow():
+        yield SimpleNamespace(
+            boards=_Boards(),
+            services=SimpleNamespace(shares=_Shares()),
+        )
+
     app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return TestClient(app)
 
 

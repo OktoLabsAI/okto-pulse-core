@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import uuid
 from typing import Any
 
 from okto_pulse.core.application.scope import ActorScope
@@ -20,6 +19,10 @@ from okto_pulse.core.kg.kg_service import (
     KGToolError,
     get_kg_service,
     normalize_graph_layer,
+)
+from okto_pulse.core.kg.query_contract import (
+    TYPED_ARTIFACT_KINDS,
+    validate_related_context_artifact_ref,
 )
 from okto_pulse.core.kg.tool_schemas import (
     AlternativeResult,
@@ -63,42 +66,11 @@ def _err_from(e: KGToolError) -> str:
     return _err(e.code, e.message)
 
 
-_RELATED_CONTEXT_TYPED_REF_PREFIXES = frozenset({"spec", "card"})
+_RELATED_CONTEXT_TYPED_REF_PREFIXES = frozenset(TYPED_ARTIFACT_KINDS)
 
-
-def _raw_uuid(value: str) -> bool:
-    try:
-        uuid.UUID(value)
-        return True
-    except (TypeError, ValueError):
-        return False
-
-
-def _validate_related_context_artifact_ref(artifact_id: str) -> str | None:
-    """Validate KG related-context anchors at the MCP boundary.
-
-    ``spec:<uuid>`` and ``card:<uuid>`` are unambiguous and supported. Existing
-    non-UUID artifact refs remain accepted for backward compatibility with
-    historical ``source_artifact_ref`` values. Raw UUIDs fail before any graph
-    store query so the core does not infer relational type.
-    """
-    value = (artifact_id or "").strip()
-    if not value:
-        return "artifact_id is required. Use spec:<uuid> or card:<uuid>."
-    if ":" in value:
-        prefix, raw_id = value.split(":", 1)
-        if prefix not in _RELATED_CONTEXT_TYPED_REF_PREFIXES or not raw_id:
-            return (
-                "artifact_id must use a typed reference: spec:<uuid> or card:<uuid>. "
-                "Do not pass raw UUIDs."
-            )
-        return None
-    if _raw_uuid(value):
-        return (
-            "artifact_id is ambiguous as a raw UUID. Use spec:<uuid> or card:<uuid> "
-            "so KG queries do not infer relational type."
-        )
-    return None
+# Compatibility alias for focused tests and callers that imported the former
+# MCP-local helper.  Validation now comes from the public canonical contract.
+_validate_related_context_artifact_ref = validate_related_context_artifact_ref
 
 
 async def _get_auth_context():
@@ -347,6 +319,11 @@ okto-pulse://reference/tool-docs/kg."""
     ) -> str:
         """Explain the origin of a constraint: the spec/decision it derives from,
         related constraints, and any violations (bugs) registered against it.
+
+        ``constraint_id`` is the canonical ``Constraint.id`` stored in the graph,
+        not a technical-requirement id or a deterministic worker candidate id.
+        Discover current draft constraints with the documented parameterized
+        ``okto_pulse_kg_query_cypher`` source-ref query before calling this tool.
         """
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:

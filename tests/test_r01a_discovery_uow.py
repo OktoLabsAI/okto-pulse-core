@@ -167,6 +167,18 @@ async def test_list_saved_searches_scoped_to_board(client) -> None:
     assert ids == {saved_id}
 
 
+@pytest.mark.asyncio
+async def test_list_saved_searches_foreign_board_is_non_enumerable(client) -> None:
+    board_id = await _seed_board(owner_id=OTHER_USER)
+    saved_id = await _seed_saved_search(board_id)
+
+    resp = client.get(f"{PREFIX}/discovery/boards/{board_id}/saved-searches")
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Board not found"
+    assert saved_id not in resp.text
+
+
 # --- search history ---------------------------------------------------------
 
 
@@ -181,6 +193,18 @@ async def test_list_search_history_scoped_to_user(client) -> None:
     ids = {row["id"] for row in resp.json()}
     assert mine in ids
     assert theirs not in ids
+
+
+@pytest.mark.asyncio
+async def test_list_search_history_foreign_board_is_non_enumerable(client) -> None:
+    board_id = await _seed_board(owner_id=OTHER_USER)
+    history_id = await _seed_history(board_id, USER)
+
+    resp = client.get(f"{PREFIX}/discovery/boards/{board_id}/search-history")
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Board not found"
+    assert history_id not in resp.text
 
 
 # --- selector options -------------------------------------------------------

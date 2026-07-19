@@ -15,6 +15,7 @@ from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
 import uuid
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -132,7 +133,7 @@ async def test_get_active_none_when_no_template():
 
     async with get_session_factory()() as db:
         active = await DefaultBoardConfigApiService(db).get_active()
-        assert active == {"scope": "global", "active": None}
+        assert active == {"scope": "global", "presence": "absent", "active": None}
 
 
 async def test_diff_legacy_board_reports_no_snapshot():
@@ -146,6 +147,29 @@ async def test_diff_legacy_board_reports_no_snapshot():
         diff = await DefaultBoardConfigApiService(db).get_board_diff(board_id=board.id)
         assert diff["snapshot_state"] == "legacy_no_snapshot"
         assert diff["fields"] == []
+
+
+async def test_empty_snapshot_is_distinct_from_absent_and_not_comparable():
+    board = SimpleNamespace(
+        id="board-empty-snapshot",
+        default_config_snapshot={},
+        settings=BoardSettings().model_dump(mode="json"),
+    )
+    svc = DefaultBoardConfigurationService(object())
+
+    described = await svc.describe_board_config(board)
+    diff = await svc.diff_board_config(board)
+
+    assert described == {
+        "state": "empty_snapshot",
+        "board_id": board.id,
+        "configuration_presence": "empty",
+        "comparable": False,
+    }
+    assert diff["snapshot_state"] == "empty_snapshot"
+    assert diff["configuration_presence"] == "empty"
+    assert diff["comparable"] is False
+    assert diff["fields"] == []
 
 
 async def test_mcp_twin_active_versions_and_diff():

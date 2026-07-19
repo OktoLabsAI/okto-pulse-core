@@ -41,6 +41,7 @@ from okto_pulse.core.infra.database import get_db, get_session_factory
 from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
 
 USER = "r01a-fu3e-s3-user"
+OTHER = "r01a-fu3e-s3-other"
 PREFIX = "/api/v1"
 _ENDPOINTS = (
     "link_task_to_integration_requirement",
@@ -68,6 +69,7 @@ def client():
 
 async def _seed(
     *,
+    owner: str = USER,
     spec_status: SpecStatus = SpecStatus.DRAFT,
     integration_requirements: list[dict] | None = None,
     observability_requirements: list[dict] | None = None,
@@ -77,14 +79,14 @@ async def _seed(
     sid = f"spec-fu3es3-{uuid.uuid4().hex[:8]}"
     cid = f"card-fu3es3-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
-        db.add(Board(id=bid, name="fu3es3", owner_id=USER))
+        db.add(Board(id=bid, name="fu3es3", owner_id=owner))
         db.add(
             Spec(
                 id=sid,
                 board_id=bid,
                 title="fu3es3-spec",
                 status=spec_status,
-                created_by=USER,
+                created_by=owner,
                 functional_requirements=[],
                 acceptance_criteria=[],
                 test_scenarios=[],
@@ -100,7 +102,7 @@ async def _seed(
                 board_id=bid,
                 spec_id=None,
                 title="fu3es3-card",
-                created_by=USER,
+                created_by=owner,
             )
         )
         await db.commit()
@@ -312,6 +314,32 @@ async def test_link_task_to_observability_requirement_orphan_422(client) -> None
     )
     assert resp.status_code == 422
     assert ghost in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_ir_or_links_foreign_board_have_no_mutation(client) -> None:
+    _, sid, cid = await _seed(
+        owner=OTHER,
+        integration_requirements=[
+            {"id": "ir1", "title": "IR one", "linked_task_ids": []}
+        ],
+        observability_requirements=[
+            {"id": "or1", "title": "OR one", "linked_task_ids": []}
+        ],
+    )
+
+    ir = client.post(
+        f"{PREFIX}/specs/{sid}/integration-requirements/ir1/link-task/{cid}"
+    )
+    observability = client.post(
+        f"{PREFIX}/specs/{sid}/observability-requirements/or1/link-task/{cid}"
+    )
+
+    assert ir.status_code == 404
+    assert observability.status_code == 404
+    spec = await _get_spec(sid)
+    assert spec.integration_requirements[0]["linked_task_ids"] == []
+    assert spec.observability_requirements[0]["linked_task_ids"] == []
 
 
 # --- use case + AST ---------------------------------------------------------

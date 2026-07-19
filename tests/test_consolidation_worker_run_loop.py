@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
 
 from okto_pulse.core.application.processors import consolidation
-from okto_pulse.core.application.processors.consolidation import ConsolidationProcessor
 from okto_pulse.core.ports.coordination import (
     register_coordination_providers,
     reset_coordination_providers_for_tests,
 )
 
-from tests.coordination_fakes import FakeWriteLockPort
+from coordination_fakes import FakeWriteLockPort
 
 
 @pytest.mark.asyncio
@@ -74,6 +74,14 @@ def test_app_lifespan_starts_and_stops_consolidation_worker(
     class _Runtime:
         engine = object()
         session_factory = staticmethod(lambda: None)
+
+        @asynccontextmanager
+        async def transactional_session(self):
+            yield None
+
+        @asynccontextmanager
+        async def cancel_safe_session_scope(self, session_factory=None):
+            yield (session_factory or self.session_factory)()
 
         async def close(self) -> None:
             return None

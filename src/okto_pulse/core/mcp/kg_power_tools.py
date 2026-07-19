@@ -8,6 +8,7 @@ hatches never open a relational session (spec R01A MCP-FU4 dropped the unused
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -428,43 +429,127 @@ narrows to one table."""
         board_id: str,
         nl_query: str,
         limit: int = 20,
+        min_confidence: float = 0.5,
+        graph_layer: str = "canonical",
+        max_iterations: int = 3,
+        deadline_ms: int = 5000,
+        budget_units: int = 10,
     ) -> str:
-        """Reflective NL query over a board's KG (authorization: kg.query.global).
-        V1 stub: delegates to the kg_query_natural core (params board_id,
-        nl_query, limit) and returns nodes, total_matches, iterations and
-        stopped_reason='v1_stub_no_critic_wired'.
+        """Run the bounded retrieve→critic→corrective-action KG loop.
+
+        Authorization and board ACL are checked before graph/embedding access.
+        The Community runtime supplies a deterministic critic, so no LLM is
+        required. Terminal reasons distinguish accepted, rejected, malformed
+        critic output, no progress, exhausted budget/deadline and provider
+        failures. ``graph_layer`` is canonical|working|all (default canonical).
         """
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
         try:
-            check_rate_limit(agent.id)
+            from okto_pulse.core.kg.interfaces import get_kg_registry
+            from okto_pulse.core.kg.kg_service import (
+                KGToolError,
+                get_kg_service,
+                normalize_graph_layer,
+            )
+            from okto_pulse.core.kg.retrieve_critic import run_reflective_query
+
+            if not board_id.strip():
+                return _err("invalid_board_id", "board_id is required")
+            if not nl_query.strip():
+                return _err("invalid_query", "nl_query is required")
+            rejection = KGNaturalQueryBoundaryGuard().check(nl_query)
+            if rejection is not None:
+                return _err(
+                    "query_too_large",
+                    rejection["detail"],
+                    embedding_invoked=False,
+                    query_chars=rejection["rejection"]["query_chars"],
+                    max_chars=rejection["rejection"]["max_chars"],
+                )
+            if not 1 <= int(limit) <= 100:
+                return _err("invalid_limit", "limit must be between 1 and 100")
+            if not 0.0 <= float(min_confidence) <= 1.0:
+                return _err(
+                    "invalid_min_confidence",
+                    "min_confidence must be between 0 and 1",
+                )
+            if not 1 <= int(max_iterations) <= 8:
+                return _err(
+                    "invalid_max_iterations",
+                    "max_iterations must be between 1 and 8",
+                )
+            if not 50 <= int(deadline_ms) <= 30_000:
+                return _err(
+                    "invalid_deadline_ms",
+                    "deadline_ms must be between 50 and 30000",
+                )
+            if not 1 <= int(budget_units) <= 10_000:
+                return _err(
+                    "invalid_budget_units",
+                    "budget_units must be between 1 and 10000",
+                )
+            applied_layer = normalize_graph_layer(graph_layer)
+
+            registry = get_kg_registry()
+            factory = registry.auth_context_factory
+            if factory is None:
+                return _err(
+                    "unauthorized",
+                    "KG AuthContext provider is not configured",
+                )
+            auth = factory()
+            agent_id = await auth.get_agent_id()
+            if agent_id is None:
+                return _err("unauthorized", "authentication required")
+            boards = sorted(set(await auth.get_accessible_boards() or []))
+            get_kg_service().check_board_access(boards, board_id)
+            check_rate_limit(str(agent_id))
+
+            retrieval = registry.require_reflective_retrieval()
+            critic = registry.require_reflective_critic()
+            telemetry = registry.reflective_telemetry
+            acl_raw = json.dumps(
+                {"agent_id": str(agent_id), "boards": boards},
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            acl_scope_hash = hashlib.sha256(acl_raw.encode("utf-8")).hexdigest()
+
             result = await asyncio.wait_for(
                 asyncio.to_thread(
-                    execute_natural_query,
-                    board_id, nl_query, limit=limit,
+                    run_reflective_query,
+                    board_id=board_id,
+                    query=nl_query,
+                    limit=int(limit),
+                    min_confidence=float(min_confidence),
+                    graph_layer=applied_layer,
+                    max_iterations=int(max_iterations),
+                    deadline_ms=int(deadline_ms),
+                    budget_units=int(budget_units),
+                    acl_scope_hash=acl_scope_hash,
+                    retrieval=retrieval,
+                    critic=critic,
+                    telemetry=telemetry,
                 ),
-                timeout=30.0,
+                timeout=(int(deadline_ms) / 1000.0) + 0.25,
             )
-            payload = {
-                "nodes": result.get("nodes", []),
-                "total_matches": result.get("total_matches", 0),
-                "stopped_reason": "v1_stub_no_critic_wired",
-                "iterations": [
-                    {
-                        "iteration": 0,
-                        "adequacy": "sufficient",
-                        "action": "accept",
-                        "rows_count": len(result.get("nodes", [])),
-                        "note": (
-                            "V1 stub: no critic LLM wired over MCP. "
-                            "Use reflect() in Python for the full loop."
-                        ),
-                    }
-                ],
-            }
-            return json.dumps(payload, default=str)
+            result["applied_graph_layer"] = applied_layer
+            return json.dumps(round_kg_numbers(result), default=str)
         except asyncio.TimeoutError:
-            return _err("timeout", "Query exceeded 30s timeout")
+            return _err("timeout", "Reflective query exceeded its deadline")
+        except KGToolError as e:
+            return _err(e.code, e.message, details=e.details)
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
+        except (RuntimeError, TypeError, ValueError) as e:
+            logger.warning(
+                "kg.reflective.provider_failure board=%s error=%s",
+                board_id,
+                type(e).__name__,
+            )
+            return _err(
+                "reflective_provider_unavailable",
+                "Reflective KG providers are unavailable or invalid",
+            )

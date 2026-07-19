@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, require_runtime_value, reset_runtime_values
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, Sequence
+
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    require_runtime_value,
+    reset_runtime_values,
+)
+
+
+GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL = -1
+GLOBAL_OUTBOX_MAX_RETRIES = 5
 
 
 @dataclass(slots=True)
@@ -19,6 +27,15 @@ class GlobalOutboxEventRecord:
     retry_count: int
     last_error: str | None
     processed_at: datetime | None
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalOutboxDeadLetterCursor:
+    """Stable keyset cursor for an ordered dead-letter recovery scan."""
+
+    created_at: datetime
+    id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,14 +44,44 @@ class GlobalOutboxNodeRefFact:
     graph_node_type: str
 
 
+class GlobalOutboxMutationConflict(RuntimeError):
+    """A terminal row changed after validation but before guarded requeue."""
+
+
 class GlobalOutboxStore(Protocol):
     async def materialize_claimed(
         self, context: Any, claimed: Sequence[Any]
     ) -> tuple[GlobalOutboxEventRecord, ...]: ...
 
     async def list_dead_letters(
-        self, context: Any, *, limit: int
+        self,
+        context: Any,
+        *,
+        limit: int,
+        error_markers: Sequence[str],
+        after: GlobalOutboxDeadLetterCursor | None = None,
     ) -> tuple[GlobalOutboxEventRecord, ...]: ...
+
+    async def list_terminal_events(
+        self,
+        context: Any,
+        *,
+        limit: int,
+        after: GlobalOutboxDeadLetterCursor | None = None,
+    ) -> tuple[GlobalOutboxEventRecord, ...]: ...
+
+    async def get_events_by_ids(
+        self,
+        context: Any,
+        *,
+        ids: tuple[str, ...],
+    ) -> tuple[GlobalOutboxEventRecord, ...]: ...
+
+    async def requeue_terminal_events(
+        self,
+        context: Any,
+        events: Sequence[GlobalOutboxEventRecord],
+    ) -> None: ...
 
     async def list_added_node_refs(
         self,
@@ -68,7 +115,11 @@ def reset_global_outbox_store_for_tests() -> None:
 
 
 __all__ = [
+    "GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL",
+    "GLOBAL_OUTBOX_MAX_RETRIES",
+    "GlobalOutboxDeadLetterCursor",
     "GlobalOutboxEventRecord",
+    "GlobalOutboxMutationConflict",
     "GlobalOutboxNodeRefFact",
     "GlobalOutboxStore",
     "get_global_outbox_store",

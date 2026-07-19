@@ -98,26 +98,25 @@ def test_under_safe_write_unblocks_each_barrier_point():
 # --- Global discovery barrier wiring (KG-01.3.1 rework val_441ad311) ---------
 
 
-def test_bootstrap_global_discovery_calls_require_global_write_token(monkeypatch):
-    """Since R09 the core wrapper no longer calls require_global_write_token
-    itself: the edition runtime owns the global barrier (the Community adapter
-    invokes it before any storage mutation — proven by the
-    *_blocked_in_strict_without_guard twins below, which run only with
-    Community installed). Core-side the same contract reads: bootstrap
-    delegates to the composed GlobalDiscoveryRuntime port and fails closed
-    when none is composed, so no core path reaches global discovery storage
-    without going through the barrier-owning runtime."""
+def test_bootstrap_global_discovery_helper_owns_durable_writer_lease(monkeypatch):
+    """The shared fixture enters the same durable writer lane as production."""
     from pathlib import Path
 
     from okto_pulse.core.composition import RuntimeProviderMissing
     from okto_pulse.core.kg import interfaces as interfaces_pkg
+    from okto_pulse.core.kg.global_discovery_writer import (
+        assert_global_discovery_writer_fence,
+    )
     import global_graph_testing as schema
     from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
+    from okto_pulse.core.kg.write_barrier import require_global_write_token
 
     calls: list[str] = []
 
     class _Runtime:
         def bootstrap(self) -> Path:
+            assert_global_discovery_writer_fence()
+            require_global_write_token()
             calls.append("bootstrap")
             return Path("global-discovery.lbug")
 
@@ -128,7 +127,10 @@ def test_bootstrap_global_discovery_calls_require_global_write_token(monkeypatch
 
     empty = KGProviderRegistry()
     monkeypatch.setattr(
-        interfaces_pkg, "get_kg_registry", lambda: empty, raising=True,
+        interfaces_pkg,
+        "get_kg_registry",
+        lambda: empty,
+        raising=True,
     )
     with pytest.raises(RuntimeProviderMissing) as excinfo:
         schema.bootstrap_global_discovery()
@@ -136,19 +138,23 @@ def test_bootstrap_global_discovery_calls_require_global_write_token(monkeypatch
     assert calls == ["bootstrap"]  # the failed call never reached a runtime
 
 
-def test_purge_global_discovery_storage_calls_require_global_write_token(monkeypatch):
-    """Purge twin of the bootstrap test above: the destructive path delegates
-    to the barrier-owning runtime (reason kwarg preserved) and fails closed
-    without a composed runtime — never a silent core-side purge."""
+def test_purge_global_discovery_helper_owns_durable_writer_lease(monkeypatch):
+    """The test purge helper owns a durable lease and preserves its reason."""
     from okto_pulse.core.composition import RuntimeProviderMissing
     from okto_pulse.core.kg import interfaces as interfaces_pkg
+    from okto_pulse.core.kg.global_discovery_writer import (
+        assert_global_discovery_writer_fence,
+    )
     import global_graph_testing as schema
     from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
+    from okto_pulse.core.kg.write_barrier import require_global_write_token
 
     calls: list[tuple[str, str]] = []
 
     class _Runtime:
         def purge(self, *, reason: str = "manual") -> list[str]:
+            assert_global_discovery_writer_fence()
+            require_global_write_token()
             calls.append(("purge", reason))
             return ["quarantined-a"]
 
@@ -159,7 +165,10 @@ def test_purge_global_discovery_storage_calls_require_global_write_token(monkeyp
 
     empty = KGProviderRegistry()
     monkeypatch.setattr(
-        interfaces_pkg, "get_kg_registry", lambda: empty, raising=True,
+        interfaces_pkg,
+        "get_kg_registry",
+        lambda: empty,
+        raising=True,
     )
     with pytest.raises(RuntimeProviderMissing) as excinfo:
         schema.purge_global_discovery_storage(reason="test")
@@ -167,12 +176,44 @@ def test_purge_global_discovery_storage_calls_require_global_write_token(monkeyp
     assert calls == [("purge", "test")]
 
 
-def test_gc_orphans_calls_require_global_write_token():
+def test_execute_global_write_helper_owns_durable_writer_lease(monkeypatch):
+    from okto_pulse.core.kg import interfaces as interfaces_pkg
+    from okto_pulse.core.kg.global_discovery_writer import (
+        assert_global_discovery_writer_fence,
+    )
+    from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
+    from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
+
+    import global_graph_testing as schema
+
+    calls: list[tuple[str, dict | None]] = []
+
+    class _Runtime:
+        def execute(self, statement: str, params=None) -> GraphStatementResult:
+            assert_global_discovery_writer_fence()
+            require_global_write_token()
+            calls.append((statement, params))
+            return GraphStatementResult.from_rows([[1]])
+
+    reg = KGProviderRegistry(global_discovery_runtime=_Runtime())
+    monkeypatch.setattr(interfaces_pkg, "get_kg_registry", lambda: reg, raising=True)
+
+    result = schema.execute_global_write(
+        "CREATE (:Fixture {id: $id})",
+        {"id": "fixture-a"},
+        operation="test_fixture_write",
+    )
+
+    assert result.rows == ((1,),)
+    assert calls == [("CREATE (:Fixture {id: $id})", {"id": "fixture-a"})]
+
+
+def test_gc_orphans_uses_shared_durable_writer_scope():
     from okto_pulse.core.kg.global_discovery import clustering
 
     src = inspect.getsource(clustering.gc_orphans)
-    assert "require_global_write_token" in src
-    assert "require_global_write_token()" in src
+    assert "global_discovery_writer_scope" in src
+    assert "require_global_write_token()" not in src
 
 
 def test_require_global_write_token_strict_raises_without_guard():
@@ -205,24 +246,63 @@ def test_global_guard_does_not_grant_board_access():
             require_write_token("some-board")
 
 
-def test_bootstrap_global_discovery_blocked_in_strict_without_guard():
-    """Dynamic regression: calling bootstrap_global_discovery without a
-    guard MUST raise WriteLifecycleViolation BEFORE the ladybug import
-    or DDL execution. Proves the barrier is the first statement in the
-    function body."""
+def test_raw_global_discovery_bootstrap_blocked_without_durable_lease():
+    """The adapter still fails closed when a caller bypasses the safe helper."""
+    from okto_pulse.core.kg.global_discovery_writer import (
+        GlobalDiscoveryWriterFenceLost,
+    )
     import global_graph_testing as schema
-    with pytest.raises(WriteLifecycleViolation):
-        schema.bootstrap_global_discovery()
+
+    with pytest.raises(GlobalDiscoveryWriterFenceLost):
+        schema._runtime().bootstrap()
 
 
-def test_purge_global_discovery_storage_blocked_in_strict_without_guard():
+def test_raw_global_discovery_purge_blocked_without_durable_lease():
+    from okto_pulse.core.kg.global_discovery_writer import (
+        GlobalDiscoveryWriterFenceLost,
+    )
     import global_graph_testing as schema
-    with pytest.raises(WriteLifecycleViolation):
-        schema.purge_global_discovery_storage(reason="test")
+
+    with pytest.raises(GlobalDiscoveryWriterFenceLost):
+        schema._runtime().purge(reason="test")
 
 
-def test_gc_orphans_blocked_in_strict_without_guard():
+@pytest.mark.parametrize(("dry_run", "expected_calls"), [(True, 2), (False, 4)])
+def test_gc_orphans_acquires_its_own_durable_global_guard(
+    monkeypatch,
+    dry_run,
+    expected_calls,
+):
+    from okto_pulse.core.kg import interfaces as interfaces_pkg
     from okto_pulse.core.kg.global_discovery import clustering
+    from okto_pulse.core.kg.global_discovery_writer import (
+        assert_global_discovery_writer_fence,
+    )
+    from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
+    from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 
-    with pytest.raises(WriteLifecycleViolation):
-        clustering.gc_orphans(dry_run=True)
+    calls: list[str] = []
+
+    class _Runtime:
+        def execute(self, statement: str, params=None) -> GraphStatementResult:
+            del params
+            assert_global_discovery_writer_fence()
+            require_global_write_token()
+            calls.append(statement)
+            if "RETURN count(t)" in statement:
+                return GraphStatementResult.from_rows([[2]])
+            if "RETURN count(e)" in statement:
+                return GraphStatementResult.from_rows([[3]])
+            return GraphStatementResult()
+
+    reg = KGProviderRegistry(global_discovery_runtime=_Runtime())
+    monkeypatch.setattr(interfaces_pkg, "get_kg_registry", lambda: reg, raising=True)
+
+    result = clustering.gc_orphans(dry_run=dry_run)
+
+    assert result == {
+        "topics_removed": 2,
+        "entities_removed": 3,
+        "dry_run": dry_run,
+    }
+    assert len(calls) == expected_calls

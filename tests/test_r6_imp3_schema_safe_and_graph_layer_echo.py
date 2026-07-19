@@ -15,9 +15,11 @@ schema-safe map is asserted from the REAL schema constants / get_schema_info.
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
+from fastmcp import Client, FastMCP
 
 from global_graph_testing import (
     bootstrap_global_discovery,
@@ -154,6 +156,68 @@ def test_get_related_context_rejects_raw_uuid_before_graph_lookup(monkeypatch):
     result = _call(tool, board_id=board_id, artifact_id=raw_uuid)
     assert result["error"]["code"] == "invalid_artifact_ref"
     assert result["error"]["supported"] == ["spec:<uuid>", "card:<uuid>"]
+    assert calls["get_related_context"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_related_context_raw_uuid_survives_real_fastmcp_transport(
+    monkeypatch,
+):
+    """The host/transport must deliver the structured boundary error verbatim.
+
+    This mirrors the live friction report, including graph_layer=all and
+    max_rows=200.  Unlike the focused closure test above, this calls through a
+    real FastMCP client transport, so a wrapper/serialization regression cannot
+    turn the valid JSON envelope into an ExceptionGroup with no payload.
+    """
+    import okto_pulse.core.mcp.kg_query_tools as kg_query_tools
+
+    board_id = f"transport-{uuid.uuid4()}"
+    calls = {"get_related_context": 0}
+
+    class Agent:
+        id = "transport-agent"
+
+    async def authorized_user_boards(*_args, **_kwargs):
+        return Agent(), [board_id]
+
+    class FakeService:
+        def check_board_access(self, boards, checked_board_id):
+            assert boards == [board_id]
+            assert checked_board_id == board_id
+
+        def get_related_context(self, *_args, **_kwargs):
+            calls["get_related_context"] += 1
+            raise AssertionError("raw UUID must fail before graph lookup")
+
+    monkeypatch.setattr(
+        kg_query_tools,
+        "_get_user_boards",
+        authorized_user_boards,
+    )
+    monkeypatch.setattr(kg_query_tools, "get_kg_service", lambda: FakeService())
+
+    host = FastMCP("related-context-transport-regression")
+    kg_query_tools.register_kg_query_tools(
+        host,
+        get_agent=lambda: None,
+        get_uow=lambda: None,
+    )
+    async with Client(host) as client:
+        result = await client.call_tool(
+            "okto_pulse_kg_get_related_context",
+            {
+                "board_id": board_id,
+                "artifact_id": str(uuid.uuid4()),
+                "graph_layer": "all",
+                "max_rows": 200,
+            },
+        )
+
+    assert result.is_error is False
+    payload = json.loads(result.data)
+    assert payload["error"]["code"] == "invalid_artifact_ref"
+    assert payload["error"]["supported"] == ["spec:<uuid>", "card:<uuid>"]
     assert calls["get_related_context"] == 0
 
 

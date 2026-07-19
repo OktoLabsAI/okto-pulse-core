@@ -25,7 +25,7 @@ from collections import Counter
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Protocol, Sequence, runtime_checkable
+from typing import Any, AsyncIterator, Iterator, Protocol, Sequence, runtime_checkable
 
 from .runtime_context import (
     RuntimeValueRegistry,
@@ -185,6 +185,24 @@ def runtime_composition_scope(composition: RuntimeComposition):
             yield composition
     finally:
         _active_runtime_composition.reset(token)
+
+
+@contextmanager
+def isolated_runtime_provider_scope() -> Iterator[None]:
+    """Fork runtime providers for one task and restore them on scope exit.
+
+    Edition composition roots occasionally need to replace providers for one
+    bounded operation (for example, an offline first-boot seed).  The active
+    registry is copied instead of mutated, so registrations made in this scope
+    cannot leak into sibling tasks or the caller.  The underlying ContextVar
+    token restores the previous registry on both normal and exceptional exits.
+
+    The registry itself intentionally remains private to Core; editions receive
+    only this lifecycle-safe composition seam.
+    """
+
+    with runtime_value_scope(snapshot_runtime_values()):
+        yield
 
 
 def record_runtime_bridge_usage(bridge: str) -> None:

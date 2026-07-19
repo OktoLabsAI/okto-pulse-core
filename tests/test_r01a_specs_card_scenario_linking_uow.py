@@ -19,11 +19,14 @@ the endpoints take ``uow`` (not a raw ``AsyncSession``).
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 import uuid
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 
 from okto_pulse.community.api import specs as specs_api
 from okto_pulse.community.api.specs import router as specs_router
@@ -33,6 +36,7 @@ from okto_pulse.core.infra.database import get_db, get_session_factory
 from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
 
 USER = "r01a-fu3c-s2-user"
+OTHER = "r01a-fu3c-s2-other"
 PREFIX = "/api/v1"
 _ENDPOINTS = (
     "link_card_to_spec",
@@ -64,6 +68,7 @@ async def _seed(
     scenarios: list[dict] | None = None,
     card_spec_id_to_self: bool = False,
     card_scenarios: list[str] | None = None,
+    owner: str = USER,
 ) -> tuple[str, str, str]:
     """Seed a board + spec + card and return ``(board_id, spec_id, card_id)``.
 
@@ -79,7 +84,7 @@ async def _seed(
             Board(
                 id=bid,
                 name="fu3cs2",
-                owner_id=USER,
+                owner_id=owner,
                 settings={"skip_test_evidence_global": True},
             )
         )
@@ -89,7 +94,7 @@ async def _seed(
                 board_id=bid,
                 title="fu3cs2-spec",
                 status=spec_status,
-                created_by=USER,
+                created_by=owner,
                 functional_requirements=[],
                 acceptance_criteria=[],
                 test_scenarios=scenarios or [],
@@ -103,7 +108,7 @@ async def _seed(
                 board_id=bid,
                 spec_id=sid if card_spec_id_to_self else None,
                 title="fu3cs2-card",
-                created_by=USER,
+                created_by=owner,
                 test_scenario_ids=card_scenarios or [],
             )
         )
@@ -119,6 +124,19 @@ async def _get_spec(spec_id: str) -> Spec | None:
 async def _get_card(card_id: str) -> Card | None:
     async with get_session_factory()() as db:
         return await db.get(Card, card_id)
+
+
+async def _card_link_state(card_id: str) -> dict:
+    from sqlalchemy_test_models import ActivityLog
+
+    async with get_session_factory()() as db:
+        card = await db.get(Card, card_id)
+        activity_count = await db.scalar(
+            select(func.count())
+            .select_from(ActivityLog)
+            .where(ActivityLog.card_id == card_id)
+        )
+        return {"spec_id": card.spec_id, "activity_count": activity_count}
 
 
 def _missing() -> str:
@@ -167,6 +185,142 @@ async def test_unlink_card_not_linked_404(client) -> None:
     assert resp.json()["detail"] == "Card not found or not linked to any spec"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "initially_linked", "expected_detail"),
+    (
+        (
+            "link-card",
+            False,
+            "Spec or card not found, or they belong to different boards",
+        ),
+        ("unlink-card", True, "Card not found or not linked to any spec"),
+    ),
+)
+async def test_card_spec_relation_foreign_owner_fails_closed_without_audit(
+    client, operation: str, initially_linked: bool, expected_detail: str
+) -> None:
+    _, sid, cid = await _seed(
+        card_spec_id_to_self=initially_linked,
+        owner=OTHER,
+    )
+    before = await _card_link_state(cid)
+
+    response = client.post(f"{PREFIX}/specs/{sid}/{operation}/{cid}")
+
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == expected_detail
+    assert await _card_link_state(cid) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "card_linked_to_own_spec", "expected_detail"),
+    (
+        (
+            "link-card",
+            False,
+            "Spec or card not found, or they belong to different boards",
+        ),
+        ("unlink-card", True, "Card not found or not linked to any spec"),
+    ),
+)
+async def test_card_spec_relation_cross_board_fails_closed_without_audit(
+    client, operation: str, card_linked_to_own_spec: bool, expected_detail: str
+) -> None:
+    _, target_spec_id, _ = await _seed()
+    _, _, foreign_card_id = await _seed(
+        card_spec_id_to_self=card_linked_to_own_spec
+    )
+    before = await _card_link_state(foreign_card_id)
+
+    response = client.post(
+        f"{PREFIX}/specs/{target_spec_id}/{operation}/{foreign_card_id}"
+    )
+
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == expected_detail
+    assert await _card_link_state(foreign_card_id) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "spec_board", "card_board", "card_spec_id", "expected_entity"),
+    (
+        ("link", "foreign-board", "actor-board", None, "spec"),
+        ("link", "actor-board", "foreign-board", None, "card"),
+        ("link", "actor-board", None, None, "card"),
+        ("unlink", "foreign-board", "actor-board", "spec-1", "spec"),
+        ("unlink", "actor-board", "foreign-board", "spec-1", "card"),
+        ("unlink", "actor-board", None, None, "card"),
+        ("unlink", "actor-board", "actor-board", "other-spec", "card"),
+    ),
+)
+async def test_card_spec_relation_preflight_blocks_service_mutation(
+    operation: str,
+    spec_board: str,
+    card_board: str | None,
+    card_spec_id: str | None,
+    expected_entity: str,
+) -> None:
+    from okto_pulse.core.application.use_cases import (
+        LinkCardToSpecCommand,
+        LinkCardToSpecUseCase,
+        UnlinkCardFromSpecCommand,
+        UnlinkCardFromSpecUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
+
+    spec = SimpleNamespace(id="spec-1", board_id=spec_board)
+    card = (
+        None
+        if card_board is None
+        else SimpleNamespace(
+            id="card-1",
+            board_id=card_board,
+            spec_id=card_spec_id,
+        )
+    )
+    specs = SimpleNamespace(
+        get_spec=AsyncMock(return_value=spec),
+        link_card=AsyncMock(return_value=True),
+        unlink_card=AsyncMock(return_value=True),
+    )
+    cards = SimpleNamespace(get_card=AsyncMock(return_value=card))
+    uow = SimpleNamespace(
+        boards=SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(id="actor-board"))
+        ),
+        services=SimpleNamespace(specs=specs, cards=cards),
+        commit=AsyncMock(),
+    )
+
+    command = (
+        LinkCardToSpecCommand("spec-1", "card-1")
+        if operation == "link"
+        else UnlinkCardFromSpecCommand("spec-1", "card-1")
+    )
+    use_case = (
+        LinkCardToSpecUseCase()
+        if operation == "link"
+        else UnlinkCardFromSpecUseCase()
+    )
+    with pytest.raises(EntityNotFoundError) as exc_info:
+        await use_case.execute(
+            command,
+            actor=ActorContext("agent", "mcp", board_id="actor-board"),
+            uow=uow,
+        )
+
+    assert exc_info.value.entity_type == expected_entity
+    specs.link_card.assert_not_awaited()
+    specs.unlink_card.assert_not_awaited()
+    uow.commit.assert_not_awaited()
+
+
 # --- link task to scenario --------------------------------------------------
 
 
@@ -175,6 +329,7 @@ async def test_link_task_to_scenario_200_bidirectional(client) -> None:
     _, sid, cid = await _seed(
         spec_status=SpecStatus.DRAFT,
         scenarios=[{"id": "sc1", "title": "Scenario one", "linked_task_ids": []}],
+        card_spec_id_to_self=True,
         card_scenarios=[],
     )
     resp = client.post(f"{PREFIX}/specs/{sid}/scenarios/sc1/link-task/{cid}")
@@ -212,7 +367,10 @@ async def test_link_task_to_scenario_card_404(client) -> None:
 
 @pytest.mark.asyncio
 async def test_link_task_to_scenario_scenario_404(client) -> None:
-    _, sid, cid = await _seed(scenarios=[{"id": "sc1", "title": "Scenario one", "linked_task_ids": []}])
+    _, sid, cid = await _seed(
+        scenarios=[{"id": "sc1", "title": "Scenario one", "linked_task_ids": []}],
+        card_spec_id_to_self=True,
+    )
     resp = client.post(f"{PREFIX}/specs/{sid}/scenarios/nope/link-task/{cid}")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Scenario 'nope' not found in spec."
@@ -338,6 +496,96 @@ async def test_link_task_use_case_raises_for_missing_spec() -> None:
                 actor=actor,
                 uow=uow,
             )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("spec_board", "card_board", "expected_entity"),
+    (
+        ("foreign-board", "actor-board", "spec"),
+        ("actor-board", "foreign-board", "card"),
+        ("actor-board", None, "card"),
+    ),
+)
+async def test_unlink_task_fails_closed_before_either_write(
+    spec_board: str, card_board: str | None, expected_entity: str
+) -> None:
+    from okto_pulse.core.application.use_cases import (
+        UnlinkTaskFromScenarioCommand,
+        UnlinkTaskFromScenarioUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
+
+    spec = SimpleNamespace(
+        id="spec-1",
+        board_id=spec_board,
+        test_scenarios=[{"id": "sc1", "linked_task_ids": ["card-1"]}],
+    )
+    card = (
+        None
+        if card_board is None
+        else SimpleNamespace(
+            id="card-1", board_id=card_board, test_scenario_ids=["sc1"]
+        )
+    )
+    specs = SimpleNamespace(
+        get_spec=AsyncMock(return_value=spec),
+        update_spec=AsyncMock(),
+    )
+    cards = SimpleNamespace(
+        get_card=AsyncMock(return_value=card),
+        update_card=AsyncMock(),
+    )
+    uow = SimpleNamespace(
+        boards=SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(id="actor-board"))
+        ),
+        services=SimpleNamespace(specs=specs, cards=cards),
+        commit=AsyncMock(),
+    )
+
+    with pytest.raises(EntityNotFoundError) as exc_info:
+        await UnlinkTaskFromScenarioUseCase().execute(
+            UnlinkTaskFromScenarioCommand("spec-1", "sc1", "card-1"),
+            actor=ActorContext(
+                "agent", "mcp", board_id="actor-board"
+            ),
+            uow=uow,
+        )
+
+    assert exc_info.value.entity_type == expected_entity
+    specs.update_spec.assert_not_awaited()
+    cards.update_card.assert_not_awaited()
+    uow.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_status_update_cross_board_is_governed_before_service_write() -> None:
+    from okto_pulse.core.application.use_cases import (
+        SetTestScenarioStatusCommand,
+        SetTestScenarioStatusUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import ActorContext
+
+    specs = SimpleNamespace(
+        get_spec=AsyncMock(
+            return_value=SimpleNamespace(id="spec-1", board_id="foreign-board")
+        ),
+        set_test_scenario_status=AsyncMock(),
+    )
+    uow = SimpleNamespace(services=SimpleNamespace(specs=specs))
+
+    with pytest.raises(ValueError, match="scenario_not_found: spec not found"):
+        await SetTestScenarioStatusUseCase().execute(
+            SetTestScenarioStatusCommand("spec-1", "sc1", "ready"),
+            actor=ActorContext("agent", "mcp", board_id="actor-board"),
+            uow=uow,
+        )
+
+    specs.set_test_scenario_status.assert_not_awaited()
 
 
 def test_fu3c_s2_endpoints_take_uow_not_raw_session() -> None:

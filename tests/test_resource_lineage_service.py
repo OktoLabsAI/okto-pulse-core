@@ -281,6 +281,64 @@ async def test_resolver_allows_architecture_source_ref_hop_with_canonical_root()
 
 
 @pytest.mark.asyncio
+async def test_multihop_mockup_and_kb_snapshots_dedupe_on_canonical_root() -> None:
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
+    ideation = LineageEntityRef("ideation", "idea-1", "Ideation")
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        parents={spec.ref: [refinement, ideation]},
+        refs={
+            spec.ref: {
+                "mockup": [{
+                    "id": "mock-spec",
+                    "origin_id": "mock-root",
+                    "source_mockup_id": "mock-refinement",
+                }],
+                "knowledge_base": [{
+                    "id": "kb-spec",
+                    "source_kb_id": "kb-refinement",
+                    "root_source_kb_id": "kb-root",
+                    "immediate_parent_kb_id": "kb-refinement",
+                }],
+            },
+            refinement.ref: {
+                "mockup": [{
+                    "id": "mock-refinement",
+                    "origin_id": "mock-root",
+                    "source_mockup_id": "mock-root",
+                }],
+                "knowledge_base": [{
+                    "id": "kb-refinement",
+                    "source_kb_id": "kb-root",
+                    "root_source_kb_id": "kb-root",
+                    "immediate_parent_kb_id": "kb-root",
+                }],
+            },
+            ideation.ref: {
+                "mockup": [{"id": "mock-root"}],
+                "knowledge_base": [{"id": "kb-root"}],
+            },
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1", "spec", "spec-1"
+    )
+
+    assert resolved.counts["attachment_count"] == 6
+    assert resolved.counts["unique_resources_count"] == 2
+    grouped = {
+        item.unique_resource_id: item.attachment_count
+        for item in resolved.unique_resources
+    }
+    assert grouped == {
+        "mockup:mock-root": 3,
+        "knowledge_base:kb-root": 3,
+    }
+
+
+@pytest.mark.asyncio
 async def test_resolver_rejects_conflicting_origin_evidence() -> None:
     spec = LineageEntityRef("spec", "spec-1", "Spec")
     provider = FakeLineageProvider(

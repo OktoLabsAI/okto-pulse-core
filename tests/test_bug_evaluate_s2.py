@@ -30,11 +30,126 @@ from okto_pulse.core.kg.cognitive_readiness import (
 )
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
+from okto_pulse.core.ports.bug_cognitive_context import BugCognitiveContext
+from okto_pulse.core.ports.test_evidence import (
+    TestEvidenceWriteVerification as EvidenceWriteVerification,
+    register_test_evidence_write_verifier,
+    reset_test_evidence_write_verifier_for_tests,
+)
 from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 UUID_A = "11111111-1111-1111-1111-111111111111"
 GOOD_EVIDENCE = {"root_cause": "off-by-one", "fix_narrative": "guarded the bound"}
+ACCEPTANCE_CRITERIA = (
+    {"id": "ac-version", "text": "The requested version is rendered."},
+)
+
+
+class _TrustedEvidenceVerifier:
+    def verify(self, **_request):  # noqa: ANN003, ANN201
+        return EvidenceWriteVerification(True)
+
+
+@pytest.fixture(autouse=True)
+def _trusted_evidence_verifier():
+    register_test_evidence_write_verifier(_TrustedEvidenceVerifier())
+    yield
+    reset_test_evidence_write_verifier_for_tests()
+
+
+def _verified_scenario(board_id: str) -> dict:
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        compute_execution_attestation_sha256,
+        compute_test_scenario_semantic_sha256,
+    )
+
+    scenario = {
+        "id": "scenario-regression",
+        "scenario_type": "regression",
+        "given": "a stale compiled version was previously rendered",
+        "when": "the corrected build is exercised",
+        "then": "the requested version is rendered",
+        "linked_criteria": ["ac-version"],
+        "status": "passed",
+    }
+    scenario_sha256 = compute_test_scenario_semantic_sha256(
+        board_id=board_id,
+        spec_id="spec-evidence",
+        scenario=scenario,
+        acceptance_criteria=list(ACCEPTANCE_CRITERIA),
+    )
+    manifest_ref = "mcp://replay/bug-closeout"
+    attestation = {
+        "schema_version": 2,
+        "run_id": "run-bug-closeout",
+        "executed_at": "2026-07-14T12:00:00+00:00",
+        "scenario_id": "scenario-regression",
+        "scenario_sha256": scenario_sha256,
+        "outcome": "passed",
+        "product_runtime_exercised": True,
+        "manifest_sha256": "sha256:" + "b" * 64,
+        "assertions": [{
+            "name": "bug is no longer reproduced",
+            "expected": "fixed",
+            "observed": "fixed",
+            "status": "passed",
+            "message": None,
+        }],
+        "provenance": {
+            "producer": "okto-pulse-community",
+            "producer_version": "0.3.0",
+            "adapter": "mcp-replay-runner",
+            "environment": "test",
+        },
+    }
+    attestation["attestation_sha256"] = compute_execution_attestation_sha256(
+        attestation,
+        manifest_ref=manifest_ref,
+    )
+    return {
+        **scenario,
+        "evidence": {
+            "manifest_ref": manifest_ref,
+            "execution_attestation": attestation,
+            "execution_receipt": "opaque-test-receipt",
+        },
+    }
+
+
+def _complete_context(
+    board_id: str,
+    *,
+    canonical_bug_present: bool | None = True,
+    action_plan: str | None = None,
+    conclusions: tuple[dict, ...] | None = None,
+) -> BugCognitiveContext:
+    return BugCognitiveContext(
+        board_id=board_id,
+        bug_id=UUID_A,
+        card_exists=True,
+        card_type="bug",
+        status="done",
+        expected_behavior="The requested version is rendered.",
+        observed_behavior="A stale version is rendered.",
+        action_plan=action_plan or (
+            "Root cause was stale compiled metadata; rebuild the frontend from "
+            "the authoritative release version."
+        ),
+        conclusions=(
+            ({"text": "Rebuilt and verified the frontend bundle."},)
+            if conclusions is None
+            else conclusions
+        ),
+        validations=({"outcome": "success"},),
+        comments=({"content": "Bundle and source version now agree."},),
+        spec_id="spec-evidence",
+        origin_task_id="task-origin",
+        acceptance_criteria=ACCEPTANCE_CRITERIA,
+        test_scenarios=(_verified_scenario(board_id),),
+        canonical_bug_present=canonical_bug_present,
+        provenance_refs=(f"sql:cards/{UUID_A}",),
+    )
 
 
 def _store(tmp_path) -> CognitiveConsolidationItemStore:
@@ -105,18 +220,20 @@ async def test_ts_dbea2946_mirrors_service_readiness(tmp_path, db_factory):
 
 @pytest.mark.asyncio
 async def test_ts_6cc3403d_missing_bug_node_no_fabrication(tmp_path, db_factory):
-    board = "be-nonode"
+    board, gen = "be-nonode", generate_kg_generation_id()
     await _board(db_factory, board)
-    store = _store(tmp_path)  # NENHUM item de bug materializado
+    store = _store(tmp_path)
+    _seed_bug_pending(store, board, gen)
     svc = CognitiveReadinessService(store)
     async with db_factory() as db:
         resp = await evaluate_bug_cognitive_closure(
             svc, db, board_id=board, bug_id=UUID_A, evidence=GOOD_EVIDENCE,
             requested_action="create_learning",
+            bug_context=_complete_context(board, canonical_bug_present=False),
         )
-    assert resp["status"] == "technical_remediation_required"
-    assert resp["technical_remediation"] == "bug_node_absent"
-    assert resp["graph_commit_required"] is True
+    assert resp["status"] == "canonical_bug_node_absent"
+    assert resp["technical_remediation"] == "reconcile_canonical_bug_node"
+    assert resp["graph_commit_required"] is False
     assert resp["outcome_type"] is None  # nada fabricado
     assert resp["bug_action_label"] is None
 
@@ -188,6 +305,7 @@ async def test_create_learning_ready_to_commit_with_reusable_evidence(tmp_path, 
         resp = await evaluate_bug_cognitive_closure(
             svc, db, board_id=board, bug_id=UUID_A, evidence=GOOD_EVIDENCE,
             requested_action="create_learning",
+            bug_context=_complete_context(board),
         )
     assert resp["status"] == "ready_to_commit"
     assert resp["graph_commit_required"] is True
@@ -195,7 +313,7 @@ async def test_create_learning_ready_to_commit_with_reusable_evidence(tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_create_learning_without_reusable_evidence_is_no_action(tmp_path, db_factory):
+async def test_create_learning_without_reusable_evidence_fails_closed(tmp_path, db_factory):
     board, gen = "be-noreuse", generate_kg_generation_id()
     await _board(db_factory, board)
     store = _store(tmp_path)
@@ -206,9 +324,15 @@ async def test_create_learning_without_reusable_evidence_is_no_action(tmp_path, 
             svc, db, board_id=board, bug_id=UUID_A,
             evidence={"impact": "low"},  # sem root_cause/fix → não reutilizável
             requested_action="create_learning",
+            bug_context=_complete_context(
+                board,
+                action_plan="short",
+                conclusions=(),
+            ),
         )
-    assert resp["status"] == "no_reusable_learning"
-    assert resp["reason_code"] == "no_reusable_learning"
+    assert resp["status"] == "evidence_incomplete"
+    assert resp["reason_code"] is None
+    assert resp["blocking"] is True
     assert resp["graph_commit_required"] is False  # nada fabricado
 
 
@@ -286,11 +410,12 @@ async def test_tsc4f11007_create_learning_with_open_debt_stays_blocked(tmp_path,
         resp = await evaluate_bug_cognitive_closure(
             svc, db, board_id=board, bug_id=UUID_A, evidence=GOOD_EVIDENCE,
             requested_action="create_learning",
+            bug_context=_complete_context(board),
         )
     assert resp["status"] == "blocked"
     assert resp["readiness_effect"] == "blocking_technical"
     assert resp["blocking"] is True
-    assert resp["graph_commit_required"] is True
+    assert resp["graph_commit_required"] is False
     assert resp["outcome_type"] is None          # nada fabricado
     assert resp["reason_code"] is None            # NÃO virou no_action
     assert resp["technical_remediation"] == "resolve_technical_debt_before_commit"

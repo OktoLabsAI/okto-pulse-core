@@ -14,6 +14,7 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
     _apply_graph_node_create,
     add_edge_candidate,
@@ -205,7 +206,7 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         )
 
     assert commit.connectivity["passed"] is True
-    assert _count_api_implements_constraint(
+    assert await _count_api_implements_constraint_async(
         board_id,
         api_title="POST /login",
         tr_title="Login API emits audit events",
@@ -311,6 +312,36 @@ def _read_decision(board_id, source_ref):
     return None
 
 
+async def _count_api_implements_constraint_async(
+    board_id: str,
+    *,
+    api_title: str,
+    tr_title: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_api_implements_constraint(
+            board_id, api_title=api_title, tr_title=tr_title
+        ),
+        task_name="tests.spec_children.count_api_constraint",
+    )
+
+
+async def _seed_decision_async(board_id, *, title, human_curated):
+    return await run_blocking_graph_io(
+        lambda: _seed_decision(
+            board_id, title=title, human_curated=human_curated
+        ),
+        task_name="tests.spec_children.seed_decision",
+    )
+
+
+async def _read_decision_async(board_id, source_ref):
+    return await run_blocking_graph_io(
+        lambda: _read_decision(board_id, source_ref),
+        task_name="tests.spec_children.read_decision",
+    )
+
+
 async def _promote(board_id, agent_id, db_factory, *, source_ref, cand_id):
     # The real promotion is the Layer 1 deterministic worker re-emitting a
     # done spec's child as canonical; model that with a DETERMINISTIC candidate
@@ -358,7 +389,7 @@ async def test_promotion_curated_promotes_maturity_preserves_content(
 ):
     # A human-curated WORKING decision: promotion must lift graph_layer to
     # canonical (maturity metadata) WITHOUT overwriting the curated content.
-    source_ref = _seed_decision(
+    source_ref = await _seed_decision_async(
         board_id, title="CURATED TITLE", human_curated=True
     )
 
@@ -368,7 +399,7 @@ async def test_promotion_curated_promotes_maturity_preserves_content(
     assert commit.nodes_merged == 1  # reused, not duplicated
     assert commit.nodes_added == 0
 
-    node = _read_decision(board_id, source_ref)
+    node = await _read_decision_async(board_id, source_ref)
     assert node is not None
     assert node["count"] == 1  # no duplicate
     assert node["graph_layer"] == "canonical"  # maturity METADATA promoted
@@ -383,7 +414,7 @@ async def test_promotion_non_curated_promotes_and_updates_content(
 ):
     # A title change is identity-bearing under MKG-D: promotion creates a
     # canonical successor and preserves the previous working state as history.
-    source_ref = _seed_decision(
+    source_ref = await _seed_decision_async(
         board_id, title="OLD TITLE", human_curated=False
     )
 
@@ -394,7 +425,7 @@ async def test_promotion_non_curated_promotes_and_updates_content(
     assert commit.nodes_merged == 0
     assert commit.nodes_added == 0
 
-    node = _read_decision(board_id, source_ref)
+    node = await _read_decision_async(board_id, source_ref)
     assert node is not None
     assert node["count"] == 2
     assert node["superseded_count"] == 1

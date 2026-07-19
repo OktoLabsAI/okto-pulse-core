@@ -300,6 +300,7 @@ class TestHistoricalOptIn:
         session_id = f"kgses_{uuid.uuid4().hex[:16]}"
         async with db_factory() as db:
             db.add(Board(id=board_id, name="Purge stale", owner_id="owner"))
+            await db.flush()
             db.add(Spec(
                 id=spec_id,
                 board_id=board_id,
@@ -308,6 +309,7 @@ class TestHistoricalOptIn:
                 archived=False,
                 created_by="test-user",
             ))
+            await db.flush()
             now = datetime.now(timezone.utc)
             db.add(ConsolidationAudit(
                 session_id=session_id,
@@ -321,6 +323,7 @@ class TestHistoricalOptIn:
                 content_hash="stale",
                 undo_status="none",
             ))
+            await db.flush()
             db.add(KuzuNodeRef(
                 session_id=session_id,
                 board_id=board_id,

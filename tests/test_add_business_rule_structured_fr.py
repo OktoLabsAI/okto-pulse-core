@@ -289,6 +289,72 @@ async def test_update_api_contract_tr_text_structured_requirement(db_factory):
 # ====================================================================
 
 
+async def test_add_decision_linked_requirements_schema_accepts_native_list():
+    tool = await mcp_server.mcp.get_tool("okto_pulse_add_decision")
+    schema = tool.parameters["properties"]["linked_requirements"]
+    branches = schema.get("anyOf", [])
+
+    assert any(
+        branch.get("type") == "array"
+        and branch.get("items", {}).get("type") == "string"
+        for branch in branches
+    ), schema
+    assert any(branch.get("type") == "string" for branch in branches), schema
+
+
+async def test_add_decision_linked_requirements_native_list_and_pipe_are_equivalent(
+    db_factory,
+):
+    board_id, spec_id = await _seed(db_factory)
+
+    native = await _call(
+        "okto_pulse_add_decision",
+        board_id,
+        spec_id=spec_id,
+        title="Native requirement links",
+        rationale="Exercise the native MCP wire shape",
+        linked_requirements=["0", "tr_3333cccc"],
+    )
+    pipe = await _call(
+        "okto_pulse_add_decision",
+        board_id,
+        spec_id=spec_id,
+        title="Pipe requirement links",
+        rationale="Exercise the compatibility wire shape",
+        linked_requirements="0|tr_3333cccc",
+    )
+
+    assert native.get("success") is True, native
+    assert pipe.get("success") is True, pipe
+    assert native["decision"]["linked_requirements"] == [
+        "fr_1111aaaa",
+        "tr_3333cccc",
+    ]
+    assert pipe["decision"]["linked_requirements"] == native["decision"][
+        "linked_requirements"
+    ]
+
+
+async def test_add_decision_linked_requirements_rejects_ambiguous_comma_input(
+    db_factory,
+):
+    board_id, spec_id = await _seed(db_factory)
+
+    payload = await _call(
+        "okto_pulse_add_decision",
+        board_id,
+        spec_id=spec_id,
+        title="Ambiguous links",
+        rationale="Must fail before persistence",
+        linked_requirements="0,tr_3333cccc",
+    )
+
+    assert payload.get("error") == "invalid_multi_value_input", payload
+    assert "comma-separated input is rejected" in payload.get("detail", ""), payload
+    spec = await _read_spec(spec_id)
+    assert not spec.decisions
+
+
 async def test_add_decision_tr_id_structured_requirement(db_factory):
     board_id, spec_id = await _seed(db_factory)
     payload = await _call(

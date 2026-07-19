@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import logging
 import secrets
-import threading
-from okto_pulse.core.runtime_context import runtime_lock, runtime_state
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
+
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     REBUILD_AUDIT_GLOBAL_BOARD_ID,
@@ -257,20 +258,26 @@ class RebuildConfirmationStore:
             raise ValueError("preflight_hash is required")
         if not manifest_ref:
             raise ValueError("manifest_ref is required")
-        confirmation_id = f"conf_{secrets.token_urlsafe(24)}"
         issued_at = datetime.now(timezone.utc)
         expires_at = issued_at + timedelta(seconds=self.ttl_seconds)
-        token = ConfirmationToken(
-            confirmation_id=confirmation_id,
-            board_id=board_id,
-            actor_id=actor_id,
-            operation=operation,
-            preflight_hash=preflight_hash,
-            manifest_ref=manifest_ref,
-            issued_at=issued_at.isoformat(),
-            expires_at=expires_at.isoformat(),
-        )
-        self._write(token)
+        for _attempt in range(5):
+            token = ConfirmationToken(
+                confirmation_id=f"conf_{secrets.token_urlsafe(24)}",
+                board_id=board_id,
+                actor_id=actor_id,
+                operation=operation,
+                preflight_hash=preflight_hash,
+                manifest_ref=manifest_ref,
+                issued_at=issued_at.isoformat(),
+                expires_at=expires_at.isoformat(),
+            )
+            try:
+                self._write(token)
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise RuntimeError("confirmation_id_collision_budget_exhausted")
         _bump_conf(
             board_id=board_id,
             operation=operation,
@@ -350,10 +357,18 @@ class RebuildConfirmationStore:
         expected_operation: str,
         expected_preflight_hash: str,
         expected_manifest_ref: str,
+        consumption_receipt_key: RebuildAuditKey | None = None,
+        consumption_receipt_payload: Mapping[str, Any] | None = None,
     ) -> ConfirmationResult:
         """Atomically consume a token if it matches every expected
         scope field. Returns ``ConfirmationResult`` — caller MUST
         refuse to mutate unless ``outcome == 'consumed'``."""
+        if (consumption_receipt_key is None) != (
+            consumption_receipt_payload is None
+        ):
+            raise ValueError(
+                "consumption receipt key and payload must be supplied together"
+            )
         actor_type = _classify_actor(expected_actor_id)
         # Read first to evaluate scope. Then attempt atomic unlink.
         try:
@@ -489,15 +504,31 @@ class RebuildConfirmationStore:
                 token=None,
             )
 
-        # Atomic consume: unlink before returning. Second attempt on
-        # the same id sees FileNotFoundError and lands in MISSING /
-        # replayed.
-        if not self._delete(confirmation_id):
+        # The recovery path creates a durable authorization receipt before
+        # deleting the token.  Generic rebuild callers retain the historical
+        # unlink-only behavior.  Both operations are edition-serialized.
+        atomic_outcome = "consumed"
+        if consumption_receipt_key is not None:
+            atomic_outcome = self.artifact_store.consume_json_with_receipt(
+                source_key=self._key(confirmation_id),
+                expected_source=data,
+                receipt_key=consumption_receipt_key,
+                receipt_payload=consumption_receipt_payload or {},
+            )
+        elif not self._delete(confirmation_id):
+            atomic_outcome = "source_missing"
+        if atomic_outcome != "consumed":
+            replay_reason = {
+                "receipt_exists": "authorization_already_recorded",
+                "source_missing": "already_consumed",
+                "source_mismatch": "token_changed_during_consume",
+                "receipt_conflict": "authorization_receipt_conflict",
+            }.get(atomic_outcome, "already_consumed")
             _bump_conf(
                 board_id=expected_board_id,
                 operation=expected_operation,
                 outcome=ConfirmationOutcome.REPLAYED.value,
-                reason="already_consumed",
+                reason=replay_reason,
                 actor_type=actor_type,
             )
             self._record_consumption_audit(
@@ -506,12 +537,12 @@ class RebuildConfirmationStore:
                 expected_actor_id=expected_actor_id,
                 expected_operation=expected_operation,
                 outcome=ConfirmationOutcome.REPLAYED.value,
-                reason="already_consumed",
+                reason=replay_reason,
                 token=token,
             )
             return ConfirmationResult(
                 outcome=ConfirmationOutcome.REPLAYED.value,
-                reason="already_consumed",
+                reason=replay_reason,
                 token=None,
             )
 
@@ -560,9 +591,18 @@ class RebuildConfirmationStore:
         return self.artifact_store.delete_json(self._key(confirmation_id))
 
     def _write(self, token: ConfirmationToken) -> None:
-        self.artifact_store.write_json_atomic(
-            self._key(token.confirmation_id), token.to_dict()
-        )
+        collided = False
+
+        def create_only(current: dict[str, Any] | None) -> dict[str, Any]:
+            nonlocal collided
+            if current is not None:
+                collided = True
+                return dict(current)
+            return token.to_dict()
+
+        self.artifact_store.replace_json(self._key(token.confirmation_id), create_only)
+        if collided:
+            raise FileExistsError(token.confirmation_id)
 
 
 __all__ = [

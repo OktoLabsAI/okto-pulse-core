@@ -87,6 +87,30 @@ async def _spec_exists(spec_id: str) -> bool:
         return await SpecService(db).get_spec(spec_id) is not None
 
 
+async def _spec_guard_state(spec_id: str) -> dict:
+    from sqlalchemy import func, select
+    from sqlalchemy_test_models import ActivityLog, Spec, SpecHistory
+
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, spec_id)
+        return {
+            "exists": spec is not None,
+            "title": spec.title if spec else None,
+            "status": spec.status.value if spec else None,
+            "version": spec.version if spec else None,
+            "history": await db.scalar(
+                select(func.count())
+                .select_from(SpecHistory)
+                .where(SpecHistory.spec_id == spec_id)
+            ),
+            "activity": await db.scalar(
+                select(func.count())
+                .select_from(ActivityLog)
+                .where(ActivityLog.board_id == (spec.board_id if spec else ""))
+            ),
+        }
+
+
 # --- create / list / get ----------------------------------------------------
 
 
@@ -216,6 +240,37 @@ async def test_list_spec_history_200() -> None:
     resp = _client().get(f"{PREFIX}/specs/{spec_id}/history")
     assert resp.status_code == 200, resp.text
     assert isinstance(resp.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_spec_crud_foreign_board_is_indistinguishable_and_read_only() -> None:
+    board_id = await _seed_board(owner=OTHER)
+    spec_id = await _seed_spec(board_id, owner=OTHER)
+    before = await _spec_guard_state(spec_id)
+    client = _client(USER)
+
+    get_response = client.get(f"{PREFIX}/specs/{spec_id}")
+    update_response = client.patch(
+        f"{PREFIX}/specs/{spec_id}", json={"title": "forbidden"}
+    )
+    move_response = client.post(
+        f"{PREFIX}/specs/{spec_id}/move", json={"status": "review"}
+    )
+    history_response = client.get(f"{PREFIX}/specs/{spec_id}/history")
+    delete_response = client.delete(f"{PREFIX}/specs/{spec_id}")
+
+    assert all(
+        response.status_code == 404
+        for response in (
+            get_response,
+            update_response,
+            move_response,
+            delete_response,
+        )
+    )
+    assert history_response.status_code == 404
+    assert history_response.json() == {"detail": "Spec not found"}
+    assert await _spec_guard_state(spec_id) == before
 
 
 # --- strangler + Clean Core proofs ------------------------------------------

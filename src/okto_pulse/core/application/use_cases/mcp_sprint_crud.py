@@ -7,9 +7,9 @@ the permission gate, the S-LANE-01 fail-closed DTO validation
 (``_canonical_sprint_validation_error``) and the SprintOperationError-before-ValueError
 envelopes; ALL aggregation (incl. cross-family) lives in these use cases (Clean Core).
 
-Sprint family traits (from the parallel inventory wf_cd4ce2d2): board-scope is almost
-entirely ABSENT (only get_sprint_context board-scopes the sprint, not the inner spec).
-Most tools REUSE the existing REST sprint use cases (sprints_crud); only create_sprint,
+Sprint family traits (from the parallel inventory wf_cd4ce2d2): every entity access
+must be scoped to the board carried by the MCP actor, with cross-board IDs rendered as
+not found. Most tools REUSE the existing REST sprint use cases (sprints_crud); only create_sprint,
 get_sprint_context, answer/delete_sprint_question (and the delete_sprint_evaluation
 boundary) need MCP-specific VARIANTS here. ``SprintOperationError`` IS a ``ValueError``
 subclass — adapters that branch on it must catch it FIRST.
@@ -60,10 +60,18 @@ class McpCreateSprintUseCase:
     async def execute(
         self, command: McpCreateSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpCreateSprintResult:
+        if actor.board_id != command.board_id:
+            return McpCreateSprintResult(None)
+
+        spec = await uow.services.specs.get_spec(command.data.spec_id)
+        if not spec or spec.board_id != command.board_id:
+            return McpCreateSprintResult(None)
 
         sprint = await uow.services.sprints.create_sprint(
             command.board_id, actor.actor_id, command.data, skip_ownership_check=True
         )
+        if not sprint:
+            return McpCreateSprintResult(None)
         await commit(uow)
         return McpCreateSprintResult(sprint)
 
@@ -89,19 +97,21 @@ class McpGetSprintResult:
 class McpGetSprintUseCase:
     """Fetch a sprint + build the FULL presentation dict (cards/qa_items lazy) HERE in
     the application layer (Clean Core: the MCP adapter must stay thin and expose no
-    composed queries, no direct service). A ``None`` result -> ``not_found`` -> the
-    adapter's "Sprint not found". No board-scope, auth-only (legacy parity)."""
+    composed queries, no direct service). A missing or cross-board result becomes
+    ``not_found`` so the adapter emits the same "Sprint not found" envelope."""
 
     async def execute(
         self, command: McpGetSprintCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetSprintResult:
 
         sprint = await uow.services.sprints.get_sprint(command.sprint_id)
-        if not sprint:
+        if not sprint or sprint.board_id != actor.board_id:
             return McpGetSprintResult(not_found=True)
         result = {
             "id": sprint.id, "spec_id": sprint.spec_id, "board_id": sprint.board_id,
             "title": sprint.title, "description": sprint.description,
+            "objective": getattr(sprint, "objective", None),
+            "expected_outcome": getattr(sprint, "expected_outcome", None),
             "status": sprint.status.value, "spec_version": sprint.spec_version,
             "lane_type": sprint.lane_type.value if sprint.lane_type else "normal",
             "origin_sprint_id": sprint.origin_sprint_id,
@@ -126,6 +136,14 @@ class McpGetSprintUseCase:
             ],
             "created_by": sprint.created_by,
             "created_at": sprint.created_at.isoformat() if sprint.created_at else None,
+            "updated_at": sprint.updated_at.isoformat() if sprint.updated_at else None,
+            "cancellation_reason": getattr(sprint, "cancellation_reason", None),
+            "cancelled_by": getattr(sprint, "cancelled_by", None),
+            "cancelled_at": (
+                sprint.cancelled_at.isoformat()
+                if getattr(sprint, "cancelled_at", None)
+                else None
+            ),
         }
         return McpGetSprintResult(result)
 
@@ -154,9 +172,9 @@ class McpGetSprintContextUseCase:
     presentation aggregation is built HERE in the application layer (Codex: a
     cross-family aggregation must NOT leak into the MCP adapter — unlike the
     get_spec_context precedent, this block keeps the SpecService read in the use case):
-    the sprint dict, the CROSS-FAMILY parent-spec read (``SpecService.get_spec``,
-    intentionally NOT board-scoped — gated only on ``if spec``) and the scoped-item
-    filtering. A missing OR cross-board sprint is ``EntityNotFoundError`` -> the
+    the sprint dict, the board-consistent CROSS-FAMILY parent-spec read
+    (``SpecService.get_spec``) and the scoped-item filtering. A missing, cross-board,
+    or parent-inconsistent sprint is ``EntityNotFoundError`` -> the
     adapter's ``"Sprint not found"``. The adapter only parses ``include_spec`` and
     ``json.dumps(result, default=str)``. The original two no-op read commits are
     dropped (read-no-commit)."""
@@ -166,8 +184,29 @@ class McpGetSprintContextUseCase:
     ) -> McpGetSprintContextResult:
 
         sprint = await uow.services.sprints.get_sprint(command.sprint_id)
-        if not sprint or sprint.board_id != command.board_id:
+        if (
+            not sprint
+            or actor.board_id != command.board_id
+            or sprint.board_id != actor.board_id
+        ):
             raise EntityNotFoundError("sprint", command.sprint_id)
+        board = await uow.services.boards.get_board(command.board_id)
+        if not board:
+            raise EntityNotFoundError("sprint", command.sprint_id)
+        spec = await uow.services.specs.get_spec(sprint.spec_id)
+        if not spec or spec.board_id != sprint.board_id:
+            raise EntityNotFoundError("sprint", command.sprint_id)
+
+        from okto_pulse.core.services.reviewer_separation import (
+            evaluate_reviewer_separation,
+        )
+
+        reviewer_separation = evaluate_reviewer_separation(
+            board=board,
+            reviewer_id=actor.actor_id,
+            sprint=sprint,
+            cards=sprint.cards,
+        )
 
         result: dict = {
             "id": sprint.id,
@@ -210,70 +249,60 @@ class McpGetSprintContextUseCase:
             ],
             "created_by": sprint.created_by,
             "created_at": sprint.created_at.isoformat() if sprint.created_at else None,
+            "updated_at": sprint.updated_at.isoformat() if sprint.updated_at else None,
+            "cancellation_reason": getattr(sprint, "cancellation_reason", None),
+            "cancelled_by": getattr(sprint, "cancelled_by", None),
+            "cancelled_at": (
+                sprint.cancelled_at.isoformat()
+                if getattr(sprint, "cancelled_at", None)
+                else None
+            ),
+            "reviewer_separation": reviewer_separation.to_dict(),
         }
 
-        if command.include_spec and sprint.spec_id:
-            spec = await uow.services.specs.get_spec(sprint.spec_id)
-            if spec:
-                sprint_card_ids = {c.id for c in sprint.cards}
-                spec_ts = spec.test_scenarios or []
-                spec_brs = spec.business_rules or []
-                spec_trs = spec.technical_requirements or []
-                spec_contracts = spec.api_contracts or []
-                spec_irs = getattr(spec, "integration_requirements", None) or []
-                spec_ors = getattr(spec, "observability_requirements", None) or []
+        if command.include_spec:
+            from okto_pulse.core.services.sprint_scope import SprintScopeResolver
 
-                scoped_ts_ids = set(sprint.test_scenario_ids or [])
-                scoped_ts = [
-                    ts for ts in spec_ts
-                    if ts.get("id") in scoped_ts_ids
-                    or any(tid in sprint_card_ids for tid in (ts.get("linked_task_ids") or []))
-                ]
-                scoped_brs_ids = set(sprint.business_rule_ids or [])
-                scoped_brs = [
-                    br for br in spec_brs
-                    if br.get("id") in scoped_brs_ids
-                    or any(tid in sprint_card_ids for tid in (br.get("linked_task_ids") or []))
-                ]
-                scoped_trs = [
-                    tr for tr in spec_trs
-                    if isinstance(tr, dict)
-                    and any(tid in sprint_card_ids for tid in (tr.get("linked_task_ids") or []))
-                ]
-                scoped_contracts = [
-                    c for c in spec_contracts
-                    if any(tid in sprint_card_ids for tid in (c.get("linked_task_ids") or []))
-                ]
-                scoped_irs = [
-                    ir for ir in spec_irs
-                    if any(tid in sprint_card_ids for tid in (ir.get("linked_task_ids") or []))
-                ]
-                scoped_ors = [
-                    req for req in spec_ors
-                    if any(tid in sprint_card_ids for tid in (req.get("linked_task_ids") or []))
-                ]
+            spec_ts = spec.test_scenarios or []
+            spec_brs = spec.business_rules or []
+            spec_trs = spec.technical_requirements or []
+            spec_contracts = spec.api_contracts or []
+            spec_irs = getattr(spec, "integration_requirements", None) or []
+            spec_ors = getattr(spec, "observability_requirements", None) or []
+            scope = SprintScopeResolver.resolve(
+                sprint=sprint,
+                spec=spec,
+                cards=sprint.cards,
+            )
 
-                result["spec"] = {
-                    "id": spec.id,
-                    "title": spec.title,
-                    "status": spec.status.value,
-                    "functional_requirements": spec.functional_requirements or [],
-                    "technical_requirements": spec_trs,
-                    "acceptance_criteria": spec.acceptance_criteria or [],
-                    "test_scenarios": spec_ts,
-                    "business_rules": spec_brs,
-                    "api_contracts": spec_contracts,
-                    "integration_requirements": spec_irs,
-                    "observability_requirements": spec_ors,
-                }
-                result["scoped"] = {
-                    "test_scenarios": scoped_ts,
-                    "business_rules": scoped_brs,
-                    "technical_requirements": scoped_trs,
-                    "api_contracts": scoped_contracts,
-                    "integration_requirements": scoped_irs,
-                    "observability_requirements": scoped_ors,
-                }
+            result["spec"] = {
+                "id": spec.id,
+                "title": spec.title,
+                "status": spec.status.value,
+                "functional_requirements": spec.functional_requirements or [],
+                "technical_requirements": spec_trs,
+                "acceptance_criteria": spec.acceptance_criteria or [],
+                "test_scenarios": spec_ts,
+                "business_rules": spec_brs,
+                "api_contracts": spec_contracts,
+                "integration_requirements": spec_irs,
+                "observability_requirements": spec_ors,
+            }
+            result["scoped"] = {
+                name: list(scope.items.get(name, ()))
+                for name in (
+                    "functional_requirements",
+                    "acceptance_criteria",
+                    "test_scenarios",
+                    "business_rules",
+                    "technical_requirements",
+                    "api_contracts",
+                    "integration_requirements",
+                    "observability_requirements",
+                    "decisions",
+                )
+            }
+            result["scope_provenance"] = scope.to_dict()["provenance"]
 
         return McpGetSprintContextResult(result)
 
@@ -299,15 +328,15 @@ class McpListSprintEvaluationsResult:
 class McpListSprintEvaluationsUseCase:
     """List + aggregate a sprint's evaluations (read, no commit). The aggregation
     (total / non_stale / approvals / avg_score over the ``Sprint.evaluations`` JSON
-    column) is built HERE (Clean Core: no composed read in the adapter). A ``None``
-    sprint -> ``not_found`` -> "Sprint not found". No board-scope, auth-only."""
+    column) is built HERE (Clean Core: no composed read in the adapter). A missing or
+    cross-board sprint -> ``not_found`` -> "Sprint not found"."""
 
     async def execute(
         self, command: McpListSprintEvaluationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpListSprintEvaluationsResult:
 
         sprint = await uow.services.sprints.get_sprint(command.sprint_id)
-        if not sprint:
+        if not sprint or sprint.board_id != actor.board_id:
             return McpListSprintEvaluationsResult(not_found=True)
         evaluations = sprint.evaluations or []
         non_stale = [e for e in evaluations if not e.get("stale")]
@@ -355,14 +384,14 @@ class McpGetSprintEvaluationUseCase:
     HERE (Clean Core: no composed read in the adapter). Two-level not-found: missing
     sprint -> ``sprint_not_found`` -> "Sprint not found"; missing eval ->
     ``eval_not_found`` -> "Evaluation '<id>' not found". On hit, the raw eval dict is
-    returned UNWRAPPED. No board-scope, auth-only."""
+    returned UNWRAPPED. Cross-board sprint IDs use the same sprint-not-found result."""
 
     async def execute(
         self, command: McpGetSprintEvaluationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetSprintEvaluationResult:
 
         sprint = await uow.services.sprints.get_sprint(command.sprint_id)
-        if not sprint:
+        if not sprint or sprint.board_id != actor.board_id:
             return McpGetSprintEvaluationResult(sprint_not_found=True)
         for e in sprint.evaluations or []:
             if e.get("id") == command.evaluation_id:
@@ -391,12 +420,16 @@ class McpDeleteSprintEvaluationUseCase:
     ``SprintService.delete_evaluation`` — the relational ratchet keeps ORM mutation in
     the service). This use case ONLY orchestrates the UoW: it commits iff the service
     reports ``"deleted"`` and forwards the status for the adapter's envelope
-    (``sprint_not_found`` / ``eval_not_found`` / ``not_owner`` / ``deleted``). No log,
-    no board-scope (legacy parity)."""
+    (``sprint_not_found`` / ``eval_not_found`` / ``not_owner`` / ``deleted``). It adds
+    no log. Cross-board IDs are rejected before the JSON mutation."""
 
     async def execute(
         self, command: McpDeleteSprintEvaluationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteSprintEvaluationResult:
+
+        sprint = await uow.services.sprints.get_sprint(command.sprint_id)
+        if not sprint or sprint.board_id != actor.board_id:
+            return McpDeleteSprintEvaluationResult("sprint_not_found")
 
         status = await uow.services.sprints.delete_evaluation(
             command.sprint_id, actor.actor_id, command.evaluation_id
@@ -410,9 +443,11 @@ class McpDeleteSprintEvaluationUseCase:
 
 
 class McpAnswerSprintQuestionCommand:
-    __slots__ = ("qa_id", "answer")
+    __slots__ = ("board_id", "sprint_id", "qa_id", "answer")
 
-    def __init__(self, qa_id: str, answer: str) -> None:
+    def __init__(self, board_id: str, sprint_id: str, qa_id: str, answer: str) -> None:
+        self.board_id = board_id
+        self.sprint_id = sprint_id
         self.qa_id = qa_id
         self.answer = answer
 
@@ -431,10 +466,10 @@ class McpAnswerSprintQuestionResult:
 class McpAnswerSprintQuestionUseCase:
     """Answer a sprint Q&A item. UNLIKE the refinement/ideation answer use cases: NO
     permission gate, NO activity log, and a PLAIN ``answer`` string (no choice payload).
-    The commit is UNCONDITIONAL — the legacy commits AFTER the try-block and BEFORE the
-    not-found check, so this commits even when ``qa`` is ``None``. A
-    ``QASelfAnsweringNotAllowedError`` is caught + COMMITTED + surfaced. A ``None``
-    result -> ``qa_not_found`` -> "Q&A item not found" (NOT "...or invalid selection")."""
+    Missing, parent-mismatched, and cross-board IDs return ``qa_not_found`` before any
+    write/commit. After that preflight, the legacy answer call keeps its unconditional
+    commit behavior. A ``QASelfAnsweringNotAllowedError`` is caught + COMMITTED +
+    surfaced."""
 
     async def execute(
         self, command: McpAnswerSprintQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
@@ -442,6 +477,17 @@ class McpAnswerSprintQuestionUseCase:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
         service = uow.services.sprint_qa
+        qa = await service.get_question(command.qa_id)
+        if not qa or qa.sprint_id != command.sprint_id:
+            return McpAnswerSprintQuestionResult(qa_not_found=True)
+        sprint = await uow.services.sprints.get_sprint(qa.sprint_id)
+        if (
+            not sprint
+            or actor.board_id != command.board_id
+            or sprint.board_id != actor.board_id
+        ):
+            return McpAnswerSprintQuestionResult(qa_not_found=True)
+
         try:
             qa = await service.answer_question(
                 command.qa_id, actor.actor_id, command.answer,
@@ -483,16 +529,27 @@ class McpDeleteSprintQuestionUseCase:
         self, command: McpDeleteSprintQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteSprintQuestionResult:
 
+        qa = await uow.services.sprint_qa.get_question(command.qa_id)
+        if not qa or qa.sprint_id != command.sprint_id:
+            return McpDeleteSprintQuestionResult(qa_not_found=True)
+        sprint = await uow.services.sprints.get_sprint(qa.sprint_id)
+        if (
+            not sprint
+            or actor.board_id != command.board_id
+            or sprint.board_id != actor.board_id
+        ):
+            return McpDeleteSprintQuestionResult(qa_not_found=True)
+
         deleted = await uow.services.sprint_qa.delete_question(command.qa_id)
         if not deleted:
             return McpDeleteSprintQuestionResult(qa_not_found=True)
         await uow.services.boards._log_activity(
-            board_id=command.board_id,
+            board_id=sprint.board_id,
             action="sprint_question_deleted",
             actor_type="agent",
             actor_id=actor.actor_id,
             actor_name=actor.actor_name,
-            details={"sprint_id": command.sprint_id, "qa_id": command.qa_id},
+            details={"sprint_id": sprint.id, "qa_id": command.qa_id},
         )
         await commit(uow)
         return McpDeleteSprintQuestionResult()

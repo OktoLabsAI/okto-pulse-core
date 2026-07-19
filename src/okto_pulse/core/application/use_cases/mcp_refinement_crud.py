@@ -9,8 +9,8 @@ coercion, the board-scoping envelopes, and the MCP aggregation projections
 the get_spec_context precedent).
 
 Refinement mirrors the ideation family (CRUD + reads + knowledge + Q&A) WITHOUT the
-evaluate/stories tools. Board-scope is ASYMMETRIC: present on get/get_context/move
-(+ the read/knowledge by-id paths), absent on create/update/delete/snapshot/history.
+evaluate/stories tools. Every by-id path resolves the canonical refinement before
+reading or writing and requires actor, command, and parent to share one board.
 """
 
 from __future__ import annotations
@@ -26,6 +26,15 @@ from okto_pulse.core.application.use_cases.base import (
 )
 
 
+def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
+    """Require the MCP actor, command, and canonical parent to share a board."""
+    return bool(
+        record
+        and actor.board_id == board_id
+        and record.board_id == board_id
+    )
+
+
 # --- create (skip_ownership; ValueError propagates) --------------------------
 
 
@@ -38,22 +47,34 @@ class McpCreateRefinementCommand:
 
 
 class McpCreateRefinementResult:
-    __slots__ = ("refinement",)
+    __slots__ = ("refinement", "resource_propagation")
 
-    def __init__(self, refinement: Any) -> None:
+    def __init__(self, refinement: Any, resource_propagation: Any = None) -> None:
         self.refinement = refinement
+        self.resource_propagation = (
+            resource_propagation
+            if resource_propagation is not None
+            else getattr(refinement, "resource_propagation", None)
+        )
 
 
 class McpCreateRefinementUseCase:
-    """Create a refinement for a DONE ideation (``skip_ownership_check=True``), single
-    commit. ``ValueError`` (ideation not done / artifact propagation) propagates for
-    the adapter's ``{"error": str}``; a ``None`` result -> the adapter's "Failed to
-    create refinement (ideation not found)". The adapter keeps the RefinementCreate
-    build (coercions) and the envelope."""
+    """Create a refinement for a board-scoped DONE ideation, with one commit.
+
+    The parent is resolved before the ``skip_ownership_check=True`` write and must
+    belong to the board already authorized by the MCP adapter. Missing/cross-board
+    parents return ``None`` for the adapter's legacy "Failed to create refinement
+    (ideation not found)" envelope. ``ValueError`` (ideation not done / artifact
+    propagation) still propagates for the adapter's ``{"error": str}`` envelope.
+    """
 
     async def execute(
         self, command: McpCreateRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpCreateRefinementResult:
+        ideation = await uow.services.ideations.get_ideation(command.ideation_id)
+        if not ideation or ideation.board_id != actor.board_id:
+            return McpCreateRefinementResult(None)
+
         refinement = await uow.services.refinements.create_refinement(
             command.ideation_id,
             actor.actor_id,
@@ -94,19 +115,20 @@ class McpGetRefinementUseCase:
         refinement = await uow.services.refinements.get_refinement(
             command.refinement_id
         )
-        if not refinement or refinement.board_id != command.board_id:
+        if not _in_board_scope(refinement, command.board_id, actor):
             raise EntityNotFoundError("refinement", command.refinement_id)
         return McpGetRefinementResult(refinement)
 
 
-# --- update (no board-scope, like update_ideation) ---------------------------
+# --- update -----------------------------------------------------------------
 
 
 class McpUpdateRefinementCommand:
-    __slots__ = ("refinement_id", "payload")
+    __slots__ = ("refinement_id", "board_id", "payload")
 
-    def __init__(self, refinement_id: str, payload: Any) -> None:
+    def __init__(self, refinement_id: str, board_id: str, payload: Any) -> None:
         self.refinement_id = refinement_id
+        self.board_id = board_id
         self.payload = payload
 
 
@@ -118,15 +140,17 @@ class McpUpdateRefinementResult:
 
 
 class McpUpdateRefinementUseCase:
-    """Update a refinement (write). A ``None`` result (missing) is
-    ``EntityNotFoundError`` -> "Refinement not found". NO board-scope (matches the
-    legacy update_refinement). The adapter builds the RefinementUpdate (non-empty
-    fields + "No fields to update") and the envelope."""
+    """Update a board-scoped refinement after a canonical-parent preflight."""
 
     async def execute(
         self, command: McpUpdateRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateRefinementResult:
-        refinement = await uow.services.refinements.update_refinement(
+        service = uow.services.refinements
+        existing = await service.get_refinement(command.refinement_id)
+        if not _in_board_scope(existing, command.board_id, actor):
+            raise EntityNotFoundError("refinement", command.refinement_id)
+
+        refinement = await service.update_refinement(
             command.refinement_id, actor.actor_id, command.payload
         )
         if not refinement:
@@ -167,7 +191,7 @@ class McpMoveRefinementUseCase:
     ) -> McpMoveRefinementResult:
         service = uow.services.refinements
         existing = await service.get_refinement(command.refinement_id)
-        if not existing or existing.board_id != command.board_id:
+        if not _in_board_scope(existing, command.board_id, actor):
             raise EntityNotFoundError("refinement", command.refinement_id)
         old_status = existing.status.value
         refinement = await service.move_refinement(
@@ -182,14 +206,15 @@ class McpMoveRefinementUseCase:
         return McpMoveRefinementResult(refinement, old_status)
 
 
-# --- delete (cascade Q&A; commit always for legacy parity) -------------------
+# --- delete (cascade Q&A) ---------------------------------------------------
 
 
 class McpDeleteRefinementCommand:
-    __slots__ = ("refinement_id",)
+    __slots__ = ("refinement_id", "board_id")
 
-    def __init__(self, refinement_id: str) -> None:
+    def __init__(self, refinement_id: str, board_id: str) -> None:
         self.refinement_id = refinement_id
+        self.board_id = board_id
 
 
 class McpDeleteRefinementResult:
@@ -200,28 +225,33 @@ class McpDeleteRefinementResult:
 
 
 class McpDeleteRefinementUseCase:
-    """Delete a refinement and CASCADE its Q&A. Commits regardless (legacy parity —
-    a missing refinement is a no-op commit); the adapter maps ``deleted=False`` ->
-    "Refinement not found"."""
+    """Delete a board-scoped refinement and CASCADE its Q&A."""
 
     async def execute(
         self, command: McpDeleteRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteRefinementResult:
-        deleted = await uow.services.refinements.delete_refinement(
+        service = uow.services.refinements
+        existing = await service.get_refinement(command.refinement_id)
+        if not _in_board_scope(existing, command.board_id, actor):
+            return McpDeleteRefinementResult(False)
+
+        deleted = await service.delete_refinement(
             command.refinement_id, actor.actor_id
         )
-        await commit(uow)
+        if deleted:
+            await commit(uow)
         return McpDeleteRefinementResult(deleted)
 
 
-# --- snapshot / history (reads, no board-scope, no commit) -------------------
+# --- snapshot / history -----------------------------------------------------
 
 
 class McpGetRefinementSnapshotCommand:
-    __slots__ = ("refinement_id", "version")
+    __slots__ = ("refinement_id", "board_id", "version")
 
-    def __init__(self, refinement_id: str, version: int) -> None:
+    def __init__(self, refinement_id: str, board_id: str, version: int) -> None:
         self.refinement_id = refinement_id
+        self.board_id = board_id
         self.version = version
 
 
@@ -233,25 +263,28 @@ class McpGetRefinementSnapshotResult:
 
 
 class McpGetRefinementSnapshotUseCase:
-    """Fetch the immutable refinement snapshot at a version (read, no commit). A
-    ``None`` result maps to the adapter's ``"Snapshot v<version> not found"``. No
-    board-scope (legacy parity). The adapter coerces ``version`` to int + builds the
-    envelope."""
+    """Fetch an immutable snapshot after validating its refinement parent."""
 
     async def execute(
         self, command: McpGetRefinementSnapshotCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetRefinementSnapshotResult:
-        snapshot = await uow.services.refinements.get_snapshot(
+        service = uow.services.refinements
+        refinement = await service.get_refinement(command.refinement_id)
+        if not _in_board_scope(refinement, command.board_id, actor):
+            return McpGetRefinementSnapshotResult(None)
+
+        snapshot = await service.get_snapshot(
             command.refinement_id, command.version
         )
         return McpGetRefinementSnapshotResult(snapshot)
 
 
 class McpGetRefinementHistoryCommand:
-    __slots__ = ("refinement_id", "limit")
+    __slots__ = ("refinement_id", "board_id", "limit")
 
-    def __init__(self, refinement_id: str, limit: int) -> None:
+    def __init__(self, refinement_id: str, board_id: str, limit: int) -> None:
         self.refinement_id = refinement_id
+        self.board_id = board_id
         self.limit = limit
 
 
@@ -263,13 +296,17 @@ class McpGetRefinementHistoryResult:
 
 
 class McpGetRefinementHistoryUseCase:
-    """List a refinement's change history (read, no commit). No board-scope (legacy
-    parity). The adapter coerces ``limit`` to int + builds the history envelope."""
+    """List a refinement's history after validating its canonical parent."""
 
     async def execute(
         self, command: McpGetRefinementHistoryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetRefinementHistoryResult:
-        entries = await uow.services.refinements.list_history(
+        service = uow.services.refinements
+        refinement = await service.get_refinement(command.refinement_id)
+        if not _in_board_scope(refinement, command.board_id, actor):
+            raise EntityNotFoundError("refinement", command.refinement_id)
+
+        entries = await service.list_history(
             command.refinement_id, command.limit
         )
         return McpGetRefinementHistoryResult(entries)
@@ -282,10 +319,11 @@ class McpGetRefinementHistoryUseCase:
 
 
 class McpGetRefinementKnowledgeCommand:
-    __slots__ = ("refinement_id", "knowledge_id")
+    __slots__ = ("refinement_id", "board_id", "knowledge_id")
 
-    def __init__(self, refinement_id: str, knowledge_id: str) -> None:
+    def __init__(self, refinement_id: str, board_id: str, knowledge_id: str) -> None:
         self.refinement_id = refinement_id
+        self.board_id = board_id
         self.knowledge_id = knowledge_id
 
 
@@ -304,7 +342,11 @@ class McpGetRefinementKnowledgeUseCase:
     async def execute(
         self, command: McpGetRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpGetRefinementKnowledgeResult:
-
+        refinement = await uow.services.refinements.get_refinement(
+            command.refinement_id
+        )
+        if not _in_board_scope(refinement, command.board_id, actor):
+            raise EntityNotFoundError("refinement", command.refinement_id)
         kb = await uow.services.refinement_knowledge.get_knowledge(
             command.knowledge_id
         )
@@ -314,10 +356,11 @@ class McpGetRefinementKnowledgeUseCase:
 
 
 class McpAddRefinementKnowledgeCommand:
-    __slots__ = ("refinement_id", "kb_data")
+    __slots__ = ("refinement_id", "board_id", "kb_data")
 
-    def __init__(self, refinement_id: str, kb_data: Any) -> None:
+    def __init__(self, refinement_id: str, board_id: str, kb_data: Any) -> None:
         self.refinement_id = refinement_id
+        self.board_id = board_id
         self.kb_data = kb_data
 
 
@@ -337,7 +380,11 @@ class McpAddRefinementKnowledgeUseCase:
     async def execute(
         self, command: McpAddRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAddRefinementKnowledgeResult:
-
+        refinement = await uow.services.refinements.get_refinement(
+            command.refinement_id
+        )
+        if not _in_board_scope(refinement, command.board_id, actor):
+            return McpAddRefinementKnowledgeResult(None)
         kb = await uow.services.refinement_knowledge.create_knowledge(
             command.refinement_id, actor.actor_id, command.kb_data
         )
@@ -346,10 +393,11 @@ class McpAddRefinementKnowledgeUseCase:
 
 
 class McpDeleteRefinementKnowledgeCommand:
-    __slots__ = ("refinement_id", "knowledge_id")
+    __slots__ = ("refinement_id", "board_id", "knowledge_id")
 
-    def __init__(self, refinement_id: str, knowledge_id: str) -> None:
+    def __init__(self, refinement_id: str, board_id: str, knowledge_id: str) -> None:
         self.refinement_id = refinement_id
+        self.board_id = board_id
         self.knowledge_id = knowledge_id
 
 
@@ -367,7 +415,11 @@ class McpDeleteRefinementKnowledgeUseCase:
     async def execute(
         self, command: McpDeleteRefinementKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteRefinementKnowledgeResult:
-
+        refinement = await uow.services.refinements.get_refinement(
+            command.refinement_id
+        )
+        if not _in_board_scope(refinement, command.board_id, actor):
+            raise EntityNotFoundError("refinement", command.refinement_id)
         service = uow.services.refinement_knowledge
         kb = await service.get_knowledge(command.knowledge_id)
         if not kb or kb.refinement_id != command.refinement_id:
@@ -405,7 +457,14 @@ class McpAskRefinementChoiceQuestionUseCase:
     async def execute(
         self, command: McpAskRefinementChoiceQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAskRefinementChoiceQuestionResult:
-
+        refinement = await uow.services.refinements.get_refinement(
+            command.refinement_id
+        )
+        if not _in_board_scope(refinement, command.board_id, actor):
+            return McpAskRefinementChoiceQuestionResult(
+                None,
+                refinement_not_found=True,
+            )
         qa = await uow.services.refinement_qa.create_question(
             command.refinement_id, actor.actor_id, command.data
         )
@@ -478,6 +537,15 @@ class McpAnswerRefinementQuestionUseCase:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
         service = uow.services.refinement_qa
+        qa_item = await service.get_question(command.qa_id)
+        if not qa_item or qa_item.refinement_id != command.refinement_id:
+            return McpAnswerRefinementQuestionResult(None, qa_not_found=True)
+        refinement = await uow.services.refinements.get_refinement(
+            qa_item.refinement_id
+        )
+        if not _in_board_scope(refinement, command.board_id, actor):
+            return McpAnswerRefinementQuestionResult(None, qa_not_found=True)
+
         try:
             qa = await service.answer_question(
                 command.qa_id,
@@ -492,13 +560,13 @@ class McpAnswerRefinementQuestionUseCase:
         if not qa:
             return McpAnswerRefinementQuestionResult(None, qa_not_found=True)
         await uow.services.boards._log_activity(
-            board_id=command.board_id,
+            board_id=refinement.board_id,
             action="refinement_question_answered",
             actor_type="agent",
             actor_id=actor.actor_id,
             actor_name=actor.actor_name,
             details={
-                "refinement_id": command.refinement_id,
+                "refinement_id": qa_item.refinement_id,
                 "qa_id": command.qa_id,
                 "answer": (command.answer_text or "")[:100],
                 "selected": command.selected_list,
@@ -531,17 +599,26 @@ class McpDeleteRefinementQuestionUseCase:
     async def execute(
         self, command: McpDeleteRefinementQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeleteRefinementQuestionResult:
+        service = uow.services.refinement_qa
+        qa_item = await service.get_question(command.qa_id)
+        if not qa_item or qa_item.refinement_id != command.refinement_id:
+            return McpDeleteRefinementQuestionResult(qa_not_found=True)
+        refinement = await uow.services.refinements.get_refinement(
+            qa_item.refinement_id
+        )
+        if not _in_board_scope(refinement, command.board_id, actor):
+            return McpDeleteRefinementQuestionResult(qa_not_found=True)
 
-        deleted = await uow.services.refinement_qa.delete_question(command.qa_id)
+        deleted = await service.delete_question(command.qa_id)
         if not deleted:
             return McpDeleteRefinementQuestionResult(qa_not_found=True)
         await uow.services.boards._log_activity(
-            board_id=command.board_id,
+            board_id=refinement.board_id,
             action="refinement_question_deleted",
             actor_type="agent",
             actor_id=actor.actor_id,
             actor_name=actor.actor_name,
-            details={"refinement_id": command.refinement_id, "qa_id": command.qa_id},
+            details={"refinement_id": qa_item.refinement_id, "qa_id": command.qa_id},
         )
         await commit(uow)
         return McpDeleteRefinementQuestionResult()

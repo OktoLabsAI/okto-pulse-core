@@ -31,8 +31,14 @@ from okto_pulse.community.api.agents import router as agents_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.kg_stale_canonical_parity import router as stale_router
 from okto_pulse.community.api.queue_health import router as queue_router
-from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.auth_deps import (
+    get_realm_id,
+    require_principal,
+    require_user,
+)
+from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.ports.authentication import Principal
 from okto_pulse.core.repositories.relational_boundary_gate import (
     default_use_cases_path,
     run_relational_boundary_gate,
@@ -64,20 +70,56 @@ def _client(*router_prefixes) -> TestClient:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
+    app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        USER,
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
     return TestClient(app)
 
 
 # --- read-only parity via the REAL endpoints -------------------------------
 
 
-def test_stale_canonical_parity_endpoint_payload() -> None:
+@pytest.mark.asyncio
+async def test_stale_canonical_parity_endpoint_payload() -> None:
+    from sqlalchemy_test_models import Board
+
+    board_id = f"board-{uuid.uuid4().hex[:8]}"
+    async with get_session_factory()() as db:
+        db.add(Board(id=board_id, name="R01A parity", owner_id=USER))
+        await db.commit()
+
     client = _client((stale_router, "/api/v1"))
     resp = client.get(
-        f"/api/v1/kg/board-{uuid.uuid4().hex[:8]}/stale-canonical-parity",
+        f"/api/v1/kg/{board_id}/stale-canonical-parity",
         params={"limit": 25, "offset": 0},
     )
     assert resp.status_code == 200, resp.text
     assert isinstance(resp.json(), dict)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("foreign", [False, True], ids=["missing", "foreign"])
+async def test_stale_canonical_parity_board_denial_is_non_enumerable(
+    foreign: bool,
+) -> None:
+    from sqlalchemy_test_models import Board
+
+    board_id = f"board-{uuid.uuid4().hex[:8]}"
+    if foreign:
+        async with get_session_factory()() as db:
+            db.add(Board(id=board_id, name="Foreign parity", owner_id="other-user"))
+            await db.commit()
+
+    response = _client((stale_router, "/api/v1")).get(
+        f"/api/v1/kg/{board_id}/stale-canonical-parity",
+        params={"limit": 25, "offset": 0},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Board not found"}
 
 
 def test_queue_health_endpoints_payload() -> None:

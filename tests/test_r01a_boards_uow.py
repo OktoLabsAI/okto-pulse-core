@@ -66,7 +66,12 @@ def client():
     return TestClient(app)
 
 
-async def _seed_board(owner: str = USER, name: str = "fu7s1") -> str:
+async def _seed_board(
+    owner: str = USER,
+    name: str = "fu7s1",
+    *,
+    realm_id: str = LOCAL_REALM_ID,
+) -> str:
     from sqlalchemy_test_models import Board
 
     bid = f"board-fu7s1-{uuid.uuid4().hex[:8]}"
@@ -76,14 +81,14 @@ async def _seed_board(owner: str = USER, name: str = "fu7s1") -> str:
                 id=bid,
                 name=name,
                 owner_id=owner,
-                realm_id=LOCAL_REALM_ID,
+                realm_id=realm_id,
             )
         )
         await db.commit()
         return bid
 
 
-async def _seed_board_spec_card() -> tuple[str, str, str]:
+async def _seed_board_spec_card(owner: str = USER) -> tuple[str, str, str]:
     """Board + Spec + Card via raw models (bypasses CardService.create_card's
     spec-status gate — these endpoints read/group/archive, not create)."""
     from sqlalchemy_test_models import Board, Card, Spec
@@ -96,14 +101,30 @@ async def _seed_board_spec_card() -> tuple[str, str, str]:
             Board(
                 id=bid,
                 name="fu7s1",
-                owner_id=USER,
+                owner_id=owner,
                 realm_id=LOCAL_REALM_ID,
             )
         )
-        db.add(Spec(id=sid, board_id=bid, title="fu7s1-spec", created_by=USER))
-        db.add(Card(id=cid, board_id=bid, spec_id=sid, title="fu7s1-card", created_by=USER))
+        db.add(Spec(id=sid, board_id=bid, title="fu7s1-spec", created_by=owner))
+        db.add(Card(id=cid, board_id=bid, spec_id=sid, title="fu7s1-card", created_by=owner))
         await db.commit()
         return bid, sid, cid
+
+
+async def _grant_share(board_id: str, permission: str) -> None:
+    from sqlalchemy_test_models import BoardShare
+
+    async with get_session_factory()() as db:
+        db.add(
+            BoardShare(
+                board_id=board_id,
+                user_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                permission=permission,
+                shared_by=OTHER,
+            )
+        )
+        await db.commit()
 
 
 def _missing(kind: str = "board") -> str:
@@ -270,6 +291,49 @@ async def test_restore_invalid_entity_type_400(client) -> None:
     assert "entity_type" in resp.json()["detail"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "initial_archived"),
+    [("archive", False), ("restore", True)],
+)
+async def test_tree_root_foreign_board_matches_missing_without_mutation(
+    client, operation: str, initial_archived: bool
+) -> None:
+    from sqlalchemy import select
+    from sqlalchemy_test_models import ActivityLog, Card, Spec
+
+    owned_board = await _seed_board()
+    _foreign_board, foreign_spec, foreign_card = await _seed_board_spec_card(owner=OTHER)
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, foreign_spec)
+        card = await db.get(Card, foreign_card)
+        spec.archived = initial_archived
+        card.archived = initial_archived
+        await db.commit()
+
+    foreign = client.post(
+        f"{PREFIX}/{owned_board}/{operation}/spec/{foreign_spec}"
+    )
+    missing = client.post(
+        f"{PREFIX}/{owned_board}/{operation}/spec/{_missing('spec')}"
+    )
+
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.content == missing.content
+    async with get_session_factory()() as db:
+        assert (await db.get(Spec, foreign_spec)).archived is initial_archived
+        assert (await db.get(Card, foreign_card)).archived is initial_archived
+        activities = (
+            await db.execute(
+                select(ActivityLog).where(
+                    ActivityLog.board_id == owned_board,
+                    ActivityLog.action.in_(["tree_archived", "tree_restored"]),
+                )
+            )
+        ).scalars().all()
+        assert activities == []
+
+
 # --- shares -----------------------------------------------------------------
 
 
@@ -278,6 +342,98 @@ def _share(client, board_id: str, target: str, permission: str = "viewer"):
         f"{PREFIX}/{board_id}/shares",
         json={"user_id": target, "permission": permission},
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("permission", ["viewer", "editor", "admin"])
+async def test_shared_board_read_and_columns_follow_share_permission(
+    client, permission: str
+) -> None:
+    board_id, _spec_id, card_id = await _seed_board_spec_card(owner=OTHER)
+    await _grant_share(board_id, permission)
+
+    board = client.get(f"{PREFIX}/{board_id}")
+    columns = client.get(f"{PREFIX}/{board_id}/columns")
+
+    assert board.status_code == 200, board.text
+    assert columns.status_code == 200, columns.text
+    assert card_id in {
+        card["id"]
+        for column in columns.json()["columns"].values()
+        for card in column
+    }
+
+
+@pytest.mark.asyncio
+async def test_unshared_board_read_and_columns_are_same_not_found(client) -> None:
+    board_id = await _seed_board(owner=OTHER)
+    missing_id = _missing()
+
+    assert client.get(f"{PREFIX}/{board_id}").content == client.get(
+        f"{PREFIX}/{missing_id}"
+    ).content
+    assert client.get(f"{PREFIX}/{board_id}/columns").content == client.get(
+        f"{PREFIX}/{missing_id}/columns"
+    ).content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("via_share", [False, True])
+async def test_cross_realm_owner_or_share_is_not_board_access(
+    client, via_share: bool
+) -> None:
+    tenant_realm = f"tenant-{uuid.uuid4().hex[:8]}"
+    board_id = await _seed_board(
+        owner=OTHER if via_share else USER,
+        realm_id=tenant_realm,
+    )
+    if via_share:
+        from sqlalchemy_test_models import BoardShare
+
+        async with get_session_factory()() as db:
+            db.add(
+                BoardShare(
+                    board_id=board_id,
+                    user_id=USER,
+                    realm_id=tenant_realm,
+                    permission="admin",
+                    shared_by=OTHER,
+                )
+            )
+            await db.commit()
+
+    foreign = client.get(f"{PREFIX}/{board_id}")
+    missing = client.get(f"{PREFIX}/{_missing()}")
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.content == missing.content
+
+
+@pytest.mark.asyncio
+async def test_viewer_share_cannot_mutate_board_or_archive_tree(client) -> None:
+    board_id, spec_id, _card_id = await _seed_board_spec_card(owner=OTHER)
+    await _grant_share(board_id, "viewer")
+
+    updated = client.patch(f"{PREFIX}/{board_id}", json={"name": "forbidden"})
+    archived = client.post(f"{PREFIX}/{board_id}/archive/spec/{spec_id}")
+
+    assert updated.status_code == 404
+    assert archived.status_code == 404
+    from sqlalchemy_test_models import Spec
+
+    async with get_session_factory()() as db:
+        assert (await db.get(Spec, spec_id)).archived is False
+
+
+@pytest.mark.asyncio
+async def test_editor_share_can_archive_but_not_update_board_metadata(client) -> None:
+    board_id, spec_id, _card_id = await _seed_board_spec_card(owner=OTHER)
+    await _grant_share(board_id, "editor")
+
+    updated = client.patch(f"{PREFIX}/{board_id}", json={"name": "forbidden"})
+    archived = client.post(f"{PREFIX}/{board_id}/archive/spec/{spec_id}")
+
+    assert updated.status_code == 404
+    assert archived.status_code == 200, archived.text
 
 
 @pytest.mark.asyncio
@@ -331,13 +487,13 @@ async def test_update_board_share_200(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_board_share_missing_403(client) -> None:
+async def test_update_board_share_missing_404(client) -> None:
     board_id = await _seed_board()
     resp = client.patch(
         f"{PREFIX}/{board_id}/shares/{_missing('share')}", json={"permission": "admin"}
     )
-    assert resp.status_code == 403
-    assert resp.json()["detail"] == "Not authorized to update this share"
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Board or share not found"
 
 
 @pytest.mark.asyncio
@@ -349,11 +505,29 @@ async def test_revoke_board_share_204(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_revoke_board_share_missing_403(client) -> None:
+async def test_revoke_board_share_missing_404(client) -> None:
     board_id = await _seed_board()
     resp = client.delete(f"{PREFIX}/{board_id}/shares/{_missing('share')}")
-    assert resp.status_code == 403
-    assert resp.json()["detail"] == "Not authorized to revoke this share"
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Board or share not found"
+
+
+@pytest.mark.asyncio
+async def test_share_id_cannot_cross_the_board_route_parent(client) -> None:
+    board_a = await _seed_board(name="share-parent-a")
+    board_b = await _seed_board(name="share-parent-b")
+    share_id = _share(client, board_a, OTHER, "viewer").json()["id"]
+
+    update = client.patch(
+        f"{PREFIX}/{board_b}/shares/{share_id}",
+        json={"permission": "admin"},
+    )
+    revoke = client.delete(f"{PREFIX}/{board_b}/shares/{share_id}")
+
+    assert update.status_code == revoke.status_code == 404
+    assert update.json() == revoke.json() == {"detail": "Board or share not found"}
+    shares = client.get(f"{PREFIX}/{board_a}/shares").json()
+    assert next(item for item in shares if item["id"] == share_id)["permission"] == "viewer"
 
 
 # --- use case + AST ---------------------------------------------------------

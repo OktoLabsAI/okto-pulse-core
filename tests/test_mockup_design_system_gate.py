@@ -329,10 +329,17 @@ async def test_dangling_design_system_fail_closed_under_blocking():
 
     async with get_session_factory()() as db:
         board = await _board(db, "blocking")
-        ds = await _global_ds(db)
-        await _link(db, board.id, ds.id)
-        mapped_ds = await db.get(DesignSystem, ds.id)
-        await db.delete(mapped_ds)  # link now dangles -> configured but broken
+        # A relational board link cannot dangle while FK enforcement is enabled:
+        # deleting its Design System cascades the link and means "not configured".
+        # A stale persisted default snapshot is the supported configured-but-broken
+        # state exercised by get_board_effective_design_system.
+        board.default_config_snapshot = {
+            "design_system": {
+                "design_system_id": str(uuid.uuid4()),
+                "version": 1,
+            }
+        }
+        flag_modified(board, "default_config_snapshot")
         await db.flush()
         gate = MockupDesignSystemGate(db)
         with pytest.raises(DesignSystemError) as exc:

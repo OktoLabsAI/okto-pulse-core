@@ -14,40 +14,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from okto_pulse.core.kg.query_contract import KGEdgeType, KGNodeType
+
 
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
-
-
-class KGNodeType(str, Enum):
-    DECISION = "Decision"
-    CRITERION = "Criterion"
-    CONSTRAINT = "Constraint"
-    ASSUMPTION = "Assumption"
-    REQUIREMENT = "Requirement"
-    ENTITY = "Entity"
-    API_CONTRACT = "APIContract"
-    TEST_SCENARIO = "TestScenario"
-    BUG = "Bug"
-    LEARNING = "Learning"
-    ALTERNATIVE = "Alternative"
-
-
-class KGEdgeType(str, Enum):
-    SUPERSEDES = "supersedes"
-    CONTRADICTS = "contradicts"
-    DERIVES_FROM = "derives_from"
-    RELATES_TO = "relates_to"
-    MENTIONS = "mentions"
-    DEPENDS_ON = "depends_on"
-    VIOLATES = "violates"
-    IMPLEMENTS = "implements"
-    TESTS = "tests"
-    VALIDATES = "validates"
-    BELONGS_TO = "belongs_to"
-    ORIGINATES_FROM = "originates_from"
-    COVERED_BY = "covered_by"
 
 
 class ReconciliationOperation(str, Enum):

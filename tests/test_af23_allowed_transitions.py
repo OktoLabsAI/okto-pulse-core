@@ -22,12 +22,18 @@ from okto_pulse.core.application.use_cases.allowed_transitions import (
     calculate_allowed_transition_drift,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
-from okto_pulse.core.domain.enums import IdeationStatus, RefinementStatus, SpecStatus
+from okto_pulse.core.domain.enums import (
+    CardStatus,
+    IdeationStatus,
+    RefinementStatus,
+    SpecStatus,
+)
+from okto_pulse.core.domain.sdlc_registry import is_transition_allowed
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.community.api.auth_deps import get_realm_id, require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
-from sqlalchemy_test_models import Board, Ideation, Refinement, Spec
+from sqlalchemy_test_models import Board, BoardShare, Ideation, Refinement, Spec
 from okto_pulse.core.models.schemas import SpecMove
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services import IdeationService, RefinementService, SpecService
@@ -93,14 +99,56 @@ def test_read_model_projects_the_same_runtime_transition_authority(entity_type, 
         ]
 
 
-def test_read_model_is_not_a_parallel_static_map(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_service_and_read_model_derive_from_registry_not_runtime_monkeypatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         SpecService,
         "_SPEC_TRANSITIONS",
         {SpecStatus.DRAFT: [SpecStatus.DONE]},
     )
 
-    assert _status_values("spec", "draft") == ["done"]
+    # The registry is the authority; a consumer monkeypatch cannot create a
+    # second lifecycle contract for UI/resources.
+    assert _status_values("spec", "draft") == ["review", "cancelled"]
+
+
+@pytest.mark.parametrize("card_type", ["normal", "test", "bug"])
+def test_card_read_model_and_mutation_admission_share_every_typed_edge(
+    card_type: str,
+) -> None:
+    for current in CardStatus:
+        projected = {
+            item.to_status
+            for item in allowed_transitions_for_status(
+                "card",
+                current.value,
+                card_type=card_type,
+            )
+        }
+        admitted = {
+            target.value
+            for target in CardStatus
+            if is_transition_allowed(
+                "card",
+                current.value,
+                target.value,
+                card_type=card_type,
+            )
+        }
+        assert projected == admitted
+
+    direct = {
+        item.to_status
+        for item in allowed_transitions_for_status(
+            "card",
+            CardStatus.NOT_STARTED.value,
+            card_type=card_type,
+        )
+    }
+    assert (CardStatus.IN_PROGRESS.value in direct) is (
+        card_type in {"test", "bug"}
+    )
 
 
 def test_docs_only_forward_subset_reports_reverse_and_unlock_drift() -> None:
@@ -243,6 +291,54 @@ async def test_rest_endpoint_and_mcp_tool_return_the_same_contract(client: TestC
     mcp_payload = json.loads(raw)
 
     assert mcp_payload == rest_payload
+
+
+@pytest.mark.asyncio
+async def test_rest_viewer_share_can_read_allowed_transitions(client: TestClient) -> None:
+    board_id = _id("af23-shared-board")
+    spec_id = _id("af23-shared-spec")
+    async with get_session_factory()() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name="AF23 shared board",
+                owner_id="af23-board-owner",
+                realm_id=LOCAL_REALM_ID,
+                settings={},
+            )
+        )
+        db.add(
+            BoardShare(
+                board_id=board_id,
+                user_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                permission="viewer",
+                shared_by="af23-board-owner",
+            )
+        )
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="AF23 shared spec",
+                status=SpecStatus.REVIEW,
+                created_by="af23-board-owner",
+                functional_requirements=[],
+                acceptance_criteria=[],
+                business_rules=[],
+                api_contracts=[],
+                technical_requirements=[],
+            )
+        )
+        await db.commit()
+
+    response = client.get(
+        f"{PREFIX}/boards/{board_id}/allowed-transitions",
+        params={"entity_type": "spec", "entity_id": spec_id},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["current_status"] == "review"
 
 
 @pytest.mark.asyncio

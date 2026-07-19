@@ -15,8 +15,12 @@ trigger, card_id, created_at + a deterministic `summary` string built
 server-side from details — ~120B per row vs ~1.5KB. Pass include_details=true
 to receive the full nested details object (legacy shape).
 
-Cursor-pagination follow-up: pass ``cursor`` (opaque base64 from a prior
-``next_cursor``) for O(1) keyset pagination independent of page depth.
+Cursor-pagination follow-up: pass ``cursor`` (opaque versioned token from a prior
+``next_cursor``) for O(1) keyset pagination independent of page depth. V2 binds
+the exclusive ``created_at DESC, id DESC`` position to direction plus the
+``action``/``card_id`` filters and carries an integrity check. Reusing a cursor
+with different filters or editing it is rejected instead of silently paging a
+different result set.
 Pass ``envelope=true`` to receive ``{items, next_cursor}`` instead of a
 raw list (default keeps Story 3 list shape — backward compat). Legacy
 ``offset`` is silently ignored unless the edition enables ``mcp_legacy_offset``.
@@ -37,4 +41,6 @@ Args:
 
 Returns:
     JSON list (default) or ``{items, next_cursor}`` dict when envelope=true.
-    Invalid cursor returns ``{error, error_code: "invalid_cursor"}``.
+    Invalid cursor returns a typed error. Codes include ``invalid_cursor``,
+    ``cursor_scope_mismatch``, ``cursor_integrity_failed`` and
+    ``unsupported_cursor_version``.

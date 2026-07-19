@@ -11,42 +11,23 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
-from okto_pulse.core.application.scope import ActorScope
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
     EntityNotFoundError,
 )
-from okto_pulse.core.domain.enums import IdeationStatus, RefinementStatus, SpecStatus
+from okto_pulse.core.domain.sdlc_registry import (
+    SDLC_REGISTRY,
+    lifecycle_definition,
+    transition_contracts,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
-from okto_pulse.core.services import IdeationService, RefinementService, SpecService
 
-ALLOWED_TRANSITIONS_SOURCE = "programmatic_backend_transition_authority"
+ALLOWED_TRANSITIONS_SOURCE = "core_sdlc_registry_v1"
 ALLOWED_TRANSITIONS_DRIFT_METRIC = "allowed_transitions_contract_drift_total"
-
-
-@dataclass(frozen=True)
-class TransitionAuthority:
-    status_enum: type[Enum]
-    transitions: Callable[[], Mapping[Enum, Sequence[Enum]]]
-
-
-_TRANSITION_AUTHORITIES: dict[str, TransitionAuthority] = {
-    "ideation": TransitionAuthority(
-        status_enum=IdeationStatus,
-        transitions=lambda: IdeationService._IDEATION_TRANSITIONS,
-    ),
-    "refinement": TransitionAuthority(
-        status_enum=RefinementStatus,
-        transitions=lambda: RefinementService._REFINEMENT_TRANSITIONS,
-    ),
-    "spec": TransitionAuthority(
-        status_enum=SpecStatus,
-        transitions=lambda: SpecService._SPEC_TRANSITIONS,
-    ),
-}
 
 
 @dataclass(frozen=True)
@@ -55,13 +36,21 @@ class AllowedTransition:
     label: str
     gate: str
     blocked_reason: str | None = None
+    preconditions: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] = ()
+    effects: tuple[str, ...] = ()
+    reason_codes: tuple[str, ...] = ()
 
-    def to_dict(self) -> dict[str, str | None]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "to_status": self.to_status,
             "label": self.label,
             "gate": self.gate,
             "blocked_reason": self.blocked_reason,
+            "preconditions": list(self.preconditions),
+            "capabilities": list(self.capabilities),
+            "effects": list(self.effects),
+            "reason_codes": list(self.reason_codes),
         }
 
 
@@ -125,13 +114,15 @@ class ListAllowedTransitionsResult:
         self.read_model = read_model
 
 
-def _authority_for(entity_type: str) -> TransitionAuthority:
+def _authority_for(entity_type: str):
     normalized = (entity_type or "").strip().lower()
-    authority = _TRANSITION_AUTHORITIES.get(normalized)
-    if authority is None:
-        allowed = ", ".join(sorted(_TRANSITION_AUTHORITIES))
-        raise CommandValidationError(f"Invalid entity_type. Must be one of: {allowed}")
-    return authority
+    try:
+        return lifecycle_definition(normalized)
+    except ValueError as exc:
+        allowed = ", ".join(sorted(SDLC_REGISTRY))
+        raise CommandValidationError(
+            f"Invalid entity_type. Must be one of: {allowed}"
+        ) from exc
 
 
 def _parse_status(entity_type: str, status: str) -> Enum:
@@ -172,20 +163,28 @@ def _gate_for(entity_type: str, from_status: Enum, to_status: Enum) -> str:
     return "none"
 
 
-def allowed_transitions_for_status(entity_type: str, current_status: str) -> list[AllowedTransition]:
-    """Project the enforced service transition table for one status."""
+def allowed_transitions_for_status(
+    entity_type: str,
+    current_status: str,
+    *,
+    card_type: str | None = None,
+) -> list[AllowedTransition]:
+    """Project the same canonical contracts consumed by mutation services."""
 
     normalized = (entity_type or "").strip().lower()
-    from_status = _parse_status(normalized, current_status)
-    authority = _authority_for(normalized)
-    transitions = authority.transitions()
+    _parse_status(normalized, current_status)
     return [
         AllowedTransition(
-            to_status=str(to_status.value),
-            label=_label_for(to_status),
-            gate=_gate_for(normalized, from_status, to_status),
+            to_status=edge.to_status,
+            label=edge.label,
+            gate=edge.gate,
+            preconditions=edge.preconditions,
+            capabilities=edge.capabilities,
+            effects=edge.effects,
+            reason_codes=edge.reason_codes,
         )
-        for to_status in transitions.get(from_status, [])
+        for edge in transition_contracts(normalized, current_status)
+        if not edge.card_types or card_type in edge.card_types
     ]
 
 
@@ -193,10 +192,10 @@ def allowed_transition_edges() -> dict[str, dict[str, list[str]]]:
     """Return the current programmatic authority as comparable string edges."""
 
     edges: dict[str, dict[str, list[str]]] = {}
-    for entity_type, authority in _TRANSITION_AUTHORITIES.items():
+    for entity_type, authority in SDLC_REGISTRY.items():
         edges[entity_type] = {
-            str(from_status.value): [str(to_status.value) for to_status in to_statuses]
-            for from_status, to_statuses in authority.transitions().items()
+            from_status: [edge.to_status for edge in to_statuses]
+            for from_status, to_statuses in authority.transitions.items()
         }
     return edges
 
@@ -247,25 +246,20 @@ class ListAllowedTransitionsUseCase:
     ) -> ListAllowedTransitionsResult:
         entity_type = (command.entity_type or "").strip().lower()
         _authority_for(entity_type)
-        if actor.source == "mcp":
-            board = await uow.services.boards.get_board(command.board_id)
-        else:
-            board = await uow.services.boards.get_board(
-                command.board_id,
-                actor.actor_id,
-                query_scope=ActorScope.from_context(actor).query_scope(
-                    target_board_id=command.board_id
-                ),
-            )
+        board = await load_accessible_board(uow, command.board_id, actor)
         if not board:
             raise EntityNotFoundError("board", command.board_id)
 
         entity_id = (command.entity_id or "").strip() or None
+        card_type: str | None = None
         if entity_id:
             entity = await self._load_entity(uow.services, entity_type, entity_id)
             if not entity or getattr(entity, "board_id", None) != command.board_id:
                 raise EntityNotFoundError(entity_type, entity_id)
             current_status = str(entity.status.value)
+            if entity_type == "card":
+                raw_card_type = getattr(entity, "card_type", None)
+                card_type = str(getattr(raw_card_type, "value", raw_card_type or "normal"))
         else:
             if not command.current_status:
                 raise CommandValidationError(
@@ -279,7 +273,9 @@ class ListAllowedTransitionsUseCase:
             entity_type=entity_type,
             entity_id=entity_id,
             current_status=current_status,
-            allowed_transitions=allowed_transitions_for_status(entity_type, current_status),
+            allowed_transitions=allowed_transitions_for_status(
+                entity_type, current_status, card_type=card_type
+            ),
         )
         return ListAllowedTransitionsResult(read_model)
 
@@ -295,4 +291,10 @@ class ListAllowedTransitionsUseCase:
             return await services.refinements.get_refinement(entity_id)
         if entity_type == "spec":
             return await services.specs.get_spec(entity_id)
+        if entity_type == "story":
+            return await services.stories.get_story(entity_id)
+        if entity_type == "card":
+            return await services.cards.get_card(entity_id)
+        if entity_type == "sprint":
+            return await services.sprints.get_sprint(entity_id)
         raise CommandValidationError(f"Invalid entity_type: {entity_type}")

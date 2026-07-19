@@ -24,9 +24,9 @@ MAIN_PY = REPO_ROOT / "src" / "okto_pulse" / "core" / "services" / "main.py"
 
 
 # ---------------------------------------------------------------------------
-# Baselines updated after the 2026-07-13 persistence-port extraction. If a
-# gate changes intentionally, review its semantic tests and update this
-# versioned constant in the same change.
+# Baselines updated after the 2026-07-14 sprint reviewer-separation and
+# optimistic-versioning contract. If a gate changes intentionally, review its
+# semantic tests and update this versioned constant in the same change.
 # ---------------------------------------------------------------------------
 
 EXPECTED_HASHES = {
@@ -34,7 +34,7 @@ EXPECTED_HASHES = {
         "109c313b5e35aaef267446eaf5c4aafbe39ba3f3ddfbc885a75f90a234f7cea9"
     ),
     "submit_evaluation": (
-        "14fab1e297418f393932a8d537761ceeddc6b9e98bfda0c1fd00bd83a1627057"
+        "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"
     ),
 }
 

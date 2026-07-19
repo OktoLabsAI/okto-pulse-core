@@ -44,6 +44,7 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.models import ArchitectureDesignCreate
 from okto_pulse.core.services.application_schemas import (
@@ -78,6 +79,109 @@ async def _resolve_parent(
     if parent is None:
         raise EntityNotFoundError(parent_type, parent_id)
     return parent
+
+
+async def _require_board_access(
+    uow: PulseUnitOfWork,
+    actor: ActorContext,
+    board_id: str | None,
+    *,
+    entity_type: str,
+    entity_id: str,
+    expected_board_id: str | None = None,
+) -> None:
+    """Fail closed when an architecture record is outside the actor's board.
+
+    MCP actors arrive after credential-to-board resolution and therefore carry a
+    trusted ``actor.board_id``. REST actors do not, so their owner/share access is
+    resolved through :func:`load_accessible_board`. Missing boards and denied
+    boards deliberately raise the same entity-scoped not-found error.
+    """
+
+    if not board_id or (expected_board_id and board_id != expected_board_id):
+        raise EntityNotFoundError(entity_type, entity_id)
+    if actor.board_id is not None:
+        if actor.board_id != board_id:
+            raise EntityNotFoundError(entity_type, entity_id)
+        return
+    if await load_accessible_board(uow, board_id, actor) is None:
+        raise EntityNotFoundError(entity_type, entity_id)
+
+
+async def _resolve_accessible_parent(
+    uow: PulseUnitOfWork,
+    actor: ActorContext,
+    parent_type: str,
+    parent_id: str,
+    *,
+    board_id: str | None = None,
+) -> Any:
+    """Resolve a parent envelope, then authorize its board before child access."""
+
+    parent = await _resolve_parent(uow.services, parent_type, parent_id)
+    await _require_board_access(
+        uow,
+        actor,
+        getattr(parent, "board_id", None),
+        entity_type=parent_type,
+        entity_id=parent_id,
+        expected_board_id=board_id,
+    )
+    return parent
+
+
+async def _resolve_accessible_design(
+    uow: PulseUnitOfWork,
+    actor: ActorContext,
+    design_id: str,
+    *,
+    board_id: str | None = None,
+    include_payloads: bool = False,
+) -> Any:
+    """Authorize a design envelope before parent, payload, or version reads.
+
+    The first repository read is intentionally metadata-only. After board access
+    succeeds, the declared parent is resolved and required to belong to the same
+    board. Payload hydration, when requested, happens only after both checks.
+    """
+
+    repo = uow.services.architecture_designs
+    design = await repo.get(design_id)
+    if design is None:
+        raise EntityNotFoundError("Architecture design", design_id)
+
+    await _require_board_access(
+        uow,
+        actor,
+        getattr(design, "board_id", None),
+        entity_type="Architecture design",
+        entity_id=design_id,
+        expected_board_id=board_id,
+    )
+    try:
+        parent_id = repo.parent_id_for(design)
+        parent = await _resolve_parent(uow.services, design.parent_type, parent_id)
+    except (AttributeError, EntityNotFoundError, ValueError) as exc:
+        raise EntityNotFoundError("Architecture design", design_id) from exc
+    if getattr(parent, "board_id", None) != design.board_id:
+        raise EntityNotFoundError("Architecture design", design_id)
+
+    if not include_payloads:
+        return design
+
+    loaded = await repo.get(design_id, include_payloads=True)
+    try:
+        loaded_parent_id = repo.parent_id_for(loaded) if loaded is not None else None
+    except (AttributeError, ValueError) as exc:
+        raise EntityNotFoundError("Architecture design", design_id) from exc
+    if (
+        loaded is None
+        or loaded.board_id != design.board_id
+        or loaded.parent_type != design.parent_type
+        or loaded_parent_id != parent_id
+    ):
+        raise EntityNotFoundError("Architecture design", design_id)
+    return loaded
 
 
 def _spec_architecture_locked(spec: Any) -> bool:
@@ -125,17 +229,36 @@ class ListArchitectureUseCase:
     async def execute(
         self, command: ListArchitectureCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListArchitectureResult:
-        parent = await _resolve_parent(uow.services, command.parent_type, command.parent_id)
-        if command.board_id and getattr(parent, "board_id", None) != command.board_id:
-            raise EntityNotFoundError(command.parent_type, command.parent_id)
+        parent = await _resolve_accessible_parent(
+            uow,
+            actor,
+            command.parent_type,
+            command.parent_id,
+            board_id=command.board_id,
+        )
         repo = uow.services.architecture_designs
         designs = await repo.list(
             command.parent_type,
             command.parent_id,
-            include_payloads=command.include_payloads,
+            include_payloads=False,
         )
+        designs = [
+            design
+            for design in designs
+            if getattr(design, "board_id", None) == parent.board_id
+        ]
         if command.include_payloads:
-            return ListArchitectureResult([repo.to_response(design) for design in designs])
+            hydrated: list[Any] = []
+            for design in designs:
+                scoped = await _resolve_accessible_design(
+                    uow,
+                    actor,
+                    design.id,
+                    board_id=parent.board_id,
+                    include_payloads=True,
+                )
+                hydrated.append(repo.to_response(scoped))
+            return ListArchitectureResult(hydrated)
         return ListArchitectureResult([repo.to_summary(design) for design in designs])
 
 
@@ -177,9 +300,13 @@ class CreateArchitectureUseCase:
     async def execute(
         self, command: CreateArchitectureCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateArchitectureResult:
-        parent = await _resolve_parent(uow.services, command.parent_type, command.parent_id)
-        if command.board_id and getattr(parent, "board_id", None) != command.board_id:
-            raise EntityNotFoundError(command.parent_type, command.parent_id)
+        parent = await _resolve_accessible_parent(
+            uow,
+            actor,
+            command.parent_type,
+            command.parent_id,
+            board_id=command.board_id,
+        )
         if command.parent_type == "spec" and _spec_architecture_locked(parent):
             raise ConflictError("spec_architecture_locked", command.parent_id)
         repo = uow.services.architecture_designs
@@ -204,7 +331,8 @@ class CreateArchitectureUseCase:
 
 
 async def _resolve_mutable_design(
-    services: ApplicationServiceCatalog,
+    uow: PulseUnitOfWork,
+    actor: ActorContext,
     design_id: str,
     board_id: str | None = None,
 ) -> Any:
@@ -221,15 +349,16 @@ async def _resolve_mutable_design(
     ``EntityNotFoundError("Spec", …)`` (adapter → 404 "Spec not found"); a locked
     spec raises ``ConflictError("spec_architecture_locked", …)`` (adapter → 409
     locked detail). Returns the design so callers reuse it without a re-fetch."""
-    design = await services.architecture_designs.get(design_id)
-    if design is None:
-        raise EntityNotFoundError("Architecture design", design_id)
-    if board_id and design.board_id != board_id:
-        raise EntityNotFoundError("Architecture design", design_id)
+    design = await _resolve_accessible_design(
+        uow,
+        actor,
+        design_id,
+        board_id=board_id,
+    )
     if design.parent_type == "card":
         raise ConflictError("card_architecture_readonly", design_id)
     if design.parent_type == "spec":
-        spec = await services.specs.get_spec(design.spec_id)
+        spec = await uow.services.specs.get_spec(design.spec_id)
         if spec is None:
             raise EntityNotFoundError("Spec", design.spec_id)
         if _spec_architecture_locked(spec):
@@ -272,13 +401,13 @@ class GetArchitectureDesignUseCase:
         self, command: GetArchitectureDesignCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetArchitectureDesignResult:
         repo = uow.services.architecture_designs
-        design = await repo.get(
-            command.design_id, include_payloads=command.include_payloads
+        design = await _resolve_accessible_design(
+            uow,
+            actor,
+            command.design_id,
+            board_id=command.board_id,
+            include_payloads=command.include_payloads,
         )
-        if design is None:
-            raise EntityNotFoundError("Architecture design", command.design_id)
-        if command.board_id and design.board_id != command.board_id:
-            raise EntityNotFoundError("Architecture design", command.design_id)
         return GetArchitectureDesignResult(repo.to_response(design))
 
 
@@ -319,7 +448,12 @@ class UpdateArchitectureDesignUseCase:
     async def execute(
         self, command: UpdateArchitectureDesignCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateArchitectureDesignResult:
-        await _resolve_mutable_design(uow.services, command.design_id, board_id=command.board_id)
+        await _resolve_mutable_design(
+            uow,
+            actor,
+            command.design_id,
+            board_id=command.board_id,
+        )
         repo = uow.services.architecture_designs
         design = await repo.update(command.design_id, command.data, actor.actor_id)
         response = repo.to_response(design)
@@ -353,7 +487,12 @@ class DeleteArchitectureDesignUseCase:
     async def execute(
         self, command: DeleteArchitectureDesignCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteArchitectureDesignResult:
-        await _resolve_mutable_design(uow.services, command.design_id, board_id=command.board_id)
+        await _resolve_mutable_design(
+            uow,
+            actor,
+            command.design_id,
+            board_id=command.board_id,
+        )
         repo = uow.services.architecture_designs
         deleted = await repo.delete(command.design_id, actor.actor_id)
         if not deleted:
@@ -478,11 +617,18 @@ class McpValidateArchitecturePayloadUseCase:
 
         if command.design_id:
             design = await _resolve_mutable_design(
-                uow.services, command.design_id, board_id=command.board_id
+                uow,
+                actor,
+                command.design_id,
+                board_id=command.board_id,
             )
-            loaded = await repo.get(command.design_id, include_payloads=True)
-            if not loaded:
-                raise EntityNotFoundError("Architecture design", command.design_id)
+            loaded = await _resolve_accessible_design(
+                uow,
+                actor,
+                command.design_id,
+                board_id=command.board_id,
+                include_payloads=True,
+            )
             candidate = {
                 "title": command.title or loaded.title,
                 "global_description": command.global_description or loaded.global_description,
@@ -497,11 +643,13 @@ class McpValidateArchitecturePayloadUseCase:
                 raise ValueError(
                     "parent_type and parent_id are required when design_id is omitted"
                 )
-            parent = await _resolve_parent(
-                uow.services, command.parent_type, command.parent_id
+            parent = await _resolve_accessible_parent(
+                uow,
+                actor,
+                command.parent_type,
+                command.parent_id,
+                board_id=command.board_id,
             )
-            if getattr(parent, "board_id", None) != command.board_id:
-                raise EntityNotFoundError(command.parent_type, command.parent_id)
             if command.parent_type == "spec" and _spec_architecture_locked(parent):
                 raise ConflictError("spec_architecture_locked", command.parent_id)
             candidate = {
@@ -632,6 +780,14 @@ class ArchitecturePropagationLegacyReportUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ArchitecturePropagationLegacyReportResult:
+        await _require_board_access(
+            uow,
+            actor,
+            command.board_id,
+            entity_type="Board",
+            entity_id=command.board_id,
+            expected_board_id=command.board_id,
+        )
         report = await uow.services.build_propagation_legacy_report(
             board_id=command.board_id,
             limit=command.limit,
@@ -699,12 +855,12 @@ class GetArchitectureDiagramPayloadUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> GetArchitectureDiagramPayloadResult:
-        repo = uow.services.architecture_designs
-        design = await repo.get(command.design_id)
-        if design is None:
-            raise EntityNotFoundError("Architecture design", command.design_id)
-        if command.board_id and design.board_id != command.board_id:
-            raise EntityNotFoundError("Architecture design", command.design_id)
+        design = await _resolve_accessible_design(
+            uow,
+            actor,
+            command.design_id,
+            board_id=command.board_id,
+        )
         diagram = next(
             (
                 item
@@ -792,7 +948,10 @@ class UpdateArchitectureDiagramPayloadUseCase:
         uow: PulseUnitOfWork,
     ) -> UpdateArchitectureDiagramPayloadResult:
         design = await _resolve_mutable_design(
-            uow.services, command.design_id, board_id=command.board_id
+            uow,
+            actor,
+            command.design_id,
+            board_id=command.board_id,
         )
         diagrams = [dict(item) for item in design.diagrams or []]
         target = next(
@@ -887,7 +1046,10 @@ class ImportExcalidrawArchitectureDiagramUseCase:
         uow: PulseUnitOfWork,
     ) -> ImportExcalidrawArchitectureDiagramResult:
         design = await _resolve_mutable_design(
-            uow.services, command.design_id, board_id=command.board_id
+            uow,
+            actor,
+            command.design_id,
+            board_id=command.board_id,
         )
         diagrams = [dict(item) for item in design.diagrams or []]
         imported = {
@@ -937,12 +1099,19 @@ class ImportExcalidrawArchitectureDiagramUseCase:
 
 
 class GetArchitectureDiffCommand:
-    __slots__ = ("design_id", "from_version", "to_version")
+    __slots__ = ("design_id", "from_version", "to_version", "board_id")
 
-    def __init__(self, design_id: str, from_version: int, to_version: int) -> None:
+    def __init__(
+        self,
+        design_id: str,
+        from_version: int,
+        to_version: int,
+        board_id: str | None = None,
+    ) -> None:
         self.design_id = design_id
         self.from_version = from_version
         self.to_version = to_version
+        self.board_id = board_id
 
 
 class GetArchitectureDiffResult:
@@ -963,6 +1132,12 @@ class GetArchitectureDiffUseCase:
     async def execute(
         self, command: GetArchitectureDiffCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetArchitectureDiffResult:
+        await _resolve_accessible_design(
+            uow,
+            actor,
+            command.design_id,
+            board_id=command.board_id,
+        )
         repo = uow.services.architecture_designs
         diff = await repo.diff(
             command.design_id, command.from_version, command.to_version
@@ -1025,9 +1200,22 @@ class CopyArchitectureFromSpecToCardUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> CopyArchitectureFromSpecToCardResult:
-        card = await _resolve_parent(uow.services, "card", command.card_id)
-        if command.board_id and getattr(card, "board_id", None) != command.board_id:
-            raise EntityNotFoundError("card", command.card_id)
+        card = await _resolve_accessible_parent(
+            uow,
+            actor,
+            "card",
+            command.card_id,
+            board_id=command.board_id,
+        )
+        spec = await _resolve_accessible_parent(
+            uow,
+            actor,
+            "spec",
+            command.spec_id,
+            board_id=command.board_id or card.board_id,
+        )
+        if spec.board_id != card.board_id or getattr(card, "spec_id", None) != spec.id:
+            raise EntityNotFoundError("spec", command.spec_id)
         service = uow.services.architecture_propagation
         designs, _plan = await service.copy_effective_spec_to_card(
             board_id=command.board_id or card.board_id,

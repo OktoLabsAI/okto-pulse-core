@@ -159,9 +159,8 @@ async def test_ts_18089a6a_no_effective_ds_effective_null_mandate_false():
 
 
 async def test_ts_4288636b_default_snapshot_normalizes_title_null_and_gate_from_settings():
-    """TEETH: source=default_snapshot carries gate_mode but NOT title; the block must
-    normalize title=None AND read gate_mode ONLY from BoardSettings (advisory), never the
-    snapshot's own gate_mode (blocking)."""
+    """TEETH: source=default_snapshot resolves the same effective DTO as a board link
+    and reads gate_mode ONLY from BoardSettings, never the snapshot mirror."""
     from okto_pulse.core.infra.database import get_session_factory
 
     board_id = ds_id = None
@@ -190,7 +189,11 @@ async def test_ts_4288636b_default_snapshot_normalizes_title_null_and_gate_from_
         assert block["effective"] is not None
         assert block["effective"]["source"] == "default_snapshot"
         assert block["effective"]["design_system_id"] == ds_id
-        assert block["effective"]["title"] is None  # normalized (snapshot has no title)
+        assert block["effective"]["title"] == "Snapshot DS"
+        assert block["effective"]["status"] == "active"
+        assert block["effective"]["scope"] == "global"
+        assert block["effective"]["exists"] is True
+        assert block["effective"]["gate_mode"] == "advisory"
         assert block["gate_mode"] == "advisory"  # from BoardSettings, NOT the snapshot mirror
         assert block["gate_mode"] != "blocking"
         assert block["mandate"] is False  # advisory is not blocking

@@ -120,26 +120,62 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[
     return data
 
 
+def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
+    """Require actor, command, and canonical entity to share one board."""
+    return bool(
+        record
+        and actor.board_id == board_id
+        and record.board_id == board_id
+    )
+
+
 async def _load_entity_mockups(
     services: ApplicationServiceCatalog,
     entity_type: str,
     entity_id: str,
+    board_id: str,
+    actor: ActorContext,
 ):
     if entity_type == "spec":
         service = services.specs
-        return await service.get_spec(entity_id), service, ServicePayload
+        entity = await service.get_spec(entity_id)
+        return (
+            entity if _in_board_scope(entity, board_id, actor) else None,
+            service,
+            ServicePayload,
+        )
     if entity_type == "ideation":
         service = services.ideations
-        return await service.get_ideation(entity_id), service, ServicePayload
+        entity = await service.get_ideation(entity_id)
+        return (
+            entity if _in_board_scope(entity, board_id, actor) else None,
+            service,
+            ServicePayload,
+        )
     if entity_type == "refinement":
         service = services.refinements
-        return await service.get_refinement(entity_id), service, ServicePayload
+        entity = await service.get_refinement(entity_id)
+        return (
+            entity if _in_board_scope(entity, board_id, actor) else None,
+            service,
+            ServicePayload,
+        )
     if entity_type == "card":
         service = services.cards
-        return await service.get_card(entity_id), service, ServicePayload
+        entity = await service.get_card(entity_id)
+        return (
+            entity if _in_board_scope(entity, board_id, actor) else None,
+            service,
+            ServicePayload,
+        )
     if entity_type == "story":
         service = services.stories
-        return await service.get_story(entity_id), service, ServicePayload
+        entity = await service.get_story(entity_id)
+        return (
+            entity if _in_board_scope(entity, board_id, actor) else None,
+            service,
+            ServicePayload,
+        )
     return None, None, None
 
 
@@ -168,7 +204,7 @@ class McpCopyMockupsToCardCommand:
     board_id: str
     spec_id: str
     card_id: str
-    screen_ids: set[str] | None
+    screen_ids: list[str] | set[str] | tuple[str, ...] | None
 
 
 class McpCopyMockupsToCardResult:
@@ -198,15 +234,16 @@ class McpCopyMockupsToCardUseCase:
     ) -> McpCopyMockupsToCardResult:
 
         spec = await uow.services.specs.get_spec(command.spec_id)
-        if not spec:
+        if not _in_board_scope(spec, command.board_id, actor):
             raise EntityNotFoundError("spec", command.spec_id)
         card_service = uow.services.cards
         card = await card_service.get_card(command.card_id)
-        if not card:
+        if not _in_board_scope(card, command.board_id, actor):
             raise EntityNotFoundError("card", command.card_id)
 
         source_mockups = [m for m in (spec.screen_mockups or []) if isinstance(m, dict)]
         fallback = False
+        source_type, source_id = "spec", command.spec_id
         if not source_mockups:
             plan = await uow.services.resolve_effective_card_copy_plan(
                 board_id=command.board_id,
@@ -215,17 +252,51 @@ class McpCopyMockupsToCardUseCase:
             )
             if not plan["fallback"]:
                 return McpCopyMockupsToCardResult(empty_plan=plan)
+            fallback_parent, _service, _update_class = await _load_entity_mockups(
+                uow.services,
+                plan["source_entity_type"],
+                plan["source_entity_id"],
+                command.board_id,
+                actor,
+            )
+            if not fallback_parent:
+                raise EntityNotFoundError("spec", command.spec_id)
             source_mockups = await uow.services.load_effective_mockup_items(
                 plan["source_entity_type"],
                 plan["source_entity_id"],
             )
             if not source_mockups:
                 return McpCopyMockupsToCardResult(empty_plan=plan)
+            source_type = plan["source_entity_type"]
+            source_id = plan["source_entity_id"]
             fallback = True
 
-        if command.screen_ids:
+        from okto_pulse.core.application.artifact_propagation import (
+            artifact_identity_values,
+            validate_artifact_selections,
+        )
+
+        requested_ids = (
+            sorted(command.screen_ids)
+            if isinstance(command.screen_ids, set)
+            else list(command.screen_ids)
+            if command.screen_ids is not None
+            else None
+        )
+        validate_artifact_selections(
+            source_mockups=source_mockups,
+            source_knowledge_bases=None,
+            mockup_ids=requested_ids,
+            kb_ids=None,
+            source_type=source_type,
+            source_id=source_id,
+        )
+        if command.screen_ids is not None:
+            wanted_ids = set(command.screen_ids)
             source_mockups = [
-                item for item in source_mockups if item.get("id") in command.screen_ids
+                item
+                for item in source_mockups
+                if artifact_identity_values(item, "mockup") & wanted_ids
             ]
 
         existing = list(card.screen_mockups or [])
@@ -266,7 +337,7 @@ class McpGetCardKnowledgeUseCase:
     ) -> McpPayloadResult:
 
         card = await uow.services.cards.get_card(command.card_id)
-        if not card or card.board_id != command.board_id:
+        if not _in_board_scope(card, command.board_id, actor):
             raise EntityNotFoundError("card", command.card_id)
         for kb in card.knowledge_bases or []:
             if kb.get("id") == command.knowledge_id:
@@ -276,6 +347,7 @@ class McpGetCardKnowledgeUseCase:
 
 @dataclass(frozen=True)
 class McpCopyQaToCardCommand:
+    board_id: str
     spec_id: str
     card_id: str
 
@@ -290,15 +362,17 @@ class McpCopyQaToCardUseCase:
     ) -> McpPayloadResult:
 
         spec = await uow.services.specs.get_spec(command.spec_id)
-        if not spec:
+        if not _in_board_scope(spec, command.board_id, actor):
             raise EntityNotFoundError("spec", command.spec_id)
         card = await uow.services.cards.get_card(command.card_id)
-        if not card:
+        if not _in_board_scope(card, command.board_id, actor):
             raise EntityNotFoundError("card", command.card_id)
 
         qa_items = [qa for qa in (spec.qa_items or []) if _qa_answer_text(qa)]
         if not qa_items:
-            return McpPayloadResult({"error": "No answered Q&A to copy"})
+            return McpPayloadResult(
+                {"success": True, "copied": 0, "reason": "no_answered_qa"}
+            )
 
         lines = ["## Spec Q&A Context\n"]
         for qa in qa_items:
@@ -344,6 +418,16 @@ class McpAddScreenMockupUseCase:
             normalize_design_system_ref,
         )
 
+        entity, service, update_class = await _load_entity_mockups(
+            uow.services,
+            command.entity_type,
+            command.entity_id,
+            command.board_id,
+            actor,
+        )
+        if not entity:
+            raise EntityNotFoundError(command.entity_type, command.entity_id)
+
         screen_id = "sm_" + hashlib.md5(
             f"{command.entity_id}{command.title}{time.time()}".encode()
         ).hexdigest()[:8]
@@ -360,11 +444,6 @@ class McpAddScreenMockupUseCase:
             ),
             "design_system_evidence": command.design_system_evidence,
         }
-        entity, service, update_class = await _load_entity_mockups(
-            uow.services, command.entity_type, command.entity_id
-        )
-        if not entity:
-            raise EntityNotFoundError(command.entity_type, command.entity_id)
         try:
             gate_outcome = await uow.services.mockup_design_gate.evaluate_screen(
                 command.board_id,
@@ -401,7 +480,11 @@ class McpUpdateScreenMockupUseCase:
         )
 
         entity, service, update_class = await _load_entity_mockups(
-            uow.services, command.entity_type, command.entity_id
+            uow.services,
+            command.entity_type,
+            command.entity_id,
+            command.board_id,
+            actor,
         )
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
@@ -451,6 +534,15 @@ class McpAnnotateMockupUseCase:
     async def execute(
         self, command: McpScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
+        entity, service, update_class = await _load_entity_mockups(
+            uow.services,
+            command.entity_type,
+            command.entity_id,
+            command.board_id,
+            actor,
+        )
+        if not entity:
+            raise EntityNotFoundError(command.entity_type, command.entity_id)
         annotation = {
             "id": "an_" + hashlib.md5(
                 f"{command.screen_id}{command.text}{time.time()}".encode()
@@ -458,11 +550,6 @@ class McpAnnotateMockupUseCase:
             "text": command.text,
             "author_id": actor.actor_id,
         }
-        entity, service, update_class = await _load_entity_mockups(
-            uow.services, command.entity_type, command.entity_id
-        )
-        if not entity:
-            raise EntityNotFoundError(command.entity_type, command.entity_id)
         screens = list(entity.screen_mockups or [])
         screen = next((s for s in screens if s.get("id") == command.screen_id), None)
         if not screen:
@@ -482,7 +569,11 @@ class McpListScreenMockupsUseCase:
         self, command: McpScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
         entity, _service, _update_class = await _load_entity_mockups(
-            uow.services, command.entity_type, command.entity_id
+            uow.services,
+            command.entity_type,
+            command.entity_id,
+            command.board_id,
+            actor,
         )
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
@@ -508,7 +599,11 @@ class McpDeleteScreenMockupUseCase:
         self, command: McpScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
         entity, service, update_class = await _load_entity_mockups(
-            uow.services, command.entity_type, command.entity_id
+            uow.services,
+            command.entity_type,
+            command.entity_id,
+            command.board_id,
+            actor,
         )
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
@@ -526,6 +621,7 @@ class McpDeleteScreenMockupUseCase:
 
 @dataclass(frozen=True)
 class McpListQaCommand:
+    board_id: str
     entity_type: str
     entity_id: str
     filters: dict[str, Any]
@@ -535,14 +631,21 @@ class McpListQaUseCase:
     async def execute(
         self, command: McpListQaCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-
+        parent, _service, _update_class = await _load_entity_mockups(
+            uow.services,
+            command.entity_type,
+            command.entity_id,
+            command.board_id,
+            actor,
+        )
+        if not parent:
+            raise EntityNotFoundError(command.entity_type, command.entity_id)
         if command.entity_type == "spec":
             items = await uow.services.spec_qa.list_qa(command.entity_id)
         elif command.entity_type == "ideation":
             items = await uow.services.ideation_qa.list_qa(command.entity_id)
         else:
             items = await uow.services.refinement_qa.list_qa(command.entity_id)
-        await commit(uow)
         if command.filters.get("asked_by"):
             items = [q for q in items if q.asked_by == command.filters["asked_by"]]
         return McpPayloadResult(
@@ -582,11 +685,19 @@ class McpListKnowledgeUseCase:
     async def execute(
         self, command: McpListKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
+        parent, _service, _update_class = await _load_entity_mockups(
+            uow.services,
+            command.entity_type,
+            command.entity_id,
+            command.board_id,
+            actor,
+        )
+        if not parent:
+            raise EntityNotFoundError(command.entity_type, command.entity_id)
 
         mime_filter: str | None = command.filters.get("mime_type")
         if command.entity_type == "spec":
             items = await uow.services.spec_knowledge.list_knowledge(command.entity_id)
-            await commit(uow)
             if mime_filter:
                 items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
             return McpPayloadResult(
@@ -607,11 +718,7 @@ class McpListKnowledgeUseCase:
                 }
             )
         if command.entity_type == "ideation":
-            ideation = await uow.services.ideations.get_ideation(command.entity_id)
-            if not ideation or ideation.board_id != command.board_id:
-                raise EntityNotFoundError("ideation", command.entity_id)
             items = await uow.services.ideation_knowledge.list_knowledge(command.entity_id)
-            await commit(uow)
             if mime_filter:
                 items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
             return McpPayloadResult(
@@ -627,7 +734,6 @@ class McpListKnowledgeUseCase:
             )
         if command.entity_type == "refinement":
             items = await uow.services.refinement_knowledge.list_knowledge(command.entity_id)
-            await commit(uow)
             if mime_filter:
                 items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
             return McpPayloadResult(
@@ -647,9 +753,7 @@ class McpListKnowledgeUseCase:
                     ],
                 }
             )
-        card = await uow.services.cards.get_card(command.entity_id)
-        if not card or card.board_id != command.board_id:
-            raise EntityNotFoundError("card", command.entity_id)
+        card = parent
         kbs = list(card.knowledge_bases or [])
         if mime_filter:
             kbs = [kb for kb in kbs if kb.get("mime_type") == mime_filter]
@@ -665,6 +769,7 @@ class McpListKnowledgeUseCase:
 
 @dataclass(frozen=True)
 class McpListSnapshotsCommand:
+    board_id: str
     entity_type: str
     entity_id: str
 
@@ -673,12 +778,19 @@ class McpListSnapshotsUseCase:
     async def execute(
         self, command: McpListSnapshotsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpPayloadResult:
-
+        parent, _service, _update_class = await _load_entity_mockups(
+            uow.services,
+            command.entity_type,
+            command.entity_id,
+            command.board_id,
+            actor,
+        )
+        if not parent:
+            raise EntityNotFoundError(command.entity_type, command.entity_id)
         if command.entity_type == "ideation":
             snapshots = await uow.services.ideations.list_snapshots(
                 command.entity_id
             )
-            await commit(uow)
             return McpPayloadResult(
                 {
                     "entity_type": command.entity_type,
@@ -699,7 +811,6 @@ class McpListSnapshotsUseCase:
         snapshots = await uow.services.refinements.list_snapshots(
             command.entity_id
         )
-        await commit(uow)
         return McpPayloadResult(
             {
                 "entity_type": command.entity_type,

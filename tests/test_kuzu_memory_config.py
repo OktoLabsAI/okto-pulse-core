@@ -280,8 +280,10 @@ async def settings_client():
     from fastapi import FastAPI
 
     from okto_pulse.community.api.settings import router
-    from okto_pulse.community.api.auth_deps import require_user
+    from okto_pulse.community.api.auth_deps import require_principal, require_user
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
     from okto_pulse.core.infra.database import get_db, get_session_factory
+    from okto_pulse.core.ports.authentication import Principal
 
     configure_settings(CommunitySettings())
 
@@ -299,6 +301,11 @@ async def settings_client():
             yield session
 
     app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        "user-test",
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
     app.dependency_overrides[get_db] = _override_db
 
     transport = ASGITransport(app=app)
