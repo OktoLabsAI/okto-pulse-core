@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, require_runtime_value, reset_runtime_values
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
+
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    require_runtime_value,
+    reset_runtime_values,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,12 +23,37 @@ class QueueHealthStorageSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class ActiveConsolidationWorkItemSnapshot:
+    queue_id: str
+    status: str
+    work_kind: str
+    artifact_type: str
+    artifact_id: str
+    attempts: int
+    triggered_at: datetime
+    claimed_at: datetime | None = None
+    claim_timeout_at: datetime | None = None
+    next_retry_at: datetime | None = None
+    last_error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ActiveQueueStorageSnapshot:
     consolidation_by_status: dict[str, int]
     consolidation_by_category: dict[str, int]
     consolidation_oldest_at: datetime | None
     outbox_depth: int
     outbox_oldest_at: datetime | None
+    consolidation_ready_count: int
+    consolidation_scheduled_retry_count: int
+    consolidation_claimed_count: int
+    consolidation_overdue_claimed_count: int
+    consolidation_ready_oldest_at: datetime | None
+    consolidation_overdue_claimed_oldest_at: datetime | None
+    consolidation_next_retry_at: datetime | None
+    consolidation_by_work_kind: dict[str, int]
+    consolidation_max_attempts: int
+    consolidation_items: tuple[ActiveConsolidationWorkItemSnapshot, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +86,9 @@ class QueueHealthReadPort(Protocol):
         active_statuses: tuple[str, ...],
         max_outbox_retries: int,
         dead_letter_retry_sentinel: int,
+        now: datetime,
+        stuck_before: datetime,
+        item_limit: int,
     ) -> ActiveQueueStorageSnapshot: ...
 
     async def global_outbox_dead_letter_snapshot(
@@ -86,6 +118,7 @@ def reset_queue_health_read_port_for_tests() -> None:
 
 
 __all__ = [
+    "ActiveConsolidationWorkItemSnapshot",
     "ActiveQueueStorageSnapshot",
     "GlobalOutboxDeadLetterRowSnapshot",
     "GlobalOutboxDeadLetterStorageSnapshot",

@@ -404,7 +404,8 @@ args: okto-pulse://reference/tool-docs/kg."""
     ) -> str:
         """Read-only artifact→node drift report: compares each node's persisted
 source_content_hash against the artifact's latest consolidation and current
-existence. Reasons: content_changed | artifact_missing (deleted source, terminal).
+existence. Reasons: content_changed | artifact_missing (deleted source, terminal)
+| audit_missing (live source without a durable comparison anchor).
 Returns checked_count/drifted_count/skipped_count + drifted list. Remedy is a
 normal re-consolidation; the graph is never modified. node_type optionally
 narrows to one table."""

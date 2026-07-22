@@ -3550,17 +3550,20 @@ async def okto_pulse_delete_card(board_id: str, card_id: str) -> str:
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            deleted = (
-                await McpDeleteCardUseCase().execute(
-                    McpDeleteCardCommand(card_id, board_id), actor=actor, uow=uow
-                )
-            ).deleted
+            result = await McpDeleteCardUseCase().execute(
+                McpDeleteCardCommand(card_id, board_id), actor=actor, uow=uow
+            )
     except EntityNotFoundError:
         return json.dumps({"error": "Card not found"})
     except CardOperationError as e:
         return json.dumps({"error": e.code, **e.to_dict(), **e.facts})
 
-    return json.dumps({"success": deleted})
+    return json.dumps(
+        {
+            "success": result.deleted,
+            "takedown": result.takedown,
+        }
+    )
 
 
 @mcp.tool()
@@ -16762,6 +16765,68 @@ async def okto_pulse_kg_stale_canonical_parity_list(
             uow=uow,
         )
     return json.dumps(result.data, default=str)
+
+
+@mcp.tool()
+async def okto_pulse_kg_takedown_status(
+    board_id: str,
+    delete_event_id: str = "",
+    delivery_key: str = "",
+) -> str:
+    """Inspect one governed SOT/KG deletion timeline. READ-ONLY.
+
+    Provide exactly one durable identity returned by a delete operation:
+    ``delete_event_id`` or ``delivery_key``. The response includes the intent,
+    graph-demotion and delivery states plus the fail-closed board/Global
+    Discovery parity predicate. It never retries, rearms or mutates work.
+    """
+
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+
+    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if perm_err:
+        return _perm_error(perm_err)
+
+    event_selector = str(delete_event_id or "").strip() or None
+    delivery_selector = str(delivery_key or "").strip() or None
+    if (event_selector is None) == (delivery_selector is None):
+        return json.dumps(
+            {
+                "found": False,
+                "error": "takedown_selector_invalid",
+                "detail": (
+                    "Provide exactly one of delete_event_id or delivery_key"
+                ),
+            }
+        )
+
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+        result = await uow.services.kg.query_takedown_telemetry(
+            board_id=board_id,
+            delete_event_id=event_selector,
+            delivery_key=delivery_selector,
+        )
+
+    # Selector identities are global. Enforce the requested board again at the
+    # transport boundary so a valid identity cannot disclose another board.
+    if result.get("found") is True and result.get("board_id") != board_id:
+        return json.dumps(
+            {
+                "found": False,
+                "error": "takedown_telemetry_not_found",
+                "selector": (
+                    {"delete_event_id": event_selector}
+                    if event_selector is not None
+                    else {"delivery_key": delivery_selector}
+                ),
+            }
+        )
+    return json.dumps(result, default=str)
 
 
 @mcp.tool()

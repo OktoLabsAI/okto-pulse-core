@@ -425,6 +425,26 @@ Args:
 Returns:
     JSON with stale parity rows and diagnostic metadata.
 
+## `okto_pulse_kg_takedown_status`
+
+Read-only timeline for one governed SOT/KG deletion. Use an identity returned
+by the delete response to follow intent creation, graph convergence, durable
+delivery and the fail-closed board/Global Discovery parity predicate.
+
+Args:
+    board_id: Required authorization and storage scope. Selectors are resolved
+        inside this board before any timeline or aggregate is materialized.
+    delete_event_id: Durable delete event identity. Mutually exclusive with
+        delivery_key.
+    delivery_key: Logical Global Discovery delivery identity. Mutually
+        exclusive with delete_event_id.
+
+Returns:
+    JSON with found, immutable artifact identity, generation, ordered states,
+    retry metadata, SLO aggregates and e2e_health. The tool never retries,
+    rearms or mutates queue work. An unavailable parity probe is explicit and
+    cannot be interpreted as healthy.
+
 ## `okto_pulse_kg_orphan_report`
 
 Return a bounded safe orphan-node report for a board KG.
@@ -637,9 +657,11 @@ Args:
 Returns:
     JSON with `worker_mode`, `total_active_depth`, an overall `classification`
     (transient | stuck | backpressure | idle) and per-source breakdowns:
-    `consolidation_queue` (pending/claimed by status + by artifact category +
-    oldest_age_seconds) and `global_update_outbox` (pending retry-window depth
-    + oldest_age_seconds).
+    `consolidation_queue` (ready/scheduled_retry/claimed/overdue_claimed,
+    work_kind, attempts, next_retry_at, last_progress_at and safe reason) and
+    `global_update_outbox` (pending retry-window depth + oldest_age_seconds).
+    Scheduled backoff is active depth but is not classified as stuck until it
+    becomes retry-eligible; claimed work is stuck only after its claim expires.
 
 ## `okto_pulse_kg_migrate_schema`
 

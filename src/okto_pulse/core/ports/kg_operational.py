@@ -32,6 +32,10 @@ def classify_kg_recovery_failure(
     kind = str(error_type or "").casefold()
     detail = str(message or "").casefold()
     joined = f"{kind} {detail}"
+    if kind in {"auditwritecontention", "audit_write_contention"}:
+        return KGRecoveryClassification(
+            "connectivity", "kg_recovery.audit_write_contention", True
+        )
     if any(
         token in joined
         for token in (

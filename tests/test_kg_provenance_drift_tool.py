@@ -13,11 +13,13 @@ import shutil
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from kg_registry_testing import configure_real_graph_test_kg_registry
 
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from okto_pulse.core.kg import provenance_drift as provenance_module
 from okto_pulse.core.kg.provenance_drift import provenance_drift_report
 
 from test_kg_dedup_nc8 import (  # noqa: F401  (harness reuse)
@@ -268,12 +270,171 @@ async def test_s6_generic_card_ref_resolves_semantic_source_alias(
         artifact_ref,
         f"[MKG-B] Alias de card {card_type}",
         content="conteudo",
+        artifact_type="card",
     )
 
     report = await provenance_drift_report(board_id, "Entity")
     drifted = {d["node_id"]: d for d in report["drifted"]}
     node = await _graph_snapshot(board_id, artifact_ref)
     assert node["id"] not in drifted
+
+
+def _configure_auditless_provenance_probe(
+    monkeypatch,
+    *,
+    source_rows: list[dict],
+) -> None:
+    source_ref = "spec:auditless-artifact"
+
+    class _Reader:
+        def fetch(self, board_id):
+            assert board_id == "board-auditless"
+            return SimpleNamespace(complete=True, cause=None, rows=source_rows)
+
+    class _AuditRepo:
+        async def get_latest_for_artifact(
+            self,
+            board_id,
+            artifact_id,
+            *,
+            artifact_type,
+        ):
+            assert board_id == "board-auditless"
+            assert artifact_id == "auditless-artifact"
+            assert artifact_type == "spec"
+            return None
+
+    registry = SimpleNamespace(
+        require_board_source_reader=lambda: _Reader(),
+        audit_repo=_AuditRepo(),
+    )
+    monkeypatch.setattr(
+        provenance_module,
+        "get_kg_registry",
+        lambda: registry,
+    )
+    monkeypatch.setattr(
+        provenance_module,
+        "_fetch_provenance_nodes",
+        lambda board_id, node_types: [{
+            "node_id": "node-auditless",
+            "node_type": "Entity",
+            "source_artifact_ref": source_ref,
+            "persisted_hash": "persisted-without-audit",
+        }],
+    )
+
+
+async def test_missing_source_without_audit_is_artifact_missing(monkeypatch):
+    _configure_auditless_provenance_probe(monkeypatch, source_rows=[])
+
+    report = await provenance_drift_report("board-auditless", "Entity")
+
+    assert report["checked_count"] == 1
+    assert report["skipped_count"] == 0
+    assert report["drifted"][0]["reason"] == "artifact_missing"
+    assert report["drifted"][0]["current_hash"] is None
+    assert report["drifted_by_reason"]["artifact_missing"] == 1
+    assert report["drifted_by_reason"]["audit_missing"] == 0
+
+
+async def test_live_source_without_audit_is_audit_missing(monkeypatch):
+    _configure_auditless_provenance_probe(
+        monkeypatch,
+        source_rows=[{
+            "source_ref": "spec:auditless-artifact",
+            "artifact_type": "spec",
+            "id": "auditless-artifact",
+        }],
+    )
+
+    report = await provenance_drift_report("board-auditless", "Entity")
+
+    assert report["checked_count"] == 1
+    assert report["skipped_count"] == 0
+    assert report["drifted"][0]["reason"] == "audit_missing"
+    assert report["drifted"][0]["current_hash"] is None
+    assert report["drifted_by_reason"]["artifact_missing"] == 0
+    assert report["drifted_by_reason"]["audit_missing"] == 1
+
+
+async def test_audit_lookup_is_scoped_by_type_when_ids_collide(monkeypatch):
+    shared_id = "00000000-0000-4000-8000-000000000123"
+    audit_calls: list[tuple[str, str, str | None]] = []
+
+    class _Reader:
+        def fetch(self, board_id):
+            assert board_id == "board-shared-id"
+            return SimpleNamespace(
+                complete=True,
+                cause=None,
+                rows=[
+                    {
+                        "source_ref": f"spec:{shared_id}",
+                        "artifact_type": "spec",
+                        "id": shared_id,
+                    },
+                    {
+                        "source_ref": f"task:{shared_id}",
+                        "artifact_type": "task",
+                        "id": shared_id,
+                    },
+                ],
+            )
+
+    class _AuditRepo:
+        async def get_latest_for_artifact(
+            self,
+            board_id,
+            artifact_id,
+            *,
+            artifact_type,
+        ):
+            audit_calls.append((board_id, artifact_id, artifact_type))
+            return SimpleNamespace(
+                artifact_type=artifact_type,
+                content_hash=f"{artifact_type}-hash",
+            )
+
+    registry = SimpleNamespace(
+        require_board_source_reader=lambda: _Reader(),
+        audit_repo=_AuditRepo(),
+    )
+    monkeypatch.setattr(
+        provenance_module,
+        "get_kg_registry",
+        lambda: registry,
+    )
+    monkeypatch.setattr(
+        provenance_module,
+        "_fetch_provenance_nodes",
+        lambda board_id, node_types: [
+            {
+                "node_id": "node-spec",
+                "node_type": "Entity",
+                "source_artifact_ref": f"spec:{shared_id}",
+                "persisted_hash": "spec-hash",
+            },
+            {
+                "node_id": "node-task",
+                "node_type": "Entity",
+                "source_artifact_ref": f"task:{shared_id}",
+                "persisted_hash": "task-hash",
+            },
+        ],
+    )
+
+    report = await provenance_drift_report("board-shared-id", "Entity")
+
+    # A cache/lookup keyed only by id would call the repository once and could
+    # reuse the Spec audit for the Task node. Both typed audits are recovered.
+    assert audit_calls == [
+        ("board-shared-id", shared_id, "spec"),
+        ("board-shared-id", shared_id, "task"),
+    ]
+    assert report["checked_count"] == 2
+    assert report["drifted_count"] == 0
+    assert report["drifted"] == []
 
 
 async def test_s6_unknown_node_type_rejected(drift_tempdir, monkeypatch):

@@ -208,9 +208,11 @@ async def test_ts18_controlled_normal_and_sweep_recovery_slo_use_delivered_parit
     operations = CoreKnowledgeGraphOperations(object(), clock=lambda: observed_at)
 
     normal_payload = await operations.query_takedown_telemetry(
+        board_id=BOARD_ID,
         delete_event_id=DELETE_EVENT_ID
     )
     recovery_payload = await operations.query_takedown_telemetry(
+        board_id=BOARD_ID,
         delete_event_id=recovery_event
     )
 
@@ -400,6 +402,12 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
             routed_to_debt=[],
             routed_to_debt_count=0,
             scanned=1,
+            target_identity_count=1,
+            target_found_count=1,
+            target_demoted_count=1,
+            target_already_converged_count=0,
+            target_skipped_cognitive_count=0,
+            target_preserved_canonical_count=0,
         )
 
     from okto_pulse.core.kg import canonical_stale_reconciler

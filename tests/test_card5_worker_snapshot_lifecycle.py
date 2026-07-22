@@ -80,6 +80,12 @@ async def test_source_snapshot_incomplete_skips_graph_lifecycle(monkeypatch):
             incomplete=True,
             incomplete_cause="db_missing",
             failed_types=(),
+            target_identity_count=1,
+            target_found_count=0,
+            target_demoted_count=0,
+            target_already_converged_count=0,
+            target_skipped_cognitive_count=0,
+            target_preserved_canonical_count=0,
         )
 
     monkeypatch.setattr(
@@ -109,6 +115,12 @@ async def test_partial_type_failure_keeps_graph_lifecycle(monkeypatch):
             incomplete=True,
             incomplete_cause=None,
             failed_types=("Decision",),
+            target_identity_count=1,
+            target_found_count=0,
+            target_demoted_count=0,
+            target_already_converged_count=0,
+            target_skipped_cognitive_count=0,
+            target_preserved_canonical_count=0,
         )
 
     monkeypatch.setattr(

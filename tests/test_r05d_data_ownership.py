@@ -245,7 +245,10 @@ def test_prefer_provided_base_registry_slots_not_overwritten():
             ...
 
     class _SentinelAudit:
-        ...
+        async def stage_consolidation_records(
+            self, transaction_context, audit, node_refs, outbox_event,
+        ):
+            ...
 
     sentinel_bus = _SentinelBus()
     sentinel_audit = _SentinelAudit()

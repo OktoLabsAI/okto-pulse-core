@@ -255,7 +255,8 @@ class TestE2EInMemoryProviders:
         content = "same content"
         h = compute_content_hash(content, "art-4", "test-board")
         now = datetime.now(timezone.utc)
-        await audit_repo.commit_consolidation_records(
+        await audit_repo.stage_consolidation_records(
+            object(),
             ConsolidationAuditData(
                 session_id="prev-session", board_id="test-board",
                 artifact_id="art-4", artifact_type="spec",

@@ -20,13 +20,18 @@ class InMemoryAuditRepository:
         self.outbox_events: list[OutboxEventData] = []
 
     async def get_latest_for_artifact(
-        self, board_id: str, artifact_id: str
+        self,
+        board_id: str,
+        artifact_id: str,
+        *,
+        artifact_type: str,
     ) -> AuditRow | None:
         matching = [
             a
             for a in reversed(self.audits)
             if a.board_id == board_id
             and a.artifact_id == artifact_id
+            and a.artifact_type == artifact_type
             and a.committed_at is not None
             and a.undo_status == "none"
         ]
@@ -41,12 +46,14 @@ class InMemoryAuditRepository:
     async def get_node_refs_by_session(self, session_id: str) -> list[NodeRefData]:
         return [r for r in self.node_refs if r.session_id == session_id]
 
-    async def commit_consolidation_records(
+    async def stage_consolidation_records(
         self,
+        transaction_context: object,
         audit: ConsolidationAuditData,
         node_refs: list[NodeRefData],
         outbox_event: OutboxEventData,
     ) -> None:
+        del transaction_context
         self.audits.append(
             AuditRow(
                 session_id=audit.session_id,

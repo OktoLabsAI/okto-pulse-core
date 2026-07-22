@@ -197,15 +197,17 @@ class TakedownTransition:
 
 @dataclass(frozen=True, slots=True)
 class TakedownTelemetryQuery:
-    """Exactly-one identity query with a caller-controlled observation time."""
+    """Board-scoped, exactly-one identity query with a controlled clock."""
 
     now: datetime
+    board_id: str
     delete_event_id: str | None = None
     delivery_key: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.now, datetime):
             raise ValueError("takedown_telemetry_now_invalid")
+        board_id = _required_text(self.board_id, field_name="board_id")
         delete_event_id = _optional_text(
             self.delete_event_id,
             field_name="delete_event_id",
@@ -216,6 +218,7 @@ class TakedownTelemetryQuery:
         )
         if (delete_event_id is None) == (delivery_key is None):
             raise ValueError("takedown_telemetry_identity_one_of_required")
+        object.__setattr__(self, "board_id", board_id)
         object.__setattr__(self, "delete_event_id", delete_event_id)
         object.__setattr__(self, "delivery_key", delivery_key)
 

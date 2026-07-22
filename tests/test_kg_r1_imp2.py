@@ -29,7 +29,12 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r1i2_"))
 
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.global_discovery import metrics as gdm
+from okto_pulse.core.kg.global_discovery import layer_parity
 from okto_pulse.core.kg.global_discovery.layer_parity import (
+    PARITY_EVALUATED,
+    PARITY_NOT_EVALUATED,
+    PARITY_STATUS_AVAILABLE,
+    PARITY_STATUS_UNAVAILABLE,
     collect_digest_layer_mismatch_inputs,
     detect_digest_layer_mismatches,
     evaluate_digest_layer_mismatch_inputs,
@@ -209,6 +214,43 @@ def _issues_by_code(health, code):
 # ===========================================================================
 
 
+@pytest.mark.asyncio
+async def test_unavailable_parity_is_preserved_as_not_evaluated(monkeypatch):
+    unavailable_inputs = {
+        "status": "unavailable",
+        "reason": "global_discovery_read_failed",
+        "digests": [],
+        "board_meta": {},
+        "needs_overlay": False,
+    }
+    monkeypatch.setattr(
+        layer_parity,
+        "collect_digest_layer_mismatch_inputs",
+        lambda board_id: unavailable_inputs,
+    )
+
+    evaluated = await detect_digest_layer_mismatches(
+        object(),
+        board_id="board-unavailable",
+    )
+    assert evaluated == {
+        "status": PARITY_STATUS_UNAVAILABLE,
+        "evaluation": PARITY_NOT_EVALUATED,
+        "reason": "global_discovery_read_failed",
+        "items": [],
+    }
+
+    # The detector has one status-bearing contract: an empty item list without
+    # an evaluated state can never be interpreted as healthy.
+    drilldown = await list_digest_layer_mismatches(
+        object(), board_id="board-unavailable"
+    )
+    assert drilldown["items"] == []
+    assert drilldown["status"] == PARITY_STATUS_UNAVAILABLE
+    assert drilldown["evaluation"] == PARITY_NOT_EVALUATED
+    assert drilldown["evaluation_reason"] == "global_discovery_read_failed"
+
+
 def test_collector_uses_board_type_for_mixed_duplicate_rows_and_skips_ghosts(
     monkeypatch,
 ):
@@ -312,15 +354,20 @@ def test_collector_uses_board_type_for_mixed_duplicate_rows_and_skips_ghosts(
 
     # One duplicate row is stale against the board's canonical Decision.  The
     # other duplicate agrees, and the vanished source is prune territory.
-    assert evaluate_digest_layer_mismatch_inputs(inputs) == [{
-        "board_id": board_id,
-        "digest_id": digest_id,
-        "original_node_id": source_id,
-        "node_type": "Decision",
-        "expected_layer": "canonical",
-        "actual_layer": "working",
-        "source_artifact_ref": "",
-    }]
+    assert evaluate_digest_layer_mismatch_inputs(inputs) == {
+        "status": PARITY_STATUS_AVAILABLE,
+        "evaluation": PARITY_EVALUATED,
+        "reason": "ok",
+        "items": [{
+            "board_id": board_id,
+            "digest_id": digest_id,
+            "original_node_id": source_id,
+            "node_type": "Decision",
+            "expected_layer": "canonical",
+            "actual_layer": "working",
+            "source_artifact_ref": "",
+        }],
+    }
 
 
 @pytest.mark.asyncio
@@ -329,7 +376,12 @@ async def test_detector_finds_stale_digest_then_reconcile_clears(db_factory):
     nid = await _make_stale_canonical_digest(db_factory, board_id)
 
     async with db_factory() as db:
-        mismatches = await detect_digest_layer_mismatches(db, board_id=board_id)
+        evaluation = await detect_digest_layer_mismatches(
+            db, board_id=board_id
+        )
+    assert evaluation["status"] == PARITY_STATUS_AVAILABLE
+    assert evaluation["evaluation"] == PARITY_EVALUATED
+    mismatches = evaluation["items"]
     assert len(mismatches) == 1
     m = mismatches[0]
     assert m["original_node_id"] == nid
@@ -341,7 +393,12 @@ async def test_detector_finds_stale_digest_then_reconcile_clears(db_factory):
     assert await _run_outbox_no_refs(db_factory, board_id) == 1
     assert _digest_layer(board_id, nid) == "working"
     async with db_factory() as db:
-        assert await detect_digest_layer_mismatches(db, board_id=board_id) == []
+        evaluation = await detect_digest_layer_mismatches(
+            db, board_id=board_id
+        )
+    assert evaluation["status"] == PARITY_STATUS_AVAILABLE
+    assert evaluation["evaluation"] == PARITY_EVALUATED
+    assert evaluation["items"] == []
 
 
 # ===========================================================================

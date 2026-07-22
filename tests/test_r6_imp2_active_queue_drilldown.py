@@ -34,9 +34,12 @@ from sqlalchemy_test_models import (
     GlobalUpdateOutbox,
 )
 from okto_pulse.core.services.queue_health_service import (
+    ActiveQueueSnapshotContractError,
+    _validate_active_queue_snapshot,
     classify_active_queue,
     get_active_queue_drilldown,
 )
+from okto_pulse.core.ports.queue_health import ActiveQueueStorageSnapshot
 
 USER_ID = "r6-imp2-user"
 BOARD_PREFIX = "r6imp2-board"
@@ -93,11 +96,29 @@ async def _call(name: str, **kwargs) -> dict:
         return json.loads(await tool.fn(**kwargs))
 
 
-def _cq(board, *, artifact_type, status, age_s=10):
+def _cq(
+    board,
+    *,
+    artifact_type,
+    status,
+    age_s=10,
+    work_kind="consolidate",
+    attempts=0,
+    next_retry_at=None,
+    claimed_at=None,
+    claim_timeout_at=None,
+    last_error=None,
+):
     return ConsolidationQueue(
         id=_id("cq"), board_id=board, artifact_type=artifact_type,
         artifact_id=_id("art"), status=status,
         triggered_at=_now() - timedelta(seconds=age_s),
+        work_kind=work_kind,
+        attempts=attempts,
+        next_retry_at=next_retry_at,
+        claimed_at=claimed_at,
+        claim_timeout_at=claim_timeout_at,
+        last_error=last_error,
     )
 
 
@@ -122,6 +143,32 @@ def test_classify_active_queue_thresholds():
     assert classify_active_queue(depth=5000, oldest_age_s=10, alert_threshold=5000, stuck_age_s=300) == "backpressure"
     # backpressure wins over stuck when both apply.
     assert classify_active_queue(depth=5000, oldest_age_s=400, alert_threshold=5000, stuck_age_s=300) == "backpressure"
+
+
+def test_incomplete_adapter_snapshot_fails_closed() -> None:
+    snapshot = ActiveQueueStorageSnapshot(
+        consolidation_by_status={"pending": 1, "claimed": 0},
+        consolidation_by_category={"card": 1},
+        consolidation_oldest_at=_now() - timedelta(minutes=20),
+        outbox_depth=0,
+        outbox_oldest_at=None,
+        consolidation_ready_count=0,
+        consolidation_scheduled_retry_count=0,
+        consolidation_claimed_count=0,
+        consolidation_overdue_claimed_count=0,
+        consolidation_ready_oldest_at=None,
+        consolidation_overdue_claimed_oldest_at=None,
+        consolidation_next_retry_at=None,
+        consolidation_by_work_kind={},
+        consolidation_max_attempts=0,
+        consolidation_items=(),
+    )
+
+    with pytest.raises(
+        ActiveQueueSnapshotContractError,
+        match="pending_partition_mismatch",
+    ):
+        _validate_active_queue_snapshot(snapshot)
 
 
 # ===========================================================================
@@ -186,6 +233,54 @@ async def test_drilldown_idle_when_no_active_work(db_factory):
         dd = await get_active_queue_drilldown(db, board)
     assert dd["total_active_depth"] == 0
     assert dd["classification"] == "idle"
+
+
+@pytest.mark.asyncio
+async def test_scheduled_retry_is_visible_but_not_misclassified_as_stuck(
+    db_factory,
+):
+    board = _id(BOARD_PREFIX)
+    retry_at = _now() + timedelta(minutes=10)
+    async with db_factory() as db:
+        db.add(Board(id=board, name="scheduled retry", owner_id=USER_ID))
+        await db.flush()
+        db.add(
+            _cq(
+                board,
+                artifact_type="card",
+                status="pending",
+                age_s=1200,
+                work_kind="stale_reconcile",
+                attempts=2,
+                next_retry_at=retry_at,
+                last_error="database is locked",
+            )
+        )
+        await db.commit()
+        dd = await get_active_queue_drilldown(db, board)
+
+    cq = next(
+        source
+        for source in dd["sources"]
+        if source["source"] == "consolidation_queue"
+    )
+    assert cq["queue_depth"] == 1
+    assert cq["oldest_age_seconds"] >= 1200
+    assert cq["oldest_actionable_age_seconds"] == 0
+    assert cq["classification"] == "transient"
+    assert cq["reason"] == "scheduled_retry_not_yet_eligible"
+    assert cq["next_action"] == "wait_for_scheduled_retry"
+    assert cq["state_counts"] == {
+        "ready": 0,
+        "scheduled_retry": 1,
+        "claimed": 0,
+        "overdue_claimed": 0,
+    }
+    assert cq["by_work_kind"] == {"stale_reconcile": 1}
+    assert cq["max_attempts"] == 2
+    assert cq["items"][0]["operational_state"] == "scheduled_retry"
+    assert cq["items"][0]["next_retry_at"] is not None
+    assert cq["items"][0]["reason"] == "retry_backoff_not_elapsed"
 
 
 @pytest.mark.asyncio

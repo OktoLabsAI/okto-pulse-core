@@ -305,6 +305,15 @@ def configure_kg_registry(
                 "tests use a defaults_factory / explicit fakes."
             )
 
+        if not callable(
+            getattr(reg.audit_repo, "stage_consolidation_records", None)
+        ):
+            raise RuntimeError(
+                "KG registry audit_repo is incompatible: the composition must "
+                "provide stage_consolidation_records(transaction_context, ...) "
+                "so consolidation receipts share the caller-owned UnitOfWork."
+            )
+
         register_runtime_value(_RUNTIME_KEY, reg)
 
 

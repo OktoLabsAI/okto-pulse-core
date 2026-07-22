@@ -28,6 +28,7 @@ from okto_pulse.core.ports.delivery_ledger import (
     DeliveryTransferReplayConflict,
     DeliveryTransferRequest,
     DeliveryTransferReceipt,
+    build_attempt_event_key,
     get_delivery_ledger_port,
     register_delivery_ledger_port,
     reset_delivery_ledger_port_for_tests,
@@ -243,11 +244,13 @@ class _DeliveryPort:
         degraded: bool = False,
         failure: Exception | None = None,
         authoritative_state: DeliveryState | None = None,
+        authoritative_attempt: int = 0,
     ) -> None:
         self.store = store
         self.degraded = degraded
         self.failure = failure
         self.authoritative_state = authoritative_state
+        self.authoritative_attempt = authoritative_attempt
         self.read_calls: list[str] = []
         self.transfer_calls: list[DeliveryTransferRequest] = []
 
@@ -272,6 +275,11 @@ class _DeliveryPort:
         # These mutations model all three effects staged in the caller's
         # transaction before the adapter learns whether its queue CAS won.
         state = self.authoritative_state or request.target_state
+        attempt = (
+            self.authoritative_attempt
+            if self.authoritative_state is not None
+            else request.attempt
+        )
         self.store.delivery_rows[request.delivery_key] = state
         self.store.entries.pop(request.entry_id, None)
         if self.failure is not None:
@@ -279,10 +287,12 @@ class _DeliveryPort:
         return DeliveryTransferReceipt(
             delivery_key=request.delivery_key,
             state=state,
-            attempt=request.attempt,
+            attempt=attempt,
             attempt_event_key=(
-                request.attempt_event_key
-                if state is DeliveryState.OUTBOX_PERSISTED
+                build_attempt_event_key(request.delivery_key, attempt=attempt)
+                if state
+                in {DeliveryState.OUTBOX_PERSISTED, DeliveryState.DELIVERED}
+                or attempt > 0
                 else None
             ),
             replayed=self.authoritative_state is not None,
@@ -372,6 +382,7 @@ def _complete_empty_result(entry: ConsolidationQueueRecord) -> StaleReconcileRes
         board_id=entry.board_id,
         correlation_id=entry.delete_event_id or "legacy",
         demoted=[],
+        target_identity_count=1,
     )
 
 
@@ -433,6 +444,9 @@ async def test_transfer_carries_reconcile_evidence_and_controlled_timestamp(
         scanned=4,
         demoted=[{"node_id": "requirement-1"}],
         routed_to_debt=[{"node_id": "learning-1"}],
+        target_identity_count=1,
+        target_found_count=1,
+        target_demoted_count=1,
     )
 
     async def _complete(
@@ -461,32 +475,63 @@ async def test_transfer_carries_reconcile_evidence_and_controlled_timestamp(
         "routed_to_debt_count": 1,
         "incomplete": False,
         "incomplete_cause": None,
-        "failed_types": [],
-        "circuit_reason": "healthy",
+            "failed_types": [],
+            "target_identity_count": 1,
+            "target_found_count": 1,
+            "target_demoted_count": 1,
+            "target_already_converged_count": 0,
+            "target_skipped_cognitive_count": 0,
+            "target_preserved_canonical_count": 0,
+            "circuit_reason": "healthy",
     }
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("degraded", "authoritative_state", "requested_state"),
+    (
+        "degraded",
+        "authoritative_state",
+        "authoritative_attempt",
+        "requested_state",
+    ),
     [
         (
             True,
             DeliveryState.OUTBOX_PERSISTED,
+            0,
             DeliveryState.DELIVERY_DEBT,
         ),
         (
             False,
             DeliveryState.DELIVERY_DEBT,
+            0,
+            DeliveryState.OUTBOX_PERSISTED,
+        ),
+        (
+            False,
+            DeliveryState.DELIVERY_DEBT,
+            2,
+            DeliveryState.OUTBOX_PERSISTED,
+        ),
+        (
+            False,
+            DeliveryState.DELIVERED,
+            3,
             DeliveryState.OUTBOX_PERSISTED,
         ),
     ],
-    ids=("healthy-owner-after-degrade", "debt-owner-after-recovery"),
+    ids=(
+        "healthy-owner-after-degrade",
+        "debt-owner-after-recovery",
+        "advanced-debt-owner",
+        "delivered-owner",
+    ),
 )
 async def test_replay_preserves_authoritative_owner_across_circuit_change(
     monkeypatch: pytest.MonkeyPatch,
     degraded: bool,
     authoritative_state: DeliveryState,
+    authoritative_attempt: int,
     requested_state: DeliveryState,
 ) -> None:
     entry = _entry()
@@ -495,6 +540,7 @@ async def test_replay_preserves_authoritative_owner_across_circuit_change(
         store,
         degraded=degraded,
         authoritative_state=authoritative_state,
+        authoritative_attempt=authoritative_attempt,
     )
     processor = _processor(monkeypatch, store)
     mark_failed_calls = _track_mark_failed(monkeypatch, processor)

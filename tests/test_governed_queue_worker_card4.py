@@ -195,7 +195,11 @@ async def test_stale_reconcile_branches_before_artifact_load(monkeypatch):
 
     async def _reconcile(_db, **kwargs):
         reconciliations.append(kwargs)
-        return SimpleNamespace(incomplete=False, failed_types=())
+        return SimpleNamespace(
+            incomplete=False,
+            failed_types=(),
+            **_complete_target_contract(),
+        )
 
     monkeypatch.setattr(
         canonical_stale_reconciler,
@@ -251,13 +255,38 @@ async def test_invalid_stale_payload_has_no_graph_write_or_ack(monkeypatch):
     assert failure_calls == [entry.id]
 
 
+def _complete_target_contract() -> dict[str, int]:
+    return {
+        "target_identity_count": 1,
+        "target_found_count": 0,
+        "target_demoted_count": 0,
+        "target_already_converged_count": 0,
+        "target_skipped_cognitive_count": 0,
+        "target_preserved_canonical_count": 0,
+    }
+
+
 @pytest.mark.parametrize(
     ("result", "expected"),
     [
         (SimpleNamespace(), False),
         ({}, False),
-        (SimpleNamespace(incomplete=False, failed_types=()), True),
-        ({"incomplete": False, "failed_types": []}, True),
+        (
+            SimpleNamespace(
+                incomplete=False,
+                failed_types=(),
+                **_complete_target_contract(),
+            ),
+            True,
+        ),
+        (
+            {
+                "incomplete": False,
+                "failed_types": [],
+                **_complete_target_contract(),
+            },
+            True,
+        ),
         (SimpleNamespace(incomplete=True, failed_types=()), False),
         ({"incomplete": False, "failed_types": ["Decision"]}, False),
     ],

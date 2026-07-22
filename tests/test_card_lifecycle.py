@@ -15,6 +15,7 @@ Rules:
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -1680,6 +1681,7 @@ class TestActivityLog:
             old_title = card.title
             old_priority = card.priority.value
             old_labels = list(card.labels or [])
+            new_due_date = datetime(2026, 8, 15, 12, 30, tzinfo=timezone.utc)
 
             await svc.update_card(
                 card.id, USER_ID,
@@ -1687,6 +1689,7 @@ class TestActivityLog:
                     title="Updated via test",
                     priority=CardPriority.CRITICAL,
                     labels=["label-a", "activity-diff"],
+                    due_date=new_due_date,
                 ),
             )
             await db.commit()
@@ -1705,6 +1708,7 @@ class TestActivityLog:
             assert details["title"] == "Updated via test"
             assert details["priority"] == "critical"
             assert details["labels"] == ["label-a", "activity-diff"]
+            assert details["due_date"] == new_due_date.isoformat()
 
             changes = {
                 change["field"]: {"old": change["old"], "new": change["new"]}
@@ -1717,6 +1721,7 @@ class TestActivityLog:
                     "old": old_labels,
                     "new": ["label-a", "activity-diff"],
                 },
+                "due_date": {"old": None, "new": new_due_date.isoformat()},
             }
 
     async def test_activity_logged_on_card_deletion(self, db_factory):

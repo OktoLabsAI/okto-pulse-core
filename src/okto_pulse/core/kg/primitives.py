@@ -328,7 +328,13 @@ async def begin_consolidation(
     # an escape path.
     has_audit_source = not force_reprocess
     if has_audit_source:
-        latest = await _get_latest_audit(registry, db, req.board_id, req.artifact_id)
+        latest = await _get_latest_audit(
+            registry,
+            db,
+            req.board_id,
+            req.artifact_type,
+            req.artifact_id,
+        )
         nothing_changed = bool(latest and _audit_hash(latest) == content_hash)
         previous_session_id = _audit_session_id(latest) if latest else None
     else:
@@ -675,7 +681,11 @@ async def propose_reconciliation(
 
     if not force_reprocess:
         latest = await _get_latest_audit(
-            registry, db, session.board_id, session.artifact_id
+            registry,
+            db,
+            session.board_id,
+            session.artifact_type,
+            session.artifact_id,
         )
         nothing_changed = bool(latest and _audit_hash(latest) == session.content_hash)
     else:
@@ -3400,10 +3410,20 @@ def _now_iso() -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _get_latest_audit(registry, db, board_id: str, artifact_id: str):
+async def _get_latest_audit(
+    registry,
+    db,
+    board_id: str,
+    artifact_type: str,
+    artifact_id: str,
+):
     """Get latest committed audit via the composed AuditRepository."""
     if registry.audit_repo is not None:
-        return await registry.audit_repo.get_latest_for_artifact(board_id, artifact_id)
+        return await registry.audit_repo.get_latest_for_artifact(
+            board_id,
+            artifact_id,
+            artifact_type=artifact_type,
+        )
     raise KGPrimitiveError(
         "audit_repository_required",
         (
@@ -3481,8 +3501,11 @@ async def _commit_audit_records(registry, db, records, counters, req, session, a
     )
 
     if registry.audit_repo is not None:
-        await registry.audit_repo.commit_consolidation_records(
-            audit_data, graph_refs, outbox_data
+        await registry.audit_repo.stage_consolidation_records(
+            db,
+            audit_data,
+            graph_refs,
+            outbox_data,
         )
         return
     raise KGPrimitiveError(

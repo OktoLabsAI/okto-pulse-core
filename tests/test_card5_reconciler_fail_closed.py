@@ -50,7 +50,11 @@ class _GraphScope:
     def __init__(
         self,
         *,
-        rows_by_type: dict[str, list[tuple[str, str, str, str]]] | None = None,
+        rows_by_type: dict[
+            str,
+            list[tuple[str, str, str, str] | tuple[str, str, str, str, str]],
+        ]
+        | None = None,
         fail_query_types: frozenset[str] = frozenset(),
         fail_set_types: frozenset[str] = frozenset(),
     ) -> None:
@@ -68,7 +72,13 @@ class _GraphScope:
             self.query_types.append(node_type)
             if node_type in self.fail_query_types:
                 raise RuntimeError(f"injected QUERY failure for {node_type}")
-            return SimpleNamespace(rows=self.rows_by_type.get(node_type, []))
+            rows = self.rows_by_type.get(node_type, [])
+            if "n.maturity_status, n.graph_layer" in query:
+                rows = [
+                    row if len(row) == 5 else (*row, "canonical")
+                    for row in rows
+                ]
+            return SimpleNamespace(rows=rows)
         if "SET n.graph_layer" in query:
             if node_type in self.fail_set_types:
                 raise RuntimeError(f"injected SET failure for {node_type}")
@@ -313,6 +323,89 @@ async def test_source_refs_none_and_valid_list_have_distinct_scopes(
     # The reconciler owns graph mutation only.  Durable GD delivery is
     # transferred later by the queue worker in one relational transaction.
     assert result.global_sync_enqueued is False
+    if source_refs is not None:
+        assert result.target_identity_count == 1
+        assert result.target_found_count == 1
+        assert result.target_demoted_count == 1
+        assert result.target_already_converged_count == 0
+        assert result.target_skipped_cognitive_count == 0
+        assert result.target_preserved_canonical_count == 0
+    else:
+        assert result.target_identity_count == 0
+        assert result.target_found_count == 0
+
+
+@pytest.mark.asyncio
+async def test_targeted_retry_reports_existing_working_projection_as_converged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = _GraphScope(
+        rows_by_type={
+            "Entity": [
+                (
+                    "already-working-card",
+                    "card:deleted-card",
+                    "system:historical_consolidation",
+                    "working_stale",
+                    "working",
+                )
+            ]
+        }
+    )
+    _install_registry(monkeypatch, snapshot=BoardSourceSnapshot(), scope=scope)
+
+    result = await reconcile_stale_canonical(
+        object(),
+        board_id="board-card5",
+        source_refs=["card:deleted-card"],
+        correlation_id="delete-card-retry",
+    )
+
+    assert scope.writes == []
+    assert result.demoted == []
+    assert result.target_identity_count == 1
+    assert result.target_found_count == 1
+    assert result.target_demoted_count == 0
+    assert result.target_already_converged_count == 1
+    assert result.target_skipped_cognitive_count == 0
+    assert result.target_preserved_canonical_count == 0
+    assert result.to_dict()["target_already_converged_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_historical_consolidation_entity_is_a_deterministic_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = _GraphScope(
+        rows_by_type={
+            "Entity": [
+                (
+                    "historical-card-entity",
+                    "card:deleted-card",
+                    "system:historical_consolidation",
+                    "canonical_eligible",
+                )
+            ]
+        }
+    )
+    _install_registry(monkeypatch, snapshot=BoardSourceSnapshot(), scope=scope)
+
+    result = await reconcile_stale_canonical(
+        object(),
+        board_id="board-card5",
+        source_refs=["card:deleted-card"],
+        correlation_id="delete-card-event",
+    )
+
+    assert scope.writes == [("Entity", "historical-card-entity")]
+    assert [record["node_id"] for record in result.demoted] == [
+        "historical-card-entity"
+    ]
+    assert result.target_found_count == 1
+    assert result.target_demoted_count == 1
+    assert result.target_already_converged_count == 0
+    assert result.target_skipped_cognitive_count == 0
+    assert result.target_preserved_canonical_count == 0
 
 
 @pytest.mark.asyncio
@@ -857,6 +950,7 @@ async def test_failed_types_result_retries_without_ack_then_success_acknowledges
         StaleReconcileResult(
             board_id=entry.board_id,
             correlation_id="attempt-complete",
+            target_identity_count=1,
         ),
     ]
     observed_results: list[StaleReconcileResult] = []

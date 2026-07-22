@@ -94,9 +94,14 @@ async def test_stale_parity_offloads_board_graph_reader(monkeypatch) -> None:
         *,
         board_id: str,
         blocking_execution=None,
-    ) -> list[dict]:
+    ) -> dict:
         del board_id, blocking_execution
-        return []
+        return {
+            "status": "available",
+            "evaluation": "evaluated",
+            "reason": "ok",
+            "items": [],
+        }
 
     monkeypatch.setattr(
         stale_canonical_parity,
@@ -144,5 +149,10 @@ async def test_digest_parity_offloads_graph_input_collection(monkeypatch) -> Non
         board_id="board-offload",
     )
 
-    assert result == []
+    assert result == {
+        "status": "unavailable",
+        "evaluation": "not_evaluated",
+        "reason": "test",
+        "items": [],
+    }
     assert observed_threads and observed_threads[0] != event_loop_thread

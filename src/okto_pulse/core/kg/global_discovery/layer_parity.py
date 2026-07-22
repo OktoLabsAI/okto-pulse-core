@@ -32,6 +32,29 @@ from okto_pulse.core.ports.runtime_workers import BlockingExecutionPort
 
 LEARNING_NODE_TYPE = "Learning"
 DIGEST_LAYER_MISMATCH_CODE = "digest_vs_board_layer_mismatch"
+PARITY_STATUS_AVAILABLE = "available"
+PARITY_STATUS_UNAVAILABLE = "unavailable"
+PARITY_EVALUATED = "evaluated"
+PARITY_NOT_EVALUATED = "not_evaluated"
+
+
+def _parity_evaluation(
+    *,
+    status: str,
+    reason: str,
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build the status-bearing result used by diagnostic consumers."""
+    return {
+        "status": status,
+        "evaluation": (
+            PARITY_EVALUATED
+            if status == PARITY_STATUS_AVAILABLE
+            else PARITY_NOT_EVALUATED
+        ),
+        "reason": reason,
+        "items": items,
+    }
 
 
 def resolve_expected_digest_layer(
@@ -235,12 +258,22 @@ def evaluate_digest_layer_mismatch_inputs(
     inputs: dict[str, Any],
     *,
     overlay: dict[str, str] | None = None,
-) -> list[dict[str, Any]]:
-    """Purely evaluate collected graph inputs against an optional SQL overlay."""
+) -> dict[str, Any]:
+    """Purely evaluate graph inputs against an optional SQL overlay.
+
+    The status-bearing envelope is the only canonical contract. An empty
+    ``items`` list is meaningful only when ``status=available`` and
+    ``evaluation=evaluated``.
+    """
     from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
 
     if inputs.get("status") != "available":
-        return []
+        result = _parity_evaluation(
+            status=PARITY_STATUS_UNAVAILABLE,
+            reason=str(inputs.get("reason") or "parity_inputs_unavailable"),
+            items=[],
+        )
+        return result
     digests = list(inputs.get("digests") or [])
     board_meta = dict(inputs.get("board_meta") or {})
     effective_overlay = overlay or {}
@@ -271,7 +304,65 @@ def evaluate_digest_layer_mismatch_inputs(
                 "actual_layer": d["actual_layer"],
                 "source_artifact_ref": meta.get("source_artifact_ref") or "",
             })
-    return mismatches
+    result = _parity_evaluation(
+        status=PARITY_STATUS_AVAILABLE,
+        reason=str(inputs.get("reason") or "ok"),
+        items=mismatches,
+    )
+    return result
+
+
+async def probe_digest_layer_mismatches(
+    db: object,
+    *,
+    board_id: str,
+    blocking_execution: BlockingExecutionPort | None = None,
+) -> dict[str, Any]:
+    """Return mismatches together with an explicit evaluation state.
+
+    Read failures and an unreadable SQL overlay are represented as
+    ``unavailable`` / ``not_evaluated``. They are never reported as an
+    evaluated empty mismatch list.
+    """
+    from okto_pulse.core.kg.canonical_partition_integrity import (
+        pending_or_debt_exclusions,
+    )
+
+    try:
+        inputs = await run_blocking_graph_io(
+            lambda: collect_digest_layer_mismatch_inputs(board_id),
+            task_name="core.kg.digest_layer_parity.graph_read",
+            blocking_execution=blocking_execution,
+        )
+    except Exception as exc:
+        return _parity_evaluation(
+            status=PARITY_STATUS_UNAVAILABLE,
+            reason=f"graph_input_collection_failed:{type(exc).__name__}",
+            items=[],
+        )
+
+    if inputs.get("status") != PARITY_STATUS_AVAILABLE:
+        result = evaluate_digest_layer_mismatch_inputs(
+            inputs,
+        )
+        return result
+
+    try:
+        overlay = (
+            await pending_or_debt_exclusions(db, board_id=board_id)
+            if inputs.get("needs_overlay") else {}
+        )
+        result = evaluate_digest_layer_mismatch_inputs(
+            inputs,
+            overlay=overlay,
+        )
+    except Exception as exc:
+        return _parity_evaluation(
+            status=PARITY_STATUS_UNAVAILABLE,
+            reason=f"parity_evaluation_failed:{type(exc).__name__}",
+            items=[],
+        )
+    return result
 
 
 async def detect_digest_layer_mismatches(
@@ -279,30 +370,18 @@ async def detect_digest_layer_mismatches(
     *,
     board_id: str,
     blocking_execution: BlockingExecutionPort | None = None,
-) -> list[dict[str, Any]]:
-    """List digests whose published layer != expected_digest_layer.
+) -> dict[str, Any]:
+    """Evaluate digests whose published layer != expected_digest_layer.
 
-    Read-only. Degrades to ``[]`` if the global or board graph is unreadable
-    (Health/drilldown must never crash). A digest whose source node has vanished
-    is NOT a layer mismatch (that is prune territory) and is skipped.
+    Read-only and fail-closed. A digest whose source node has vanished is NOT a
+    layer mismatch (that is prune territory) and is skipped. Consumers must
+    inspect ``status``/``evaluation`` before interpreting ``items``.
     """
-    from okto_pulse.core.kg.canonical_partition_integrity import (
-        pending_or_debt_exclusions,
-    )
-
-    inputs = await run_blocking_graph_io(
-        lambda: collect_digest_layer_mismatch_inputs(board_id),
-        task_name="core.kg.digest_layer_parity.graph_read",
+    return await probe_digest_layer_mismatches(
+        db,
+        board_id=board_id,
         blocking_execution=blocking_execution,
     )
-    if inputs.get("status") != "available":
-        return []
-    needs_overlay = bool(inputs.get("needs_overlay"))
-    overlay = (
-        await pending_or_debt_exclusions(db, board_id=board_id)
-        if needs_overlay else {}
-    )
-    return evaluate_digest_layer_mismatch_inputs(inputs, overlay=overlay)
 
 
 async def list_digest_layer_mismatches(
@@ -320,11 +399,12 @@ async def list_digest_layer_mismatches(
 
     bounded_limit = max(1, min(int(limit), 200))
     bounded_offset = max(0, int(offset))
-    mismatches = await detect_digest_layer_mismatches(
+    evaluation = await detect_digest_layer_mismatches(
         db,
         board_id=board_id,
         blocking_execution=blocking_execution,
     )
+    mismatches = list(evaluation["items"])
     for m in mismatches:
         emit_digest_layer_mismatch(
             board_id=board_id,
@@ -341,6 +421,9 @@ async def list_digest_layer_mismatches(
         "total": len(mismatches),
         "limit": bounded_limit,
         "offset": bounded_offset,
+        "status": evaluation["status"],
+        "evaluation": evaluation["evaluation"],
+        "evaluation_reason": evaluation["reason"],
     }
 
 
@@ -349,7 +432,12 @@ __all__ = [
     "collect_digest_layer_mismatch_inputs",
     "detect_digest_layer_mismatches",
     "evaluate_digest_layer_mismatch_inputs",
+    "probe_digest_layer_mismatches",
     "list_digest_layer_mismatches",
     "LEARNING_NODE_TYPE",
     "DIGEST_LAYER_MISMATCH_CODE",
+    "PARITY_STATUS_AVAILABLE",
+    "PARITY_STATUS_UNAVAILABLE",
+    "PARITY_EVALUATED",
+    "PARITY_NOT_EVALUATED",
 ]

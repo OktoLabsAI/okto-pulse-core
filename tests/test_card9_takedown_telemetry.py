@@ -41,6 +41,7 @@ from okto_pulse.core.runtime_context import (
 
 
 NOW = datetime(2026, 7, 21, 18, 0, tzinfo=timezone.utc)
+BOARD_ID = "board-card9"
 DELETE_EVENT_ID = "delete-card9-g1"
 DELIVERY_KEY = "gd_parity:board-card9:spec:spec-card9:1"
 
@@ -96,9 +97,10 @@ def test_query_selector_accepts_exactly_one_identity(
     selected_field: str,
     selected_value: str,
 ) -> None:
-    query = TakedownTelemetryQuery(now=NOW, **kwargs)
+    query = TakedownTelemetryQuery(now=NOW, board_id=BOARD_ID, **kwargs)
 
     assert getattr(query, selected_field) == selected_value
+    assert query.board_id == BOARD_ID
 
 
 @pytest.mark.parametrize(
@@ -117,13 +119,14 @@ def test_query_selector_rejects_missing_ambiguous_or_invalid_identity(
     kwargs: dict[str, str],
 ) -> None:
     with pytest.raises(ValueError):
-        TakedownTelemetryQuery(now=NOW, **kwargs)
+        TakedownTelemetryQuery(now=NOW, board_id=BOARD_ID, **kwargs)
 
 
 def test_query_rejects_non_datetime_observation_time() -> None:
     with pytest.raises(ValueError, match="takedown_telemetry_now_invalid"):
         TakedownTelemetryQuery(  # type: ignore[arg-type]
             now="2026-07-21T18:00:00Z",
+            board_id=BOARD_ID,
             delete_event_id=DELETE_EVENT_ID,
         )
 
@@ -349,6 +352,12 @@ def test_reconcile_run_metrics_survive_the_boolean_worker_boundary() -> None:
             "incomplete": False,
             "incomplete_cause": None,
             "failed_types": [],
+            "target_identity_count": 1,
+            "target_found_count": 1,
+            "target_demoted_count": 1,
+            "target_already_converged_count": 0,
+            "target_skipped_cognitive_count": 0,
+            "target_preserved_canonical_count": 0,
         },
         SimpleNamespace(attempts=3),
     )
@@ -361,6 +370,12 @@ def test_reconcile_run_metrics_survive_the_boolean_worker_boundary() -> None:
         "incomplete": False,
         "incomplete_cause": None,
         "failed_types": [],
+        "target_identity_count": 1,
+        "target_found_count": 1,
+        "target_demoted_count": 1,
+        "target_already_converged_count": 0,
+        "target_skipped_cognitive_count": 0,
+        "target_preserved_canonical_count": 0,
     }
 
 
@@ -615,12 +630,16 @@ async def test_kg_operations_query_takedown_telemetry_is_serializable_and_clocke
         return NOW
 
     operations = CoreKnowledgeGraphOperations(context, clock=_clock)
-    payload = await operations.query_takedown_telemetry(**selector)
+    payload = await operations.query_takedown_telemetry(
+        board_id=BOARD_ID,
+        **selector,
+    )
 
     assert clock_calls == 1
     assert len(reader.calls) == 1
     assert reader.calls[0][0] is context
     assert reader.calls[0][1].now == NOW
+    assert reader.calls[0][1].board_id == BOARD_ID
     assert payload["found"] is True
     assert payload["selector"] == selector
     assert payload["observed_at"] == NOW.isoformat()
@@ -700,7 +719,10 @@ async def test_kg_operations_health_uses_delivered_and_independent_parity_probe(
 
     payload = await CoreKnowledgeGraphOperations(
         relational_context, clock=lambda: NOW
-    ).query_takedown_telemetry(delete_event_id=DELETE_EVENT_ID)
+    ).query_takedown_telemetry(
+        board_id=BOARD_ID,
+        delete_event_id=DELETE_EVENT_ID,
+    )
 
     health = payload["e2e_health"]
     assert health == {
@@ -746,7 +768,10 @@ async def test_kg_operations_health_fails_closed_when_parity_is_not_evaluable(
     ):
         payload = await CoreKnowledgeGraphOperations(
             object(), clock=lambda: NOW
-        ).query_takedown_telemetry(delete_event_id=DELETE_EVENT_ID)
+        ).query_takedown_telemetry(
+            board_id=BOARD_ID,
+            delete_event_id=DELETE_EVENT_ID,
+        )
 
     health = payload["e2e_health"]
     assert health["healthy"] is False
@@ -828,7 +853,10 @@ async def test_kg_operations_health_requires_final_highest_attempt_to_be_deliver
 
     payload = await CoreKnowledgeGraphOperations(
         object(), clock=lambda: NOW
-    ).query_takedown_telemetry(delete_event_id=DELETE_EVENT_ID)
+    ).query_takedown_telemetry(
+        board_id=BOARD_ID,
+        delete_event_id=DELETE_EVENT_ID,
+    )
 
     health = payload["e2e_health"]
     assert health["healthy"] is False
@@ -899,7 +927,10 @@ async def test_kg_operations_health_requires_evaluable_clean_global_discovery(
 
     payload = await CoreKnowledgeGraphOperations(
         object(), clock=lambda: NOW
-    ).query_takedown_telemetry(delete_event_id=DELETE_EVENT_ID)
+    ).query_takedown_telemetry(
+        board_id=BOARD_ID,
+        delete_event_id=DELETE_EVENT_ID,
+    )
 
     health = payload["e2e_health"]
     assert health["healthy"] is False
@@ -960,7 +991,10 @@ async def test_kg_operations_query_takedown_telemetry_enforces_selector_xor(
         ValueError,
         match="takedown_telemetry_identity_one_of_required",
     ):
-        await operations.query_takedown_telemetry(**selector)
+        await operations.query_takedown_telemetry(
+            board_id=BOARD_ID,
+            **selector,
+        )
 
     assert reader.calls == []
 
@@ -973,6 +1007,7 @@ async def test_kg_operations_query_takedown_telemetry_not_found_is_fail_closed(
     operations = CoreKnowledgeGraphOperations(object(), clock=lambda: NOW)
 
     payload = await operations.query_takedown_telemetry(
+        board_id=BOARD_ID,
         delete_event_id=DELETE_EVENT_ID
     )
 
@@ -996,5 +1031,6 @@ async def test_kg_operations_query_takedown_telemetry_rejects_selector_mismatch(
 
     with pytest.raises(RuntimeError, match="takedown_telemetry_selector_mismatch"):
         await operations.query_takedown_telemetry(
+            board_id=BOARD_ID,
             delivery_key="gd_parity:other-delivery"
         )

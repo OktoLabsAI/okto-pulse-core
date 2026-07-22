@@ -74,6 +74,7 @@ async def _drive_with_provenance(
     content: str = "",
     provenance: dict | None = None,
     agent_id: str = "system:layer1_worker",
+    artifact_type: str = "spec",
 ):
     """begin -> propose -> commit for one Entity candidate carrying the
     optional MKG-B provenance fields. Returns (commit, expected_hash)."""
@@ -117,7 +118,7 @@ async def _drive_with_provenance(
     begin = await begin_consolidation(
         BeginConsolidationRequest(
             board_id=board_id,
-            artifact_type="spec",
+            artifact_type=artifact_type,
             artifact_id=artifact_id,
             raw_content=raw_content,
             deterministic_candidates=[root_cand, cand],

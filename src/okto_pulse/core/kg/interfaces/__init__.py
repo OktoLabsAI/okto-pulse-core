@@ -5,7 +5,12 @@ don't need to inherit — they just need to implement the methods.
 """
 
 from okto_pulse.core.kg.interfaces.auth_context import AuthContext
-from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
+from okto_pulse.core.kg.interfaces.audit_repository import (
+    AuditPersistenceError,
+    AuditRepository,
+    AuditTransactionContextRequired,
+    AuditWriteContention,
+)
 from okto_pulse.core.kg.interfaces.board_source_reader import (
     BoardSourceReader,
     BoardSourceRow,
@@ -120,7 +125,10 @@ from okto_pulse.core.kg.interfaces.registry import (
 __all__ = [
     "Adequacy",
     "AuthContext",
+    "AuditPersistenceError",
     "AuditRepository",
+    "AuditTransactionContextRequired",
+    "AuditWriteContention",
     "BoardSourceReader",
     "BoardSourceRow",
     "BoardSourceSnapshot",

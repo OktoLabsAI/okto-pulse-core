@@ -35,6 +35,7 @@ from okto_pulse.core.ports.delivery_ledger import (
     DeliveryTransferClaimConflict,
     DeliveryTransferReceipt,
     DeliveryTransferRequest,
+    build_attempt_event_key,
     get_delivery_ledger_port,
 )
 from okto_pulse.core.ports.stale_sweep import (
@@ -234,17 +235,41 @@ async def _transfer_stale_reconcile_ownership(
         occurred_at=occurred_at,
     )
     receipt = await delivery.transfer_delivery_ownership(db, request)
-    expected_event_key = (
-        request.attempt_event_key
-        if receipt.state is DeliveryState.OUTBOX_PERSISTED
-        else None
-    )
-    if (
-        receipt.delivery_key != request.delivery_key
-        or receipt.attempt != request.attempt
-        or receipt.attempt_event_key != expected_event_key
-        or (not receipt.replayed and receipt.state is not request.target_state)
-    ):
+    receipt_mismatch = receipt.delivery_key != request.delivery_key
+    if receipt.replayed:
+        current_event_key = build_attempt_event_key(
+            receipt.delivery_key,
+            attempt=receipt.attempt,
+        )
+        if receipt.state in {
+            DeliveryState.OUTBOX_PERSISTED,
+            DeliveryState.DELIVERED,
+        }:
+            receipt_mismatch = (
+                receipt_mismatch
+                or receipt.attempt_event_key != current_event_key
+            )
+        else:
+            allowed_event_keys = {current_event_key}
+            if receipt.attempt == 0:
+                allowed_event_keys.add(None)
+            receipt_mismatch = (
+                receipt_mismatch
+                or receipt.attempt_event_key not in allowed_event_keys
+            )
+    else:
+        expected_event_key = (
+            request.attempt_event_key
+            if receipt.state is DeliveryState.OUTBOX_PERSISTED
+            else None
+        )
+        receipt_mismatch = (
+            receipt_mismatch
+            or receipt.attempt != request.attempt
+            or receipt.attempt_event_key != expected_event_key
+            or receipt.state is not request.target_state
+        )
+    if receipt_mismatch:
         raise RuntimeError("delivery_transfer_receipt_mismatch")
     return receipt, circuit.reason
 
@@ -402,17 +427,52 @@ def _log_stale_sweep_receipt(receipt: StaleSweepRunReceipt) -> None:
 def _stale_reconcile_is_complete(result: Any) -> bool:
     """Require the explicit completeness contract before acknowledging work."""
 
+    target_fields = (
+        "target_identity_count",
+        "target_found_count",
+        "target_demoted_count",
+        "target_already_converged_count",
+        "target_skipped_cognitive_count",
+        "target_preserved_canonical_count",
+    )
     if isinstance(result, dict):
-        if "incomplete" not in result or "failed_types" not in result:
+        if (
+            "incomplete" not in result
+            or "failed_types" not in result
+            or any(field not in result for field in target_fields)
+        ):
             return False
         incomplete = bool(result["incomplete"])
         failed_types = result["failed_types"] or ()
+        target_values = {field: result[field] for field in target_fields}
     else:
-        if not hasattr(result, "incomplete") or not hasattr(result, "failed_types"):
+        if (
+            not hasattr(result, "incomplete")
+            or not hasattr(result, "failed_types")
+            or any(not hasattr(result, field) for field in target_fields)
+        ):
             return False
         incomplete = bool(result.incomplete)
         failed_types = result.failed_types or ()
-    return not incomplete and not bool(failed_types)
+        target_values = {
+            field: getattr(result, field) for field in target_fields
+        }
+    if incomplete or bool(failed_types):
+        return False
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in target_values.values()
+    ):
+        return False
+    if target_values["target_identity_count"] < 1:
+        return False
+    if target_values["target_preserved_canonical_count"] != 0:
+        return False
+    return target_values["target_found_count"] == (
+        target_values["target_demoted_count"]
+        + target_values["target_already_converged_count"]
+        + target_values["target_skipped_cognitive_count"]
+    )
 
 
 def _stale_reconcile_telemetry_details(
@@ -447,6 +507,18 @@ def _stale_reconcile_telemetry_details(
         ),
         "failed_types": [str(item) for item in failed_types],
     }
+    for field in (
+        "target_identity_count",
+        "target_found_count",
+        "target_demoted_count",
+        "target_already_converged_count",
+        "target_skipped_cognitive_count",
+        "target_preserved_canonical_count",
+    ):
+        value = _value(field, None)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"stale_reconcile_{field}_invalid")
+        details[field] = value
 
     # A completed ontology scan is the proof that ACK/ownership transfer did
     # not skip a registered node type.  Keep the per-type receipt intact at
@@ -2307,11 +2379,7 @@ class ConsolidationProcessor:
                                                 reconcile_details=(
                                                     stale_reconcile_telemetry
                                                 ),
-                                                occurred_at=(
-                                                    self._clock.now()
-                                                    if self._clock is not None
-                                                    else None
-                                                ),
+                                                occurred_at=self._now(),
                                             )
                                         )
                                     except DeliveryTransferClaimConflict as exc:

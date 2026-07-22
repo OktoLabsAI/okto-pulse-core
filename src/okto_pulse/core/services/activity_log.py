@@ -79,13 +79,18 @@ def activity_log_changes(
     """
     changes: list[dict[str, Any]] = []
     for field in fields if fields is not None else after:
-        old_value = _activity_change_value(before.get(field))
-        new_value = _activity_change_value(after.get(field))
+        old_value = activity_log_value(before.get(field))
+        new_value = activity_log_value(after.get(field))
         if old_value != new_value:
             changes.append(
                 {"field": field, "old": old_value, "new": new_value}
             )
     return changes
+
+
+def activity_log_value(value: Any) -> Any:
+    """Return a detached JSON-safe value suitable for activity details."""
+    return _activity_change_value(value)
 
 
 def _activity_change_value(value: Any) -> Any:

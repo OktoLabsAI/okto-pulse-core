@@ -27,6 +27,13 @@ DELIVERY_WORK_KIND = "stale_reconcile"
 DELIVERY_OUTBOX_EVENT_TYPE = "consolidation_committed"
 DELIVERY_OUTBOX_REASON = "stale_demotion_parity"
 DELIVERY_REDRIVE_OUTBOX_REASON = "delivery_debt_redrive"
+# Durable debt reason used when a repeated stale reconciliation changed the
+# board graph after the current physical attempt may already have observed an
+# older snapshot.  The old attempt outcome is fenced; tick-owned redrive emits
+# the next never-reused attempt key.
+DELIVERY_PARITY_REFRESH_REQUIRED_REASON = (
+    "stale_reconcile_parity_refresh_required"
+)
 
 
 class DeliveryState(str, Enum):
@@ -448,7 +455,14 @@ class DeliveryTransferRequest:
 
 @dataclass(frozen=True, slots=True)
 class DeliveryTransferReceipt:
-    """Result of a transfer whose queue CAS matched exactly one row."""
+    """Result of a transfer whose queue CAS matched exactly one row.
+
+    A brand-new owner always reports the initial attempt-zero shape.  A
+    reconstituted stale-reconcile job may find that the same durable owner has
+    already advanced through redrive; in that case ``replayed=True`` reports
+    the owner's current state and physical attempt without minting or reusing
+    an attempt key.
+    """
 
     delivery_key: str
     state: DeliveryState
@@ -465,25 +479,39 @@ class DeliveryTransferReceipt:
             state = DeliveryState(self.state)
         except (TypeError, ValueError) as exc:
             raise ValueError("delivery_transfer_receipt_state_invalid") from exc
-        if state not in _INITIAL_TRANSFER_STATES:
-            raise ValueError("delivery_transfer_receipt_state_invalid")
         attempt = _non_negative_int(self.attempt, field_name="attempt")
-        if attempt != 0:
-            raise ValueError("delivery_transfer_receipt_attempt_invalid")
         if not isinstance(self.replayed, bool):
             raise ValueError("delivery_transfer_receipt_replayed_invalid")
+        if not self.replayed:
+            if state not in _INITIAL_TRANSFER_STATES:
+                raise ValueError("delivery_transfer_receipt_state_invalid")
+            if attempt != 0:
+                raise ValueError("delivery_transfer_receipt_attempt_invalid")
 
-        if state is DeliveryState.OUTBOX_PERSISTED:
-            expected_event_key = build_attempt_event_key(
-                delivery_key,
-                attempt=attempt,
-            )
+        expected_event_key = build_attempt_event_key(
+            delivery_key,
+            attempt=attempt,
+        )
+        if state in {
+            DeliveryState.OUTBOX_PERSISTED,
+            DeliveryState.DELIVERED,
+        }:
             if self.attempt_event_key != expected_event_key:
                 raise ValueError(
                     "delivery_transfer_receipt_attempt_event_key_invalid"
                 )
-        elif self.attempt_event_key is not None:
-            raise ValueError("delivery_transfer_receipt_attempt_event_key_invalid")
+        elif state is DeliveryState.DELIVERY_DEBT:
+            allowed_event_keys = {expected_event_key}
+            if self.replayed and attempt == 0:
+                # Initial circuit debt has no physical attempt.  Attempt-zero
+                # debt reached from a terminal physical outbox retains its key.
+                allowed_event_keys.add(None)
+            elif not self.replayed:
+                allowed_event_keys = {None}
+            if self.attempt_event_key not in allowed_event_keys:
+                raise ValueError(
+                    "delivery_transfer_receipt_attempt_event_key_invalid"
+                )
 
         object.__setattr__(self, "delivery_key", delivery_key)
         object.__setattr__(self, "state", state)
@@ -565,6 +593,7 @@ def reset_delivery_ledger_port_for_tests() -> None:
 __all__ = [
     "DELIVERY_OUTBOX_EVENT_TYPE",
     "DELIVERY_OUTBOX_REASON",
+    "DELIVERY_PARITY_REFRESH_REQUIRED_REASON",
     "DELIVERY_REDRIVE_OUTBOX_REASON",
     "DELIVERY_WORK_KIND",
     "DeliveryAttemptContractError",

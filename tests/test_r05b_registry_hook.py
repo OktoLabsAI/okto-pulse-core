@@ -53,7 +53,10 @@ class _SentinelBus:
 
 
 class _SentinelAudit:
-    ...
+    async def stage_consolidation_records(
+        self, transaction_context, audit, node_refs, outbox_event,
+    ):
+        ...
 
 
 def _instrument_onda_a(monkeypatch):

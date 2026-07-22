@@ -40,7 +40,10 @@ class _Bus:
 
 
 class _Audit:
-    pass
+    async def stage_consolidation_records(
+        self, transaction_context, audit, node_refs, outbox_event,
+    ):
+        ...
 
 
 def _required_composed_registry_without_read_time_slots() -> KGProviderRegistry:

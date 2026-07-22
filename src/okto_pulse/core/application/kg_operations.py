@@ -578,6 +578,7 @@ class CoreKnowledgeGraphOperations:
     async def query_takedown_telemetry(
         self,
         *,
+        board_id: str,
         delete_event_id: str | None = None,
         delivery_key: str | None = None,
     ) -> dict[str, object]:
@@ -597,6 +598,7 @@ class CoreKnowledgeGraphOperations:
 
         query = TakedownTelemetryQuery(
             now=self.__clock(),
+            board_id=board_id,
             delete_event_id=delete_event_id,
             delivery_key=delivery_key,
         )
@@ -618,6 +620,8 @@ class CoreKnowledgeGraphOperations:
             }
         if not isinstance(snapshot, TakedownTelemetrySnapshot):
             raise RuntimeError("takedown_telemetry_snapshot_invalid")
+        if snapshot.board_id != query.board_id:
+            raise RuntimeError("takedown_telemetry_board_mismatch")
         if (
             query.delete_event_id is not None
             and snapshot.delete_event_id != query.delete_event_id

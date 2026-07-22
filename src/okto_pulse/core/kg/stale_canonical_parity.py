@@ -15,6 +15,7 @@ transparent) if R1 digest metadata is unreadable — never a false healthy.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from okto_pulse.core.kg.canonical_stale_reconciler import (
@@ -148,19 +149,48 @@ async def list_stale_canonical_parity(
 
     # Reuse the R1-IMP2 digest-vs-board detector (no digest repair here).
     gd_evaluation = GD_EVALUATED
+    gd_status = "available"
+    gd_evaluation_reason = "ok"
     stale_digest_node_ids: set[str] = set()
     try:
         from okto_pulse.core.kg.global_discovery.layer_parity import (
             detect_digest_layer_mismatches,
         )
-        mismatches = await detect_digest_layer_mismatches(
+        detected = await detect_digest_layer_mismatches(
             db,
             board_id=board_id,
             blocking_execution=blocking_execution,
         )
-        stale_digest_node_ids = {str(m.get("original_node_id") or "") for m in mismatches}
+        if not isinstance(detected, Mapping):
+            raise RuntimeError("digest_layer_parity_result_invalid")
+        gd_evaluation = str(
+            detected.get("evaluation") or GD_NOT_EVALUATED
+        )
+        gd_status = str(detected.get("status") or "unavailable")
+        gd_evaluation_reason = str(
+            detected.get("reason") or "digest_layer_parity_unavailable"
+        )
+        raw_mismatches = detected.get("items")
+        if not isinstance(raw_mismatches, list):
+            raise RuntimeError("digest_layer_parity_result_invalid")
+        mismatches = raw_mismatches
+
+        if gd_evaluation == GD_EVALUATED and gd_status == "available":
+            stale_digest_node_ids = {
+                str(m.get("original_node_id") or "") for m in mismatches
+            }
+        else:
+            gd_evaluation = GD_NOT_EVALUATED
+            gd_status = "unavailable"
+            logger.warning(
+                "kg.stale_canonical_parity.gd_not_evaluated board=%s reason=%s",
+                board_id,
+                gd_evaluation_reason,
+            )
     except Exception as exc:  # never claim healthy on an unreadable GD layer
         gd_evaluation = GD_NOT_EVALUATED
+        gd_status = "unavailable"
+        gd_evaluation_reason = type(exc).__name__
         logger.warning(
             "kg.stale_canonical_parity.gd_not_evaluated board=%s err=%s",
             board_id, exc,
@@ -187,7 +217,9 @@ async def list_stale_canonical_parity(
         # mutation tool may demote/clear stale here; the R2 reconciler is the only
         # internal demotion path, driven by a maturity/status event or sweep).
         "mutation_allowed": False,
+        "global_discovery_status": gd_status,
         "global_discovery_evaluation": gd_evaluation,
+        "global_discovery_evaluation_reason": gd_evaluation_reason,
         "global_discovery_stale_digest_count": len(stale_digest_node_ids),
         "limit": bounded_limit,
         "offset": bounded_offset,

@@ -318,7 +318,14 @@ class KGConnectivityValidationResult:
 
 
 def classify_writer_path(writer_path: str) -> WriterClass:
-    normalized = (writer_path or "").lower()
+    normalized = (writer_path or "").strip().lower()
+    # Historical consolidation is the deterministic Layer-1 producer used by
+    # the queue worker.  Keep this exact compatibility mapping ahead of the
+    # generic ``consolidation``/``agent`` cognitive markers: persisted graph
+    # nodes retain this producer id, so renaming only the current worker would
+    # leave existing deterministic material classified as cognitive forever.
+    if normalized == "system:historical_consolidation":
+        return WriterClass.DETERMINISTIC
     if any(
         marker in normalized
         for marker in (

@@ -300,7 +300,8 @@ class TestE2EInMemory:
         h = compute_content_hash(content, "art-nc", "b1")
         now = datetime.now(timezone.utc)
 
-        await audit_repo.commit_consolidation_records(
+        await audit_repo.stage_consolidation_records(
+            object(),
             ConsolidationAuditData(
                 session_id="prev", board_id="b1", artifact_id="art-nc",
                 artifact_type="spec", agent_id="old",

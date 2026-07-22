@@ -1,7 +1,7 @@
 """Live consolidation queue health metrics for /api/v1/kg/queue/health.
 
 Spec bdcda842 (FR9, TR13). Combines:
-    * SQL aggregations against ConsolidationQueue + ConsolidationDeadLetter
+    * Edition-owned relational projections of active queue and terminal debt
       (depth, oldest pending age, claimed count, claimed_boards set, DLQ size).
     * In-process sliding-window counters for ``claims_per_min_1m`` /
       ``claims_per_min_5m`` populated by the consolidation worker.
@@ -10,8 +10,8 @@ Spec bdcda842 (FR9, TR13). Combines:
     * Cross-process graph backend file-lock retry counter exposed by
       ``commit_coordinator.graph_lock_retries_5m``.
 
-The endpoint is read-only: it touches SQLite for queue stats but does not
-hit graph backend (alert_active is computed on-read from queue_depth + alert_threshold).
+The endpoint is read-only: it queries the queue-health port but does not hit the
+graph backend (alert_active is computed on-read from queue_depth + alert_threshold).
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from okto_pulse.core.domain.queue_health import (
 )
 from okto_pulse.core.kg.commit_coordinator import graph_lock_retries_5m
 from okto_pulse.core.ports.queue_health import (
+    ActiveQueueStorageSnapshot,
     get_queue_health_read_port,
 )
 
@@ -241,6 +242,88 @@ def _bounded_error(value: str | None, *, max_chars: int = 240) -> str | None:
     )
 
 
+class ActiveQueueSnapshotContractError(RuntimeError):
+    """The edition adapter returned an internally inconsistent projection."""
+
+    code = "active_queue_snapshot_contract_invalid"
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"{self.code}:{reason}")
+
+
+def _validate_active_queue_snapshot(
+    snapshot: ActiveQueueStorageSnapshot,
+) -> None:
+    """Fail closed instead of treating an old/incomplete adapter as healthy."""
+
+    def require_count(value: object, field_name: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ActiveQueueSnapshotContractError(
+                f"{field_name}_must_be_non_negative_int"
+            )
+        return value
+
+    pending = require_count(
+        snapshot.consolidation_by_status.get("pending", 0),
+        "pending_count",
+    )
+    claimed = require_count(
+        snapshot.consolidation_by_status.get("claimed", 0),
+        "claimed_status_count",
+    )
+    ready = require_count(
+        snapshot.consolidation_ready_count,
+        "ready_count",
+    )
+    scheduled = require_count(
+        snapshot.consolidation_scheduled_retry_count,
+        "scheduled_retry_count",
+    )
+    claimed_projection = require_count(
+        snapshot.consolidation_claimed_count,
+        "claimed_count",
+    )
+    overdue = require_count(
+        snapshot.consolidation_overdue_claimed_count,
+        "overdue_claimed_count",
+    )
+    require_count(snapshot.outbox_depth, "outbox_depth")
+    require_count(
+        snapshot.consolidation_max_attempts,
+        "max_attempts",
+    )
+    by_work_kind_total = sum(
+        require_count(count, "work_kind_count")
+        for count in snapshot.consolidation_by_work_kind.values()
+    )
+
+    if ready + scheduled != pending:
+        raise ActiveQueueSnapshotContractError(
+            "pending_partition_mismatch"
+        )
+    if claimed_projection != claimed:
+        raise ActiveQueueSnapshotContractError(
+            "claimed_partition_mismatch"
+        )
+    if overdue > claimed:
+        raise ActiveQueueSnapshotContractError(
+            "overdue_claimed_exceeds_claimed"
+        )
+    if by_work_kind_total != pending + claimed:
+        raise ActiveQueueSnapshotContractError(
+            "work_kind_partition_mismatch"
+        )
+    if ready and snapshot.consolidation_ready_oldest_at is None:
+        raise ActiveQueueSnapshotContractError("ready_oldest_missing")
+    if scheduled and snapshot.consolidation_next_retry_at is None:
+        raise ActiveQueueSnapshotContractError("next_retry_missing")
+    if overdue and snapshot.consolidation_overdue_claimed_oldest_at is None:
+        raise ActiveQueueSnapshotContractError(
+            "overdue_claimed_oldest_missing"
+        )
+
+
 def _classify_global_outbox_dead_letter(last_error: str | None) -> str:
     from okto_pulse.core.application.global_outbox_dead_letter import (
         classify_global_outbox_dead_letter,
@@ -350,7 +433,11 @@ async def get_active_queue_drilldown(
         active_statuses=_ACTIVE_CQ_STATUSES,
         max_outbox_retries=MAX_OUTBOX_RETRIES,
         dead_letter_retry_sentinel=DEAD_LETTER_RETRY_SENTINEL,
+        now=now,
+        stuck_before=now - timedelta(seconds=stuck_age_s),
+        item_limit=100,
     )
+    _validate_active_queue_snapshot(storage)
 
     # --- Source 1: ConsolidationQueue (pending/claimed) ---
     cq_by_status = storage.consolidation_by_status
@@ -358,9 +445,100 @@ async def get_active_queue_drilldown(
     cq_by_category = storage.consolidation_by_category
     cq_oldest = storage.consolidation_oldest_at
     cq_age = _age_seconds(cq_oldest, now)
+    cq_ready_age = _age_seconds(storage.consolidation_ready_oldest_at, now)
+    cq_overdue_claim_age = _age_seconds(
+        storage.consolidation_overdue_claimed_oldest_at,
+        now,
+    )
+    cq_actionable_age = max(cq_ready_age, cq_overdue_claim_age)
     cq_class = classify_active_queue(
-        depth=cq_depth, oldest_age_s=cq_age,
+        depth=cq_depth, oldest_age_s=cq_actionable_age,
         alert_threshold=alert_threshold, stuck_age_s=stuck_age_s,
+    )
+
+    def _iso(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value
+        if normalized.tzinfo is None:
+            normalized = normalized.replace(tzinfo=timezone.utc)
+        return normalized.isoformat()
+
+    def _is_future(value: datetime | None) -> bool:
+        if value is None:
+            return False
+        comparable = value
+        if comparable.tzinfo is None:
+            comparable = comparable.replace(tzinfo=timezone.utc)
+        return comparable > now
+
+    cq_items = []
+    for item in storage.consolidation_items:
+        last_progress_at = item.claimed_at or item.triggered_at
+        if item.status == "pending" and _is_future(item.next_retry_at):
+            operational_state = "scheduled_retry"
+            reason = "retry_backoff_not_elapsed"
+            actionable = False
+        elif item.status == "pending":
+            operational_state = "ready"
+            reason = "retry_eligible_for_claim"
+            actionable = True
+        else:
+            claim_overdue = (
+                item.claim_timeout_at is not None
+                and not _is_future(item.claim_timeout_at)
+            ) or (
+                item.claim_timeout_at is None
+                and _age_seconds(last_progress_at, now) >= stuck_age_s
+            )
+            operational_state = "claimed"
+            reason = (
+                "claim_timeout_exceeded"
+                if claim_overdue
+                else "claim_in_progress"
+            )
+            actionable = claim_overdue
+        cq_items.append(
+            {
+                "queue_id": item.queue_id,
+                "status": item.status,
+                "operational_state": operational_state,
+                "work_kind": item.work_kind,
+                "artifact_type": item.artifact_type,
+                "artifact_id": item.artifact_id,
+                "attempts": item.attempts,
+                "triggered_at": _iso(item.triggered_at),
+                "last_progress_at": _iso(last_progress_at),
+                "next_retry_at": _iso(item.next_retry_at),
+                "claim_timeout_at": _iso(item.claim_timeout_at),
+                "actionable": actionable,
+                "reason": reason,
+                "last_error": _bounded_error(item.last_error),
+            }
+        )
+
+    cq_only_scheduled = (
+        cq_depth > 0
+        and storage.consolidation_scheduled_retry_count == cq_depth
+    )
+    cq_reason = (
+        "scheduled_retry_not_yet_eligible"
+        if cq_only_scheduled and cq_class == "transient"
+        else {
+            "idle": "no_active_work",
+            "transient": "eligible_or_claimed_work_within_threshold",
+            "stuck": "retry_eligible_or_claim_overdue_without_progress",
+            "backpressure": "source_depth_reaches_alert_threshold",
+        }[cq_class]
+    )
+    cq_next_action = (
+        "wait_for_scheduled_retry"
+        if cq_only_scheduled and cq_class == "transient"
+        else _source_next_action(
+            "consolidation_queue",
+            cq_class,
+            worker_modes["consolidation_queue"],
+        )
     )
 
     # --- Source 2: GlobalUpdateOutbox (still in the retry window; dead_letter excluded) ---
@@ -381,12 +559,21 @@ async def get_active_queue_drilldown(
             "by_status": cq_by_status,
             "by_category": cq_by_category,
             "oldest_age_seconds": round(cq_age, 3),
+            "oldest_actionable_age_seconds": round(cq_actionable_age, 3),
+            "state_counts": {
+                "ready": storage.consolidation_ready_count,
+                "scheduled_retry": storage.consolidation_scheduled_retry_count,
+                "claimed": storage.consolidation_claimed_count,
+                "overdue_claimed": storage.consolidation_overdue_claimed_count,
+            },
+            "by_work_kind": storage.consolidation_by_work_kind,
+            "max_attempts": storage.consolidation_max_attempts,
+            "next_retry_at": _iso(storage.consolidation_next_retry_at),
+            "items": cq_items,
+            "items_truncated": cq_depth > len(cq_items),
             "classification": cq_class,
-            "next_action": _source_next_action(
-                "consolidation_queue",
-                cq_class,
-                worker_modes["consolidation_queue"],
-            ),
+            "reason": cq_reason,
+            "next_action": cq_next_action,
         },
         {
             "source": "global_update_outbox",
@@ -397,6 +584,12 @@ async def get_active_queue_drilldown(
             "by_category": {},
             "oldest_age_seconds": round(ob_age, 3),
             "classification": ob_class,
+            "reason": {
+                "idle": "no_active_work",
+                "transient": "active_work_within_operational_thresholds",
+                "stuck": "oldest_active_item_exceeds_stuck_threshold",
+                "backpressure": "source_depth_reaches_alert_threshold",
+            }[ob_class],
             "next_action": _source_next_action(
                 "global_update_outbox",
                 ob_class,
@@ -416,12 +609,7 @@ async def get_active_queue_drilldown(
             item["source"],
         ),
     )
-    diagnostic_reason = {
-        "idle": "no_active_work",
-        "transient": "active_work_within_operational_thresholds",
-        "stuck": "oldest_active_item_exceeds_stuck_threshold",
-        "backpressure": "source_depth_reaches_alert_threshold",
-    }[worst_source["classification"]]
+    diagnostic_reason = worst_source["reason"]
 
     return {
         "board_id": board_id,

@@ -73,6 +73,7 @@ async def test_ts11_partial_and_final_runs_share_delete_event_but_not_attempt(
             failed_types=["Requirement"],
             scanned_by_type=partial_counts,
             completed_types=completed_without_requirement,
+            target_identity_count=1,
         ),
         StaleReconcileResult(
             board_id=entry.board_id,
@@ -80,6 +81,7 @@ async def test_ts11_partial_and_final_runs_share_delete_event_but_not_attempt(
             scanned=0,
             scanned_by_type=final_counts,
             completed_types=list(ALL_NODE_TYPES),
+            target_identity_count=1,
         ),
     ]
 

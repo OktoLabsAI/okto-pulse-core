@@ -10,6 +10,8 @@ against the artifact's consolidation history and current existence:
   or the node is human_curated and its protected content diverged);
 * artifact row absent from the BoardSourceReader → ``artifact_missing``
   (terminal drift — the source was deleted, D5);
+* artifact row present but no consolidation audit exists → ``audit_missing``
+  (the live source has no durable comparison anchor and is not healthy).
 Artifact timestamps are deliberately excluded: they are volatile metadata and
 cannot prove semantic drift. The committed canonical hash is the authority.
 
@@ -101,9 +103,10 @@ async def provenance_drift_report(
 ) -> dict[str, Any]:
     """Build the drift report for one board (optionally one node type).
 
-    Nodes without a parseable ``type:id`` ref or whose artifact was never
-    consolidated through the session path are counted as ``skipped`` —
-    they carry no comparable anchor (technical roots, free-form refs).
+    Only nodes without a parseable ``type:id`` ref are counted as ``skipped``
+    (technical roots and free-form refs). A parseable node is always evaluated:
+    a missing source is ``artifact_missing`` even when its audit is also absent,
+    while a live source without an audit is ``audit_missing``.
     """
 
     if node_type is not None and node_type not in NODE_TYPES:
@@ -124,37 +127,55 @@ async def provenance_drift_report(
     types = [node_type] if node_type else list(NODE_TYPES)
     nodes = await asyncio.to_thread(_fetch_provenance_nodes, board_id, types)
 
-    audit_cache: dict[str, Any] = {}
+    # Artifact ids are not globally unique across source types. Keep the same
+    # complete identity in the local cache that the typed repository lookup
+    # resolves.
+    audit_cache: dict[tuple[str, str], Any] = {}
     drifted: list[dict[str, Any]] = []
     checked = 0
     skipped = 0
 
     for node in nodes:
         ref = node["source_artifact_ref"]
-        if ":" not in ref:
+        artifact_type, separator, artifact_id = ref.partition(":")
+        if not separator or not artifact_type or not artifact_id:
             skipped += 1
             continue
-        artifact_id = ref.split(":", 1)[1]
-        if artifact_id not in audit_cache:
-            audit_cache[artifact_id] = await registry.audit_repo.get_latest_for_artifact(
-                board_id, artifact_id
-            )
-        audit = audit_cache[artifact_id]
-        if audit is None:
-            skipped += 1
-            continue
+        artifact_type = artifact_type.lower()
         checked += 1
+        audit_identity = (artifact_type, artifact_id)
+        if audit_identity not in audit_cache:
+            audit = await registry.audit_repo.get_latest_for_artifact(
+                board_id,
+                artifact_id,
+                artifact_type=artifact_type,
+            )
+            audit_type = str(
+                getattr(audit, "artifact_type", "") or ""
+            ).lower()
+            # Defense in depth for a misbehaving custom provider: a cross-type
+            # audit is not an anchor for this node.
+            if audit is not None and audit_type and audit_type != artifact_type:
+                audit = None
+            audit_cache[audit_identity] = audit
+        audit = audit_cache[audit_identity]
 
         entry = {
             "node_id": node["node_id"],
             "node_type": node["node_type"],
             "source_artifact_ref": ref,
             "persisted_hash": node["persisted_hash"],
-            "current_hash": audit.content_hash,
+            "current_hash": (
+                audit.content_hash if audit is not None else None
+            ),
         }
         row = rows_by_ref.get(ref)
         if row is None:
             entry["reason"] = "artifact_missing"
+            drifted.append(entry)
+            continue
+        if audit is None:
+            entry["reason"] = "audit_missing"
             drifted.append(entry)
             continue
         if node["persisted_hash"] != (audit.content_hash or ""):
@@ -176,6 +197,9 @@ async def provenance_drift_report(
             ),
             "artifact_missing": sum(
                 1 for d in drifted if d["reason"] == "artifact_missing"
+            ),
+            "audit_missing": sum(
+                1 for d in drifted if d["reason"] == "audit_missing"
             ),
         },
         "drifted": drifted[:max_items],

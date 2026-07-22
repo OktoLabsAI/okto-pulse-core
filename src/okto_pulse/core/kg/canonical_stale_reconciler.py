@@ -169,6 +169,16 @@ class StaleReconcileResult:
         default_factory=lambda: {node_type: 0 for node_type in ALL_NODE_TYPES}
     )
     completed_types: list[str] = field(default_factory=list)
+    # Target outcome counters are populated only for the event fast-path
+    # (``source_refs`` is not None).  They make a retry distinguish a graph
+    # projection that was mutated now from one already converged by an earlier
+    # graph commit, while keeping preserved cognitive material explicit.
+    target_identity_count: int = 0
+    target_found_count: int = 0
+    target_demoted_count: int = 0
+    target_already_converged_count: int = 0
+    target_skipped_cognitive_count: int = 0
+    target_preserved_canonical_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -187,6 +197,18 @@ class StaleReconcileResult:
             "failed_types": list(self.failed_types),
             "scanned_by_type": dict(self.scanned_by_type),
             "completed_types": list(self.completed_types),
+            "target_identity_count": self.target_identity_count,
+            "target_found_count": self.target_found_count,
+            "target_demoted_count": self.target_demoted_count,
+            "target_already_converged_count": (
+                self.target_already_converged_count
+            ),
+            "target_skipped_cognitive_count": (
+                self.target_skipped_cognitive_count
+            ),
+            "target_preserved_canonical_count": (
+                self.target_preserved_canonical_count
+            ),
         }
 
 
@@ -555,23 +577,56 @@ async def _scan_and_demote(
     async with await transaction.begin(board_id) as scope:
         for ntype in ALL_NODE_TYPES:
             try:
-                res = scope.execute(
-                    f"MATCH (n:{ntype}) WHERE n.graph_layer = $c "
-                    f"RETURN n.id, n.source_artifact_ref, n.created_by_agent, "
-                    f"n.maturity_status",
-                    {"c": GRAPH_LAYER_CANONICAL},
-                )
-                rows: list[tuple[str, str, str, str]] = []
+                if target_identities is None:
+                    res = scope.execute(
+                        f"MATCH (n:{ntype}) WHERE n.graph_layer = $c "
+                        f"RETURN n.id, n.source_artifact_ref, n.created_by_agent, "
+                        f"n.maturity_status",
+                        {"c": GRAPH_LAYER_CANONICAL},
+                    )
+                else:
+                    # A governed retry must be able to prove that a previous
+                    # graph auto-commit already moved its target to ``working``.
+                    # The full sweep remains canonical-only; the extra layer is
+                    # observed solely for the bounded event fast-path.
+                    res = scope.execute(
+                        f"MATCH (n:{ntype}) "
+                        "WHERE n.graph_layer = $c OR n.graph_layer = $w "
+                        f"RETURN n.id, n.source_artifact_ref, n.created_by_agent, "
+                        f"n.maturity_status, n.graph_layer",
+                        {
+                            "c": GRAPH_LAYER_CANONICAL,
+                            "w": GRAPH_LAYER_WORKING,
+                        },
+                    )
+                rows: list[tuple[str, str, str, str, str]] = []
                 for row in res.rows:
                     rows.append((
                         str(row[0]),
                         str(row[1] or ""),
                         str(row[2] or ""),
                         str(row[3] or ""),
+                        (
+                            str(row[4] or "")
+                            if target_identities is not None
+                            else GRAPH_LAYER_CANONICAL
+                        ),
                     ))
-                for node_id, ref, writer, _cur_maturity in rows:
-                    result.scanned += 1
-                    result.scanned_by_type[ntype] += 1
+                for node_id, ref, writer, _cur_maturity, graph_layer in rows:
+                    if graph_layer == GRAPH_LAYER_CANONICAL:
+                        # Preserve the established meaning of ``scanned``: it
+                        # counts canonical candidates, not the working rows
+                        # additionally inspected to prove retry convergence.
+                        result.scanned += 1
+                        result.scanned_by_type[ntype] += 1
+                    source_identity = _source_identity_from_ref(ref)
+                    if target_identities is not None:
+                        if source_identity not in target_identities:
+                            continue  # outside the governed event scope
+                        result.target_found_count += 1
+                        if graph_layer != GRAPH_LAYER_CANONICAL:
+                            result.target_already_converged_count += 1
+                            continue
                     if _is_cognitive(ntype, writer):
                         intent = _classify_cognitive(
                             board_id,
@@ -584,6 +639,11 @@ async def _scan_and_demote(
                         )
                         if intent is None:
                             continue  # out of fast-path scope
+                        if target_identities is not None:
+                            # Debt routing is also a cognitive preservation
+                            # outcome: the canonical node is deliberately
+                            # skipped by demotion even when debt is recorded.
+                            result.target_skipped_cognitive_count += 1
                         if intent.get("_route"):
                             cognitive_debt_intents.append(intent)
                         else:
@@ -601,7 +661,6 @@ async def _scan_and_demote(
                         continue
 
                     # Deterministic node: resolve owning source + check staleness.
-                    source_identity = _source_identity_from_ref(ref)
                     if source_identity is None:
                         continue  # infra root / unknown — not source-derived
                     if (
@@ -611,6 +670,8 @@ async def _scan_and_demote(
                         continue  # fast-path scope
                     cls = source_by_identity.get(source_identity)
                     if cls is not None and cls.graph_layer == GRAPH_LAYER_CANONICAL:
+                        if target_identities is not None:
+                            result.target_preserved_canonical_count += 1
                         continue  # source still canonical-eligible — not stale
                     new_maturity = (
                         cls.maturity_status if cls else MATURITY_WORKING_STALE
@@ -642,6 +703,8 @@ async def _scan_and_demote(
                         "action": ACTION_DEMOTED,
                     }
                     result.demoted.append(record)
+                    if target_identities is not None:
+                        result.target_demoted_count += 1
                     logger.info(
                         "kg.stale.demoted_to_working board=%s node=%s type=%s "
                         "reason=%s corr=%s",
@@ -760,6 +823,8 @@ async def reconcile_stale_canonical(
     # Validate scope before touching the source database or graph. Only None is
     # an explicit full sweep; invalid durable intents remain retryable.
     target_identities = _source_ids_from_refs(source_refs)
+    if target_identities is not None:
+        result.target_identity_count = len(target_identities)
     source_by_identity, source_complete, incomplete_cause = (
         _build_source_classification_map(board_id)
     )

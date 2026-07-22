@@ -271,3 +271,52 @@ async def test_gd_evaluation_is_safe_when_unavailable(db_factory, monkeypatch):
     assert result["global_discovery_evaluation"] == GD_NOT_EVALUATED
     assert result["count"] >= 1
     assert result["items"][0]["global_discovery_stale_digest"] is None  # unknown, not False
+
+
+@pytest.mark.asyncio
+async def test_gd_unavailable_result_is_not_collapsed_to_evaluated_empty(
+    monkeypatch,
+):
+    import okto_pulse.core.kg.global_discovery.layer_parity as lp
+    import okto_pulse.core.kg.stale_canonical_parity as stale_module
+
+    board_item = {
+        "node_id": "stale-node",
+        "node_type": "Requirement",
+        "source_artifact_ref": "spec:source",
+        "board_graph_stale": True,
+    }
+    monkeypatch.setattr(
+        stale_module,
+        "detect_board_graph_stale",
+        lambda board_id: [dict(board_item)],
+    )
+
+    async def _not_evaluated(
+        db,
+        *,
+        board_id,
+        blocking_execution=None,
+    ):
+        return {
+            "status": "unavailable",
+            "evaluation": "not_evaluated",
+            "reason": "global_discovery_read_failed",
+            "items": [],
+        }
+
+    monkeypatch.setattr(lp, "detect_digest_layer_mismatches", _not_evaluated)
+
+    result = await list_stale_canonical_parity(
+        object(),
+        board_id="board-unavailable-result",
+    )
+
+    assert result["global_discovery_status"] == "unavailable"
+    assert result["global_discovery_evaluation"] == GD_NOT_EVALUATED
+    assert (
+        result["global_discovery_evaluation_reason"]
+        == "global_discovery_read_failed"
+    )
+    assert result["global_discovery_stale_digest_count"] == 0
+    assert result["items"][0]["global_discovery_stale_digest"] is None

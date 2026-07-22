@@ -46,6 +46,7 @@ from okto_pulse.core.kg.source_maturity import (
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
 from okto_pulse.core.application.processors.consolidation import (
+    AGENT_ID,
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
@@ -241,7 +242,7 @@ async def _seed_done_spec_canonical(db_factory, board_id):
     spec_id = f"spec-{uuid.uuid4().hex[:10]}"
     await _insert_spec(db_factory, board_id, spec_id, status="done")
     result = DeterministicWorker().process_spec(_spec_dict(spec_id, board_id, "done"))
-    await _commit_worker_result(db_factory, board_id, "system:layer1_worker", result)
+    await _commit_worker_result(db_factory, board_id, AGENT_ID, result)
     return spec_id, f"spec:{spec_id}"
 
 
@@ -290,8 +291,22 @@ async def test_fast_path_and_sweep_demote_the_same_state(db_factory):
             db, board_id=board_id, source_refs=[spec_ref],
         )
     assert fast.demoted, fast.to_dict()
+    assert fast.target_found_count == len(fast.demoted)
+    assert fast.target_demoted_count == len(fast.demoted)
+    assert fast.target_already_converged_count == 0
+    assert fast.target_skipped_cognitive_count == 0
     assert await _count_canonical(board_id, "Requirement") == 0
-    # A following full sweep is a NOOP (fast-path already converged) — AC8.
+    # A retry proves the prior graph auto-commit already converged its target.
+    async with db_factory() as db:
+        retry = await reconcile_stale_canonical(
+            db, board_id=board_id, source_refs=[spec_ref],
+        )
+    assert retry.demoted == []
+    assert retry.target_found_count == fast.target_found_count
+    assert retry.target_already_converged_count == retry.target_found_count
+    assert retry.target_demoted_count == 0
+
+    # A following full sweep is also a NOOP (fast-path already converged) — AC8.
     async with db_factory() as db:
         sweep = await reconcile_stale_canonical(db, board_id=board_id)
     assert sweep.demoted == []

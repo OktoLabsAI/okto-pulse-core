@@ -3113,10 +3113,22 @@ async def get_kg_health(
                 evaluate_digest_layer_mismatch_inputs,
             )
 
-            digest_layer_mismatches = evaluate_digest_layer_mismatch_inputs(
+            digest_evaluation = evaluate_digest_layer_mismatch_inputs(
                 digest_inputs,
                 overlay=overlay,
             )
+            if (
+                digest_evaluation.get("status") == "available"
+                and digest_evaluation.get("evaluation") == "evaluated"
+                and isinstance(digest_evaluation.get("items"), list)
+            ):
+                digest_layer_mismatches = list(digest_evaluation["items"])
+            else:
+                digest_probe_status = "unavailable"
+                digest_probe_reason = str(
+                    digest_evaluation.get("reason")
+                    or "digest_layer_parity_not_evaluated"
+                )
 
     stale_items = list(parity_snapshot.get("stale_board_items") or [])
     stale_probe_status = str(parity_snapshot.get("stale_board_status") or "unavailable")

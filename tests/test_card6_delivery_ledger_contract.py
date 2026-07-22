@@ -200,6 +200,50 @@ def test_transfer_receipt_encodes_persisted_and_debt_shapes() -> None:
 
 
 @pytest.mark.parametrize(
+    ("state", "attempt"),
+    [
+        (DeliveryState.OUTBOX_PERSISTED, 2),
+        (DeliveryState.DELIVERY_DEBT, 3),
+        (DeliveryState.DELIVERED, 4),
+    ],
+)
+def test_transfer_receipt_reports_an_advanced_authoritative_replay(
+    state: DeliveryState,
+    attempt: int,
+) -> None:
+    request = _request()
+    event_key = build_attempt_event_key(request.delivery_key, attempt=attempt)
+
+    receipt = DeliveryTransferReceipt(
+        delivery_key=request.delivery_key,
+        state=state,
+        attempt=attempt,
+        attempt_event_key=event_key,
+        replayed=True,
+    )
+
+    assert receipt.state is state
+    assert receipt.attempt == attempt
+    assert receipt.attempt_event_key == event_key
+    assert receipt.replayed is True
+
+
+def test_transfer_receipt_preserves_attempt_zero_physical_debt_key() -> None:
+    request = _request()
+
+    receipt = DeliveryTransferReceipt(
+        delivery_key=request.delivery_key,
+        state=DeliveryState.DELIVERY_DEBT,
+        attempt=0,
+        attempt_event_key=request.attempt_event_key,
+        replayed=True,
+    )
+
+    assert receipt.attempt_event_key == request.attempt_event_key
+    assert receipt.replayed is True
+
+
+@pytest.mark.parametrize(
     "receipt",
     [
         {

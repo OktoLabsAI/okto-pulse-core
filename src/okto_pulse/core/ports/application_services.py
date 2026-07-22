@@ -601,6 +601,7 @@ class KnowledgeGraphOperations(Protocol):
     async def query_takedown_telemetry(
         self,
         *,
+        board_id: str,
         delete_event_id: str | None = None,
         delivery_key: str | None = None,
     ) -> dict[str, object]: ...

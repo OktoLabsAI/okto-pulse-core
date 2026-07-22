@@ -32,7 +32,10 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
 )
 from okto_pulse.core.domain.enums import CardStatus
-from okto_pulse.core.services.activity_log import activity_log_changes
+from okto_pulse.core.services.activity_log import (
+    activity_log_changes,
+    activity_log_value,
+)
 
 
 def _require_actor_board(actor: ActorContext, board_id: str) -> None:
@@ -196,6 +199,10 @@ class McpUpdateCardUseCase:
             update_data,
             update_data,
         )
+        activity_details = {
+            field: activity_log_value(value)
+            for field, value in command.activity_details.items()
+        }
         updated = await service.update_card(
             command.card_id, actor.actor_id, command.data
         )
@@ -208,7 +215,7 @@ class McpUpdateCardUseCase:
             actor_name=actor.actor_name,
             # Keep every legacy MCP metadata field and add the same diff
             # envelope emitted by the canonical CardService producer.
-            details={**command.activity_details, "changes": changes},
+            details={**activity_details, "changes": changes},
         )
         await commit(uow)
         return McpUpdateCardResult(updated)
@@ -267,10 +274,11 @@ class McpDeleteCardCommand:
 
 
 class McpDeleteCardResult:
-    __slots__ = ("deleted",)
+    __slots__ = ("deleted", "takedown")
 
-    def __init__(self, deleted: bool) -> None:
+    def __init__(self, deleted: bool, takedown: dict[str, object]) -> None:
         self.deleted = deleted
+        self.takedown = takedown
 
 
 class McpDeleteCardUseCase:
@@ -286,9 +294,19 @@ class McpDeleteCardUseCase:
         card = await _get_card_in_scope(
             service, command.card_id, command.board_id, actor
         )
-        deleted = await service.delete_card(command.card_id, actor.actor_id)
-        if not deleted:
+        delete_result = await service.delete_card(
+            command.card_id,
+            actor.actor_id,
+            return_receipt=True,
+        )
+        if not delete_result:
             raise EntityNotFoundError("card", command.card_id)
+        receipt_serializer = getattr(delete_result, "to_dict", None)
+        if receipt_serializer is None:
+            raise RuntimeError("governed_delete_receipt_missing")
+        takedown = receipt_serializer()
+        if not isinstance(takedown, dict):
+            raise RuntimeError("governed_delete_receipt_invalid")
         await uow.services.boards._log_activity(
             board_id=command.board_id,
             card_id=command.card_id,
@@ -299,7 +317,7 @@ class McpDeleteCardUseCase:
             details={"title": card.title},
         )
         await commit(uow)
-        return McpDeleteCardResult(deleted)
+        return McpDeleteCardResult(True, takedown)
 
 
 # --- dependencies (combined read) -------------------------------------------

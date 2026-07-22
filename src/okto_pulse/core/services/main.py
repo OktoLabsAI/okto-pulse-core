@@ -7,6 +7,7 @@ import logging
 import secrets
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -107,7 +108,10 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
-from okto_pulse.core.services.activity_log import activity_log_changes
+from okto_pulse.core.services.activity_log import (
+    activity_log_changes,
+    activity_log_value,
+)
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.analytics_service import (
     _structured_ref_text,
@@ -421,6 +425,35 @@ async def _application_delete(context: Any, record: ApplicationRecord) -> None:
     await get_application_persistence_port().delete(context, record)
 
 
+@dataclass(frozen=True, slots=True)
+class GovernedArtifactDeletionReceipt:
+    """Stable identities created before the SOT row is deleted.
+
+    The receipt is intentionally transport-neutral.  Callers may expose it as
+    additive metadata so an operator can follow the durable intent through the
+    queue, delivery ledger and Global Discovery without guessing identifiers.
+    """
+
+    board_id: str
+    artifact_type: str
+    artifact_id: str
+    delete_event_id: str
+    generation: int
+    reconcile_intent_id: str
+    delivery_key: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "board_id": self.board_id,
+            "artifact_type": self.artifact_type,
+            "artifact_id": self.artifact_id,
+            "delete_event_id": self.delete_event_id,
+            "generation": self.generation,
+            "reconcile_intent_id": self.reconcile_intent_id,
+            "delivery_key": self.delivery_key,
+        }
+
+
 async def _prepare_governed_artifact_deletion(
     context: Any,
     *,
@@ -428,7 +461,7 @@ async def _prepare_governed_artifact_deletion(
     artifact_type: str,
     artifact_id: str,
     occurred_at: datetime | None = None,
-) -> None:
+) -> GovernedArtifactDeletionReceipt:
     """Stage discard, permanent tombstone and reconcile intent in one UoW."""
 
     from okto_pulse.core.ports.consolidation import (
@@ -438,6 +471,7 @@ async def _prepare_governed_artifact_deletion(
         ReconcileIntentCreate,
         get_reconcile_intent_port,
     )
+    from okto_pulse.core.ports.delivery_ledger import build_delivery_key
     from okto_pulse.core.ports.tombstone import (
         DeletionTombstoneAdvance,
         get_tombstone_port,
@@ -480,6 +514,20 @@ async def _prepare_governed_artifact_deletion(
         or intent.delete_event_id != delete_event_id
     ):
         raise RuntimeError("governed_delete_intent_receipt_mismatch")
+    return GovernedArtifactDeletionReceipt(
+        board_id=board_id,
+        artifact_type=artifact_type,
+        artifact_id=artifact_id,
+        delete_event_id=delete_event_id,
+        generation=tombstone.generation,
+        reconcile_intent_id=intent.intent_id,
+        delivery_key=build_delivery_key(
+            board_id=board_id,
+            artifact_type=artifact_type,
+            artifact_id=artifact_id,
+            generation=tombstone.generation,
+        ),
+    )
 
 
 async def _application_flush(context: Any) -> None:
@@ -2808,6 +2856,10 @@ class CardService:
             update_data,
             list(update_data.keys()),
         )
+        activity_update_data = {
+            field: activity_log_value(value)
+            for field, value in update_data.items()
+        }
         for key, value in update_data.items():
             setattr(card, key, value)
             if key in card_json_fields:
@@ -2835,7 +2887,7 @@ class CardService:
             # Preserve the legacy top-level fields consumed by summaries and
             # existing integrations, while exposing the same structured
             # field-level diff contract used by Spec history.
-            details={**update_data, "changes": activity_changes},
+            details={**activity_update_data, "changes": activity_changes},
         )
 
         # spec 28583299 (Ideação #4, FR6/FR7 + api_21467ada/api_ff834434):
@@ -4984,7 +5036,13 @@ class CardService:
         )
         return card
 
-    async def delete_card(self, card_id: str, user_id: str) -> bool:
+    async def delete_card(
+        self,
+        card_id: str,
+        user_id: str,
+        *,
+        return_receipt: bool = False,
+    ) -> bool | GovernedArtifactDeletionReceipt:
         """Delete a card.
 
         Cascade-cleans orphan references before the row delete so the next
@@ -5082,7 +5140,7 @@ class CardService:
                     bug.mark_dirty("linked_test_task_ids")
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await _prepare_governed_artifact_deletion(
+        takedown_receipt = await _prepare_governed_artifact_deletion(
             self.db,
             board_id=board_id,
             artifact_type="card",
@@ -5098,7 +5156,7 @@ class CardService:
             actor_id=user_id,
             actor_name=actor_name,
         )
-        return True
+        return takedown_receipt if return_receipt else True
 
     async def _log_activity(self, **kwargs: Any) -> None:
         """Log an activity."""

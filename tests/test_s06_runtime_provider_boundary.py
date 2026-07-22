@@ -30,6 +30,13 @@ _RETIRED_MODULES = {
 }
 
 
+class _AuditProvider:
+    async def stage_consolidation_records(
+        self, transaction_context, audit, node_refs, outbox_event,
+    ):
+        ...
+
+
 def _saas_registry(
     runtime: FakeSaaSRuntime,
     *,
@@ -42,7 +49,7 @@ def _saas_registry(
         "session_store": runtime.session_store,
         "embedding_provider": object(),
         "event_bus": object(),
-        "audit_repo": object(),
+        "audit_repo": _AuditProvider(),
         "graph_store": object(),
         "cypher_executor": object(),
         "graph_transaction": object(),
