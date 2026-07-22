@@ -3,6 +3,8 @@
 from okto_pulse.core.application.rebuild_ports import (
     BoardSourceReader,
     BoardSourceRow,
+    BoardSourceSnapshot,
+    BoardSourceSnapshotCause,
     InvalidArtifactTypeError,
     SourceReadError,
     SourceReadFailure,
@@ -13,6 +15,8 @@ from okto_pulse.core.application.rebuild_ports import (
 __all__ = [
     "BoardSourceReader",
     "BoardSourceRow",
+    "BoardSourceSnapshot",
+    "BoardSourceSnapshotCause",
     "InvalidArtifactTypeError",
     "SourceReadError",
     "SourceReadFailure",

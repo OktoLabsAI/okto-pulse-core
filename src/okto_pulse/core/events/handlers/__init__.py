@@ -28,6 +28,7 @@ from okto_pulse.core.events.handlers.card_boost_recompute import (  # noqa: F401
 )
 from okto_pulse.core.events.handlers.kg_decay_tick import (  # noqa: F401
     KGDailyTickHandler,
+    KGDeliveryRedriveTickHandler,
 )
 
 __all__ = [
@@ -40,4 +41,5 @@ __all__ = [
     "CardPriorityChangedHandler",
     "CardSeverityChangedHandler",
     "KGDailyTickHandler",
+    "KGDeliveryRedriveTickHandler",
 ]

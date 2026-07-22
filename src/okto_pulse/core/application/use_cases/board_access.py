@@ -45,9 +45,12 @@ async def load_accessible_board(
     if getattr(board, "owner_id", None) == actor.actor_id:
         return board
 
-    permission = await uow.services.shares.get_user_permission(
-        board_id,
-        actor.actor_id,
+    shares = uow.services.shares
+    share_only = getattr(shares, "get_share_permission", None)
+    permission = (
+        await share_only(board_id, actor.actor_id)
+        if callable(share_only)
+        else await shares.get_user_permission(board_id, actor.actor_id)
     )
     if permission is None:
         return None

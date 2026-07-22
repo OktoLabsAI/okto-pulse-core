@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import and_, asc, event, func, select
+from sqlalchemy import and_, asc, event, exists, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ---------------------------------------------------------------------------
@@ -98,6 +98,7 @@ from sqlalchemy_test_models import (  # noqa: E402
     ConsolidationAudit,
     ConsolidationDeadLetter,
     ConsolidationQueue,
+    ArtifactDeletionTombstone,
     GlobalUpdateOutbox,
     Ideation,
     KGTickRun,
@@ -320,25 +321,57 @@ class _CoreTestRelationalEffects(RelationalEffectsPort):
         )
         return int(depth or 0)
 
-    async def upsert_consolidation_queue(
+    async def upsert_consolidation_queue_unless_tombstoned(
         self,
         session,
         upsert: ConsolidationQueueUpsert,
-    ) -> None:
+    ) -> bool:
         insert = _upsert_insert_for_session(session)
+        candidate_id = str(uuid.uuid4())
+        admitted_values = select(
+            literal(candidate_id),
+            literal(upsert.board_id),
+            literal(upsert.artifact_type),
+            literal(upsert.artifact_id),
+            literal("consolidate"),
+            literal(0),
+            literal(upsert.priority),
+            literal(upsert.source),
+            literal(upsert.triggered_by_event),
+            literal("pending"),
+            literal(0),
+        ).where(
+            ~exists(
+                select(1).where(
+                    ArtifactDeletionTombstone.board_id == upsert.board_id,
+                    ArtifactDeletionTombstone.artifact_type
+                    == upsert.artifact_type,
+                    ArtifactDeletionTombstone.artifact_id == upsert.artifact_id,
+                )
+            )
+        )
         stmt = (
             insert(ConsolidationQueue)
-            .values(
-                board_id=upsert.board_id,
-                artifact_type=upsert.artifact_type,
-                artifact_id=upsert.artifact_id,
-                priority=upsert.priority,
-                source=upsert.source,
-                triggered_by_event=upsert.triggered_by_event,
-                status="pending",
+            .from_select(
+                (
+                    "id",
+                    "board_id",
+                    "artifact_type",
+                    "artifact_id",
+                    "work_kind",
+                    "generation",
+                    "priority",
+                    "source",
+                    "triggered_by_event",
+                    "status",
+                    "attempts",
+                ),
+                admitted_values,
+                include_defaults=False,
             )
             .on_conflict_do_update(
                 index_elements=["board_id", "artifact_type", "artifact_id"],
+                index_where=ConsolidationQueue.work_kind == "consolidate",
                 set_={
                     "status": "pending",
                     "attempts": 0,
@@ -354,8 +387,9 @@ class _CoreTestRelationalEffects(RelationalEffectsPort):
                 },
                 where=ConsolidationQueue.status.notin_(("pending", "claimed")),
             )
+            .returning(ConsolidationQueue.id)
         )
-        await session.execute(stmt)
+        return (await session.execute(stmt)).scalar_one_or_none() is not None
 
     async def list_board_ids(self, session) -> list[str]:
         result = await session.execute(select(Board.id))
@@ -2019,15 +2053,36 @@ def _consolidation_test_store():
         register_consolidation_persistence_port,
         reset_consolidation_persistence_port_for_tests,
     )
+    from okto_pulse.core.ports.reconcile_intent import (
+        register_reconcile_intent_port,
+        reset_reconcile_intent_port_for_tests,
+    )
+    from okto_pulse.core.ports.tombstone import (
+        register_tombstone_port,
+        reset_tombstone_port_for_tests,
+    )
     from sqlalchemy_consolidation_store import (
         TestSqlAlchemyConsolidationPersistence,
     )
 
-    register_consolidation_persistence_port(
-        TestSqlAlchemyConsolidationPersistence()
-    )
+    adapter = TestSqlAlchemyConsolidationPersistence()
+    register_consolidation_persistence_port(adapter)
+    register_tombstone_port(adapter)
+    register_reconcile_intent_port(adapter)
     yield
     reset_consolidation_persistence_port_for_tests()
+    reset_tombstone_port_for_tests()
+    reset_reconcile_intent_port_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _stale_sweep_test_port_reset():
+    from okto_pulse.core.ports.stale_sweep import (
+        reset_stale_sweep_port_for_tests,
+    )
+
+    yield
+    reset_stale_sweep_port_for_tests()
 
 
 @pytest.fixture(autouse=True)

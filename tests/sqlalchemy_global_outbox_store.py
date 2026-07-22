@@ -20,6 +20,7 @@ def _record(row: Any) -> GlobalOutboxEventRecord:
         payload=copy.deepcopy(row.payload or {}), retry_count=int(row.retry_count),
         last_error=row.last_error, processed_at=row.processed_at,
         created_at=row.created_at,
+        event_type=str(row.event_type),
     )
 
 

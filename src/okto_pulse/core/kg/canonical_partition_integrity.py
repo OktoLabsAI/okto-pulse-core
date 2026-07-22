@@ -39,7 +39,9 @@ from typing import Any
 
 
 from okto_pulse.core.kg.canonical_learning_partition import (
+    CANONICAL_LEARNING_DEBT_REASONS,
     HISTORICAL_DEBT_REASON,
+    SOURCE_ABSENT_DEBT_REASON,
     _is_bug_derived_ref,
 )
 from okto_pulse.core.kg.cognitive_policy import LEARNING_RELATES_TO_TARGETS
@@ -87,6 +89,7 @@ PARTITION_STATUSES: frozenset[str] = frozenset({
 _FILTERABLE_REASON_CODES: frozenset[str] = frozenset({
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
     HISTORICAL_DEBT_REASON,
+    SOURCE_ABSENT_DEBT_REASON,
     CANONICAL_LEARNING_MIXED_DEFERRED_REASON,
     CANONICAL_LEARNING_PROVENANCE_ONLY_REASON,
 })
@@ -341,13 +344,14 @@ async def canonical_debt_exclusions(
     try:
         debt = await list_canonical_debt(db, board_id=board_id, limit=200)
         for row in debt.items:
-            if str(row.get("failure_reason") or "") != HISTORICAL_DEBT_REASON:
+            reason = str(row.get("failure_reason") or "")
+            if reason not in CANONICAL_LEARNING_DEBT_REASONS:
                 continue
             if str(row.get("canonical_state") or "") not in OPEN_STATES:
                 continue
             aid = normalize_cognitive_artifact_id(str(row.get("source_ref") or ""))
             if aid:
-                out[aid] = HISTORICAL_DEBT_REASON
+                out[aid] = reason
     except Exception:  # pragma: no cover - compatibility read remains best-effort
         pass
     return out
@@ -581,14 +585,15 @@ def _gather(db_debt_items: list[dict[str, Any]], *, board_id: str) -> list[dict[
 
     # Source 2 — historical canonical debt (IMP2).
     for row in db_debt_items:
-        if str(row.get("failure_reason") or "") != HISTORICAL_DEBT_REASON:
+        failure_reason = str(row.get("failure_reason") or "")
+        if failure_reason not in CANONICAL_LEARNING_DEBT_REASONS:
             continue
         signals.append({
             "node_id": None,
             "node_type": "Learning",
             "artifact_id": normalize_cognitive_artifact_id(str(row.get("source_ref") or "")),
             "source_artifact_ref": str(row.get("source_ref") or ""),
-            "reason_code": HISTORICAL_DEBT_REASON,
+            "reason_code": failure_reason,
             # Historical bug-derived Learning lacking a canonical Bug edge — still
             # not canonical knowledge (S-KG-02 weak_provenance).
             "classification": CLASSIFICATION_WEAK_PROVENANCE,
@@ -805,7 +810,8 @@ async def get_canonical_partition_integrity_detail(
         debt = await list_canonical_debt(db, board_id=board_id, limit=200)
         for row in debt.items:
             if (
-                str(row.get("failure_reason") or "") == HISTORICAL_DEBT_REASON
+                str(row.get("failure_reason") or "")
+                in CANONICAL_LEARNING_DEBT_REASONS
                 and normalize_cognitive_artifact_id(str(row.get("source_ref") or ""))
                 == artifact_id
             ):

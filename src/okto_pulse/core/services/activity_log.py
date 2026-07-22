@@ -8,7 +8,9 @@ or relying on Python object stringification.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from datetime import date, datetime
+from enum import Enum
 from typing import Any
 
 
@@ -62,6 +64,50 @@ def activity_log_trigger(details: Any) -> str | None:
         return None
     trigger = _scalar_text(details.get("trigger"), max_chars=120)
     return trigger or None
+
+
+def activity_log_changes(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    fields: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Build the canonical field-level ``old``/``new`` activity diff.
+
+    Values are normalized into detached JSON-safe structures so a later
+    in-memory mutation cannot rewrite the audit payload. This matches the
+    existing Spec history contract consumed by the UI.
+    """
+    changes: list[dict[str, Any]] = []
+    for field in fields if fields is not None else after:
+        old_value = _activity_change_value(before.get(field))
+        new_value = _activity_change_value(after.get(field))
+        if old_value != new_value:
+            changes.append(
+                {"field": field, "old": old_value, "new": new_value}
+            )
+    return changes
+
+
+def _activity_change_value(value: Any) -> Any:
+    """Detach and normalize one value for a durable activity diff."""
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json")
+    if isinstance(value, Enum):
+        return _activity_change_value(value.value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {
+            str(key): _activity_change_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
+        return [_activity_change_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
 
 def activity_log_summary(action: str, details: Any) -> str:

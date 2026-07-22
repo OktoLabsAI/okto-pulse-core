@@ -9,6 +9,10 @@ from pathlib import Path
 import pytest
 
 from kg_registry_testing import configure_test_kg_registry
+from source_reader_schema_testing import (
+    create_complete_source_catalog,
+    insert_source_board,
+)
 from okto_pulse.core.application.boundary.source_read_consumer_gate import (
     SourceReadConsumerGate,
 )
@@ -18,7 +22,10 @@ from okto_pulse.core.kg.board_source_store import (
     SPEC_SOURCE_MANIFEST_VERSION,
     _canonical_content_hash,
 )
-from okto_pulse.core.kg.interfaces.board_source_reader import SourceReadError
+from okto_pulse.core.kg.interfaces.board_source_reader import (
+    BoardSourceSnapshot,
+    SourceReadError,
+)
 
 _board_source_reader = pytest.importorskip(
     "okto_pulse.community.adapters.board_source_reader",
@@ -30,40 +37,18 @@ CommunityBoardSourceReader = _board_source_reader.CommunityBoardSourceReader
 def _source_db(tmp_path: Path) -> Path:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute("CREATE TABLE boards (id TEXT, settings TEXT)")
+        create_complete_source_catalog(conn)
+        insert_source_board(conn, "b1")
         conn.execute(
-            "CREATE TABLE specs ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, updated_at TEXT, "
-            "title TEXT, description TEXT, context TEXT, version INTEGER, "
-            "functional_requirements TEXT, technical_requirements TEXT, "
-            "acceptance_criteria TEXT, test_scenarios TEXT, business_rules TEXT, "
-            "api_contracts TEXT, decisions TEXT, integration_requirements TEXT, "
-            "observability_requirements TEXT)"
+            "UPDATE boards SET settings = ? WHERE id = ?",
+            (json.dumps({"kg_working_ttl_days": 7}), "b1"),
         )
         conn.execute(
-            "CREATE TABLE cards ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, updated_at TEXT, "
-            "title TEXT, description TEXT, details TEXT, priority TEXT, "
-            "card_type TEXT, spec_id TEXT, sprint_id TEXT, test_scenario_ids TEXT, "
-            "conclusions TEXT, screen_mockups TEXT, knowledge_bases TEXT, "
-            "validations TEXT, origin_task_id TEXT, severity TEXT, "
-            "expected_behavior TEXT, observed_behavior TEXT, "
-            "steps_to_reproduce TEXT, action_plan TEXT, linked_test_task_ids TEXT)"
-        )
-        conn.execute(
-            "CREATE TABLE amendment_hotfix_revisions ("
-            "id TEXT, board_id TEXT, created_at TEXT, updated_at TEXT, "
-            "original_spec_id TEXT, origin_bug_id TEXT, origin_task_ids TEXT, "
-            "affected_task_ids TEXT, revision_spec_id TEXT, "
-            "regression_scenario_ids TEXT, regression_test_task_ids TEXT, "
-            "automated_regression_refs TEXT, status TEXT, lineage_state TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO boards VALUES (?, ?)",
-            ("b1", json.dumps({"kg_working_ttl_days": 7})),
-        )
-        conn.execute(
-            "INSERT INTO specs VALUES ("
+            "INSERT INTO specs "
+            "(id, board_id, status, created_at, updated_at, title, description, "
+            "context, version, functional_requirements, technical_requirements, "
+            "acceptance_criteria, test_scenarios, business_rules, api_contracts, "
+            "decisions, integration_requirements, observability_requirements) VALUES ("
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "s1",
@@ -87,7 +72,12 @@ def _source_db(tmp_path: Path) -> Path:
             ),
         )
         conn.execute(
-            "INSERT INTO cards VALUES ("
+            "INSERT INTO cards "
+            "(id, board_id, status, created_at, updated_at, title, description, "
+            "details, priority, card_type, spec_id, sprint_id, test_scenario_ids, "
+            "conclusions, screen_mockups, knowledge_bases, validations, "
+            "origin_task_id, severity, expected_behavior, observed_behavior, "
+            "steps_to_reproduce, action_plan, linked_test_task_ids) VALUES ("
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "bug1",
@@ -117,7 +107,11 @@ def _source_db(tmp_path: Path) -> Path:
             ),
         )
         conn.execute(
-            "INSERT INTO amendment_hotfix_revisions VALUES ("
+            "INSERT INTO amendment_hotfix_revisions "
+            "(id, board_id, created_at, updated_at, original_spec_id, origin_bug_id, "
+            "origin_task_ids, affected_task_ids, revision_spec_id, "
+            "regression_scenario_ids, regression_test_task_ids, "
+            "automated_regression_refs, status, lineage_state) VALUES ("
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "am1",
@@ -194,11 +188,23 @@ def test_community_reader_translates_sqlite_errors_to_structured_source_error(
 ) -> None:
     db_path = tmp_path / "bad.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute("CREATE TABLE specs (id TEXT, board_id TEXT)")
+        create_complete_source_catalog(conn)
+        insert_source_board(conn, "b1")
         conn.commit()
 
+    class _ReaderWithFailingPostPreflightRead(CommunityBoardSourceReader):
+        def _fetch_conn(
+            self,
+            conn: sqlite3.Connection,
+            board_id: str,
+        ) -> BoardSourceSnapshot:
+            snapshot = super()._fetch_conn(conn, board_id)
+            assert snapshot.complete is True
+            conn.execute("SELECT missing_source_column FROM specs").fetchall()
+            return snapshot
+
     with pytest.raises(SourceReadError) as exc:
-        CommunityBoardSourceReader(db_path).fetch("b1")
+        _ReaderWithFailingPostPreflightRead(db_path).fetch("b1")
 
     assert exc.value.code == "read_error"
     assert exc.value.cause_type == "OperationalError"
@@ -215,8 +221,10 @@ def test_community_reader_translates_sqlite_errors_to_structured_source_error(
 
 def test_kg_rebuild_build_source_store_uses_registry_reader() -> None:
     class _Reader:
-        def fetch(self, board_id: str) -> list[dict[str, str]]:
-            return [{"artifact_type": "spec", "id": board_id}]
+        def fetch(self, board_id: str) -> BoardSourceSnapshot:
+            return BoardSourceSnapshot(
+                rows=({"artifact_type": "spec", "id": board_id},),
+            )
 
     configure_test_kg_registry(board_source_reader=_Reader())
 

@@ -14,6 +14,15 @@ legacy ``e.to_dict()`` envelope.
 
 from __future__ import annotations
 
+import json
+
+from okto_pulse.core.domain.enums import CardStatus, RefinementStatus, SpecStatus
+from okto_pulse.core.ports.application_persistence import (
+    ApplicationFilter,
+    GroupCountRequest,
+    PageRequest,
+    PageResult,
+)
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
@@ -607,8 +616,130 @@ def _apply_derivation_pending_filter(
     return [item for item in items if predicate(item) is expected]
 
 
+def _page_scope(
+    board_id: str, *, include_archived: bool = False, **parents: str
+) -> tuple[ApplicationFilter, ...]:
+    scope = [ApplicationFilter("board_id", "eq", board_id)]
+    scope.extend(
+        ApplicationFilter(field, "eq", value)
+        for field, value in parents.items()
+    )
+    if not include_archived:
+        scope.append(ApplicationFilter("archived", "is_false"))
+    return tuple(scope)
+
+
+def _label_groups(raw: Any) -> tuple[tuple[ApplicationFilter, ...], ...]:
+    if not raw:
+        return ()
+    labels = raw if isinstance(raw, list) else [raw]
+    return tuple(
+        (
+            ApplicationFilter(
+                "labels",
+                "contains",
+                json.dumps(label, ensure_ascii=False),
+            ),
+        )
+        for label in labels
+    )
+
+
+def _empty_page(offset: int, limit: int) -> PageResult:
+    return PageResult((), 0, 0, offset, limit)
+
+
+class McpListCardsByStatusCommand:
+    __slots__ = (
+        "board_id",
+        "status",
+        "spec_id",
+        "priority",
+        "assignee_id",
+        "offset",
+        "limit",
+    )
+
+    def __init__(
+        self,
+        board_id: str,
+        *,
+        status: str = "",
+        spec_id: str = "",
+        priority: str = "",
+        assignee_id: str = "",
+        offset: int = 0,
+        limit: int = 50,
+    ) -> None:
+        self.board_id = board_id
+        self.status = status
+        self.spec_id = spec_id
+        self.priority = priority
+        self.assignee_id = assignee_id
+        self.offset = offset
+        self.limit = limit
+
+
+class McpListCardsByStatusUseCase:
+    """MCP card-list contract backed by the catalogued SQL page executor."""
+
+    async def execute(
+        self,
+        command: McpListCardsByStatusCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> _DataResult:
+        board = await load_accessible_board(uow, command.board_id, actor)
+        if board is None:
+            raise EntityNotFoundError("board", command.board_id)
+
+        filters: list[ApplicationFilter] = []
+        if command.status == "open":
+            filters.append(
+                ApplicationFilter(
+                    "status",
+                    "in",
+                    tuple(
+                        item.value
+                        for item in CardStatus
+                        if item not in {CardStatus.DONE, CardStatus.CANCELLED}
+                    ),
+                )
+            )
+        elif command.status:
+            filters.append(ApplicationFilter("status", "eq", command.status))
+        if command.spec_id:
+            filters.append(ApplicationFilter("spec_id", "eq", command.spec_id))
+        if command.priority:
+            filters.append(ApplicationFilter("priority", "eq", command.priority))
+        if command.assignee_id:
+            filters.append(
+                ApplicationFilter("assignee_id", "eq", command.assignee_id)
+            )
+
+        page = await uow.services.entity_pages.list(
+            PageRequest(
+                surface="mcp_card_status_list",
+                scope=(ApplicationFilter("board_id", "eq", command.board_id),),
+                filters=tuple(filters),
+                offset=command.offset,
+                limit=command.limit,
+            )
+        )
+        return _DataResult(page)
+
+
 class McpListByBoardCommand:
-    __slots__ = ("board_id", "entity_type", "filters", "story_args", "topic_args")
+    __slots__ = (
+        "board_id",
+        "entity_type",
+        "filters",
+        "story_args",
+        "topic_args",
+        "offset",
+        "limit",
+    )
 
     def __init__(
         self,
@@ -618,22 +749,25 @@ class McpListByBoardCommand:
         *,
         story_args: dict | None = None,
         topic_args: dict | None = None,
+        offset: int = 0,
+        limit: int = 100,
     ) -> None:
         self.board_id = board_id
         self.entity_type = entity_type
         self.filters = filters
         self.story_args = story_args or {}
         self.topic_args = topic_args or {}
+        self.offset = offset
+        self.limit = limit
 
 
 class McpListByBoardUseCase:
-    """Fetch a board's top-level entities by ``entity_type`` + apply the pure-data
-    post-filters (labels/assignee/status), read-only. Transport-free: the adapter
-    owns ``filters`` JSON parsing/``validate_filters``, the required-filter checks
-    (``refinement``→``ideation_id``, ``sprint``→``spec_id``, validated BEFORE this
-    call), the story/topic bool-arg computation (server helpers), pagination and
-    per-type JSON shaping. ``story_args``/``topic_args`` carry the adapter's
-    pre-computed kwargs so the server helpers stay out of the core."""
+    """Execute every supported MCP board list through one typed SQL page.
+
+    The inbound adapter still owns filter-payload validation and per-type JSON
+    shaping.  Core owns scope, predicates, canonical per-tool order, both
+    counts, the SQL window and page-local derived counters.
+    """
 
     async def execute(
         self, command: McpListByBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
@@ -647,56 +781,242 @@ class McpListByBoardUseCase:
         # resolving any parent identifier so an actor cannot use a board-scoped
         # list as an existence oracle for another board.
         if actor.board_id != command.board_id:
-            return _DataResult([])
+            return _DataResult(_empty_page(command.offset, command.limit))
+
+        filters: list[ApplicationFilter] = []
+        any_groups: tuple[tuple[ApplicationFilter, ...], ...] = ()
+        includes: tuple[str, ...] = ()
 
         if et == "spec":
-            items = await uow.services.specs.list_specs(command.board_id, f.get("status"))
-            items = _apply_label_filter(items, f)
+            surface = "mcp_spec_list"
+            scope = _page_scope(command.board_id)
+            if f.get("status"):
+                filters.append(ApplicationFilter("status", "eq", f["status"]))
             if f.get("assignee_id"):
-                items = [s for s in items if s.assignee_id == f["assignee_id"]]
+                filters.append(
+                    ApplicationFilter("assignee_id", "eq", f["assignee_id"])
+                )
+            any_groups = _label_groups(f.get("labels"))
         elif et == "ideation":
-            items = await uow.services.ideations.list_ideations(
-                command.board_id, f.get("status")
-            )
-            items = _apply_label_filter(items, f)
-            items = _apply_derivation_pending_filter(
-                items,
-                f,
-                is_derivation_pending_ideation,
-            )
+            surface = "mcp_ideation_list"
+            scope = _page_scope(command.board_id)
+            if f.get("status"):
+                filters.append(ApplicationFilter("status", "eq", f["status"]))
+            pending = _optional_bool(f.get("derivation_pending"))
+            if pending is not None:
+                filters.append(
+                    ApplicationFilter(
+                        "derivation_pending",
+                        "is_true" if pending else "is_false",
+                    )
+                )
+            any_groups = _label_groups(f.get("labels"))
         elif et == "refinement":
             ideation_id = f.get("ideation_id", "")
-            ideation = await uow.services.ideations.get_ideation(ideation_id)
-            if not ideation or ideation.board_id != command.board_id:
-                return _DataResult([])
-            items = await uow.services.refinements.list_refinements(ideation_id)
-            # Contain corrupt legacy rows as well as cross-board parent probes.
-            items = [r for r in items if r.board_id == command.board_id]
-            if f.get("status"):
-                items = [r for r in items if r.status.value == f["status"]]
-            items = _apply_label_filter(items, f)
-            items = _apply_derivation_pending_filter(
-                items,
-                f,
-                is_derivation_pending_refinement,
+            parent = await uow.ideations.get(ideation_id)
+            if parent is None or parent.board_id != command.board_id:
+                return _DataResult(_empty_page(command.offset, command.limit))
+            surface = "mcp_refinement_list"
+            scope = _page_scope(
+                command.board_id,
+                ideation_id=ideation_id,
             )
+            if f.get("status"):
+                filters.append(ApplicationFilter("status", "eq", f["status"]))
+            pending = _optional_bool(f.get("derivation_pending"))
+            if pending is not None:
+                filters.append(
+                    ApplicationFilter(
+                        "derivation_pending",
+                        "is_true" if pending else "is_false",
+                    )
+                )
+            any_groups = _label_groups(f.get("labels"))
         elif et == "sprint":
             spec_id = f.get("spec_id", "")
-            spec = await uow.services.specs.get_spec(spec_id)
-            if not spec or spec.board_id != command.board_id:
-                return _DataResult([])
-            items = await uow.services.sprints.list_sprints(spec_id)
-            # A legacy database can contain relationally valid but cross-board
-            # children; never project those through the authenticated board.
-            items = [s for s in items if s.board_id == command.board_id]
+            parent = await uow.specs.get(spec_id)
+            if parent is None or parent.board_id != command.board_id:
+                return _DataResult(_empty_page(command.offset, command.limit))
+            surface = "mcp_sprint_list"
+            scope = _page_scope(
+                command.board_id,
+                spec_id=spec_id,
+            )
             if f.get("status"):
-                items = [s for s in items if s.status.value == f["status"]]
+                filters.append(ApplicationFilter("status", "eq", f["status"]))
         elif et == "story":
-            items = await uow.services.stories.list_stories(
-                command.board_id, **command.story_args
+            surface = "mcp_story_list"
+            args = command.story_args
+            scope = _page_scope(
+                command.board_id,
+                include_archived=bool(args.get("include_archived")),
             )
+            if args.get("status_filter"):
+                filters.append(
+                    ApplicationFilter("status", "eq", args["status_filter"])
+                )
+            if args.get("topic_id"):
+                filters.append(
+                    ApplicationFilter("topic_id", "eq", args["topic_id"])
+                )
+            for field in ("linked", "converted"):
+                value = args.get(field)
+                if value is not None:
+                    filters.append(
+                        ApplicationFilter(
+                            field,
+                            "is_true" if value else "is_false",
+                        )
+                    )
+            includes = ("ideation_links",)
         else:  # topic
-            items = await uow.services.stories.list_topics(
-                command.board_id, **command.topic_args
+            surface = "mcp_topic_list"
+            scope = _page_scope(
+                command.board_id,
+                include_archived=bool(
+                    command.topic_args.get("include_archived")
+                ),
             )
-        return _DataResult(items)
+
+        page = await uow.services.entity_pages.list(
+            PageRequest(
+                surface=surface,
+                scope=scope,
+                filters=tuple(filters),
+                any_groups=any_groups,
+                includes=includes,
+                offset=command.offset,
+                limit=command.limit,
+            )
+        )
+        await _attach_mcp_page_derivatives(
+            uow,
+            command.board_id,
+            et,
+            page.items,
+        )
+        return _DataResult(page)
+
+
+async def _attach_mcp_page_derivatives(
+    uow: PulseUnitOfWork,
+    board_id: str,
+    entity_type: str,
+    items: tuple[Any, ...],
+) -> None:
+    """Attach legacy-derived fields with page-bounded aggregate queries."""
+    if not items:
+        return
+
+    ids = tuple(item.id for item in items)
+    if entity_type == "ideation":
+        refinement_rows = await uow.services.entity_pages.group_count(
+            GroupCountRequest(
+                surface="mcp_ideation_refinement_counts",
+                scope=(
+                    ApplicationFilter("board_id", "eq", board_id),
+                    ApplicationFilter("archived", "is_false"),
+                ),
+                filters=(
+                    ApplicationFilter("ideation_id", "in", ids),
+                    ApplicationFilter(
+                        "status",
+                        "in",
+                        tuple(
+                            status.value
+                            for status in RefinementStatus
+                            if status != RefinementStatus.CANCELLED
+                        ),
+                    ),
+                ),
+                group_by=("ideation_id",),
+            )
+        )
+        spec_rows = await uow.services.entity_pages.group_count(
+            GroupCountRequest(
+                surface="mcp_spec_child_counts",
+                scope=(
+                    ApplicationFilter("board_id", "eq", board_id),
+                    ApplicationFilter("archived", "is_false"),
+                ),
+                filters=(
+                    ApplicationFilter("ideation_id", "in", ids),
+                    ApplicationFilter("refinement_id", "is_none"),
+                    ApplicationFilter(
+                        "status",
+                        "in",
+                        tuple(
+                            status.value
+                            for status in SpecStatus
+                            if status != SpecStatus.CANCELLED
+                        ),
+                    ),
+                ),
+                group_by=("ideation_id",),
+            )
+        )
+        refinement_counts = {row.values[0]: row.count for row in refinement_rows}
+        spec_counts = {row.values[0]: row.count for row in spec_rows}
+        for item in items:
+            item.attach(
+                "active_refinement_count", refinement_counts.get(item.id, 0)
+            )
+            item.attach("active_spec_count", spec_counts.get(item.id, 0))
+    elif entity_type == "refinement":
+        rows = await uow.services.entity_pages.group_count(
+            GroupCountRequest(
+                surface="mcp_spec_child_counts",
+                scope=(
+                    ApplicationFilter("board_id", "eq", board_id),
+                    ApplicationFilter("archived", "is_false"),
+                ),
+                filters=(
+                    ApplicationFilter("refinement_id", "in", ids),
+                    ApplicationFilter(
+                        "status",
+                        "in",
+                        tuple(
+                            status.value
+                            for status in SpecStatus
+                            if status != SpecStatus.CANCELLED
+                        ),
+                    ),
+                ),
+                group_by=("refinement_id",),
+            )
+        )
+        counts = {row.values[0]: row.count for row in rows}
+        for item in items:
+            item.attach("active_spec_count", counts.get(item.id, 0))
+    elif entity_type == "sprint":
+        for item in items:
+            item.attach("normal_sprint_created", _enum_value(item.lane_type) == "normal")
+    elif entity_type == "topic":
+        rows = await uow.services.entity_pages.group_count(
+            GroupCountRequest(
+                surface="topic_story_counts",
+                scope=(ApplicationFilter("board_id", "eq", board_id),),
+                group_by=("topic_id", "archived"),
+            )
+        )
+        counts: dict[str, dict[str, int]] = {}
+        for row in rows:
+            topic_id, archived = row.values
+            if topic_id is None:
+                continue
+            bucket = counts.setdefault(
+                topic_id, {"active_count": 0, "archived_count": 0}
+            )
+            key = "archived_count" if bool(archived) else "active_count"
+            bucket[key] += row.count
+        for item in items:
+            bucket = counts.get(
+                item.id, {"active_count": 0, "archived_count": 0}
+            )
+            item.attach("story_count", bucket["active_count"])
+            item.attach("active_count", bucket["active_count"])
+            item.attach("archived_count", bucket["archived_count"])
+            item.attach(
+                "total_associated_count",
+                bucket["active_count"] + bucket["archived_count"],
+            )

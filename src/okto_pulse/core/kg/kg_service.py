@@ -1126,6 +1126,11 @@ class KGService:
                 query_vec=query_vec,
                 top_k=top_k * 2,  # fetch extra for re-ranking
                 min_similarity=min_similarity,
+                # Find Similar is a canonical knowledge surface.  Working
+                # nodes remain available through the separately governed
+                # diagnostic graph-layer paths, but must never leak through
+                # this default decision-reuse query.
+                graph_layer="canonical",
             )
         except KGToolError as exc:
             if exc.code == "graph_unavailable":

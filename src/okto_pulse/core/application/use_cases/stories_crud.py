@@ -473,13 +473,19 @@ class ListStoriesUseCase:
     ``story.entity.read`` gate; ``ValueError`` (bad status filter → 400)
     propagates."""
 
-    async def execute(
+    async def preflight(
         self, command: ListStoriesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> ListStoriesResult:
+    ) -> None:
+        """Authorize the list without materializing its legacy collection."""
         await _ensure_board(uow, command.board_id, actor)
         await _require_permissions(
             uow.services, actor.actor_id, command.board_id, "story.entity.read"
         )
+
+    async def execute(
+        self, command: ListStoriesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+    ) -> ListStoriesResult:
+        await self.preflight(command, actor=actor, uow=uow)
         stories = await uow.services.stories.list_stories(
             command.board_id,
             status_filter=command.status_filter,

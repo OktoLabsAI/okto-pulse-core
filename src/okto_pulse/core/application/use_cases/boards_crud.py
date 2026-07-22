@@ -387,6 +387,21 @@ class GetBoardColumnsUseCase:
     ``BoardService.get_board``; the per-card projection + ``include_archived``
     filtering stay in the adapter, exactly as the legacy endpoint shaped them."""
 
+    async def preflight(
+        self, command: GetBoardColumnsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+    ) -> Any:
+        """Authorize a columns read without hydrating the legacy board graph.
+
+        The paginated columns transport performs this lightweight check before
+        opening its data-statement budget.  The legacy ``execute`` path remains
+        unchanged and continues to return the fully hydrated board object.
+        """
+
+        board = await load_accessible_board(uow, command.board_id, actor)
+        if board is None:
+            raise EntityNotFoundError("board", command.board_id)
+        return board
+
     async def execute(
         self, command: GetBoardColumnsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetBoardColumnsResult:

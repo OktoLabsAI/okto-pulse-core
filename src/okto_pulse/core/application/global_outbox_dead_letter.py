@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from threading import RLock
 from typing import Any
 
+from okto_pulse.core.ports.delivery_ledger import is_governed_delivery_attempt
 from okto_pulse.core.ports.global_outbox import (
     GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL,
     GLOBAL_OUTBOX_MAX_RETRIES,
@@ -383,6 +384,27 @@ class GlobalOutboxDeadLetterOperations:
             normalized_reason = _normalize_reason(reason)
             rows = await self._store.get_events_by_ids(context, ids=selected_ids)
             by_id = {row.id: row for row in rows}
+            governed_ids = [
+                row_id
+                for row_id in selected_ids
+                if (row := by_id.get(row_id)) is not None
+                and is_governed_delivery_attempt(
+                    event_id=row.event_id,
+                    payload=row.payload,
+                )
+            ]
+            if governed_ids:
+                # Governed attempts have immutable physical keys.  Only the
+                # daily tick may advance the durable ledger and emit attempt
+                # n+1; the legacy runbook must reject the whole mixed
+                # selection before touching any row.
+                raise GlobalOutboxDeadLetterError(
+                    "governed_delivery_attempt_tick_owned",
+                    detail={
+                        "rejected_count": len(governed_ids),
+                        "owner": "kg.tick.daily",
+                    },
+                )
             requeue: list[GlobalOutboxEventRecord] = []
             already_queued: list[str] = []
             already_applied: list[str] = []

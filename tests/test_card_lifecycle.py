@@ -1554,7 +1554,8 @@ class TestActivityLog:
             specs = (await db.execute(
                 __import__("sqlalchemy").select(Spec).where(Spec.board_id == BOARD_ID)
             )).scalars().all()
-            actual_spec_id = specs[0].id
+            spec = specs[0]
+            actual_spec_id = spec.id
 
             data = CardCreate(
                 title=f"Move Card ({status.value})",
@@ -1562,6 +1563,10 @@ class TestActivityLog:
                 spec_id=actual_spec_id,
             )
             card = await svc.create_card(BOARD_ID, USER_ID, data)
+            # The helper must be order-independent: forward card transitions
+            # require an execution-ready spec, rather than relying on an
+            # earlier test to have promoted the shared fixture.
+            spec.status = SpecStatus.IN_PROGRESS
             await db.commit()
             return card, actual_spec_id
 
@@ -1665,17 +1670,24 @@ class TestActivityLog:
             assert logs[0].details.get("to_status") == "started"
 
     async def test_activity_logged_on_card_update(self, db_factory):
-        """Updating a card should log a card_updated activity."""
+        """Card updates preserve legacy details and add field-level diffs."""
         await _seed_board(db_factory)
         async with db_factory() as db:
             svc = CardService(db)
             card = (await db.execute(
                 __import__("sqlalchemy").select(Card).where(Card.board_id == BOARD_ID)
             )).scalars().first()
+            old_title = card.title
+            old_priority = card.priority.value
+            old_labels = list(card.labels or [])
 
             await svc.update_card(
                 card.id, USER_ID,
-                CardUpdate(title="Updated via test"),
+                CardUpdate(
+                    title="Updated via test",
+                    priority=CardPriority.CRITICAL,
+                    labels=["label-a", "activity-diff"],
+                ),
             )
             await db.commit()
 
@@ -1686,6 +1698,26 @@ class TestActivityLog:
                 .where(ActivityLog.card_id == card.id)
             )).scalars().all()
             assert len(logs) >= 1
+            details = logs[0].details
+            assert details is not None
+            # Backward compatibility: existing consumers still receive the
+            # submitted values at the top level.
+            assert details["title"] == "Updated via test"
+            assert details["priority"] == "critical"
+            assert details["labels"] == ["label-a", "activity-diff"]
+
+            changes = {
+                change["field"]: {"old": change["old"], "new": change["new"]}
+                for change in details["changes"]
+            }
+            assert changes == {
+                "title": {"old": old_title, "new": "Updated via test"},
+                "priority": {"old": old_priority, "new": "critical"},
+                "labels": {
+                    "old": old_labels,
+                    "new": ["label-a", "activity-diff"],
+                },
+            }
 
     async def test_activity_logged_on_card_deletion(self, db_factory):
         """Deleting a card should log a card_deleted activity."""

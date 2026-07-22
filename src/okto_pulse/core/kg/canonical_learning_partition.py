@@ -29,12 +29,27 @@ from okto_pulse.core.services.canonical_debt_service import (
     reconcile_canonical_debt_with_evidence,
     upsert_canonical_debt,
 )
+from okto_pulse.core.ports.canonical_debt import (
+    CanonicalDebtRecord,
+    get_canonical_debt_store,
+)
 
 logger = logging.getLogger("okto_pulse.kg.canonical_learning_partition")
 
 # Reason code for an ALREADY-materialized canonical Learning whose bug evidence
 # is working-only (distinct from IMP1's go-forward pre-commit hold reason).
 HISTORICAL_DEBT_REASON = "canonical_learning_historical_working_only_bug_evidence_debt"
+
+# A governed delete removes the durable Bug source while preserving its material
+# canonical Learning.  This reason is more specific than the historical
+# working-only classification and must therefore survive later generic
+# partition-maintenance passes until canonical evidence resolves the debt.
+SOURCE_ABSENT_DEBT_REASON = "source_absent"
+
+CANONICAL_LEARNING_DEBT_REASONS: frozenset[str] = frozenset({
+    HISTORICAL_DEBT_REASON,
+    SOURCE_ABSENT_DEBT_REASON,
+})
 
 # Stable target_status for the partition-integrity debt class (part of the
 # CanonicalDebt idempotency key together with board/artifact/content_hash).
@@ -81,6 +96,68 @@ def _stable_content_hash(source_ref: str, node_id: str) -> str:
     this is the stable identity used for idempotent upsert + reconcile."""
     digest = hashlib.sha256(f"{source_ref}|{node_id}".encode("utf-8")).hexdigest()
     return f"clp_{digest}"
+
+
+async def upsert_canonical_learning_debt(
+    db: object,
+    *,
+    board_id: str,
+    node_id: str,
+    source_ref: str,
+    failure_reason: str,
+    actor_id: str | None = None,
+    correlation_id: str | None = None,
+) -> CanonicalDebtRecord:
+    """Upsert the one partition-integrity debt owned by a canonical Learning.
+
+    All writers share the same per-Learning content hash so stale reconciliation,
+    historical maintenance and canonical-evidence reconciliation converge on one
+    row.  ``source_absent`` is sticky over the less-specific historical reason:
+    a later maintenance scan must not erase the governed-delete diagnosis or its
+    correlation id merely because the graph also looks working-only.
+    """
+
+    if not node_id or not source_ref:
+        raise ValueError("canonical_learning_debt_identity_required")
+    if failure_reason not in CANONICAL_LEARNING_DEBT_REASONS:
+        raise ValueError("canonical_learning_debt_reason_invalid")
+
+    artifact_id = _bug_artifact_id(source_ref)
+    content_hash = _stable_content_hash(source_ref, node_id)
+    existing = await get_canonical_debt_store().find_by_identity(
+        db,
+        board_id=board_id,
+        artifact_type="bug",
+        artifact_id=artifact_id,
+        target_status=PARTITION_TARGET_STATUS,
+        content_hash=content_hash,
+    )
+    effective_reason = failure_reason
+    effective_correlation_id = correlation_id
+    if existing is not None:
+        if (
+            existing.failure_reason == SOURCE_ABSENT_DEBT_REASON
+            and failure_reason == HISTORICAL_DEBT_REASON
+        ):
+            effective_reason = SOURCE_ABSENT_DEBT_REASON
+        if effective_correlation_id is None:
+            effective_correlation_id = existing.correlation_id
+
+    return await upsert_canonical_debt(
+        db,
+        board_id=board_id,
+        artifact_type="bug",
+        artifact_id=artifact_id,
+        source_ref=source_ref,
+        content_hash=content_hash,
+        target_status=PARTITION_TARGET_STATUS,
+        canonical_state="pending",
+        graph_layer="canonical",
+        maturity_status="canonical_eligible",
+        failure_reason=effective_reason,
+        owner_agent_id=actor_id,
+        correlation_id=effective_correlation_id,
+    )
 
 
 def _scan_partition(graph_scope) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
@@ -172,19 +249,13 @@ async def detect_historical_canonical_learning_debt(
 
     opened: list[str] = []
     for node_id, source_ref in violating:
-        await upsert_canonical_debt(
+        await upsert_canonical_learning_debt(
             db,
             board_id=board_id,
-            artifact_type="bug",
-            artifact_id=_bug_artifact_id(source_ref),
+            node_id=node_id,
             source_ref=source_ref,
-            content_hash=_stable_content_hash(source_ref, node_id),
-            target_status=PARTITION_TARGET_STATUS,
-            canonical_state="pending",
-            graph_layer="canonical",
-            maturity_status="canonical_eligible",
             failure_reason=HISTORICAL_DEBT_REASON,
-            owner_agent_id=actor_id,
+            actor_id=actor_id,
         )
         opened.append(source_ref)
     if opened:
@@ -261,19 +332,13 @@ async def run_canonical_learning_partition_maintenance(
 
     opened = 0
     for node_id, source_ref in violating:
-        await upsert_canonical_debt(
+        await upsert_canonical_learning_debt(
             db,
             board_id=board_id,
-            artifact_type="bug",
-            artifact_id=_bug_artifact_id(source_ref),
+            node_id=node_id,
             source_ref=source_ref,
-            content_hash=_stable_content_hash(source_ref, node_id),
-            target_status=PARTITION_TARGET_STATUS,
-            canonical_state="pending",
-            graph_layer="canonical",
-            maturity_status="canonical_eligible",
             failure_reason=HISTORICAL_DEBT_REASON,
-            owner_agent_id=actor_id,
+            actor_id=actor_id,
         )
         opened += 1
 
@@ -291,10 +356,13 @@ async def run_canonical_learning_partition_maintenance(
 
 
 __all__ = [
+    "CANONICAL_LEARNING_DEBT_REASONS",
     "EVIDENCE_LAYER_CANONICAL",
     "HISTORICAL_DEBT_REASON",
     "PARTITION_TARGET_STATUS",
+    "SOURCE_ABSENT_DEBT_REASON",
     "detect_historical_canonical_learning_debt",
     "reconcile_canonical_learning_partition_debt",
     "run_canonical_learning_partition_maintenance",
+    "upsert_canonical_learning_debt",
 ]

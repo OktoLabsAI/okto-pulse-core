@@ -2,16 +2,195 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.kg.curation_policy import CurationPolicyError
 from okto_pulse.core.kg.graph_export import GraphExportError
 
 
+logger = logging.getLogger(__name__)
+
+
+async def _takedown_e2e_health(
+    snapshot: object,
+    *,
+    relational_context: object,
+) -> dict[str, object]:
+    """Evaluate the Card 9 health predicate from independent evidence.
+
+    Delivery truth comes from the durable telemetry timeline.  Parity truth is
+    read independently from the board graph/source census; an unavailable or
+    malformed probe is explicit and can never be interpreted as healthy.
+    """
+
+    from okto_pulse.core.kg.stale_canonical_parity import (
+        GD_EVALUATED,
+        list_stale_canonical_parity,
+    )
+    from okto_pulse.core.ports.takedown_telemetry import (
+        TAKEDOWN_STATE_RANK,
+        TakedownState,
+        TakedownTelemetrySnapshot,
+    )
+
+    if not isinstance(snapshot, TakedownTelemetrySnapshot):
+        raise RuntimeError("takedown_telemetry_snapshot_invalid")
+
+    attempt_states = {
+        TakedownState.OUTBOX_PERSISTED,
+        TakedownState.DELIVERY_DEBT,
+        TakedownState.DELIVERED,
+    }
+    delivery_transitions = tuple(
+        transition
+        for transition in snapshot.states
+        if transition.state in attempt_states
+    )
+    final_delivery = (
+        max(
+            delivery_transitions,
+            key=lambda transition: (
+                transition.attempt if transition.attempt is not None else -1,
+                transition.occurred_at,
+                TAKEDOWN_STATE_RANK[transition.state],
+                transition.transition_key,
+            ),
+        )
+        if delivery_transitions
+        else None
+    )
+    delivered = (
+        final_delivery is not None
+        and final_delivery.state is TakedownState.DELIVERED
+    )
+    final_delivery_state = (
+        final_delivery.state.value if final_delivery is not None else None
+    )
+    final_delivery_attempt = (
+        final_delivery.attempt if final_delivery is not None else None
+    )
+
+    matching_stale_count: int | None = None
+    board_stale_count: int | None = None
+    digest_stale_count: int | None = None
+    global_discovery_evaluation: str | None = None
+    parity_evaluable = False
+    parity_clean: bool | None = None
+    board_parity_clean: bool | None = None
+    global_discovery_parity_clean: bool | None = None
+    probe_error_class: str | None = None
+    try:
+        probe = await list_stale_canonical_parity(
+            relational_context,
+            board_id=snapshot.board_id,
+            limit=200,
+            offset=0,
+        )
+        if (
+            not isinstance(probe, Mapping)
+            or probe.get("board_id") != snapshot.board_id
+            or probe.get("mutation_allowed") is not False
+        ):
+            raise RuntimeError("takedown_parity_probe_result_invalid")
+        stale_items = probe.get("items")
+        raw_board_stale_count = probe.get("count")
+        raw_digest_stale_count = probe.get(
+            "global_discovery_stale_digest_count"
+        )
+        if (
+            not isinstance(stale_items, list)
+            or any(not isinstance(item, Mapping) for item in stale_items)
+            or isinstance(raw_board_stale_count, bool)
+            or not isinstance(raw_board_stale_count, int)
+            or raw_board_stale_count < 0
+            or isinstance(raw_digest_stale_count, bool)
+            or not isinstance(raw_digest_stale_count, int)
+            or raw_digest_stale_count < 0
+        ):
+            raise RuntimeError("takedown_parity_probe_result_invalid")
+        board_stale_count = raw_board_stale_count
+        digest_stale_count = raw_digest_stale_count
+        global_discovery_evaluation = str(
+            probe.get("global_discovery_evaluation") or ""
+        )
+        source_ref = f"{snapshot.artifact_type}:{snapshot.artifact_id}"
+        matching_stale_count = sum(
+            1
+            for item in stale_items
+            if item.get("source_artifact_ref") == source_ref
+        )
+        board_parity_clean = board_stale_count == 0
+        if global_discovery_evaluation == GD_EVALUATED:
+            global_discovery_parity_clean = digest_stale_count == 0
+            parity_evaluable = True
+            parity_clean = (
+                board_parity_clean and global_discovery_parity_clean
+            )
+    except Exception as exc:
+        probe_error_class = type(exc).__name__
+        logger.warning(
+            "kg.takedown.parity_probe_unavailable board_id=%s "
+            "delete_event_id=%s delivery_key=%s error_class=%s",
+            snapshot.board_id,
+            snapshot.delete_event_id,
+            snapshot.delivery_key,
+            probe_error_class,
+            extra={
+                "event": "kg.takedown.parity_probe_unavailable",
+                "board_id": snapshot.board_id,
+                "delete_event_id": snapshot.delete_event_id,
+                "delivery_key": snapshot.delivery_key,
+                "artifact_type": snapshot.artifact_type,
+                "artifact_id": snapshot.artifact_id,
+                "generation": snapshot.generation,
+                "probe_error_class": probe_error_class,
+            },
+        )
+
+    failure_reasons: list[str] = []
+    if not delivered:
+        failure_reasons.append("delivered_state_not_observed")
+    if not parity_evaluable:
+        failure_reasons.append("parity_probe_not_evaluable")
+    else:
+        if not board_parity_clean:
+            failure_reasons.append("stale_canonical_parity_detected")
+        if not global_discovery_parity_clean:
+            failure_reasons.append(
+                "global_discovery_parity_mismatch_detected"
+            )
+
+    return {
+        "predicate": "delivered_state_and_evaluable_parity_probe",
+        "healthy": not failure_reasons,
+        "delivered": delivered,
+        "final_delivery_state": final_delivery_state,
+        "final_delivery_attempt": final_delivery_attempt,
+        "parity_probe_evaluable": parity_evaluable,
+        "parity_clean": parity_clean,
+        "board_parity_clean": board_parity_clean,
+        "global_discovery_parity_clean": global_discovery_parity_clean,
+        "board_stale_node_count": board_stale_count,
+        "global_discovery_stale_digest_count": digest_stale_count,
+        "global_discovery_evaluation": global_discovery_evaluation,
+        "matching_stale_node_count": matching_stale_count,
+        "failure_reasons": failure_reasons,
+        "probe_error_class": probe_error_class,
+    }
+
+
 class CoreKnowledgeGraphOperations:
-    def __init__(self, relational_context: object) -> None:
+    def __init__(
+        self,
+        relational_context: object,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self.__relational_context = relational_context
+        self.__clock = clock or (lambda: datetime.now(timezone.utc))
 
     async def dispatch_manual_tick(
         self,
@@ -396,6 +575,69 @@ class CoreKnowledgeGraphOperations:
             offset=offset,
         )
 
+    async def query_takedown_telemetry(
+        self,
+        *,
+        delete_event_id: str | None = None,
+        delivery_key: str | None = None,
+    ) -> dict[str, object]:
+        """Return one governed-takedown timeline through the edition read port.
+
+        The query DTO owns exactly-one selector validation.  A missing snapshot
+        is an explicit not-found result with no empty states/aggregates that
+        could be mistaken for healthy delivery.  The injected clock keeps SLO
+        aggregation deterministic without widening the transport surface.
+        """
+
+        from okto_pulse.core.ports.takedown_telemetry import (
+            TakedownTelemetryQuery,
+            TakedownTelemetrySnapshot,
+            get_takedown_telemetry_read_port,
+        )
+
+        query = TakedownTelemetryQuery(
+            now=self.__clock(),
+            delete_event_id=delete_event_id,
+            delivery_key=delivery_key,
+        )
+        selector = (
+            {"delete_event_id": query.delete_event_id}
+            if query.delete_event_id is not None
+            else {"delivery_key": query.delivery_key}
+        )
+        snapshot = await get_takedown_telemetry_read_port().query_takedown_telemetry(
+            self.__relational_context,
+            query,
+        )
+        if snapshot is None:
+            return {
+                "found": False,
+                "error": "takedown_telemetry_not_found",
+                "selector": selector,
+                "observed_at": query.now.isoformat(),
+            }
+        if not isinstance(snapshot, TakedownTelemetrySnapshot):
+            raise RuntimeError("takedown_telemetry_snapshot_invalid")
+        if (
+            query.delete_event_id is not None
+            and snapshot.delete_event_id != query.delete_event_id
+        ) or (
+            query.delivery_key is not None
+            and snapshot.delivery_key != query.delivery_key
+        ):
+            raise RuntimeError("takedown_telemetry_selector_mismatch")
+        e2e_health = await _takedown_e2e_health(
+            snapshot,
+            relational_context=self.__relational_context,
+        )
+        return {
+            "found": True,
+            "selector": selector,
+            "observed_at": query.now.isoformat(),
+            **snapshot.to_dict(),
+            "e2e_health": e2e_health,
+        }
+
     async def list_canonical_debt(
         self,
         *,
@@ -599,6 +841,9 @@ class CoreKnowledgeGraphOperations:
         from okto_pulse.core.kg.canonical_demotion_global_sync import (
             enqueue_digest_layer_reconciliation,
         )
+        from okto_pulse.core.ports.delivery_ledger import (
+            is_governed_delivery_attempt,
+        )
         from okto_pulse.core.ports.global_outbox import (
             GlobalOutboxDeadLetterCursor,
             get_global_outbox_store,
@@ -608,6 +853,7 @@ class CoreKnowledgeGraphOperations:
         store = get_global_outbox_store()
         cursor = None
         selected = []
+        governed_deferred = 0
         while len(selected) < limit:
             page_limit = min(100, limit - len(selected))
             rows = list(
@@ -620,9 +866,16 @@ class CoreKnowledgeGraphOperations:
             )
             if not rows:
                 break
-            selected.extend(
-                row for row in rows if _is_retryable_global_open_error(row.last_error)
-            )
+            for row in rows:
+                if not _is_retryable_global_open_error(row.last_error):
+                    continue
+                if is_governed_delivery_attempt(
+                    event_id=row.event_id,
+                    payload=row.payload,
+                ):
+                    governed_deferred += 1
+                    continue
+                selected.append(row)
             cursor = GlobalOutboxDeadLetterCursor(
                 created_at=rows[-1].created_at,
                 id=rows[-1].id,
@@ -648,6 +901,7 @@ class CoreKnowledgeGraphOperations:
         return {
             "run_id": run_id,
             "dead_letters_requeued": len(selected),
+            "governed_delivery_attempts_deferred": governed_deferred,
             "board_reconciliations_enqueued": enqueued,
             "selective_error_class": "global_open",
         }

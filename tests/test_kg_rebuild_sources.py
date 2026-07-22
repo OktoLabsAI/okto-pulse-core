@@ -12,6 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from source_reader_schema_testing import (
+    create_complete_source_catalog,
+    insert_source_board,
+)
+
 from okto_pulse.core.kg.rebuild_confirmation import (
     CANONICAL_OPERATIONS,
     ConfirmationOutcome,
@@ -499,33 +504,12 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
+        create_complete_source_catalog(conn)
+        insert_source_board(conn, "b1")
         conn.execute(
-            "CREATE TABLE specs ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "title TEXT, description TEXT, version INTEGER, decisions TEXT)"
-        )
-        conn.execute(
-            "CREATE TABLE refinements ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "title TEXT, description TEXT, analysis TEXT, version INTEGER)"
-        )
-        conn.execute(
-            "CREATE TABLE ideations ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, title TEXT)"
-        )
-        conn.execute(
-            "CREATE TABLE stories ("
-            "id TEXT, board_id TEXT, topic_id TEXT, status TEXT, "
-            "created_at TEXT, title TEXT, description TEXT, actor TEXT, "
-            "goal TEXT, benefit TEXT, labels TEXT)"
-        )
-        conn.execute(
-            "CREATE TABLE cards ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "title TEXT, description TEXT, card_type TEXT, archived INTEGER)"
-        )
-        conn.execute(
-            "INSERT INTO specs VALUES "
+            "INSERT INTO specs "
+            "(id, board_id, status, created_at, title, description, version, decisions) "
+            "VALUES "
             "('s1', 'b1', 'done', '2026-05-01T00:00:00Z', 'Spec', 'D', 2, ?)",
             (json.dumps([
                 {"id": "dec-active", "title": "Use hosted KG", "status": "active"},
@@ -533,20 +517,27 @@ def test_board_source_store_maps_cards_to_task_test_bug_sources(
             ]),),
         )
         conn.execute(
-            "INSERT INTO refinements VALUES "
+            "INSERT INTO refinements "
+            "(id, board_id, status, created_at, title, description, analysis, version) "
+            "VALUES "
             "('r1', 'b1', 'done', '2026-05-01T00:00:01Z', 'Ref', 'D', 'A', 1)"
         )
         conn.execute(
-            "INSERT INTO ideations VALUES "
+            "INSERT INTO ideations "
+            "(id, board_id, status, created_at, title) VALUES "
             "('i1', 'b1', 'done', '2026-05-01T00:00:02Z', 'Idea')"
         )
         conn.execute(
-            "INSERT INTO stories VALUES ("
+            "INSERT INTO stories "
+            "(id, board_id, topic_id, status, created_at, title, description, "
+            "actor, goal, benefit, labels) VALUES ("
             "'st1', 'b1', 'topic1', 'ready', '2026-05-01T00:00:02Z', "
             "'Story', 'D', 'Actor', 'Goal', 'Benefit', '[]')"
         )
         conn.executemany(
-            "INSERT INTO cards VALUES (?, 'b1', ?, ?, ?, 'D', ?, ?)",
+            "INSERT INTO cards "
+            "(id, board_id, status, created_at, title, description, card_type, archived) "
+            "VALUES (?, 'b1', ?, ?, ?, 'D', ?, ?)",
             [
                 ("t1", "done", "2026-05-01T00:00:03Z", "Task", "normal", 0),
                 ("tc1", "done", "2026-05-01T00:00:04Z", "Test", "test", 0),
@@ -605,23 +596,18 @@ def test_board_source_store_propagates_working_ttl_board_override(
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
+        create_complete_source_catalog(conn)
+        insert_source_board(conn, "b1")
         conn.execute(
-            "CREATE TABLE boards (id TEXT, settings TEXT)"
+            "UPDATE boards SET settings = ? WHERE id = ?",
+            (json.dumps({"kg_working_ttl_days": 30}), "b1"),
         )
         conn.execute(
-            "CREATE TABLE specs ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "updated_at TEXT, title TEXT, description TEXT, version INTEGER, "
-            "functional_requirements TEXT, technical_requirements TEXT, "
-            "acceptance_criteria TEXT, test_scenarios TEXT, business_rules TEXT, "
-            "api_contracts TEXT, decisions TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO boards VALUES (?, ?)",
-            ("b1", json.dumps({"kg_working_ttl_days": 30})),
-        )
-        conn.execute(
-            "INSERT INTO specs VALUES ("
+            "INSERT INTO specs "
+            "(id, board_id, status, created_at, updated_at, title, description, "
+            "version, functional_requirements, technical_requirements, "
+            "acceptance_criteria, test_scenarios, business_rules, api_contracts, "
+            "decisions) VALUES ("
             "'s1', 'b1', 'approved', '2026-05-01T00:00:00Z', "
             "'2026-05-01T00:00:00Z', 'Spec', 'D', 1, '[]', '[]', '[]', "
             "'[]', '[]', '[]', '[]')"
@@ -1004,6 +990,7 @@ def _client_with_router(board_id: str = "b-life"):
     from fastapi.testclient import TestClient
 
     from okto_pulse.community.api.auth_deps import require_user
+    from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
 
     async def _fake_health(_board_id, _db, scheduler_control=None):
         return {"graph_state": "healthy", "metric_status": "available",
@@ -1012,6 +999,13 @@ def _client_with_router(board_id: str = "b-life"):
     # Monkeypatch at module level (safe: tests run in same process, sequential).
     _original_health = kg_rebuild_mod.get_kg_health
     kg_rebuild_mod.get_kg_health = _fake_health  # type: ignore[assignment]
+
+    source_db_path = resolve_database_runtime().local_database_path()
+    assert source_db_path is not None
+    with sqlite3.connect(str(source_db_path)) as source_connection:
+        create_complete_source_catalog(source_connection)
+        source_board_inserted = insert_source_board(source_connection, board_id)
+        source_connection.commit()
 
     app = _make_rebuild_test_app(board_id=board_id)
 
@@ -1027,9 +1021,17 @@ def _client_with_router(board_id: str = "b-life"):
             return client.__enter__()
 
         def __exit__(self, *args):
-            result = client.__exit__(*args)
-            kg_rebuild_mod.get_kg_health = _original_health  # type: ignore[assignment]
-            return result
+            try:
+                return client.__exit__(*args)
+            finally:
+                kg_rebuild_mod.get_kg_health = _original_health  # type: ignore[assignment]
+                if source_board_inserted:
+                    with sqlite3.connect(str(source_db_path)) as source_connection:
+                        source_connection.execute(
+                            "DELETE FROM boards WHERE id = ?",
+                            (board_id,),
+                        )
+                        source_connection.commit()
 
     return _CtxClient()
 

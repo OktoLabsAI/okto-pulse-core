@@ -59,11 +59,17 @@ class RelationalEffectsPort(Protocol):
     ) -> int:
         ...
 
-    async def upsert_consolidation_queue(
+    async def upsert_consolidation_queue_unless_tombstoned(
         self,
         session: Any,
         upsert: ConsolidationQueueUpsert,
-    ) -> None:
+    ) -> bool:
+        """Atomically admit legacy work unless fenced.
+
+        Return ``True`` only when a row is inserted or a terminal row is
+        reopened. Active-row coalescing and tombstone suppression return
+        ``False`` without mutating the queue.
+        """
         ...
 
     async def list_board_ids(self, session: Any) -> Sequence[str]:

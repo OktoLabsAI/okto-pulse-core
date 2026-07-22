@@ -1,8 +1,9 @@
-"""R2-TEST8 (card 29254584) — demotion synchronizes Global Discovery via R1.
+"""R2-TEST8 (card 29254584) — demotion parity converges through R1.
 
 Scenario ts_fb7f8da6 (AC7): a stale demotion in the board graph converges the
-Global Discovery DecisionDigest THROUGH the R1 parity contract (R2-IMP5 enqueues;
-the GD outbox worker runs the R1-IMP1 reconciler). After the cycle,
+Global Discovery DecisionDigest THROUGH the R1 parity contract (the Card 6
+worker owns durable enqueue; this lower-level proof supplies the trigger and the
+GD outbox worker runs the R1-IMP1 reconciler). After the cycle,
 ``query_global(graph_layer=canonical)`` no longer returns the obsolete digest while
 ``graph_layer=all`` still surfaces it (working / diagnostic).
 
@@ -36,6 +37,9 @@ from r2_scenario_helpers import (
 )
 
 from okto_pulse.core.kg.canonical_stale_reconciler import reconcile_stale_canonical
+from okto_pulse.core.kg.canonical_demotion_global_sync import (
+    enqueue_digest_layer_reconciliation,
+)
 from okto_pulse.core.kg.cypher_templates import layer_filter_clause
 from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
 from global_graph_testing import (
@@ -158,15 +162,21 @@ async def test_demotion_syncs_global_discovery_via_r1(db_factory):
     assert _digest_layer(board_id, req_id) == "canonical"
     assert req_id in _query_ids(board_id, "canonical"), "sanity: canonical query returns it"
 
-    # Regress the source + run the R2 stale reconciler -> demote board node +
-    # enqueue the R1 Global Discovery sync (R2-IMP5).
+    # Regress the source + run the graph-only reconciler.  The queue worker is
+    # the production delivery owner; this lower-level R1 test explicitly
+    # supplies a parity event so it remains focused on digest convergence.
     await set_spec_status(db_factory, spec_id, "draft")
     async with db_factory() as db:
         rec = await reconcile_stale_canonical(db, board_id=board_id)
+        await enqueue_digest_layer_reconciliation(
+            db,
+            board_id=board_id,
+            reason="stale_demotion_parity",
+            idempotency_key=f"r2-test8:{board_id}:{spec_id}",
+        )
         await db.commit()
     assert rec.demoted, rec.to_dict()
-    # Coupling: the demotion enqueued the GD sync (not just a board-graph update).
-    assert rec.global_sync_enqueued is True
+    assert rec.global_sync_enqueued is False
 
     # The GD worker runs the EXISTING R1 parity reconciler -> the digest converges.
     assert await _drain_gd_worker(db_factory) == 1
@@ -193,8 +203,14 @@ async def test_demotion_sync_is_idempotent(db_factory):
     await set_spec_status(db_factory, spec_id, "draft")
     async with db_factory() as db:
         first = await reconcile_stale_canonical(db, board_id=board_id)
+        await enqueue_digest_layer_reconciliation(
+            db,
+            board_id=board_id,
+            reason="stale_demotion_parity",
+            idempotency_key=f"r2-test8:{board_id}:{spec_id}",
+        )
         await db.commit()
-    assert first.demoted and first.global_sync_enqueued is True
+    assert first.demoted and first.global_sync_enqueued is False
     await _drain_gd_worker(db_factory)
     assert _digest_layer(board_id, req_id) == "working"
 

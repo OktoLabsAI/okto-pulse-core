@@ -173,18 +173,25 @@ class ListBoardSprintsUseCase:
     """List every sprint for a board (read, no commit), optionally filtered by
     status and/or spec. A board-bound actor cannot query another board."""
 
+    async def preflight(
+        self, command: ListBoardSprintsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+    ) -> None:
+        """Authorize board/spec anchors without materializing sprints."""
+        await _require_board_access(uow, command.board_id, actor)
+        if command.spec_id is not None:
+            repository = getattr(uow, "specs", None)
+            spec = (
+                await repository.get(command.spec_id)
+                if repository is not None
+                else await uow.services.specs.get_spec(command.spec_id)
+            )
+            if spec is None or spec.board_id != command.board_id:
+                raise EntityNotFoundError("spec", command.spec_id)
+
     async def execute(
         self, command: ListBoardSprintsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListBoardSprintsResult:
-        await _require_board_access(uow, command.board_id, actor)
-        if command.spec_id is not None:
-            await _require_spec_access(
-                uow,
-                command.spec_id,
-                actor,
-                expected_board_id=command.board_id,
-            )
-
+        await self.preflight(command, actor=actor, uow=uow)
         sprints = await uow.services.sprints.list_board_sprints(
             command.board_id,
             command.status_filter,
@@ -214,13 +221,35 @@ class ListSprintsResult:
 class ListSprintsUseCase:
     """List a spec's sprints (read, no commit) within the actor's board."""
 
+    async def preflight(
+        self, command: ListSprintsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+    ) -> Any:
+        """Authorize the spec anchor without materializing its sprints."""
+        repository = getattr(uow, "specs", None)
+        spec = (
+            await repository.get(command.spec_id)
+            if repository is not None
+            else await uow.services.specs.get_spec(command.spec_id)
+        )
+        if spec is None:
+            raise EntityNotFoundError("spec", command.spec_id)
+        await _require_board_access(
+            uow,
+            spec.board_id,
+            actor,
+            entity_type="spec",
+            entity_id=command.spec_id,
+        )
+        return spec
+
     async def execute(
         self, command: ListSprintsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListSprintsResult:
-        await _require_spec_access(uow, command.spec_id, actor)
-
+        spec = await self.preflight(command, actor=actor, uow=uow)
         sprints = await uow.services.sprints.list_sprints(command.spec_id)
-        return ListSprintsResult(sprints)
+        return ListSprintsResult(
+            [sprint for sprint in sprints if sprint.board_id == spec.board_id]
+        )
 
 
 # --- get sprint -------------------------------------------------------------

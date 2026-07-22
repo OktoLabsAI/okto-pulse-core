@@ -25,6 +25,11 @@ class ConsolidationQueueRecord:
     claimed_by_session_id: str | None
     triggered_at: datetime | None
     priority: str
+    work_kind: str = "consolidate"
+    generation: int = 0
+    payload: dict[str, Any] | None = None
+    delete_event_id: str | None = None
+    claim_token: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +76,45 @@ class ConsolidationPersistencePort(Protocol):
         self, context: Any, *, entry_id: str
     ) -> ConsolidationQueueRecord | None: ...
 
+    async def queue_claim_is_current_and_unfenced(
+        self,
+        context: Any,
+        *,
+        entry_id: str,
+        claim_token: str,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+        work_kind: str,
+        generation: int,
+        delete_event_id: str | None,
+    ) -> bool:
+        """Validate claim ownership and the governed-deletion generation fence.
+
+        ``consolidate`` is valid only while no tombstone exists for the
+        artifact. ``stale_reconcile`` is valid only while the tombstone has
+        the exact generation and delete-event identity carried by the work
+        row. Implementations must evaluate the claim and tombstone predicates
+        in one storage statement/snapshot.
+        """
+        ...
+
+    async def ack_claimed_queue_entry(
+        self,
+        context: Any,
+        *,
+        entry_id: str,
+        claim_token: str,
+        generation: int,
+        delete_event_id: str | None,
+    ) -> bool:
+        """Delete one claimed row by compare-and-swap identity.
+
+        Returns ``True`` only when exactly one row matched the id, claimed
+        status, claim token, generation and null-safe delete-event identity.
+        """
+        ...
+
     async def save_queue_entries(
         self, context: Any, entries: Sequence[ConsolidationQueueRecord]
     ) -> None: ...
@@ -85,7 +129,7 @@ class ConsolidationPersistencePort(Protocol):
         artifact_type: str,
         artifact_id: str,
     ) -> None:
-        """Discard transient/terminal KG work for an intentionally deleted artifact."""
+        """Discard legacy KG work without committing the caller's unit of work."""
         ...
 
     async def board_exists(self, context: Any, *, board_id: str) -> bool: ...

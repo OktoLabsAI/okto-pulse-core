@@ -6,6 +6,7 @@ import hashlib
 import logging
 import secrets
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -50,7 +51,14 @@ from okto_pulse.core.ports.application_persistence import (
     ApplicationOperator,
     ApplicationQuery,
     ApplicationRecord,
+    GroupCountRequest,
+    PageRequest,
+    PageResult,
     get_application_persistence_port,
+)
+from okto_pulse.core.ports.card_repository import (
+    ColumnResequenceOp,
+    get_card_repository_port,
 )
 
 from okto_pulse.core.models.schemas import (
@@ -99,6 +107,7 @@ from okto_pulse.core.models.schemas import (
     TopicCreate,
     TopicUpdate,
 )
+from okto_pulse.core.services.activity_log import activity_log_changes
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.analytics_service import (
     _structured_ref_text,
@@ -328,6 +337,61 @@ async def _application_list(
     return list(rows)
 
 
+async def _application_count(
+    context: Any,
+    entity: str,
+    *,
+    filters: tuple[ApplicationFilter, ...] = (),
+    any_filters: tuple[ApplicationFilter, ...] = (),
+    any_groups: tuple[tuple[ApplicationFilter, ...], ...] = (),
+) -> int:
+    """Count rows matching the filters, ignoring any window (offset/limit).
+
+    The paginated read path calls this twice — once for the filtered scope
+    (``total_filtered``) and once for the base scope (``total_overall``) — so
+    both totals are always server-computed, never inferred from ``len(items)``.
+    """
+    return await get_application_persistence_port().count(
+        context,
+        ApplicationQuery(
+            entity=entity,
+            filters=filters,
+            any_filters=any_filters,
+            any_groups=any_groups,
+        ),
+    )
+
+
+async def list_entities_page(context: Any, request: PageRequest) -> PageResult:
+    """Service-facing facade for the application-layer pagination executor.
+
+    The implementation moved to
+    ``okto_pulse.core.application.use_cases.entity_pagination`` (purity
+    boundary); the import is deferred to call time because the use_cases
+    package init imports application.errors, which imports this module.
+    """
+    from okto_pulse.core.application.use_cases.entity_pagination import (
+        list_entities_page as _list_entities_page,
+    )
+
+    return await _list_entities_page(context, request)
+
+
+async def _application_group_count(
+    context: Any, request: GroupCountRequest
+) -> tuple[Any, ...]:
+    """Run a catalog-validated aggregate through the bound persistence port.
+
+    The import is deferred for the same service/use-case cycle avoided by
+    :func:`list_entities_page` above.
+    """
+    from okto_pulse.core.application.use_cases.entity_pagination import (
+        group_count_entities,
+    )
+
+    return await group_count_entities(context, request)
+
+
 async def _application_run(
     context: Any, query: ApplicationQuery
 ) -> list[ApplicationRecord]:
@@ -357,25 +421,65 @@ async def _application_delete(context: Any, record: ApplicationRecord) -> None:
     await get_application_persistence_port().delete(context, record)
 
 
-async def _discard_deleted_artifact_work(
+async def _prepare_governed_artifact_deletion(
     context: Any,
     *,
     board_id: str,
     artifact_type: str,
     artifact_id: str,
+    occurred_at: datetime | None = None,
 ) -> None:
-    """Keep governed hard deletes atomic with their operational KG state."""
+    """Stage discard, permanent tombstone and reconcile intent in one UoW."""
 
     from okto_pulse.core.ports.consolidation import (
         get_consolidation_persistence_port,
     )
+    from okto_pulse.core.ports.reconcile_intent import (
+        ReconcileIntentCreate,
+        get_reconcile_intent_port,
+    )
+    from okto_pulse.core.ports.tombstone import (
+        DeletionTombstoneAdvance,
+        get_tombstone_port,
+    )
 
-    await get_consolidation_persistence_port().discard_artifact_work(
+    persistence = get_consolidation_persistence_port()
+    intent_occurred_at = occurred_at or datetime.now(timezone.utc)
+    await persistence.discard_artifact_work(
         context,
         board_id=board_id,
         artifact_type=artifact_type,
         artifact_id=artifact_id,
     )
+    delete_event_id = str(uuid.uuid4())
+    tombstone = await get_tombstone_port().advance_deletion_tombstone(
+        context,
+        DeletionTombstoneAdvance(
+            board_id=board_id,
+            artifact_type=artifact_type,
+            artifact_id=artifact_id,
+            delete_event_id=delete_event_id,
+        ),
+    )
+    if tombstone.generation < 1 or tombstone.delete_event_id != delete_event_id:
+        raise RuntimeError("governed_delete_tombstone_receipt_mismatch")
+    intent = await get_reconcile_intent_port().persist_reconcile_intent(
+        context,
+        ReconcileIntentCreate(
+            board_id=board_id,
+            artifact_type=artifact_type,
+            artifact_id=artifact_id,
+            generation=tombstone.generation,
+            delete_event_id=delete_event_id,
+            source_refs=(f"{artifact_type}:{artifact_id}",),
+            occurred_at=intent_occurred_at,
+        ),
+    )
+    if (
+        intent.generation != tombstone.generation
+        or intent.delete_event_id != delete_event_id
+    ):
+        raise RuntimeError("governed_delete_intent_receipt_mismatch")
 
 
 async def _application_flush(context: Any) -> None:
@@ -574,6 +678,14 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
     ``AgentBoard.permission_overrides`` layer (spec R01A REST-FU6-S2 rework — the
     legacy stories/specs adapters resolved the board overrides before
     check_permission; restoring it here keeps board-scoped grants/denies intact)."""
+    persistence = get_application_persistence_port()
+    compact_resolver = getattr(persistence, "resolve_user_permissions", None)
+    if callable(compact_resolver):
+        # Edition adapters may collapse agent + preset + board override into
+        # one relational statement.  Besides avoiding redundant round-trips,
+        # this keeps paginated REST authorization inside its <=6 SQL budget.
+        return await compact_resolver(db, user_id=user_id, board_id=board_id)
+
     from okto_pulse.core.infra.permissions import (
         map_legacy_permissions,
         resolve_permissions,
@@ -2653,6 +2765,9 @@ class CardService:
         old_priority = _enum_value(card.priority)
         old_severity = _enum_value(getattr(card, "severity", None))
         old_spec_id = card.spec_id
+        old_update_data = {
+            field: getattr(card, field, None) for field in update_data
+        }
 
         if "test_scenario_ids" in update_data:
             next_type = update_data.get("card_type", card.card_type)
@@ -2688,6 +2803,11 @@ class CardService:
             )
 
         card_json_fields = {"labels", "test_scenario_ids", "conclusions", "screen_mockups", "knowledge_bases"}
+        activity_changes = activity_log_changes(
+            old_update_data,
+            update_data,
+            list(update_data.keys()),
+        )
         for key, value in update_data.items():
             setattr(card, key, value)
             if key in card_json_fields:
@@ -2712,7 +2832,10 @@ class CardService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details=update_data,
+            # Preserve the legacy top-level fields consumed by summaries and
+            # existing integrations, while exposing the same structured
+            # field-level diff contract used by Spec history.
+            details={**update_data, "changes": activity_changes},
         )
 
         # spec 28583299 (Ideação #4, FR6/FR7 + api_21467ada/api_ff834434):
@@ -3924,6 +4047,30 @@ class CardService:
                 f"Alternatively, enable 'skip decisions coverage' on the spec or board."
             )
 
+    async def resequence_columns(
+        self,
+        board_id: str,
+        ops: list[ColumnResequenceOp],
+        *,
+        extra_columns: tuple[CardStatus, ...] = (),
+        records: dict[str, ApplicationRecord] | None = None,
+    ) -> int:
+        """Atomically place cards and rewrite the affected columns densely.
+
+        Thin domain facade over :data:`CardRepositoryPort.resequence_columns`
+        (``okto_pulse.core.ports.card_repository``) — the architecture's batch
+        contract (refinement v17 item 7 + matriz v13 item 5) lives behind the
+        port; the Core default implementation is :class:`CoreCardResequencer`.
+        See the port module for the full pre-validation and determinism rules.
+        """
+        return await get_card_repository_port().resequence_columns(
+            self.db,
+            board_id,
+            ops,
+            extra_columns=extra_columns,
+            records=records,
+        )
+
     async def move_card(
         self, card_id: str, user_id: str, data: CardMove, actor_name: str | None = None
     ) -> ApplicationRecord | None:
@@ -3933,6 +4080,14 @@ class CardService:
         report. The report is appended to the card's conclusions list so
         reviewers can validate the executor's claim before approving it.
         """
+        requested_position = data.position
+        if requested_position is not None and requested_position < -1:
+            # Authorized contract narrowing (QA 6afdc547): reject the legacy
+            # negative sentinels BEFORE any read, mutation or event — the REST
+            # boundary 422s first; this is service-level defense in depth.
+            raise ValueError(
+                "position_out_of_range: position must be None, -1 (end of column) or >= 0"
+            )
         card = await self.get_card(card_id)
         if not card:
             return None
@@ -4721,21 +4876,29 @@ class CardService:
             actor_id=user_id,
         )
 
-        card.status = data.status
-        if data.position is not None:
-            card.position = data.position
-        else:
-            # Move to end of new column
-            status_cards = await _application_list(
-                self.db,
-                "card",
-                filters=(
-                    _apf("board_id", "eq", card.board_id),
-                    _apf("status", "eq", data.status),
-                ),
-            )
-            max_pos = max((item.position for item in status_cards), default=-1)
-            card.position = max_pos + 1
+        # position < -1 was rejected at the top of this method, before any
+        # read, mutation or event (authorized narrowing, QA 6afdc547). All
+        # selectors are forwarded; the resequencer enforces their mutual
+        # exclusivity (resequence_conflicting_placement) and anchor validity.
+        await self.resequence_columns(
+            card.board_id,
+            [
+                ColumnResequenceOp(
+                    card_id=card.id,
+                    from_status=old_status,
+                    to_status=data.status,
+                    target_index=(
+                        None
+                        if requested_position is None or requested_position == -1
+                        else requested_position
+                    ),
+                    before_id=getattr(data, "before_id", None),
+                    after_id=getattr(data, "after_id", None),
+                    placement=getattr(data, "placement", None),
+                )
+            ],
+            records={card.id: card},
+        )
 
         # Auto-rollback: if card cancelled and spec is validated → revert to approved
         if data.status == CardStatus.CANCELLED and card.spec_id:
@@ -4919,7 +5082,7 @@ class CardService:
                     bug.mark_dirty("linked_test_task_ids")
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await _discard_deleted_artifact_work(
+        await _prepare_governed_artifact_deletion(
             self.db,
             board_id=board_id,
             artifact_type="card",
@@ -7318,7 +7481,7 @@ class SpecService:
 
         board_id = spec.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await _discard_deleted_artifact_work(
+        await _prepare_governed_artifact_deletion(
             self.db,
             board_id=board_id,
             artifact_type="spec",
@@ -8135,7 +8298,20 @@ class ShareService:
         if _board_owner_matches(board, user_id, query_scope):
             return "owner"
 
-        # Check shares
+        return await self.get_share_permission(
+            board_id,
+            user_id,
+            query_scope=query_scope,
+        )
+
+    async def get_share_permission(
+        self,
+        board_id: str,
+        user_id: str,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> str | None:
+        """Read only the share row when board existence/ownership is known."""
         scoped_user_id = _scope_actor_id(user_id, query_scope) or user_id
         shares = await _application_list(
             self.db,
@@ -8277,23 +8453,31 @@ class StoryService:
         suffix = f" [archived {topic_id[:8]}]"
         return f"{name[: max(1, 255 - len(suffix))]}{suffix}"
 
-    async def _topic_story_counts(self, topic_id: str) -> dict[str, int]:
-        rows = await _application_list(
+    async def _topic_story_counts(
+        self, topic_id: str, *, board_id: str
+    ) -> dict[str, int]:
+        rows = await _application_group_count(
             self.db,
-            "story",
-            filters=(_apf("topic_id", "eq", topic_id),),
+            GroupCountRequest(
+                surface="topic_story_counts",
+                scope=(
+                    _apf("board_id", "eq", board_id),
+                    _apf("topic_id", "eq", topic_id),
+                ),
+                group_by=("archived",),
+            ),
         )
         counts = {"active_count": 0, "archived_count": 0}
-        for story in rows:
-            key = "archived_count" if story.archived else "active_count"
-            counts[key] += 1
+        for row in rows:
+            key = "archived_count" if bool(row.values[0]) else "active_count"
+            counts[key] += row.count
         counts["total_associated_count"] = counts["active_count"] + counts["archived_count"]
         return counts
 
     async def _attach_topic_counts(
         self, topic: ApplicationRecord
     ) -> ApplicationRecord:
-        counts = await self._topic_story_counts(topic.id)
+        counts = await self._topic_story_counts(topic.id, board_id=topic.board_id)
         topic.attach("story_count", counts["active_count"])
         topic.attach("active_count", counts["active_count"])
         topic.attach("archived_count", counts["archived_count"])
@@ -8393,19 +8577,22 @@ class StoryService:
             filters=tuple(filters),
             order_by=(("name", False),),
         )
-        count_rows = await _application_list(
+        count_rows = await _application_group_count(
             self.db,
-            "story",
-            filters=(_apf("board_id", "eq", board_id),),
+            GroupCountRequest(
+                surface="topic_story_counts",
+                scope=(_apf("board_id", "eq", board_id),),
+                group_by=("topic_id", "archived"),
+            ),
         )
         counts: dict[str, dict[str, int]] = {}
-        for story in count_rows:
-            topic_id = story.topic_id
+        for row in count_rows:
+            topic_id, archived = row.values
             if not topic_id:
                 continue
             bucket = counts.setdefault(topic_id, {"active_count": 0, "archived_count": 0})
-            key = "archived_count" if story.archived else "active_count"
-            bucket[key] += 1
+            key = "archived_count" if bool(archived) else "active_count"
+            bucket[key] += row.count
         for topic in topics:
             topic_counts = counts.get(topic.id, {"active_count": 0, "archived_count": 0})
             total_count = topic_counts["active_count"] + topic_counts["archived_count"]
@@ -8436,7 +8623,7 @@ class StoryService:
             await self._free_archived_exact_name(topic.board_id, topic.name, exclude_topic_id=topic.id)
         for key, value in update_data.items():
             setattr(topic, key, value)
-        counts = await self._topic_story_counts(topic.id)
+        counts = await self._topic_story_counts(topic.id, board_id=topic.board_id)
         if original_archived != bool(topic.archived):
             action = "topic_restored" if original_archived else "topic_archived"
         else:
@@ -8468,7 +8655,7 @@ class StoryService:
         topic = await _application_get(self.db, "topic", topic_id)
         if not topic:
             return None
-        counts = await self._topic_story_counts(topic.id)
+        counts = await self._topic_story_counts(topic.id, board_id=topic.board_id)
         if counts["total_associated_count"] > 0:
             raise TopicNotEmptyError(
                 active_count=counts["active_count"],
@@ -8499,8 +8686,12 @@ class StoryService:
         if target_topic.archived:
             raise InvalidTopicMergeError("Target Topic must be active")
 
-        source_counts = await self._topic_story_counts(source_topic.id)
-        target_counts_before = await self._topic_story_counts(target_topic.id)
+        source_counts = await self._topic_story_counts(
+            source_topic.id, board_id=source_topic.board_id
+        )
+        target_counts_before = await self._topic_story_counts(
+            target_topic.id, board_id=target_topic.board_id
+        )
         stories = await _application_list(
             self.db,
             "story",
@@ -8510,7 +8701,9 @@ class StoryService:
             story.topic_id = target_topic.id
         source_topic.archived = True
         await _application_flush(self.db)
-        target_counts_after = await self._topic_story_counts(target_topic.id)
+        target_counts_after = await self._topic_story_counts(
+            target_topic.id, board_id=target_topic.board_id
+        )
         actor_name = await resolve_actor_name(self.db, user_id, source_topic.board_id)
         await self._log_activity(
             board_id=source_topic.board_id,
@@ -9534,7 +9727,7 @@ class IdeationService:
         for refinement in refinements:
             await RefinementService(self.db).delete_refinement(refinement.id, user_id)
 
-        await _discard_deleted_artifact_work(
+        await _prepare_governed_artifact_deletion(
             self.db,
             board_id=board_id,
             artifact_type="ideation",
@@ -10470,7 +10663,7 @@ class RefinementService:
         for spec in specs:
             await SpecService(self.db).delete_spec(spec.id, user_id)
 
-        await _discard_deleted_artifact_work(
+        await _prepare_governed_artifact_deletion(
             self.db,
             board_id=board_id,
             artifact_type="refinement",
@@ -11182,6 +11375,56 @@ class GuidelineService:
 # ============================================================================
 
 
+def _tree_cards_structural_preorder(cards: list[Any]) -> list[Any]:
+    """Deterministic STRUCTURAL preorder for tree card ops (matriz v13).
+
+    True DFS PREORDER (FR11): roots in canonical lane order — (status,
+    position ASC, id DESC) — and each card is IMMEDIATELY followed by its
+    whole bug subtree (``origin_task_id`` children in lane order, then their
+    own bugs, depth-first). ``A, A1(→A), A2(→A1), B, B1(→B)`` — never the
+    breadth-first ``A, B, A1, B1, A2``. Bug-of-bug chains are product-legal
+    and traversed. Cycle-safe: an origin loop's residue is emitted in lane
+    order via the trailing sweep.
+    """
+    ordered = sorted(cards, key=lambda item: item.id, reverse=True)
+    ordered.sort(
+        key=lambda item: (
+            getattr(item.status, "value", str(item.status)),
+            item.position if isinstance(item.position, int) else 0,
+        )
+    )
+    ids_in_tree = {card.id for card in ordered}
+    children: dict[str, list[Any]] = {}
+    roots: list[Any] = []
+    for card in ordered:
+        origin = getattr(card, "origin_task_id", None)
+        if origin and origin != card.id and origin in ids_in_tree:
+            children.setdefault(origin, []).append(card)
+        else:
+            roots.append(card)
+
+    result: list[Any] = []
+    visited: set[str] = set()
+
+    def _visit(card: Any) -> None:
+        stack = [card]
+        while stack:
+            current = stack.pop()
+            if current.id in visited:
+                continue
+            visited.add(current.id)
+            result.append(current)
+            # Reversed push keeps lane order across siblings under DFS.
+            stack.extend(reversed(children.get(current.id, [])))
+
+    for root in roots:
+        _visit(root)
+    for card in ordered:  # cycle residue (origin loops): lane order
+        if card.id not in visited:
+            _visit(card)
+    return result
+
+
 class ArchiveService:
     """Service for archiving and restoring entity trees."""
 
@@ -11293,13 +11536,39 @@ class ArchiveService:
                 spec.archived = True
                 counts["specs"] += 1
 
-        for card in tree["cards"]:
+        # Cards are archived as resequence OPS (matriz v13, item 5): each op
+        # flips archived and relocates the card to the archived range n..m
+        # preserving batch (tree-preorder) relative order, while the actives
+        # stay dense 0..n-1.
+        card_ops: dict[str, list[ColumnResequenceOp]] = {}
+        card_records: dict[str, dict[str, ApplicationRecord]] = {}
+        # _resolve_tree lists without order_by (DB order): apply the
+        # deterministic STRUCTURAL preorder — canonical column order
+        # (position ASC, id DESC) plus parent-before-bug topology.
+        tree_cards = _tree_cards_structural_preorder(tree["cards"])
+        for card in tree_cards:
             if not card.archived:
                 card.pre_archive_status = card.status.value if hasattr(card.status, "value") else str(card.status)
-                card.archived = True
                 counts["cards"] += 1
+                card_ops.setdefault(card.board_id, []).append(
+                    ColumnResequenceOp(
+                        card_id=card.id,
+                        from_status=card.status,
+                        to_status=card.status,
+                        from_archived=False,
+                        to_archived=True,
+                    )
+                )
+                card_records.setdefault(card.board_id, {})[card.id] = card
 
         await _application_flush(self.db)
+        card_service = CardService(self.db)
+        for affected_board_id, ops in card_ops.items():
+            await card_service.resequence_columns(
+                affected_board_id,
+                ops,
+                records=card_records[affected_board_id],
+            )
         return counts
 
     async def restore_tree(self, entity_type: str, entity_id: str) -> dict[str, int]:
@@ -11348,18 +11617,47 @@ class ArchiveService:
                 spec.pre_archive_status = None
                 counts["specs"] += 1
 
-        for card in tree["cards"]:
+        # Cards are restored as resequence OPS with placement="end" (matriz
+        # v13, item 5): the landing at the END of the active range is EXPLICIT
+        # — never inferred from the stored position, which legacy data may
+        # hold as -1 or any other corrupt value (ts_b2e972e7).
+        card_ops: dict[str, list[ColumnResequenceOp]] = {}
+        card_records: dict[str, dict[str, ApplicationRecord]] = {}
+        # Deterministic STRUCTURAL preorder (see archive_tree): canonical
+        # column order plus parent-before-bug topology — restored cards land
+        # at the end of the active range in this stable order.
+        tree_cards = _tree_cards_structural_preorder(tree["cards"])
+        for card in tree_cards:
             if card.archived:
+                stored_status = card.status
+                restored_status = stored_status
                 if card.pre_archive_status:
                     try:
-                        card.status = CardStatus(card.pre_archive_status)
+                        restored_status = CardStatus(card.pre_archive_status)
                     except (ValueError, KeyError):
-                        pass
-                card.archived = False
+                        restored_status = stored_status
                 card.pre_archive_status = None
                 counts["cards"] += 1
+                card_ops.setdefault(card.board_id, []).append(
+                    ColumnResequenceOp(
+                        card_id=card.id,
+                        from_status=stored_status,
+                        to_status=restored_status,
+                        from_archived=True,
+                        to_archived=False,
+                        placement="end",
+                    )
+                )
+                card_records.setdefault(card.board_id, {})[card.id] = card
 
         await _application_flush(self.db)
+        card_service = CardService(self.db)
+        for affected_board_id, ops in card_ops.items():
+            await card_service.resequence_columns(
+                affected_board_id,
+                ops,
+                records=card_records[affected_board_id],
+            )
         return counts
 
 

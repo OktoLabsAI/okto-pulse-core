@@ -1,18 +1,28 @@
 """Test-only SQLAlchemy consolidation persistence adapter."""
 
+import uuid
 from typing import Any, Sequence
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import case, delete, exists, func, or_, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import selectinload
 
 from sqlalchemy_test_models import (
-    AmendmentHotfixRevision, Board, CanonicalDebt, Card,
+    AmendmentHotfixRevision, ArtifactDeletionTombstone, Board, CanonicalDebt, Card,
     ConsolidationDeadLetter, ConsolidationQueue, Ideation, Refinement, Spec,
     Sprint, Story,
 )
 from okto_pulse.core.ports.consolidation import (
     ConsolidationPoisonRow,
     ConsolidationQueueRecord,
+)
+from okto_pulse.core.ports.reconcile_intent import (
+    ReconcileIntentCreate,
+    ReconcileIntentReceipt,
+)
+from okto_pulse.core.ports.tombstone import (
+    DeletionTombstoneAdvance,
+    DeletionTombstoneReceipt,
 )
 
 
@@ -33,13 +43,18 @@ def _record(row: Any) -> ConsolidationQueueRecord:
         claimed_by_session_id=row.claimed_by_session_id,
         triggered_at=row.triggered_at,
         priority=str(getattr(row.priority, "value", row.priority)),
+        work_kind=str(row.work_kind),
+        generation=int(row.generation or 0),
+        payload=dict(row.payload) if isinstance(row.payload, dict) else row.payload,
+        delete_event_id=row.delete_event_id,
+        claim_token=row.claim_token,
     )
 
 
 def _apply(row: Any, record: ConsolidationQueueRecord) -> None:
     for name in (
         "status", "attempts", "last_error", "next_retry_at", "claimed_at",
-        "claim_timeout_at", "worker_id", "claimed_by_session_id",
+        "claim_timeout_at", "worker_id", "claimed_by_session_id", "claim_token",
     ):
         setattr(row, name, getattr(record, name))
 
@@ -88,6 +103,7 @@ class TestSqlAlchemyConsolidationPersistence:
                 select(ConsolidationQueue).where(
                     ConsolidationQueue.status == "claimed",
                     or_(
+                        ConsolidationQueue.claim_token.is_(None),
                         ConsolidationQueue.claim_timeout_at.is_not(None)
                         & (ConsolidationQueue.claim_timeout_at < now),
                         ConsolidationQueue.claim_timeout_at.is_(None)
@@ -123,6 +139,9 @@ class TestSqlAlchemyConsolidationPersistence:
                 select(ConsolidationQueue)
                 .where(
                     ConsolidationQueue.status == "pending",
+                    ConsolidationQueue.work_kind.in_(
+                        ("consolidate", "stale_reconcile")
+                    ),
                     or_(
                         ConsolidationQueue.next_retry_at.is_(None),
                         ConsolidationQueue.next_retry_at <= now,
@@ -141,6 +160,90 @@ class TestSqlAlchemyConsolidationPersistence:
     ) -> ConsolidationQueueRecord | None:
         row = await context.get(ConsolidationQueue, entry_id)
         return _record(row) if row is not None else None
+
+    async def queue_claim_is_current_and_unfenced(
+        self,
+        context,
+        *,
+        entry_id: str,
+        claim_token: str,
+        board_id: str,
+        artifact_type: str,
+        artifact_id: str,
+        work_kind: str,
+        generation: int,
+        delete_event_id: str | None,
+    ) -> bool:
+        if not entry_id or not claim_token:
+            return False
+        claim_predicates = (
+            ConsolidationQueue.id == entry_id,
+            ConsolidationQueue.status == "claimed",
+            ConsolidationQueue.claim_token == claim_token,
+            ConsolidationQueue.board_id == board_id,
+            ConsolidationQueue.artifact_type == artifact_type,
+            ConsolidationQueue.artifact_id == artifact_id,
+            ConsolidationQueue.work_kind == work_kind,
+            ConsolidationQueue.generation == generation,
+            (
+                ConsolidationQueue.delete_event_id.is_(None)
+                if delete_event_id is None
+                else ConsolidationQueue.delete_event_id == delete_event_id
+            ),
+        )
+        tombstone_key = (
+            ArtifactDeletionTombstone.board_id == board_id,
+            ArtifactDeletionTombstone.artifact_type == artifact_type,
+            ArtifactDeletionTombstone.artifact_id == artifact_id,
+        )
+        if work_kind == "consolidate":
+            if generation != 0 or delete_event_id is not None:
+                return False
+            deletion_fence = ~exists(select(1).where(*tombstone_key))
+        elif work_kind == "stale_reconcile":
+            if generation < 1 or delete_event_id is None:
+                return False
+            deletion_fence = exists(
+                select(1).where(
+                    *tombstone_key,
+                    ArtifactDeletionTombstone.generation == generation,
+                    ArtifactDeletionTombstone.delete_event_id == delete_event_id,
+                )
+            )
+        else:
+            return False
+        return bool(
+            await context.scalar(
+                select(exists().where(*claim_predicates, deletion_fence))
+            )
+        )
+
+    async def ack_claimed_queue_entry(
+        self,
+        context,
+        *,
+        entry_id: str,
+        claim_token: str,
+        generation: int,
+        delete_event_id: str | None,
+    ) -> bool:
+        if not entry_id or not claim_token:
+            return False
+        delete_event_predicate = (
+            ConsolidationQueue.delete_event_id.is_(None)
+            if delete_event_id is None
+            else ConsolidationQueue.delete_event_id == delete_event_id
+        )
+        result = await context.execute(
+            delete(ConsolidationQueue).where(
+                ConsolidationQueue.id == entry_id,
+                ConsolidationQueue.status == "claimed",
+                ConsolidationQueue.claim_token == claim_token,
+                ConsolidationQueue.generation == generation,
+                delete_event_predicate,
+            )
+        )
+        return int(result.rowcount or 0) == 1
 
     async def save_queue_entries(
         self, context, entries: Sequence[ConsolidationQueueRecord]
@@ -165,7 +268,15 @@ class TestSqlAlchemyConsolidationPersistence:
         artifact_type: str,
         artifact_id: str,
     ) -> None:
-        for model in (ConsolidationQueue, ConsolidationDeadLetter, CanonicalDebt):
+        await context.execute(
+            delete(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == board_id,
+                ConsolidationQueue.artifact_type == artifact_type,
+                ConsolidationQueue.artifact_id == artifact_id,
+                ConsolidationQueue.work_kind == "consolidate",
+            )
+        )
+        for model in (ConsolidationDeadLetter, CanonicalDebt):
             await context.execute(
                 delete(model).where(
                     model.board_id == board_id,
@@ -174,6 +285,141 @@ class TestSqlAlchemyConsolidationPersistence:
                 )
             )
         await context.flush()
+
+    async def advance_deletion_tombstone(
+        self,
+        context: Any,
+        request: DeletionTombstoneAdvance,
+    ) -> DeletionTombstoneReceipt:
+        _validate_deletion_identity(
+            artifact_type=request.artifact_type,
+            artifact_id=request.artifact_id,
+            delete_event_id=request.delete_event_id,
+        )
+        statement = (
+            sqlite_insert(ArtifactDeletionTombstone)
+            .values(
+                id=str(uuid.uuid4()),
+                board_id=request.board_id,
+                artifact_type=request.artifact_type,
+                artifact_id=request.artifact_id,
+                generation=1,
+                delete_event_id=request.delete_event_id,
+            )
+            .on_conflict_do_update(
+                index_elements=["board_id", "artifact_type", "artifact_id"],
+                set_={
+                    "generation": case(
+                        (
+                            ArtifactDeletionTombstone.delete_event_id
+                            == request.delete_event_id,
+                            ArtifactDeletionTombstone.generation,
+                        ),
+                        else_=ArtifactDeletionTombstone.generation + 1,
+                    ),
+                    "delete_event_id": request.delete_event_id,
+                    "updated_at": func.now(),
+                },
+            )
+            .returning(
+                ArtifactDeletionTombstone.generation,
+                ArtifactDeletionTombstone.delete_event_id,
+            )
+        )
+        generation, delete_event_id = (await context.execute(statement)).one()
+        return DeletionTombstoneReceipt(
+            generation=int(generation),
+            delete_event_id=str(delete_event_id),
+        )
+
+    async def persist_reconcile_intent(
+        self,
+        context: Any,
+        request: ReconcileIntentCreate,
+    ) -> ReconcileIntentReceipt:
+        _validate_deletion_identity(
+            artifact_type=request.artifact_type,
+            artifact_id=request.artifact_id,
+            delete_event_id=request.delete_event_id,
+        )
+        expected_refs = (f"{request.artifact_type}:{request.artifact_id}",)
+        if request.generation < 1 or request.source_refs != expected_refs:
+            raise ValueError("invalid_reconcile_intent_identity")
+
+        tombstone = (
+            await context.execute(
+                select(ArtifactDeletionTombstone).where(
+                    ArtifactDeletionTombstone.board_id == request.board_id,
+                    ArtifactDeletionTombstone.artifact_type == request.artifact_type,
+                    ArtifactDeletionTombstone.artifact_id == request.artifact_id,
+                )
+            )
+        ).scalars().one_or_none()
+        if (
+            tombstone is None
+            or int(tombstone.generation) != request.generation
+            or str(tombstone.delete_event_id) != request.delete_event_id
+        ):
+            raise RuntimeError("reconcile_intent_tombstone_mismatch")
+
+        intent_id = str(uuid.uuid4())
+        payload = {
+            "schema_version": 1,
+            "delete_event_id": request.delete_event_id,
+            "source_refs": list(request.source_refs),
+        }
+        statement = (
+            sqlite_insert(ConsolidationQueue)
+            .values(
+                id=intent_id,
+                board_id=request.board_id,
+                artifact_type=request.artifact_type,
+                artifact_id=request.artifact_id,
+                work_kind="stale_reconcile",
+                generation=request.generation,
+                payload=payload,
+                delete_event_id=request.delete_event_id,
+                priority="high",
+                source="governed_delete",
+                status="pending",
+                triggered_by_event=request.delete_event_id,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    "board_id",
+                    "artifact_type",
+                    "artifact_id",
+                    "work_kind",
+                    "generation",
+                ],
+                index_where=ConsolidationQueue.work_kind == "stale_reconcile",
+            )
+            .returning(ConsolidationQueue.id)
+        )
+        persisted_id = (await context.execute(statement)).scalar_one_or_none()
+        if persisted_id is None:
+            existing = (
+                await context.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == request.board_id,
+                        ConsolidationQueue.artifact_type == request.artifact_type,
+                        ConsolidationQueue.artifact_id == request.artifact_id,
+                        ConsolidationQueue.work_kind == "stale_reconcile",
+                        ConsolidationQueue.generation == request.generation,
+                    )
+                )
+            ).scalars().one()
+            if (
+                str(existing.delete_event_id) != request.delete_event_id
+                or existing.payload != payload
+            ):
+                raise RuntimeError("reconcile_intent_replay_conflict")
+            persisted_id = existing.id
+        return ReconcileIntentReceipt(
+            intent_id=str(persisted_id),
+            generation=request.generation,
+            delete_event_id=request.delete_event_id,
+        )
 
     async def board_exists(self, context, *, board_id: str) -> bool:
         return await context.get(Board, board_id) is not None
@@ -219,3 +465,12 @@ class TestSqlAlchemyConsolidationPersistence:
 
 
 __all__ = ["TestSqlAlchemyConsolidationPersistence"]
+
+
+def _validate_deletion_identity(
+    *, artifact_type: str, artifact_id: str, delete_event_id: str
+) -> None:
+    if artifact_type not in {"card", "spec", "ideation", "refinement"}:
+        raise ValueError("invalid_governed_deletion_artifact_type")
+    if not artifact_id or not delete_event_id or len(delete_event_id) > 255:
+        raise ValueError("invalid_governed_deletion_identity")

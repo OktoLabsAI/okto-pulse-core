@@ -89,8 +89,20 @@ fixed; it is distinct from the board consolidation DLQ family:
 1. Page `okto_pulse_kg_global_outbox_dead_letter_list` with `limit<=100` and
    retain the returned immutable IDs. With `classification`, an empty page may
    still carry `next_cursor`; follow it until null.
-2. Call `okto_pulse_kg_global_outbox_dead_letter_reprocess` with 1-100 explicit,
-   unique IDs and an audit reason. Never interpret an empty selection as all.
+2. For legacy rows, call `okto_pulse_kg_global_outbox_dead_letter_reprocess`
+   with 1-100 explicit, unique IDs and an audit reason.
+   Never interpret an empty selection as all. Governed
+   `gd_parity:...:attempt:n` rows are immutable
+   delivery history: do not rearm them. `kg.tick.daily` starts the automatic
+   recovery chain; each `kg.tick.delivery_redrive` event runs one globally
+   bounded page, serves one oldest due item per board before repeating a board,
+   and advances the persisted round-robin checkpoint in the same transaction
+   as fresh `attempt:n+1` rows. Due backlog schedules the next bounded event in
+   that transaction. A governed or mixed manual selection fails closed with
+   `governed_delivery_attempt_tick_owned`.
+   The orphan watchdog is independently board-bounded and resumes from a
+   persisted rotating cursor, so an active prefix cannot starve a later
+   missing, malformed, terminal, or already-processed attempt.
 3. Call `okto_pulse_kg_global_outbox_dead_letter_verify` with those exact IDs.
    Treat `still_dead_lettered`, dangling/cyclic lineage reason codes, or a busy
    response as unresolved; queued/applied are idempotent replay outcomes.
@@ -98,6 +110,32 @@ fixed; it is distinct from the board consolidation DLQ family:
 Each operation owns a dedicated relational transaction. Selection validation
 and guarded requeue are atomic; `process_now=true` wakes the outbox worker only
 after commit.
+
+## Durable stale-canonical catch-up
+
+`kg.tick.daily` stages at most one low-priority `stale_sweep` coordinator per
+relational board, and does so only after the board's decay graph transaction has
+closed. Its durable payload is `{cursor,budget,attempt}`. The queue worker runs
+one global `(artifact_type, artifact_id)` keyset query capped at `budget + 1`,
+normalizes card child refs to their owning card, and advances through live-only
+inventory pages as well as deleted-source pages.
+
+The inventory requires a complete relational source snapshot. Before creating
+catch-up work, the relational adapter rechecks each candidate while holding the
+writer slot. A still-absent historical source receives the deterministic key
+`catchup:{board}:{type}:{id}:epoch:1`; its tombstone, `stale_reconcile` child and
+next checkpoint are committed in one relational unit of work. An existing real
+tombstone is reused and never advanced by the sweep.
+
+Graph open/read failures and incomplete source snapshots preserve the cursor
+and re-pend the coordinator for the next tick window; they never authorize a
+broader scan or a synthetic tombstone. Literal relational board deletion still
+cascades its queue rows, so "board unavailable" here means the board remains in
+SQL while its graph runtime is absent, locked, quarantined or unreadable. Do not
+edit coordinator payloads manually. Use staged telemetry
+`kg.stale_sweep.scheduled.staged`, `kg.stale_sweep.page_staged`,
+`kg.stale_sweep.rescheduled.staged` and `kg.stale_sweep.completed.staged` to
+follow the caller-owned commit boundary.
 
 ## Query Timing — MANDATORY at Every Stage
 

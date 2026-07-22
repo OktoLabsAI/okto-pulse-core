@@ -27,11 +27,15 @@ import pytest
 from okto_pulse.core.kg.canonical_learning_partition import (
     HISTORICAL_DEBT_REASON,
     PARTITION_TARGET_STATUS,
+    SOURCE_ABSENT_DEBT_REASON,
     _canonical_only_evidence,
     _stable_content_hash,
     detect_historical_canonical_learning_debt,
     reconcile_canonical_learning_partition_debt,
+    run_canonical_learning_partition_maintenance,
+    upsert_canonical_learning_debt,
 )
+from okto_pulse.core.kg.canonical_partition_integrity import canonical_debt_exclusions
 from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
@@ -254,6 +258,115 @@ async def test_ts3_detect_is_idempotent(db_factory):
     async with db_factory() as db:
         listed = await list_canonical_debt(db, board_id=board_id)
     assert listed.total == 1  # upsert keyed by source hash — no duplicate row
+
+
+@pytest.mark.asyncio
+async def test_source_absent_reason_survives_historical_maintenance(db_factory):
+    board_id = await _setup_board(db_factory)
+    source_ref = f"card:bug:{uuid.uuid4()}:learning:{uuid.uuid4()}"
+    learning_id, _working_bug = _seed_learning_validating_bug(
+        board_id, learning_source_ref=source_ref, bug_layer=GRAPH_LAYER_WORKING
+    )
+
+    async with db_factory() as db:
+        first = await upsert_canonical_learning_debt(
+            db,
+            board_id=board_id,
+            node_id=learning_id,
+            source_ref=source_ref,
+            failure_reason=SOURCE_ABSENT_DEBT_REASON,
+            correlation_id="delete-event-source-absent",
+        )
+        second = await upsert_canonical_learning_debt(
+            db,
+            board_id=board_id,
+            node_id=learning_id,
+            source_ref=source_ref,
+            failure_reason=SOURCE_ABSENT_DEBT_REASON,
+            correlation_id="delete-event-source-absent",
+        )
+        await run_canonical_learning_partition_maintenance(
+            db, board_id=board_id, actor_id="system:maintenance"
+        )
+        await db.commit()
+
+    async with db_factory() as db:
+        listed = await list_canonical_debt(db, board_id=board_id)
+        exclusions = await canonical_debt_exclusions(db, board_id=board_id)
+
+    assert second.id == first.id
+    assert listed.total == 1
+    assert listed.items[0]["content_hash"] == _stable_content_hash(
+        source_ref, learning_id
+    )
+    assert listed.items[0]["failure_reason"] == SOURCE_ABSENT_DEBT_REASON
+    assert listed.items[0]["correlation_id"] == "delete-event-source-absent"
+    assert listed.items[0]["canonical_state"] in OPEN_STATES
+    assert SOURCE_ABSENT_DEBT_REASON in exclusions.values()
+
+
+@pytest.mark.asyncio
+async def test_source_absent_debt_identity_is_per_learning(db_factory):
+    board_id = await _setup_board(db_factory)
+    bug_id = str(uuid.uuid4())
+    source_ref = f"bug:{bug_id}"
+    learning_ids = ("learning-source-absent-a", "learning-source-absent-b")
+
+    async with db_factory() as db:
+        for node_id in (*learning_ids, learning_ids[0]):
+            await upsert_canonical_learning_debt(
+                db,
+                board_id=board_id,
+                node_id=node_id,
+                source_ref=source_ref,
+                failure_reason=SOURCE_ABSENT_DEBT_REASON,
+            )
+        await db.commit()
+
+    async with db_factory() as db:
+        listed = await list_canonical_debt(db, board_id=board_id)
+
+    assert listed.total == 2
+    assert {item["content_hash"] for item in listed.items} == {
+        _stable_content_hash(source_ref, node_id) for node_id in learning_ids
+    }
+    assert {
+        item["failure_reason"] for item in listed.items
+    } == {SOURCE_ABSENT_DEBT_REASON}
+
+
+@pytest.mark.asyncio
+async def test_source_absent_debt_closes_with_matching_canonical_evidence(db_factory):
+    board_id = await _setup_board(db_factory)
+    source_ref = f"card:bug:{uuid.uuid4()}:learning:{uuid.uuid4()}"
+    learning_id, _working_bug = _seed_learning_validating_bug(
+        board_id, learning_source_ref=source_ref, bug_layer=GRAPH_LAYER_WORKING
+    )
+
+    async with db_factory() as db:
+        await upsert_canonical_learning_debt(
+            db,
+            board_id=board_id,
+            node_id=learning_id,
+            source_ref=source_ref,
+            failure_reason=SOURCE_ABSENT_DEBT_REASON,
+        )
+        await db.commit()
+
+    _add_canonical_bug_validates(board_id, learning_id)
+    async with db_factory() as db:
+        result = await reconcile_canonical_learning_partition_debt(
+            db, board_id=board_id, actor_id="system:maintenance"
+        )
+        await db.commit()
+
+    async with db_factory() as db:
+        listed = await list_canonical_debt(db, board_id=board_id)
+
+    assert result["committed_count"] == 1
+    assert listed.total == 1
+    assert listed.items[0]["canonical_state"] == "committed"
+    assert listed.items[0]["failure_reason"] == SOURCE_ABSENT_DEBT_REASON
 
 
 # ---------------------------------------------------------------------------

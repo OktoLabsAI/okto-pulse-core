@@ -8,13 +8,15 @@ Covers FR5/FR6 + TR3/TR4 + G4:
   NEVER re-emits the original spec node (AC1);
 * amendment sources are counted in expected_layers and enqueued for
   materialization (not counted-but-skipped → no false MATERIALIZED_LAYER_MISMATCH);
-* backward compatibility for boards without amendment rows.
+* complete empty amendment partitions and fail-closed legacy schemas.
 
 Reproduce:
   .venv/Scripts/python -m pytest -p no:logging -q tests/test_amendment_kg_rebuild.py
 """
 
 from __future__ import annotations
+
+import pytest
 
 import okto_pulse.core.kg.rebuild_service as rebuild_service
 from okto_pulse.core.kg.board_rebuild_adapter import (
@@ -32,6 +34,7 @@ from okto_pulse.core.kg.source_maturity import (
     classify_source_for_kg,
 )
 from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from okto_pulse.core.application.rebuild_ports import SourceUnavailableError
 
 AMD = "amendment_hotfix_revision"
 
@@ -266,9 +269,9 @@ def test_board_source_store_amendment_working_when_not_done(tmp_path):
     ).graph_layer == "working"  # approved -> working-only before done
 
 
-def test_board_without_amendment_table_is_silent_backward_compat(tmp_path):
-    # TR4: a legacy board whose schema lacks the amendment table must not crash
-    # the source store (existence-guarded, silent skip).
+def test_board_without_amendment_table_is_incomplete_fail_closed(tmp_path):
+    # A missing authoritative partition cannot be treated as a proven empty set:
+    # the durable snapshot is explicitly incomplete and sequence consumption fails.
     from sqlalchemy import text
     from sqlalchemy.orm import Session
     from sqlalchemy_test_models import Board
@@ -283,8 +286,13 @@ def test_board_without_amendment_table_is_silent_backward_compat(tmp_path):
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS amendment_hotfix_revisions"))
 
-    rows = BoardSourceStore(db_path).fetch(board_id)  # must not raise
-    assert [r for r in rows if r["artifact_type"] == AMD] == []
+    snapshot = BoardSourceStore(db_path).fetch(board_id)
+
+    assert snapshot.rows == ()
+    assert snapshot.complete is False
+    assert snapshot.cause == "table_missing"
+    with pytest.raises(SourceUnavailableError):
+        list(snapshot)
 
 
 # ---------------------------------------------------------------------------

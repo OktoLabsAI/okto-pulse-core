@@ -231,10 +231,13 @@ async def test_list_use_case_rejects_actor_command_board_spoof_before_parent_rea
             actor=actor,
             uow=uow,
         )
-        assert result.data == []
+        assert result.data.items == ()
+        assert result.data.total_filtered == 0
+        assert result.data.total_overall == 0
+        assert result.data.offset == 0
+        assert result.data.limit == 100
 
     ideations.get_ideation.assert_not_awaited()
     refinements.list_refinements.assert_not_awaited()
     specs.get_spec.assert_not_awaited()
     sprints.list_sprints.assert_not_awaited()
-

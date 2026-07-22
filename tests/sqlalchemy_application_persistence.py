@@ -6,12 +6,14 @@ import copy
 from typing import Any
 from weakref import WeakKeyDictionary
 
-from sqlalchemy import and_, event, or_, select
+from sqlalchemy import and_, event, false, func, or_, select
 from sqlalchemy.orm import selectinload
 
 import sqlalchemy_test_models as models
 from okto_pulse.core.ports.application_persistence import (
     ApplicationFilter,
+    ApplicationGroupCount,
+    ApplicationGroupCountQuery,
     ApplicationQuery,
     ApplicationRecord,
 )
@@ -99,6 +101,103 @@ def _model(entity: str):
 
 
 def _predicate(model: Any, item: ApplicationFilter):
+    if model is models.Ideation and item.field == "derivation_pending":
+        active_refinement_exists = (
+            select(models.Refinement.id)
+            .where(
+                models.Refinement.board_id == models.Ideation.board_id,
+                models.Refinement.ideation_id == models.Ideation.id,
+                models.Refinement.archived == false(),
+                models.Refinement.status != "cancelled",
+            )
+            .exists()
+        )
+        active_direct_spec_exists = (
+            select(models.Spec.id)
+            .where(
+                models.Spec.board_id == models.Ideation.board_id,
+                models.Spec.ideation_id == models.Ideation.id,
+                models.Spec.refinement_id.is_(None),
+                models.Spec.archived == false(),
+                models.Spec.status != "cancelled",
+            )
+            .exists()
+        )
+        pending = func.coalesce(
+            and_(
+                models.Ideation.status == "done",
+                or_(
+                    and_(
+                        models.Ideation.complexity.in_(("medium", "large")),
+                        ~active_refinement_exists,
+                    ),
+                    and_(
+                        models.Ideation.complexity == "small",
+                        ~active_direct_spec_exists,
+                    ),
+                ),
+            ),
+            false(),
+        )
+        if item.operator == "is_true" or (
+            item.operator == "eq" and item.value is True
+        ):
+            return pending
+        if item.operator == "is_false" or (
+            item.operator == "eq" and item.value is False
+        ):
+            return ~pending
+        raise ValueError(f"unsupported_application_operator:{item.operator}")
+    if model is models.Refinement and item.field == "derivation_pending":
+        active_spec_exists = (
+            select(models.Spec.id)
+            .where(
+                models.Spec.board_id == models.Refinement.board_id,
+                models.Spec.refinement_id == models.Refinement.id,
+                models.Spec.archived == false(),
+                models.Spec.status != "cancelled",
+            )
+            .exists()
+        )
+        pending = and_(
+            models.Refinement.status == "done",
+            ~active_spec_exists,
+        )
+        if item.operator == "is_true" or (
+            item.operator == "eq" and item.value is True
+        ):
+            return pending
+        if item.operator == "is_false" or (
+            item.operator == "eq" and item.value is False
+        ):
+            return ~pending
+        raise ValueError(f"unsupported_application_operator:{item.operator}")
+    if model is models.Story and item.field == "linked":
+        link_exists = (
+            select(models.StoryIdeationLink.id)
+            .where(models.StoryIdeationLink.story_id == models.Story.id)
+            .exists()
+        )
+        if item.operator == "is_true" or (
+            item.operator == "eq" and item.value is True
+        ):
+            return link_exists
+        if item.operator == "is_false" or (
+            item.operator == "eq" and item.value is False
+        ):
+            return ~link_exists
+        raise ValueError(f"unsupported_application_operator:{item.operator}")
+    if model is models.Story and item.field == "converted":
+        is_converted = models.Story.status == "converted"
+        if item.operator == "is_true" or (
+            item.operator == "eq" and item.value is True
+        ):
+            return is_converted
+        if item.operator == "is_false" or (
+            item.operator == "eq" and item.value is False
+        ):
+            return ~is_converted
+        raise ValueError(f"unsupported_application_operator:{item.operator}")
     column = getattr(model, item.field)
     if item.operator == "eq":
         return column == item.value
@@ -242,6 +341,61 @@ class TestSqlAlchemyApplicationPersistence:
         return tuple(
             self._track(context, _record(query.entity, row, query.includes), row)
             for row in rows
+        )
+
+    async def count(self, context: Any, query: ApplicationQuery) -> int:
+        model = _model(query.entity)
+        statement = select(func.count()).select_from(model)
+        if query.filters:
+            statement = statement.where(
+                *(_predicate(model, item) for item in query.filters)
+            )
+        if query.any_filters:
+            statement = statement.where(
+                or_(*(_predicate(model, item) for item in query.any_filters))
+            )
+        if query.any_groups:
+            statement = statement.where(
+                or_(
+                    *(and_(*(_predicate(model, item) for item in group)) for group in query.any_groups)
+                )
+            )
+        result = await context.execute(statement)
+        return int(result.scalar_one())
+
+    async def group_count(
+        self, context: Any, query: ApplicationGroupCountQuery
+    ) -> tuple[ApplicationGroupCount, ...]:
+        """Test-port parity for catalogued server-side aggregates."""
+        model = _model(query.entity)
+        if not query.group_by:
+            raise ValueError("application_group_count_fields_required")
+        group_columns = tuple(getattr(model, field) for field in query.group_by)
+        statement = select(
+            *group_columns,
+            func.count().label("count"),
+        ).select_from(model)
+        if query.filters:
+            statement = statement.where(
+                *(_predicate(model, item) for item in query.filters)
+            )
+        for dimension in query.disjunctions:
+            if not dimension:
+                raise ValueError("application_group_count_disjunction_empty")
+            if any(not branch for branch in dimension):
+                raise ValueError("application_group_count_branch_empty")
+            statement = statement.where(
+                or_(
+                    *(
+                        and_(*(_predicate(model, item) for item in branch))
+                        for branch in dimension
+                    )
+                )
+            )
+        result = await context.execute(statement.group_by(*group_columns))
+        return tuple(
+            ApplicationGroupCount(values=tuple(row[:-1]), count=int(row[-1]))
+            for row in result.all()
         )
 
     async def get(

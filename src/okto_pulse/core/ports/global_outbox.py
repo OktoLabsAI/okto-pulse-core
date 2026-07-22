@@ -28,6 +28,7 @@ class GlobalOutboxEventRecord:
     last_error: str | None
     processed_at: datetime | None
     created_at: datetime
+    event_type: str = "consolidation_committed"
 
 
 @dataclass(frozen=True, slots=True)

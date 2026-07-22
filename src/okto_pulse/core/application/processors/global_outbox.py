@@ -24,6 +24,14 @@ from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.interfaces.graph_errors import GraphError
 from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
 from okto_pulse.core.ports.coordination import ClaimRepository, get_claim_repository
+from okto_pulse.core.ports.delivery_ledger import (
+    DeliveryAttemptEnvelope,
+    DeliveryAttemptOutcome,
+    DeliveryAttemptResult,
+    DeliveryLedgerPort,
+    get_delivery_ledger_port,
+    parse_delivery_attempt_event,
+)
 from okto_pulse.core.ports.global_outbox import (
     GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL,
     GLOBAL_OUTBOX_MAX_RETRIES,
@@ -79,6 +87,7 @@ class GlobalOutboxProcessor:
         clock: WorkerClockPort | None = None,
         retry_policy: RetryPolicy | None = None,
         blocking_execution: BlockingExecutionPort | None = None,
+        delivery_ledger: DeliveryLedgerPort | None = None,
     ):
         if relational_scope_factory is None:
             from okto_pulse.core.ports.relational_runtime import get_db_session
@@ -90,6 +99,7 @@ class GlobalOutboxProcessor:
         self._clock = clock
         self._retry_policy = retry_policy or RetryPolicy(max_attempts=MAX_RETRIES)
         self._blocking_execution = blocking_execution
+        self._delivery_ledger = delivery_ledger
 
     async def _run_graph_io(self, operation: Callable[[], Any]) -> Any:
         """Run one graph critical section off-loop and drain it on cancel."""
@@ -307,8 +317,12 @@ class GlobalOutboxProcessor:
             processed_events: list[
                 tuple[GlobalOutboxEventRecord, dict[str, tuple[str, str]]]
             ] = []
+            delivery_attempts: dict[str, DeliveryAttemptEnvelope] = {}
             for event in events:
                 try:
+                    delivery_attempt = parse_delivery_attempt_event(event)
+                    if delivery_attempt is not None:
+                        delivery_attempts[event.id] = delivery_attempt
                     expected_state = await self._apply_event(event, db)
                     processed_events.append((event, expected_state))
                     processed += 1
@@ -370,8 +384,45 @@ class GlobalOutboxProcessor:
                         )[:500]
                         if self._retry_policy.after_failure(event.retry_count).terminal:
                             event.retry_count = DEAD_LETTER_SENTINEL
-            await get_global_outbox_store().save_events(db, events)
-            await get_global_outbox_store().commit(db)
+            outbox_store = get_global_outbox_store()
+            await outbox_store.save_events(db, events)
+            delivery_outcomes: list[DeliveryAttemptResult] = []
+            for event in events:
+                envelope = delivery_attempts.get(event.id)
+                if envelope is None:
+                    continue
+                if event.processed_at is not None:
+                    delivery_outcomes.append(
+                        DeliveryAttemptResult(
+                            envelope=envelope,
+                            outcome=DeliveryAttemptOutcome.DELIVERED,
+                            occurred_at=event.processed_at,
+                        )
+                    )
+                    continue
+                if event.retry_count == DEAD_LETTER_SENTINEL or (
+                    event.retry_count >= MAX_RETRIES
+                ):
+                    delivery_outcomes.append(
+                        DeliveryAttemptResult(
+                            envelope=envelope,
+                            outcome=DeliveryAttemptOutcome.DELIVERY_DEBT,
+                            occurred_at=self._now(),
+                            error=(
+                                event.last_error
+                                or "governed_delivery_attempt_terminal"
+                            ),
+                        )
+                    )
+            if delivery_outcomes:
+                delivery_ledger = self._delivery_ledger
+                if delivery_ledger is None:
+                    delivery_ledger = get_delivery_ledger_port()
+                await delivery_ledger.apply_attempt_outcomes(
+                    db,
+                    tuple(delivery_outcomes),
+                )
+            await outbox_store.commit(db)
         if processed:
             logger.info(
                 "outbox.processed count=%d",

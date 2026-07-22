@@ -362,6 +362,21 @@ class KGDailyTick(DomainEvent):
     scheduled_at: str  # ISO datetime when the scheduler fired the trigger
 
 
+class KGDeliveryRedriveTick(DomainEvent):
+    """Durable bounded continuation of tick-owned delivery-debt recovery.
+
+    A daily tick starts the chain.  Each event owns exactly one budgeted,
+    globally fair redrive run and transactionally publishes its successor
+    only while due debt remains.  ``checkpoint_version`` identifies the
+    durable checkpoint produced by the run that scheduled this continuation.
+    """
+
+    event_type: ClassVar[str] = "kg.tick.delivery_redrive"
+    run_id: str
+    scheduled_at: str
+    checkpoint_version: int = 0
+
+
 # Ordered list of all event_type strings known to the MVP. The dispatcher
 # uses this to resolve DomainEventRow → subclass during reconstruction.
 EVENT_TYPES: list[str] = [
@@ -394,6 +409,7 @@ EVENT_TYPES: list[str] = [
     CardSeverityChanged.event_type,
     BugRegressionScenarioReuseDecision.event_type,
     KGDailyTick.event_type,
+    KGDeliveryRedriveTick.event_type,
 ]
 
 
@@ -427,6 +443,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     CardSeverityChanged.event_type: CardSeverityChanged,
     BugRegressionScenarioReuseDecision.event_type: BugRegressionScenarioReuseDecision,
     KGDailyTick.event_type: KGDailyTick,
+    KGDeliveryRedriveTick.event_type: KGDeliveryRedriveTick,
 }
 
 

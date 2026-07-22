@@ -118,40 +118,53 @@ class ConsolidationEnqueuer:
         # Earlier dedup was implemented by the SELECT block at lines 104-129
         # of the v1 file — see git history before bug 4a430c6d.
 
-        # Spec bdcda842 (TR4 + BR1 zero-loss): NEVER reject the enqueue. The
-        # queue is now a zero-loss store; backpressure flows from the
-        # consumer (worker pool throttling) rather than from admission. We
-        # still emit an alert when the depth crosses the configurable
-        # alert_threshold so operators can tune the worker pool — but the
-        # UPSERT proceeds unconditionally. Alert is fired BEFORE the upsert
-        # so the depth count reflects current state without including the
-        # row this call is about to add (no-op cases would otherwise inflate
-        # the count).
-        settings = get_settings()
-        alert_threshold = settings.kg_queue_alert_threshold
+        # Spec bdcda842 (TR4 + BR1 zero-loss): every non-tombstoned event is
+        # admitted regardless of depth; backpressure flows from the consumer
+        # rather than admission. Permanent deletion fences and active-row
+        # coalescing are successful no-ops and emit no enqueue telemetry.
         relational_effects = get_relational_effects_port()
-        depth_before_insert = (
-            await relational_effects.count_active_consolidation_queue(
+        queue_changed = (
+            await relational_effects.upsert_consolidation_queue_unless_tombstoned(
                 session,
-                board_id=event.board_id,
+                ConsolidationQueueUpsert(
+                    board_id=event.board_id,
+                    artifact_type=artifact_type,
+                    artifact_id=artifact_id,
+                    priority=priority,
+                    source=f"event:{event.event_type}",
+                    triggered_by_event=event.event_type,
+                ),
             )
         )
-        if (
-            depth_before_insert is not None
-            and depth_before_insert + 1 >= alert_threshold
-            and depth_before_insert < alert_threshold
-        ):
+
+        # Count only after the atomic write. A pre-write SELECT can pin a
+        # SQLite/WAL read snapshot and make the subsequent writer promotion
+        # fail if a governed delete commits between both statements.
+        depth_after_insert = None
+        alert_threshold = None
+        if queue_changed:
+            alert_threshold = get_settings().kg_queue_alert_threshold
+            depth_after_insert = (
+                await relational_effects.count_active_consolidation_queue(
+                    session,
+                    board_id=event.board_id,
+                )
+            )
+
+        if alert_threshold is not None and depth_after_insert == alert_threshold:
             # Crossing edge only — fired exactly once per low→high transition
             # so log volume stays bounded under sustained backlog.
             logger.warning(
                 "consolidation.queue.alert_fired board=%s depth=%d threshold=%d "
                 "event=%s",
-                event.board_id, depth_before_insert + 1, alert_threshold,
+                event.board_id,
+                depth_after_insert,
+                alert_threshold,
                 event.event_type,
                 extra={
                     "event": "kg.queue.alert_fired",
                     "board_id": event.board_id,
-                    "queue_depth": depth_before_insert + 1,
+                    "queue_depth": depth_after_insert,
                     "alert_threshold": alert_threshold,
                     "trigger_event": event.event_type,
                 },
@@ -163,23 +176,12 @@ class ConsolidationEnqueuer:
             )
             record_alert_fired()
 
-        await relational_effects.upsert_consolidation_queue(
-            session,
-            ConsolidationQueueUpsert(
-                board_id=event.board_id,
-                artifact_type=artifact_type,
-                artifact_id=artifact_id,
-                priority=priority,
-                source=f"event:{event.event_type}",
-                triggered_by_event=event.event_type,
-            ),
-        )
-
         # Spec 4007e4a3 (Ideação #3, FR5): structured counter for dual-target
         # spec re-enqueue. Emitted only when the spec-side enqueue actually
         # fires (after dedup short-circuit for orphan and duplicate paths).
         if (
-            artifact_type == "spec"
+            queue_changed
+            and artifact_type == "spec"
             and event.event_type in _CARD_DUAL_TARGET_EVENTS
         ):
             logger.info(
@@ -196,7 +198,8 @@ class ConsolidationEnqueuer:
                 },
             )
         if (
-            artifact_type == "spec"
+            queue_changed
+            and artifact_type == "spec"
             and event.event_type.startswith(_STRUCTURED_ENTITY_EVENT_PREFIX)
         ):
             logger.info(

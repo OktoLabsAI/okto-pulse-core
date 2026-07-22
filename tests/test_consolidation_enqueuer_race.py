@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -34,7 +35,13 @@ from okto_pulse.core.events.handlers.consolidation_enqueuer import (
     ConsolidationEnqueuer,
 )
 from okto_pulse.core.events.types import CardMoved, StoryMoved
-from sqlalchemy_test_models import Base, Board, ConsolidationQueue
+from sqlalchemy_test_models import (
+    ArtifactDeletionTombstone,
+    Base,
+    Board,
+    ConsolidationDeadLetter,
+    ConsolidationQueue,
+)
 
 
 @pytest_asyncio.fixture
@@ -281,6 +288,76 @@ async def test_serial_events_on_same_artifact_produce_one_row(race_db_factory):
     assert len(rows) == 1
 
 
+@pytest.mark.asyncio
+async def test_pre_delete_event_drained_after_tombstone_is_suppressed(
+    race_db_factory,
+):
+    """AC5/TS2: a late event never recreates legacy queue or DLQ work."""
+
+    factory, board_id = race_db_factory
+    card_id = str(uuid.uuid4())
+    event = _card_moved_event(board_id, card_id)
+
+    async with factory() as session:
+        session.add_all(
+            [
+                ArtifactDeletionTombstone(
+                    board_id=board_id,
+                    artifact_type="card",
+                    artifact_id=card_id,
+                    generation=1,
+                    delete_event_id="delete-after-event",
+                ),
+                ConsolidationQueue(
+                    board_id=board_id,
+                    artifact_type="card",
+                    artifact_id=card_id,
+                    work_kind="stale_reconcile",
+                    generation=1,
+                    delete_event_id="delete-after-event",
+                    payload={
+                        "schema_version": 1,
+                        "delete_event_id": "delete-after-event",
+                        "source_refs": [f"card:{card_id}"],
+                    },
+                    priority="high",
+                    source="governed_delete",
+                    status="pending",
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with factory() as session:
+        await ConsolidationEnqueuer().handle(event, session)
+        await session.commit()
+
+    async with factory() as session:
+        queue_rows = (
+            await session.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.board_id == board_id,
+                    ConsolidationQueue.artifact_type == "card",
+                    ConsolidationQueue.artifact_id == card_id,
+                )
+            )
+        ).scalars().all()
+        dlq_rows = (
+            await session.execute(
+                select(ConsolidationDeadLetter).where(
+                    ConsolidationDeadLetter.board_id == board_id,
+                    ConsolidationDeadLetter.artifact_type == "card",
+                    ConsolidationDeadLetter.artifact_id == card_id,
+                )
+            )
+        ).scalars().all()
+
+    assert [(row.work_kind, row.generation) for row in queue_rows] == [
+        ("stale_reconcile", 1)
+    ]
+    assert dlq_rows == []
+
+
 # ---------------------------------------------------------------------------
 # Structural — verify the legacy SELECT-then-INSERT idiom is gone
 # ---------------------------------------------------------------------------
@@ -308,7 +385,7 @@ def test_legacy_select_then_insert_idiom_is_gone():
     assert "session.add(ConsolidationQueue(" not in src, (
         "v1 SELECT-then-INSERT idiom returned to _enqueue_one — race fix regressed"
     )
-    assert "upsert_consolidation_queue" in src
+    assert "upsert_consolidation_queue_unless_tombstoned" in src
     assert "get_relational_effects_port" in src
     assert "on_conflict_do_update" not in src
     assert "sqlalchemy.dialects" not in src

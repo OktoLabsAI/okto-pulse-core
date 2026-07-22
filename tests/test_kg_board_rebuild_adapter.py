@@ -23,6 +23,25 @@ def _noop_purge_report(self, *, board_id: str, reason: str) -> PurgeReport:
     return PurgeReport(board_id=board_id, status="noop", reason=reason)
 
 
+def _create_consolidation_queue(conn: sqlite3.Connection) -> None:
+    """Create the governed multi-kind queue shape used by current runtime."""
+
+    conn.execute(
+        "CREATE TABLE consolidation_queue ("
+        "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
+        "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
+        "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
+        "claim_timeout_at TEXT, next_retry_at TEXT, claim_token TEXT, "
+        "work_kind TEXT NOT NULL DEFAULT 'consolidate', "
+        "generation INTEGER NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX uq_queue_consolidate_board_artifact "
+        "ON consolidation_queue(board_id, artifact_type, artifact_id) "
+        "WHERE work_kind='consolidate'"
+    )
+
+
 def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
     tmp_path: Path,
 ) -> None:
@@ -33,14 +52,7 @@ def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         conn.commit()
 
     adapter = BoardRebuildIngestionAdapter(db_path=db_path)
@@ -85,14 +97,7 @@ def test_enqueue_sources_leaves_active_rows_alone_for_new_rebuild(
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         conn.execute(
             "INSERT INTO consolidation_queue "
             "(id, board_id, artifact_type, artifact_id, priority, source, status, "
@@ -139,14 +144,7 @@ def test_enqueue_sources_preserves_row_claimed_after_source_enumeration(
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         conn.execute(
             "INSERT INTO consolidation_queue "
             "(id, board_id, artifact_type, artifact_id, priority, source, status, "
@@ -224,14 +222,7 @@ def test_enqueue_sources_resets_terminal_rows_for_new_rebuild(
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         conn.execute(
             "INSERT INTO consolidation_queue "
             "(id, board_id, artifact_type, artifact_id, priority, source, status, "
@@ -350,14 +341,7 @@ def test_rebuild_step_fails_when_worker_queue_does_not_drain(
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         conn.commit()
 
     adapter = BoardRebuildIngestionAdapter(
@@ -463,14 +447,7 @@ def test_drain_until_idle_uses_final_grace_for_nearly_drained_queue(
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         conn.execute(
             "INSERT INTO consolidation_queue "
             "(id, board_id, artifact_type, artifact_id, priority, source, status, "
@@ -515,14 +492,7 @@ def test_drain_until_idle_does_not_grace_large_stuck_backlog(
 ) -> None:
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         for idx in range(5):
             conn.execute(
                 "INSERT INTO consolidation_queue "
@@ -560,14 +530,7 @@ def test_drain_until_idle_renews_window_while_queue_progresses(
     é janela de ESTAGNAÇÃO: enquanto a profundidade cair, o drain segue."""
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         for idx in range(6):
             conn.execute(
                 "INSERT INTO consolidation_queue "
@@ -620,14 +583,7 @@ def test_drain_until_idle_hard_ceiling_stops_endless_progress(
     sempre: progresso constante mas fila nunca zera → hard timeout."""
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
-        conn.execute(
-            "CREATE TABLE consolidation_queue ("
-            "id TEXT PRIMARY KEY, board_id TEXT, artifact_type TEXT, artifact_id TEXT, "
-            "priority TEXT, source TEXT, status TEXT, triggered_at TEXT, attempts INTEGER, "
-            "last_error TEXT, claimed_by_session_id TEXT, claimed_at TEXT, worker_id TEXT, "
-            "claim_timeout_at TEXT, next_retry_at TEXT, "
-            "UNIQUE(board_id, artifact_type, artifact_id))"
-        )
+        _create_consolidation_queue(conn)
         for idx in range(50):
             conn.execute(
                 "INSERT INTO consolidation_queue "

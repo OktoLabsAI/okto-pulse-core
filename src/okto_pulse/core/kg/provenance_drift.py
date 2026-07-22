@@ -110,8 +110,16 @@ async def provenance_drift_report(
         raise ValueError(f"unknown node_type: {node_type}")
     registry = get_kg_registry()
     reader = registry.require_board_source_reader()
-    rows = await asyncio.to_thread(reader.fetch, board_id)
-    rows_by_ref = _index_source_rows(rows)
+    snapshot = await asyncio.to_thread(reader.fetch, board_id)
+    if not snapshot.complete:
+        from okto_pulse.core.kg.interfaces import SourceUnavailableError
+
+        raise SourceUnavailableError(
+            "provenance drift source snapshot is incomplete "
+            f"(board_id={board_id}, cause={snapshot.cause})",
+            cause_type=str(snapshot.cause or "unknown"),
+        )
+    rows_by_ref = _index_source_rows(snapshot.rows)
 
     types = [node_type] if node_type else list(NODE_TYPES)
     nodes = await asyncio.to_thread(_fetch_provenance_nodes, board_id, types)

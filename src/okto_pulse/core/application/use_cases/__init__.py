@@ -129,6 +129,11 @@ from okto_pulse.core.application.use_cases.consolidation import (
     ProposeReconciliationResult,
     ProposeReconciliationUseCase,
 )
+from okto_pulse.core.application.use_cases.entity_pagination import (
+    ListEntityPageCommand,
+    ListEntityPageResult,
+    ListEntityUseCase,
+)
 from okto_pulse.core.application.use_cases.create_board import (
     CreateBoardCommand,
     CreateBoardResult,
@@ -490,6 +495,8 @@ from okto_pulse.core.application.use_cases.refinements_crud import (
     ListRefinementSnapshotsCommand,
     ListRefinementSnapshotsResult,
     ListRefinementSnapshotsUseCase,
+    ListBoardRefinementsCommand,
+    ListBoardRefinementsUseCase,
     ListRefinementsCommand,
     ListRefinementsResult,
     ListRefinementsUseCase,
@@ -1003,6 +1010,9 @@ __all__ = [
     "ListAgentsForUserCommand",
     "ListAgentsForUserResult",
     "ListAgentsForUserUseCase",
+    "ListEntityPageCommand",
+    "ListEntityPageResult",
+    "ListEntityUseCase",
     "ListAgentsForBoardCommand",
     "ListAgentsForBoardResult",
     "ListAgentsForBoardUseCase",
@@ -1545,6 +1555,8 @@ __all__ = [
     "ListRefinementSnapshotsCommand",
     "ListRefinementSnapshotsResult",
     "ListRefinementSnapshotsUseCase",
+    "ListBoardRefinementsCommand",
+    "ListBoardRefinementsUseCase",
     "ListRefinementsCommand",
     "ListRefinementsResult",
     "ListRefinementsUseCase",

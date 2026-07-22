@@ -208,12 +208,35 @@ class ListRefinementsUseCase:
     """List an ideation's refinements (read, no commit). A missing parent ideation
     is ``EntityNotFoundError("ideation")`` (adapter → 404 "Ideation not found")."""
 
+    async def preflight(
+        self, command: ListRefinementsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+    ) -> Any:
+        """Authorize the parent and return it without listing refinements."""
+        repository = getattr(uow, "ideations", None)
+        ideation = (
+            await repository.get(command.ideation_id)
+            if repository is not None
+            else await uow.services.ideations.get_ideation(command.ideation_id)
+        )
+        if ideation is None or (
+            actor.board_id is not None and ideation.board_id != actor.board_id
+        ):
+            raise EntityNotFoundError("ideation", command.ideation_id)
+        if actor.source == "mcp" and actor.board_id == ideation.board_id:
+            return ideation
+        board = await load_accessible_board(
+            uow,
+            ideation.board_id,
+            actor,
+        )
+        if board is None:
+            raise EntityNotFoundError("ideation", command.ideation_id)
+        return ideation
+
     async def execute(
         self, command: ListRefinementsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListRefinementsResult:
-        ideation = await _require_accessible_ideation(
-            uow, command.ideation_id, actor
-        )
+        ideation = await self.preflight(command, actor=actor, uow=uow)
         refinements = await uow.services.refinements.list_refinements(
             command.ideation_id,
             command.status_filter,
@@ -225,6 +248,31 @@ class ListRefinementsUseCase:
             if refinement.board_id == ideation.board_id
         ]
         return ListRefinementsResult(refinements)
+
+
+class ListBoardRefinementsCommand:
+    """Authorize one board-wide refinement page without hydrating rows."""
+
+    __slots__ = ("board_id",)
+
+    def __init__(self, board_id: str) -> None:
+        self.board_id = board_id
+
+
+class ListBoardRefinementsUseCase:
+    """Lightweight, non-enumerable board preflight for the C8 REST surface."""
+
+    async def preflight(
+        self,
+        command: ListBoardRefinementsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
+    ) -> Any:
+        board = await load_accessible_board(uow, command.board_id, actor)
+        if board is None:
+            raise EntityNotFoundError("board", command.board_id)
+        return board
 
 
 # --- get --------------------------------------------------------------------

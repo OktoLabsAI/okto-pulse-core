@@ -169,10 +169,16 @@ class ListIdeationsUseCase:
     """List a board's ideations (read). 404 when the board is missing/not owned —
     the legacy endpoint resolves ``BoardService.get_board`` first, then lists."""
 
+    async def preflight(
+        self, command: ListIdeationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+    ) -> None:
+        """Authorize the list without materializing its legacy collection."""
+        await _require_accessible_board(uow, command.board_id, actor)
+
     async def execute(
         self, command: ListIdeationsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListIdeationsResult:
-        await _require_accessible_board(uow, command.board_id, actor)
+        await self.preflight(command, actor=actor, uow=uow)
         ideations = await uow.services.ideations.list_ideations(
             command.board_id, command.status_filter, include_archived=command.include_archived
         )

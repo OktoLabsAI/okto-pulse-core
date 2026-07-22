@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.interfaces import SourceUnavailableError, get_kg_registry
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     classify_source_for_kg,
@@ -46,8 +46,15 @@ def _build_source_index(board_id: str) -> dict[str, dict[str, Any]]:
     from the registered source reader + the maturity classifier (TR6)."""
 
     reader = get_kg_registry().require_board_source_reader()
+    snapshot = reader.fetch(board_id)
+    if not snapshot.complete:
+        raise SourceUnavailableError(
+            "canonical debt replay source snapshot is incomplete "
+            f"(board_id={board_id}, cause={snapshot.cause})",
+            cause_type=str(snapshot.cause or "unknown"),
+        )
     out: dict[str, dict[str, Any]] = {}
-    for row in reader.fetch(board_id):
+    for row in snapshot.rows:
         aid = str(row.get("id") or "")
         if not aid:
             continue

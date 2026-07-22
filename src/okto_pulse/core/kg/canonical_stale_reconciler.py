@@ -27,23 +27,32 @@ card does not touch the R1 parity primitive directly.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
-
+from okto_pulse.core.application.rebuild_ports import BoardSourceSnapshotCause
 from okto_pulse.core.kg.canonical_learning_partition import (
     _bug_artifact_id,
     _is_bug_derived_ref,
 )
 from okto_pulse.core.kg.connectivity_guard import WriterClass, classify_writer_path
 from okto_pulse.core.kg.interfaces import get_kg_registry
+from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.kg.source_maturity import (
+    DEFAULT_WORKING_TTL_DAYS,
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
     MATURITY_WORKING_STALE,
     SourceMaturityClassification,
     classify_source_for_kg,
+)
+from okto_pulse.core.ports.stale_sweep import (
+    GOVERNED_SWEEP_ARTIFACT_TYPES,
+    StaleSweepCandidate,
 )
 
 logger = logging.getLogger("okto_pulse.kg.canonical_stale_reconciler")
@@ -51,15 +60,92 @@ logger = logging.getLogger("okto_pulse.kg.canonical_stale_reconciler")
 # Cognitive-origin node types: never demoted to working by R2 (carve-out).
 COGNITIVE_NODE_TYPES: frozenset[str] = frozenset({"Learning", "Alternative", "Assumption"})
 
-# All board-graph node types to scan for stale canonical publication.
-ALL_NODE_TYPES: tuple[str, ...] = (
-    "Decision", "Requirement", "Criterion", "Constraint", "APIContract",
-    "TestScenario", "Bug", "Entity", "Learning", "Alternative", "Assumption",
+# Explicit policy is intentionally separate from the schema vocabulary. A new
+# physical node type must choose a reconcile policy before the coverage gate
+# lets it enter production.
+STALE_RECONCILE_NODE_POLICY = MappingProxyType(
+    {
+        "Decision": "demote_deterministic",
+        "Criterion": "demote_deterministic",
+        "Constraint": "demote_deterministic",
+        "Assumption": "preserve_cognitive",
+        "Requirement": "demote_deterministic",
+        "Entity": "demote_deterministic",
+        "APIContract": "demote_deterministic",
+        "TestScenario": "demote_deterministic",
+        "Bug": "demote_deterministic",
+        "Learning": "preserve_cognitive",
+        "Alternative": "preserve_cognitive",
+    }
 )
+
+
+def validate_stale_reconcile_ontology_coverage(
+    node_types: tuple[str, ...] = NODE_TYPES,
+    policy: Mapping[str, str] = STALE_RECONCILE_NODE_POLICY,
+) -> tuple[str, ...]:
+    """Fail when schema node types and stale-reconcile policies diverge."""
+
+    schema = tuple(node_types)
+    missing = tuple(node_type for node_type in schema if node_type not in policy)
+    extra = tuple(node_type for node_type in policy if node_type not in schema)
+    misclassified = tuple(
+        node_type
+        for node_type in schema
+        if node_type in policy
+        and policy[node_type]
+        != (
+            "preserve_cognitive"
+            if node_type in COGNITIVE_NODE_TYPES
+            else "demote_deterministic"
+        )
+    )
+    if missing or extra or misclassified:
+        raise RuntimeError(
+            "stale_reconcile_ontology_coverage_mismatch "
+            f"missing={list(missing)} extra={list(extra)} "
+            f"misclassified={list(misclassified)}"
+        )
+    return schema
+
+
+# Scan order and membership come from the canonical schema contract.
+ALL_NODE_TYPES: tuple[str, ...] = validate_stale_reconcile_ontology_coverage()
 
 # source_artifact_refs that are NOT SDLC sources (infra roots) — never demoted.
 _SKIP_REFS: frozenset[str] = frozenset({"tech_entities.yml"})
 _SKIP_REF_PREFIXES: tuple[str, ...] = ("board:",)
+_SOURCE_REF_TYPES: frozenset[str] = frozenset(
+    {
+        "story",
+        "ideation",
+        "spec",
+        "refinement",
+        "sprint",
+        "card",
+        "task",
+        "test",
+        "bug",
+        "amendment_hotfix_revision",
+        "decision",
+    }
+)
+
+# Ownership is type-qualified.  UUIDs are not globally unique across SDLC
+# tables, so reducing a source reference to only its id can let (for example) a
+# live ``card:X`` mask a deleted ``spec:X``.  Card subtypes are one governed
+# owner family because their durable rows are stored in ``cards`` while graph
+# projections use both ``card:`` and ``card_relationship_target:`` refs.
+SourceIdentity = tuple[str, str]
+_SOURCE_OWNER_FAMILY = MappingProxyType(
+    {
+        "card": "card",
+        "card_relationship_target": "card",
+        "task": "card",
+        "test": "card",
+        "bug": "card",
+    }
+)
 
 # DTO-only result action labels (NEVER persisted enums).
 ACTION_DEMOTED = "demoted_to_working"
@@ -76,6 +162,13 @@ class StaleReconcileResult:
     skipped_cognitive: list[dict[str, Any]] = field(default_factory=list)
     routed_to_debt: list[dict[str, Any]] = field(default_factory=list)
     global_sync_enqueued: bool = False
+    incomplete: bool = False
+    incomplete_cause: BoardSourceSnapshotCause | str | None = None
+    failed_types: list[str] = field(default_factory=list)
+    scanned_by_type: dict[str, int] = field(
+        default_factory=lambda: {node_type: 0 for node_type in ALL_NODE_TYPES}
+    )
+    completed_types: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -89,50 +182,356 @@ class StaleReconcileResult:
             "skipped_cognitive_count": len(self.skipped_cognitive),
             "routed_to_debt_count": len(self.routed_to_debt),
             "global_sync_enqueued": self.global_sync_enqueued,
+            "incomplete": self.incomplete,
+            "incomplete_cause": self.incomplete_cause,
+            "failed_types": list(self.failed_types),
+            "scanned_by_type": dict(self.scanned_by_type),
+            "completed_types": list(self.completed_types),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class StaleSweepPage:
+    """Bounded, stable page of canonical sources absent from durable state."""
+
+    board_id: str
+    cursor: str
+    next_cursor: str
+    budget: int
+    candidates: tuple[StaleSweepCandidate, ...]
+    has_more: bool
+    complete: bool
+    incomplete_cause: BoardSourceSnapshotCause | str | None = None
+    graph_rows_scanned: int = 0
+    failed_types: tuple[str, ...] = ()
+
+
+def _source_identity_from_ref(ref: str) -> SourceIdentity | None:
+    """Return the governed ``(owner_family, artifact_id)`` for a source ref.
+
+    Child refs such as ``spec:{id}:criterion:{criterion_id}`` retain their
+    owning spec identity.  Infrastructure and unknown ref families are
+    deliberately unowned so a full sweep never treats them as absent SQL
+    artifacts.
+    """
+
+    if not isinstance(ref, str) or not ref or ref != ref.strip() or ref in _SKIP_REFS:
+        return None
+    if any(ref.startswith(prefix) for prefix in _SKIP_REF_PREFIXES):
+        return None
+    parts = ref.split(":")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        return None
+    source_type = parts[0]
+    if source_type not in _SOURCE_REF_TYPES and source_type not in _SOURCE_OWNER_FAMILY:
+        return None
+    return (_SOURCE_OWNER_FAMILY.get(source_type, source_type), parts[1])
 
 
 def _owning_source_id(ref: str) -> str | None:
     """Extract the owning artifact id from a deterministic node's
     ``source_artifact_ref`` (``spec:{id}``, ``spec:{id}:fr:..``, ``card:{id}`` ...).
     Returns None for infra roots (board:/tech_entities) or malformed refs."""
-    if not ref or ref in _SKIP_REFS:
-        return None
-    if any(ref.startswith(p) for p in _SKIP_REF_PREFIXES):
-        return None
-    parts = ref.split(":")
-    if len(parts) < 2 or not parts[1]:
-        return None
-    return parts[1]
+    identity = _source_identity_from_ref(ref)
+    return identity[1] if identity is not None else None
 
 
-def _source_ids_from_refs(source_refs: list[str] | None) -> set[str] | None:
+def encode_stale_sweep_cursor(candidate: StaleSweepCandidate) -> str:
+    """Encode a stable opaque cursor ordered by ``(type, id)``."""
+
+    return json.dumps(
+        [candidate.artifact_type, candidate.artifact_id],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+
+
+def decode_stale_sweep_cursor(cursor: str) -> tuple[str, str] | None:
+    """Decode the public string cursor; only ``""`` means the beginning."""
+
+    if not isinstance(cursor, str):
+        raise ValueError("stale_sweep_cursor_invalid")
+    if cursor == "":
+        return None
+    try:
+        raw = json.loads(cursor)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("stale_sweep_cursor_invalid") from exc
+    if (
+        not isinstance(raw, list)
+        or len(raw) != 2
+        or raw[0] not in GOVERNED_SWEEP_ARTIFACT_TYPES
+        or not isinstance(raw[1], str)
+        or not raw[1]
+        or raw[1] != raw[1].strip()
+    ):
+        raise ValueError("stale_sweep_cursor_invalid")
+    return (str(raw[0]), raw[1])
+
+
+def _source_ids_from_refs(
+    source_refs: list[str] | None,
+) -> set[SourceIdentity] | None:
+    if source_refs is None:
+        return None
     if not source_refs:
-        return None
-    ids: set[str] = set()
+        raise ValueError("invalid_source_refs: empty list cannot authorize a sweep")
+    identities: set[SourceIdentity] = set()
     for ref in source_refs:
-        sid = _owning_source_id(str(ref))
-        if sid:
-            ids.add(sid)
-    return ids
+        if not isinstance(ref, str) or ref != ref.strip():
+            raise ValueError(f"invalid_source_refs: malformed ref {ref!r}")
+        parts = ref.split(":")
+        if (
+            len(parts) < 2
+            or parts[0] not in _SOURCE_REF_TYPES
+            or not parts[1]
+        ):
+            raise ValueError(f"invalid_source_refs: malformed ref {ref!r}")
+        identity = _source_identity_from_ref(ref)
+        if identity is None:
+            raise ValueError(f"invalid_source_refs: unsupported ref {ref!r}")
+        identities.add(identity)
+    return identities
 
 
-def _build_source_classification_map(board_id: str) -> dict[str, SourceMaturityClassification]:
-    """``{artifact_id: classification}`` from the registered source reader."""
+def _build_source_classification_map(
+    board_id: str,
+) -> tuple[
+    dict[SourceIdentity, SourceMaturityClassification],
+    bool,
+    BoardSourceSnapshotCause | None,
+]:
+    """Type-qualified source classifications from the registered reader."""
     reader = get_kg_registry().require_board_source_reader()
-    out: dict[str, SourceMaturityClassification] = {}
-    for row in reader.fetch(board_id):
+    snapshot = reader.fetch(board_id)
+    if not snapshot.complete:
+        return {}, False, snapshot.cause
+    out: dict[SourceIdentity, SourceMaturityClassification] = {}
+    for row in snapshot.rows:
         sid = str(row.get("id") or "")
-        if not sid:
+        artifact_type = str(row.get("artifact_type") or "").strip().lower()
+        # Derived decision rows are children of a spec and do not own graph
+        # publication.  Indexing ``decision:{spec_id}:...`` would create an
+        # unknown classification and risks shadowing the actual spec owner.
+        if artifact_type == "decision":
             continue
-        out[sid] = classify_source_for_kg(
-            artifact_type=row.get("artifact_type"),
+        if not sid or not artifact_type:
+            logger.warning(
+                "kg.stale.source_snapshot_row_invalid board=%s reason=missing_identity",
+                board_id,
+            )
+            return {}, False, "realm_incomplete"
+        source_ref = str(row.get("source_ref") or f"{artifact_type}:{sid}")
+        identity = _source_identity_from_ref(source_ref)
+        if identity is None or identity[1] != sid:
+            logger.warning(
+                "kg.stale.source_snapshot_row_invalid board=%s ref=%s id=%s",
+                board_id,
+                source_ref,
+                sid,
+            )
+            return {}, False, "realm_incomplete"
+        ttl_raw = row.get("working_ttl_days")
+        working_ttl_days = (
+            int(ttl_raw) if ttl_raw is not None else DEFAULT_WORKING_TTL_DAYS
+        )
+        classification = classify_source_for_kg(
+            artifact_type=artifact_type,
             artifact_status=row.get("source_artifact_status") or row.get("status"),
             content_hash=row.get("content_hash"),
             updated_at=row.get("updated_at"),
+            working_ttl_days=working_ttl_days,
             has_minimal_evidence=bool(row.get("has_minimal_evidence", True)),
+            lineage_complete=bool(row.get("lineage_complete", True)),
         )
-    return out
+        out[identity] = classification
+    return out, True, None
+
+
+async def enumerate_stale_sweep_page(
+    board_id: str,
+    *,
+    cursor: str,
+    budget: int,
+) -> StaleSweepPage:
+    """Return one stable page from the canonical/source anti-join.
+
+    Only canonical nodes whose governed owner is absent from a *complete*
+    relational snapshot become catch-up work. Existing but regressed sources
+    are intentionally not tombstoned. One cross-label keyset query materializes
+    at most ``budget + 1`` distinct owner identities, which bounds both graph
+    scanning and the resulting relational batch.
+    """
+
+    if (
+        not board_id
+        or isinstance(budget, bool)
+        or not isinstance(budget, int)
+        or budget < 1
+    ):
+        raise ValueError("stale_sweep_page_request_invalid")
+    after = decode_stale_sweep_cursor(cursor)
+    try:
+        source_by_identity, source_complete, incomplete_cause = (
+            _build_source_classification_map(board_id)
+        )
+    except Exception:
+        logger.exception(
+            "kg.stale_sweep.source_snapshot_failed board=%s",
+            board_id,
+        )
+        return StaleSweepPage(
+            board_id=board_id,
+            cursor=cursor,
+            next_cursor=cursor,
+            budget=budget,
+            candidates=(),
+            has_more=False,
+            complete=False,
+            incomplete_cause="source_snapshot_unavailable",
+        )
+    if not source_complete:
+        return StaleSweepPage(
+            board_id=board_id,
+            cursor=cursor,
+            next_cursor=cursor,
+            budget=budget,
+            candidates=(),
+            has_more=False,
+            complete=False,
+            incomplete_cause=incomplete_cause,
+        )
+
+    registry = get_kg_registry()
+    try:
+        graph_available = registry.graph_runtime_store.exists(board_id)
+    except Exception:
+        logger.exception(
+            "kg.stale_sweep.graph_runtime_probe_failed board=%s",
+            board_id,
+        )
+        return StaleSweepPage(
+            board_id=board_id,
+            cursor=cursor,
+            next_cursor=cursor,
+            budget=budget,
+            candidates=(),
+            has_more=False,
+            complete=False,
+            incomplete_cause="graph_runtime_probe_failed",
+        )
+    if not graph_available:
+        return StaleSweepPage(
+            board_id=board_id,
+            cursor=cursor,
+            next_cursor=cursor,
+            budget=budget,
+            candidates=(),
+            has_more=False,
+            complete=False,
+            incomplete_cause="graph_unavailable",
+        )
+
+    scan_limit = budget + 1
+    after_type, after_id = after or ("", "")
+    # Ladybug/Kuzu list indexes are one-based. Normalizing card subtypes in the
+    # query makes DISTINCT and keyset ordering operate on the governed owner,
+    # rather than on child source-ref strings such as ``test:{card_id}:...``.
+    query = """
+        MATCH (n)
+        WHERE n.graph_layer = $canonical
+          AND n.source_artifact_ref IS NOT NULL
+        WITH string_split(n.source_artifact_ref, ':') AS parts
+        WHERE size(parts) >= 2
+        WITH CASE parts[1]
+          WHEN 'card' THEN 'card'
+          WHEN 'card_relationship_target' THEN 'card'
+          WHEN 'task' THEN 'card'
+          WHEN 'test' THEN 'card'
+          WHEN 'bug' THEN 'card'
+          ELSE parts[1]
+        END AS artifact_type, parts[2] AS artifact_id
+        WHERE artifact_type IN $governed_types
+          AND artifact_id IS NOT NULL
+          AND artifact_id <> ''
+          AND (
+            $after_type = ''
+            OR artifact_type > $after_type
+            OR (artifact_type = $after_type AND artifact_id > $after_id)
+          )
+        RETURN DISTINCT artifact_type, artifact_id
+        ORDER BY artifact_type ASC, artifact_id ASC
+        LIMIT $scan_limit
+    """
+    params = {
+        "canonical": GRAPH_LAYER_CANONICAL,
+        "governed_types": sorted(GOVERNED_SWEEP_ARTIFACT_TYPES),
+        "after_type": after_type,
+        "after_id": after_id,
+        "scan_limit": scan_limit,
+    }
+    try:
+        async with await registry.graph_transaction.begin(board_id) as scope:
+            rows = list(scope.execute(query, params).rows)
+        if len(rows) > scan_limit:
+            raise RuntimeError("stale_sweep_scan_limit_exceeded")
+        scanned_identities = tuple(
+            StaleSweepCandidate(str(row[0] or ""), str(row[1] or ""))
+            for row in rows
+        )
+        if scanned_identities != tuple(sorted(set(scanned_identities))):
+            raise RuntimeError("stale_sweep_scan_order_invalid")
+    except Exception:
+        logger.exception(
+            "kg.stale_sweep.scan_failed board=%s",
+            board_id,
+        )
+        return StaleSweepPage(
+            board_id=board_id,
+            cursor=cursor,
+            next_cursor=cursor,
+            budget=budget,
+            candidates=(),
+            has_more=False,
+            complete=False,
+            incomplete_cause="graph_scan_incomplete",
+            graph_rows_scanned=0,
+            failed_types=ALL_NODE_TYPES,
+        )
+
+    has_more = len(scanned_identities) > budget
+    scanned_page = scanned_identities[:budget]
+    candidates = tuple(
+        candidate
+        for candidate in scanned_page
+        if (candidate.artifact_type, candidate.artifact_id) not in source_by_identity
+    )
+    # The checkpoint follows the graph inventory, not only missing sources.
+    # This guarantees progress through pages containing exclusively live rows
+    # while the complete snapshot and the adapter's writer-slot recheck prevent
+    # synthetic tombstones for recreated sources.
+    next_cursor = (
+        encode_stale_sweep_cursor(scanned_page[-1]) if scanned_page else cursor
+    )
+    return StaleSweepPage(
+        board_id=board_id,
+        cursor=cursor,
+        next_cursor=next_cursor,
+        budget=budget,
+        candidates=candidates,
+        has_more=has_more,
+        complete=True,
+        graph_rows_scanned=len(scanned_identities),
+    )
+
+
+def _record_failed_type(
+    result: StaleReconcileResult,
+    node_type: str,
+) -> None:
+    result.incomplete = True
+    if node_type not in result.failed_types:
+        result.failed_types.append(node_type)
 
 
 def _is_cognitive(node_type: str, created_by_agent: str) -> bool:
@@ -143,8 +542,8 @@ def _is_cognitive(node_type: str, created_by_agent: str) -> bool:
 
 async def _scan_and_demote(
     board_id: str,
-    source_by_id: dict[str, SourceMaturityClassification],
-    target_ids: set[str] | None,
+    source_by_identity: dict[SourceIdentity, SourceMaturityClassification],
+    target_identities: set[SourceIdentity] | None,
     correlation_id: str,
     result: StaleReconcileResult,
 ) -> list[dict[str, Any]]:
@@ -162,86 +561,101 @@ async def _scan_and_demote(
                     f"n.maturity_status",
                     {"c": GRAPH_LAYER_CANONICAL},
                 )
-            except Exception as exc:  # pragma: no cover - defensive per-type guard
+                rows: list[tuple[str, str, str, str]] = []
+                for row in res.rows:
+                    rows.append((
+                        str(row[0]),
+                        str(row[1] or ""),
+                        str(row[2] or ""),
+                        str(row[3] or ""),
+                    ))
+                for node_id, ref, writer, _cur_maturity in rows:
+                    result.scanned += 1
+                    result.scanned_by_type[ntype] += 1
+                    if _is_cognitive(ntype, writer):
+                        intent = _classify_cognitive(
+                            board_id,
+                            ntype,
+                            node_id,
+                            ref,
+                            target_identities,
+                            source_by_identity,
+                            correlation_id,
+                        )
+                        if intent is None:
+                            continue  # out of fast-path scope
+                        if intent.get("_route"):
+                            cognitive_debt_intents.append(intent)
+                        else:
+                            result.skipped_cognitive.append(intent)
+                            logger.info(
+                                "kg.stale.skipped_cognitive board=%s node=%s type=%s",
+                                board_id, node_id, ntype,
+                                extra={
+                                    "event": "kg.stale.skipped_cognitive",
+                                    "board_id": board_id, "node_id": node_id,
+                                    "node_type": ntype,
+                                    "correlation_id": correlation_id,
+                                },
+                            )
+                        continue
+
+                    # Deterministic node: resolve owning source + check staleness.
+                    source_identity = _source_identity_from_ref(ref)
+                    if source_identity is None:
+                        continue  # infra root / unknown — not source-derived
+                    if (
+                        target_identities is not None
+                        and source_identity not in target_identities
+                    ):
+                        continue  # fast-path scope
+                    cls = source_by_identity.get(source_identity)
+                    if cls is not None and cls.graph_layer == GRAPH_LAYER_CANONICAL:
+                        continue  # source still canonical-eligible — not stale
+                    new_maturity = (
+                        cls.maturity_status if cls else MATURITY_WORKING_STALE
+                    )
+                    reason = cls.reason_code if cls else "source_absent"
+                    src_status = cls.artifact_status if cls else ""
+                    scope.execute(
+                        f"MATCH (n:{ntype} {{id: $node_id}}) "
+                        "SET n.graph_layer = $graph_layer, "
+                        "n.maturity_status = $maturity_status",
+                        {
+                            "node_id": node_id,
+                            "graph_layer": GRAPH_LAYER_WORKING,
+                            "maturity_status": new_maturity,
+                        },
+                    )
+                    record = {
+                        "node_id": node_id,
+                        "node_type": ntype,
+                        "source_artifact_ref": ref,
+                        "owning_source_type": source_identity[0],
+                        "owning_source_id": source_identity[1],
+                        "prev_layer": GRAPH_LAYER_CANONICAL,
+                        "expected_layer": GRAPH_LAYER_WORKING,
+                        "maturity_status": new_maturity,
+                        "source_status": src_status,
+                        "reason_code": reason,
+                        "correlation_id": correlation_id,
+                        "action": ACTION_DEMOTED,
+                    }
+                    result.demoted.append(record)
+                    logger.info(
+                        "kg.stale.demoted_to_working board=%s node=%s type=%s "
+                        "reason=%s corr=%s",
+                        board_id, node_id, ntype, reason, correlation_id,
+                        extra={"event": "kg.stale.demoted_to_working", **record},
+                    )
+            except Exception as exc:  # per-type convergence guard
+                _record_failed_type(result, ntype)
                 logger.warning(
                     "kg.stale.scan_type_failed board=%s type=%s err=%s",
                     board_id, ntype, exc,
                 )
                 continue
-            rows: list[tuple[str, str, str, str]] = []
-            for row in res.rows:
-                rows.append((
-                    str(row[0]),
-                    str(row[1] or ""),
-                    str(row[2] or ""),
-                    str(row[3] or ""),
-                ))
-            for node_id, ref, writer, _cur_maturity in rows:
-                result.scanned += 1
-                if _is_cognitive(ntype, writer):
-                    intent = _classify_cognitive(
-                        board_id, ntype, node_id, ref, target_ids, source_by_id,
-                        correlation_id,
-                    )
-                    if intent is None:
-                        continue  # out of fast-path scope
-                    if intent.get("_route"):
-                        cognitive_debt_intents.append(intent)
-                    else:
-                        result.skipped_cognitive.append(intent)
-                        logger.info(
-                            "kg.stale.skipped_cognitive board=%s node=%s type=%s",
-                            board_id, node_id, ntype,
-                            extra={
-                                "event": "kg.stale.skipped_cognitive",
-                                "board_id": board_id, "node_id": node_id,
-                                "node_type": ntype, "correlation_id": correlation_id,
-                            },
-                        )
-                    continue
-
-                # Deterministic node: resolve owning source + check staleness.
-                src_id = _owning_source_id(ref)
-                if src_id is None:
-                    continue  # infra root / unknown — not source-derived
-                if target_ids is not None and src_id not in target_ids:
-                    continue  # fast-path scope
-                cls = source_by_id.get(src_id)
-                if cls is not None and cls.graph_layer == GRAPH_LAYER_CANONICAL:
-                    continue  # source still canonical-eligible — not stale
-                new_maturity = cls.maturity_status if cls else MATURITY_WORKING_STALE
-                reason = cls.reason_code if cls else "source_absent"
-                src_status = cls.artifact_status if cls else ""
-                scope.execute(
-                    f"MATCH (n:{ntype} {{id: $node_id}}) "
-                    "SET n.graph_layer = $graph_layer, "
-                    "n.maturity_status = $maturity_status",
-                    {
-                        "node_id": node_id,
-                        "graph_layer": GRAPH_LAYER_WORKING,
-                        "maturity_status": new_maturity,
-                    },
-                )
-                record = {
-                    "node_id": node_id,
-                    "node_type": ntype,
-                    "source_artifact_ref": ref,
-                    "owning_source_id": src_id,
-                    "prev_layer": GRAPH_LAYER_CANONICAL,
-                    "expected_layer": GRAPH_LAYER_WORKING,
-                    "maturity_status": new_maturity,
-                    "source_status": src_status,
-                    "reason_code": reason,
-                    "correlation_id": correlation_id,
-                    "action": ACTION_DEMOTED,
-                }
-                result.demoted.append(record)
-                logger.info(
-                    "kg.stale.demoted_to_working board=%s node=%s type=%s "
-                    "reason=%s corr=%s",
-                    board_id, node_id, ntype, reason, correlation_id,
-                    extra={"event": "kg.stale.demoted_to_working", **record},
-                )
+            result.completed_types.append(ntype)
     return cognitive_debt_intents
 
 
@@ -250,8 +664,8 @@ def _classify_cognitive(
     ntype: str,
     node_id: str,
     ref: str,
-    target_ids: set[str] | None,
-    source_by_id: dict[str, SourceMaturityClassification],
+    target_identities: set[SourceIdentity] | None,
+    source_by_identity: dict[SourceIdentity, SourceMaturityClassification],
     correlation_id: str,
 ) -> dict[str, Any] | None:
     """Cognitive carve-out: NEVER demote. A bug-derived Learning whose Bug source
@@ -266,18 +680,23 @@ def _classify_cognitive(
         "_route": False,
     }
     if ntype != "Learning" or not _is_bug_derived_ref(ref):
-        if target_ids is not None:
+        if target_identities is not None:
             # Non-bug-derived cognitive: only report inside fast-path scope when
             # its owning id (if resolvable) is targeted; otherwise still a skip.
-            sid = _owning_source_id(ref)
-            if sid is not None and sid not in target_ids:
+            identity = _source_identity_from_ref(ref)
+            if identity is not None and identity not in target_identities:
                 return None
         return base
     bug_id = _bug_artifact_id(ref)
-    if target_ids is not None and bug_id not in target_ids:
+    bug_identity: SourceIdentity = ("card", bug_id)
+    if target_identities is not None and bug_identity not in target_identities:
         return None  # fast-path scope
-    bug_cls = source_by_id.get(bug_id)
-    regressed = bug_cls is not None and bug_cls.graph_layer != GRAPH_LAYER_CANONICAL
+    bug_cls = source_by_identity.get(bug_identity)
+    # A governed delete removes the durable Bug row before this intent drains.
+    # Absence is therefore the strongest regression signal, not an unknown
+    # state.  Preserve the canonical Learning itself, but route its now-orphaned
+    # material evidence through the existing R7 debt contract.
+    regressed = bug_cls is None or bug_cls.graph_layer != GRAPH_LAYER_CANONICAL
     if not regressed:
         return base  # bug evidence still canonical (or unknown) -> preserved skip
     return {
@@ -286,7 +705,7 @@ def _classify_cognitive(
         "_route": True,
         "bug_id": bug_id,
         "source_status": bug_cls.artifact_status if bug_cls else "",
-        "reason_code": bug_cls.reason_code if bug_cls else "bug_source_regressed",
+        "reason_code": bug_cls.reason_code if bug_cls else "source_absent",
         "correlation_id": correlation_id,
     }
 
@@ -299,21 +718,22 @@ async def _route_cognitive_to_debt(
     Learning — this records the irregularity, it does NOT demote."""
     from okto_pulse.core.kg.canonical_learning_partition import (
         HISTORICAL_DEBT_REASON,
-        PARTITION_TARGET_STATUS,
+        SOURCE_ABSENT_DEBT_REASON,
+        upsert_canonical_learning_debt,
     )
-    from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
-    bug_id = str(intent.get("bug_id") or "")
-    await upsert_canonical_debt(
+    reason_code = str(intent.get("reason_code") or "")
+    failure_reason = (
+        SOURCE_ABSENT_DEBT_REASON
+        if reason_code == SOURCE_ABSENT_DEBT_REASON
+        else HISTORICAL_DEBT_REASON
+    )
+    await upsert_canonical_learning_debt(
         db,
         board_id=board_id,
-        artifact_type="bug",
-        artifact_id=bug_id[:36],
+        node_id=str(intent.get("node_id") or ""),
         source_ref=str(intent.get("source_artifact_ref") or ""),
-        content_hash=f"r2stale:{bug_id}",
-        target_status=PARTITION_TARGET_STATUS,
-        canonical_state="pending",
-        failure_reason=HISTORICAL_DEBT_REASON,
+        failure_reason=failure_reason,
         correlation_id=correlation_id,
     )
 
@@ -337,11 +757,31 @@ async def reconcile_stale_canonical(
 
     corr = correlation_id or _uuid.uuid4().hex
     result = StaleReconcileResult(board_id=board_id, correlation_id=corr)
-    source_by_id = _build_source_classification_map(board_id)
-    target_ids = _source_ids_from_refs(source_refs)
+    # Validate scope before touching the source database or graph. Only None is
+    # an explicit full sweep; invalid durable intents remain retryable.
+    target_identities = _source_ids_from_refs(source_refs)
+    source_by_identity, source_complete, incomplete_cause = (
+        _build_source_classification_map(board_id)
+    )
+    if not source_complete:
+        result.incomplete = True
+        result.incomplete_cause = incomplete_cause
+        logger.warning(
+            "kg.stale.source_snapshot_incomplete board=%s cause=%s corr=%s",
+            board_id,
+            incomplete_cause,
+            corr,
+            extra={
+                "event": "kg.stale.source_snapshot_incomplete",
+                "board_id": board_id,
+                "cause": incomplete_cause,
+                "correlation_id": corr,
+            },
+        )
+        return result
 
     debt_intents = await _scan_and_demote(
-        board_id, source_by_id, target_ids, corr, result
+        board_id, source_by_identity, target_identities, corr, result
     )
     for intent in debt_intents:
         try:
@@ -356,29 +796,19 @@ async def reconcile_stale_canonical(
                        "bug_id": intent.get("bug_id")},
             )
         except Exception as exc:  # pragma: no cover - debt routing best-effort
+            _record_failed_type(result, str(intent.get("node_type") or "Learning"))
             logger.warning(
                 "kg.stale.debt_routing_failed board=%s node=%s err=%s",
                 board_id, intent.get("node_id"), exc,
             )
 
-    # R2-IMP5: after a deterministic demotion, sync Global Discovery via the R1
-    # parity contract so query_global(canonical) stops returning the obsolete
-    # canonical digest (all keeps it as working/diagnostic). Reuses the R1
-    # reconciler (enqueue -> GD worker recomputes expected_digest_layer); additive
-    # + best-effort (a sync-enqueue failure must NOT undo the board-graph demotion).
-    if result.demoted:
-        try:
-            from okto_pulse.core.kg.canonical_demotion_global_sync import (
-                sync_stale_demotion_to_global_discovery,
-            )
-
-            await sync_stale_demotion_to_global_discovery(db, board_id=board_id)
-            result.global_sync_enqueued = True
-        except Exception as exc:  # pragma: no cover - sync enqueue best-effort
-            logger.warning(
-                "kg.stale.global_sync_enqueue_failed board=%s err=%s",
-                board_id, exc,
-            )
+    # Delivery ownership deliberately does not live in this graph primitive.
+    # The governed queue worker transfers a complete reconciliation to the
+    # Delivery Ledger, the physical GD outbox and the queue ACK in one
+    # relational transaction.  Keeping this function graph-only is essential:
+    # a crash after the embedded graph auto-commit must leave the durable queue
+    # row available so a retry (including one with zero new demotions) still
+    # schedules Global Discovery parity exactly once.
     return result
 
 
@@ -387,6 +817,15 @@ __all__ = [
     "ACTION_ROUTED_DEBT",
     "ACTION_SKIPPED_COGNITIVE",
     "COGNITIVE_NODE_TYPES",
+    "ALL_NODE_TYPES",
+    "STALE_RECONCILE_NODE_POLICY",
+    "SourceIdentity",
     "StaleReconcileResult",
+    "StaleSweepPage",
+    "_source_identity_from_ref",
+    "decode_stale_sweep_cursor",
+    "encode_stale_sweep_cursor",
+    "enumerate_stale_sweep_page",
     "reconcile_stale_canonical",
+    "validate_stale_reconcile_ontology_coverage",
 ]

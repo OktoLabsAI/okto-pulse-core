@@ -180,9 +180,15 @@ async def test_update_card_writes_atomic_card_updated_activity(_seed):
         "okto_pulse_update_card", board_id=BOARD_A, card_id=card_id, title="Updated"
     )
     assert payload.get("success") is True, payload
-    assert await _activity_rows(card_id, "card_updated"), (
-        "update_card must atomically write a card_updated ActivityLog row"
+    rows = await _activity_rows(card_id, "card_updated")
+    assert len(rows) == 2, (
+        "the canonical and MCP audit producers must both write atomically"
     )
+    for row in rows:
+        assert row.details["title"] == "Updated"
+        assert row.details["changes"] == [
+            {"field": "title", "old": "C", "new": "Updated"}
+        ]
 
 
 @pytest.mark.asyncio

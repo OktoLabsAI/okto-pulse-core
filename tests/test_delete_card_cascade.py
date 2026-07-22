@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 
 from okto_pulse.core.infra.database import get_session_factory
 from sqlalchemy_test_models import (
+    ArtifactDeletionTombstone,
     Board,
     CanonicalDebt,
     Card,
@@ -366,7 +367,9 @@ async def test_ac5_spec_less_card_deletes_without_cascade(db_session, board):
 
 
 @pytest.mark.asyncio
-async def test_hard_delete_discards_all_operational_kg_work(db_session, board):
+async def test_hard_delete_discards_legacy_work_and_persists_intent(
+    db_session, board
+):
     card = await _make_card(
         db_session,
         board_id=board.id,
@@ -403,7 +406,19 @@ async def test_hard_delete_discards_all_operational_kg_work(db_session, board):
     assert await CardService(db_session).delete_card(card.id, USER_ID) is True
     await db_session.commit()
 
-    for model in (ConsolidationQueue, ConsolidationDeadLetter, CanonicalDebt):
+    legacy_queue_count = await db_session.scalar(
+        select(func.count())
+        .select_from(ConsolidationQueue)
+        .where(
+            ConsolidationQueue.board_id == board.id,
+            ConsolidationQueue.artifact_type == "card",
+            ConsolidationQueue.artifact_id == card.id,
+            ConsolidationQueue.work_kind == "consolidate",
+        )
+    )
+    assert legacy_queue_count == 0
+
+    for model in (ConsolidationDeadLetter, CanonicalDebt):
         count = await db_session.scalar(
             select(func.count())
             .select_from(model)
@@ -414,3 +429,30 @@ async def test_hard_delete_discards_all_operational_kg_work(db_session, board):
             )
         )
         assert count == 0
+
+    tombstone = (
+        await db_session.execute(
+            select(ArtifactDeletionTombstone).where(
+                ArtifactDeletionTombstone.board_id == board.id,
+                ArtifactDeletionTombstone.artifact_type == "card",
+                ArtifactDeletionTombstone.artifact_id == card.id,
+            )
+        )
+    ).scalars().one()
+    intent = (
+        await db_session.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == board.id,
+                ConsolidationQueue.artifact_type == "card",
+                ConsolidationQueue.artifact_id == card.id,
+                ConsolidationQueue.work_kind == "stale_reconcile",
+            )
+        )
+    ).scalars().one()
+    assert tombstone.generation == intent.generation == 1
+    assert tombstone.delete_event_id == intent.delete_event_id
+    assert intent.payload == {
+        "schema_version": 1,
+        "delete_event_id": tombstone.delete_event_id,
+        "source_refs": [f"card:{card.id}"],
+    }

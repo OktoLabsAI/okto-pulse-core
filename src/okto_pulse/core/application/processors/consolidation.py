@@ -24,14 +24,30 @@ import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Mapping
 
 from okto_pulse.core.ports.consolidation import (
     ConsolidationQueueRecord,
     get_consolidation_persistence_port,
 )
+from okto_pulse.core.ports.delivery_ledger import (
+    DeliveryState,
+    DeliveryTransferClaimConflict,
+    DeliveryTransferReceipt,
+    DeliveryTransferRequest,
+    get_delivery_ledger_port,
+)
+from okto_pulse.core.ports.stale_sweep import (
+    StaleSweepBatchRequest,
+    StaleSweepClaimConflict,
+    StaleSweepRescheduleRequest,
+    StaleSweepRunAction,
+    StaleSweepRunReceipt,
+    get_stale_sweep_port,
+)
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
+    AbortConsolidationRequest,
     BeginConsolidationRequest,
     CommitConsolidationRequest,
     EdgeCandidate,
@@ -42,6 +58,7 @@ from okto_pulse.core.kg.schemas import (
 )
 from okto_pulse.core.kg.primitives import (
     add_edge_candidate,
+    abort_consolidation,
     begin_consolidation,
     commit_consolidation,
     propose_reconciliation,
@@ -94,6 +111,410 @@ logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
 AGENT_ID = "system:historical_consolidation"
 CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
+_CLAIMABLE_WORK_KINDS = frozenset(
+    {"consolidate", "stale_reconcile", "stale_sweep"}
+)
+_GOVERNED_DELETION_ARTIFACT_TYPES = frozenset(
+    {"card", "ideation", "refinement", "spec"}
+)
+
+
+class _QueueClaimLostOrFenced(RuntimeError):
+    """Neutral worker outcome: ownership or deletion generation changed."""
+
+
+def _work_kind(entry: ConsolidationQueueRecord) -> str:
+    return str(getattr(entry, "work_kind", None) or "consolidate")
+
+
+def _generation(entry: ConsolidationQueueRecord) -> int:
+    return int(getattr(entry, "generation", 0) or 0)
+
+
+def _delete_event_id(entry: ConsolidationQueueRecord) -> str | None:
+    value = getattr(entry, "delete_event_id", None)
+    return str(value) if value is not None else None
+
+
+def _claim_token(entry: ConsolidationQueueRecord) -> str | None:
+    value = getattr(entry, "claim_token", None)
+    return str(value) if value else None
+
+
+def _same_claim(
+    expected: ConsolidationQueueRecord,
+    current: ConsolidationQueueRecord,
+) -> bool:
+    token = _claim_token(expected)
+    return bool(
+        token
+        and current.status == "claimed"
+        and _claim_token(current) == token
+        and current.id == expected.id
+        and current.board_id == expected.board_id
+        and current.artifact_type == expected.artifact_type
+        and current.artifact_id == expected.artifact_id
+        and _work_kind(current) == _work_kind(expected)
+        and _generation(current) == _generation(expected)
+        and _delete_event_id(current) == _delete_event_id(expected)
+    )
+
+
+async def _queue_claim_is_current_and_unfenced(
+    db: Any,
+    entry: ConsolidationQueueRecord,
+) -> bool:
+    """Check the exact claim and governed-deletion fence in storage.
+
+    Every row claimed by ``ConsolidationProcessor`` receives a token before
+    processing. A missing token is therefore never authoritative.
+    """
+
+    token = _claim_token(entry)
+    kind = _work_kind(entry)
+    if token is None:
+        return False
+    return await get_consolidation_persistence_port().queue_claim_is_current_and_unfenced(
+        db,
+        entry_id=entry.id,
+        claim_token=token,
+        board_id=entry.board_id,
+        artifact_type=entry.artifact_type,
+        artifact_id=entry.artifact_id,
+        work_kind=kind,
+        generation=_generation(entry),
+        delete_event_id=_delete_event_id(entry),
+    )
+
+
+async def _transfer_stale_reconcile_ownership(
+    db: Any,
+    entry: ConsolidationQueueRecord,
+    *,
+    reconcile_details: dict[str, object] | None = None,
+    occurred_at: datetime | None = None,
+) -> tuple[DeliveryTransferReceipt, str]:
+    """Atomically hand a completed graph reconciliation to GD delivery.
+
+    The concrete port stages all three relational effects in ``db``: the
+    logical delivery owner, its physical attempt-zero outbox row (unless the
+    circuit is degraded), and the exact queue compare-and-delete.  This helper
+    intentionally does not commit; ``process_batch`` owns the transaction.
+    """
+
+    claim_token = _claim_token(entry)
+    delete_event_id = _delete_event_id(entry)
+    if claim_token is None or delete_event_id is None:
+        raise DeliveryTransferClaimConflict(
+            f"delivery_transfer_claim_identity_missing entry_id={entry.id}"
+        )
+
+    delivery = get_delivery_ledger_port()
+    circuit = await delivery.read_circuit_snapshot(
+        db,
+        board_id=entry.board_id,
+    )
+    request = DeliveryTransferRequest(
+        entry_id=entry.id,
+        claim_token=claim_token,
+        board_id=entry.board_id,
+        artifact_type=entry.artifact_type,
+        artifact_id=entry.artifact_id,
+        generation=_generation(entry),
+        delete_event_id=delete_event_id,
+        target_state=(
+            DeliveryState.DELIVERY_DEBT
+            if circuit.degraded
+            else DeliveryState.OUTBOX_PERSISTED
+        ),
+        reconcile_details={
+            **dict(reconcile_details or {}),
+            "circuit_reason": circuit.reason,
+        },
+        occurred_at=occurred_at,
+    )
+    receipt = await delivery.transfer_delivery_ownership(db, request)
+    expected_event_key = (
+        request.attempt_event_key
+        if receipt.state is DeliveryState.OUTBOX_PERSISTED
+        else None
+    )
+    if (
+        receipt.delivery_key != request.delivery_key
+        or receipt.attempt != request.attempt
+        or receipt.attempt_event_key != expected_event_key
+        or (not receipt.replayed and receipt.state is not request.target_state)
+    ):
+        raise RuntimeError("delivery_transfer_receipt_mismatch")
+    return receipt, circuit.reason
+
+
+def _log_stale_reconcile_delivery_transfer(
+    entry: ConsolidationQueueRecord,
+    receipt: DeliveryTransferReceipt,
+    *,
+    circuit_reason: str,
+) -> None:
+    """Emit transfer telemetry only after the caller commits the hand-off."""
+
+    delete_event_id = _delete_event_id(entry)
+    logger.info(
+        "kg.stale_reconcile.delivery_transferred entry=%s delivery=%s "
+        "state=%s replayed=%s circuit_reason=%s",
+        entry.id,
+        receipt.delivery_key,
+        receipt.state.value,
+        receipt.replayed,
+        circuit_reason,
+        extra={
+            "event": "kg.stale_reconcile.delivery_transferred",
+            "board_id": entry.board_id,
+            "delete_event_id": delete_event_id,
+            "delivery_key": receipt.delivery_key,
+            "delivery_state": receipt.state.value,
+            "delivery_attempt": receipt.attempt,
+            "delivery_replayed": receipt.replayed,
+            "delivery_circuit_reason": circuit_reason,
+        },
+    )
+
+
+def _capped_retry_delay(policy: RetryPolicy, attempts: int) -> int:
+    """Return exponential backoff without making terminal mean data loss."""
+
+    delay = 1
+    for _ in range(max(0, attempts)):
+        delay = min(delay * policy.base, policy.cap_seconds)
+        if delay >= policy.cap_seconds:
+            break
+    return delay
+
+
+def _validated_stale_reconcile_source_refs(
+    entry: ConsolidationQueueRecord,
+) -> list[str] | None:
+    """Return the v1 fast-path refs, or ``None`` for a malformed intent."""
+
+    payload = getattr(entry, "payload", None)
+    delete_event_id = _delete_event_id(entry)
+    expected_ref = f"{entry.artifact_type}:{entry.artifact_id}"
+    if (
+        entry.artifact_type not in _GOVERNED_DELETION_ARTIFACT_TYPES
+        or _generation(entry) < 1
+        or not delete_event_id
+        or not isinstance(payload, dict)
+        or payload.get("schema_version") != 1
+        or payload.get("delete_event_id") != delete_event_id
+        or payload.get("source_refs") != [expected_ref]
+    ):
+        return None
+    return [expected_ref]
+
+
+def _validated_stale_sweep_payload(
+    entry: ConsolidationQueueRecord,
+) -> tuple[str, int, int] | None:
+    """Return ``(cursor, budget, attempt)`` for an exact board sweep row."""
+
+    payload = getattr(entry, "payload", None)
+    if (
+        entry.artifact_type != "board"
+        or entry.artifact_id != entry.board_id
+        or _generation(entry) != 0
+        or _delete_event_id(entry) is not None
+        or not isinstance(payload, dict)
+        or not {"cursor", "budget"}.issubset(payload)
+        or not set(payload).issubset({"cursor", "budget", "attempt"})
+    ):
+        return None
+    cursor = payload.get("cursor")
+    budget = payload.get("budget")
+    attempt = payload.get("attempt", 0)
+    if (
+        not isinstance(cursor, str)
+        or isinstance(budget, bool)
+        or not isinstance(budget, int)
+        or budget < 1
+        or isinstance(attempt, bool)
+        or not isinstance(attempt, int)
+        or attempt < 0
+    ):
+        return None
+    from okto_pulse.core.kg.canonical_stale_reconciler import (
+        decode_stale_sweep_cursor,
+    )
+
+    try:
+        decode_stale_sweep_cursor(cursor)
+    except ValueError:
+        return None
+    return (cursor, budget, attempt)
+
+
+def _stale_sweep_retry_at(now: datetime) -> datetime:
+    """Defer degraded work to the next configured daily-tick window."""
+
+    from okto_pulse.core.infra.config import get_settings
+
+    interval_minutes = int(
+        getattr(get_settings(), "kg_decay_tick_interval_minutes", 1440)
+    )
+    return now + timedelta(minutes=max(1, interval_minutes))
+
+
+def _log_stale_sweep_receipt(receipt: StaleSweepRunReceipt) -> None:
+    event = {
+        StaleSweepRunAction.ADVANCED: "kg.stale_sweep.page_staged",
+        StaleSweepRunAction.COMPLETED: "kg.stale_sweep.completed.staged",
+        StaleSweepRunAction.RESCHEDULED: "kg.stale_sweep.rescheduled.staged",
+    }[receipt.action]
+    logger.info(
+        "%s board=%s entry=%s cursor=%s budget=%d attempt=%d "
+        "enqueued=%d has_more=%s reason=%s transaction_state=%s "
+        "commit_owner=%s",
+        event,
+        receipt.board_id,
+        receipt.entry_id,
+        receipt.cursor,
+        receipt.budget,
+        receipt.attempt,
+        receipt.enqueued,
+        receipt.has_more,
+        receipt.reason,
+        "pending_caller_commit",
+        "consolidation_processor",
+        extra={
+            "event": event,
+            "board_id": receipt.board_id,
+            "entry_id": receipt.entry_id,
+            "cursor": receipt.cursor,
+            "budget": receipt.budget,
+            "attempt": receipt.attempt,
+            "enqueued": receipt.enqueued,
+            "has_more": receipt.has_more,
+            "reason": receipt.reason,
+            "transaction_state": "pending_caller_commit",
+            "commit_owner": "consolidation_processor",
+        },
+    )
+
+
+def _stale_reconcile_is_complete(result: Any) -> bool:
+    """Require the explicit completeness contract before acknowledging work."""
+
+    if isinstance(result, dict):
+        if "incomplete" not in result or "failed_types" not in result:
+            return False
+        incomplete = bool(result["incomplete"])
+        failed_types = result["failed_types"] or ()
+    else:
+        if not hasattr(result, "incomplete") or not hasattr(result, "failed_types"):
+            return False
+        incomplete = bool(result.incomplete)
+        failed_types = result.failed_types or ()
+    return not incomplete and not bool(failed_types)
+
+
+def _stale_reconcile_telemetry_details(
+    result: Any,
+    entry: ConsolidationQueueRecord,
+) -> dict[str, object]:
+    """Normalize the governed run receipt before the worker returns a bool."""
+
+    def _value(name: str, default: object) -> object:
+        if isinstance(result, dict):
+            return result.get(name, default)
+        return getattr(result, name, default)
+
+    demoted = _value("demoted", ()) or ()
+    routed_to_debt = _value("routed_to_debt", ()) or ()
+    failed_types = _value("failed_types", ()) or ()
+    incomplete_cause = _value("incomplete_cause", None)
+    details: dict[str, object] = {
+        "queue_attempt": int(entry.attempts or 0),
+        "scanned": int(_value("scanned", 0) or 0),
+        "demoted_count": int(
+            _value("demoted_count", len(demoted)) or 0
+        ),
+        "routed_to_debt_count": int(
+            _value("routed_to_debt_count", len(routed_to_debt)) or 0
+        ),
+        "incomplete": bool(_value("incomplete", True)),
+        "incomplete_cause": (
+            str(getattr(incomplete_cause, "value", incomplete_cause))
+            if incomplete_cause is not None
+            else None
+        ),
+        "failed_types": [str(item) for item in failed_types],
+    }
+
+    # A completed ontology scan is the proof that ACK/ownership transfer did
+    # not skip a registered node type.  Keep the per-type receipt intact at
+    # the boolean worker boundary so the final ``graph_demoted`` timeline row
+    # remains independently auditable instead of carrying only an aggregate.
+    raw_completed_types = _value("completed_types", ()) or ()
+    completed_types = [str(item) for item in raw_completed_types]
+    if completed_types:
+        raw_scanned_by_type = _value("scanned_by_type", {}) or {}
+        if not isinstance(raw_scanned_by_type, Mapping):
+            raise ValueError("stale_reconcile_scanned_by_type_invalid")
+        details["scanned_by_type"] = {
+            str(node_type): int(count)
+            for node_type, count in raw_scanned_by_type.items()
+        }
+        details["completed_types"] = completed_types
+    return details
+
+
+def _stale_reconcile_source_snapshot_is_incomplete(result: Any) -> bool:
+    """Return whether reconciliation stopped before any graph mutation.
+
+    A source-snapshot failure is the one incomplete outcome guaranteed by the
+    reconciler to return before scanning or mutating graph nodes.  Keep the
+    check explicit and fail closed: malformed results still run the durability
+    lifecycle because they cannot prove that no graph write occurred.
+    """
+
+    if isinstance(result, dict):
+        failed_types = result.get("failed_types")
+        return (
+            result.get("incomplete") is True
+            and result.get("incomplete_cause") is not None
+            and "failed_types" in result
+            and isinstance(failed_types, (list, tuple))
+            and not failed_types
+        )
+    failed_types = getattr(result, "failed_types", None)
+    return (
+        getattr(result, "incomplete", None) is True
+        and getattr(result, "incomplete_cause", None) is not None
+        and hasattr(result, "failed_types")
+        and isinstance(failed_types, (list, tuple))
+        and not failed_types
+    )
+
+
+async def _abort_open_consolidation_after_fence(
+    *,
+    entry: ConsolidationQueueRecord,
+    session_id: str,
+) -> None:
+    """Best-effort cleanup for a deterministic session that lost authority."""
+
+    try:
+        await abort_consolidation(
+            AbortConsolidationRequest(
+                session_id=session_id,
+                reason="queue_claim_lost_or_deletion_fenced",
+            ),
+            agent_id=AGENT_ID,
+        )
+    except Exception:
+        logger.exception(
+            "consolidation.abort_after_fence_failed entry=%s session=%s",
+            entry.id,
+            session_id,
+        )
 
 class _DirectBlockingExecution:
     """Task-free fallback for direct processor tests.
@@ -216,8 +637,24 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     the same embedded graph backend lifecycle used by explicit rebuild recovery.
     """
 
-    owner_token = f"consolidation-worker:{entry.id}:{uuid.uuid4().hex}"
+    owner_token = (
+        f"consolidation-worker:{entry.id}:"
+        f"{_claim_token(entry) or uuid.uuid4().hex}"
+    )
     mutation_ref = f"{entry.artifact_type}:{entry.artifact_id}:{session_id}"
+    if _claim_token(entry) is not None and not await (
+        _queue_claim_is_current_and_unfenced(db, entry)
+    ):
+        # The deterministic session is process-local and has not committed to
+        # the graph yet. Drop it explicitly so a delete that won after claim
+        # cannot leave an orphaned session behind.
+        await _abort_open_consolidation_after_fence(
+            entry=entry,
+            session_id=session_id,
+        )
+        raise _QueueClaimLostOrFenced(
+            f"queue_claim_lost_or_fenced entry_id={entry.id}"
+        )
     with under_safe_write(entry.board_id, owner_token, CONSOLIDATION_COMMIT_OPERATION):
         commit_resp = await commit_consolidation(
             CommitConsolidationRequest(
@@ -246,7 +683,8 @@ async def _process_queue_entry_serialized(
     *,
     blocking_execution: BlockingExecutionPort | None = None,
     clock: WorkerClockPort | None = None,
-) -> bool:
+    stale_reconcile_telemetry: dict[str, object] | None = None,
+) -> bool | StaleSweepRunReceipt:
     """Process one queue row under a process-local per-board mutex.
 
     The queue claim contract prevents duplicate rows, but reprocess tools,
@@ -262,6 +700,7 @@ async def _process_queue_entry_serialized(
             entry,
             blocking_execution=blocking_execution,
             clock=clock,
+            stale_reconcile_telemetry=stale_reconcile_telemetry,
         )
 
 
@@ -1149,15 +1588,245 @@ async def _run_post_commit_maintenance(
         )
 
 
+async def _process_stale_sweep_entry(
+    db: Any,
+    entry: ConsolidationQueueRecord,
+    *,
+    clock: WorkerClockPort | None = None,
+) -> StaleSweepRunReceipt | bool:
+    """Enumerate one bounded catch-up page and stage its durable checkpoint."""
+
+    validated = _validated_stale_sweep_payload(entry)
+    claim_token = _claim_token(entry)
+    if validated is None or claim_token is None:
+        logger.error(
+            "kg.stale_sweep.invalid_payload entry=%s board=%s payload=%r",
+            entry.id,
+            entry.board_id,
+            entry.payload,
+        )
+        return False
+    cursor, budget, attempt = validated
+    now = clock.now() if clock is not None else datetime.now(timezone.utc)
+    sweep_port = get_stale_sweep_port()
+
+    async def _reschedule(reason: str) -> StaleSweepRunReceipt:
+        receipt = await sweep_port.reschedule_stale_sweep(
+            db,
+            StaleSweepRescheduleRequest(
+                entry_id=entry.id,
+                claim_token=claim_token,
+                board_id=entry.board_id,
+                cursor=cursor,
+                budget=budget,
+                attempt=attempt,
+                retry_at=_stale_sweep_retry_at(now),
+                reason=reason,
+            ),
+        )
+        _log_stale_sweep_receipt(receipt)
+        return receipt
+
+    store = get_consolidation_persistence_port()
+    if not await store.board_exists(db, board_id=entry.board_id):
+        return await _reschedule("board_absent")
+    try:
+        graph_available = get_kg_registry().graph_runtime_store.exists(
+            entry.board_id
+        )
+    except Exception:
+        logger.exception(
+            "kg.stale_sweep.graph_runtime_probe_failed entry=%s board=%s",
+            entry.id,
+            entry.board_id,
+        )
+        return await _reschedule("graph_runtime_probe_failed")
+    if not graph_available:
+        return await _reschedule("graph_unavailable")
+
+    from okto_pulse.core.kg.canonical_stale_reconciler import (
+        enumerate_stale_sweep_page,
+    )
+
+    page = await enumerate_stale_sweep_page(
+        entry.board_id,
+        cursor=cursor,
+        budget=budget,
+    )
+    if not page.complete:
+        return await _reschedule(
+            str(page.incomplete_cause or "sweep_inventory_incomplete")
+        )
+
+    if (
+        page.board_id != entry.board_id
+        or page.cursor != cursor
+        or page.budget != budget
+    ):
+        return await _reschedule("sweep_page_contract_invalid")
+    try:
+        batch_request = StaleSweepBatchRequest(
+            entry_id=entry.id,
+            claim_token=claim_token,
+            board_id=entry.board_id,
+            cursor=cursor,
+            budget=budget,
+            attempt=attempt,
+            candidates=page.candidates,
+            next_cursor=page.next_cursor,
+            has_more=page.has_more,
+            now=now,
+        )
+    except ValueError:
+        logger.exception(
+            "kg.stale_sweep.page_contract_invalid entry=%s board=%s",
+            entry.id,
+            entry.board_id,
+        )
+        return await _reschedule("sweep_page_contract_invalid")
+    receipt = await sweep_port.stage_stale_sweep_batch(db, batch_request)
+    _log_stale_sweep_receipt(receipt)
+    return receipt
+
+
+async def _process_stale_reconcile_entry(
+    db: Any,
+    entry: ConsolidationQueueRecord,
+    *,
+    blocking_execution: BlockingExecutionPort | None = None,
+    clock: WorkerClockPort | None = None,
+    telemetry_details: dict[str, object] | None = None,
+) -> bool:
+    """Drain one governed-delete reconciliation intent without source loading."""
+
+    source_refs = _validated_stale_reconcile_source_refs(entry)
+    if source_refs is None:
+        logger.error(
+            "kg.stale_reconcile.invalid_payload entry=%s artifact=%s:%s "
+            "generation=%s",
+            entry.id,
+            entry.artifact_type,
+            entry.artifact_id,
+            _generation(entry),
+        )
+        return False
+
+    # This is the final storage read before the graph write. It jointly checks
+    # ownership and the exact tombstone generation/event while the board's
+    # process-local writer mutex is held by the serialized caller.
+    if not await _queue_claim_is_current_and_unfenced(db, entry):
+        raise _QueueClaimLostOrFenced(
+            f"queue_claim_lost_or_fenced entry_id={entry.id}"
+        )
+
+    from okto_pulse.core.kg.canonical_stale_reconciler import (
+        reconcile_stale_canonical,
+    )
+
+    owner_token = (
+        f"consolidation-worker:{entry.id}:"
+        f"{_claim_token(entry) or uuid.uuid4().hex}"
+    )
+    delete_event_id = _delete_event_id(entry)
+    mutation_ref = (
+        f"stale_reconcile:{entry.artifact_type}:{entry.artifact_id}:"
+        f"g{_generation(entry)}:{delete_event_id}"
+    )
+    with under_safe_write(
+        entry.board_id,
+        owner_token,
+        CONSOLIDATION_COMMIT_OPERATION,
+    ):
+        result = await reconcile_stale_canonical(
+            db,
+            board_id=entry.board_id,
+            source_refs=source_refs,
+            correlation_id=delete_event_id,
+        )
+        if not _stale_reconcile_source_snapshot_is_incomplete(result):
+            executor = blocking_execution or _DirectBlockingExecution()
+            await executor.run(
+                lambda: _apply_board_graph_lifecycle_after_commit(
+                    board_id=entry.board_id,
+                    owner_token=owner_token,
+                    mutation_ref=mutation_ref,
+                    failure_timestamp=clock.now() if clock is not None else None,
+                )
+            )
+
+    run_details = _stale_reconcile_telemetry_details(result, entry)
+    if telemetry_details is not None:
+        telemetry_details.update(run_details)
+
+    if not _stale_reconcile_is_complete(result):
+        logger.error(
+            "kg.stale_reconcile.incomplete entry=%s board=%s failed_types=%s",
+            entry.id,
+            entry.board_id,
+            (
+                result.get("failed_types", ())
+                if isinstance(result, dict)
+                else getattr(result, "failed_types", ())
+            ),
+            extra={
+                "event": "kg.stale_reconcile.run",
+                "board_id": entry.board_id,
+                "entry_id": entry.id,
+                "delete_event_id": delete_event_id,
+                "generation": _generation(entry),
+                **run_details,
+            },
+        )
+        return False
+
+    logger.info(
+        "kg.stale_reconcile.completed entry=%s board=%s generation=%d",
+        entry.id,
+        entry.board_id,
+        _generation(entry),
+        extra={
+            "event": "kg.stale_reconcile.run",
+            "board_id": entry.board_id,
+            "entry_id": entry.id,
+            "delete_event_id": delete_event_id,
+            "generation": _generation(entry),
+            **run_details,
+        },
+    )
+    return True
+
+
 async def _process_queue_entry(
     db: Any,
     entry: ConsolidationQueueRecord,
     *,
     blocking_execution: BlockingExecutionPort | None = None,
     clock: WorkerClockPort | None = None,
-) -> bool:
+    stale_reconcile_telemetry: dict[str, object] | None = None,
+) -> bool | StaleSweepRunReceipt:
     """Process one queue entry through the primitives pipeline.
     Returns True on success, False on failure."""
+
+    if _work_kind(entry) == "stale_sweep":
+        return await _process_stale_sweep_entry(
+            db,
+            entry,
+            clock=clock,
+        )
+    if _work_kind(entry) == "stale_reconcile":
+        return await _process_stale_reconcile_entry(
+            db,
+            entry,
+            blocking_execution=blocking_execution,
+            clock=clock,
+            telemetry_details=stale_reconcile_telemetry,
+        )
+    if _work_kind(entry) != "consolidate":
+        logger.warning(
+            "unsupported consolidation work_kind: %s",
+            _work_kind(entry),
+        )
+        return False
 
     if entry.artifact_type not in {
         "story",
@@ -1241,6 +1910,20 @@ async def _process_queue_entry(
         db=None,
         force_reprocess=True,
     )
+
+    # A governed delete may commit while extraction/proposal is paused. Check
+    # at the final publication boundary, aborting the uncommitted session
+    # before the commit/lifecycle wrapper is entered.
+    if _claim_token(entry) is not None and not await (
+        _queue_claim_is_current_and_unfenced(db, entry)
+    ):
+        await _abort_open_consolidation_after_fence(
+            entry=entry,
+            session_id=session_id,
+        )
+        raise _QueueClaimLostOrFenced(
+            f"queue_claim_lost_or_fenced entry_id={entry.id}"
+        )
 
     # 4. commit + safe lifecycle. The queue row is only acknowledged after
     # board graph survives close/reopen from disk.
@@ -1354,6 +2037,10 @@ def _select_board_aware_entries(
     selected: list[ConsolidationQueueRecord] = []
     unavailable_boards = set(claimed_board_ids)
     for entry in ready_entries:
+        # Card 8 owns sweep execution. Unknown/future kinds also remain
+        # pending rather than being accidentally consumed by this worker.
+        if _work_kind(entry) not in _CLAIMABLE_WORK_KINDS:
+            continue
         if entry.board_id in unavailable_boards:
             continue
         selected.append(entry)
@@ -1461,6 +2148,7 @@ class ConsolidationProcessor:
                 entry.claim_timeout_at = None
                 entry.worker_id = None
                 entry.claimed_by_session_id = None
+                entry.claim_token = None
             await store.save_queue_entries(db, stale)
             await store.commit(db)
         logger.info(
@@ -1540,6 +2228,8 @@ class ConsolidationProcessor:
                 entry.claim_timeout_at = claim_timeout_at
                 worker_id = f"worker_{uuid.uuid4().hex[:8]}"
                 entry.worker_id = worker_id
+                # A token is never reused, including after recovery/reclaim.
+                entry.claim_token = uuid.uuid4().hex
                 # Keep claimed_by_session_id populated for backward-compat
                 # with cognitive-session inspectors that still read it.
                 entry.claimed_by_session_id = worker_id
@@ -1561,39 +2251,135 @@ class ConsolidationProcessor:
         max_attempts = settings.kg_queue_max_attempts
         for entry in entries:
             try:
+                acknowledged = False
+                delivery_transfer: tuple[DeliveryTransferReceipt, str] | None = None
+                stale_reconcile_telemetry: dict[str, object] = {}
                 async with self.relational_scope_factory() as db:
                     store = get_consolidation_persistence_port()
-                    success = await _process_queue_entry_serialized(
+                    outcome = await _process_queue_entry_serialized(
                         db,
                         entry,
                         blocking_execution=self._blocking_execution,
                         clock=self._clock,
+                        stale_reconcile_telemetry=stale_reconcile_telemetry,
                     )
-                    fresh = await store.get_queue_entry(db, entry_id=entry.id)
-                    if fresh is None:
-                        # Row was already removed (e.g. recovery scan +
-                        # another worker raced past us — at-least-once
-                        # tolerates that).
-                        await store.commit(db)
-                        if success:
-                            processed += 1
-                        continue
-
-                    if success:
-                        # DELETE-on-ack: row only disappears once the
-                        # commit + recompute completed. Any crash before
-                        # this point keeps the row claimed; the recovery
-                        # scan re-pendings it after claim_timeout_at.
-                        await store.delete_queue_entry(db, entry_id=fresh.id)
+                    if isinstance(outcome, StaleSweepRunReceipt):
+                        if (
+                            _work_kind(entry) != "stale_sweep"
+                            or outcome.entry_id != entry.id
+                            or outcome.board_id != entry.board_id
+                            or outcome.action
+                            not in {
+                                StaleSweepRunAction.ADVANCED,
+                                StaleSweepRunAction.COMPLETED,
+                                StaleSweepRunAction.RESCHEDULED,
+                            }
+                        ):
+                            raise RuntimeError("stale_sweep_receipt_mismatch")
+                        # The adapter already performed the exact claim CAS and
+                        # either re-pended or deleted this sweep row. Its
+                        # synthetic tombstones, reconcile intents and checkpoint
+                        # are committed together here.
+                        acknowledged = True
                     else:
-                        await self._mark_failed(
-                            db, fresh,
-                            error_text=fresh.last_error or "processing returned False",
-                            max_attempts=max_attempts,
-                        )
+                        success = outcome is True
+                        fresh = await store.get_queue_entry(db, entry_id=entry.id)
+                        if fresh is None:
+                            # A missing row is a lost claim, never a successful
+                            # ACK. A stale-reconcile graph write may already
+                            # have auto-committed, but relational effects must
+                            # not leak after ownership is lost.
+                            if _work_kind(entry) == "stale_reconcile":
+                                await store.rollback(db)
+                            else:
+                                await store.commit(db)
+                            continue
+
+                        if success:
+                            token = _claim_token(entry)
+                            if token is not None:
+                                if _work_kind(entry) == "stale_reconcile":
+                                    try:
+                                        delivery_transfer = (
+                                            await _transfer_stale_reconcile_ownership(
+                                                db,
+                                                entry,
+                                                reconcile_details=(
+                                                    stale_reconcile_telemetry
+                                                ),
+                                                occurred_at=(
+                                                    self._clock.now()
+                                                    if self._clock is not None
+                                                    else None
+                                                ),
+                                            )
+                                        )
+                                    except DeliveryTransferClaimConflict as exc:
+                                        # CAS=0 is a neutral ownership loss.
+                                        await store.rollback(db)
+                                        raise _QueueClaimLostOrFenced(
+                                            str(exc)
+                                        ) from exc
+                                    except Exception:
+                                        await store.rollback(db)
+                                        raise
+                                    acknowledged = True
+                                else:
+                                    # Legacy consolidation retains its
+                                    # standalone exact compare-and-delete ACK.
+                                    acknowledged = (
+                                        await store.ack_claimed_queue_entry(
+                                            db,
+                                            entry_id=entry.id,
+                                            claim_token=token,
+                                            generation=_generation(entry),
+                                            delete_event_id=_delete_event_id(entry),
+                                        )
+                                    )
+                        elif _same_claim(entry, fresh) and await (
+                            store.queue_claim_is_current_and_unfenced(
+                                db,
+                                entry_id=entry.id,
+                                claim_token=_claim_token(entry) or "",
+                                board_id=entry.board_id,
+                                artifact_type=entry.artifact_type,
+                                artifact_id=entry.artifact_id,
+                                work_kind=_work_kind(entry),
+                                generation=_generation(entry),
+                                delete_event_id=_delete_event_id(entry),
+                            )
+                        ):
+                            await self._mark_failed(
+                                db,
+                                fresh,
+                                error_text=(
+                                    fresh.last_error
+                                    or "processing returned False"
+                                ),
+                                max_attempts=max_attempts,
+                            )
                     await store.commit(db)
-                if success:
+                if acknowledged:
+                    if delivery_transfer is not None:
+                        receipt, circuit_reason = delivery_transfer
+                        _log_stale_reconcile_delivery_transfer(
+                            entry,
+                            receipt,
+                            circuit_reason=circuit_reason,
+                        )
                     processed += 1
+            except _QueueClaimLostOrFenced as exc:
+                logger.info(
+                    "consolidation.claim_lost_or_fenced entry=%s reason=%s",
+                    entry.id,
+                    exc,
+                )
+            except StaleSweepClaimConflict as exc:
+                logger.info(
+                    "consolidation.stale_sweep_claim_lost entry=%s reason=%s",
+                    entry.id,
+                    exc,
+                )
             except Exception as exc:
                 logger.error(
                     "consolidation failed for %s:%s: %s",
@@ -1604,7 +2390,24 @@ class ConsolidationProcessor:
                     async with self.relational_scope_factory() as db:
                         store = get_consolidation_persistence_port()
                         fresh = await store.get_queue_entry(db, entry_id=entry.id)
-                        if fresh:
+                        token = _claim_token(entry)
+                        claim_is_current = bool(
+                            fresh is not None
+                            and token is not None
+                            and _same_claim(entry, fresh)
+                            and await store.queue_claim_is_current_and_unfenced(
+                                db,
+                                entry_id=entry.id,
+                                claim_token=token,
+                                board_id=entry.board_id,
+                                artifact_type=entry.artifact_type,
+                                artifact_id=entry.artifact_id,
+                                work_kind=_work_kind(entry),
+                                generation=_generation(entry),
+                                delete_event_id=_delete_event_id(entry),
+                            )
+                        )
+                        if claim_is_current and fresh is not None:
                             await self._mark_failed(
                                 db, fresh,
                                 error_text=f"{type(exc).__name__}: {str(exc)[:480]}",
@@ -1625,12 +2428,15 @@ class ConsolidationProcessor:
         max_attempts: int,
     ) -> None:
         """Common failure handler: increment attempts, schedule exp backoff,
-        re-pending the row. When ``attempts >= max_attempts`` the row is
-        instead routed to ``ConsolidationDeadLetter`` (IMPL-3 wiring) and
-        deleted from the queue. This method persists the effective queue
-        record (including a record reloaded after rollback) whenever a
-        persistence context is supplied; the caller is responsible only for
-        committing the surrounding transaction.
+        re-pending the row. When ``attempts >= max_attempts``, only legacy
+        ``consolidate`` work is routed to ``ConsolidationDeadLetter`` (IMPL-3
+        wiring) and deleted from the queue. Governed ``stale_reconcile`` and
+        coordinator ``stale_sweep`` work remain in their identity-bearing
+        queue rows with capped backoff because the legacy DLQ cannot preserve
+        their generation/checkpoint payloads.
+        This method persists the effective queue record (including a record
+        reloaded after rollback) whenever a persistence context is supplied;
+        the caller is responsible only for committing the transaction.
 
         FR3 (spec R2c): when the entry is routed to the dead-letter queue,
         a FailureEvent with ``event_kind="kg.commit.failed"`` is recorded
@@ -1647,6 +2453,16 @@ class ConsolidationProcessor:
         diagnostic (or_1f52d4fd) so the dead-letter row names the operational
         action rather than the opaque binder error.
         """
+        claimed_entry = entry
+        token = _claim_token(claimed_entry)
+        if token is not None and not await _queue_claim_is_current_and_unfenced(
+            db,
+            claimed_entry,
+        ):
+            raise _QueueClaimLostOrFenced(
+                f"queue_claim_lost_or_fenced entry_id={claimed_entry.id}"
+            )
+
         if is_graph_layer_schema_error(error_text):
             remediation = ensure_graph_layer_schema(
                 entry.board_id, raw_error=error_text
@@ -1661,6 +2477,7 @@ class ConsolidationProcessor:
                 entry.worker_id = None
                 entry.claimed_at = None
                 entry.claimed_by_session_id = None
+                entry.claim_token = None
                 if db is not None:
                     await get_consolidation_persistence_port().save_queue_entries(
                         db,
@@ -1753,12 +2570,20 @@ class ConsolidationProcessor:
             )
             if reloaded is None:
                 return
+            if token is not None and (
+                not _same_claim(claimed_entry, reloaded)
+                or not await _queue_claim_is_current_and_unfenced(db, reloaded)
+            ):
+                raise _QueueClaimLostOrFenced(
+                    f"queue_claim_lost_or_fenced entry_id={entry_id}"
+                )
             entry = reloaded
 
         entry.attempts = (entry.attempts or 0) + 1
         entry.last_error = error_text
-        retry = RetryPolicy(max_attempts=max_attempts).after_failure(entry.attempts)
-        if retry.terminal:
+        retry_policy = RetryPolicy(max_attempts=max_attempts)
+        retry = retry_policy.after_failure(entry.attempts)
+        if retry.terminal and _work_kind(entry) == "consolidate":
             await route_to_dead_letter(db, entry, error_text=error_text)
             # FR3: record commit failure for the memory-pressure correlator.
             try:
@@ -1774,13 +2599,18 @@ class ConsolidationProcessor:
             except Exception:
                 pass
             return
-        backoff_s = retry.delay_seconds
+        backoff_s = (
+            _capped_retry_delay(retry_policy, entry.attempts)
+            if retry.terminal
+            else retry.delay_seconds
+        )
         entry.status = "pending"
         entry.next_retry_at = self._now() + timedelta(seconds=backoff_s)
         entry.claim_timeout_at = None
         entry.worker_id = None
         entry.claimed_at = None
         entry.claimed_by_session_id = None
+        entry.claim_token = None
         await get_consolidation_persistence_port().save_queue_entries(
             db,
             (entry,),

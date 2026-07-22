@@ -2,12 +2,13 @@
 
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Literal
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    RootModel,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -18,8 +19,10 @@ from okto_pulse.core.discovery_params_schema import (
     normalize_discovery_params_schema,
 )
 from okto_pulse.core.domain.enums import (
+    BugSeverity,
     CardPriority,
     CardStatus,
+    CardType,
     IdeationComplexity,
     IdeationStatus,
     RefinementStatus,
@@ -529,6 +532,156 @@ class StoryConversionRequest(BaseModel):
     proposed_approach: str | None = None
     mockup_ids: list[str] | None = None
     mark_converted: bool = True
+
+
+_PageItemT = TypeVar("_PageItemT")
+
+
+class PageEnvelope(BaseSchema, Generic[_PageItemT]):
+    """Paginated list envelope (spec 8b33f9a8, FR1/DR9).
+
+    Returned by the list routes ONLY when the caller opts in with
+    ``offset``/``limit``; without them the legacy shapes stay byte-identical.
+    Both totals are ALWAYS server-computed, window-independent (KG
+    dec-s05-01): ``total_filtered`` counts the filtered scope that produced
+    ``items``; ``total_overall`` counts the base scope (board + archived
+    policy) regardless of discretionary filters.
+    """
+
+    items: list[_PageItemT]
+    total_filtered: int
+    total_overall: int
+    offset: int
+    limit: int
+
+
+class LookupItem(BaseSchema):
+    """Lean entity identity returned by the board lookup endpoints."""
+
+    id: str
+    title: str
+    status: str
+
+
+class LookupResponse(BaseSchema):
+    """Bounded response shared by spec and ideation lookups."""
+
+    items: list[LookupItem]
+    total: int = Field(..., ge=0)
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1, le=50)
+
+
+class StoryPageItem(BaseSchema):
+    """Lean Story projection for paginated lists (FR4/br_0ec07efd).
+
+    The heavy ``screen_mockups`` HTML array is REPLACED by
+    ``screen_mockups_count`` (badge-sufficient, derived from the loaded row
+    without extra queries); ``ideation_links`` is likewise omitted from the
+    paginated projection.
+    """
+
+    id: str
+    board_id: str
+    topic_id: str
+    title: str
+    description: str
+    actor: str | None = None
+    goal: str | None = None
+    benefit: str | None = None
+    labels: list[str] | None = None
+    status: StoryStatus
+    assignee_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    archived: bool = False
+    screen_mockups_count: int = 0
+
+
+class IdeationPageItem(BaseSchema):
+    """Lean Ideation projection for paginated lists (FR4).
+
+    Row-derivable fields only — relationship collections
+    (``architecture_designs``) and join-derived badge counts stay off the
+    paginated projection; ``scope_assessment`` rides the ORM column.
+    """
+
+    id: str
+    board_id: str
+    title: str
+    description: str | None = None
+    problem_statement: str | None = None
+    complexity: IdeationComplexity | None = None
+    status: IdeationStatus
+    version: int
+    assignee_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    labels: list[str] | None = None
+    archived: bool = False
+    scope_assessment: dict | None = None
+
+
+class RefinementPageItem(BaseSchema):
+    """Lean Refinement projection for paginated lists (FR4)."""
+
+    id: str
+    ideation_id: str
+    board_id: str
+    title: str
+    description: str | None = None
+    status: RefinementStatus
+    version: int
+    assignee_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    labels: list[str] | None = None
+    archived: bool = False
+
+
+class BoardRefinementPageItem(RefinementPageItem):
+    """Board-wide refinement row with its parent title projected in SQL."""
+
+    ideation_title: str
+
+
+class SpecPageItem(BaseSchema):
+    """Lean Spec projection for paginated lists (FR4)."""
+
+    id: str
+    board_id: str
+    ideation_id: str | None = None
+    refinement_id: str | None = None
+    title: str
+    description: str | None = None
+    status: SpecStatus
+    version: int
+    assignee_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    labels: list[str] | None = None
+    archived: bool = False
+
+
+class SprintPageItem(BaseSchema):
+    """Lean Sprint projection for paginated lists (FR4)."""
+
+    id: str
+    spec_id: str
+    board_id: str
+    title: str
+    description: str | None = None
+    objective: str | None = None
+    expected_outcome: str | None = None
+    status: SprintStatus
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    archived: bool = False
 
 
 class StorySummary(BaseSchema):
@@ -2041,10 +2194,154 @@ class ConclusionEntry(BaseModel):
 
 
 class CardMove(BaseModel):
-    """Schema for moving a card between columns."""
+    """Schema for moving a card between columns.
+
+    Placement selectors (spec 8b33f9a8, matriz v13): ``position`` (legacy
+    positional; None/-1 = fim; < -1 rejeitado — estreitamento autorizado QA
+    6afdc547), ``before_id``/``after_id`` (relativo a um card ATIVO da coluna
+    destino) e ``placement`` (start|end). Mutuamente exclusivos.
+
+    The published ``oneOf`` (below) is NULL-TOLERANT: excluded fields accept
+    ABSENT or EXPLICIT NULL via ``{"type": "null"}`` — never
+    ``{"const": null}``, which Pydantic's serializer DROPS (it becomes ``{}``
+    and accepts anything). Every raw payload matches EXACTLY one variant or
+    zero (422), and the runtime agrees case by case: ``position`` is a
+    STRICT int (no ``"0"``/``true`` coercion) and anchors require a
+    non-blank character (``pattern \\S``) exactly like the runtime strip
+    check. TR4's ``dependentRequired`` is FORMALLY SUBSTITUTED by this
+    oneOf: the selectors' co-occurrence rules are exclusions, which
+    ``dependentRequired`` cannot express — publishing a vacuous or
+    runtime-unenforced coupling would reintroduce schema/runtime divergence
+    (substitution recorded on card c8218da8).
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "oneOf": [
+                {
+                    "title": "positional",
+                    "properties": {
+                        "position": {
+                            "anyOf": [
+                                {"type": "null"},
+                                {"type": "integer", "minimum": -1},
+                            ]
+                        },
+                        "before_id": {"type": "null"},
+                        "after_id": {"type": "null"},
+                        "placement": {"type": "null"},
+                    },
+                },
+                {
+                    "title": "relative",
+                    "properties": {
+                        "position": {"type": "null"},
+                        "placement": {"type": "null"},
+                    },
+                    "oneOf": [
+                        {
+                            "required": ["before_id"],
+                            "properties": {
+                                "before_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                },
+                                "after_id": {"type": "null"},
+                            },
+                        },
+                        {
+                            "required": ["after_id"],
+                            "properties": {
+                                "after_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                },
+                                "before_id": {"type": "null"},
+                            },
+                        },
+                    ],
+                },
+                {
+                    "title": "global",
+                    "required": ["placement"],
+                    "properties": {
+                        "placement": {"enum": ["start", "end"]},
+                        "position": {"type": "null"},
+                        "before_id": {"type": "null"},
+                        "after_id": {"type": "null"},
+                    },
+                },
+            ]
+        }
+    )
 
     status: CardStatus = Field(..., description="Novo status do card: not_started, started, in_progress, validation, on_hold, done, cancelled.")
-    position: int | None = Field(None, description="Nova posicao na coluna de destino (-1 ou None = fim da coluna).")
+    position: int | None = Field(None, description="Nova posicao na coluna de destino (-1 ou None = fim da coluna; < -1 = 422). bool/str sao rejeitados sem coercao; floats matematicamente integrais (1.0/-1.0/-0.0) normalizam para int — exatamente o conjunto que o schema draft 2020-12 aceita como 'integer'.")
+
+    @field_validator("position", mode="before")
+    @classmethod
+    def _position_integer_kinds(cls, value: object) -> object:
+        """Agree with the published Draft 2020-12 ``integer`` semantics.
+
+        ``"0"``/``true`` are rejected WITHOUT coercion (the schema matches
+        zero variants for them), while mathematically integral floats
+        (``1.0``, ``-1.0``, ``-0.0``) ARE ``integer`` in Draft 2020-12 and
+        normalize to ``int``; fractional floats stay invalid.
+        """
+        if value is None or (isinstance(value, int) and not isinstance(value, bool)):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        raise ValueError(
+            "position must be an integer (bool/str rejected; integral floats "
+            "normalize; fractional floats invalid)"
+        )
+    before_id: str | None = Field(None, description="Ancora relativa: insere IMEDIATAMENTE ANTES deste card ativo da coluna destino. Exclui after_id/position/placement.")
+    after_id: str | None = Field(None, description="Ancora relativa: insere IMEDIATAMENTE DEPOIS deste card ativo da coluna destino. Exclui before_id/position/placement.")
+    placement: str | None = Field(None, description="Posicionamento global na coluna destino: 'start' ou 'end'. Exclui position/anchors.")
+
+    @model_validator(mode="after")
+    def _validate_placement_selectors(self) -> "CardMove":
+        """Preflight the placement contract at PARSE time — before any service
+        read, mutation, policy or event runs (matriz v13; QA 6afdc547).
+
+        ``position`` counts as a selector whenever it is an INT — including
+        ``-1`` (explicit positional intent), so ``position=-1 + before_id`` is
+        a conflict. An explicit ``position: null`` stays null-tolerant and
+        combines freely with anchors/placement. ``position < -1`` is rejected
+        here (422 at the REST boundary); anchors must be non-blank;
+        ``placement`` only accepts ``start``/``end``.
+        """
+        if self.position is not None and self.position < -1:
+            raise ValueError(
+                "position_out_of_range: position must be None, -1 (end of column) or >= 0"
+            )
+        selectors = [
+            name
+            for name, value in (
+                ("position", self.position),
+                ("before_id", self.before_id),
+                ("after_id", self.after_id),
+                ("placement", self.placement),
+            )
+            if value is not None
+        ]
+        if len(selectors) > 1:
+            raise ValueError(
+                f"card_move_conflicting_placement: {'+'.join(selectors)} — "
+                "position/before_id/after_id/placement are mutually exclusive"
+            )
+        if self.placement is not None and self.placement not in ("start", "end"):
+            raise ValueError(
+                "card_move_invalid_placement: placement must be 'start' or 'end'"
+            )
+        for name in ("before_id", "after_id"):
+            value = getattr(self, name)
+            if value is not None and not value.strip():
+                raise ValueError(f"card_move_empty_anchor: {name} must be non-blank")
+        return self
     conclusion: str | None = Field(None, description="Resumo obrigatorio ao mover para 'validation' ou 'done': o que foi feito, arquivos, decisoes e testes.")
     completeness: int | None = Field(None, description="0-100: quanto do trabalho planejado foi implementado (obrigatorio em validation/done).")
     completeness_justification: str | None = Field(None, description="Justificativa para o score de completeness (obrigatorio em validation/done).")
@@ -2100,34 +2397,77 @@ class CardResponse(BaseSchema):
 
 
 class CardSummary(BaseSchema):
-    """Schema for card summary (without nested items)."""
+    """Canonical lean card projection used by all three columns shapes.
 
-    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    Every field is required at the transport boundary, including nullable
+    fields.  That keeps the opt-in projection explicit and prevents response
+    serialization from silently manufacturing defaults that were not read
+    from persistence.
+    """
+
     id: str
     board_id: str
-    spec_id: str | None = None
-    sprint_id: str | None = None
+    spec_id: str | None
     title: str
     description: str | None
     status: CardStatus
     priority: CardPriority
     position: int
     assignee_id: str | None
+    created_by: str | None
     created_at: datetime
     updated_at: datetime
     due_date: datetime | None
+    labels: list[str]
+    test_scenario_ids: list[str] | None
+    conclusions: list[ConclusionEntry] | None
+    card_type: CardType
+    origin_task_id: str | None
+    severity: str | None
+    linked_test_task_ids: list[str] | None
+    archived: bool
+    # Count of unanswered Q&A (answered_at IS NULL) — drives the badge.
+    open_qa_count: int = Field(..., ge=0)
+
+
+class CardPageItem(BaseSchema):
+    """Authoritative lightweight DTO for the paginated board card list.
+
+    All fields are required in the projection, while nullable ORM columns and
+    metrics that do not exist until a validation/conclusion occurs remain
+    explicitly nullable.
+    """
+
+    id: str
+    board_id: str
+    spec_id: str | None
+    sprint_id: str | None
+    title: str
+    description: str | None
+    status: CardStatus
+    priority: CardPriority
+    card_type: CardType
+    position: int
+    assignee_id: str | None
     labels: list[str] | None
-    test_scenario_ids: list[str] | None = None
-    architecture_designs: list[ArchitectureDesignSummary] = []
-    # Bug card fields (for kanban display)
-    card_type: str = "normal"
-    origin_task_id: str | None = None
-    severity: str | None = None
-    linked_test_task_ids: list[str] | None = None
-    skip_task_requirement_link_gate: bool = False
-    archived: bool = False
-    pre_archive_status: str | None = None
+    archived: bool
+    created_by: str
+    due_date: datetime | None
+    severity: BugSeverity | None
+    test_scenario_ids: list[str] | None
+    linked_test_task_ids: list[str] | None
+    validations_count: int = Field(..., ge=0)
+    validations_fail_count: int = Field(..., ge=0)
+    validations_has_pass: bool
+    first_pass_confidence: int | None = Field(..., ge=0, le=100)
+    first_pass_completeness: int | None = Field(..., ge=0, le=100)
+    first_pass_drift: int | None = Field(..., ge=0, le=100)
+    conclusions_count: int = Field(..., ge=0)
+    last_conclusion_completeness: int | None = Field(..., ge=0, le=100)
+    last_conclusion_drift: int | None = Field(..., ge=0, le=100)
+    created_at: datetime
+    updated_at: datetime
+    open_qa_count: int = Field(..., ge=0)
 
 
 # ============================================================================
@@ -2463,6 +2803,193 @@ class BoardListResponse(BaseSchema):
 
     board: BoardSummary
     columns: dict[str, list[CardSummary]]
+
+
+class ColumnFacets(BaseSchema):
+    """Self-excluding facet counts for one kanban column."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    card_type: dict[str, int]
+
+
+class ColumnMeta(BaseSchema):
+    """Counts and facets accompanying a column's bounded card window."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    total_filtered: int = Field(..., ge=0)
+    total_overall: int = Field(..., ge=0)
+    has_more: bool
+    facets: ColumnFacets
+
+
+class ColumnsFacets(BaseSchema):
+    """Board-wide facets shared by all columns in the batch response."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    # The established facet wire is a stable list of {value,count} entries;
+    # ``value`` may be null for unassigned cards.
+    assignee: list[dict[str, Any]]
+
+
+class ColumnsMeta(BaseSchema):
+    """Per-column metadata plus board-wide facets."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    columns: dict[str, ColumnMeta]
+    facets: ColumnsFacets
+
+
+def _forbid_shape_fields(
+    value: object,
+    *,
+    forbidden: tuple[str, ...],
+    shape: str,
+) -> object:
+    """Reject only reserved fields from competing shapes.
+
+    Responses remain open to unrelated forward-compatible fields while the
+    reserved shape fields make the published ``oneOf`` truly exclusive.
+    """
+
+    if isinstance(value, dict):
+        present = sorted(set(value).intersection(forbidden))
+        if present:
+            raise ValueError(
+                f"{shape} response cannot contain fields from another shape: "
+                f"{', '.join(present)}"
+            )
+    return value
+
+
+class ColumnsLegacyResponse(BaseSchema):
+    """Literal legacy columns response (no pagination metadata)."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "not": {
+                        "anyOf": [
+                            {"required": [field]}
+                            for field in (
+                                "columns_meta",
+                                "column",
+                                "items",
+                                "meta",
+                                "next_offset",
+                            )
+                        ]
+                    }
+                }
+            ]
+        },
+    )
+
+    board_id: str
+    columns: dict[str, list[CardSummary]]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exclude_other_shapes(cls, value: object) -> object:
+        return _forbid_shape_fields(
+            value,
+            forbidden=("columns_meta", "column", "items", "meta", "next_offset"),
+            shape="legacy",
+        )
+
+
+class ColumnsOptInResponse(BaseSchema):
+    """Bounded windows for every column, with batch metadata and facets."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "not": {
+                        "anyOf": [
+                            {"required": [field]}
+                            for field in ("column", "items", "next_offset")
+                        ]
+                    }
+                }
+            ]
+        },
+    )
+
+    board_id: str
+    columns: dict[str, list[CardSummary]]
+    columns_meta: ColumnsMeta
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exclude_other_shapes(cls, value: object) -> object:
+        return _forbid_shape_fields(
+            value,
+            forbidden=("column", "items", "next_offset"),
+            shape="opt-in",
+        )
+
+
+class ColumnPageResponse(BaseSchema):
+    """One independently paged kanban column."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "not": {
+                        "anyOf": [
+                            {"required": ["columns"]},
+                            {"required": ["columns_meta"]},
+                        ]
+                    }
+                }
+            ]
+        },
+    )
+
+    board_id: str
+    column: CardStatus
+    items: list[CardSummary]
+    meta: ColumnMeta
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1, le=100)
+    next_offset: int | None = Field(..., ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exclude_other_shapes(cls, value: object) -> object:
+        return _forbid_shape_fields(
+            value,
+            forbidden=("columns", "columns_meta"),
+            shape="column page",
+        )
+
+
+def _publish_columns_one_of(schema: dict[str, Any]) -> None:
+    """Publish the response union as JSON Schema ``oneOf``, not ``anyOf``."""
+
+    variants = schema.pop("anyOf", None)
+    if variants is not None:
+        schema["oneOf"] = variants
+
+
+class ColumnsResponseUnion(
+    RootModel[ColumnsLegacyResponse | ColumnsOptInResponse | ColumnPageResponse]
+):
+    """OpenAPI-only union for the three mutually exclusive columns shapes."""
+
+    model_config = ConfigDict(json_schema_extra=_publish_columns_one_of)
 
 
 # ============================================================================

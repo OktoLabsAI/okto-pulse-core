@@ -3710,65 +3710,69 @@ async def okto_pulse_list_cards_by_status(
 
     limit = min(limit, 200)
 
-    async with get_unit_of_work_factory_for_mcp()() as uow:
-        service = uow.services.boards
-        board = await service.get_board(board_id)
-        await uow.commit()
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.mcp_board_crud import (
+        McpListCardsByStatusCommand,
+        McpListCardsByStatusUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
-        if not board:
-            return json.dumps({"error": "Board not found"})
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            page = (
+                await McpListCardsByStatusUseCase().execute(
+                    McpListCardsByStatusCommand(
+                        board_id,
+                        status=status,
+                        spec_id=spec_id,
+                        priority=priority,
+                        assignee_id=assignee_id,
+                        offset=offset,
+                        limit=limit,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            ).data
+    except EntityNotFoundError:
+        return json.dumps({"error": "Board not found"})
 
-        cards = board.cards
-        total_all = len(cards)
+    paginated = page.items
+    total_all = page.total_overall
+    total_filtered = page.total_filtered
 
-        if status == "open":
-            cards = [c for c in cards if c.status.value not in ("done", "cancelled")]
-        elif status:
-            cards = [c for c in cards if c.status.value == status]
-        if spec_id:
-            cards = [c for c in cards if c.spec_id == spec_id]
-        if priority:
-            cards = [c for c in cards if c.priority.value == priority]
-        if assignee_id:
-            cards = [c for c in cards if c.assignee_id == assignee_id]
+    from okto_pulse.core.mcp.payload_compaction import compact_and_emit
 
-        sorted_cards = sorted(cards, key=lambda x: (x.status.value, x.position))
-        total_filtered = len(sorted_cards)
-        paginated = sorted_cards[offset : offset + limit]
-
-        from okto_pulse.core.mcp.payload_compaction import compact_and_emit
-
-        return json.dumps(
-            compact_and_emit(
-                {
-                    "total_all": total_all,
-                    "filtered_count": total_filtered,
-                    "offset": offset,
-                    "limit": limit,
-                    "cards": [
-                        {
-                            "id": c.id,
-                            "title": c.title,
-                            "description": c.description,
-                            "status": c.status.value,
-                            "priority": c.priority.value,
-                            "position": c.position,
-                            "assignee_id": c.assignee_id,
-                            "spec_id": c.spec_id,
-                            "test_scenario_ids": c.test_scenario_ids,
-                            "due_date": (
-                                c.due_date.isoformat() if c.due_date else None
-                            ),
-                            "labels": c.labels or [],
-                        }
-                        for c in paginated
-                    ],
-                },
-                tool_name="okto_pulse_list_cards_by_status",
-                truncated=total_filtered > offset + len(paginated),
-            ),
-            default=str,
-        )
+    return json.dumps(
+        compact_and_emit(
+            {
+                "total_all": total_all,
+                "filtered_count": total_filtered,
+                "offset": offset,
+                "limit": limit,
+                "cards": [
+                    {
+                        "id": c.id,
+                        "title": c.title,
+                        "description": c.description,
+                        "status": getattr(c.status, "value", c.status),
+                        "priority": getattr(c.priority, "value", c.priority),
+                        "position": c.position,
+                        "assignee_id": c.assignee_id,
+                        "spec_id": c.spec_id,
+                        "test_scenario_ids": c.test_scenario_ids,
+                        "due_date": c.due_date.isoformat() if c.due_date else None,
+                        "labels": c.labels or [],
+                    }
+                    for c in paginated
+                ],
+            },
+            tool_name="okto_pulse_list_cards_by_status",
+            truncated=total_filtered > offset + len(paginated),
+        ),
+        default=str,
+    )
 
 
 # ============================================================================
@@ -19329,7 +19333,7 @@ async def okto_pulse_list_by_board(
     # get_db_for_mcp nor builds the entity services.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        items = (
+        page = (
             await McpListByBoardUseCase().execute(
                 McpListByBoardCommand(
                     board_id,
@@ -19337,20 +19341,25 @@ async def okto_pulse_list_by_board(
                     filters,
                     story_args=story_args,
                     topic_args=topic_args,
+                    offset=offset,
+                    limit=limit,
                 ),
                 actor=actor,
                 uow=uow,
             )
         ).data
+        items = page.items
+        total = page.total_filtered
+        total_overall = page.total_overall
 
         if entity_type == "spec":
-            total = len(items)
-            paginated = items[offset : offset + limit]
+            paginated = items
             return json.dumps(
                 {
                     "board_id": board_id,
                     "entity_type": entity_type,
                     "total": total,
+                    "total_overall": total_overall,
                     "offset": offset,
                     "limit": limit,
                     "items": [
@@ -19372,13 +19381,13 @@ async def okto_pulse_list_by_board(
             )
 
         elif entity_type == "ideation":
-            total = len(items)
-            paginated = items[offset : offset + limit]
+            paginated = items
             return json.dumps(
                 {
                     "board_id": board_id,
                     "entity_type": entity_type,
                     "total": total,
+                    "total_overall": total_overall,
                     "offset": offset,
                     "limit": limit,
                     "items": [
@@ -19408,14 +19417,14 @@ async def okto_pulse_list_by_board(
 
         elif entity_type == "refinement":
             ideation_id = filters.get("ideation_id", "")
-            total = len(items)
-            paginated = items[offset : offset + limit]
+            paginated = items
             return json.dumps(
                 {
                     "board_id": board_id,
                     "entity_type": entity_type,
                     "ideation_id": ideation_id,
                     "total": total,
+                    "total_overall": total_overall,
                     "offset": offset,
                     "limit": limit,
                     "items": [
@@ -19442,14 +19451,14 @@ async def okto_pulse_list_by_board(
 
         elif entity_type == "sprint":
             spec_id = filters.get("spec_id", "")
-            total = len(items)
-            paginated = items[offset : offset + limit]
+            paginated = items
             return json.dumps(
                 {
                     "board_id": board_id,
                     "entity_type": entity_type,
                     "spec_id": spec_id,
                     "total": total,
+                    "total_overall": total_overall,
                     "offset": offset,
                     "limit": limit,
                     "items": [
@@ -19473,13 +19482,13 @@ async def okto_pulse_list_by_board(
             )
 
         elif entity_type == "story":
-            total = len(items)
-            paginated = items[offset : offset + limit]
+            paginated = items
             return json.dumps(
                 {
                     "board_id": board_id,
                     "entity_type": entity_type,
                     "total": total,
+                    "total_overall": total_overall,
                     "offset": offset,
                     "limit": limit,
                     "items": [_story_payload(s) for s in paginated],
@@ -19488,13 +19497,13 @@ async def okto_pulse_list_by_board(
             )
 
         else:  # topic
-            total = len(items)
-            paginated = items[offset : offset + limit]
+            paginated = items
             return json.dumps(
                 {
                     "board_id": board_id,
                     "entity_type": entity_type,
                     "total": total,
+                    "total_overall": total_overall,
                     "offset": offset,
                     "limit": limit,
                     "items": [_topic_payload(t) for t in paginated],

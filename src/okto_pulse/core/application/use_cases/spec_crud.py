@@ -177,9 +177,10 @@ class ListSpecsResult:
 class ListSpecsUseCase:
     """List a board's specs (read). 404 when the board is missing/not owned."""
 
-    async def execute(
+    async def preflight(
         self, command: ListSpecsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> ListSpecsResult:
+    ) -> None:
+        """Authorize the board without materializing its legacy specs."""
         board = await load_accessible_board(
             uow,
             command.board_id,
@@ -187,6 +188,11 @@ class ListSpecsUseCase:
         )
         if not board:
             raise EntityNotFoundError("board", command.board_id)
+
+    async def execute(
+        self, command: ListSpecsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+    ) -> ListSpecsResult:
+        await self.preflight(command, actor=actor, uow=uow)
         specs = await uow.services.specs.list_specs(
             command.board_id,
             command.status_filter,

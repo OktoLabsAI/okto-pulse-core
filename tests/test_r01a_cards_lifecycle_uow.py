@@ -97,6 +97,7 @@ async def _seed_card(
     status=None,
     validations: list | None = None,
     title: str = "fu4-s2-card",
+    position: int | None = None,
 ) -> str:
     # Seed Board + Spec + Card via raw models. We exercise the lifecycle/move/
     # dependency/validation endpoints, not create, so this deliberately bypasses
@@ -112,19 +113,22 @@ async def _seed_card(
         if not await db.get(Board, board_id):
             db.add(Board(id=board_id, name="fu4s2", owner_id=USER))
         if not await db.get(Spec, spec_id):
-            db.add(Spec(id=spec_id, board_id=board_id, title="fu4s2-spec", created_by=USER))
-        db.add(
-            Card(
-                id=cid,
-                board_id=board_id,
-                spec_id=spec_id,
-                title=f"{title}-{uuid.uuid4().hex[:6]}",
-                created_by=USER,
-                archived=archived,
-                status=status or CardStatus.NOT_STARTED,
-                validations=validations,
+            db.add(
+                Spec(id=spec_id, board_id=board_id, title="fu4s2-spec", created_by=USER)
             )
+        card = Card(
+            id=cid,
+            board_id=board_id,
+            spec_id=spec_id,
+            title=f"{title}-{uuid.uuid4().hex[:6]}",
+            created_by=USER,
+            archived=archived,
+            status=status or CardStatus.NOT_STARTED,
+            validations=validations,
         )
+        if position is not None:
+            card.position = position
+        db.add(card)
         await db.commit()
     return cid
 
@@ -141,7 +145,9 @@ async def test_move_card_200_refetched_body(client) -> None:
     card_id = await _seed_card()
     # Lateral move (not_started → not_started, level 0 → 0) skips the forward
     # spec/sprint gates; it is a reorder that returns the re-fetched card.
-    resp = client.post(f"{PREFIX}/{card_id}/move", json={"status": "not_started", "position": 1})
+    resp = client.post(
+        f"{PREFIX}/{card_id}/move", json={"status": "not_started", "position": 1}
+    )
     assert resp.status_code == 200, resp.text
     assert resp.json()["id"] == card_id
 
@@ -159,6 +165,92 @@ async def test_move_card_409_archived(client) -> None:
     resp = client.post(f"{PREFIX}/{card_id}/move", json={"status": "not_started"})
     assert resp.status_code == 409, resp.text
     assert "archived" in str(resp.json()["detail"]).lower()
+
+
+@pytest.mark.asyncio
+async def test_move_card_valid_selector_variants_reorder_and_return_card_response(
+    client,
+) -> None:
+    board_id, spec_id = await _seed_board_spec()
+    a = await _seed_card(board_id=board_id, spec_id=spec_id, title="move-a", position=0)
+    b = await _seed_card(board_id=board_id, spec_id=spec_id, title="move-b", position=1)
+    c = await _seed_card(board_id=board_id, spec_id=spec_id, title="move-c", position=2)
+
+    cases = (
+        (c, {"status": "not_started", "before_id": a}, 0),
+        (c, {"status": "not_started", "placement": "end"}, 2),
+        (a, {"status": "not_started", "position": -1}, 2),
+        (
+            b,
+            {
+                "status": "not_started",
+                "position": None,
+                "before_id": None,
+                "after_id": None,
+                "placement": None,
+            },
+            2,
+        ),
+    )
+    for card_id, payload, expected_position in cases:
+        response = client.post(f"{PREFIX}/{card_id}/move", json=payload)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["id"] == card_id
+        assert body["status"] == "not_started"
+        assert body["position"] == expected_position
+
+        from sqlalchemy import select
+        from sqlalchemy_test_models import Card, CardStatus
+
+        async with get_session_factory()() as db:
+            positions = list(
+                (
+                    await db.execute(
+                        select(Card.position)
+                        .where(
+                            Card.board_id == board_id,
+                            Card.status == CardStatus.NOT_STARTED,
+                            Card.archived.is_(False),
+                        )
+                        .order_by(Card.position)
+                    )
+                ).scalars()
+            )
+        assert positions == [0, 1, 2]
+
+
+@pytest.mark.asyncio
+async def test_move_card_route_maps_missing_cancellation_reason_to_typed_400(
+    client,
+) -> None:
+    card_id = await _seed_card()
+    response = client.post(f"{PREFIX}/{card_id}/move", json={"status": "cancelled"})
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]["error"] == "cancellation_reason_required"
+
+
+@pytest.mark.asyncio
+async def test_move_card_route_maps_cross_column_anchor_to_409(client) -> None:
+    from sqlalchemy_test_models import CardStatus
+
+    board_id, spec_id = await _seed_board_spec()
+    moving = await _seed_card(
+        board_id=board_id, spec_id=spec_id, title="moving", position=0
+    )
+    anchor = await _seed_card(
+        board_id=board_id,
+        spec_id=spec_id,
+        title="wrong-column-anchor",
+        status=CardStatus.STARTED,
+        position=0,
+    )
+    response = client.post(
+        f"{PREFIX}/{moving}/move",
+        json={"status": "not_started", "before_id": anchor},
+    )
+    assert response.status_code == 409, response.text
+    assert "resequence_anchor_invalid" in str(response.json()["detail"])
 
 
 # --- dependencies -----------------------------------------------------------
@@ -283,7 +375,9 @@ async def test_get_validation_200_and_404(client) -> None:
     assert found.status_code == 200, found.text
     assert found.json()["id"] == vid
 
-    missing_val = client.get(f"{PREFIX}/{card_id}/validations/nope-{uuid.uuid4().hex[:6]}")
+    missing_val = client.get(
+        f"{PREFIX}/{card_id}/validations/nope-{uuid.uuid4().hex[:6]}"
+    )
     assert missing_val.status_code == 404
     assert missing_val.json()["detail"] == "Validation not found"
 
@@ -321,10 +415,14 @@ async def test_delete_validation_404_missing_card(client) -> None:
 @pytest.mark.asyncio
 async def test_move_card_use_case_raises_for_missing_card() -> None:
     from okto_pulse.core.application.use_cases import MoveCardCommand, MoveCardUseCase
-    from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
     from okto_pulse.core.models.schemas import CardMove
     from sqlalchemy_test_models import CardStatus
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest")
     with pytest.raises(EntityNotFoundError):

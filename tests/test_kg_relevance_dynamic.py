@@ -664,8 +664,9 @@ def test_kg_hit_flushed_event_class_registered():
     assert "kg.hit_flushed" in EVENT_TYPES
     # Ideação #4 took it to 21; later structured-entity canonicalization,
     # story lifecycle, refinement semantic changes, and bug-regression reuse
-    # events expanded the registry to 29.
-    assert len(EVENT_TYPES) == 29
+    # events expanded the registry; delivery-debt recovery later added its
+    # dedicated bounded continuation event.
+    assert len(EVENT_TYPES) == 30
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1146,7 +1147,7 @@ def test_impl_c_frozen_on_insert_doc_updated_to_mutable_semantics():
 
 
 def test_impl_d_kg_daily_tick_event_class_registered():
-    """KGDailyTick is registered in the current 29-event registry."""
+    """KGDailyTick is registered in the current event registry."""
     from okto_pulse.core.events.types import (
         EVENT_TYPES,
         KGDailyTick,
@@ -1155,7 +1156,7 @@ def test_impl_d_kg_daily_tick_event_class_registered():
 
     assert KGDailyTick.event_type == "kg.tick.daily"
     assert "kg.tick.daily" in EVENT_TYPES
-    assert len(EVENT_TYPES) == 29
+    assert len(EVENT_TYPES) == 30
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 

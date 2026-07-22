@@ -3634,11 +3634,13 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
     raises, never rebuilds.
     """
     try:
-        from okto_pulse.core.kg.interfaces import get_kg_registry
         from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
 
-        reader = get_kg_registry().require_board_source_reader()
-        source_set = RebuildSourceEnumerator(source_store=reader.fetch).enumerate(
+        from okto_pulse.core.application.kg_rebuild import build_source_store
+
+        source_set = RebuildSourceEnumerator(
+            source_store=build_source_store()
+        ).enumerate(
             board_id=board_id
         )
         canonical = int(source_set.canonical_source_count)

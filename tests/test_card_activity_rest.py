@@ -75,6 +75,13 @@ async def activity_client(db_factory):
                     "field": "description",
                     "password": "do-not-return",
                     "after": {"nested": "value"},
+                    "changes": [
+                        {
+                            "field": "description",
+                            "old": {"nested": "old value"},
+                            "new": {"nested": "value"},
+                        }
+                    ],
                 },
                 created_at=datetime.now(timezone.utc),
             )
@@ -106,5 +113,35 @@ def test_card_activity_rest_returns_explicit_readable_dto(activity_client):
     assert row["trigger"] == "structured_entity_updated"
     assert row["details"]["password"] == "[redacted]"
     assert row["details"]["after"] == {"nested": "value"}
+    assert row["details"]["changes"] == [
+        {
+            "field": "description",
+            "old": {"nested": "old value"},
+            "new": {"nested": "value"},
+        }
+    ]
     assert "[object Object]" not in row["summary"]
     assert "{'nested'" not in row["summary"]
+
+
+def test_card_update_rest_exposes_real_before_after_contract(activity_client):
+    client, card_id = activity_client
+    update = client.patch(
+        f"/api/v1/cards/{card_id}",
+        json={"title": "Activity Card Updated"},
+    )
+    assert update.status_code == 200, update.text
+
+    response = client.get(f"/api/v1/cards/{card_id}/activity")
+    assert response.status_code == 200, response.text
+    update_row = next(
+        row for row in response.json() if row["action"] == "card_updated"
+    )
+    assert update_row["details"]["title"] == "Activity Card Updated"
+    assert update_row["details"]["changes"] == [
+        {
+            "field": "title",
+            "old": "Activity Card",
+            "new": "Activity Card Updated",
+        }
+    ]

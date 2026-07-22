@@ -390,3 +390,66 @@ class TestKGServiceUsesRegistry:
         # This test validates the flow works without errors.
         results = svc.find_similar_decisions("b1", "authentication")
         assert isinstance(results, list)
+
+    def test_find_similar_is_canonical_while_diagnostic_all_preserves_working(self):
+        from okto_pulse.core.kg.kg_service import KGService
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
+
+        class _FixedEmbeddingProvider:
+            dim = 3
+
+            def encode(self, _text: str) -> list[float]:
+                return [1.0, 0.0, 0.0]
+
+            def encode_batch(self, texts: list[str]) -> list[list[float]]:
+                return [self.encode(text) for text in texts]
+
+        store = InMemoryGraphStore()
+        store.bootstrap("b1")
+        store.create_node(
+            "b1",
+            "Decision",
+            "canonical-decision",
+            {
+                "title": "Canonical decision",
+                "embedding": [1.0, 0.0, 0.0],
+                "graph_layer": "canonical",
+            },
+        )
+        store.create_node(
+            "b1",
+            "Decision",
+            "demoted-decision",
+            {
+                "title": "Demoted decision",
+                "embedding": [1.0, 0.0, 0.0],
+                "graph_layer": "working",
+            },
+        )
+        configure_test_kg_registry(
+            graph_provider="inmemory",
+            graph_store=store,
+            embedding_provider=_FixedEmbeddingProvider(),
+        )
+
+        normal_results = KGService().find_similar_decisions(
+            "b1",
+            "same semantic topic",
+            min_similarity=0.9,
+        )
+        diagnostic_results = store.vector_search(
+            "b1",
+            "Decision",
+            [1.0, 0.0, 0.0],
+            top_k=10,
+            min_similarity=0.9,
+            graph_layer="all",
+        )
+
+        assert [item["id"] for item in normal_results] == ["canonical-decision"]
+        assert {item["node_id"] for item in diagnostic_results} == {
+            "canonical-decision",
+            "demoted-decision",
+        }

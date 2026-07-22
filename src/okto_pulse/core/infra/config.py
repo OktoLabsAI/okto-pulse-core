@@ -115,6 +115,7 @@ class CoreSettings(BaseModel):
     kg_decay_tick_interval_minutes: int = Field(1440, ge=5, le=10080)
     kg_decay_tick_staleness_days: int = Field(7, ge=1, le=365)
     kg_decay_tick_max_age_days: int = Field(0, ge=0, le=365)
+    kg_stale_sweep_budget: int = Field(50, ge=1, le=1000)
 
 def configure_settings(s: "CoreSettings") -> None:
     """Register a pre-built CoreSettings instance."""

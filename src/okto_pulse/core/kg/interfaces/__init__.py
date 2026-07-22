@@ -9,6 +9,8 @@ from okto_pulse.core.kg.interfaces.audit_repository import AuditRepository
 from okto_pulse.core.kg.interfaces.board_source_reader import (
     BoardSourceReader,
     BoardSourceRow,
+    BoardSourceSnapshot,
+    BoardSourceSnapshotCause,
     InvalidArtifactTypeError,
     SourceReadError,
     SourceReadFailure,
@@ -121,6 +123,8 @@ __all__ = [
     "AuditRepository",
     "BoardSourceReader",
     "BoardSourceRow",
+    "BoardSourceSnapshot",
+    "BoardSourceSnapshotCause",
     "CacheBackend",
     "CognitivePendingRecordRef",
     "CognitivePendingWorkProvider",

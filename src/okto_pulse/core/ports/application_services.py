@@ -13,6 +13,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from okto_pulse.core.application.use_cases.entity_pagination import (
+        EntityPageService,
+    )
     from okto_pulse.core.ports.relational_application import PermissionPresetGateway
     from okto_pulse.core.services.amendment_revision_api import (
         AmendmentRevisionApiService,
@@ -104,6 +107,9 @@ class ApplicationServiceCatalog(Protocol):
 
     @property
     def comments(self) -> "CommentService": ...
+
+    @property
+    def entity_pages(self) -> "EntityPageService": ...
 
     @property
     def default_board_config(self) -> "DefaultBoardConfigApiService": ...
@@ -591,6 +597,13 @@ class KnowledgeGraphOperations(Protocol):
     async def list_stale_canonical_parity(
         self, board_id: str, *, limit: int, offset: int
     ) -> object: ...
+
+    async def query_takedown_telemetry(
+        self,
+        *,
+        delete_event_id: str | None = None,
+        delivery_key: str | None = None,
+    ) -> dict[str, object]: ...
 
     async def list_canonical_debt(
         self,

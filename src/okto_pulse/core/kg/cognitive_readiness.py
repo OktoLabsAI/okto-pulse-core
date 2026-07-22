@@ -56,7 +56,10 @@ from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_MIXED_DEFERRED_REASON,
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
 )
-from okto_pulse.core.kg.canonical_learning_partition import HISTORICAL_DEBT_REASON
+from okto_pulse.core.kg.canonical_learning_partition import (
+    HISTORICAL_DEBT_REASON,
+    SOURCE_ABSENT_DEBT_REASON,
+)
 from okto_pulse.core.ports.kg_operational import get_kg_operational_read_model_port
 
 
@@ -125,6 +128,7 @@ R7_HOLD_REASON_CODES: frozenset[str] = frozenset({
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
     CANONICAL_LEARNING_MIXED_DEFERRED_REASON,
     HISTORICAL_DEBT_REASON,
+    SOURCE_ABSENT_DEBT_REASON,
 })
 
 

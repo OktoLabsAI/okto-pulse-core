@@ -289,13 +289,18 @@ class InMemoryGraphStore:
         top_k: int, min_similarity: float,
         *,
         include_superseded: bool = False,
+        graph_layer: str = "all",
     ) -> list[dict]:
+        if graph_layer not in {"canonical", "working", "all"}:
+            raise ValueError("invalid_graph_layer")
         nodes = self._board_nodes(board_id)
         results = []
         for n in nodes.values():
             if n.get("_type") != node_type:
                 continue
             if n.get("superseded_by") and not include_superseded:
+                continue
+            if graph_layer != "all" and n.get("graph_layer") != graph_layer:
                 continue
             emb = n.get("embedding")
             if emb is None:

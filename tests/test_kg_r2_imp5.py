@@ -1,11 +1,12 @@
-"""R2-IMP5 — sync deterministic stale demotion with Global Discovery via R1.
+"""R2-IMP5 — exercise digest parity after a deterministic stale demotion.
 
 Spec 9aedfe78 / card fb2d683f (TR3/TR10/AC7).
 
 Anti-test-theater: the canonical starting point is a REAL Spec + DeterministicWorker
 + commit, the DecisionDigest is created by the REAL Global Discovery outbox worker,
 and the convergence is the EXISTING R1-IMP1 parity reconciler (the GD worker's
-_apply_event) — R2 only enqueues. R1 is consumed unchanged.
+_apply_event). The reconciler is graph-only; Card 6 worker tests own the durable
+ledger/outbox/queue transfer, while this module consumes R1 unchanged.
 """
 
 from __future__ import annotations
@@ -22,6 +23,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_r2i5_"))
 
 from okto_pulse.core.kg.canonical_stale_reconciler import reconcile_stale_canonical
+from okto_pulse.core.kg.canonical_demotion_global_sync import (
+    enqueue_digest_layer_reconciliation,
+)
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
 from global_graph_testing import (
@@ -273,14 +277,21 @@ async def test_demotion_syncs_global_discovery_canonical_disappears(db_factory):
     assert _digest_layer(board_id, req_id) == "canonical"
     assert req_id in _query_ids(board_id, "canonical"), "sanity: canonical query returns it"
 
-    # Regress the source + run the R2 stale reconciler -> demotes board node +
-    # enqueues the R1 Global Discovery sync.
+    # Regress the source + run the graph-only stale reconciler. Delivery is a
+    # separate durable ownership boundary now; this lower-level R1 proof
+    # explicitly supplies its parity trigger.
     await _set_spec_status(db_factory, spec_id, "draft")
     async with db_factory() as db:
         rec = await reconcile_stale_canonical(db, board_id=board_id)
+        await enqueue_digest_layer_reconciliation(
+            db,
+            board_id=board_id,
+            reason="stale_demotion_parity",
+            idempotency_key=f"r2-imp5:{board_id}:{spec_id}",
+        )
         await db.commit()
     assert rec.demoted, rec.to_dict()
-    assert rec.global_sync_enqueued is True
+    assert rec.global_sync_enqueued is False
 
     # The GD worker runs the EXISTING R1 parity reconciler -> digest converges.
     assert await _drain_gd_worker(db_factory) == 1
@@ -290,23 +301,24 @@ async def test_demotion_syncs_global_discovery_canonical_disappears(db_factory):
     assert req_id not in _query_ids(board_id, "canonical")
     assert req_id in _query_ids(board_id, "all")
 
-    # Idempotent: a second sweep finds nothing to demote and re-sync is a no-op.
+    # Idempotent: a second graph sweep finds nothing to demote and never emits
+    # delivery by itself.
     async with db_factory() as db:
         rec2 = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
     assert rec2.demoted == []
     assert rec2.global_sync_enqueued is False
-    assert await _drain_gd_worker(db_factory) in (0, 1)  # no churn either way
+    assert await _drain_gd_worker(db_factory) == 0
     assert _digest_layer(board_id, req_id) == "working"
 
 
 # ===========================================================================
-# Coupling: a demotion always enqueues the GD sync (additive on R2-IMP1)
+# Ownership boundary: the bare graph reconciler never enqueues GD delivery
 # ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_reconcile_demotion_enqueues_global_sync_event(db_factory):
+async def test_bare_reconciler_never_enqueues_global_sync_event(db_factory):
     board_id = await _new_board(db_factory)
     spec_id = f"spec-{uuid.uuid4().hex[:10]}"
     await _insert_spec(db_factory, board_id, spec_id, status="done")
@@ -319,7 +331,7 @@ async def test_reconcile_demotion_enqueues_global_sync_event(db_factory):
         await db.commit()
         rec = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
-    assert rec.demoted and rec.global_sync_enqueued is True
+    assert rec.demoted and rec.global_sync_enqueued is False
 
     # A Global Discovery outbox event was enqueued for the board (the R1 trigger).
     async with db_factory() as db:
@@ -327,5 +339,4 @@ async def test_reconcile_demotion_enqueues_global_sync_event(db_factory):
         rows = (await db.execute(
             select(GlobalUpdateOutbox).where(GlobalUpdateOutbox.board_id == board_id)
         )).scalars().all()
-    assert any((r.payload or {}).get("reason") == "r2_stale_demotion_global_sync"
-               for r in rows)
+    assert rows == []

@@ -32,6 +32,7 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
 )
 from okto_pulse.core.domain.enums import CardStatus
+from okto_pulse.core.services.activity_log import activity_log_changes
 
 
 def _require_actor_board(actor: ActorContext, board_id: str) -> None:
@@ -186,7 +187,15 @@ class McpUpdateCardUseCase:
         self, command: McpUpdateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpUpdateCardResult:
         service = uow.services.cards
-        await _get_card_in_scope(service, command.card_id, command.board_id, actor)
+        card = await _get_card_in_scope(
+            service, command.card_id, command.board_id, actor
+        )
+        update_data = command.data.model_dump(exclude_unset=True)
+        changes = activity_log_changes(
+            {field: getattr(card, field, None) for field in update_data},
+            update_data,
+            update_data,
+        )
         updated = await service.update_card(
             command.card_id, actor.actor_id, command.data
         )
@@ -197,7 +206,9 @@ class McpUpdateCardUseCase:
             actor_type="agent",
             actor_id=actor.actor_id,
             actor_name=actor.actor_name,
-            details=command.activity_details,
+            # Keep every legacy MCP metadata field and add the same diff
+            # envelope emitted by the canonical CardService producer.
+            details={**command.activity_details, "changes": changes},
         )
         await commit(uow)
         return McpUpdateCardResult(updated)

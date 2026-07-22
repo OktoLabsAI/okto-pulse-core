@@ -311,6 +311,14 @@ class CoreApplicationServiceCatalog:
         return CommentService(self.__relational_context)
 
     @cached_property
+    def entity_pages(self):  # noqa: ANN201
+        from okto_pulse.core.application.use_cases.entity_pagination import (
+            EntityPageService,
+        )
+
+        return EntityPageService(self.__relational_context)
+
+    @cached_property
     def default_board_config(self):  # noqa: ANN201
         from okto_pulse.core.services.default_board_config_api import (
             DefaultBoardConfigApiService,
