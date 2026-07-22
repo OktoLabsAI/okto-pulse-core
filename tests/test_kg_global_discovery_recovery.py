@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -495,6 +496,74 @@ def test_preloaded_cognitive_digest_is_order_and_json_representation_stable() ->
     assert forward == reverse
     assert forward["count"] == 2
     assert len(str(forward["digest"])) == 64
+
+
+def test_base_only_cognitive_digest_is_byte_identical_to_legacy_policy() -> None:
+    row = {
+        "board_id": "board-1",
+        "node_id": "node-a",
+        "node_type": "Learning",
+        "generation": 0,
+        "source_revision": 0,
+        "payload": {"title": "A", "score": 1},
+        "evidence_refs": ["spec:1"],
+        "committed_at": "2026-07-17T00:00:01+00:00",
+    }
+    payload_hash = hashlib.sha256(
+        json.dumps(
+            row["payload"], sort_keys=True, separators=(",", ":"), default=str
+        ).encode("utf-8")
+    ).hexdigest()
+    legacy_canonical = [
+        {
+            "node_id": "node-a",
+            "node_type": "Learning",
+            "generation": 0,
+            "payload_hash": payload_hash,
+        }
+    ]
+    legacy_digest = hashlib.sha256(
+        json.dumps(
+            legacy_canonical, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+
+    assert cognitive_durable_digest_from_rows((row,)) == {
+        "count": 1,
+        "digest": legacy_digest,
+    }
+
+
+def test_cognitive_digest_uses_latest_revision_and_binds_evidence() -> None:
+    base = {
+        "board_id": "board-1",
+        "node_id": "node-a",
+        "node_type": "Learning",
+        "generation": 0,
+        "source_revision": 0,
+        "payload": {"title": "old"},
+        "evidence_refs": ["spec:old"],
+        "committed_at": "2026-07-17T00:00:01+00:00",
+    }
+    revision = {
+        **base,
+        "source_revision": 1,
+        "payload": {"title": "new"},
+        "evidence_refs": ["spec:new"],
+        "committed_at": "2026-07-17T00:00:02+00:00",
+    }
+    different_evidence = {
+        **revision,
+        "evidence_refs": ["spec:different"],
+    }
+
+    history = cognitive_durable_digest_from_rows((base, revision))
+    latest_only = cognitive_durable_digest_from_rows((revision,))
+    evidence_changed = cognitive_durable_digest_from_rows((different_evidence,))
+
+    assert history == latest_only
+    assert history["count"] == 1
+    assert evidence_changed["digest"] != history["digest"]
 
 
 def test_stage_rejects_census_revision_that_changed_before_core_staging() -> None:

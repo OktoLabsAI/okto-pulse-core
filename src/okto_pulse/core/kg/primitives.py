@@ -12,9 +12,15 @@ Reconciliation rules (deterministic, zero LLM):
   new id → SUPERSEDE hint, agent decides whether to override
 - Otherwise → ADD
 
-commit_consolidation writes to graph backend first (via compensating delete on
-failure — the pattern lives in card 7b922175 `compensating_tx.py`), then
-writes the audit row + outbox event in a single SQLite transaction.
+commit_consolidation writes to the graph backend first, releases the embedded
+graph writer, appends the durable cognitive-source batch, then stages the audit
+row + outbox event.  This is an explicit saga: embedded graph statements may
+auto-commit, so there is a bounded graph-ahead window between graph close and
+the durable append.  Append failure triggers best-effort graph compensation
+before the stable fail-closed error is returned.  Compensation removes
+session-created nodes/edges; in-place UPDATE/NC-8 mutations have no before-image
+in the current orchestrator and therefore require retry/reconciliation when an
+immutable same-generation source conflict exposes that saga residue.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
 from typing import TypeVar
@@ -78,6 +85,24 @@ from okto_pulse.core.ports.runtime_workers import BlockingExecutionPort
 logger = logging.getLogger("okto_pulse.kg.primitives")
 
 _T = TypeVar("_T")
+
+
+@dataclass
+class _PendingConsolidationCommit:
+    """Graph-applied commit awaiting a caller-owned relational commit.
+
+    Sessions are process-local, so this snapshot intentionally stays an
+    internal in-memory recovery record.  It contains exactly what is needed to
+    restage the durable cognitive ledger plus audit/outbox on retry, while
+    skipping ``_do_graph_commit`` entirely.
+    """
+
+    request_payload: dict[str, object]
+    records: tuple[object, ...]
+    counters: object
+    cognitive_source_records: tuple[dict, ...]
+    response: CommitConsolidationResponse
+    in_flight: bool = False
 
 
 def _allowed_edge_pairs(edge_type: str) -> tuple[tuple[str, str], ...]:
@@ -188,6 +213,20 @@ async def _run_cancellation_atomic(
         raise
 
 
+async def run_cancellation_atomic(
+    operation: Awaitable[_T],
+    *,
+    task_name: str,
+) -> _T:
+    """Public Core helper for a short cross-store completion boundary.
+
+    Adapters use this when a relational commit and its process-local
+    finalizer must finish as one cancellation-drained operation.
+    """
+
+    return await _run_cancellation_atomic(operation, task_name=task_name)
+
+
 # ---------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------
@@ -285,8 +324,46 @@ def _ownership(session_id: str, agent_id: str) -> KGPrimitiveError:
     )
 
 
+def _validate_session_state(
+    session: ConsolidationSession,
+    *,
+    allow_pending_commit: bool,
+) -> None:
+    """Validate mutable session state; callers under ``session.lock`` re-use it.
+
+    The first lookup is necessarily optimistic.  A commit can create a
+    deferred snapshot while another coroutine waits for the same lock, so
+    every mutating boundary must repeat this check after acquiring the lock.
+    """
+
+    session_id = session.session_id
+    if session.status != SessionStatus.OPEN:
+        raise KGPrimitiveError(
+            "session_already_committed",
+            f"Session {session_id} is in status {session.status}",
+            session_id=session_id,
+        )
+    pending = getattr(session, "pending_commit", None)
+    if pending is not None:
+        if bool(getattr(pending, "in_flight", False)):
+            raise KGPrimitiveError(
+                "session_commit_in_progress",
+                f"Session {session_id} is awaiting relational commit finalization",
+                session_id=session_id,
+            )
+        if not allow_pending_commit:
+            raise KGPrimitiveError(
+                "session_commit_pending",
+                f"Session {session_id} has a graph-applied commit awaiting retry",
+                session_id=session_id,
+            )
+
+
 async def _require_open_session(
-    session_id: str, agent_id: str
+    session_id: str,
+    agent_id: str,
+    *,
+    allow_pending_commit: bool = False,
 ) -> ConsolidationSession:
     store = get_kg_registry().require_session_store()
     session = await store.get(session_id)
@@ -294,12 +371,10 @@ async def _require_open_session(
         raise _not_found(session_id)
     if not session.check_ownership(agent_id):
         raise _ownership(session_id, agent_id)
-    if session.status != SessionStatus.OPEN:
-        raise KGPrimitiveError(
-            "session_already_committed",
-            f"Session {session_id} is in status {session.status}",
-            session_id=session_id,
-        )
+    _validate_session_state(
+        session,
+        allow_pending_commit=allow_pending_commit,
+    )
     return session
 
 
@@ -457,6 +532,7 @@ async def add_node_candidate(
         ) from exc
 
     async with session.lock:
+        _validate_session_state(session, allow_pending_commit=False)
         if cand.candidate_id in session.node_candidates:
             raise KGPrimitiveError(
                 "duplicate_candidate_id",
@@ -493,6 +569,7 @@ async def add_edge_candidate(
     session = await _require_open_session(req.session_id, agent_id)
     store = get_kg_registry().require_session_store()
     async with session.lock:
+        _validate_session_state(session, allow_pending_commit=False)
         cand = req.candidate
 
         # Layer ownership: reject deterministic edge types proposed by the
@@ -679,6 +756,10 @@ async def propose_reconciliation(
     registry = get_kg_registry()
     session = await _require_open_session(req.session_id, agent_id)
 
+    async with session.lock:
+        _validate_session_state(session, allow_pending_commit=False)
+        candidate_snapshot = dict(session.node_candidates)
+
     if not force_reprocess:
         latest = await _get_latest_audit(
             registry,
@@ -692,38 +773,48 @@ async def propose_reconciliation(
         latest = None
         nothing_changed = False
 
-    # Spec MKG-B-S1 (FR5, D2): propose re-checks the hash, so a session that
-    # began BEFORE an identical commit landed still counts the re-assertion.
-    # The session flag keeps the normal begin→propose flow at exactly one
-    # count per re-assertion.
-    if nothing_changed and not session.count_only_attested:
-        await _register_count_only_attestation(
-            registry,
-            board_id=session.board_id,
-            artifact_id=session.artifact_id,
-            previous_session_id=_audit_session_id(latest) if latest else None,
-            trigger="propose",
-        )
-        session.count_only_attested = True
-
     existing_matches_by_candidate: dict[str, list] = {}
     if not nothing_changed:
         embedder = registry.require_embedding_provider()
         existing_matches_by_candidate = await _run_graph_io(
             _find_existing_graph_matches,
             session.board_id,
-            dict(session.node_candidates),
+            candidate_snapshot,
             embedder,
         )
 
     hints_by_cid = reconcile_session(
-        session.node_candidates,
+        candidate_snapshot,
         nothing_changed=nothing_changed,
         existing_matches_by_candidate=existing_matches_by_candidate,
     )
     hints = list(hints_by_cid.values())
 
     async with session.lock:
+        _validate_session_state(session, allow_pending_commit=False)
+        if session.node_candidates != candidate_snapshot:
+            raise KGPrimitiveError(
+                "session_mutated_during_reconciliation",
+                "Session candidates changed while reconciliation was computed; "
+                "retry proposal against the current session snapshot",
+                session_id=req.session_id,
+            )
+
+        # Spec MKG-B-S1 (FR5, D2): only register the count-only attestation
+        # after the locked pending/state re-check.  Otherwise a concurrent
+        # commit could make the graph immutable while this proposal still
+        # publishes a relational side effect from the stale session.
+        if nothing_changed and not session.count_only_attested:
+            await _register_count_only_attestation(
+                registry,
+                board_id=session.board_id,
+                artifact_id=session.artifact_id,
+                previous_session_id=(
+                    _audit_session_id(latest) if latest else None
+                ),
+                trigger="propose",
+            )
+            session.count_only_attested = True
         session.reconciliation_hints = hints_by_cid
         session.touch(registry.require_session_store().default_ttl_seconds)
 
@@ -764,6 +855,51 @@ def _compensate_graph_writes(board_id: str, session_id: str, records: list) -> N
                     )
                 except Exception:
                     pass
+
+            # A fresh SUPERSEDE marks its predecessor before creating the
+            # session-owned successor.  Deleting that successor without
+            # clearing the mark leaves a dangling ``superseded_by`` pointer.
+            # The record intersection is a safe local before-image substitute:
+            # only a :supersedes edge created by this session whose successor
+            # is also a node created by this session can qualify.  The Cypher
+            # predicate then clears metadata only while the predecessor still
+            # points at that exact successor, preserving any later writer.
+            created_nodes = {
+                (record.entity_type, record.entity_id)
+                for record in records
+                if record.kind == "node"
+            }
+            for record in records:
+                successor_id = getattr(record, "from_id", None)
+                predecessor_id = getattr(record, "to_id", None)
+                if (
+                    record.kind != "edge"
+                    or record.entity_type != "supersedes"
+                    or not successor_id
+                    or not predecessor_id
+                ):
+                    continue
+                successor_types = sorted(
+                    node_type
+                    for node_type, node_id in created_nodes
+                    if node_id == successor_id
+                )
+                for node_type in successor_types:
+                    try:
+                        scope.execute(
+                            f"MATCH (n:{node_type}) "
+                            "WHERE n.id = $predecessor_id "
+                            "AND n.superseded_by = $successor_id "
+                            "SET n.superseded_by = NULL, "
+                            "n.superseded_at = NULL, "
+                            "n.revocation_reason = NULL",
+                            {
+                                "predecessor_id": predecessor_id,
+                                "successor_id": successor_id,
+                            },
+                        )
+                    except Exception:
+                        pass
 
             # Delete nodes
             node_types = {r.entity_type for r in records if r.kind == "node"}
@@ -1630,12 +1766,14 @@ def _do_graph_commit(
     kg_health_state: str,
     session_content_hash: str = "",
     session_artifact_id: str = "",
-) -> tuple[dict, object, list, datetime, dict]:
+) -> tuple[dict, object, list, datetime, dict, list[dict]]:
     """Synchronous graph writes for ``commit_consolidation``.
 
     Runs in the thread pool via ``_run_graph_io``. Returns
-    ``(candidate_to_graph_id, counters, records, committed_at, connectivity)``
-    on success.
+    ``(candidate_to_graph_id, counters, records, committed_at, connectivity,
+    cognitive_source_records)`` on success.  The durable records are returned
+    to the async coordinator and are never written while this function owns
+    the process-global embedded graph writer.
     Raises ``KGPrimitiveError`` on failure (after inline compensation).
     """
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
@@ -1796,6 +1934,23 @@ def _do_graph_commit(
                     _bump_attestation(orch, node_type_check, target_node_id)
                     candidate_to_graph_id[cand_id] = target_node_id
                     candidate_to_node_type[cand_id] = node_type_check
+                    if node_type_check in _COGNITIVE_SOURCE_TYPES:
+                        # Explicit UPDATE used to bypass the durable ledger
+                        # entirely.  Snapshot the literal post-update node so
+                        # immutable replay validation can reject a divergent
+                        # reuse of the same generation instead of silently
+                        # accepting stale source data.
+                        generation = _node_generation(
+                            graph_scope, node_type_check, target_node_id
+                        )
+                        _queue_cognitive_source_record(
+                            node_id=target_node_id,
+                            node_type=node_type_check,
+                            generation=generation,
+                            attrs=_read_cognitive_source_node_attrs(
+                                graph_scope, node_type_check, target_node_id
+                            ),
+                        )
                     logger.info(
                         "kg.consolidation.updated candidate=%s target=%s "
                         "type=%s session=%s",
@@ -1970,7 +2125,9 @@ def _do_graph_commit(
                         node_id=new_node_id,
                         node_type=node_type,
                         generation=successor_generation,
-                        attrs=new_attrs,
+                        attrs=_read_cognitive_source_node_attrs(
+                            graph_scope, node_type, new_node_id
+                        ),
                     )
                     logger.info(
                         "kg.consolidation.supersede_replayed candidate=%s "
@@ -2336,7 +2493,9 @@ def _do_graph_commit(
                     node_id=node_id,
                     node_type=node_type,
                     generation=0,
-                    attrs=node_attrs,
+                    attrs=_read_cognitive_source_node_attrs(
+                        graph_scope, node_type, node_id
+                    ),
                 )
                 logger.info(
                     "kg.consolidation.deterministic_id_reused candidate=%s "
@@ -2461,25 +2620,6 @@ def _do_graph_commit(
                 session_id, exc,
             )
 
-        # Spec MKG-A-S1 (FR4/D5, BR2): append the durable cognitive-source
-        # records BEFORE the graph transaction commits. On failure the
-        # graph writes are rolled back AND compensated (rollback alone is
-        # not reliable on this engine — same belt-and-braces as the generic
-        # failure branch below), so the graph is NEVER ahead of the durable
-        # source. Append is idempotent per (node_id, generation), so
-        # retrying the commit after the store recovers is safe.
-        try:
-            _append_cognitive_source_records(
-                board_id, session_id, cognitive_source_records
-            )
-        except KGPrimitiveError:
-            try:
-                run_async_blocking(graph_scope.rollback())
-            except Exception:
-                pass
-            _compensate_graph_writes(board_id, session_id, orch.records)
-            raise
-
         committed_at = datetime.now(timezone.utc)
         run_async_blocking(graph_scope.commit())
         return (
@@ -2488,6 +2628,7 @@ def _do_graph_commit(
             list(orch.records),
             committed_at,
             connectivity,
+            cognitive_source_records,
         )
 
     except KGPrimitiveError:
@@ -2517,12 +2658,16 @@ async def commit_consolidation(
     agent_id: str,
     db=None,
     blocking_execution: BlockingExecutionPort | None = None,
+    defer_session_finalization: bool = False,
 ) -> CommitConsolidationResponse:
     """Atomically write graph backend nodes/edges + audit + outbox event.
 
     Graph writes are offloaded to the thread pool via ``_run_graph_io`` and
-    ``_do_graph_commit``.  Audit persistence (SQLite) remains in the async
-    context via ``_commit_audit_records``.
+    ``_do_graph_commit``.  The graph scope is closed before the atomic
+    cognitive-source batch is appended on the owning async loop; no relational
+    operation runs while the process-global embedded graph writer is held.
+    Audit persistence (SQLite) remains in the async context via
+    ``_commit_audit_records``.
 
     KG-01 FR5/FR6 enforcement: this primitive is a write path against
     `board graph` and MUST run inside a `under_safe_write` guard. In SOFT
@@ -2535,7 +2680,19 @@ async def commit_consolidation(
     from okto_pulse.core.kg.write_barrier import require_write_token
 
     registry = get_kg_registry()
-    session = await _require_open_session(req.session_id, agent_id)
+    session = await _require_open_session(
+        req.session_id,
+        agent_id,
+        allow_pending_commit=True,
+    )
+
+    if defer_session_finalization and db is None:
+        raise KGPrimitiveError(
+            "relational_context_required",
+            "deferred consolidation finalization requires a caller-owned "
+            "relational UnitOfWork",
+            session_id=req.session_id,
+        )
 
     # FR5/FR6 barrier check. Uses session.board_id so a multi-board
     # process never blocks the wrong board. Raises in STRICT, logs+counter
@@ -2545,9 +2702,117 @@ async def commit_consolidation(
     # Spec MKG-E-S1 (FR4): subtype opt-in validation BEFORE any write.
     await _validate_subtype_declarations(dict(session.node_candidates))
 
+    # A cognitive candidate can take an in-place UPDATE/NC-8 path whose graph
+    # mutation has no before-image for compensation. Resolve the durable
+    # source port before opening the graph writer so a missing adapter leaves
+    # no graph-ahead residue. Runtime database failures still use the bounded
+    # saga below after the graph scope has closed.
+    cognitive_source_store = None
+    if any(
+        _enum_value(candidate.node_type) in _COGNITIVE_SOURCE_TYPES
+        for candidate in session.node_candidates.values()
+    ):
+        from okto_pulse.core.ports.kg_cognitive_source import (
+            CognitiveSourceError,
+            require_cognitive_source_store,
+        )
+
+        try:
+            cognitive_source_store = require_cognitive_source_store()
+            if db is not None and not callable(
+                getattr(cognitive_source_store, "append_many_in_context", None)
+            ):
+                raise CognitiveSourceError(
+                    "cognitive_source_context_append_unsupported",
+                    board_id=session.board_id,
+                    remediation=(
+                        "Install a CognitiveSourceStore adapter that can stage "
+                        "append_many_in_context in the caller-owned relational "
+                        "unit of work."
+                    ),
+                )
+        except CognitiveSourceError as exc:
+            raise KGPrimitiveError(
+                "kg_cognitive_source_unavailable",
+                "cognitive durable-source adapter is unavailable; graph "
+                "commit was rejected before its first write.",
+                session_id=req.session_id,
+                details={
+                    "board_id": session.board_id,
+                    "failure_reason": exc.failure_reason,
+                    "node_id": exc.node_id,
+                },
+            ) from exc
+
+    owns_deferred_claim = False
+
     async def _complete_commit(
         kg_health_state: str,
     ) -> CommitConsolidationResponse:
+        nonlocal owns_deferred_claim
+        request_payload = req.model_dump(mode="json")
+        pending = getattr(session, "pending_commit", None)
+        if pending is not None:
+            if not isinstance(pending, _PendingConsolidationCommit):
+                raise KGPrimitiveError(
+                    "session_commit_state_invalid",
+                    "Session contains an invalid deferred commit snapshot",
+                    session_id=req.session_id,
+                )
+            # Re-check under ``session.lock``. Two callers may both pass the
+            # optimistic adapter pre-check before the first one marks the
+            # deferred snapshot in flight.
+            if pending.in_flight:
+                raise KGPrimitiveError(
+                    "session_commit_in_progress",
+                    f"Session {req.session_id} is awaiting relational commit "
+                    "finalization",
+                    session_id=req.session_id,
+                )
+            if not defer_session_finalization:
+                raise KGPrimitiveError(
+                    "session_commit_retry_requires_finalization",
+                    "A graph-applied deferred commit must be retried through "
+                    "a caller-owned relational UnitOfWork",
+                    session_id=req.session_id,
+                )
+            if pending.request_payload != request_payload:
+                raise KGPrimitiveError(
+                    "session_commit_retry_mismatch",
+                    "Deferred commit retry must use the original summary and "
+                    "agent overrides",
+                    session_id=req.session_id,
+                )
+
+            # The session lock serializes this transition. Record ownership
+            # before the first fallible restage await so cancellation cleanup
+            # can distinguish this retry from a competing caller rejected on
+            # another invocation's ``in_flight`` snapshot.
+            owns_deferred_claim = True
+
+            # The graph was already applied by the first attempt.  Restage only
+            # the relational ledger/audit/outbox in the fresh caller UOW.
+            await _append_cognitive_source_records(
+                session.board_id,
+                req.session_id,
+                list(pending.cognitive_source_records),
+                context=db,
+                store=cognitive_source_store,
+            )
+            await _commit_audit_records(
+                registry,
+                db,
+                list(pending.records),
+                pending.counters,
+                req,
+                session,
+                agent_id,
+                pending.response.committed_at,
+            )
+            pending.in_flight = True
+            session.touch(registry.require_session_store().default_ttl_seconds)
+            return pending.response
+
         effective_hints = dict(session.reconciliation_hints)
         for cid, override in req.agent_overrides.items():
             effective_hints[cid] = override
@@ -2560,6 +2825,7 @@ async def commit_consolidation(
                 records,
                 committed_at,
                 connectivity,
+                cognitive_source_records,
             ) = await _run_graph_io(
                 _do_graph_commit,
                 session.board_id,
@@ -2585,47 +2851,66 @@ async def commit_consolidation(
                 details=details,
             ) from exc
 
-        # --- SQLite audit + outbox (async, remains in event loop) ---
-        await _commit_audit_records(
-            registry,
-            db,
-            records,
-            counters,
-            req,
-            session,
-            agent_id,
-            committed_at,
-        )
-
-        session.status = SessionStatus.COMMITTED
-        session.committed_graph_node_refs = [
-            {
-                "node_id": record.entity_id,
-                "node_type": record.entity_type,
-                "kind": record.kind,
-            }
-            for record in records
-        ]
-        await registry.require_session_store().remove(req.session_id)
-
-        registry.require_cache_backend().invalidate_board(session.board_id)
-
-        # Commit bem-sucedido prova que o write-path está saudável:
-        # (a) limpa falhas de WAL/commit do ring buffer (sem isso, o health
-        #     manteria wal_or_commit_errors até o restart — feedback loop);
-        # (b) invalida o cache de health do write-path para a transição
-        #     vazio→populado refletir já no próximo commit.
+        # --- relational staging (async, graph writer already released) ---
+        # Ladybug/Kuzu can auto-commit individual graph statements, so this is
+        # deliberately a saga rather than a cross-engine transaction.  Both
+        # the durable cognitive append and audit/outbox staging belong to the
+        # same post-graph compensation barrier: neither may fail while leaving
+        # session-created graph entities acknowledged as committed.  In-place
+        # UPDATE/NC-8 writes are intentionally not claimed as reversible:
+        # GraphWriteRecord carries no before-image for them.
+        failure_stage = "cognitive_source_append"
         try:
-            from okto_pulse.core.kg.memory_pressure_collector import (
-                record_write_success,
+            await _append_cognitive_source_records(
+                session.board_id,
+                req.session_id,
+                cognitive_source_records,
+                context=db,
+                store=cognitive_source_store,
             )
 
-            record_write_success(session.board_id)
-        except Exception:  # pragma: no cover — defensivo, nunca quebra commit
-            pass
-        _COMMIT_HEALTH_CACHE.pop(session.board_id, None)
+            failure_stage = "audit_outbox_stage"
+            await _commit_audit_records(
+                registry,
+                db,
+                records,
+                counters,
+                req,
+                session,
+                agent_id,
+                committed_at,
+            )
+        except Exception:
+            try:
+                await _run_graph_io(
+                    _compensate_graph_writes,
+                    session.board_id,
+                    req.session_id,
+                    records,
+                    executor=blocking_execution,
+                )
+            except Exception as compensation_error:
+                # Compensation is explicitly best-effort.  Never replace the
+                # original append/audit exception with an executor/cleanup
+                # failure; preserve both and identify the failed stage in
+                # telemetry for operator recovery.
+                logger.warning(
+                    "kg.post_graph.compensation_failed board=%s session=%s "
+                    "failure_stage=%s err=%s",
+                    session.board_id,
+                    req.session_id,
+                    failure_stage,
+                    compensation_error,
+                    extra={
+                        "event": "kg.post_graph.compensation_failed",
+                        "board_id": session.board_id,
+                        "session_id": req.session_id,
+                        "failure_stage": failure_stage,
+                    },
+                )
+            raise
 
-        return CommitConsolidationResponse(
+        response = CommitConsolidationResponse(
             session_id=req.session_id,
             status=SessionStatus.COMMITTED,
             nodes_added=counters.nodes_added,
@@ -2646,18 +2931,222 @@ async def commit_consolidation(
             committed_at=committed_at,
         )
 
+        if defer_session_finalization:
+            session.pending_commit = _PendingConsolidationCommit(
+                request_payload=request_payload,
+                records=tuple(records),
+                counters=counters,
+                cognitive_source_records=tuple(cognitive_source_records),
+                response=response,
+                in_flight=True,
+            )
+            owns_deferred_claim = True
+            session.touch(registry.require_session_store().default_ttl_seconds)
+            return response
+
+        await _finalize_consolidation_session_unlocked(
+            registry,
+            session,
+            records,
+            session_id=req.session_id,
+        )
+        return response
+
     # Waiting for the session lock and resolving pre-commit health remain
     # cancellable: no irreversible graph write has started at either point.
     # Once graph IO begins, keep the parent-held lock until graph, audit/outbox,
     # and session finalization have all completed.
     async with session.lock:
+        _validate_session_state(
+            session,
+            allow_pending_commit=True,
+        )
         kg_health_state = await _resolve_commit_kg_health_state(
             session.board_id,
             db,
         )
-        return await _run_cancellation_atomic(
-            _complete_commit(kg_health_state),
-            task_name="core.kg.commit_consolidation",
+        try:
+            return await _run_cancellation_atomic(
+                _complete_commit(kg_health_state),
+                task_name="core.kg.commit_consolidation",
+            )
+        except asyncio.CancelledError:
+            # The cancellation drain above lets the atomic child finish.  A
+            # deferred child may therefore have applied graph writes and
+            # staged its relational batch even though its caller never reaches
+            # ``uow.commit()``. Compensate while this invocation still owns the
+            # session lock. Merely releasing the volatile retry snapshot would
+            # leave graph-ahead state if the cancelled client never returned.
+            pending = getattr(session, "pending_commit", None)
+            if (
+                defer_session_finalization
+                and owns_deferred_claim
+                and isinstance(pending, _PendingConsolidationCommit)
+            ):
+                await _run_cancellation_atomic(
+                    _abort_deferred_consolidation_unlocked(
+                        registry,
+                        session,
+                        req.session_id,
+                        blocking_execution=blocking_execution,
+                    ),
+                    task_name="core.kg.cancelled_deferred_compensation",
+                )
+            raise
+
+
+async def _finalize_consolidation_session_unlocked(
+    registry,
+    session: ConsolidationSession,
+    records,
+    *,
+    session_id: str,
+) -> None:
+    """Finalize process-local session state after relational durability."""
+
+    session.status = SessionStatus.COMMITTED
+    session.committed_graph_node_refs = [
+        {
+            "node_id": record.entity_id,
+            "node_type": record.entity_type,
+            "kind": record.kind,
+        }
+        for record in records
+    ]
+    session.pending_commit = None
+    await registry.require_session_store().remove(session_id)
+
+    registry.require_cache_backend().invalidate_board(session.board_id)
+
+    # Only a confirmed relational commit proves the whole write path healthy.
+    try:
+        from okto_pulse.core.kg.memory_pressure_collector import (
+            record_write_success,
+        )
+
+        record_write_success(session.board_id)
+    except Exception:  # pragma: no cover - observability must not break commit
+        pass
+    _COMMIT_HEALTH_CACHE.pop(session.board_id, None)
+
+
+async def finalize_deferred_consolidation(
+    session_id: str,
+    *,
+    agent_id: str,
+) -> None:
+    """Remove a deferred session only after its caller UOW committed.
+
+    This hook deliberately performs no relational work.  Its sole authority is
+    the caller's successful ``commit()`` return; until then the pending snapshot
+    remains retryable and graph writes are never replayed.
+    """
+
+    registry = get_kg_registry()
+    session = await registry.require_session_store().get(session_id)
+    if session is None:
+        # Terminal finalization is intentionally idempotent.  A caller may be
+        # retrying after the relational commit succeeded and the first
+        # finalizer removed the process-local session before a later cache or
+        # transport failure became visible.
+        return
+    if not session.check_ownership(agent_id):
+        raise _ownership(session_id, agent_id)
+
+    async with session.lock:
+        pending = getattr(session, "pending_commit", None)
+        if not isinstance(pending, _PendingConsolidationCommit):
+            raise KGPrimitiveError(
+                "session_commit_not_pending",
+                f"Session {session_id} has no deferred commit to finalize",
+                session_id=session_id,
+            )
+        # The successful caller-owned relational commit is the authority for
+        # terminal cleanup.  Do not require ``in_flight`` here: an earlier
+        # error handler from an older caller may have released that volatile
+        # flag after durability was already established.  Finalization must
+        # never restage INSERTs or replay graph writes.
+        await _finalize_consolidation_session_unlocked(
+            registry,
+            session,
+            pending.records,
+            session_id=session_id,
+        )
+
+
+async def release_deferred_consolidation(
+    session_id: str,
+    *,
+    agent_id: str,
+) -> None:
+    """Release an unsuccessful caller UOW while preserving retry state."""
+
+    registry = get_kg_registry()
+    session = await registry.require_session_store().get(session_id)
+    if session is None:
+        return
+    if not session.check_ownership(agent_id):
+        raise _ownership(session_id, agent_id)
+
+    async with session.lock:
+        pending = getattr(session, "pending_commit", None)
+        if isinstance(pending, _PendingConsolidationCommit):
+            pending.in_flight = False
+            session.touch(registry.require_session_store().default_ttl_seconds)
+
+
+async def _abort_deferred_consolidation_unlocked(
+    registry,
+    session: ConsolidationSession,
+    session_id: str,
+    *,
+    blocking_execution: BlockingExecutionPort | None = None,
+) -> None:
+    """Compensate/discard a deferred session while its lock is already held."""
+
+    pending = getattr(session, "pending_commit", None)
+    if isinstance(pending, _PendingConsolidationCommit):
+        pending.in_flight = False
+        await _run_graph_io(
+            _compensate_graph_writes,
+            session.board_id,
+            session_id,
+            list(pending.records),
+            executor=blocking_execution,
+        )
+    session.pending_commit = None
+    session.status = SessionStatus.ABORTED
+    await registry.require_session_store().remove(session_id)
+    registry.require_cache_backend().invalidate_board(session.board_id)
+
+
+async def abort_deferred_consolidation(
+    session_id: str,
+    *,
+    agent_id: str,
+    blocking_execution: BlockingExecutionPort | None = None,
+) -> None:
+    """Compensate a deferred graph write and discard its session.
+
+    Cognitive closeout uses this after its relational ``commit()`` fails.  Its
+    next worker attempt must not mistake a graph-only node for a durable
+    success, so this path compensates before removing the process-local retry
+    snapshot.
+    """
+
+    registry = get_kg_registry()
+    session = await registry.require_session_store().get(session_id)
+    if session is None:
+        return
+    if not session.check_ownership(agent_id):
+        raise _ownership(session_id, agent_id)
+
+    async with session.lock:
+        await _abort_deferred_consolidation_unlocked(
+            registry,
+            session,
+            session_id,
+            blocking_execution=blocking_execution,
         )
 
 
@@ -3091,11 +3580,13 @@ def _cognitive_source_record_kwargs(
 
     payload = dict(attrs)
     source_ref = str(payload.get("source_artifact_ref") or "")
+    source_revision = max(int(payload.get("attestation_count") or 1) - 1, 0)
     return {
         "node_id": node_id,
         "board_id": board_id,
         "node_type": node_type,
         "generation": generation,
+        "source_revision": source_revision,
         "payload": payload,
         "evidence_refs": (source_ref,) if source_ref else (),
         "source_session_id": session_id,
@@ -3103,15 +3594,21 @@ def _cognitive_source_record_kwargs(
     }
 
 
-def _append_cognitive_source_records(
-    board_id: str, session_id: str, records: list[dict]
+async def _append_cognitive_source_records(
+    board_id: str,
+    session_id: str,
+    records: list[dict],
+    *,
+    context: object | None = None,
+    store: object | None = None,
 ) -> None:
     """Append cognitive-source records fail-closed (spec MKG-A-S1 FR4/D5).
 
     Raises ``KGPrimitiveError`` with the stable code
-    ``kg_cognitive_source_unavailable`` — the caller's KGPrimitiveError
-    branch rolls the graph transaction back, keeping the graph behind the
-    durable source.
+    ``kg_cognitive_source_unavailable`` — the caller's coordinator compensates
+    graph writes best-effort.  The graph scope is
+    already closed when this function runs, so no relational wait can retain
+    the process-global embedded writer.
     """
 
     if not records:
@@ -3123,9 +3620,28 @@ def _append_cognitive_source_records(
     )
 
     try:
-        store = require_cognitive_source_store()
-        for record_kwargs in records:
-            run_async_blocking(store.append(CognitiveSourceRecord(**record_kwargs)))
+        resolved_store = store or require_cognitive_source_store()
+        source_records = tuple(
+            CognitiveSourceRecord(**kwargs) for kwargs in records
+        )
+        if context is None:
+            await resolved_store.append_many(source_records)
+        else:
+            append_in_context = getattr(
+                resolved_store,
+                "append_many_in_context",
+                None,
+            )
+            if not callable(append_in_context):
+                raise CognitiveSourceError(
+                    "cognitive_source_context_append_unsupported",
+                    board_id=board_id,
+                    remediation=(
+                        "Install a CognitiveSourceStore adapter that supports "
+                        "the caller-owned relational unit of work."
+                    ),
+                )
+            await append_in_context(context, source_records)
     except CognitiveSourceError as exc:
         # OR1: structured failure log — the operator must distinguish
         # "commit aborted: durable source unavailable" from graph failures.
@@ -3147,14 +3663,44 @@ def _append_cognitive_source_records(
         raise KGPrimitiveError(
             "kg_cognitive_source_unavailable",
             "cognitive durable-source append failed; commit aborted "
-            "fail-closed (the graph is never ahead of the durable source). "
-            "Retry after the application database recovers — the append is "
-            "idempotent per (node_id, generation).",
+            "fail-closed and graph compensation was requested. Retry after "
+            "the application database recovers; identical appends are "
+            "idempotent per (node_id, generation, source_revision), while "
+            "divergent replays "
+            "are rejected as integrity conflicts.",
             session_id=session_id,
             details={
                 "board_id": board_id,
                 "failure_reason": exc.failure_reason,
                 "node_id": exc.node_id,
+            },
+        ) from exc
+    except Exception as exc:
+        node_id = str(records[0].get("node_id") or "")
+        logger.exception(
+            "kg.cognitive_source.append_failed board=%s session=%s "
+            "node_id=%s reason=cognitive_source_append_unexpected",
+            board_id,
+            session_id,
+            node_id,
+            extra={
+                "event": "kg.cognitive_source.append_failed",
+                "board_id": board_id,
+                "session_id": session_id,
+                "node_id": node_id,
+                "failure_reason": "cognitive_source_append_unexpected",
+            },
+        )
+        raise KGPrimitiveError(
+            "kg_cognitive_source_unavailable",
+            "cognitive durable-source append failed unexpectedly; commit "
+            "aborted fail-closed and graph compensation was requested.",
+            session_id=session_id,
+            details={
+                "board_id": board_id,
+                "failure_reason": "cognitive_source_append_unexpected",
+                "node_id": node_id,
+                "error_type": type(exc).__name__,
             },
         ) from exc
 
@@ -3392,6 +3938,7 @@ async def abort_consolidation(
     never called — the transactional boundary guaranteed no partial writes."""
     session = await _require_open_session(req.session_id, agent_id)
     async with session.lock:
+        _validate_session_state(session, allow_pending_commit=False)
         session.status = SessionStatus.ABORTED
     await get_kg_registry().require_session_store().remove(req.session_id)
     return AbortConsolidationResponse(

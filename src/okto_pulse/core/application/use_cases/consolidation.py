@@ -106,5 +106,6 @@ class CommitConsolidationUseCase:
             command.req,
             board_id=command.board_id,
             agent_id=actor.actor_id,
+            defer_session_finalization=True,
         )
         return CommitConsolidationResult(resp)

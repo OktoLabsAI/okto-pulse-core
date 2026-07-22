@@ -220,6 +220,19 @@ class _RuntimeConnection:
 
     def execute(self, cypher: str, params: dict[str, Any] | None = None) -> _FakeResult:
         self.executed.append(cypher)
+        if "CALL SHOW_TABLES()" in cypher:
+            return _FakeResult(
+                [["Board"], ["Topic"], ["Entity"], ["DecisionDigest"]]
+            )
+        if "CALL SHOW_INDEXES()" in cypher:
+            return _FakeResult(
+                [
+                    ["board_summary_idx"],
+                    ["topic_centroid_idx"],
+                    ["entity_embedding_idx"],
+                    ["digest_embedding_idx"],
+                ]
+            )
         if "QUERY_VECTOR_INDEX" in cypher:
             assert params is not None
             assert params["boards"] == ["board-a"]
@@ -249,7 +262,7 @@ class _FakeBoardGraphRuntime:
         self.executed: list[str] = []
         self.loaded_extensions = 0
 
-    def open_kuzu_db(self, path: Path, *, on_corruption=None) -> _FakeDb:
+    def open_global_kuzu_db(self, path: Path, *, on_corruption=None) -> _FakeDb:
         del on_corruption
         db = _FakeDb(path)
         self.opened_dbs.append(db)

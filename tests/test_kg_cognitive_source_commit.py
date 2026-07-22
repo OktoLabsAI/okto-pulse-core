@@ -1,10 +1,10 @@
 """MKG-A C4 — durable cognitive-source append in the real commit path.
 
-Covers spec MKG-A-S1 scenario S3 (AC3): a cognitive commit appends the
-durable record BEFORE reporting success; with the store unavailable the
-commit aborts fail-closed with the stable code
-``kg_cognitive_source_unavailable`` and NO cognitive node lands in the
-graph; retry after recovery succeeds.
+Covers spec MKG-A-S1 scenario S3 (AC3): a cognitive commit closes the graph
+scope, appends one atomic durable batch on the owning event loop, and only then
+reports success.  With the store unavailable the commit aborts fail-closed,
+requests graph compensation and returns ``kg_cognitive_source_unavailable``;
+retry after recovery succeeds.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 import gc
 import shutil
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 
@@ -77,6 +78,34 @@ async def _ensure_community_tables():
         await conn.run_sync(CommunityBase.metadata.create_all)
 
 
+def _require_ambient_community_store(session_factory):
+    """Resolve the matching cross-edition adapter or skip this integration oracle.
+
+    Core and Community are independently installable distributions.  A Core
+    source checkout can therefore legitimately run beside an older installed
+    Community wheel.  These SQL integration cases require the new ambient-UOW
+    capability; the Core-owned contract cases below still run when that
+    matching adapter is not installed.
+    """
+
+    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
+        CommunitySqlAlchemyCognitiveSourceStore,
+    )
+
+    if not callable(
+        getattr(
+            CommunitySqlAlchemyCognitiveSourceStore,
+            "append_many_in_context",
+            None,
+        )
+    ):
+        pytest.skip(
+            "matching Community cognitive-source adapter is not installed "
+            "(append_many_in_context is required)"
+        )
+    return CommunitySqlAlchemyCognitiveSourceStore(session_factory)
+
+
 class _BrokenStore:
     async def append(self, record: CognitiveSourceRecord) -> str:
         raise CognitiveSourceError(
@@ -86,7 +115,77 @@ class _BrokenStore:
             remediation="test-injected outage",
         )
 
+    async def append_many(
+        self, records: tuple[CognitiveSourceRecord, ...]
+    ) -> tuple[str, ...]:
+        record = records[0]
+        raise CognitiveSourceError(
+            "cognitive_source_append_failed",
+            board_id=record.board_id,
+            node_id=record.node_id,
+            remediation="test-injected outage",
+        )
+
+    async def append_many_in_context(
+        self,
+        context: object,
+        records: tuple[CognitiveSourceRecord, ...],
+    ) -> tuple[str, ...]:
+        del context
+        return await self.append_many(records)
+
     async def enumerate(self, board_id: str):
+        return ()
+
+
+class _CapturingBatchStore:
+    def __init__(self) -> None:
+        self.append_many_calls = 0
+        self.thread_id: int | None = None
+        self.records: tuple[CognitiveSourceRecord, ...] = ()
+        self.contexts: list[object] = []
+
+    async def append(self, record: CognitiveSourceRecord) -> str:
+        raise AssertionError("commit path must use append_many")
+
+    async def append_many(
+        self, records: tuple[CognitiveSourceRecord, ...]
+    ) -> tuple[str, ...]:
+        self.append_many_calls += 1
+        self.thread_id = threading.get_ident()
+        self.records = records
+        return tuple(record.node_id for record in records)
+
+    async def append_many_in_context(
+        self,
+        context: object,
+        records: tuple[CognitiveSourceRecord, ...],
+    ) -> tuple[str, ...]:
+        self.contexts.append(context)
+        return await self.append_many(records)
+
+    async def enumerate(self, board_id: str):
+        return tuple(record for record in self.records if record.board_id == board_id)
+
+
+class _UnexpectedBrokenStore(_CapturingBatchStore):
+    async def append_many(
+        self, records: tuple[CognitiveSourceRecord, ...]
+    ) -> tuple[str, ...]:
+        raise RuntimeError("test-injected unexpected adapter failure")
+
+
+class _LegacyStoreWithoutContextAppend:
+    async def append(self, record: CognitiveSourceRecord) -> str:
+        return record.node_id
+
+    async def append_many(
+        self, records: tuple[CognitiveSourceRecord, ...]
+    ) -> tuple[str, ...]:
+        return tuple(record.node_id for record in records)
+
+    async def enumerate(self, board_id: str):
+        del board_id
         return ()
 
 
@@ -161,7 +260,7 @@ async def _drive_learning_session(
         db=None,
     )
     async with session_factory() as db:
-        return await commit_consolidation(
+        result = await commit_consolidation(
             CommitConsolidationRequest(
                 session_id=begin.session_id,
                 summary_text=f"MKG-A C4 commit — {title}",
@@ -169,6 +268,8 @@ async def _drive_learning_session(
             agent_id="system:layer1_worker",
             db=db,
         )
+        await db.commit()
+        return result
 
 
 def _count_learnings_sync(board_id: str) -> int:
@@ -241,16 +342,12 @@ async def _create_graph_ahead_learning(
 async def test_commit_appends_durable_record_before_success(
     cogsrc_tempdir, monkeypatch
 ):
-    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
-        CommunitySqlAlchemyCognitiveSourceStore,
-    )
     from okto_pulse.community.adapters.sqlalchemy_models import KGCognitiveSource
 
     session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    store = _require_ambient_community_store(session_factory)
     await _ensure_community_tables()
-    register_cognitive_source_store(
-        CommunitySqlAlchemyCognitiveSourceStore(session_factory)
-    )
+    register_cognitive_source_store(store)
 
     title = "[MKG-A C4] retry-safe learning"
     commit = await _drive_learning_session(session_factory, board_id, title)
@@ -274,13 +371,131 @@ async def test_commit_appends_durable_record_before_success(
     assert row.source_session_id
 
 
+async def test_commit_uses_ambient_uow_and_batches_on_event_loop(
+    cogsrc_tempdir, monkeypatch
+):
+    from okto_pulse.core.kg.primitives import reset_commit_health_cache_for_tests
+
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    capture = _CapturingBatchStore()
+    register_cognitive_source_store(capture)
+    reset_commit_health_cache_for_tests(board_id)
+    event_loop_thread = threading.get_ident()
+
+    commit = await _drive_learning_session(
+        session_factory,
+        board_id,
+        "[MKG-A P1] no relational write under graph writer",
+    )
+
+    assert commit.nodes_added >= 1
+    assert capture.append_many_calls == 1
+    assert len(capture.contexts) == 1
+    assert capture.thread_id == event_loop_thread
+    assert len(capture.records) == 1
+    assert capture.records[0].source_revision == 0
+    assert len(capture.records[0].record_fingerprint) == 64
+
+
+async def test_nc8_reuse_derives_revision_from_post_update_attestation(
+    cogsrc_tempdir, monkeypatch
+):
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    capture = _CapturingBatchStore()
+    register_cognitive_source_store(capture)
+    source_ref = "spec:cognitive-revision-source"
+
+    await _drive_learning_session(
+        session_factory,
+        board_id,
+        "[MKG-A revision] initial",
+        source_artifact_ref=source_ref,
+    )
+    assert capture.records[0].source_revision == 0
+
+    await _drive_learning_session(
+        session_factory,
+        board_id,
+        "[MKG-A revision] initial",
+        source_artifact_ref=source_ref,
+    )
+
+    assert capture.append_many_calls == 2
+    assert len(capture.records) == 1
+    assert capture.records[0].generation == 0
+    assert capture.records[0].source_revision == 1
+    assert capture.records[0].payload["attestation_count"] == 2
+
+
+async def test_missing_store_rejects_cognitive_commit_before_graph_write(
+    cogsrc_tempdir, monkeypatch
+):
+    from okto_pulse.core.kg import primitives
+
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    reset_cognitive_source_store_for_tests()
+    real_run_graph_io = primitives._run_graph_io
+    graph_commit_calls = 0
+
+    async def _spy_graph_io(operation, *args, **kwargs):
+        nonlocal graph_commit_calls
+        if operation is primitives._do_graph_commit:
+            graph_commit_calls += 1
+        return await real_run_graph_io(operation, *args, **kwargs)
+
+    monkeypatch.setattr(primitives, "_run_graph_io", _spy_graph_io)
+
+    with pytest.raises(KGPrimitiveError) as excinfo:
+        await _drive_learning_session(
+            session_factory,
+            board_id,
+            "[MKG-A revision] missing store preflight",
+        )
+
+    assert excinfo.value.code == "kg_cognitive_source_unavailable"
+    assert excinfo.value.details["failure_reason"] == (
+        "cognitive_source_store_absent"
+    )
+    assert graph_commit_calls == 0
+    assert await _count_learnings(board_id) == 0
+
+
+async def test_missing_context_capability_rejects_before_graph_write(
+    cogsrc_tempdir, monkeypatch
+):
+    from okto_pulse.core.kg import primitives
+
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    register_cognitive_source_store(_LegacyStoreWithoutContextAppend())
+    real_run_graph_io = primitives._run_graph_io
+    graph_commit_calls = 0
+
+    async def _spy_graph_io(operation, *args, **kwargs):
+        nonlocal graph_commit_calls
+        if operation is primitives._do_graph_commit:
+            graph_commit_calls += 1
+        return await real_run_graph_io(operation, *args, **kwargs)
+
+    monkeypatch.setattr(primitives, "_run_graph_io", _spy_graph_io)
+
+    with pytest.raises(KGPrimitiveError) as excinfo:
+        await _drive_learning_session(
+            session_factory,
+            board_id,
+            "[MKG-A P1] legacy store capability preflight",
+        )
+
+    assert excinfo.value.code == "kg_cognitive_source_unavailable"
+    assert excinfo.value.details["failure_reason"] == (
+        "cognitive_source_context_append_unsupported"
+    )
+    assert graph_commit_calls == 0
+    assert await _count_learnings(board_id) == 0
+
+
 async def test_store_outage_aborts_commit_fail_closed_then_retry_works(
     cogsrc_tempdir, monkeypatch
 ):
-    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
-        CommunitySqlAlchemyCognitiveSourceStore,
-    )
-
     session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
     await _ensure_community_tables()
     register_cognitive_source_store(_BrokenStore())
@@ -295,30 +510,39 @@ async def test_store_outage_aborts_commit_fail_closed_then_retry_works(
     assert await _count_learnings(board_id) == 0
 
     # Retry after recovery: register the healthy store and rerun.
-    register_cognitive_source_store(
-        CommunitySqlAlchemyCognitiveSourceStore(session_factory)
-    )
+    register_cognitive_source_store(_require_ambient_community_store(session_factory))
     commit = await _drive_learning_session(session_factory, board_id, title)
     assert commit.nodes_added >= 1
     assert await _count_learnings(board_id) == 1
 
 
-async def test_explicit_supersede_replay_repairs_missing_durable_record(
+async def test_unexpected_store_failure_keeps_stable_error_and_compensates(
     cogsrc_tempdir, monkeypatch
 ):
-    """A graph-ahead replay must restore the MKG-A source ledger.
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    register_cognitive_source_store(_UnexpectedBrokenStore())
 
-    This models interruption after Ladybug materialized the deterministic
-    successor but before its durable append/ACK survived.  The explicit
-    SUPERSEDE replay takes the ``existing_successor`` branch; success is valid
-    only when that branch re-appends the generation-1 source record.
-    """
+    with pytest.raises(KGPrimitiveError) as excinfo:
+        await _drive_learning_session(
+            session_factory,
+            board_id,
+            "[MKG-A P1] unexpected source adapter failure",
+        )
+
+    assert excinfo.value.code == "kg_cognitive_source_unavailable"
+    assert excinfo.value.details["failure_reason"] == (
+        "cognitive_source_append_unexpected"
+    )
+    assert await _count_learnings(board_id) == 0
+
+
+async def test_explicit_update_repairs_missing_durable_record(
+    cogsrc_tempdir, monkeypatch
+):
+    """The in-place UPDATE branch must enqueue its post-update snapshot."""
 
     from sqlalchemy import delete
 
-    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
-        CommunitySqlAlchemyCognitiveSourceStore,
-    )
     from okto_pulse.community.adapters.sqlalchemy_models import KGCognitiveSource
     from okto_pulse.core.kg.primitives import (
         add_edge_candidate,
@@ -340,10 +564,175 @@ async def test_explicit_supersede_replay_repairs_missing_durable_record(
     )
 
     session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    delegate = _require_ambient_community_store(session_factory)
     await _ensure_community_tables()
-    register_cognitive_source_store(
-        CommunitySqlAlchemyCognitiveSourceStore(session_factory)
+
+    class _CapturingDelegate:
+        def __init__(self):
+            self.records: tuple[CognitiveSourceRecord, ...] = ()
+
+        async def append(self, record: CognitiveSourceRecord) -> str:
+            return (await self.append_many((record,)))[0]
+
+        async def append_many(
+            self, records: tuple[CognitiveSourceRecord, ...]
+        ) -> tuple[str, ...]:
+            self.records = records
+            return await delegate.append_many(records)
+
+        async def append_many_in_context(
+            self,
+            context: object,
+            records: tuple[CognitiveSourceRecord, ...],
+        ) -> tuple[str, ...]:
+            self.records = records
+            return await delegate.append_many_in_context(context, records)
+
+        async def enumerate(self, requested_board_id: str):
+            return await delegate.enumerate(requested_board_id)
+
+    capture = _CapturingDelegate()
+    register_cognitive_source_store(capture)
+
+    original_title = "[MKG-A P1] explicit update predecessor"
+    target_id = mint_node_id(
+        board_id,
+        "Learning",
+        derive_natural_key("", "Learning", original_title),
+        0,
     )
+    await _drive_learning_session(session_factory, board_id, original_title)
+
+    # Model a recoverable graph-ahead image: the graph node exists, but its
+    # immutable generation-zero source row is absent.
+    async with session_factory() as db:
+        await db.execute(
+            delete(KGCognitiveSource).where(
+                KGCognitiveSource.node_id == target_id,
+                KGCognitiveSource.generation == 0,
+            )
+        )
+        await db.commit()
+
+    root = NodeCandidate(
+        candidate_id="mkga_p1_update_root",
+        node_type=KGNodeType.ENTITY,
+        title="MKG-A C4 technical root",
+        content="Allowlisted deterministic source root.",
+        source_artifact_ref="tech_entities.yml",
+        source_confidence=1.0,
+    )
+    update = NodeCandidate(
+        candidate_id="mkga_p1_explicit_update",
+        node_type=KGNodeType.LEARNING,
+        title="[MKG-A P1] explicit update successor content",
+        content="updated lesson body",
+        justification="explicit UPDATE source coverage",
+        source_confidence=0.9,
+    )
+    begin = await begin_consolidation(
+        BeginConsolidationRequest(
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=str(uuid.uuid4()),
+            raw_content="MKG-A P1 explicit UPDATE durable source",
+            deterministic_candidates=[root, update],
+        ),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id="mkga_p1_update_belongs",
+                edge_type=KGEdgeType.BELONGS_TO,
+                from_candidate_id=update.candidate_id,
+                to_candidate_id=root.candidate_id,
+                confidence=1.0,
+            ),
+        ),
+        agent_id="system:layer1_worker",
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    override = ReconciliationHint(
+        candidate_id=update.candidate_id,
+        operation=ReconciliationOperation.UPDATE,
+        target_node_id=target_id,
+        confidence=0.9,
+        reason="test forces explicit cognitive UPDATE",
+    )
+    async with session_factory() as db:
+        result = await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=begin.session_id,
+                summary_text="explicit UPDATE source snapshot",
+                agent_overrides={update.candidate_id: override},
+            ),
+            agent_id="system:layer1_worker",
+            db=db,
+        )
+        await db.commit()
+
+    assert result.nodes_updated == 1
+    async with session_factory() as db:
+        repaired = (
+            await db.execute(
+                select(KGCognitiveSource).where(
+                    KGCognitiveSource.node_id == target_id,
+                    KGCognitiveSource.generation == 0,
+                )
+            )
+        ).scalar_one()
+    assert repaired.payload["title"] == update.title
+    assert repaired.payload["content"] == "updated lesson body"
+    assert repaired.payload["attestation_count"] == 2
+    assert len(capture.records) == 1
+    assert capture.records[0].generation == 0
+    assert capture.records[0].source_revision == 1
+
+
+async def test_explicit_supersede_replay_repairs_missing_durable_record(
+    cogsrc_tempdir, monkeypatch
+):
+    """A graph-ahead replay must restore the MKG-A source ledger.
+
+    This models interruption after Ladybug materialized the deterministic
+    successor but before its durable append/ACK survived.  The explicit
+    SUPERSEDE replay takes the ``existing_successor`` branch; success is valid
+    only when that branch re-appends the generation-1 source record.
+    """
+
+    from sqlalchemy import delete
+
+    from okto_pulse.community.adapters.sqlalchemy_models import KGCognitiveSource
+    from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
+        begin_consolidation,
+        commit_consolidation,
+        propose_reconciliation,
+    )
+    from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
+        BeginConsolidationRequest,
+        CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
+        KGNodeType,
+        NodeCandidate,
+        ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
+    )
+
+    session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    store = _require_ambient_community_store(session_factory)
+    await _ensure_community_tables()
+    register_cognitive_source_store(store)
 
     original_title = "[MKG-A C4] durable predecessor"
     successor_title = "[MKG-A C4] durable successor"
@@ -416,7 +805,7 @@ async def test_explicit_supersede_replay_repairs_missing_durable_record(
             reason="test forces replayable cognitive SUPERSEDE",
         )
         async with session_factory() as db:
-            return await commit_consolidation(
+            result = await commit_consolidation(
                 CommitConsolidationRequest(
                     session_id=begin.session_id,
                     summary_text=summary,
@@ -425,6 +814,8 @@ async def test_explicit_supersede_replay_repairs_missing_durable_record(
                 agent_id="system:layer1_worker",
                 db=db,
             )
+            await db.commit()
+            return result
 
     first = await _force_supersede("first cognitive supersede")
     assert first.nodes_superseded == 1
@@ -471,6 +862,7 @@ async def test_explicit_supersede_replay_repairs_missing_durable_record(
     assert repaired.board_id == board_id
     assert repaired.node_type == "Learning"
     assert repaired.payload["title"] == successor_title
+    assert repaired.payload["attestation_count"] == 2
 
 
 async def test_fresh_identity_replay_repairs_missing_generation_zero_record(
@@ -478,15 +870,11 @@ async def test_fresh_identity_replay_repairs_missing_generation_zero_record(
 ):
     """The deterministic CREATE guard must heal a graph-ahead gen0 node."""
 
-    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
-        CommunitySqlAlchemyCognitiveSourceStore,
-    )
     from okto_pulse.community.adapters.sqlalchemy_models import KGCognitiveSource
     session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    store = _require_ambient_community_store(session_factory)
     await _ensure_community_tables()
-    register_cognitive_source_store(
-        CommunitySqlAlchemyCognitiveSourceStore(session_factory)
-    )
+    register_cognitive_source_store(store)
 
     title = "[MKG-A C4] graph-ahead generation zero"
     node_id = mint_node_id(
@@ -532,6 +920,7 @@ async def test_fresh_identity_replay_repairs_missing_generation_zero_record(
     assert repaired.board_id == board_id
     assert repaired.node_type == "Learning"
     assert repaired.payload["title"] == title
+    assert repaired.payload["attestation_count"] == 2
 
 
 async def test_nc8_reuse_repairs_missing_generation_zero_record(
@@ -539,15 +928,11 @@ async def test_nc8_reuse_repairs_missing_generation_zero_record(
 ):
     """NC-8 source-ref reuse must heal the same graph-ahead condition."""
 
-    from okto_pulse.community.adapters.sqlalchemy_kg_cognitive_source import (
-        CommunitySqlAlchemyCognitiveSourceStore,
-    )
     from okto_pulse.community.adapters.sqlalchemy_models import KGCognitiveSource
     session_factory, board_id, _spec_id = await _bootstrap_test_board(monkeypatch)
+    store = _require_ambient_community_store(session_factory)
     await _ensure_community_tables()
-    register_cognitive_source_store(
-        CommunitySqlAlchemyCognitiveSourceStore(session_factory)
-    )
+    register_cognitive_source_store(store)
 
     title = "[MKG-A C4] graph-ahead NC-8 reuse"
     source_ref = "spec:mkga-c4-graph-ahead-nc8"

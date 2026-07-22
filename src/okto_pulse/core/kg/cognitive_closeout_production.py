@@ -24,6 +24,7 @@ Invariants:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -412,11 +413,14 @@ class ConsolidationPipelinePersister:
         import uuid as _uuid
 
         from okto_pulse.core.kg.primitives import (
+            abort_deferred_consolidation,
             add_edge_candidate,
             add_node_candidate,
             begin_consolidation,
             commit_consolidation,
+            finalize_deferred_consolidation,
             propose_reconciliation,
+            run_cancellation_atomic,
         )
         from okto_pulse.core.kg.write_barrier import under_safe_write
         from okto_pulse.core.kg.schemas import (
@@ -436,6 +440,8 @@ class ConsolidationPipelinePersister:
         # #6 (codex 2026-06-25): a failure in ANY pipeline step before/at commit
         # (begin/add_node/add_edge/propose/commit) must fail-closed to "not
         # persisted", never escape as an uncaught error or a fabricated success.
+        deferred_session_id: str | None = None
+        relational_commit_confirmed = False
         try:
             async with self._relational_scope_factory() as db:
                 begin = await begin_consolidation(
@@ -445,6 +451,7 @@ class ConsolidationPipelinePersister:
                     ),
                     agent_id=self._agent_id, db=db,
                 )
+            deferred_session_id = begin.session_id
             await add_node_candidate(
                 AddNodeCandidateRequest(
                     session_id=begin.session_id,
@@ -485,9 +492,55 @@ class ConsolidationPipelinePersister:
                 with under_safe_write(board_id, owner_token, COGNITIVE_CLOSEOUT_COMMIT_OPERATION):
                     await commit_consolidation(
                         CommitConsolidationRequest(session_id=begin.session_id),
-                        agent_id=self._agent_id, db=db,
+                        agent_id=self._agent_id,
+                        db=db,
+                        defer_session_finalization=True,
                     )
-        except Exception as exc:
+
+                    async def _commit_and_finalize() -> None:
+                        nonlocal relational_commit_confirmed
+                        await db.commit()
+                        relational_commit_confirmed = True
+                        await finalize_deferred_consolidation(
+                            begin.session_id,
+                            agent_id=self._agent_id,
+                        )
+
+                    await run_cancellation_atomic(
+                        _commit_and_finalize(),
+                        task_name="core.kg.closeout_commit_and_finalize",
+                    )
+        except BaseException as exc:
+            if deferred_session_id is not None:
+                try:
+                    async def _cleanup_deferred_commit() -> None:
+                        if relational_commit_confirmed:
+                            # The ledger is already durable. Retry only
+                            # terminal, idempotent session cleanup.
+                            await finalize_deferred_consolidation(
+                                deferred_session_id,
+                                agent_id=self._agent_id,
+                            )
+                        else:
+                            await abort_deferred_consolidation(
+                                deferred_session_id,
+                                agent_id=self._agent_id,
+                            )
+
+                    await run_cancellation_atomic(
+                        _cleanup_deferred_commit(),
+                        task_name="core.kg.closeout_deferred_cleanup",
+                    )
+                except BaseException:
+                    logger.warning(
+                        "cognitive_closeout.deferred_cleanup_failed session=%s",
+                        deferred_session_id,
+                        exc_info=True,
+                    )
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            if not isinstance(exc, Exception):
+                raise
             # BR2/FR3: any rejection/failure (begin/add_node/add_edge/propose/
             # commit) is NOT fabricated as success.
             logger.info("cognitive_closeout.persist_failed ref=%s step_err=%s",

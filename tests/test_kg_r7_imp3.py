@@ -58,6 +58,7 @@ from okto_pulse.core.application.processors.consolidation import (
     AGENT_ID,
     _commit_consolidation_with_board_graph_lifecycle,
     _process_queue_entry,
+    _run_post_commit_maintenance,
     _run_deterministic_worker,
 )
 from sqlalchemy_test_models import (
@@ -377,6 +378,16 @@ async def test_rebuild_entry_triggers_canonical_partition_maintenance(
         db.add_all([bug, entry])
         await db.flush()
         ok = await _process_queue_entry(db, entry)
+        await db.commit()
+    # Production invokes best-effort maintenance in a separate transaction
+    # after ledger/audit/ACK durability. Reproduce that boundary explicitly;
+    # a maintenance rollback must never erase the main consolidation ledger.
+    async with db_factory() as db:
+        await _run_post_commit_maintenance(
+            db,
+            entry=entry,
+            session_id="kgses-r7-rebuild-maintenance",
+        )
         await db.commit()
     assert ok is True
     assert seen.get("called_board") == board_id

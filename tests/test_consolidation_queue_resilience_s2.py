@@ -313,11 +313,19 @@ async def test_worker_commit_uses_safe_write_guard_and_lifecycle(monkeypatch):
 
     executor = RecordingBlockingExecution()
 
-    async def fake_commit(req, *, agent_id, db, blocking_execution):
+    async def fake_commit(
+        req,
+        *,
+        agent_id,
+        db,
+        blocking_execution,
+        defer_session_finalization,
+    ):
         guard = require_write_token(BOARD_ID_S2)
         assert guard is not None
         assert guard.operation == worker.CONSOLIDATION_COMMIT_OPERATION
         assert blocking_execution is executor
+        assert defer_session_finalization is False
         events.append(f"commit:{req.session_id}")
         return SimpleNamespace(nodes_added=1, edges_added=2)
 
@@ -378,8 +386,16 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
         LifecycleStepResult,
     )
 
-    async def fake_commit(req, *, agent_id, db, blocking_execution):
+    async def fake_commit(
+        req,
+        *,
+        agent_id,
+        db,
+        blocking_execution,
+        defer_session_finalization,
+    ):
         assert blocking_execution is None
+        assert defer_session_finalization is False
         return SimpleNamespace(nodes_added=1, edges_added=0)
 
     def fake_lifecycle_step(board_id: str, graph_type: str, step: str):

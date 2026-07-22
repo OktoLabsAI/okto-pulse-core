@@ -38,6 +38,7 @@ from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditKey,
 )
 from okto_pulse.core.kg.global_discovery_writer import (
+    DEFAULT_GLOBAL_DISCOVERY_WRITER_TTL_SECONDS,
     GLOBAL_DISCOVERY_WRITER_SCOPE,
     GlobalDiscoveryWriterContention,
     GlobalDiscoveryWriterLease,
@@ -2342,7 +2343,7 @@ class GlobalDiscoveryRecoveryService:
                 lease = GlobalDiscoveryWriterLease.acquire(
                     operation="global_discovery_recovery",
                     owner_id=f"{actor_id}:{run_id}",
-                    ttl_seconds=3600,
+                    ttl_seconds=DEFAULT_GLOBAL_DISCOVERY_WRITER_TTL_SECONDS,
                     admin_lane=True,
                     lock=self._single_writer,
                 )
@@ -2379,7 +2380,7 @@ class GlobalDiscoveryRecoveryService:
                         f"run={active_phase.get('run_id') if active_phase else 'unknown'} "
                         "owns recovery",
                     )
-                with lease.guard():
+                with lease.renewing_guard():
                     cutover = self._recovery.rebuild_candidate_and_cutover(
                         run_id=run_id,
                         epoch=1,

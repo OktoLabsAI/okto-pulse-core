@@ -73,6 +73,12 @@ class ConsolidationSession:
     # registered for this session's identical-content detection, so a
     # begin→propose flow never double-counts the same re-assertion.
     count_only_attested: bool = False
+    # A deferred commit has already applied its graph mutation but is waiting
+    # for the caller-owned relational UnitOfWork to commit.  The concrete
+    # snapshot is private to ``kg.primitives``; keeping it on the process-local
+    # session lets an MCP retry restage SQLite records without replaying graph
+    # writes.
+    pending_commit: Any | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def is_expired(self) -> bool:

@@ -8,14 +8,17 @@ assume):
 - golden success: a full begin->add->propose->commit driven through the use cases
   PERSISTS the canonical node to the board graph — identical to the legacy
   primitive+db path (test_kg_cognitive_canonical_invariant). This proves the
-  commit primitive's internal persistence runs on ``session_of(uow)``, so no extra
-  ``commit(uow)`` is needed.
+  commit primitive's graph persistence runs on ``session_of(uow)``. The MCP
+  adapter then commits the UnitOfWork once so relational records staged by the
+  use case become durable in the same transaction.
 - rollback oracle: a mid-commit failure persists NO partial node (no leak).
 """
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -35,7 +38,12 @@ from okto_pulse.core.application.use_cases import (
     ProposeReconciliationUseCase,
 )
 from okto_pulse.core.application.use_cases.base import ActorContext
-from okto_pulse.core.kg.primitives import add_edge_candidate, add_node_candidate
+from okto_pulse.core.kg.primitives import (
+    KGPrimitiveError,
+    add_edge_candidate,
+    add_node_candidate,
+    finalize_deferred_consolidation,
+)
 from kg_schema_testing import bootstrap_board_graph
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
@@ -155,11 +163,253 @@ async def test_consolidation_via_use_cases_persists_canonical(
                 uow=uow,
             )
         ).resp
+        await uow.commit()
+        await finalize_deferred_consolidation(
+            begin.session_id,
+            agent_id=agent_id,
+        )
 
     assert commit.connectivity["passed"] is True
     layer, maturity = _get_decision_layer_maturity(board_id, decision_ref)
     assert layer == "canonical"
     assert maturity == MATURITY_CANONICAL_ELIGIBLE
+
+
+class _MCPRegistryDouble:
+    """Minimal FastMCP double that captures registered tool callables."""
+
+    def __init__(self) -> None:
+        self.tools: dict[str, object] = {}
+
+    def tool(self):
+        def _decorator(fn):
+            self.tools[fn.__name__] = fn
+            return fn
+
+        return _decorator
+
+
+class _RecordingUow:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+        self.commits = 0
+        self.rollbacks = 0
+        self.fail_commit = False
+
+    async def commit(self) -> None:
+        self.events.append("commit")
+        self.commits += 1
+        if self.fail_commit:
+            raise RuntimeError("relational commit failed")
+
+    async def rollback(self) -> None:
+        self.events.append("rollback")
+        self.rollbacks += 1
+
+
+class _RecordingUowContext:
+    def __init__(self, uow: _RecordingUow) -> None:
+        self.uow = uow
+
+    async def __aenter__(self) -> _RecordingUow:
+        self.uow.events.append("enter")
+        return self.uow
+
+    async def __aexit__(self, exc_type, _exc, _tb) -> None:
+        if exc_type is not None:
+            await self.uow.rollback()
+        self.uow.events.append("exit")
+
+
+class _RecordingUowFactory:
+    def __init__(self, uow: _RecordingUow) -> None:
+        self.uow = uow
+
+    def __call__(self, *, actor):
+        assert actor.actor_id == "agent-mcp-commit"
+        return _RecordingUowContext(self.uow)
+
+
+class _ToolResponse:
+    def model_dump_json(self) -> str:
+        return '{"committed":true}'
+
+
+async def _registered_commit_tool(monkeypatch, execute):
+    from okto_pulse.core.application import use_cases
+    from okto_pulse.core.mcp import kg_tools
+
+    events: list[str] = []
+    uow = _RecordingUow(events)
+    factory = _RecordingUowFactory(uow)
+    registry = _MCPRegistryDouble()
+
+    async def _get_agent():
+        return SimpleNamespace(id="agent-mcp-commit")
+
+    async def _require_session(
+        _session_id: str,
+        _agent_id: str,
+        *,
+        allow_pending_commit: bool = False,
+    ):
+        assert allow_pending_commit is True
+        return SimpleNamespace(board_id="board-mcp-commit")
+
+    class _CommitUseCaseDouble:
+        async def execute(self, command, *, actor, uow):
+            return await execute(command, actor=actor, uow=uow)
+
+    monkeypatch.setattr(kg_tools, "_require_open_session", _require_session)
+
+    async def _finalize(_session_id: str, *, agent_id: str) -> None:
+        assert agent_id == "agent-mcp-commit"
+        events.append("finalize")
+
+    async def _abort(_session_id: str, *, agent_id: str) -> None:
+        assert agent_id == "agent-mcp-commit"
+        events.append("abort")
+
+    monkeypatch.setattr(kg_tools, "finalize_deferred_consolidation", _finalize)
+    monkeypatch.setattr(kg_tools, "abort_deferred_consolidation", _abort)
+    monkeypatch.setattr(
+        use_cases, "CommitConsolidationUseCase", _CommitUseCaseDouble
+    )
+    kg_tools.register_kg_tools(
+        registry,
+        get_agent=_get_agent,
+        get_uow=lambda: factory,
+    )
+    return registry.tools["okto_pulse_kg_commit_consolidation"], uow, events
+
+
+@pytest.mark.asyncio
+async def test_mcp_commit_consolidation_commits_uow_once_after_execute(
+    monkeypatch,
+):
+    async def _execute(_command, *, actor, uow):
+        assert actor.actor_id == "agent-mcp-commit"
+        assert uow.commits == 0
+        uow.events.append("execute")
+        return SimpleNamespace(resp=_ToolResponse())
+
+    tool, uow, events = await _registered_commit_tool(monkeypatch, _execute)
+
+    assert await tool(session_id="session-success") == '{"committed":true}'
+    assert uow.commits == 1
+    assert uow.rollbacks == 0
+    assert events == ["enter", "execute", "commit", "finalize", "exit"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_commit_consolidation_does_not_commit_and_rolls_back_on_failure(
+    monkeypatch,
+):
+    async def _execute(_command, *, actor, uow):
+        assert actor.actor_id == "agent-mcp-commit"
+        uow.events.append("execute")
+        raise KGPrimitiveError("commit_failed", "expected failure")
+
+    tool, uow, events = await _registered_commit_tool(monkeypatch, _execute)
+
+    response = await tool(session_id="session-failure")
+
+    assert '"code": "commit_failed"' in response
+    assert uow.commits == 0
+    assert uow.rollbacks == 1
+    assert "abort" not in events
+    assert events == ["enter", "execute", "rollback", "exit"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_relational_commit_failure_compensates_graph_before_returning(
+    monkeypatch,
+):
+    async def _execute(_command, *, actor, uow):
+        assert actor.actor_id == "agent-mcp-commit"
+        uow.events.append("execute")
+        return SimpleNamespace(resp=_ToolResponse())
+
+    tool, uow, events = await _registered_commit_tool(monkeypatch, _execute)
+    uow.fail_commit = True
+
+    with pytest.raises(RuntimeError, match="relational commit failed"):
+        await tool(session_id="session-relational-failure")
+
+    assert uow.commits == 1
+    assert uow.rollbacks == 1
+    assert "finalize" not in events
+    assert events == [
+        "enter",
+        "execute",
+        "commit",
+        "rollback",
+        "exit",
+        "abort",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_competing_mcp_commit_cannot_abort_owner_pending_snapshot(
+    monkeypatch,
+):
+    async def _execute(_command, *, actor, uow):
+        assert actor.actor_id == "agent-mcp-commit"
+        uow.events.append("execute")
+        raise KGPrimitiveError(
+            "session_commit_in_progress",
+            "owner commit is still in flight",
+        )
+
+    tool, uow, events = await _registered_commit_tool(monkeypatch, _execute)
+
+    response = await tool(session_id="session-competing-commit")
+
+    assert '"code": "session_commit_in_progress"' in response
+    assert uow.commits == 0
+    assert uow.rollbacks == 1
+    assert "abort" not in events
+    assert events == ["enter", "execute", "rollback", "exit"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_cancel_during_execute_rolls_back_after_primitive_cleanup(
+    monkeypatch,
+):
+    execute_entered = asyncio.Event()
+    allow_cleanup = asyncio.Event()
+
+    async def _execute(_command, *, actor, uow):
+        assert actor.actor_id == "agent-mcp-commit"
+        uow.events.append("execute")
+        execute_entered.set()
+        try:
+            await allow_cleanup.wait()
+        except asyncio.CancelledError:
+            # Witness the primitive contract: its cancellation handler drains
+            # and compensates graph state before UOW rollback regains control.
+            uow.events.append("primitive_cleanup")
+            raise
+
+    tool, uow, events = await _registered_commit_tool(monkeypatch, _execute)
+    parent = asyncio.create_task(tool(session_id="session-cancel-during-execute"))
+    await execute_entered.wait()
+    parent.cancel()
+    allow_cleanup.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await parent
+
+    assert uow.commits == 0
+    assert uow.rollbacks == 1
+    assert "abort" not in events  # adapter never aborts an unowned snapshot
+    assert events == [
+        "enter",
+        "execute",
+        "primitive_cleanup",
+        "rollback",
+        "exit",
+    ]
 
 
 @pytest.mark.asyncio

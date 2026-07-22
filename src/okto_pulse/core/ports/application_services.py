@@ -525,7 +525,12 @@ class KnowledgeGraphOperations(Protocol):
     ) -> object: ...
 
     async def commit_consolidation(
-        self, request: object, *, board_id: str, agent_id: str
+        self,
+        request: object,
+        *,
+        board_id: str,
+        agent_id: str,
+        defer_session_finalization: bool = False,
     ) -> object: ...
 
     async def health(

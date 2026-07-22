@@ -59,10 +59,13 @@ from okto_pulse.core.kg.schemas import (
 )
 from okto_pulse.core.kg.primitives import (
     add_edge_candidate,
+    abort_deferred_consolidation,
     abort_consolidation,
     begin_consolidation,
     commit_consolidation,
+    finalize_deferred_consolidation,
     propose_reconciliation,
+    run_cancellation_atomic,
 )
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
@@ -699,6 +702,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     db: Any,
     blocking_execution: BlockingExecutionPort | None = None,
     now: datetime | None = None,
+    defer_session_finalization: bool = False,
 ):
     """Commit a queue item and prove the persisted graph before ACK.
 
@@ -736,6 +740,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
             agent_id=AGENT_ID,
             db=db,
             blocking_execution=blocking_execution,
+            defer_session_finalization=defer_session_finalization,
         )
         executor = blocking_execution or _DirectBlockingExecution()
         await executor.run(
@@ -756,6 +761,7 @@ async def _process_queue_entry_serialized(
     blocking_execution: BlockingExecutionPort | None = None,
     clock: WorkerClockPort | None = None,
     stale_reconcile_telemetry: dict[str, object] | None = None,
+    deferred_session_ids: list[str] | None = None,
 ) -> bool | StaleSweepRunReceipt:
     """Process one queue row under a process-local per-board mutex.
 
@@ -773,6 +779,7 @@ async def _process_queue_entry_serialized(
             blocking_execution=blocking_execution,
             clock=clock,
             stale_reconcile_telemetry=stale_reconcile_telemetry,
+            deferred_session_ids=deferred_session_ids,
         )
 
 
@@ -1875,6 +1882,7 @@ async def _process_queue_entry(
     blocking_execution: BlockingExecutionPort | None = None,
     clock: WorkerClockPort | None = None,
     stale_reconcile_telemetry: dict[str, object] | None = None,
+    deferred_session_ids: list[str] | None = None,
 ) -> bool | StaleSweepRunReceipt:
     """Process one queue entry through the primitives pipeline.
     Returns True on success, False on failure."""
@@ -1967,6 +1975,11 @@ async def _process_queue_entry(
         force_reprocess=True,
     )
     session_id = begin_resp.session_id
+    if deferred_session_ids is not None:
+        # ``process_batch`` owns the relational UOW and must be able to
+        # compensate this session if any later await is cancelled or fails.
+        # Register immediately after begin, before the first fallible step.
+        deferred_session_ids.append(session_id)
 
     # 2. Add edge candidates
     for edge in edge_candidates:
@@ -2010,6 +2023,7 @@ async def _process_queue_entry(
         db=db,
         blocking_execution=blocking_execution,
         now=clock.now() if clock is not None else None,
+        defer_session_finalization=deferred_session_ids is not None,
     )
 
     logger.info(
@@ -2017,11 +2031,10 @@ async def _process_queue_entry(
         entry.artifact_type, entry.artifact_id,
         commit_resp.nodes_added, commit_resp.edges_added,
     )
-    await _run_post_commit_maintenance(
-        db,
-        entry=entry,
-        session_id=session_id,
-    )
+    # Canonical-debt/partition maintenance is intentionally run by
+    # ``process_batch`` in a fresh transaction *after* the authoritative
+    # ledger+audit+ACK commit.  Its best-effort rollback must never erase the
+    # cognitive durable source staged for this graph mutation.
     return True
 
 
@@ -2322,111 +2335,212 @@ class ConsolidationProcessor:
         # Step 2: Process each entry with its own session (short-lived tx).
         max_attempts = settings.kg_queue_max_attempts
         for entry in entries:
+            deferred_session_ids: list[str] = []
+            relational_commit_confirmed = False
             try:
                 acknowledged = False
                 delivery_transfer: tuple[DeliveryTransferReceipt, str] | None = None
                 stale_reconcile_telemetry: dict[str, object] = {}
-                async with self.relational_scope_factory() as db:
-                    store = get_consolidation_persistence_port()
-                    outcome = await _process_queue_entry_serialized(
-                        db,
-                        entry,
-                        blocking_execution=self._blocking_execution,
-                        clock=self._clock,
-                        stale_reconcile_telemetry=stale_reconcile_telemetry,
-                    )
-                    if isinstance(outcome, StaleSweepRunReceipt):
-                        if (
-                            _work_kind(entry) != "stale_sweep"
-                            or outcome.entry_id != entry.id
-                            or outcome.board_id != entry.board_id
-                            or outcome.action
-                            not in {
-                                StaleSweepRunAction.ADVANCED,
-                                StaleSweepRunAction.COMPLETED,
-                                StaleSweepRunAction.RESCHEDULED,
-                            }
-                        ):
-                            raise RuntimeError("stale_sweep_receipt_mismatch")
-                        # The adapter already performed the exact claim CAS and
-                        # either re-pended or deleted this sweep row. Its
-                        # synthetic tombstones, reconcile intents and checkpoint
-                        # are committed together here.
-                        acknowledged = True
-                    else:
-                        success = outcome is True
-                        fresh = await store.get_queue_entry(db, entry_id=entry.id)
-                        if fresh is None:
-                            # A missing row is a lost claim, never a successful
-                            # ACK. A stale-reconcile graph write may already
-                            # have auto-committed, but relational effects must
-                            # not leak after ownership is lost.
-                            if _work_kind(entry) == "stale_reconcile":
-                                await store.rollback(db)
-                            else:
-                                await store.commit(db)
-                            continue
-
-                        if success:
-                            token = _claim_token(entry)
-                            if token is not None:
+                try:
+                    async with self.relational_scope_factory() as db:
+                        store = get_consolidation_persistence_port()
+                        outcome = await _process_queue_entry_serialized(
+                            db,
+                            entry,
+                            blocking_execution=self._blocking_execution,
+                            clock=self._clock,
+                            stale_reconcile_telemetry=stale_reconcile_telemetry,
+                            deferred_session_ids=deferred_session_ids,
+                        )
+                        if isinstance(outcome, StaleSweepRunReceipt):
+                            if (
+                                _work_kind(entry) != "stale_sweep"
+                                or outcome.entry_id != entry.id
+                                or outcome.board_id != entry.board_id
+                                or outcome.action
+                                not in {
+                                    StaleSweepRunAction.ADVANCED,
+                                    StaleSweepRunAction.COMPLETED,
+                                    StaleSweepRunAction.RESCHEDULED,
+                                }
+                            ):
+                                raise RuntimeError("stale_sweep_receipt_mismatch")
+                            # The adapter already performed the exact claim CAS and
+                            # either re-pended or deleted this sweep row. Its
+                            # synthetic tombstones, reconcile intents and checkpoint
+                            # are committed together here.
+                            acknowledged = True
+                        else:
+                            success = outcome is True
+                            fresh = await store.get_queue_entry(db, entry_id=entry.id)
+                            if fresh is None:
+                                # Once a graph commit has been deferred, a missing
+                                # queue row is an ownership loss.  Roll back the
+                                # relational ledger and let the deferred cleanup
+                                # compensate the graph instead of publishing an
+                                # unowned mutation.
+                                if deferred_session_ids:
+                                    await store.rollback(db)
+                                    raise _QueueClaimLostOrFenced(
+                                        "queue_claim_lost_after_graph_commit "
+                                        f"entry_id={entry.id}"
+                                    )
+                                # A missing row is a lost claim, never a successful
+                                # ACK. Stale reconciliation owns separate transfer
+                                # semantics; legacy mock paths preserve their prior
+                                # transaction behavior when no graph session exists.
                                 if _work_kind(entry) == "stale_reconcile":
-                                    try:
-                                        delivery_transfer = (
-                                            await _transfer_stale_reconcile_ownership(
+                                    await store.rollback(db)
+                                else:
+                                    await store.commit(db)
+                                continue
+
+                            if success:
+                                token = _claim_token(entry)
+                                if token is not None:
+                                    if _work_kind(entry) == "stale_reconcile":
+                                        try:
+                                            delivery_transfer = (
+                                                await _transfer_stale_reconcile_ownership(
+                                                    db,
+                                                    entry,
+                                                    reconcile_details=(
+                                                        stale_reconcile_telemetry
+                                                    ),
+                                                    occurred_at=self._now(),
+                                                )
+                                            )
+                                        except DeliveryTransferClaimConflict as exc:
+                                            # CAS=0 is a neutral ownership loss.
+                                            await store.rollback(db)
+                                            raise _QueueClaimLostOrFenced(
+                                                str(exc)
+                                            ) from exc
+                                        except Exception:
+                                            await store.rollback(db)
+                                            raise
+                                        acknowledged = True
+                                    else:
+                                        # Legacy consolidation retains its
+                                        # standalone exact compare-and-delete ACK.
+                                        acknowledged = (
+                                            await store.ack_claimed_queue_entry(
                                                 db,
-                                                entry,
-                                                reconcile_details=(
-                                                    stale_reconcile_telemetry
-                                                ),
-                                                occurred_at=self._now(),
+                                                entry_id=entry.id,
+                                                claim_token=token,
+                                                generation=_generation(entry),
+                                                delete_event_id=_delete_event_id(entry),
                                             )
                                         )
-                                    except DeliveryTransferClaimConflict as exc:
-                                        # CAS=0 is a neutral ownership loss.
-                                        await store.rollback(db)
-                                        raise _QueueClaimLostOrFenced(
-                                            str(exc)
-                                        ) from exc
-                                    except Exception:
-                                        await store.rollback(db)
-                                        raise
-                                    acknowledged = True
-                                else:
-                                    # Legacy consolidation retains its
-                                    # standalone exact compare-and-delete ACK.
-                                    acknowledged = (
-                                        await store.ack_claimed_queue_entry(
-                                            db,
-                                            entry_id=entry.id,
-                                            claim_token=token,
-                                            generation=_generation(entry),
-                                            delete_event_id=_delete_event_id(entry),
-                                        )
+                                if deferred_session_ids and not acknowledged:
+                                    await store.rollback(db)
+                                    raise _QueueClaimLostOrFenced(
+                                        "queue_ack_lost_after_graph_commit "
+                                        f"entry_id={entry.id}"
                                     )
-                        elif _same_claim(entry, fresh) and await (
-                            store.queue_claim_is_current_and_unfenced(
-                                db,
-                                entry_id=entry.id,
-                                claim_token=_claim_token(entry) or "",
-                                board_id=entry.board_id,
-                                artifact_type=entry.artifact_type,
-                                artifact_id=entry.artifact_id,
-                                work_kind=_work_kind(entry),
-                                generation=_generation(entry),
-                                delete_event_id=_delete_event_id(entry),
-                            )
-                        ):
-                            await self._mark_failed(
-                                db,
-                                fresh,
-                                error_text=(
-                                    fresh.last_error
-                                    or "processing returned False"
+                            elif _same_claim(entry, fresh) and await (
+                                store.queue_claim_is_current_and_unfenced(
+                                    db,
+                                    entry_id=entry.id,
+                                    claim_token=_claim_token(entry) or "",
+                                    board_id=entry.board_id,
+                                    artifact_type=entry.artifact_type,
+                                    artifact_id=entry.artifact_id,
+                                    work_kind=_work_kind(entry),
+                                    generation=_generation(entry),
+                                    delete_event_id=_delete_event_id(entry),
+                                )
+                            ):
+                                await self._mark_failed(
+                                    db,
+                                    fresh,
+                                    error_text=(
+                                        fresh.last_error
+                                        or "processing returned False"
+                                    ),
+                                    max_attempts=max_attempts,
+                                )
+
+                        if deferred_session_ids:
+                            async def _commit_and_finalize() -> None:
+                                nonlocal relational_commit_confirmed
+                                await store.commit(db)
+                                relational_commit_confirmed = True
+                                for deferred_session_id in deferred_session_ids:
+                                    await finalize_deferred_consolidation(
+                                        deferred_session_id,
+                                        agent_id=AGENT_ID,
+                                    )
+
+                            await run_cancellation_atomic(
+                                _commit_and_finalize(),
+                                task_name=(
+                                    "core.kg.consolidation_worker_commit_and_finalize"
                                 ),
-                                max_attempts=max_attempts,
                             )
-                    await store.commit(db)
+                        else:
+                            await store.commit(db)
+                except BaseException:
+                    if deferred_session_ids:
+                        async def _settle_deferred_sessions() -> None:
+                            for deferred_session_id in deferred_session_ids:
+                                if relational_commit_confirmed:
+                                    # The relational ledger/ACK is already durable.
+                                    # Retry terminal in-memory finalization only;
+                                    # never release this snapshot for INSERT replay.
+                                    await finalize_deferred_consolidation(
+                                        deferred_session_id,
+                                        agent_id=AGENT_ID,
+                                    )
+                                else:
+                                    # The owning transaction rolled back (or never
+                                    # committed), so compensate graph auto-commits
+                                    # before the queue can be retried from scratch.
+                                    await abort_deferred_consolidation(
+                                        deferred_session_id,
+                                        agent_id=AGENT_ID,
+                                        blocking_execution=self._blocking_execution,
+                                    )
+
+                        try:
+                            await run_cancellation_atomic(
+                                _settle_deferred_sessions(),
+                                task_name=(
+                                    "core.kg.consolidation_worker_deferred_cleanup"
+                                ),
+                            )
+                        except BaseException:
+                            logger.exception(
+                                "consolidation.deferred_cleanup_failed entry=%s "
+                                "relational_commit_confirmed=%s sessions=%s",
+                                entry.id,
+                                relational_commit_confirmed,
+                                deferred_session_ids,
+                            )
+                    raise
+
+                if acknowledged and deferred_session_ids:
+                    # Maintenance is best-effort and uses rollback internally.
+                    # Isolate it from the already-durable cognitive ledger,
+                    # consolidation audit/outbox and queue ACK.
+                    try:
+                        async with self.relational_scope_factory() as maintenance_db:
+                            await _run_post_commit_maintenance(
+                                maintenance_db,
+                                entry=entry,
+                                session_id=deferred_session_ids[-1],
+                            )
+                            await get_consolidation_persistence_port().commit(
+                                maintenance_db
+                            )
+                    except Exception:
+                        logger.exception(
+                            "kg.post_commit.maintenance_transaction_failed "
+                            "board=%s artifact=%s:%s",
+                            entry.board_id,
+                            entry.artifact_type,
+                            entry.artifact_id,
+                        )
                 if acknowledged:
                     if delivery_transfer is not None:
                         receipt, circuit_reason = delivery_transfer

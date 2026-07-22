@@ -43,14 +43,24 @@ class _MemoryStore:
         self.records: list[CognitiveSourceRecord] = []
 
     async def append(self, record: CognitiveSourceRecord) -> str:
-        self.records.append(record)
-        return record.node_id
+        return (await self.append_many((record,)))[0]
+
+    async def append_many(
+        self, records: tuple[CognitiveSourceRecord, ...]
+    ) -> tuple[str, ...]:
+        self.records.extend(records)
+        return tuple(record.node_id for record in records)
 
     async def enumerate(self, board_id: str):
         return tuple(
             sorted(
                 (r for r in self.records if r.board_id == board_id),
-                key=lambda r: (r.committed_at or "", r.node_id, r.generation),
+                key=lambda r: (
+                    r.committed_at or "",
+                    r.node_id,
+                    r.generation,
+                    r.source_revision,
+                ),
             )
         )
 
@@ -119,13 +129,18 @@ def _read_node(board_id: str, node_type: str, node_id: str) -> dict | None:
     with conn as (_kdb, kconn):
         res = kconn.execute(
             f"MATCH (n:{node_type}) WHERE n.id = $id "
-            "RETURN n.id, n.title, n.human_curated LIMIT 1",
+            "RETURN n.id, n.title, n.human_curated, n.source_session_id LIMIT 1",
             {"id": node_id},
         )
         try:
             if res.has_next():
                 row = res.get_next()
-                return {"id": row[0], "title": row[1], "human_curated": row[2]}
+                return {
+                    "id": row[0],
+                    "title": row[1],
+                    "human_curated": row[2],
+                    "source_session_id": row[3],
+                }
             return None
         finally:
             try:
@@ -157,6 +172,37 @@ def test_replay_restores_from_durable_source_after_unreadable_snapshot(kg_tempdi
         node = _read_node(board_id, record.node_type, record.node_id)
         assert node is not None, record.node_id
         assert node["title"] == record.payload["title"]
+
+
+def test_replay_restores_only_latest_source_revision(kg_tempdir):
+    board_id = str(uuid.uuid4())
+    bootstrap_board_graph(board_id)
+
+    base = _record(board_id, "Learning", "Learning revisionada")
+    revised_payload = {**base.payload, "title": "Learning revisionada latest"}
+    revised = CognitiveSourceRecord(
+        node_id=base.node_id,
+        board_id=base.board_id,
+        node_type=base.node_type,
+        generation=base.generation,
+        payload=revised_payload,
+        evidence_refs=("spec:latest",),
+        source_session_id="sess-replay-latest",
+        committed_at="2026-07-11T20:01:00+00:00",
+        source_revision=1,
+    )
+    store = _MemoryStore()
+    store.records.extend((base, revised))
+    register_cognitive_source_store(store)
+
+    summary = replay_durable_cognitive(board_id)
+
+    assert summary["durable_source_status"] == "ok"
+    assert summary["replayed_cognitive_count"] == 1
+    node = _read_node(board_id, revised.node_type, revised.node_id)
+    assert node is not None
+    assert node["title"] == "Learning revisionada latest"
+    assert node["source_session_id"] == "sess-replay-latest"
 
 
 def test_replay_is_idempotent_and_never_duplicates_restore(kg_tempdir):

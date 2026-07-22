@@ -6,6 +6,7 @@ lifecycle are owned by an edition runner.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -64,6 +65,15 @@ DIGESTED_NODE_TYPES: tuple[str, ...] = VECTOR_INDEX_TYPES
 BOARD_SOURCE_INVENTORY_PAGE_SIZE = 5000
 LEARNING_RELATION_GROUP_PAGE_SIZE = 5000
 
+# The normal outbox lane must not leave a one-hour writer tombstone when the
+# embedded graph process dies.  Sixty seconds is long enough for the renewal
+# loop to tolerate transient scheduler delay, while bounding crash recovery to
+# one worker minute.  Callers may lower the TTL for constrained deployments,
+# but cannot raise it back to the former 3600-second window.
+GLOBAL_OUTBOX_WRITER_TTL_SECONDS = 60
+GLOBAL_OUTBOX_WRITER_MAX_TTL_SECONDS = 60
+GLOBAL_OUTBOX_WRITER_RENEW_INTERVAL_SECONDS = 15.0
+
 
 class _SourceInventoryPaginationError(RuntimeError):
     """The read port returned a non-advancing supposedly paginated page."""
@@ -88,6 +98,10 @@ class GlobalOutboxProcessor:
         retry_policy: RetryPolicy | None = None,
         blocking_execution: BlockingExecutionPort | None = None,
         delivery_ledger: DeliveryLedgerPort | None = None,
+        writer_lease_ttl_seconds: int = GLOBAL_OUTBOX_WRITER_TTL_SECONDS,
+        writer_lease_renew_interval_seconds: float = (
+            GLOBAL_OUTBOX_WRITER_RENEW_INTERVAL_SECONDS
+        ),
     ):
         if relational_scope_factory is None:
             from okto_pulse.core.ports.relational_runtime import get_db_session
@@ -100,6 +114,20 @@ class GlobalOutboxProcessor:
         self._retry_policy = retry_policy or RetryPolicy(max_attempts=MAX_RETRIES)
         self._blocking_execution = blocking_execution
         self._delivery_ledger = delivery_ledger
+        writer_ttl = int(writer_lease_ttl_seconds)
+        renew_interval = float(writer_lease_renew_interval_seconds)
+        if not 2 <= writer_ttl <= GLOBAL_OUTBOX_WRITER_MAX_TTL_SECONDS:
+            raise ValueError(
+                "writer_lease_ttl_seconds must be within "
+                f"2..{GLOBAL_OUTBOX_WRITER_MAX_TTL_SECONDS}"
+            )
+        if not 0 < renew_interval <= writer_ttl / 2:
+            raise ValueError(
+                "writer_lease_renew_interval_seconds must be positive and no "
+                "greater than half the writer lease TTL"
+            )
+        self._writer_lease_ttl_seconds = writer_ttl
+        self._writer_lease_renew_interval_seconds = renew_interval
 
     async def _run_graph_io(self, operation: Callable[[], Any]) -> Any:
         """Run one graph critical section off-loop and drain it on cancel."""
@@ -114,6 +142,113 @@ class GlobalOutboxProcessor:
         return (
             self._clock.now() if self._clock is not None else datetime.now(timezone.utc)
         )
+
+    async def _renew_writer_lease_until_stopped(
+        self,
+        lease: Any,
+        stop: asyncio.Event,
+    ) -> None:
+        """Renew the short writer lease until the batch reaches a terminal state.
+
+        Any renewal error is a fence loss.  Normalizing adapter failures to the
+        typed fence error keeps the outbox fail-closed instead of allowing the
+        relational ACK to race a writer that recovered the expired lease.
+        """
+
+        from okto_pulse.core.kg.global_discovery_writer import (
+            GlobalDiscoveryWriterFenceLost,
+        )
+
+        while True:
+            try:
+                await asyncio.wait_for(
+                    stop.wait(),
+                    timeout=self._writer_lease_renew_interval_seconds,
+                )
+            except asyncio.TimeoutError:
+                try:
+                    await self._run_graph_io(lease.renew)
+                    lease.assert_fenced()
+                except GlobalDiscoveryWriterFenceLost:
+                    raise
+                except Exception as exc:
+                    raise GlobalDiscoveryWriterFenceLost() from exc
+            else:
+                return
+
+    async def _process_once_with_lease_renewal(self, lease: Any) -> int:
+        """Race batch work with the lease renewer and stop on fence loss."""
+
+        from okto_pulse.core.kg.global_discovery_writer import (
+            GlobalDiscoveryWriterFenceLost,
+        )
+
+        stop = asyncio.Event()
+        batch_task = asyncio.create_task(
+            self._process_once_under_writer(),
+            name="core.global_outbox.batch",
+        )
+        renewal_task = asyncio.create_task(
+            self._renew_writer_lease_until_stopped(lease, stop),
+            name="core.global_outbox.writer_lease_renewal",
+        )
+        tasks = (batch_task, renewal_task)
+
+        async def _drain_task(
+            task: asyncio.Task[Any],
+            *,
+            cancel: bool,
+        ) -> None:
+            """Reach a terminal child state despite repeated parent cancel."""
+
+            if cancel and not task.done():
+                task.cancel()
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+                except BaseException:
+                    break
+            if task.done() and not task.cancelled():
+                # Consume a possible child failure. The main race path already
+                # propagates authoritative batch/fence errors; cleanup must not
+                # replace them or emit an unobserved-task warning.
+                task.exception()
+
+        try:
+            done, _pending = await asyncio.wait(
+                tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if renewal_task in done:
+                try:
+                    renewal_task.result()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    raise
+
+                # The renewer only returns normally after ``stop`` is set, and
+                # that happens below after the batch finishes.  Returning first
+                # would silently leave the batch without a live fence.
+                raise GlobalDiscoveryWriterFenceLost()
+
+            stop.set()
+            # If renewal failed concurrently with batch completion, its fence
+            # error outranks the apparent batch result and prevents ACK.
+            await renewal_task
+            lease.assert_fenced()
+            return batch_task.result()
+        finally:
+            # Keep renewing the durable fence while cancellation drains the
+            # native batch. Stopping the renewer first creates a TTL window in
+            # which another process can acquire the lease while the cancelled
+            # native statement is still executing. This order also survives a
+            # second/third cancellation request.
+            await _drain_task(batch_task, cancel=not batch_task.done())
+            stop.set()
+            await _drain_task(renewal_task, cancel=False)
 
     async def build_recovery_board_seed(
         self,
@@ -280,20 +415,34 @@ class GlobalOutboxProcessor:
             GlobalDiscoveryWriterLease,
         )
 
-        try:
-            lease = await self._run_graph_io(
-                lambda: GlobalDiscoveryWriterLease.acquire(
+        acquired_lease: dict[str, Any] = {}
+
+        def _acquire_writer_lease() -> Any:
+            lease = GlobalDiscoveryWriterLease.acquire(
                     operation="global_outbox_apply",
-                    ttl_seconds=3600,
+                    ttl_seconds=self._writer_lease_ttl_seconds,
                 )
-            )
+            # Publish from the native thread before returning. If the awaiting
+            # coroutine is cancelled, ``_run_graph_io`` drains this callable
+            # and then re-raises cancellation; the caller can still release
+            # the acquired token instead of leaking it until TTL.
+            acquired_lease["lease"] = lease
+            return lease
+
+        try:
+            lease = await self._run_graph_io(_acquire_writer_lease)
+        except asyncio.CancelledError:
+            lease = acquired_lease.get("lease")
+            if lease is not None:
+                await self._run_graph_io(lease.release)
+            raise
         except GlobalDiscoveryWriterContention:
             # Recovery (or another process' outbox batch) owns the durable
             # fence.  Leave rows untouched and retry on the next worker tick.
             return 0
         try:
             with lease.guard():
-                return await self._process_once_under_writer()
+                return await self._process_once_with_lease_renewal(lease)
         finally:
             await self._run_graph_io(lease.release)
 
@@ -444,16 +593,21 @@ class GlobalOutboxProcessor:
         batch_flush_error: Exception | None = None
         try:
             # The edition adapter holds its process-wide writer lease across
-            # flush, close/reopen and every fresh global read. Keeping this
-            # complete scope on the blocking executor prevents event-loop
-            # stalls and prevents another writer from seeing a closed handle.
+            # flush, one batch-wide close/reopen window and every fresh global
+            # read. Keeping this complete scope on the blocking executor
+            # prevents event-loop stalls and prevents another writer from
+            # seeing a closed handle.
             with runtime.post_write_verification_scope():
                 self._flush_global_discovery_storage_after_batch()
+                # Force exactly one fresh verification handle for the complete
+                # batch.  All boards are verified under the same exclusive
+                # lifecycle scope, so closing between boards adds native churn
+                # without strengthening the durability or isolation proof.
+                runtime.close()
                 latest_expected_by_board = {
                     event.board_id: expected for event, expected in processed_events
                 }
                 for board_id, expected in latest_expected_by_board.items():
-                    runtime.close()
                     try:
                         expected_source_types = {
                             source_id: node_type
@@ -497,8 +651,6 @@ class GlobalOutboxProcessor:
                                 "board_id": board_id,
                             },
                         )
-                    finally:
-                        runtime.close()
         except Exception as exc:
             batch_flush_error = exc
         return verification_errors, batch_flush_error

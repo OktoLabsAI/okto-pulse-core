@@ -121,7 +121,7 @@ class TestGlobalSchema:
         global_runtime = get_kg_registry().global_discovery_runtime
         monkeypatch.setattr(global_runtime, "_graph_path_provider", lambda: path)
         board_runtime = global_runtime._runtime()
-        monkeypatch.setattr(board_runtime, "open_kuzu_db", fake_open)
+        monkeypatch.setattr(board_runtime, "open_global_kuzu_db", fake_open)
         monkeypatch.setattr(board_runtime, "new_connection", lambda _db: FakeConn())
         monkeypatch.setattr(board_runtime, "load_vector_extension", lambda _conn: None)
 

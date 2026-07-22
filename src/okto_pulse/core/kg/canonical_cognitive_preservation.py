@@ -458,6 +458,7 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
 
     from okto_pulse.core.ports.kg_cognitive_source import (
         CognitiveSourceError,
+        latest_cognitive_source_records,
         resolve_cognitive_source_store,
     )
 
@@ -476,7 +477,9 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
         }
 
     try:
-        records = _run_async_blocking(store.enumerate(board_id))
+        records = latest_cognitive_source_records(
+            _run_async_blocking(store.enumerate(board_id))
+        )
     except CognitiveSourceError as exc:
         logger.error(
             "kg.cognitive_replay.enumerate_failed board=%s reason=%s",
@@ -502,6 +505,11 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
             continue
         attrs = dict(record.payload)
         attrs.pop("id", None)
+        # The durable ledger keeps provenance alongside (rather than inside)
+        # the literal payload.  Restore it when older payloads do not already
+        # carry the field, while never overriding an explicitly persisted
+        # payload value.
+        attrs.setdefault("source_session_id", record.source_session_id or "")
         try:
             _create_node(board_id, node_type, record.node_id, attrs)
             replayed += 1

@@ -326,20 +326,55 @@ class _InMemoryCognitiveSourceStore:
         self.records: list[Any] = []
 
     async def append(self, record: Any) -> str:
-        for existing in self.records:
-            if (
-                existing.node_id == record.node_id
-                and existing.generation == record.generation
-            ):
-                return existing.node_id
-        self.records.append(record)
-        return record.node_id
+        return (await self.append_many((record,)))[0]
+
+    async def append_many(self, records: tuple[Any, ...]) -> tuple[str, ...]:
+        from okto_pulse.core.ports.kg_cognitive_source import (
+            CognitiveSourceConflict,
+        )
+
+        ids: list[str] = []
+        pending = list(self.records)
+        for record in records:
+            matched = None
+            for existing in pending:
+                if (
+                    existing.node_id == record.node_id
+                    and existing.generation == record.generation
+                    and existing.source_revision == record.source_revision
+                ):
+                    matched = existing
+                    break
+            if matched is None:
+                pending.append(record)
+                matched = record
+            elif matched.record_fingerprint != record.record_fingerprint:
+                raise CognitiveSourceConflict(
+                    "cognitive_source_replay_conflict",
+                    board_id=record.board_id,
+                    node_id=record.node_id,
+                )
+            ids.append(matched.node_id)
+        self.records = pending
+        return tuple(ids)
+
+    async def append_many_in_context(
+        self,
+        _context: object,
+        records: tuple[Any, ...],
+    ) -> tuple[str, ...]:
+        return await self.append_many(records)
 
     async def enumerate(self, board_id: str):
         return tuple(
             sorted(
                 (r for r in self.records if r.board_id == board_id),
-                key=lambda r: (r.committed_at or "", r.node_id, r.generation),
+                key=lambda r: (
+                    r.committed_at or "",
+                    r.node_id,
+                    r.generation,
+                    r.source_revision,
+                ),
             )
         )
 

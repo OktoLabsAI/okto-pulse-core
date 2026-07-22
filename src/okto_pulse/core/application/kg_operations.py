@@ -361,7 +361,12 @@ class CoreKnowledgeGraphOperations:
         )
 
     async def commit_consolidation(
-        self, request: object, *, board_id: str, agent_id: str
+        self,
+        request: object,
+        *,
+        board_id: str,
+        agent_id: str,
+        defer_session_finalization: bool = False,
     ):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import (
             commit_consolidation,
@@ -374,6 +379,7 @@ class CoreKnowledgeGraphOperations:
                 request,
                 agent_id=agent_id,
                 db=self.__relational_context,
+                defer_session_finalization=defer_session_finalization,
             ),
         )
 

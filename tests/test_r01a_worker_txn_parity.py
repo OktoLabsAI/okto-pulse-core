@@ -14,6 +14,7 @@ OUTSIDE any HTTP request. This suite proves their commit/rollback is preserved:
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import uuid
 
@@ -165,6 +166,122 @@ async def test_consolidation_commits_and_acks_on_success(monkeypatch) -> None:
     async with factory() as db:
         assert await db.get(ConsolidationQueue, marker_id) is not None  # committed
         assert await db.get(ConsolidationQueue, entry_id) is None  # DELETE-on-ack
+
+
+@pytest.mark.asyncio
+async def test_consolidation_finalizes_graph_session_only_after_main_uow_commit(
+    monkeypatch,
+) -> None:
+    """The graph session remains compensatable until ledger+audit+ACK commit."""
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    board_id = _board_id()
+    await _seed_queue_entry(factory, board_id)
+    delegate = consolidation_mod.get_consolidation_persistence_port()
+    events: list[str] = []
+
+    class _RecordingStore:
+        def __getattr__(self, name):
+            return getattr(delegate, name)
+
+        async def commit(self, db):
+            await delegate.commit(db)
+            events.append(f"commit:{sum(e.startswith('commit:') for e in events) + 1}")
+
+    async def _process(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("kgses-worker-deferred")
+        events.append("process")
+        return True
+
+    async def _finalize(session_id: str, *, agent_id: str) -> None:
+        assert session_id == "kgses-worker-deferred"
+        assert agent_id == consolidation_mod.AGENT_ID
+        events.append("finalize")
+
+    async def _abort(*_args, **_kwargs) -> None:
+        pytest.fail("successful relational commit must not compensate the graph")
+
+    monkeypatch.setattr(
+        consolidation_mod,
+        "get_consolidation_persistence_port",
+        lambda: _RecordingStore(),
+    )
+    monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _process)
+    monkeypatch.setattr(consolidation_mod, "finalize_deferred_consolidation", _finalize)
+    monkeypatch.setattr(consolidation_mod, "abort_deferred_consolidation", _abort)
+    monkeypatch.setattr(
+        consolidation_mod,
+        "_run_post_commit_maintenance",
+        lambda *_args, **_kwargs: asyncio.sleep(0),
+    )
+
+    worker = ConsolidationProcessor(relational_scope_factory=factory)
+    assert await worker.process_batch() == 1
+
+    assert events.index("commit:2") < events.index("finalize")
+    assert events.index("finalize") < events.index("commit:3")
+
+
+@pytest.mark.asyncio
+async def test_consolidation_commit_failure_compensates_before_queue_retry(
+    monkeypatch,
+) -> None:
+    """A failed main SQLite commit cannot strand graph-ahead state."""
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy_test_models import ConsolidationQueue
+
+    factory = get_session_factory()
+    board_id = _board_id()
+    entry_id = await _seed_queue_entry(factory, board_id)
+    delegate = consolidation_mod.get_consolidation_persistence_port()
+    events: list[str] = []
+    commit_calls = 0
+
+    class _FailingMainCommitStore:
+        def __getattr__(self, name):
+            return getattr(delegate, name)
+
+        async def commit(self, db):
+            nonlocal commit_calls
+            commit_calls += 1
+            if commit_calls == 2:
+                events.append("main_commit_failed")
+                raise RuntimeError("simulated SQLite commit failure")
+            await delegate.commit(db)
+            events.append(f"commit:{commit_calls}")
+
+    async def _process(_db, _entry, **kwargs):
+        kwargs["deferred_session_ids"].append("kgses-worker-rollback")
+        return True
+
+    async def _finalize(*_args, **_kwargs) -> None:
+        pytest.fail("failed relational commit must not finalize the graph session")
+
+    async def _abort(session_id: str, *, agent_id: str, blocking_execution) -> None:
+        assert session_id == "kgses-worker-rollback"
+        assert agent_id == consolidation_mod.AGENT_ID
+        assert blocking_execution is not None
+        events.append("abort")
+
+    monkeypatch.setattr(
+        consolidation_mod,
+        "get_consolidation_persistence_port",
+        lambda: _FailingMainCommitStore(),
+    )
+    monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _process)
+    monkeypatch.setattr(consolidation_mod, "finalize_deferred_consolidation", _finalize)
+    monkeypatch.setattr(consolidation_mod, "abort_deferred_consolidation", _abort)
+
+    worker = ConsolidationProcessor(relational_scope_factory=factory)
+    assert await worker.process_batch() == 0
+
+    assert events.index("main_commit_failed") < events.index("abort")
+    async with factory() as db:
+        fresh = await db.get(ConsolidationQueue, entry_id)
+        assert fresh is not None
+        assert fresh.attempts >= 1
+        assert "simulated SQLite commit failure" in (fresh.last_error or "")
 
 
 @pytest.mark.asyncio

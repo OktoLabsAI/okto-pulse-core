@@ -21,11 +21,14 @@ from pydantic import ValidationError
 
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
+    abort_deferred_consolidation,
     _require_open_session,
     abort_consolidation,
     add_edge_candidate,
     add_node_candidate,
+    finalize_deferred_consolidation,
     get_similar_nodes,
+    run_cancellation_atomic,
 )
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
@@ -322,7 +325,11 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         # ownership — if it raises here the agent hears the same error they
         # would have heard from commit_consolidation directly.
         try:
-            session = await _require_open_session(req.session_id, agent.id)
+            session = await _require_open_session(
+                req.session_id,
+                agent.id,
+                allow_pending_commit=True,
+            )
         except KGPrimitiveError as e:
             return _err(e.code, e.message, session_id=e.session_id,
                         details=e.details)
@@ -340,12 +347,67 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
 
         actor = ActorContext(agent.id, "mcp")
         try:
-            async with get_uow()(actor=actor) as uow:
-                result = await CommitConsolidationUseCase().execute(
-                    CommitConsolidationCommand(req, board_id=session.board_id),
-                    actor=actor,
-                    uow=uow,
-                )
+            release_after_rollback = False
+            relational_commit_confirmed = False
+            try:
+                async with get_uow()(actor=actor) as uow:
+                    result = await CommitConsolidationUseCase().execute(
+                        CommitConsolidationCommand(req, board_id=session.board_id),
+                        actor=actor,
+                        uow=uow,
+                    )
+
+                    async def _commit_and_finalize() -> None:
+                        nonlocal relational_commit_confirmed
+                        await uow.commit()
+                        relational_commit_confirmed = True
+                        await finalize_deferred_consolidation(
+                            req.session_id,
+                            agent_id=agent.id,
+                        )
+
+                    try:
+                        await run_cancellation_atomic(
+                            _commit_and_finalize(),
+                            task_name="core.kg.mcp_commit_and_finalize",
+                        )
+                    except BaseException:
+                        release_after_rollback = True
+                        raise
+            except BaseException:
+                # Only this caller's failed relational commit owns a deferred
+                # claim to release. Execute-time errors may belong to a
+                # competing caller and must never release another UOW's claim.
+                if release_after_rollback:
+                    try:
+                        async def _cleanup_deferred_commit() -> None:
+                            if relational_commit_confirmed:
+                                # Durability is already established: retry only
+                                # idempotent terminal cleanup. Releasing here
+                                # would permit conflicting INSERT replay.
+                                await finalize_deferred_consolidation(
+                                    req.session_id,
+                                    agent_id=agent.id,
+                                )
+                            else:
+                                # A client may never retry after this response.
+                                # Compensate graph auto-commits immediately.
+                                await abort_deferred_consolidation(
+                                    req.session_id,
+                                    agent_id=agent.id,
+                                )
+
+                        await run_cancellation_atomic(
+                            _cleanup_deferred_commit(),
+                            task_name="core.kg.mcp_deferred_cleanup",
+                        )
+                    except BaseException:
+                        logger.warning(
+                            "kg.deferred_commit.cleanup_failed session=%s",
+                            req.session_id,
+                            exc_info=True,
+                        )
+                raise
             return _ok(result.resp)
         except KGPrimitiveError as e:
             # R7: a working-only canonical Learning bug-derived commit is an

@@ -612,18 +612,39 @@ def cognitive_durable_digest_from_rows(
     edition-neutral without duplicating classification or hashing rules.
     """
 
-    def value(record: object, field: str) -> object:
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        canonical_cognitive_source_fingerprint,
+        latest_cognitive_source_records,
+    )
+
+    def value(record: object, field: str, default: object = None) -> object:
         if isinstance(record, Mapping):
-            return record.get(field)
-        return getattr(record, field)
+            return record.get(field, default)
+        return getattr(record, field, default)
 
     normalized: list[dict[str, object]] = []
-    for record in records:
+    for record in latest_cognitive_source_records(records):
         raw_payload = value(record, "payload")
         if isinstance(raw_payload, str):
             raw_payload = json.loads(raw_payload)
         if not isinstance(raw_payload, Mapping):
             raise ValueError("cognitive source payload must be a mapping")
+        raw_evidence_refs = value(record, "evidence_refs", ()) or ()
+        if isinstance(raw_evidence_refs, str):
+            parsed_refs = json.loads(raw_evidence_refs)
+            raw_evidence_refs = (
+                parsed_refs if isinstance(parsed_refs, list) else (parsed_refs,)
+            )
+        evidence_refs = tuple(str(ref) for ref in raw_evidence_refs)
+        source_revision = int(value(record, "source_revision", 0) or 0)
+        record_fingerprint = canonical_cognitive_source_fingerprint(
+            board_id=str(value(record, "board_id", "") or ""),
+            node_id=str(value(record, "node_id", "") or ""),
+            node_type=str(value(record, "node_type", "") or ""),
+            generation=int(value(record, "generation", 0) or 0),
+            payload=raw_payload,
+            evidence_refs=evidence_refs,
+        )
         normalized.append(
             {
                 "committed_at": str(value(record, "committed_at") or ""),
@@ -638,6 +659,8 @@ def cognitive_durable_digest_from_rows(
                         default=str,
                     ).encode("utf-8")
                 ).hexdigest(),
+                "source_revision": source_revision,
+                "record_fingerprint": record_fingerprint,
             }
         )
     if not normalized:
@@ -649,15 +672,21 @@ def cognitive_durable_digest_from_rows(
             int(row["generation"]),
         )
     )
-    canonical = [
-        {
+    canonical: list[dict[str, object]] = []
+    for row in normalized:
+        item: dict[str, object] = {
             "node_id": row["node_id"],
             "node_type": row["node_type"],
             "generation": row["generation"],
             "payload_hash": row["payload_hash"],
         }
-        for row in normalized
-    ]
+        # Base-only databases must retain the exact pre-ledger digest. Once a
+        # real append-only revision exists, bind both its ordinal and its
+        # evidence-aware semantic fingerprint into the manifest.
+        if int(row["source_revision"]) > 0:
+            item["source_revision"] = row["source_revision"]
+            item["record_fingerprint"] = row["record_fingerprint"]
+        canonical.append(item)
     digest = hashlib.sha256(
         json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode(
             "utf-8"
