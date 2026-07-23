@@ -31,8 +31,8 @@ def _value(item: Any, field: str) -> Any:
     return getattr(item, field, None)
 
 
-def knowledge_content_sha256(item: Any) -> str:
-    """Return SHA-256 over the canonical Knowledge Base content envelope."""
+def knowledge_content_bytes(item: Any) -> bytes:
+    """Return the exact canonical bytes used by hashes and v2 snapshots."""
 
     payload = {field: _value(item, field) for field in KNOWLEDGE_CONTENT_HASH_FIELDS}
     canonical = json.dumps(
@@ -42,7 +42,13 @@ def knowledge_content_sha256(item: Any) -> str:
         sort_keys=True,
         default=str,
     )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return canonical.encode("utf-8")
+
+
+def knowledge_content_sha256(item: Any) -> str:
+    """Return SHA-256 over the canonical Knowledge Base content envelope."""
+
+    return hashlib.sha256(knowledge_content_bytes(item)).hexdigest()
 
 
 def compute_knowledge_content_sha256(item: Any) -> str:
@@ -64,6 +70,7 @@ def resolve_knowledge_content_sha256(item: Any) -> str:
 __all__ = [
     "KNOWLEDGE_CONTENT_HASH_FIELDS",
     "compute_knowledge_content_sha256",
+    "knowledge_content_bytes",
     "knowledge_content_sha256",
     "resolve_knowledge_content_sha256",
 ]

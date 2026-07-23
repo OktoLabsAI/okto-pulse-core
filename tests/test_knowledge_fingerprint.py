@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from okto_pulse.core.domain.knowledge_fingerprint import (
     KNOWLEDGE_CONTENT_HASH_FIELDS,
     compute_knowledge_content_sha256,
+    knowledge_content_bytes,
     knowledge_content_sha256,
     resolve_knowledge_content_sha256,
 )
@@ -43,6 +44,7 @@ def test_knowledge_fingerprint_uses_the_frozen_canonical_field_contract() -> Non
         compute_knowledge_content_sha256(payload)
         == hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     )
+    assert knowledge_content_bytes(payload) == canonical.encode("utf-8")
     assert knowledge_content_sha256(payload) == compute_knowledge_content_sha256(
         payload
     )

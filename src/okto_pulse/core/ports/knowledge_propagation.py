@@ -24,6 +24,7 @@ from typing import Any, Protocol, TypeVar, cast
 from okto_pulse.core.domain.knowledge_selection import (
     KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
     KnowledgeAssignment,
+    KnowledgeAssignmentState,
     KnowledgeOriginClass,
     KnowledgePropagationMode,
     KnowledgeSelection,
@@ -40,17 +41,37 @@ from okto_pulse.core.runtime_context import (
 
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 _RUNTIME_KEY = "ports.knowledge_propagation"
+_AUDIT_SINK_RUNTIME_KEY = "ports.knowledge_mutation_audit_sink"
 _EnumT = TypeVar("_EnumT", bound=Enum)
 
 
 class KnowledgeMutationKind(str, Enum):
     """Semantically distinct writes understood by the persistence adapter."""
 
+    REPLACE_OMITTED = "replace_omitted"
     REPLACE = "replace"
     DROP_DELTA = "drop_delta"
     REPLACE_EMPTY = "replace_empty"
     REFRESH_SNAPSHOT = "refresh_snapshot"
     GRANDFATHER = "grandfather"
+
+
+class KnowledgeMutationOutcome(str, Enum):
+    """Terminal result or append-only observation recorded by the ledger."""
+
+    APPLIED = "applied"
+    NOOP = "noop"
+    REJECTED = "rejected"
+    GRANDFATHERED = "grandfathered"
+    REPLAYED = "replayed"
+
+
+class KnowledgeRecordKind(str, Enum):
+    """Append-only record families that can supersede an earlier row."""
+
+    ASSIGNMENT = "assignment"
+    SNAPSHOT = "snapshot"
+    TOMBSTONE = "tombstone"
 
 
 class KnowledgePropagationPortError(RuntimeError):
@@ -175,9 +196,7 @@ def _canonical_stamp(
     )
     if source_hash is not None and _SHA256_HEX.fullmatch(source_hash) is None:
         raise ValueError("knowledge_propagation_source_content_sha256_invalid")
-    if require_revision_evidence and (
-        source_revision is None or source_hash is None
-    ):
+    if require_revision_evidence and (source_revision is None or source_hash is None):
         raise ValueError("knowledge_propagation_revision_evidence_required")
     return ResourceRevisionStamp(
         root_id=root_id,
@@ -237,10 +256,8 @@ class KnowledgeTemporalWindow:
         )
         if effective_to is not None and effective_to < effective_from:
             raise ValueError("knowledge_propagation_effective_window_invalid")
-        if (effective_to is None) != (superseded_by_id is None):
-            raise ValueError(
-                "knowledge_propagation_supersession_window_incoherent"
-            )
+        if effective_to is None and superseded_by_id is not None:
+            raise ValueError("knowledge_propagation_supersession_window_incoherent")
         object.__setattr__(self, "effective_from", effective_from)
         object.__setattr__(self, "effective_to", effective_to)
         object.__setattr__(self, "superseded_by_id", superseded_by_id)
@@ -285,7 +302,7 @@ class KnowledgePropagationTombstone:
 
     tombstone_id: str
     target: KnowledgeTargetKey
-    root_id: str
+    root_id: str | None
     actor_id: str
     justification: str
     temporal: KnowledgeTemporalWindow
@@ -298,7 +315,11 @@ class KnowledgePropagationTombstone:
         )
         if not isinstance(self.target, KnowledgeTargetKey):
             raise ValueError("knowledge_propagation_tombstone_target_invalid")
-        object.__setattr__(self, "root_id", _required_text(self.root_id, "root_id"))
+        object.__setattr__(
+            self,
+            "root_id",
+            _optional_text(self.root_id, "root_id"),
+        )
         object.__setattr__(self, "actor_id", _required_text(self.actor_id, "actor_id"))
         object.__setattr__(
             self,
@@ -400,6 +421,8 @@ class KnowledgeLegacyAttachment:
         if type(self.effective) is not bool:
             raise ValueError("knowledge_propagation_legacy_effective_invalid")
         object.__setattr__(self, "origin_class", origin_class)
+        if origin_class is KnowledgeOriginClass.LEGACY_UNRESOLVED:
+            object.__setattr__(self, "effective", False)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -531,12 +554,11 @@ class KnowledgePropagationScope:
         )
         if self.v2_active:
             if state not in {
+                KnowledgeSelectionState.OMITTED,
                 KnowledgeSelectionState.EXPLICIT_EMPTY,
                 KnowledgeSelectionState.EXPLICIT_IDS,
             }:
-                raise ValueError(
-                    "knowledge_propagation_active_scope_state_invalid"
-                )
+                raise ValueError("knowledge_propagation_active_scope_state_invalid")
         elif state is not None:
             raise ValueError("knowledge_propagation_inactive_scope_state_invalid")
 
@@ -553,9 +575,20 @@ class KnowledgePropagationScope:
                 or assignment.target_type != self.target.target_type
                 or assignment.target_id != self.target.target_id
             ):
+                raise ValueError("knowledge_propagation_assignment_target_mismatch")
+        current_assignments_by_id: dict[str, KnowledgeAssignment] = {}
+        current_assignment_by_root: dict[str, str] = {}
+        for item in assignments:
+            if not item.temporal.is_current:
+                continue
+            assignment = item.assignment
+            root_id = assignment.revision_stamp.root_id
+            if root_id in current_assignment_by_root:
                 raise ValueError(
-                    "knowledge_propagation_assignment_target_mismatch"
+                    "knowledge_propagation_current_assignment_root_ambiguous"
                 )
+            current_assignment_by_root[root_id] = assignment.assignment_id
+            current_assignments_by_id[assignment.assignment_id] = assignment
         tombstones = _canonical_objects(
             self.tombstones,
             KnowledgePropagationTombstone,
@@ -582,9 +615,41 @@ class KnowledgePropagationScope:
         )
         for item in tombstones:
             if item.target != self.target:
+                raise ValueError("knowledge_propagation_tombstone_target_mismatch")
+        current_tombstone_by_root: dict[str | None, str] = {}
+        for item in tombstones:
+            if not item.temporal.is_current:
+                continue
+            if item.root_id in current_tombstone_by_root:
                 raise ValueError(
-                    "knowledge_propagation_tombstone_target_mismatch"
+                    "knowledge_propagation_current_tombstone_root_ambiguous"
                 )
+            current_tombstone_by_root[item.root_id] = item.tombstone_id
+        if None in current_tombstone_by_root and len(current_tombstone_by_root) > 1:
+            raise ValueError("knowledge_propagation_current_global_tombstone_conflict")
+
+        current_snapshot_by_assignment: dict[str, str] = {}
+        for item in snapshots:
+            if not item.temporal.is_current:
+                continue
+            if item.assignment_id in current_snapshot_by_assignment:
+                raise ValueError(
+                    "knowledge_propagation_current_snapshot_assignment_ambiguous"
+                )
+            assignment = current_assignments_by_id.get(item.assignment_id)
+            if assignment is None:
+                raise ValueError(
+                    "knowledge_propagation_current_snapshot_assignment_missing"
+                )
+            if assignment.mode is not KnowledgePropagationMode.SNAPSHOT:
+                raise ValueError(
+                    "knowledge_propagation_current_snapshot_assignment_mode_invalid"
+                )
+            if item.revision_stamp != assignment.revision_stamp:
+                raise ValueError(
+                    "knowledge_propagation_current_snapshot_revision_mismatch"
+                )
+            current_snapshot_by_assignment[item.assignment_id] = item.snapshot_id
         object.__setattr__(self, "selection_state", state)
         object.__setattr__(self, "assignments", assignments)
         object.__setattr__(self, "tombstones", tombstones)
@@ -595,7 +660,13 @@ class KnowledgePropagationScope:
 
 @dataclass(frozen=True, slots=True)
 class KnowledgeMutationReceipt:
-    """Immutable success value stored in and returned from the ledger."""
+    """Immutable canonical result stored in and returned from the ledger.
+
+    ``replayed`` and ``applied_at`` remain on the public wire for backwards
+    compatibility.  ``outcome`` is authoritative: applied/grandfathered
+    results advance the scope revision, noop/rejected results do not, and a
+    replay preserves the revision semantics of its original terminal result.
+    """
 
     operation_id: str
     target: KnowledgeTargetKey
@@ -605,6 +676,11 @@ class KnowledgeMutationReceipt:
     request_hash: str
     applied_at: datetime
     replayed: bool = False
+    outcome: KnowledgeMutationOutcome | str = KnowledgeMutationOutcome.APPLIED
+    reason_code: str | None = None
+    reason_detail: str | None = None
+    original_outcome: KnowledgeMutationOutcome | str | None = None
+    details: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -624,20 +700,102 @@ class KnowledgeMutationReceipt:
             "previous_revision",
         )
         revision = _non_negative_int(self.revision, "revision")
-        if revision != previous_revision + 1:
-            raise ValueError("knowledge_propagation_receipt_revision_invalid")
         request_hash = _required_text(self.request_hash, "request_hash")
         if _SHA256_HEX.fullmatch(request_hash) is None:
             raise ValueError("knowledge_propagation_request_hash_invalid")
         if type(self.replayed) is not bool:
             raise ValueError("knowledge_propagation_replayed_invalid")
+        outcome = _coerce_enum(
+            self.outcome,
+            KnowledgeMutationOutcome,
+            "outcome",
+        )
+        original_outcome = (
+            None
+            if self.original_outcome is None
+            else _coerce_enum(
+                self.original_outcome,
+                KnowledgeMutationOutcome,
+                "original_outcome",
+            )
+        )
+        reason_code: str | None
+        reason_detail: str | None
+        try:
+            reason_code = _optional_text(self.reason_code, "reason_code")
+            reason_detail = _optional_text(self.reason_detail, "reason_detail")
+        except ValueError as exc:
+            if outcome is KnowledgeMutationOutcome.REJECTED:
+                raise ValueError(
+                    "knowledge_propagation_rejection_reason_required"
+                ) from exc
+            raise
+        if not isinstance(self.details, Mapping):
+            raise ValueError("knowledge_propagation_receipt_details_invalid")
+
+        terminal_outcomes = {
+            KnowledgeMutationOutcome.APPLIED,
+            KnowledgeMutationOutcome.NOOP,
+            KnowledgeMutationOutcome.REJECTED,
+            KnowledgeMutationOutcome.GRANDFATHERED,
+        }
+        if outcome is KnowledgeMutationOutcome.REPLAYED:
+            if (
+                original_outcome not in terminal_outcomes
+                or original_outcome is KnowledgeMutationOutcome.REPLAYED
+            ):
+                raise ValueError(
+                    "knowledge_propagation_replay_original_outcome_invalid"
+                )
+            if not self.replayed:
+                raise ValueError("knowledge_propagation_replayed_invalid")
+            revision_outcome = cast(
+                KnowledgeMutationOutcome,
+                original_outcome,
+            )
+        else:
+            if self.replayed:
+                raise ValueError("knowledge_propagation_replayed_invalid")
+            if original_outcome is not None:
+                raise ValueError(
+                    "knowledge_propagation_replay_original_outcome_invalid"
+                )
+            revision_outcome = outcome
+
+        expected_revision = (
+            previous_revision + 1
+            if revision_outcome
+            in {
+                KnowledgeMutationOutcome.APPLIED,
+                KnowledgeMutationOutcome.GRANDFATHERED,
+            }
+            else previous_revision
+        )
+        if revision != expected_revision:
+            raise ValueError("knowledge_propagation_receipt_revision_invalid")
+        if outcome is KnowledgeMutationOutcome.REJECTED and (
+            reason_code is None or reason_detail is None
+        ):
+            raise ValueError("knowledge_propagation_rejection_reason_required")
+
         object.__setattr__(self, "operation_kind", operation_kind)
         object.__setattr__(self, "previous_revision", previous_revision)
         object.__setattr__(self, "revision", revision)
         object.__setattr__(self, "request_hash", request_hash)
         object.__setattr__(self, "applied_at", _utc(self.applied_at, "applied_at"))
+        object.__setattr__(self, "outcome", outcome)
+        object.__setattr__(self, "reason_code", reason_code)
+        object.__setattr__(self, "reason_detail", reason_detail)
+        object.__setattr__(self, "original_outcome", original_outcome)
+        object.__setattr__(
+            self,
+            "details",
+            MappingProxyType(dict(self.details)),
+        )
 
     def as_replay(self) -> "KnowledgeMutationReceipt":
+        if self.outcome is KnowledgeMutationOutcome.REPLAYED:
+            raise ValueError("knowledge_propagation_receipt_already_replayed")
         return KnowledgeMutationReceipt(
             operation_id=self.operation_id,
             target=self.target,
@@ -647,6 +805,11 @@ class KnowledgeMutationReceipt:
             request_hash=self.request_hash,
             applied_at=self.applied_at,
             replayed=True,
+            outcome=KnowledgeMutationOutcome.REPLAYED,
+            reason_code=self.reason_code,
+            reason_detail=self.reason_detail,
+            original_outcome=self.outcome,
+            details=self.details,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -663,12 +826,24 @@ class KnowledgeMutationReceipt:
             "request_hash": self.request_hash,
             "applied_at": self.applied_at.isoformat(),
             "replayed": self.replayed,
+            "outcome": cast(KnowledgeMutationOutcome, self.outcome).value,
+            "reason_code": self.reason_code,
+            "reason_detail": self.reason_detail,
+            "original_outcome": (
+                None
+                if self.original_outcome is None
+                else cast(
+                    KnowledgeMutationOutcome,
+                    self.original_outcome,
+                ).value
+            ),
+            "details": dict(self.details),
         }
 
 
 @dataclass(frozen=True, slots=True)
 class KnowledgeMutationLedgerEntry:
-    """Immutable idempotency record written atomically with a mutation."""
+    """Canonical first result for one target/idempotency-key pair."""
 
     target: KnowledgeTargetKey
     idempotency_key: str
@@ -676,6 +851,7 @@ class KnowledgeMutationLedgerEntry:
     operation_kind: KnowledgeMutationKind | str
     receipt: KnowledgeMutationReceipt
     recorded_at: datetime
+    actor_id: str = "system"
 
     def __post_init__(self) -> None:
         if not isinstance(self.target, KnowledgeTargetKey):
@@ -692,18 +868,21 @@ class KnowledgeMutationLedgerEntry:
             KnowledgeMutationKind,
             "operation_kind",
         )
+        actor_id = _required_text(self.actor_id, "actor_id")
         if not isinstance(self.receipt, KnowledgeMutationReceipt):
             raise ValueError("knowledge_propagation_ledger_receipt_invalid")
         if (
             self.receipt.target != self.target
             or self.receipt.request_hash != request_hash
             or self.receipt.operation_kind != operation_kind
+            or self.receipt.outcome is KnowledgeMutationOutcome.REPLAYED
             or self.receipt.replayed
         ):
             raise ValueError("knowledge_propagation_ledger_receipt_incoherent")
         object.__setattr__(self, "idempotency_key", idempotency_key)
         object.__setattr__(self, "request_hash", request_hash)
         object.__setattr__(self, "operation_kind", operation_kind)
+        object.__setattr__(self, "actor_id", actor_id)
         object.__setattr__(
             self,
             "recorded_at",
@@ -720,8 +899,166 @@ class KnowledgeMutationLedgerEntry:
                 KnowledgeMutationKind,
                 self.operation_kind,
             ).value,
+            "actor_id": self.actor_id,
             "receipt": self.receipt.to_dict(),
             "recorded_at": self.recorded_at.isoformat(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeMutationAttempt:
+    """Append-only replay/rejection observation beside the canonical result."""
+
+    attempt_id: str
+    target: KnowledgeTargetKey
+    idempotency_key: str
+    request_hash: str
+    operation_kind: KnowledgeMutationKind | str
+    actor_id: str
+    outcome: KnowledgeMutationOutcome | str
+    recorded_at: datetime
+    original_operation_id: str | None = None
+    reason_code: str | None = None
+    reason_detail: str | None = None
+    details: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        attempt_id = _required_text(self.attempt_id, "attempt_id")
+        if not isinstance(self.target, KnowledgeTargetKey):
+            raise ValueError("knowledge_propagation_attempt_target_invalid")
+        idempotency_key = _required_text(
+            self.idempotency_key,
+            "idempotency_key",
+        )
+        request_hash = _required_text(self.request_hash, "request_hash")
+        if _SHA256_HEX.fullmatch(request_hash) is None:
+            raise ValueError("knowledge_propagation_request_hash_invalid")
+        operation_kind = _coerce_enum(
+            self.operation_kind,
+            KnowledgeMutationKind,
+            "operation_kind",
+        )
+        actor_id = _required_text(self.actor_id, "actor_id")
+        outcome = _coerce_enum(
+            self.outcome,
+            KnowledgeMutationOutcome,
+            "attempt_outcome",
+        )
+        if outcome not in {
+            KnowledgeMutationOutcome.REPLAYED,
+            KnowledgeMutationOutcome.REJECTED,
+        }:
+            raise ValueError("knowledge_propagation_attempt_outcome_invalid")
+        try:
+            original_operation_id = _optional_text(
+                self.original_operation_id,
+                "original_operation_id",
+            )
+            reason_code = _optional_text(self.reason_code, "reason_code")
+            reason_detail = _optional_text(self.reason_detail, "reason_detail")
+        except ValueError as exc:
+            if outcome is KnowledgeMutationOutcome.REJECTED:
+                raise ValueError(
+                    "knowledge_propagation_attempt_rejection_reason_required"
+                ) from exc
+            raise ValueError(
+                "knowledge_propagation_attempt_original_operation_id_invalid"
+            ) from exc
+        if not isinstance(self.details, Mapping):
+            raise ValueError("knowledge_propagation_attempt_details_invalid")
+        if outcome is KnowledgeMutationOutcome.REPLAYED:
+            if original_operation_id is None:
+                raise ValueError(
+                    "knowledge_propagation_attempt_original_operation_id_required"
+                )
+            if reason_code is not None or reason_detail is not None:
+                raise ValueError(
+                    "knowledge_propagation_attempt_original_operation_id_invalid"
+                )
+        elif reason_code is None or reason_detail is None:
+            raise ValueError("knowledge_propagation_attempt_rejection_reason_required")
+
+        object.__setattr__(self, "attempt_id", attempt_id)
+        object.__setattr__(self, "idempotency_key", idempotency_key)
+        object.__setattr__(self, "request_hash", request_hash)
+        object.__setattr__(self, "operation_kind", operation_kind)
+        object.__setattr__(self, "actor_id", actor_id)
+        object.__setattr__(self, "outcome", outcome)
+        object.__setattr__(
+            self,
+            "recorded_at",
+            _utc(self.recorded_at, "recorded_at"),
+        )
+        object.__setattr__(
+            self,
+            "original_operation_id",
+            original_operation_id,
+        )
+        object.__setattr__(self, "reason_code", reason_code)
+        object.__setattr__(self, "reason_detail", reason_detail)
+        object.__setattr__(
+            self,
+            "details",
+            MappingProxyType(dict(self.details)),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "contract_version": KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
+            "attempt_id": self.attempt_id,
+            "target": self.target.to_dict(),
+            "idempotency_key": self.idempotency_key,
+            "request_hash": self.request_hash,
+            "operation_kind": cast(
+                KnowledgeMutationKind,
+                self.operation_kind,
+            ).value,
+            "actor_id": self.actor_id,
+            "outcome": cast(KnowledgeMutationOutcome, self.outcome).value,
+            "recorded_at": self.recorded_at.isoformat(),
+            "original_operation_id": self.original_operation_id,
+            "reason_code": self.reason_code,
+            "reason_detail": self.reason_detail,
+            "details": dict(self.details),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeSupersessionLink:
+    """Explicit old→new linkage staged with one temporal mutation."""
+
+    record_kind: KnowledgeRecordKind | str
+    previous_id: str
+    successor_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "record_kind",
+            _coerce_enum(
+                self.record_kind,
+                KnowledgeRecordKind,
+                "record_kind",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "previous_id",
+            _required_text(self.previous_id, "previous_id"),
+        )
+        object.__setattr__(
+            self,
+            "successor_id",
+            _required_text(self.successor_id, "successor_id"),
+        )
+        if self.previous_id == self.successor_id:
+            raise ValueError("knowledge_propagation_supersession_self_invalid")
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "record_kind": cast(KnowledgeRecordKind, self.record_kind).value,
+            "previous_id": self.previous_id,
+            "successor_id": self.successor_id,
         }
 
 
@@ -746,6 +1083,7 @@ class KnowledgeMutationPlan:
     tombstone_ids_to_close: tuple[str, ...] = ()
     snapshots_to_open: tuple[KnowledgePropagationSnapshot, ...] = ()
     snapshot_ids_to_close: tuple[str, ...] = ()
+    supersession_links: tuple[KnowledgeSupersessionLink, ...] = ()
     ledger_entry: KnowledgeMutationLedgerEntry | None = None
 
     def __post_init__(self) -> None:
@@ -778,8 +1116,6 @@ class KnowledgeMutationPlan:
             KnowledgeSelectionState,
             "next_scope_selection_state",
         )
-        if next_state is KnowledgeSelectionState.OMITTED:
-            raise ValueError("knowledge_propagation_persisted_omitted_state_invalid")
         if self.selection is not None and not isinstance(
             self.selection,
             KnowledgeSelection,
@@ -816,6 +1152,15 @@ class KnowledgeMutationPlan:
             self.snapshot_ids_to_close,
             "snapshot_ids_to_close",
         )
+        supersession_links = _canonical_objects(
+            self.supersession_links,
+            KnowledgeSupersessionLink,
+            field_name="supersession_links",
+            identity=lambda item: (
+                f"{cast(KnowledgeRecordKind, item.record_kind).value}:"
+                f"{item.previous_id}"
+            ),
+        )
         for assignment in assignments:
             value = assignment.assignment
             if (
@@ -826,22 +1171,20 @@ class KnowledgeMutationPlan:
                 or assignment.temporal.effective_from != occurred_at
                 or not assignment.temporal.is_current
             ):
-                raise ValueError(
-                    "knowledge_propagation_plan_assignment_incoherent"
-                )
+                raise ValueError("knowledge_propagation_plan_assignment_incoherent")
         for tombstone in tombstones:
             if (
                 tombstone.target != self.target
                 or tombstone.temporal.effective_from != occurred_at
                 or not tombstone.temporal.is_current
             ):
-                raise ValueError(
-                    "knowledge_propagation_plan_tombstone_incoherent"
-                )
+                raise ValueError("knowledge_propagation_plan_tombstone_incoherent")
         snapshot_assignments = {
             assignment.assignment.assignment_id: assignment.assignment
             for assignment in assignments
         }
+        if len({item.assignment_id for item in snapshots}) != len(snapshots):
+            raise ValueError("knowledge_propagation_plan_snapshot_assignment_ambiguous")
         for snapshot in snapshots:
             assignment = snapshot_assignments.get(snapshot.assignment_id)
             if (
@@ -851,11 +1194,54 @@ class KnowledgeMutationPlan:
                 or assignment.mode is not KnowledgePropagationMode.SNAPSHOT
                 or assignment.revision_stamp != snapshot.revision_stamp
             ):
-                raise ValueError(
-                    "knowledge_propagation_plan_snapshot_incoherent"
-                )
+                raise ValueError("knowledge_propagation_plan_snapshot_incoherent")
+        open_ids = {
+            KnowledgeRecordKind.ASSIGNMENT: {
+                item.assignment.assignment_id for item in assignments
+            },
+            KnowledgeRecordKind.SNAPSHOT: {item.snapshot_id for item in snapshots},
+            KnowledgeRecordKind.TOMBSTONE: {item.tombstone_id for item in tombstones},
+        }
+        closed_ids = {
+            KnowledgeRecordKind.ASSIGNMENT: set(assignment_ids),
+            KnowledgeRecordKind.SNAPSHOT: set(snapshot_ids),
+            KnowledgeRecordKind.TOMBSTONE: set(tombstone_ids),
+        }
+        if any(open_ids[item] & closed_ids[item] for item in KnowledgeRecordKind):
+            raise ValueError("knowledge_propagation_plan_open_close_overlap")
+        for link in supersession_links:
+            record_kind = cast(KnowledgeRecordKind, link.record_kind)
+            if (
+                link.previous_id not in closed_ids[record_kind]
+                or link.successor_id not in open_ids[record_kind]
+            ):
+                raise ValueError("knowledge_propagation_supersession_link_incoherent")
 
-        if kind is KnowledgeMutationKind.REPLACE:
+        assignment_values = tuple(item.assignment for item in assignments)
+        assignment_roots = tuple(
+            item.revision_stamp.root_id for item in assignment_values
+        )
+        assignment_ids_to_open = {item.assignment_id for item in assignment_values}
+        snapshot_assignment_ids = {item.assignment_id for item in snapshots}
+        tombstone_roots = tuple(item.root_id for item in tombstones)
+        opened_actors_match = all(
+            item.actor_id == actor_id for item in assignment_values
+        ) and all(item.actor_id == actor_id for item in tombstones)
+        if kind is not KnowledgeMutationKind.GRANDFATHER and not opened_actors_match:
+            raise ValueError("knowledge_propagation_plan_actor_incoherent")
+
+        if kind is KnowledgeMutationKind.REPLACE_OMITTED:
+            if (
+                self.selection is None
+                or self.selection.selection_state is not KnowledgeSelectionState.OMITTED
+                or assignments
+                or tombstones
+                or tombstone_ids
+                or snapshots
+                or next_state is not KnowledgeSelectionState.OMITTED
+            ):
+                raise ValueError("knowledge_propagation_replace_omitted_plan_invalid")
+        elif kind is KnowledgeMutationKind.REPLACE:
             if (
                 self.selection is None
                 or self.selection.selection_state
@@ -865,6 +1251,26 @@ class KnowledgeMutationPlan:
                     KnowledgePropagationMode.REFERENCE,
                     KnowledgePropagationMode.SNAPSHOT,
                 }
+                or len(assignments) != len(self.selection.knowledge_ids)
+                or len(set(assignment_roots)) != len(assignment_roots)
+                or any(
+                    item.mode is not self.selection.mode
+                    or item.state is not KnowledgeAssignmentState.ACTIVE
+                    or item.origin_class is not KnowledgeOriginClass.V2
+                    for item in assignment_values
+                )
+                or tombstones
+                or (
+                    self.selection.mode is KnowledgePropagationMode.REFERENCE
+                    and bool(snapshots)
+                )
+                or (
+                    self.selection.mode is KnowledgePropagationMode.SNAPSHOT
+                    and (
+                        len(snapshots) != len(assignments)
+                        or snapshot_assignment_ids != assignment_ids_to_open
+                    )
+                )
                 or next_state is not KnowledgeSelectionState.EXPLICIT_IDS
             ):
                 raise ValueError("knowledge_propagation_replace_plan_invalid")
@@ -874,7 +1280,19 @@ class KnowledgeMutationPlan:
                 or self.selection.selection_state
                 is not KnowledgeSelectionState.EXPLICIT_IDS
                 or self.selection.mode is not KnowledgePropagationMode.DROP
-                or not tombstones
+                or len(assignments) != len(self.selection.knowledge_ids)
+                or len(tombstones) != len(self.selection.knowledge_ids)
+                or len(set(assignment_roots)) != len(assignment_roots)
+                or any(
+                    item.mode is not KnowledgePropagationMode.DROP
+                    or item.state is not KnowledgeAssignmentState.DROPPED
+                    or item.origin_class is not KnowledgeOriginClass.V2
+                    for item in assignment_values
+                )
+                or any(root_id is None for root_id in tombstone_roots)
+                or set(tombstone_roots) != set(assignment_roots)
+                or snapshots
+                or next_state is not KnowledgeSelectionState.EXPLICIT_IDS
             ):
                 raise ValueError("knowledge_propagation_drop_delta_plan_invalid")
         elif kind is KnowledgeMutationKind.REPLACE_EMPTY:
@@ -883,28 +1301,72 @@ class KnowledgeMutationPlan:
                 or self.selection.selection_state
                 is not KnowledgeSelectionState.EXPLICIT_EMPTY
                 or assignments
+                or snapshots
+                or len(tombstones) != 1
+                or tombstones[0].root_id is not None
                 or next_state is not KnowledgeSelectionState.EXPLICIT_EMPTY
             ):
                 raise ValueError("knowledge_propagation_replace_empty_plan_invalid")
         elif kind is KnowledgeMutationKind.REFRESH_SNAPSHOT:
-            if self.selection is not None or not snapshots:
-                raise ValueError(
-                    "knowledge_propagation_refresh_snapshot_plan_invalid"
+            assignment_links = tuple(
+                item
+                for item in supersession_links
+                if item.record_kind is KnowledgeRecordKind.ASSIGNMENT
+            )
+            snapshot_links = tuple(
+                item
+                for item in supersession_links
+                if item.record_kind is KnowledgeRecordKind.SNAPSHOT
+            )
+            if (
+                self.selection is not None
+                or next_state is not KnowledgeSelectionState.EXPLICIT_IDS
+                or not assignments
+                or len(set(assignment_roots)) != len(assignment_roots)
+                or any(
+                    item.mode is not KnowledgePropagationMode.SNAPSHOT
+                    or item.state is not KnowledgeAssignmentState.ACTIVE
+                    or item.origin_class is not KnowledgeOriginClass.V2
+                    for item in assignment_values
                 )
+                or len(snapshots) != len(assignments)
+                or snapshot_assignment_ids != assignment_ids_to_open
+                or tombstones
+                or tombstone_ids
+                or len(assignment_ids) != len(assignments)
+                or len(snapshot_ids) != len(snapshots)
+                or {item.previous_id for item in assignment_links}
+                != set(assignment_ids)
+                or {item.successor_id for item in assignment_links}
+                != assignment_ids_to_open
+                or len(assignment_links) != len(assignments)
+                or {item.previous_id for item in snapshot_links} != set(snapshot_ids)
+                or {item.successor_id for item in snapshot_links}
+                != {item.snapshot_id for item in snapshots}
+                or len(snapshot_links) != len(snapshots)
+            ):
+                raise ValueError("knowledge_propagation_refresh_snapshot_plan_invalid")
         elif self.selection is not None:
             raise ValueError("knowledge_propagation_grandfather_plan_invalid")
 
         if not isinstance(self.ledger_entry, KnowledgeMutationLedgerEntry):
             raise ValueError("knowledge_propagation_ledger_entry_required")
         receipt = self.ledger_entry.receipt
+        expected_outcome = (
+            KnowledgeMutationOutcome.GRANDFATHERED
+            if kind is KnowledgeMutationKind.GRANDFATHER
+            else KnowledgeMutationOutcome.APPLIED
+        )
         if (
             self.ledger_entry.target != self.target
             or self.ledger_entry.idempotency_key != idempotency_key
             or self.ledger_entry.request_hash != request_hash
             or self.ledger_entry.operation_kind != kind
+            or self.ledger_entry.actor_id != actor_id
             or receipt.operation_id != operation_id
             or receipt.previous_revision != expected_revision
             or receipt.revision != next_revision
+            or receipt.outcome is not expected_outcome
             or receipt.applied_at != occurred_at
             or self.ledger_entry.recorded_at != occurred_at
         ):
@@ -925,6 +1387,7 @@ class KnowledgeMutationPlan:
         object.__setattr__(self, "tombstone_ids_to_close", tombstone_ids)
         object.__setattr__(self, "snapshots_to_open", snapshots)
         object.__setattr__(self, "snapshot_ids_to_close", snapshot_ids)
+        object.__setattr__(self, "supersession_links", supersession_links)
 
 
 class KnowledgePropagationPort(Protocol):
@@ -948,6 +1411,33 @@ class KnowledgePropagationPort(Protocol):
         plan: KnowledgeMutationPlan,
     ) -> KnowledgeMutationReceipt: ...
 
+    async def stage_attempt(
+        self,
+        context: Any,
+        attempt: KnowledgeMutationAttempt,
+    ) -> None:
+        """Stage a replay observation in the caller's successful UoW.
+
+        Rejected attempts are instead carried by the typed service error so
+        the boundary can append them only after rolling back the domain UoW.
+        """
+        ...
+
+
+class KnowledgeMutationAuditSink(Protocol):
+    """Autonomous append boundary for attempts emitted on failed requests.
+
+    The caller must first roll back and close the domain unit of work.  The
+    edition adapter then owns a short independent transaction, so the audit
+    row survives the rejected request without holding or competing with the
+    failed domain transaction.
+    """
+
+    async def append_after_rollback(
+        self,
+        attempt: KnowledgeMutationAttempt,
+    ) -> None: ...
+
 
 def register_knowledge_propagation_port(port: KnowledgePropagationPort) -> None:
     register_runtime_value(_RUNTIME_KEY, port)
@@ -964,11 +1454,31 @@ def reset_knowledge_propagation_port_for_tests() -> None:
     reset_runtime_values(_RUNTIME_KEY)
 
 
+def register_knowledge_mutation_audit_sink(
+    sink: KnowledgeMutationAuditSink,
+) -> None:
+    register_runtime_value(_AUDIT_SINK_RUNTIME_KEY, sink)
+
+
+def get_knowledge_mutation_audit_sink() -> KnowledgeMutationAuditSink:
+    return require_runtime_value(
+        _AUDIT_SINK_RUNTIME_KEY,
+        "knowledge_mutation_audit_sink_not_configured",
+    )
+
+
+def reset_knowledge_mutation_audit_sink_for_tests() -> None:
+    reset_runtime_values(_AUDIT_SINK_RUNTIME_KEY)
+
+
 __all__ = [
     "KnowledgeIdempotencyLookup",
     "KnowledgeLegacyAttachment",
+    "KnowledgeMutationAttempt",
+    "KnowledgeMutationAuditSink",
     "KnowledgeMutationKind",
     "KnowledgeMutationLedgerEntry",
+    "KnowledgeMutationOutcome",
     "KnowledgeMutationPlan",
     "KnowledgeMutationReceipt",
     "KnowledgePropagationPort",
@@ -976,12 +1486,17 @@ __all__ = [
     "KnowledgePropagationScope",
     "KnowledgePropagationSnapshot",
     "KnowledgePropagationTombstone",
+    "KnowledgeRecordKind",
     "KnowledgeScopeLookup",
     "KnowledgeSelectableSource",
     "KnowledgeTargetKey",
     "KnowledgeTemporalWindow",
+    "KnowledgeSupersessionLink",
     "TemporalKnowledgeAssignment",
     "get_knowledge_propagation_port",
+    "get_knowledge_mutation_audit_sink",
+    "register_knowledge_mutation_audit_sink",
     "register_knowledge_propagation_port",
+    "reset_knowledge_mutation_audit_sink_for_tests",
     "reset_knowledge_propagation_port_for_tests",
 ]

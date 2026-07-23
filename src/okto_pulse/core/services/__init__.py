@@ -129,8 +129,19 @@ from okto_pulse.core.services.resource_lineage import (
 from okto_pulse.core.domain.knowledge_fingerprint import (
     KNOWLEDGE_CONTENT_HASH_FIELDS,
     compute_knowledge_content_sha256,
+    knowledge_content_bytes,
     knowledge_content_sha256,
     resolve_knowledge_content_sha256,
+)
+from okto_pulse.core.services.knowledge_propagation import (
+    KnowledgeGrandfatherEvidence,
+    KnowledgeMutationCommand,
+    KnowledgePropagationReadResult,
+    KnowledgePropagationService,
+    KnowledgePropagationServiceError,
+    KnowledgeRefreshCommand,
+    ResolvedKnowledgeAssignment,
+    classify_legacy_origin,
 )
 from okto_pulse.core.services.spec_resource_propagation import (
     SpecResourcePropagationService,
@@ -254,8 +265,17 @@ __all__ = [
     "reset_resource_lineage_observability_for_tests",
     "KNOWLEDGE_CONTENT_HASH_FIELDS",
     "compute_knowledge_content_sha256",
+    "knowledge_content_bytes",
     "knowledge_content_sha256",
     "resolve_knowledge_content_sha256",
+    "KnowledgeGrandfatherEvidence",
+    "KnowledgeMutationCommand",
+    "KnowledgePropagationReadResult",
+    "KnowledgePropagationService",
+    "KnowledgePropagationServiceError",
+    "KnowledgeRefreshCommand",
+    "ResolvedKnowledgeAssignment",
+    "classify_legacy_origin",
     "SpecResourcePropagationService",
     "InMemoryStructuredSpecEntityMetricsSink",
     "StructuredSpecEntityCommand",

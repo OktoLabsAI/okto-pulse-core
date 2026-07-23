@@ -51,6 +51,15 @@ def test_public_contract_resolution_is_exact_or_descendant_only() -> None:
         "okto_pulse.core.ports.knowledge_propagation.KnowledgePropagationPort"
     )
     assert is_public_core_contract(
+        "okto_pulse.core.ports.knowledge_propagation.KnowledgeMutationAuditSink"
+    )
+    assert is_public_core_contract(
+        "okto_pulse.core.ports.knowledge_propagation.KnowledgeMutationOutcome"
+    )
+    assert is_public_core_contract(
+        "okto_pulse.core.services.knowledge_propagation.KnowledgePropagationService"
+    )
+    assert is_public_core_contract(
         "okto_pulse.core.services.resource_lineage.ResolvedResourceLineageService"
     )
     assert is_public_core_contract(

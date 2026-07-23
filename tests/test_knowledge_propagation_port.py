@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 
@@ -24,6 +24,8 @@ from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgePropagationScope,
     KnowledgePropagationSnapshot,
     KnowledgePropagationTombstone,
+    KnowledgeRecordKind,
+    KnowledgeSupersessionLink,
     KnowledgeTargetKey,
     KnowledgeTemporalWindow,
     TemporalKnowledgeAssignment,
@@ -50,9 +52,13 @@ def _target() -> KnowledgeTargetKey:
     return KnowledgeTargetKey("board-1", "card", "card-1")
 
 
-def _stamp(*, content_hash: str = CONTENT_HASH) -> ResourceRevisionStamp:
+def _stamp(
+    *,
+    root_id: str = "kb-root",
+    content_hash: str = CONTENT_HASH,
+) -> ResourceRevisionStamp:
     return ResourceRevisionStamp(
-        root_id="kb-root",
+        root_id=root_id,
         immediate_parent_id="kb-parent",
         source_revision="7",
         source_content_sha256=content_hash,
@@ -78,6 +84,10 @@ def _assignment(
     mode: str = "reference",
     state: str = "active",
     revision: int = 1,
+    root_id: str = "kb-root",
+    source_knowledge_id: str = "kb-1",
+    actor_id: str = "agent-1",
+    current: bool = True,
 ) -> TemporalKnowledgeAssignment:
     return TemporalKnowledgeAssignment(
         assignment=KnowledgeAssignment(
@@ -85,16 +95,23 @@ def _assignment(
             board_id="board-1",
             target_type="card",
             target_id="card-1",
-            source_knowledge_id="kb-1",
-            revision_stamp=_stamp(),
+            source_knowledge_id=source_knowledge_id,
+            revision_stamp=_stamp(root_id=root_id),
             mode=mode,
             state=state,
             origin_class="v2",
-            actor_id="agent-1",
+            actor_id=actor_id,
             revision=revision,
             justification="required by AC-B1",
         ),
-        temporal=_window(),
+        temporal=(
+            _window()
+            if current
+            else _window(
+                effective_to=NOW + timedelta(seconds=1),
+                superseded_by_id="assignment-successor",
+            )
+        ),
     )
 
 
@@ -104,24 +121,53 @@ def _snapshot(
     assignment_id: str = "assignment-1",
     content: bytes = CONTENT,
     content_hash: str = CONTENT_HASH,
+    root_id: str = "kb-root",
+    current: bool = True,
 ) -> KnowledgePropagationSnapshot:
     return KnowledgePropagationSnapshot(
         snapshot_id=snapshot_id,
         assignment_id=assignment_id,
-        revision_stamp=_stamp(content_hash=content_hash),
+        revision_stamp=_stamp(root_id=root_id, content_hash=content_hash),
         content_bytes=content,
-        temporal=_window(),
+        temporal=(
+            _window()
+            if current
+            else _window(
+                effective_to=NOW + timedelta(seconds=1),
+                superseded_by_id="snapshot-successor",
+            )
+        ),
     )
 
 
-def _tombstone() -> KnowledgePropagationTombstone:
+def _tombstone(
+    *,
+    tombstone_id: str = "tombstone-1",
+    root_id: str | None = "kb-root",
+    actor_id: str = "agent-1",
+    current: bool = True,
+) -> KnowledgePropagationTombstone:
     return KnowledgePropagationTombstone(
-        tombstone_id="tombstone-1",
+        tombstone_id=tombstone_id,
         target=_target(),
-        root_id="kb-root",
-        actor_id="agent-1",
+        root_id=root_id,
+        actor_id=actor_id,
         justification="no longer relevant",
-        temporal=_window(),
+        temporal=(
+            _window()
+            if current
+            else _window(
+                effective_to=NOW + timedelta(seconds=1),
+                superseded_by_id="tombstone-successor",
+            )
+        ),
+    )
+
+
+def _global_tombstone() -> KnowledgePropagationTombstone:
+    return _tombstone(
+        tombstone_id="tombstone-global",
+        root_id=None,
     )
 
 
@@ -150,6 +196,7 @@ def _ledger(kind: KnowledgeMutationKind) -> KnowledgeMutationLedgerEntry:
         operation_kind=kind,
         receipt=_receipt(kind),
         recorded_at=NOW,
+        actor_id="agent-1",
     )
 
 
@@ -162,6 +209,9 @@ def _plan(
     tombstones: tuple[KnowledgePropagationTombstone, ...] = (),
     snapshots: tuple[KnowledgePropagationSnapshot, ...] = (),
     assignment_ids_to_close: tuple[str, ...] = (),
+    tombstone_ids_to_close: tuple[str, ...] = (),
+    snapshot_ids_to_close: tuple[str, ...] = (),
+    supersession_links: tuple[KnowledgeSupersessionLink, ...] = (),
 ) -> KnowledgeMutationPlan:
     return KnowledgeMutationPlan(
         operation_id=f"operation-{kind.value}",
@@ -178,7 +228,10 @@ def _plan(
         assignments_to_open=assignments,
         assignment_ids_to_close=assignment_ids_to_close,
         tombstones_to_open=tombstones,
+        tombstone_ids_to_close=tombstone_ids_to_close,
         snapshots_to_open=snapshots,
+        snapshot_ids_to_close=snapshot_ids_to_close,
+        supersession_links=supersession_links,
         ledger_entry=_ledger(kind),
     )
 
@@ -226,8 +279,10 @@ def test_temporal_window_requires_utc_order_and_coherent_supersession() -> None:
             effective_to=NOW - timedelta(microseconds=1),
             superseded_by_id="assignment-2",
         )
+    closed_without_successor = _window(effective_to=NOW + timedelta(seconds=1))
+    assert closed_without_successor.is_current is False
     with pytest.raises(ValueError, match="supersession_window_incoherent"):
-        _window(effective_to=NOW + timedelta(seconds=1))
+        _window(superseded_by_id="assignment-2")
     with pytest.raises(FrozenInstanceError):
         current.effective_to = NOW  # type: ignore[misc]
 
@@ -260,6 +315,14 @@ def test_scope_v2_marker_disables_legacy_fallback_without_erasing_history() -> N
     assert v2_empty.selection_state is KnowledgeSelectionState.EXPLICIT_EMPTY
     assert v2_empty.legacy_attachments == (legacy,)
     assert v2_empty.legacy_attachments[0].effective is False
+    v2_omitted = KnowledgePropagationScope(
+        target=_target(),
+        scope_revision=1,
+        v2_active=True,
+        selection_state=KnowledgeSelectionState.OMITTED,
+        legacy_attachments=(legacy,),
+    )
+    assert v2_omitted.selection_state is KnowledgeSelectionState.OMITTED
 
     with pytest.raises(ValueError, match="inactive_scope_state_invalid"):
         KnowledgePropagationScope(
@@ -275,6 +338,150 @@ def test_scope_v2_marker_disables_legacy_fallback_without_erasing_history() -> N
             v2_active=True,
             selection_state=None,
         )
+
+
+def test_legacy_unresolved_is_always_history_only() -> None:
+    unresolved = KnowledgeLegacyAttachment(
+        source_knowledge_id="legacy-unresolved",
+        revision_stamp=ResourceRevisionStamp(root_id="legacy-root"),
+        origin_class=KnowledgeOriginClass.LEGACY_UNRESOLVED,
+        effective=True,
+    )
+
+    assert unresolved.effective is False
+    assert unresolved.to_dict()["effective"] is False
+
+
+def test_scope_allows_only_one_current_assignment_per_root() -> None:
+    with pytest.raises(ValueError, match="current_assignment_root_ambiguous"):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=1,
+            v2_active=True,
+            selection_state="explicit_ids",
+            assignments=(
+                _assignment(assignment_id="assignment-a"),
+                _assignment(assignment_id="assignment-b"),
+            ),
+        )
+
+    scope = KnowledgePropagationScope(
+        target=_target(),
+        scope_revision=1,
+        v2_active=True,
+        selection_state="explicit_ids",
+        assignments=(
+            _assignment(assignment_id="assignment-current"),
+            _assignment(assignment_id="assignment-history", current=False),
+        ),
+    )
+    assert len(scope.assignments) == 2
+
+
+def test_scope_enforces_current_tombstone_uniqueness_and_global_exclusion() -> None:
+    with pytest.raises(ValueError, match="current_tombstone_root_ambiguous"):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=1,
+            v2_active=True,
+            selection_state="explicit_ids",
+            tombstones=(
+                _tombstone(tombstone_id="tombstone-a"),
+                _tombstone(tombstone_id="tombstone-b"),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="current_global_tombstone_conflict"):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=1,
+            v2_active=True,
+            selection_state="explicit_empty",
+            tombstones=(
+                _global_tombstone(),
+                _tombstone(tombstone_id="tombstone-root"),
+            ),
+        )
+
+    scope = KnowledgePropagationScope(
+        target=_target(),
+        scope_revision=2,
+        v2_active=True,
+        selection_state="explicit_ids",
+        tombstones=(
+            _tombstone(
+                tombstone_id="tombstone-global-history",
+                root_id=None,
+                current=False,
+            ),
+            _tombstone(tombstone_id="tombstone-current"),
+        ),
+    )
+    assert len(scope.tombstones) == 2
+
+
+def test_current_snapshot_requires_one_current_snapshot_assignment() -> None:
+    with pytest.raises(ValueError, match="current_snapshot_assignment_missing"):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=1,
+            v2_active=True,
+            selection_state="explicit_ids",
+            snapshots=(_snapshot(),),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="current_snapshot_assignment_mode_invalid",
+    ):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=1,
+            v2_active=True,
+            selection_state="explicit_ids",
+            assignments=(_assignment(),),
+            snapshots=(_snapshot(),),
+        )
+
+    snapshot_assignment = _assignment(mode="snapshot")
+    with pytest.raises(
+        ValueError,
+        match="current_snapshot_assignment_ambiguous",
+    ):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=1,
+            v2_active=True,
+            selection_state="explicit_ids",
+            assignments=(snapshot_assignment,),
+            snapshots=(
+                _snapshot(snapshot_id="snapshot-a"),
+                _snapshot(snapshot_id="snapshot-b"),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="current_snapshot_revision_mismatch"):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=1,
+            v2_active=True,
+            selection_state="explicit_ids",
+            assignments=(snapshot_assignment,),
+            snapshots=(_snapshot(root_id="different-root"),),
+        )
+
+    scope = KnowledgePropagationScope(
+        target=_target(),
+        scope_revision=1,
+        v2_active=True,
+        selection_state="explicit_ids",
+        assignments=(snapshot_assignment,),
+        snapshots=(
+            _snapshot(),
+            _snapshot(snapshot_id="snapshot-history", current=False),
+        ),
+    )
+    assert len(scope.snapshots) == 2
 
 
 def test_atomic_plan_requires_a_coherent_ledger_and_complete_next_revision() -> None:
@@ -303,9 +510,7 @@ def test_atomic_plan_requires_a_coherent_ledger_and_complete_next_revision() -> 
             operation_id="operation-replace",
             target=_target(),
             operation_kind="replace",
-            selection=KnowledgeSelection.explicit_ids(
-                ["kb-1"], mode="reference"
-            ),
+            selection=KnowledgeSelection.explicit_ids(["kb-1"], mode="reference"),
             expected_revision=0,
             next_revision=1,
             actor_id="agent-1",
@@ -319,6 +524,12 @@ def test_atomic_plan_requires_a_coherent_ledger_and_complete_next_revision() -> 
 
 
 def test_all_mutation_kinds_have_distinct_valid_write_shapes() -> None:
+    omitted = _plan(
+        KnowledgeMutationKind.REPLACE_OMITTED,
+        selection=KnowledgeSelection.omitted(),
+        next_state=KnowledgeSelectionState.OMITTED,
+        assignment_ids_to_close=("assignment-1",),
+    )
     replace = _plan(
         KnowledgeMutationKind.REPLACE,
         selection=KnowledgeSelection.explicit_ids(["kb-1"], mode="snapshot"),
@@ -330,13 +541,15 @@ def test_all_mutation_kinds_have_distinct_valid_write_shapes() -> None:
         KnowledgeMutationKind.DROP_DELTA,
         selection=KnowledgeSelection.explicit_ids(["kb-1"], mode="drop"),
         next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(_assignment(mode="drop", state="dropped"),),
         tombstones=(_tombstone(),),
-        assignment_ids_to_close=("assignment-1",),
+        assignment_ids_to_close=("assignment-previous",),
     )
     replace_empty = _plan(
         KnowledgeMutationKind.REPLACE_EMPTY,
         selection=KnowledgeSelection.explicit_empty(),
         next_state=KnowledgeSelectionState.EXPLICIT_EMPTY,
+        tombstones=(_global_tombstone(),),
         assignment_ids_to_close=("assignment-1",),
     )
     refresh = _plan(
@@ -356,13 +569,174 @@ def test_all_mutation_kinds_have_distinct_valid_write_shapes() -> None:
             ),
         ),
         assignment_ids_to_close=("assignment-previous",),
+        snapshot_ids_to_close=("snapshot-previous",),
+        supersession_links=(
+            KnowledgeSupersessionLink(
+                record_kind="assignment",
+                previous_id="assignment-previous",
+                successor_id="assignment-refreshed",
+            ),
+            KnowledgeSupersessionLink(
+                record_kind="snapshot",
+                previous_id="snapshot-previous",
+                successor_id="snapshot-refreshed",
+            ),
+        ),
     )
 
+    assert omitted.operation_kind is KnowledgeMutationKind.REPLACE_OMITTED
+    assert omitted.assignments_to_open == ()
     assert replace.operation_kind is KnowledgeMutationKind.REPLACE
     assert drop_delta.tombstones_to_open == (_tombstone(),)
     assert replace_empty.assignments_to_open == ()
+    assert replace_empty.tombstones_to_open[0].root_id is None
     assert refresh.selection is None
     assert refresh.snapshots_to_open[0].snapshot_id == "snapshot-refreshed"
+
+
+def test_plan_rejects_actor_mismatch_for_every_actor_bearing_operation() -> None:
+    replace_plan = _plan(
+        KnowledgeMutationKind.REPLACE,
+        selection=KnowledgeSelection.explicit_ids(
+            ["kb-1"],
+            mode="reference",
+        ),
+        next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(_assignment(),),
+    )
+    drop_plan = _plan(
+        KnowledgeMutationKind.DROP_DELTA,
+        selection=KnowledgeSelection.explicit_ids(["kb-1"], mode="drop"),
+        next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(_assignment(mode="drop", state="dropped"),),
+        tombstones=(_tombstone(),),
+    )
+    empty_plan = _plan(
+        KnowledgeMutationKind.REPLACE_EMPTY,
+        selection=KnowledgeSelection.explicit_empty(),
+        next_state=KnowledgeSelectionState.EXPLICIT_EMPTY,
+        tombstones=(_global_tombstone(),),
+    )
+    refresh_plan = _plan(
+        KnowledgeMutationKind.REFRESH_SNAPSHOT,
+        selection=None,
+        next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(
+            _assignment(
+                assignment_id="assignment-refreshed",
+                mode="snapshot",
+            ),
+        ),
+        snapshots=(
+            _snapshot(
+                snapshot_id="snapshot-refreshed",
+                assignment_id="assignment-refreshed",
+            ),
+        ),
+        assignment_ids_to_close=("assignment-previous",),
+        snapshot_ids_to_close=("snapshot-previous",),
+        supersession_links=(
+            KnowledgeSupersessionLink(
+                record_kind="assignment",
+                previous_id="assignment-previous",
+                successor_id="assignment-refreshed",
+            ),
+            KnowledgeSupersessionLink(
+                record_kind="snapshot",
+                previous_id="snapshot-previous",
+                successor_id="snapshot-refreshed",
+            ),
+        ),
+    )
+
+    for plan in (replace_plan, drop_plan, empty_plan, refresh_plan):
+        with pytest.raises(ValueError, match="plan_actor_incoherent"):
+            replace(plan, actor_id="different-agent")
+
+
+def test_plan_rejects_extraneous_or_incomplete_operation_shapes() -> None:
+    omitted = _plan(
+        KnowledgeMutationKind.REPLACE_OMITTED,
+        selection=KnowledgeSelection.omitted(),
+        next_state=KnowledgeSelectionState.OMITTED,
+    )
+    with pytest.raises(ValueError, match="replace_omitted_plan_invalid"):
+        replace(omitted, tombstones_to_open=(_global_tombstone(),))
+
+    reference = _plan(
+        KnowledgeMutationKind.REPLACE,
+        selection=KnowledgeSelection.explicit_ids(
+            ["kb-1"],
+            mode="reference",
+        ),
+        next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(_assignment(),),
+    )
+    with pytest.raises(ValueError, match="replace_plan_invalid"):
+        replace(reference, tombstones_to_open=(_tombstone(),))
+
+    snapshot = _plan(
+        KnowledgeMutationKind.REPLACE,
+        selection=KnowledgeSelection.explicit_ids(["kb-1"], mode="snapshot"),
+        next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(_assignment(mode="snapshot"),),
+        snapshots=(_snapshot(),),
+    )
+    with pytest.raises(ValueError, match="replace_plan_invalid"):
+        replace(snapshot, snapshots_to_open=())
+
+    drop = _plan(
+        KnowledgeMutationKind.DROP_DELTA,
+        selection=KnowledgeSelection.explicit_ids(["kb-1"], mode="drop"),
+        next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(_assignment(mode="drop", state="dropped"),),
+        tombstones=(_tombstone(),),
+    )
+    with pytest.raises(ValueError, match="drop_delta_plan_invalid"):
+        replace(drop, assignments_to_open=())
+
+    explicit_empty = _plan(
+        KnowledgeMutationKind.REPLACE_EMPTY,
+        selection=KnowledgeSelection.explicit_empty(),
+        next_state=KnowledgeSelectionState.EXPLICIT_EMPTY,
+        tombstones=(_global_tombstone(),),
+    )
+    with pytest.raises(ValueError, match="replace_empty_plan_invalid"):
+        replace(explicit_empty, tombstones_to_open=(_tombstone(),))
+
+    refresh = _plan(
+        KnowledgeMutationKind.REFRESH_SNAPSHOT,
+        selection=None,
+        next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(
+            _assignment(
+                assignment_id="assignment-refreshed",
+                mode="snapshot",
+            ),
+        ),
+        snapshots=(
+            _snapshot(
+                snapshot_id="snapshot-refreshed",
+                assignment_id="assignment-refreshed",
+            ),
+        ),
+        assignment_ids_to_close=("assignment-previous",),
+        snapshot_ids_to_close=("snapshot-previous",),
+        supersession_links=(
+            KnowledgeSupersessionLink(
+                record_kind="assignment",
+                previous_id="assignment-previous",
+                successor_id="assignment-refreshed",
+            ),
+            KnowledgeSupersessionLink(
+                record_kind="snapshot",
+                previous_id="snapshot-previous",
+                successor_id="snapshot-refreshed",
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="refresh_snapshot_plan_invalid"):
+        replace(refresh, supersession_links=())
 
 
 def test_receipt_replay_preserves_the_original_committed_result() -> None:
@@ -379,11 +753,42 @@ def test_receipt_replay_preserves_the_original_committed_result() -> None:
     assert original.replayed is False
 
 
+def test_plan_validates_explicit_supersession_links_against_the_write_set() -> None:
+    base = _plan(
+        KnowledgeMutationKind.REPLACE,
+        selection=KnowledgeSelection.explicit_ids(["kb-1"], mode="reference"),
+        next_state=KnowledgeSelectionState.EXPLICIT_IDS,
+        assignments=(_assignment(),),
+    )
+    link = KnowledgeSupersessionLink(
+        record_kind=KnowledgeRecordKind.ASSIGNMENT,
+        previous_id="assignment-old",
+        successor_id="assignment-1",
+    )
+    plan = replace(
+        base,
+        assignment_ids_to_close=("assignment-old",),
+        supersession_links=(link,),
+    )
+
+    assert plan.supersession_links == (link,)
+    with pytest.raises(ValueError, match="supersession_link_incoherent"):
+        replace(
+            base,
+            assignment_ids_to_close=("assignment-old",),
+            supersession_links=(
+                KnowledgeSupersessionLink(
+                    record_kind="assignment",
+                    previous_id="assignment-old",
+                    successor_id="assignment-missing",
+                ),
+            ),
+        )
+
+
 @pytest.mark.asyncio
 async def test_runtime_registry_fails_closed_and_port_stages_exactly_one_plan() -> None:
-    with pytest.raises(
-        RuntimeError, match="knowledge_propagation_port_not_configured"
-    ):
+    with pytest.raises(RuntimeError, match="knowledge_propagation_port_not_configured"):
         get_knowledge_propagation_port()
 
     class FakePort:
@@ -412,9 +817,7 @@ async def test_runtime_registry_fails_closed_and_port_stages_exactly_one_plan() 
         next_state=KnowledgeSelectionState.EXPLICIT_IDS,
         assignments=(_assignment(),),
     )
-    receipt = await get_knowledge_propagation_port().stage_mutation(
-        unit_of_work, plan
-    )
+    receipt = await get_knowledge_propagation_port().stage_mutation(unit_of_work, plan)
 
     assert port.staged == [plan]
     assert receipt == plan.ledger_entry.receipt

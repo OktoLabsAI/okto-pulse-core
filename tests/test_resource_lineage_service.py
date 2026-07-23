@@ -83,6 +83,134 @@ class FakeLineageProvider:
 
 
 @pytest.mark.asyncio
+async def test_v2_scope_keeps_suppressed_legacy_attachments_only_as_history() -> None:
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        parents={spec.ref: [refinement]},
+        refs={
+            spec.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "legacy-direct",
+                        "title": "Legacy direct snapshot",
+                        "root_source_kb_id": "kb-root-direct",
+                        "source_entity_type": "spec",
+                        "source_entity_id": "spec-1",
+                        "origin_class": "legacy_all",
+                        "effective": False,
+                    }
+                ]
+            },
+            refinement.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "legacy-inherited",
+                        "title": "Legacy inherited snapshot",
+                        "root_source_kb_id": "kb-root-inherited",
+                        "source_entity_type": "refinement",
+                        "source_entity_id": "ref-1",
+                        "origin_class": "legacy_all",
+                        "effective": False,
+                    }
+                ]
+            },
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1",
+        "spec",
+        "spec-1",
+    )
+    projected = ResolvedResourceLineageProjection.project(resolved)
+    knowledge_state = next(
+        item
+        for item in resolved.resource_states
+        if item.resource_type == "knowledge_base"
+    )
+
+    assert knowledge_state.state == "missing"
+    assert knowledge_state.blocking is True
+    assert knowledge_state.direct_count == 0
+    assert knowledge_state.inherited_count == 0
+    assert knowledge_state.total_count == 0
+    assert knowledge_state.direct_refs == ()
+    assert knowledge_state.inherited_refs == ()
+    assert resolved.unique_resources == ()
+    assert resolved.coverage_obligations == ()
+
+    assert len(resolved.attachments) == 2
+    assert {item.resource_id for item in resolved.attachments} == {
+        "legacy-direct",
+        "legacy-inherited",
+    }
+    assert all(item.effective is False for item in resolved.attachments)
+    assert {item.origin_class for item in resolved.attachments} == {"legacy_all"}
+
+    counts = resolved.counts
+    assert counts["attachment_count"] == 2
+    assert counts["raw_attachment_count"] == 2
+    assert counts["effective_attachment_count"] == 0
+    assert counts["history_attachment_count"] == 2
+    assert counts["unique_resources_count"] == 0
+    assert counts["unique_effective_count"] == 0
+    assert counts["direct_resources_count"] == 0
+    assert counts["inherited_references_count"] == 0
+    assert counts["covered_required_resources_count"] == 0
+    assert counts["uncovered_required_resources_count"] == 0
+
+    assert {item["origin_class"] for item in projected["attachments"]} == {
+        "legacy_all"
+    }
+    assert all(item["effective"] is False for item in projected["attachments"])
+    assert {
+        item["origin_class"] for item in projected["provenance_labels"]
+    } == {"legacy_all"}
+
+
+@pytest.mark.asyncio
+async def test_attachment_without_effective_flag_remains_effective_by_default() -> None:
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        refs={
+            spec.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "legacy-kb",
+                        "title": "Pre-v2 attachment",
+                        "source_entity_type": "spec",
+                        "source_entity_id": "spec-1",
+                    }
+                ]
+            }
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1",
+        "spec",
+        "spec-1",
+    )
+    knowledge_state = next(
+        item
+        for item in resolved.resource_states
+        if item.resource_type == "knowledge_base"
+    )
+
+    assert resolved.attachments[0].effective is True
+    assert knowledge_state.state == "provided"
+    assert knowledge_state.direct_count == 1
+    assert len(resolved.unique_resources) == 1
+    assert len(resolved.coverage_obligations) == 1
+    assert resolved.counts["effective_attachment_count"] == 1
+    assert resolved.counts["history_attachment_count"] == 0
+    assert resolved.counts["unique_effective_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_resolver_dedupes_direct_and_inherited_architecture_by_origin() -> None:
     reset_resource_lineage_observability_for_tests()
     spec = LineageEntityRef("spec", "spec-1", "Spec")
