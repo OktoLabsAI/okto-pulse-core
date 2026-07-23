@@ -152,6 +152,7 @@ class McpDeriveSpecCommand:
     __slots__ = (
         "source", "source_id", "mockup_ids", "kb_ids",
         "architecture_design_ids", "architecture_propagation_mode",
+        "knowledge_propagation",
     )
 
     def __init__(
@@ -163,6 +164,7 @@ class McpDeriveSpecCommand:
         kb_ids: Any = None,
         architecture_design_ids: Any = None,
         architecture_propagation_mode: str = "copy",
+        knowledge_propagation: Any = None,
     ) -> None:
         self.source = source
         self.source_id = source_id
@@ -170,18 +172,25 @@ class McpDeriveSpecCommand:
         self.kb_ids = kb_ids
         self.architecture_design_ids = architecture_design_ids
         self.architecture_propagation_mode = architecture_propagation_mode
+        self.knowledge_propagation = knowledge_propagation
 
 
 class McpDeriveSpecResult:
-    __slots__ = ("spec", "resource_propagation")
+    __slots__ = ("spec", "resource_propagation", "knowledge_mutation")
 
-    def __init__(self, spec: Any, resource_propagation: Any = None) -> None:
+    def __init__(
+        self,
+        spec: Any,
+        resource_propagation: Any = None,
+        knowledge_mutation: Any = None,
+    ) -> None:
         self.spec = spec
         self.resource_propagation = (
             resource_propagation
             if resource_propagation is not None
             else getattr(spec, "resource_propagation", None)
         )
+        self.knowledge_mutation = knowledge_mutation
 
 
 class McpDeriveSpecUseCase:
@@ -198,6 +207,43 @@ class McpDeriveSpecUseCase:
     async def execute(
         self, command: McpDeriveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpDeriveSpecResult:
+
+        if command.knowledge_propagation is not None:
+            if command.source != "refinement":
+                raise ValueError(
+                    "knowledge_propagation v2 is not supported for ideation derive"
+                )
+            if command.kb_ids is not None:
+                from okto_pulse.core.services.knowledge_propagation import (
+                    KnowledgePropagationServiceError,
+                )
+
+                raise KnowledgePropagationServiceError(
+                    "conflicting_propagation_parameters",
+                    "legacy kb_ids and knowledge_propagation v2 are mutually exclusive",
+                )
+            from okto_pulse.core.application.use_cases.knowledge_propagation import (
+                DeriveSpecKnowledgeV2Command,
+                DeriveSpecKnowledgeV2UseCase,
+            )
+
+            mutation = await DeriveSpecKnowledgeV2UseCase().execute(
+                DeriveSpecKnowledgeV2Command(
+                    command.source_id,
+                    command.knowledge_propagation,
+                    mockup_ids=command.mockup_ids,
+                    architecture_design_ids=command.architecture_design_ids,
+                    architecture_propagation_mode=(
+                        command.architecture_propagation_mode
+                    ),
+                ),
+                actor=actor,
+                uow=uow,
+            )
+            return McpDeriveSpecResult(
+                None,
+                knowledge_mutation=mutation,
+            )
 
         service = (
             uow.services.ideations

@@ -85,6 +85,7 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_kg_orphan_report` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_queue_drilldown` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_stale_canonical_parity_list` — docs: `okto-pulse://reference/tool-docs/kg`
+- `okto_pulse_kg_takedown_status` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_tick_run_now` — docs: `okto-pulse://reference/tool-docs/kg`
 
 ## Session & Agents
@@ -249,9 +250,11 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_create_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_delete_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_delete_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
+- `okto_pulse_drop_card_knowledge_assignments` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_get_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_get_card_dependencies` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_get_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
+- `okto_pulse_get_card_knowledge_propagation` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_get_task_conclusions` — docs: `okto-pulse://reference/tool-docs/misc`
 - `okto_pulse_get_task_context` — docs: `okto-pulse://reference/tool-docs/misc`
 - `okto_pulse_get_task_validation` — docs: `okto-pulse://reference/tool-docs/misc`
@@ -260,7 +263,9 @@ Required filters for the consolidated `list_*` tools:
 - `okto_pulse_list_cards_by_status` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_list_task_validations` — docs: `okto-pulse://reference/tool-docs/misc`
 - `okto_pulse_move_card` — docs: `okto-pulse://reference/tool-docs/card`
+- `okto_pulse_refresh_card_knowledge_assignments` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_remove_card_dependency` — docs: `okto-pulse://reference/tool-docs/card`
+- `okto_pulse_replace_card_knowledge_assignments` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_submit_task_validation` — docs: `okto-pulse://reference/tool-docs/misc`
 - `okto_pulse_update_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_update_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`

@@ -45,7 +45,20 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
 
     async def rollback(self) -> None: ...
 
-    async def synchronize(self) -> None: ...
+    async def synchronize(
+        self,
+        *,
+        conflict_error: Exception | None = None,
+    ) -> None:
+        """Flush pending work and optionally translate a uniqueness conflict.
+
+        ``conflict_error`` keeps persistence-specific exceptions out of Core
+        use cases.  Adapters raise the supplied transport-neutral exception
+        when the flush detects a creation race; existing callers omit it and
+        retain the adapter's normal error behavior.
+        """
+
+        ...
 
     async def reload(
         self, entity: object, *, fields: tuple[str, ...] = ()

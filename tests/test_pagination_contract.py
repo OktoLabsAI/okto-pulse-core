@@ -80,7 +80,13 @@ class _InMemoryPort:
     async def get(self, context: Any, *, entity: str, record_id: str, includes: tuple[str, ...] = ()):  # noqa: ANN201
         raise NotImplementedError
 
-    async def add(self, context: Any, record: ApplicationRecord):  # noqa: ANN201
+    async def add(
+        self,
+        context: Any,
+        record: ApplicationRecord,
+        *,
+        conflict_error: Exception | None = None,
+    ):  # noqa: ANN201
         raise NotImplementedError
 
     async def delete(self, context: Any, record: ApplicationRecord) -> None:

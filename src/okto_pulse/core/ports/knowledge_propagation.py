@@ -27,6 +27,8 @@ from okto_pulse.core.domain.knowledge_selection import (
     KnowledgeAssignmentState,
     KnowledgeOriginClass,
     KnowledgePropagationMode,
+    KnowledgeRelevanceEntityType,
+    KnowledgeRelevanceLink,
     KnowledgeSelection,
     KnowledgeSelectionState,
     KnowledgeTargetType,
@@ -72,6 +74,14 @@ class KnowledgeRecordKind(str, Enum):
     ASSIGNMENT = "assignment"
     SNAPSHOT = "snapshot"
     TOMBSTONE = "tombstone"
+
+
+class KnowledgeParentType(str, Enum):
+    """Supported source parents for target creation preflight."""
+
+    IDEATION = "ideation"
+    REFINEMENT = "refinement"
+    SPEC = "spec"
 
 
 class KnowledgePropagationPortError(RuntimeError):
@@ -232,6 +242,35 @@ class KnowledgeTargetKey:
             "board_id": self.board_id,
             "target_type": cast(KnowledgeTargetType, self.target_type).value,
             "target_id": self.target_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeParentKey:
+    """Board-scoped identity used before a future target exists."""
+
+    board_id: str
+    parent_type: KnowledgeParentType | str
+    parent_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "board_id", _required_text(self.board_id, "board_id"))
+        object.__setattr__(
+            self,
+            "parent_type",
+            _coerce_enum(self.parent_type, KnowledgeParentType, "parent_type"),
+        )
+        object.__setattr__(
+            self,
+            "parent_id",
+            _required_text(self.parent_id, "parent_id"),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "board_id": self.board_id,
+            "parent_type": cast(KnowledgeParentType, self.parent_type).value,
+            "parent_id": self.parent_id,
         }
 
 
@@ -479,6 +518,105 @@ class KnowledgeSelectableSource:
             "revision_stamp": self.revision_stamp.to_dict(),
             "content_available": self.content_bytes is not None,
             "source_deleted": self.source_deleted,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeParentLookup:
+    """Target-independent lookup for creation preflight and revalidation."""
+
+    parent: KnowledgeParentKey
+    source_knowledge_ids: tuple[str, ...] = ()
+    relevance_links: tuple[KnowledgeRelevanceLink, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.parent, KnowledgeParentKey):
+            raise ValueError("knowledge_propagation_parent_lookup_parent_invalid")
+        object.__setattr__(
+            self,
+            "source_knowledge_ids",
+            _canonical_text_tuple(
+                self.source_knowledge_ids,
+                "source_knowledge_ids",
+            ),
+        )
+        links = _canonical_objects(
+            self.relevance_links,
+            KnowledgeRelevanceLink,
+            field_name="relevance_links",
+            identity=lambda item: (
+                f"{cast(KnowledgeRelevanceEntityType, item.entity_type).value}:"
+                f"{item.entity_id}"
+            ),
+        )
+        object.__setattr__(self, "relevance_links", links)
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeParentEvidence:
+    """Atomic physical parent/source facts used before target creation.
+
+    Editions resolve physical parent, board, state, selected-source, and
+    structured-entity facts. Authorization and lifecycle policy stay in the
+    application use case. Structured ids are scoped to ``linked_spec_id`` so
+    Core can reject semantically foreign FR/AC/test-scenario relevance links.
+    """
+
+    parent: KnowledgeParentKey
+    parent_exists: bool
+    same_board: bool
+    parent_state: str | None = None
+    sources: tuple[KnowledgeSelectableSource, ...] = ()
+    linked_spec_id: str | None = None
+    functional_requirement_ids: tuple[str, ...] = ()
+    acceptance_criterion_ids: tuple[str, ...] = ()
+    test_scenario_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.parent, KnowledgeParentKey):
+            raise ValueError("knowledge_propagation_parent_evidence_parent_invalid")
+        for field_name in ("parent_exists", "same_board"):
+            if type(getattr(self, field_name)) is not bool:
+                raise ValueError(f"knowledge_propagation_parent_{field_name}_invalid")
+        object.__setattr__(
+            self,
+            "parent_state",
+            _optional_text(self.parent_state, "parent_state"),
+        )
+        sources = _canonical_objects(
+            self.sources,
+            KnowledgeSelectableSource,
+            field_name="parent_sources",
+            identity=lambda item: item.requested_knowledge_id,
+        )
+        object.__setattr__(self, "sources", sources)
+        object.__setattr__(
+            self,
+            "linked_spec_id",
+            _optional_text(self.linked_spec_id, "linked_spec_id"),
+        )
+        for field_name in (
+            "functional_requirement_ids",
+            "acceptance_criterion_ids",
+            "test_scenario_ids",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _canonical_text_tuple(getattr(self, field_name), field_name),
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "parent": self.parent.to_dict(),
+            "parent_exists": self.parent_exists,
+            "same_board": self.same_board,
+            "parent_state": self.parent_state,
+            "sources": [item.to_dict() for item in self.sources],
+            "linked_spec_id": self.linked_spec_id,
+            "functional_requirement_ids": list(self.functional_requirement_ids),
+            "acceptance_criterion_ids": list(self.acceptance_criterion_ids),
+            "test_scenario_ids": list(self.test_scenario_ids),
         }
 
 
@@ -1078,6 +1216,8 @@ class KnowledgeMutationPlan:
     request_hash: str
     next_scope_selection_state: KnowledgeSelectionState | str | None
     next_scope_v2_active: bool = True
+    parent: KnowledgeParentKey | None = None
+    parent_evidence: KnowledgeParentEvidence | None = None
     assignments_to_open: tuple[TemporalKnowledgeAssignment, ...] = ()
     assignment_ids_to_close: tuple[str, ...] = ()
     tombstones_to_open: tuple[KnowledgePropagationTombstone, ...] = ()
@@ -1114,6 +1254,24 @@ class KnowledgeMutationPlan:
             raise ValueError("knowledge_propagation_request_hash_invalid")
         if type(self.next_scope_v2_active) is not bool:
             raise ValueError("knowledge_propagation_next_scope_v2_active_invalid")
+        if self.parent is not None:
+            if not isinstance(self.parent, KnowledgeParentKey):
+                raise ValueError("knowledge_propagation_plan_parent_invalid")
+            if self.parent.board_id != self.target.board_id:
+                raise ValueError("knowledge_propagation_plan_parent_board_mismatch")
+        if self.parent_evidence is not None:
+            if not isinstance(self.parent_evidence, KnowledgeParentEvidence):
+                raise ValueError(
+                    "knowledge_propagation_plan_parent_evidence_invalid"
+                )
+            if self.parent is None:
+                raise ValueError(
+                    "knowledge_propagation_plan_parent_evidence_without_parent"
+                )
+            if self.parent_evidence.parent != self.parent:
+                raise ValueError(
+                    "knowledge_propagation_plan_parent_evidence_mismatch"
+                )
         next_state = (
             None
             if self.next_scope_selection_state is None
@@ -1436,6 +1594,14 @@ class KnowledgePropagationPort(Protocol):
         request: KnowledgeScopeLookup,
     ) -> KnowledgePropagationScope: ...
 
+    async def load_parent_evidence(
+        self,
+        context: Any,
+        request: KnowledgeParentLookup,
+    ) -> KnowledgeParentEvidence:
+        """Resolve physical parent, structure, and sources atomically."""
+        ...
+
     async def stage_mutation(
         self,
         context: Any,
@@ -1505,6 +1671,10 @@ def reset_knowledge_mutation_audit_sink_for_tests() -> None:
 __all__ = [
     "KnowledgeIdempotencyLookup",
     "KnowledgeLegacyAttachment",
+    "KnowledgeParentEvidence",
+    "KnowledgeParentKey",
+    "KnowledgeParentLookup",
+    "KnowledgeParentType",
     "KnowledgeMutationAttempt",
     "KnowledgeMutationAuditSink",
     "KnowledgeMutationKind",

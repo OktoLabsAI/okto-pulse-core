@@ -9,7 +9,7 @@ from okto_pulse.core.runtime_context import (
 )
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Mapping, Protocol
 
 ApplicationOperator = Literal[
     "eq",
@@ -106,6 +106,22 @@ class ApplicationRecord:
 
     def attach(self, name: str, value: Any) -> None:
         self.values[name] = value
+
+
+class ApplicationRecordConflictError(RuntimeError):
+    """A persistence insert collided with the same stable application identity.
+
+    Adapters raise this transport-neutral error only after verifying the
+    record's primary-key conflict.  Higher-level workflows can then decide
+    whether that collision represents an expected idempotent creation race.
+    """
+
+    code = "application_record_conflict"
+
+    def __init__(self, entity: str, record_id: str) -> None:
+        self.entity = entity
+        self.record_id = record_id
+        super().__init__(f"{entity}:{record_id} already exists")
 
 
 #: Core-side pagination window bounds (FR0): the REST adapter further
@@ -208,8 +224,23 @@ class ApplicationPersistencePort(Protocol):
         includes: tuple[str, ...] = (),
     ) -> ApplicationRecord | None: ...
 
+    async def fence(
+        self,
+        context: Any,
+        *,
+        entity: str,
+        record_id: str,
+        expected_values: Mapping[str, object],
+    ) -> bool:
+        """Lock one record iff its authoritative scalar facts still match."""
+        ...
+
     async def add(
-        self, context: Any, record: ApplicationRecord
+        self,
+        context: Any,
+        record: ApplicationRecord,
+        *,
+        conflict_error: Exception | None = None,
     ) -> ApplicationRecord: ...
 
     async def delete(self, context: Any, record: ApplicationRecord) -> None: ...
@@ -252,6 +283,7 @@ __all__ = [
     "ApplicationPersistencePort",
     "ApplicationQuery",
     "ApplicationRecord",
+    "ApplicationRecordConflictError",
     "GroupCountRequest",
     "PAGE_LIMIT_MAX",
     "PAGE_LIMIT_MIN",

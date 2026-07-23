@@ -69,6 +69,12 @@ from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
     ArchitectureDesignUpdate,
 )
+from okto_pulse.core.models.knowledge_propagation import (
+    KnowledgeAssignmentDropRequest,
+    KnowledgeAssignmentRefreshRequest,
+    KnowledgeAssignmentReplaceRequest,
+    KnowledgePropagationEnvelopeV2,
+)
 from okto_pulse.core.application.artifact_propagation import (
     ArtifactResourceSelectionError,
 )
@@ -2510,6 +2516,195 @@ async def okto_pulse_get_activity_log(
 # ============================================================================
 
 
+async def _append_knowledge_attempt_after_rollback(error: Exception) -> None:
+    attempt = getattr(error, "ledger_attempt", None)
+    if attempt is None:
+        return
+    from okto_pulse.core.ports.knowledge_propagation import (
+        get_knowledge_mutation_audit_sink,
+    )
+
+    await get_knowledge_mutation_audit_sink().append_after_rollback(attempt)
+
+
+def _knowledge_propagation_error(error: Exception) -> str:
+    from okto_pulse.core.application.knowledge_propagation_projection import (
+        project_knowledge_propagation_error,
+    )
+
+    return json.dumps(project_knowledge_propagation_error(error), default=str)
+
+
+def _knowledge_mutation_wire(result: Any) -> dict[str, Any]:
+    from okto_pulse.core.application.knowledge_propagation_projection import (
+        project_knowledge_mutation_response,
+    )
+
+    return project_knowledge_mutation_response(result).model_dump(mode="json")
+
+
+def _card_creation_v2_wire(result: Any) -> dict[str, Any]:
+    from okto_pulse.core.application.knowledge_propagation_projection import (
+        project_card_create_response,
+    )
+
+    return project_card_create_response(result).model_dump(mode="json")
+
+
+async def _mcp_create_card_v2(
+    *,
+    ctx: Any,
+    board_id: str,
+    spec_id: str,
+    card_create: Any,
+    scenario_ids_list: list[str] | None,
+    title: str,
+    status: str,
+    priority: str,
+) -> str:
+    from okto_pulse.core.application.use_cases import (
+        KnowledgeCreationRaceError,
+        McpCreateCardCommand,
+        McpCreateCardUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.knowledge_propagation import (
+        KnowledgePropagationPortError,
+    )
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgePropagationServiceError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    for attempt_index in range(2):
+        try:
+            async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+                result = await McpCreateCardUseCase().execute(
+                    McpCreateCardCommand(
+                        board_id,
+                        spec_id,
+                        card_create,
+                        scenario_ids_list,
+                        {"title": title, "status": status, "priority": priority},
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            break
+        except KnowledgeCreationRaceError as error:
+            if attempt_index == 0:
+                continue
+            return _knowledge_propagation_error(error)
+        except KnowledgePropagationPortError as error:
+            if error.code == "knowledge_creation_race" and attempt_index == 0:
+                continue
+            return _knowledge_propagation_error(error)
+        except KnowledgePropagationServiceError as error:
+            if error.code == "knowledge_creation_race" and attempt_index == 0:
+                continue
+            await _append_knowledge_attempt_after_rollback(error)
+            return _knowledge_propagation_error(error)
+        except CardOperationError as error:
+            return json.dumps(
+                {"error": error.code, **error.to_dict(), **error.facts}
+            )
+        except ValueError as error:
+            return json.dumps({"error": str(error)})
+    else:  # pragma: no cover - loop always breaks or returns
+        raise RuntimeError("knowledge_creation_retry_exhausted")
+    return json.dumps(
+        {
+            "success": True,
+            **_card_creation_v2_wire(result.knowledge_mutation),
+        },
+        default=str,
+    )
+
+
+async def _mcp_derive_spec_from_refinement_v2(
+    *,
+    ctx: Any,
+    board_id: str,
+    refinement_id: str,
+    envelope: KnowledgePropagationEnvelopeV2,
+    mockup_ids: list[str] | None,
+    architecture_design_ids: list[str] | None,
+    architecture_propagation_mode: str,
+) -> str:
+    from okto_pulse.core.application.use_cases import (
+        EntityNotFoundError,
+        KnowledgeCreationRaceError,
+        McpDeriveSpecCommand,
+        McpDeriveSpecUseCase,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.knowledge_propagation import (
+        KnowledgePropagationPortError,
+    )
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgePropagationServiceError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    for attempt_index in range(2):
+        try:
+            async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+                result = await McpDeriveSpecUseCase().execute(
+                    McpDeriveSpecCommand(
+                        "refinement",
+                        refinement_id,
+                        mockup_ids=mockup_ids,
+                        kb_ids=None,
+                        architecture_design_ids=architecture_design_ids,
+                        architecture_propagation_mode=(
+                            architecture_propagation_mode
+                        ),
+                        knowledge_propagation=envelope,
+                    ),
+                    actor=actor,
+                    uow=uow,
+                )
+            break
+        except KnowledgeCreationRaceError as error:
+            if attempt_index == 0:
+                continue
+            return _knowledge_propagation_error(error)
+        except KnowledgePropagationPortError as error:
+            if error.code == "knowledge_creation_race" and attempt_index == 0:
+                continue
+            return _knowledge_propagation_error(error)
+        except KnowledgePropagationServiceError as error:
+            if error.code == "knowledge_creation_race" and attempt_index == 0:
+                continue
+            await _append_knowledge_attempt_after_rollback(error)
+            return _knowledge_propagation_error(error)
+        except EntityNotFoundError:
+            return json.dumps({"error": "Refinement not found"})
+        except ArtifactResourceSelectionError as error:
+            return json.dumps(error.to_error_dict())
+        except ArchitectureDesignSelectionError as error:
+            return json.dumps(error.to_error_dict())
+        except ValueError as error:
+            return json.dumps({"error": str(error)})
+    else:  # pragma: no cover
+        raise RuntimeError("knowledge_creation_retry_exhausted")
+
+    from okto_pulse.core.application.knowledge_propagation_projection import (
+        project_derive_spec_response,
+    )
+
+    payload = project_derive_spec_response(
+        result.knowledge_mutation
+    ).model_dump(mode="json")
+    return json.dumps(
+        {
+            "success": True,
+            **payload,
+        },
+        default=str,
+    )
+
+
 @mcp.tool()
 async def okto_pulse_create_card(
     board_id: str,
@@ -2531,6 +2726,7 @@ async def okto_pulse_create_card(
     observed_behavior: str = "",
     steps_to_reproduce: str = "",
     action_plan: str = "",
+    knowledge_propagation: KnowledgePropagationEnvelopeV2 = None,  # type: ignore[assignment]
 ) -> str:
     """Create a new card on the board. Every card MUST be linked to a spec.
     The spec must be approved/in_progress/done (test cards also accept
@@ -2627,6 +2823,71 @@ async def okto_pulse_create_card(
         McpCreateCardUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+
+    if knowledge_propagation is not None:
+        if not isinstance(
+            knowledge_propagation,
+            KnowledgePropagationEnvelopeV2,
+        ):
+            knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
+                knowledge_propagation
+            )
+        _desc_v2 = description.replace("\\n", "\n") if description else None
+        _details_v2 = details.replace("\\n", "\n") if details else None
+        try:
+            scenario_ids_v2 = coerce_to_list_str(test_scenario_ids) or None
+            labels_v2 = coerce_to_list_str(labels) or None
+            fr_ids_v2 = coerce_to_list_str(functional_requirement_ids) or None
+            br_ids_v2 = coerce_to_list_str(business_rule_ids) or None
+        except ValueError as error:
+            return json.dumps(
+                {"error": "invalid_multi_value_input", "detail": str(error)}
+            )
+        card_create_v2 = CardCreate(
+            title=title,
+            description=_desc_v2,
+            details=_details_v2,
+            status=card_status,
+            priority=card_priority,
+            assignee_id=assignee_id or None,
+            labels=labels_v2,
+            spec_id=spec_id,
+            test_scenario_ids=scenario_ids_v2,
+            functional_requirement_ids=fr_ids_v2,
+            business_rule_ids=br_ids_v2,
+            card_type=_card_type_value,
+            origin_task_id=origin_task_id or None,
+            severity=(severity.strip().lower() if severity else None),
+            expected_behavior=(
+                expected_behavior.replace("\\n", "\n")
+                if expected_behavior
+                else None
+            ),
+            observed_behavior=(
+                observed_behavior.replace("\\n", "\n")
+                if observed_behavior
+                else None
+            ),
+            steps_to_reproduce=(
+                steps_to_reproduce.replace("\\n", "\n")
+                if steps_to_reproduce
+                else None
+            ),
+            action_plan=(
+                action_plan.replace("\\n", "\n") if action_plan else None
+            ),
+            knowledge_propagation=knowledge_propagation,
+        )
+        return await _mcp_create_card_v2(
+            ctx=ctx,
+            board_id=board_id,
+            spec_id=spec_id,
+            card_create=card_create_v2,
+            scenario_ids_list=scenario_ids_v2,
+            title=title,
+            status=status,
+            priority=priority,
+        )
 
     # MCP-FU6 strangler: the full create orchestration (create skip_ownership →
     # commit → scenario backlink → card_created log → commit; 2 commits + flush)
@@ -6903,9 +7164,10 @@ async def okto_pulse_derive_spec_from_refinement(
     board_id: str,
     refinement_id: str,
     mockup_ids: str = "",
-    kb_ids: str = "",
+    kb_ids: str | list[str] | None = None,
     architecture_design_ids: list[str] | str = "",
     architecture_propagation_mode: str = "copy",
+    knowledge_propagation: KnowledgePropagationEnvelopeV2 = None,  # type: ignore[assignment]
 ) -> str:
     """Create a spec draft from a DONE refinement. Context is compiled from the
     refinement's scope, analysis, decisions, and Q&A — the refinement
@@ -6925,6 +7187,44 @@ async def okto_pulse_derive_spec_from_refinement(
     perm_err = check_permission(ctx.permissions, Permissions.SPECS_CREATE)
     if perm_err:
         return _perm_error(perm_err)
+
+    if knowledge_propagation is not None:
+        if kb_ids is not None:
+            from okto_pulse.core.services.knowledge_propagation import (
+                KnowledgePropagationServiceError,
+            )
+
+            return _knowledge_propagation_error(
+                KnowledgePropagationServiceError(
+                    "conflicting_propagation_parameters",
+                    "legacy kb_ids and knowledge_propagation v2 are mutually exclusive",
+                )
+            )
+        if not isinstance(
+            knowledge_propagation,
+            KnowledgePropagationEnvelopeV2,
+        ):
+            knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
+                knowledge_propagation
+            )
+        mockup_ids_v2 = parse_multi_value(mockup_ids) or None
+        try:
+            architecture_ids_v2 = (
+                coerce_to_list_str(architecture_design_ids) or None
+            )
+        except ValueError as error:
+            return json.dumps(
+                {"error": f"Invalid architecture_design_ids: {error}"}
+            )
+        return await _mcp_derive_spec_from_refinement_v2(
+            ctx=ctx,
+            board_id=board_id,
+            refinement_id=refinement_id,
+            envelope=knowledge_propagation,
+            mockup_ids=mockup_ids_v2,
+            architecture_design_ids=architecture_ids_v2,
+            architecture_propagation_mode=architecture_propagation_mode,
+        )
 
     _mockup_ids = parse_multi_value(mockup_ids) or None
     _kb_ids = parse_multi_value(kb_ids) or None
@@ -9981,6 +10281,217 @@ def _card_resource_read_only_error() -> str:
             "message": CARD_RESOURCE_READ_ONLY_MESSAGE,
             "retryable": False,
         }
+    )
+
+
+async def _mcp_card_knowledge_mutation(
+    *,
+    ctx: Any,
+    board_id: str,
+    command: Any,
+    use_case: Any,
+    projector: Callable[[Any], Any],
+) -> str:
+    from okto_pulse.core.domain.knowledge_selection import (
+        KnowledgePropagationContractError,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.knowledge_propagation import (
+        KnowledgePropagationPortError,
+    )
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgePropagationServiceError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await use_case.execute(command, actor=actor, uow=uow)
+    except EntityNotFoundError:
+        return _knowledge_propagation_error(
+            KnowledgePropagationServiceError(
+                "card_not_found",
+                "the card was not found on the authenticated board",
+            )
+        )
+    except KnowledgePropagationPortError as error:
+        return _knowledge_propagation_error(error)
+    except KnowledgePropagationContractError as error:
+        return _knowledge_propagation_error(error)
+    except KnowledgePropagationServiceError as error:
+        await _append_knowledge_attempt_after_rollback(error)
+        return _knowledge_propagation_error(error)
+    return json.dumps(
+        {
+            "success": True,
+            **projector(result).model_dump(mode="json"),
+        },
+        default=str,
+    )
+
+
+@mcp.tool()
+async def okto_pulse_replace_card_knowledge_assignments(
+    board_id: str,
+    card_id: str,
+    request: KnowledgeAssignmentReplaceRequest,
+) -> str:
+    """Replace a card's v2 Knowledge assignments atomically.
+
+    ``linkage`` may reference only FR, AC, and test-scenario IDs on the card's
+    linked spec. Every source/link is validated before the CAS write.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    permission_error = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if permission_error:
+        return _perm_error(permission_error)
+
+    from okto_pulse.core.application.knowledge_propagation_projection import (
+        project_knowledge_mutation_response,
+    )
+    from okto_pulse.core.application.use_cases import (
+        ReplaceCardKnowledgeAssignmentsCommand,
+        ReplaceCardKnowledgeAssignmentsUseCase,
+    )
+
+    if not isinstance(request, KnowledgeAssignmentReplaceRequest):
+        request = KnowledgeAssignmentReplaceRequest.model_validate(request)
+    return await _mcp_card_knowledge_mutation(
+        ctx=ctx,
+        board_id=board_id,
+        command=ReplaceCardKnowledgeAssignmentsCommand(card_id, request),
+        use_case=ReplaceCardKnowledgeAssignmentsUseCase(),
+        projector=project_knowledge_mutation_response,
+    )
+
+
+@mcp.tool()
+async def okto_pulse_drop_card_knowledge_assignments(
+    board_id: str,
+    card_id: str,
+    request: KnowledgeAssignmentDropRequest,
+) -> str:
+    """Drop selected roots, or pass an empty list for authoritative drop-all."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    permission_error = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if permission_error:
+        return _perm_error(permission_error)
+
+    from okto_pulse.core.application.knowledge_propagation_projection import (
+        project_knowledge_mutation_response,
+    )
+    from okto_pulse.core.application.use_cases import (
+        DropCardKnowledgeAssignmentsCommand,
+        DropCardKnowledgeAssignmentsUseCase,
+    )
+
+    if not isinstance(request, KnowledgeAssignmentDropRequest):
+        request = KnowledgeAssignmentDropRequest.model_validate(request)
+    return await _mcp_card_knowledge_mutation(
+        ctx=ctx,
+        board_id=board_id,
+        command=DropCardKnowledgeAssignmentsCommand(card_id, request),
+        use_case=DropCardKnowledgeAssignmentsUseCase(),
+        projector=project_knowledge_mutation_response,
+    )
+
+
+@mcp.tool()
+async def okto_pulse_refresh_card_knowledge_assignments(
+    board_id: str,
+    card_id: str,
+    request: KnowledgeAssignmentRefreshRequest,
+) -> str:
+    """Refresh snapshots by stable Knowledge root ID, never assignment-row ID."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    permission_error = check_permission(ctx.permissions, Permissions.CARDS_UPDATE)
+    if permission_error:
+        return _perm_error(permission_error)
+
+    from okto_pulse.core.application.knowledge_propagation_projection import (
+        project_refresh_response,
+    )
+    from okto_pulse.core.application.use_cases import (
+        RefreshCardKnowledgeAssignmentsCommand,
+        RefreshCardKnowledgeAssignmentsUseCase,
+    )
+
+    if not isinstance(request, KnowledgeAssignmentRefreshRequest):
+        request = KnowledgeAssignmentRefreshRequest.model_validate(request)
+    return await _mcp_card_knowledge_mutation(
+        ctx=ctx,
+        board_id=board_id,
+        command=RefreshCardKnowledgeAssignmentsCommand(card_id, request),
+        use_case=RefreshCardKnowledgeAssignmentsUseCase(),
+        projector=project_refresh_response,
+    )
+
+
+@mcp.tool()
+async def okto_pulse_get_card_knowledge_propagation(
+    board_id: str,
+    card_id: str,
+) -> str:
+    """Get the technical v2 selection/revision/assignment state for a card."""
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    permission_error = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    if permission_error:
+        return _perm_error(permission_error)
+
+    from okto_pulse.core.application.knowledge_propagation_projection import (
+        project_technical_read_response,
+    )
+    from okto_pulse.core.application.use_cases import (
+        GetCardKnowledgePropagationCommand,
+        GetCardKnowledgePropagationUseCase,
+    )
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.domain.knowledge_selection import (
+        KnowledgePropagationContractError,
+    )
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.knowledge_propagation import (
+        KnowledgePropagationPortError,
+    )
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgePropagationServiceError,
+    )
+
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetCardKnowledgePropagationUseCase().execute(
+                GetCardKnowledgePropagationCommand(card_id),
+                actor=actor,
+                uow=uow,
+            )
+    except EntityNotFoundError:
+        return _knowledge_propagation_error(
+            KnowledgePropagationServiceError(
+                "card_not_found",
+                "the card was not found on the authenticated board",
+            )
+        )
+    except (
+        KnowledgePropagationContractError,
+        KnowledgePropagationPortError,
+        KnowledgePropagationServiceError,
+    ) as error:
+        return _knowledge_propagation_error(error)
+    return json.dumps(
+        project_technical_read_response(result.read_result).model_dump(
+            mode="json"
+        ),
+        default=str,
     )
 
 

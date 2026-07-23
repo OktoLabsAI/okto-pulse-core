@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeAlias, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -34,6 +34,11 @@ from okto_pulse.core.domain.enums import (
 )
 from okto_pulse.core.domain.knowledge_governance import (
     project_knowledge_governance,
+)
+from okto_pulse.core.models.knowledge_propagation import (
+    CardCreateKnowledgeMutationResponse,
+    DeriveSpecKnowledgeMutationResponse,
+    KnowledgePropagationEnvelopeV2,
 )
 
 # ============================================================================
@@ -2164,6 +2169,11 @@ class SpecResponse(BaseSchema):
     qa_items: list[SpecQAResponse] = []
 
 
+# Keep the legacy response model untouched while allowing the refinement
+# derive route to declare its authoritative v2 receipt projection.
+DeriveSpecResponse: TypeAlias = SpecResponse | DeriveSpecKnowledgeMutationResponse
+
+
 # ============================================================================
 # Card Schemas
 # ============================================================================
@@ -2207,7 +2217,14 @@ class CardCreate(BaseModel):
     observed_behavior: str | None = Field(None, description="Comportamento observado/incorreto (apenas bug cards).")
     steps_to_reproduce: str | None = Field(None, description="Passos para reproduzir o bug (apenas bug cards).")
     action_plan: str | None = Field(None, description="Plano de acao para correcao do bug (apenas bug cards).")
-
+    knowledge_propagation: KnowledgePropagationEnvelopeV2 | None = Field(
+        None,
+        description=(
+            "Selective Knowledge propagation v2. Omitted keeps the complete "
+            "legacy card-create behavior; when supplied this envelope is "
+            "authoritative and v1 Knowledge snapshot writes are disabled."
+        ),
+    )
 
 class CardUpdate(BaseModel):
     """Schema for updating a card."""
@@ -2512,6 +2529,9 @@ class CardResponse(BaseSchema):
             }
             for item in value
         ]
+
+
+CardCreateResponse: TypeAlias = CardResponse | CardCreateKnowledgeMutationResponse
 
 
 class CardSummary(BaseSchema):

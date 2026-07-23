@@ -27,7 +27,39 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
 - **Triage pending derivations**: the canonical surface to find done refinements that still lack a derived spec is `okto_pulse_list_by_board(entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})` — see `okto-pulse://reference/list_tools`. `entity_type="refinement"` **REQUIRES** `filters.ideation_id` (omitting it fails with `missing_required_filter`); `entity_type="sprint"` likewise requires `filters.spec_id`.
 
-## 2.2a Mandatory Deep Investigation — Refinement is Research, Not Paraphrasing
+### 2.2a Selective Knowledge propagation when deriving a spec
+
+`okto_pulse_derive_spec_from_refinement` has two intentionally separate
+Knowledge paths:
+
+- Omit `knowledge_propagation` to preserve the legacy v1 derivation exactly.
+  Legacy `kb_ids` keeps its existing meaning on this path.
+- Supply `knowledge_propagation` to opt into contract v2. In this case,
+  `kb_ids` and `knowledge_propagation` are mutually exclusive; passing both
+  fails with `conflicting_propagation_parameters`.
+
+The v2 envelope has `contract_version=2`, a caller-stable
+`idempotency_key`, and one coherent tri-state selection:
+
+| `selection_state` | Required shape | Effect |
+|---|---|---|
+| `omitted` | no `mode`; empty `knowledge_ids`; justification optional | Records an authoritative v2 omission. It does not fall back to v1. |
+| `explicit_empty` | `mode="drop"`; empty `knowledge_ids`; non-empty `justification` | Derives the spec with an authoritative empty Knowledge selection. |
+| `explicit_ids` | non-empty `knowledge_ids`; `mode="reference"`, `"snapshot"`, or `"drop"`; non-empty `justification` | Derives the spec with only the selected stable roots, or explicitly drops the named roots. |
+
+Creation accepts `expected_revision` omitted or `0`. Preflight validates the
+done refinement, parent ownership, source IDs, and request identity before the
+spec is inserted. An exact retry with the same `idempotency_key` returns the
+original `spec_id`, operation, selection, and assignments with
+`replayed=true`; never reuse the key for changed derivation content or
+selection. A rare `knowledge_creation_race` is retryable and the MCP surface
+already performs one retry in a fresh unit of work before exposing it.
+
+Selective Knowledge v2 does not change mockup or Architecture Design
+parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
+`architecture_propagation_mode` independently.
+
+## 2.2b Mandatory Deep Investigation — Refinement is Research, Not Paraphrasing
 
 > **A refinement is NOT a copy of the ideation with prettier wording.** Its purpose is to convert a vetted idea into a concrete blueprint by gathering EVERY piece of factual evidence required to design the solution. The depth of the investigation here directly determines whether the downstream spec is implementable or speculative. Skipping this step compounds — every gap here becomes a question at spec time, every wrong assumption here becomes a bug at implementation time.
 

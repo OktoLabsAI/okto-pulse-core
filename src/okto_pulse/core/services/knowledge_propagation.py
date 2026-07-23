@@ -16,7 +16,7 @@ import hashlib
 import json
 from types import MappingProxyType
 from typing import Any, cast
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from okto_pulse.core.domain.knowledge_selection import (
     KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
@@ -28,6 +28,7 @@ from okto_pulse.core.domain.knowledge_selection import (
     KnowledgeRelevanceLink,
     KnowledgeSelection,
     KnowledgeSelectionState,
+    KnowledgeTargetType,
 )
 from okto_pulse.core.domain.resource_revision import ResourceRevisionStamp
 from okto_pulse.core.ports.knowledge_propagation import (
@@ -39,6 +40,10 @@ from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgeMutationOutcome,
     KnowledgeMutationPlan,
     KnowledgeMutationReceipt,
+    KnowledgeParentEvidence,
+    KnowledgeParentKey,
+    KnowledgeParentLookup,
+    KnowledgeParentType,
     KnowledgePropagationPort,
     KnowledgePropagationPortError,
     KnowledgePropagationScope,
@@ -53,6 +58,9 @@ from okto_pulse.core.ports.knowledge_propagation import (
     TemporalKnowledgeAssignment,
     get_knowledge_propagation_port,
 )
+
+
+_KNOWLEDGE_TARGET_NAMESPACE = UUID("56d7316a-f60b-5b74-b7d0-b870f0b6e1cb")
 
 
 class KnowledgePropagationServiceError(RuntimeError):
@@ -114,6 +122,54 @@ def _revision(value: object) -> int:
     return value
 
 
+def _optional_sha256(value: object | None, field_name: str) -> str | None:
+    normalized = _optional_text(value, field_name)
+    if normalized is None:
+        return None
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        raise ValueError(f"knowledge_propagation_{field_name}_invalid")
+    return normalized
+
+
+def deterministic_knowledge_target_id(
+    parent: KnowledgeParentKey,
+    target_type: KnowledgeTargetType | str,
+    idempotency_key: str,
+) -> str:
+    """Return the stable UUIDv5 identity for one semantic create attempt."""
+
+    if not isinstance(parent, KnowledgeParentKey):
+        raise ValueError("knowledge_propagation_parent_invalid")
+    canonical_target_type = (
+        target_type
+        if isinstance(target_type, KnowledgeTargetType)
+        else KnowledgeTargetType(_required_text(target_type, "target_type"))
+    )
+    canonical_idempotency_key = _required_text(
+        idempotency_key,
+        "idempotency_key",
+    )
+    identity = json.dumps(
+        {
+            "contract_version": KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
+            "parent": parent.to_dict(),
+            "creation_operation": (
+                "derive_spec"
+                if canonical_target_type is KnowledgeTargetType.SPEC
+                else "create_card"
+            ),
+            "target_type": canonical_target_type.value,
+            "idempotency_key": canonical_idempotency_key,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return str(uuid5(_KNOWLEDGE_TARGET_NAMESPACE, identity))
+
+
 def _canonical_ids(
     values: Sequence[str],
     field_name: str,
@@ -142,6 +198,68 @@ def _canonical_links(
     return tuple(links[key] for key in sorted(links))
 
 
+def _freeze_json(value: object) -> object:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {str(key): _freeze_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _thaw_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
+
+
+def _canonical_json_mapping(
+    value: Mapping[str, object] | None,
+    field_name: str,
+) -> Mapping[str, object]:
+    if value is None:
+        return MappingProxyType({})
+    if not isinstance(value, Mapping):
+        raise ValueError(f"knowledge_propagation_{field_name}_invalid")
+    try:
+        encoded = json.dumps(
+            _thaw_json(value),
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        decoded = json.loads(encoded)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"knowledge_propagation_{field_name}_invalid") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError(f"knowledge_propagation_{field_name}_invalid")
+    return cast(Mapping[str, object], _freeze_json(decoded))
+
+
+def _require_creation_result_target(
+    value: Mapping[str, object],
+    target: KnowledgeTargetKey,
+) -> None:
+    if not value:
+        return
+    spec_id = value.get("spec_id")
+    spec = value.get("spec")
+    card = value.get("card")
+    projected_target_id: object | None = None
+    if spec_id is not None:
+        projected_target_id = spec_id
+    elif isinstance(spec, Mapping):
+        projected_target_id = spec.get("id")
+    elif isinstance(card, Mapping):
+        projected_target_id = card.get("id")
+    if projected_target_id != target.target_id:
+        raise ValueError("knowledge_propagation_creation_result_target_mismatch")
+
+
 @dataclass(frozen=True, slots=True)
 class KnowledgeMutationCommand:
     """Replace, omitted, explicit-empty, or drop-delta command."""
@@ -153,6 +271,9 @@ class KnowledgeMutationCommand:
     idempotency_key: str
     justification: str | None = None
     relevance_links: tuple[KnowledgeRelevanceLink, ...] = ()
+    semantic_creation_hash: str | None = None
+    parent: KnowledgeParentKey | None = None
+    creation_result: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.target, KnowledgeTargetKey):
@@ -180,11 +301,48 @@ class KnowledgeMutationCommand:
             "relevance_links",
             _canonical_links(self.relevance_links),
         )
+        semantic_creation_hash = _optional_sha256(
+            self.semantic_creation_hash,
+            "semantic_creation_hash",
+        )
+        if semantic_creation_hash is not None and expected_revision != 0:
+            raise ValueError("knowledge_propagation_creation_expected_revision_invalid")
+        object.__setattr__(
+            self,
+            "semantic_creation_hash",
+            semantic_creation_hash,
+        )
+        if self.parent is not None:
+            if not isinstance(self.parent, KnowledgeParentKey):
+                raise ValueError("knowledge_propagation_command_parent_invalid")
+            if self.parent.board_id != self.target.board_id:
+                raise ValueError("knowledge_propagation_command_parent_board_mismatch")
+            if (
+                self.target.target_type is KnowledgeTargetType.CARD
+                and self.parent.parent_type is not KnowledgeParentType.SPEC
+            ):
+                raise ValueError("knowledge_propagation_command_parent_target_invalid")
+        if self.relevance_links and self.parent is None:
+            raise ValueError("knowledge_propagation_relevance_parent_required")
+        if semantic_creation_hash is not None and self.parent is None:
+            raise ValueError("knowledge_propagation_creation_parent_required")
+        creation_result = _canonical_json_mapping(
+            self.creation_result,
+            "creation_result",
+        )
+        if creation_result and self.parent is None:
+            raise ValueError("knowledge_propagation_creation_parent_required")
+        _require_creation_result_target(creation_result, self.target)
+        object.__setattr__(self, "creation_result", creation_result)
 
 
 @dataclass(frozen=True, slots=True)
 class KnowledgeRefreshCommand:
-    """Explicit refresh of selected current snapshot assignments."""
+    """Deprecated internal refresh by assignment identity.
+
+    Public v2 boundaries must use :class:`KnowledgeRefreshByKnowledgeIdsCommand`
+    so retries do not depend on replaceable assignment row identities.
+    """
 
     target: KnowledgeTargetKey
     assignment_ids: tuple[str, ...]
@@ -220,6 +378,424 @@ class KnowledgeRefreshCommand:
             "idempotency_key",
             _required_text(self.idempotency_key, "idempotency_key"),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeRefreshByKnowledgeIdsCommand:
+    """Public v2 refresh selected by stable parent Knowledge Base ids."""
+
+    target: KnowledgeTargetKey
+    knowledge_ids: tuple[str, ...]
+    actor_id: str
+    expected_revision: int
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.target, KnowledgeTargetKey):
+            raise ValueError("knowledge_propagation_refresh_target_invalid")
+        knowledge_ids = _canonical_ids(self.knowledge_ids, "knowledge_ids")
+        if not knowledge_ids:
+            raise ValueError("knowledge_propagation_knowledge_ids_empty")
+        object.__setattr__(self, "knowledge_ids", knowledge_ids)
+        object.__setattr__(
+            self,
+            "actor_id",
+            _required_text(self.actor_id, "actor_id"),
+        )
+        object.__setattr__(
+            self,
+            "expected_revision",
+            _revision(self.expected_revision),
+        )
+        object.__setattr__(
+            self,
+            "idempotency_key",
+            _required_text(self.idempotency_key, "idempotency_key"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeCreationPreflightCommand:
+    """Validate a complete v2 create before its deterministic target exists."""
+
+    parent: KnowledgeParentKey
+    target_type: KnowledgeTargetType | str
+    selection: KnowledgeSelection
+    actor_id: str
+    idempotency_key: str
+    expected_revision: int | None = None
+    justification: str | None = None
+    relevance_links: tuple[KnowledgeRelevanceLink, ...] = ()
+    semantic_creation_hash: str | None = None
+    creation_result: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.parent, KnowledgeParentKey):
+            raise ValueError("knowledge_propagation_preflight_parent_invalid")
+        target_type = (
+            self.target_type
+            if isinstance(self.target_type, KnowledgeTargetType)
+            else KnowledgeTargetType(_required_text(self.target_type, "target_type"))
+        )
+        if (
+            target_type is KnowledgeTargetType.SPEC
+            and self.parent.parent_type
+            not in {KnowledgeParentType.IDEATION, KnowledgeParentType.REFINEMENT}
+        ) or (
+            target_type is KnowledgeTargetType.CARD
+            and self.parent.parent_type is not KnowledgeParentType.SPEC
+        ):
+            raise ValueError("knowledge_propagation_preflight_parent_target_invalid")
+        if not isinstance(self.selection, KnowledgeSelection):
+            raise ValueError("knowledge_propagation_preflight_selection_invalid")
+        actor_id = _required_text(self.actor_id, "actor_id")
+        idempotency_key = _required_text(
+            self.idempotency_key,
+            "idempotency_key",
+        )
+        if self.expected_revision not in {None, 0}:
+            raise ValueError("knowledge_propagation_creation_expected_revision_invalid")
+        justification = _optional_text(self.justification, "justification")
+        if (
+            self.selection.selection_state is not KnowledgeSelectionState.OMITTED
+            and justification is None
+        ):
+            raise ValueError("knowledge_propagation_justification_required")
+        object.__setattr__(self, "target_type", target_type)
+        object.__setattr__(self, "actor_id", actor_id)
+        object.__setattr__(self, "idempotency_key", idempotency_key)
+        object.__setattr__(self, "expected_revision", 0)
+        object.__setattr__(self, "justification", justification)
+        object.__setattr__(
+            self,
+            "relevance_links",
+            _canonical_links(self.relevance_links),
+        )
+        object.__setattr__(
+            self,
+            "semantic_creation_hash",
+            _optional_sha256(
+                self.semantic_creation_hash,
+                "semantic_creation_hash",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "creation_result",
+            _canonical_json_mapping(
+                self.creation_result,
+                "creation_result",
+            ),
+        )
+
+    @property
+    def target(self) -> KnowledgeTargetKey:
+        return KnowledgeTargetKey(
+            board_id=self.parent.board_id,
+            target_type=self.target_type,
+            target_id=deterministic_knowledge_target_id(
+                self.parent,
+                self.target_type,
+                self.idempotency_key,
+            ),
+        )
+
+    def to_mutation_command(self) -> KnowledgeMutationCommand:
+        return KnowledgeMutationCommand(
+            target=self.target,
+            selection=self.selection,
+            actor_id=self.actor_id,
+            expected_revision=0,
+            idempotency_key=self.idempotency_key,
+            justification=self.justification,
+            relevance_links=self.relevance_links,
+            semantic_creation_hash=self.semantic_creation_hash,
+            parent=self.parent,
+            creation_result=self.creation_result,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeMutationPreparation:
+    """Immutable successful target-independent creation preflight."""
+
+    parent: KnowledgeParentKey
+    command: KnowledgeMutationCommand
+    evidence_fingerprint: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.parent, KnowledgeParentKey):
+            raise ValueError("knowledge_propagation_preparation_parent_invalid")
+        if not isinstance(self.command, KnowledgeMutationCommand):
+            raise ValueError("knowledge_propagation_preparation_command_invalid")
+        if self.command.target.board_id != self.parent.board_id:
+            raise ValueError("knowledge_propagation_preparation_board_mismatch")
+        expected_target_id = deterministic_knowledge_target_id(
+            self.parent,
+            self.command.target.target_type,
+            self.command.idempotency_key,
+        )
+        if self.command.target.target_id != expected_target_id:
+            raise ValueError("knowledge_propagation_preparation_target_invalid")
+        object.__setattr__(
+            self,
+            "evidence_fingerprint",
+            cast(
+                str,
+                _optional_sha256(
+                    self.evidence_fingerprint,
+                    "evidence_fingerprint",
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeMutationResultV2:
+    """Canonical versioned API result persisted inside receipt details."""
+
+    operation_id: str
+    target: KnowledgeTargetKey
+    operation_kind: KnowledgeMutationKind | str
+    previous_revision: int
+    revision: int
+    selection_state: KnowledgeSelectionState | str | None
+    assignments: tuple[KnowledgeAssignment, ...] = ()
+    refreshed_knowledge_ids: tuple[str, ...] = ()
+    creation_result: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "operation_id",
+            _required_text(self.operation_id, "operation_id"),
+        )
+        if not isinstance(self.target, KnowledgeTargetKey):
+            raise ValueError("knowledge_propagation_result_target_invalid")
+        operation_kind = (
+            self.operation_kind
+            if isinstance(self.operation_kind, KnowledgeMutationKind)
+            else KnowledgeMutationKind(
+                _required_text(self.operation_kind, "operation_kind")
+            )
+        )
+        previous_revision = _revision(self.previous_revision)
+        revision = _revision(self.revision)
+        if revision != previous_revision + 1:
+            raise ValueError("knowledge_propagation_result_revision_invalid")
+        selection_state = (
+            None
+            if self.selection_state is None
+            else (
+                self.selection_state
+                if isinstance(self.selection_state, KnowledgeSelectionState)
+                else KnowledgeSelectionState(
+                    _required_text(self.selection_state, "selection_state")
+                )
+            )
+        )
+        assignments: dict[str, KnowledgeAssignment] = {}
+        for assignment in self.assignments:
+            if not isinstance(assignment, KnowledgeAssignment):
+                raise ValueError("knowledge_propagation_result_assignments_invalid")
+            if (
+                assignment.board_id != self.target.board_id
+                or assignment.target_type is not self.target.target_type
+                or assignment.target_id != self.target.target_id
+            ):
+                raise ValueError(
+                    "knowledge_propagation_result_assignment_target_mismatch"
+                )
+            if assignment.assignment_id in assignments:
+                raise ValueError("knowledge_propagation_result_assignments_duplicate")
+            assignments[assignment.assignment_id] = assignment
+        object.__setattr__(self, "operation_kind", operation_kind)
+        object.__setattr__(self, "previous_revision", previous_revision)
+        object.__setattr__(self, "revision", revision)
+        object.__setattr__(self, "selection_state", selection_state)
+        object.__setattr__(
+            self,
+            "assignments",
+            tuple(assignments[key] for key in sorted(assignments)),
+        )
+        object.__setattr__(
+            self,
+            "refreshed_knowledge_ids",
+            _canonical_ids(
+                self.refreshed_knowledge_ids,
+                "refreshed_knowledge_ids",
+            ),
+        )
+        creation_result = _canonical_json_mapping(
+            self.creation_result,
+            "result_creation_result",
+        )
+        _require_creation_result_target(creation_result, self.target)
+        object.__setattr__(self, "creation_result", creation_result)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "contract_version": KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
+            "operation_id": self.operation_id,
+            "target": self.target.to_dict(),
+            "operation_kind": cast(
+                KnowledgeMutationKind,
+                self.operation_kind,
+            ).value,
+            "previous_revision": self.previous_revision,
+            "revision": self.revision,
+            "selection_state": (
+                None
+                if self.selection_state is None
+                else cast(KnowledgeSelectionState, self.selection_state).value
+            ),
+            "assignments": [assignment.to_dict() for assignment in self.assignments],
+            "refreshed_knowledge_ids": list(self.refreshed_knowledge_ids),
+            "creation_result": _thaw_json(self.creation_result),
+        }
+
+
+class KnowledgeMutationResultV2Projector:
+    """Create and recover the canonical result carried by every receipt."""
+
+    @staticmethod
+    def project(
+        *,
+        operation_id: str,
+        target: KnowledgeTargetKey,
+        operation_kind: KnowledgeMutationKind,
+        previous_revision: int,
+        selection_state: KnowledgeSelectionState | None,
+        assignments: tuple[TemporalKnowledgeAssignment, ...],
+        refreshed_knowledge_ids: tuple[str, ...] = (),
+        creation_result: Mapping[str, object] | None = None,
+    ) -> KnowledgeMutationResultV2:
+        return KnowledgeMutationResultV2(
+            operation_id=operation_id,
+            target=target,
+            operation_kind=operation_kind,
+            previous_revision=previous_revision,
+            revision=previous_revision + 1,
+            selection_state=selection_state,
+            assignments=tuple(item.assignment for item in assignments),
+            refreshed_knowledge_ids=refreshed_knowledge_ids,
+            creation_result=creation_result or {},
+        )
+
+    @staticmethod
+    def from_receipt(
+        receipt: KnowledgeMutationReceipt,
+    ) -> KnowledgeMutationResultV2:
+        if not isinstance(receipt, KnowledgeMutationReceipt):
+            raise ValueError("knowledge_propagation_result_receipt_invalid")
+        payload = receipt.details.get("result_v2")
+        if not isinstance(payload, Mapping):
+            raise ValueError("knowledge_propagation_result_v2_missing")
+        if payload.get("contract_version") != (KNOWLEDGE_PROPAGATION_CONTRACT_VERSION):
+            raise ValueError("knowledge_propagation_result_contract_version_invalid")
+        target_payload = payload.get("target")
+        assignments_payload = payload.get("assignments")
+        if (
+            not isinstance(target_payload, Mapping)
+            or not isinstance(
+                assignments_payload,
+                Sequence,
+            )
+            or isinstance(assignments_payload, (str, bytes))
+        ):
+            raise ValueError("knowledge_propagation_result_v2_invalid")
+        assignments: list[KnowledgeAssignment] = []
+        for item in assignments_payload:
+            if not isinstance(item, Mapping):
+                raise ValueError("knowledge_propagation_result_v2_invalid")
+            stamp = item.get("revision_stamp")
+            links = item.get("relevance_links", ())
+            if (
+                not isinstance(stamp, Mapping)
+                or not isinstance(
+                    links,
+                    Sequence,
+                )
+                or isinstance(links, (str, bytes))
+            ):
+                raise ValueError("knowledge_propagation_result_v2_invalid")
+            assignments.append(
+                KnowledgeAssignment(
+                    assignment_id=cast(str, item.get("assignment_id")),
+                    board_id=cast(str, item.get("board_id")),
+                    target_type=cast(str, item.get("target_type")),
+                    target_id=cast(str, item.get("target_id")),
+                    source_knowledge_id=cast(
+                        str,
+                        item.get("source_knowledge_id"),
+                    ),
+                    revision_stamp=ResourceRevisionStamp(
+                        root_id=cast(str, stamp.get("root_id")),
+                        immediate_parent_id=cast(
+                            str | None,
+                            stamp.get("immediate_parent_id"),
+                        ),
+                        source_revision=cast(
+                            str | None,
+                            stamp.get("source_revision"),
+                        ),
+                        source_content_sha256=cast(
+                            str | None,
+                            stamp.get("source_content_sha256"),
+                        ),
+                    ),
+                    mode=cast(str, item.get("mode")),
+                    state=cast(str, item.get("state")),
+                    origin_class=cast(str, item.get("origin_class")),
+                    actor_id=cast(str, item.get("actor_id")),
+                    revision=cast(int, item.get("revision")),
+                    justification=cast(str | None, item.get("justification")),
+                    relevance_links=tuple(
+                        KnowledgeRelevanceLink(
+                            entity_type=cast(str, link.get("entity_type")),
+                            entity_id=cast(str, link.get("entity_id")),
+                        )
+                        for link in links
+                        if isinstance(link, Mapping)
+                    ),
+                )
+            )
+        refreshed = payload.get("refreshed_knowledge_ids", ())
+        if not isinstance(refreshed, Sequence) or isinstance(
+            refreshed,
+            (str, bytes),
+        ):
+            raise ValueError("knowledge_propagation_result_v2_invalid")
+        result = KnowledgeMutationResultV2(
+            operation_id=cast(str, payload.get("operation_id")),
+            target=KnowledgeTargetKey(
+                board_id=cast(str, target_payload.get("board_id")),
+                target_type=cast(str, target_payload.get("target_type")),
+                target_id=cast(str, target_payload.get("target_id")),
+            ),
+            operation_kind=cast(str, payload.get("operation_kind")),
+            previous_revision=cast(int, payload.get("previous_revision")),
+            revision=cast(int, payload.get("revision")),
+            selection_state=cast(
+                str | None,
+                payload.get("selection_state"),
+            ),
+            assignments=tuple(assignments),
+            refreshed_knowledge_ids=tuple(cast(Sequence[str], refreshed)),
+            creation_result=cast(
+                Mapping[str, object],
+                payload.get("creation_result", {}),
+            ),
+        )
+        if (
+            result.operation_id != receipt.operation_id
+            or result.target != receipt.target
+            or result.operation_kind is not receipt.operation_kind
+            or result.previous_revision != receipt.previous_revision
+            or result.revision != receipt.revision
+        ):
+            raise ValueError("knowledge_propagation_result_receipt_mismatch")
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -536,59 +1112,140 @@ class KnowledgePropagationService:
     def _port(self) -> KnowledgePropagationPort:
         return self._configured_port or get_knowledge_propagation_port()
 
-    async def mutate(
+    async def preflight_creation(
         self,
         context: Any,
-        command: KnowledgeMutationCommand,
-    ) -> KnowledgeMutationReceipt:
-        """Stage one all-or-nothing selection mutation."""
+        command: KnowledgeCreationPreflightCommand,
+    ) -> KnowledgeMutationPreparation | KnowledgeMutationReceipt:
+        """Validate a future deterministic target without creating it."""
 
-        if not isinstance(command, KnowledgeMutationCommand):
-            raise TypeError("knowledge_propagation_command_invalid")
-        request_hash = self._mutation_request_hash(command)
+        if not isinstance(command, KnowledgeCreationPreflightCommand):
+            raise TypeError("knowledge_propagation_preflight_command_invalid")
+        mutation_command = command.to_mutation_command()
+        request_hash = self._mutation_request_hash(mutation_command)
         operation_kind = self._mutation_kind(command.selection)
         try:
             replay = await self._replay(
                 context,
-                target=command.target,
-                actor_id=command.actor_id,
+                target=mutation_command.target,
+                actor_id=mutation_command.actor_id,
                 operation_kind=operation_kind,
-                idempotency_key=command.idempotency_key,
+                idempotency_key=mutation_command.idempotency_key,
+                request_hash=request_hash,
+            )
+            if replay is not None:
+                return replay
+            evidence = await self._load_and_validate_parent_evidence(
+                context,
+                parent=command.parent,
+                command=mutation_command,
+            )
+            return KnowledgeMutationPreparation(
+                parent=command.parent,
+                command=mutation_command,
+                evidence_fingerprint=self._parent_evidence_fingerprint(
+                    evidence,
+                ),
+            )
+        except KnowledgePropagationServiceError as exc:
+            wrapped = self._with_rejection_attempt(
+                exc,
+                target=mutation_command.target,
+                actor_id=mutation_command.actor_id,
+                operation_kind=operation_kind,
+                idempotency_key=mutation_command.idempotency_key,
+                request_hash=request_hash,
+            )
+            if wrapped is exc:
+                raise
+            raise wrapped from exc
+
+    async def mutate(
+        self,
+        context: Any,
+        command: KnowledgeMutationCommand | KnowledgeMutationPreparation,
+    ) -> KnowledgeMutationReceipt:
+        """Stage one all-or-nothing selection mutation."""
+
+        preparation = (
+            command if isinstance(command, KnowledgeMutationPreparation) else None
+        )
+        mutation_command = (
+            command.command
+            if isinstance(command, KnowledgeMutationPreparation)
+            else command
+        )
+        if not isinstance(mutation_command, KnowledgeMutationCommand):
+            raise TypeError("knowledge_propagation_command_invalid")
+        request_hash = self._mutation_request_hash(mutation_command)
+        operation_kind = self._mutation_kind(mutation_command.selection)
+        try:
+            replay = await self._replay(
+                context,
+                target=mutation_command.target,
+                actor_id=mutation_command.actor_id,
+                operation_kind=operation_kind,
+                idempotency_key=mutation_command.idempotency_key,
                 request_hash=request_hash,
             )
             if replay is not None:
                 return replay
 
+            parent = (
+                preparation.parent
+                if preparation is not None
+                else mutation_command.parent
+            )
+            evidence: KnowledgeParentEvidence | None = None
+            if parent is not None:
+                evidence = await self._load_and_validate_parent_evidence(
+                    context,
+                    parent=parent,
+                    command=mutation_command,
+                )
+                if preparation is not None and (
+                    self._parent_evidence_fingerprint(evidence)
+                    != preparation.evidence_fingerprint
+                ):
+                    raise KnowledgePropagationServiceError(
+                        "knowledge_propagation_preflight_stale",
+                        "parent evidence changed after creation preflight",
+                    )
+
             source_ids = (
-                command.selection.knowledge_ids
-                if command.selection.selection_state
+                mutation_command.selection.knowledge_ids
+                if mutation_command.selection.selection_state
                 is KnowledgeSelectionState.EXPLICIT_IDS
                 else ()
             )
             scope = await self._port.load_scope(
                 context,
                 KnowledgeScopeLookup(
-                    target=command.target,
+                    target=mutation_command.target,
                     source_knowledge_ids=source_ids,
                 ),
             )
-            self._require_scope_target(scope, command.target)
-            self._require_revision(scope, command.expected_revision)
-            sources = self._validated_sources(command.selection, scope)
+            self._require_scope_target(scope, mutation_command.target)
+            self._require_revision(scope, mutation_command.expected_revision)
+            sources = self._validated_sources(
+                mutation_command.selection,
+                scope,
+            )
             plan = self._build_mutation_plan(
-                command,
+                mutation_command,
                 scope=scope,
                 sources=sources,
                 request_hash=request_hash,
+                parent_evidence=evidence,
             )
             return await self._stage(context, plan)
         except KnowledgePropagationServiceError as exc:
             wrapped = self._with_rejection_attempt(
                 exc,
-                target=command.target,
-                actor_id=command.actor_id,
+                target=mutation_command.target,
+                actor_id=mutation_command.actor_id,
                 operation_kind=operation_kind,
-                idempotency_key=command.idempotency_key,
+                idempotency_key=mutation_command.idempotency_key,
                 request_hash=request_hash,
             )
             if wrapped is exc:
@@ -625,6 +1282,56 @@ class KnowledgePropagationService:
             self._require_scope_target(scope, command.target)
             self._require_revision(scope, command.expected_revision)
             plan = self._build_refresh_plan(
+                command,
+                scope=scope,
+                request_hash=request_hash,
+            )
+            return await self._stage(context, plan)
+        except KnowledgePropagationServiceError as exc:
+            wrapped = self._with_rejection_attempt(
+                exc,
+                target=command.target,
+                actor_id=command.actor_id,
+                operation_kind=operation_kind,
+                idempotency_key=command.idempotency_key,
+                request_hash=request_hash,
+            )
+            if wrapped is exc:
+                raise
+            raise wrapped from exc
+
+    async def refresh_by_knowledge_ids(
+        self,
+        context: Any,
+        command: KnowledgeRefreshByKnowledgeIdsCommand,
+    ) -> KnowledgeMutationReceipt:
+        """Refresh snapshots by stable parent/root identities."""
+
+        if not isinstance(command, KnowledgeRefreshByKnowledgeIdsCommand):
+            raise TypeError("knowledge_propagation_refresh_command_invalid")
+        request_hash = self._refresh_by_knowledge_ids_request_hash(command)
+        operation_kind = KnowledgeMutationKind.REFRESH_SNAPSHOT
+        try:
+            replay = await self._replay(
+                context,
+                target=command.target,
+                actor_id=command.actor_id,
+                operation_kind=operation_kind,
+                idempotency_key=command.idempotency_key,
+                request_hash=request_hash,
+            )
+            if replay is not None:
+                return replay
+            scope = await self._port.load_scope(
+                context,
+                KnowledgeScopeLookup(
+                    target=command.target,
+                    source_knowledge_ids=command.knowledge_ids,
+                ),
+            )
+            self._require_scope_target(scope, command.target)
+            self._require_revision(scope, command.expected_revision)
+            plan = self._build_refresh_by_knowledge_ids_plan(
                 command,
                 scope=scope,
                 request_hash=request_hash,
@@ -892,6 +1599,129 @@ class KnowledgePropagationService:
             ) from exc
         return entry.receipt.as_replay()
 
+    async def _load_and_validate_parent_evidence(
+        self,
+        context: Any,
+        *,
+        parent: KnowledgeParentKey,
+        command: KnowledgeMutationCommand,
+    ) -> KnowledgeParentEvidence:
+        source_ids = (
+            command.selection.knowledge_ids
+            if command.selection.selection_state is KnowledgeSelectionState.EXPLICIT_IDS
+            else ()
+        )
+        lookup = KnowledgeParentLookup(
+            parent=parent,
+            source_knowledge_ids=source_ids,
+            relevance_links=command.relevance_links,
+        )
+        try:
+            evidence = await self._port.load_parent_evidence(context, lookup)
+        except KnowledgePropagationPortError as exc:
+            raise KnowledgePropagationServiceError(
+                exc.code,
+                exc.detail,
+                details=exc.details,
+            ) from exc
+        if (
+            not isinstance(evidence, KnowledgeParentEvidence)
+            or evidence.parent != parent
+        ):
+            raise KnowledgePropagationServiceError(
+                "knowledge_propagation_parent_evidence_mismatch",
+                "persistence returned evidence for a different parent",
+            )
+        if not evidence.parent_exists or not evidence.same_board:
+            raise KnowledgePropagationServiceError(
+                "knowledge_propagation_parent_ineligible",
+                "parent must exist on the requested board",
+                details={
+                    "parent_exists": evidence.parent_exists,
+                    "same_board": evidence.same_board,
+                    "parent_state": evidence.parent_state,
+                },
+            )
+        self._validated_sources_from(
+            command.selection,
+            evidence.sources,
+        )
+        self._validate_relevance_links(
+            parent=parent,
+            links=command.relevance_links,
+            evidence=evidence,
+        )
+        return evidence
+
+    @staticmethod
+    def _validate_relevance_links(
+        *,
+        parent: KnowledgeParentKey,
+        links: tuple[KnowledgeRelevanceLink, ...],
+        evidence: KnowledgeParentEvidence,
+    ) -> None:
+        if not links:
+            return
+        linked_spec_id = evidence.linked_spec_id
+        if linked_spec_id is None or (
+            parent.parent_type is KnowledgeParentType.SPEC
+            and linked_spec_id != parent.parent_id
+        ):
+            raise KnowledgePropagationServiceError(
+                "knowledge_relevance_spec_mismatch",
+                "relevance links must resolve against the target's linked spec",
+            )
+        allowed = {
+            KnowledgeRelevanceEntityType.FUNCTIONAL_REQUIREMENT: set(
+                evidence.functional_requirement_ids
+            ),
+            KnowledgeRelevanceEntityType.ACCEPTANCE_CRITERION: set(
+                evidence.acceptance_criterion_ids
+            ),
+            KnowledgeRelevanceEntityType.TEST_SCENARIO: set(evidence.test_scenario_ids),
+        }
+        requested = tuple(
+            sorted(
+                (
+                    cast(KnowledgeRelevanceEntityType, item.entity_type).value,
+                    item.entity_id,
+                )
+                for item in links
+            )
+        )
+        matched = tuple(
+            item
+            for item in requested
+            if item[1] in allowed[KnowledgeRelevanceEntityType(item[0])]
+        )
+        missing = tuple(item for item in requested if item not in matched)
+        if missing:
+
+            def render(item: tuple[str, str]) -> str:
+                return f"{item[0]}:{item[1]}"
+
+            raise KnowledgePropagationServiceError(
+                "knowledge_relevance_invalid",
+                "all relevance links must belong to the linked spec",
+                details={
+                    "requested": [render(item) for item in requested],
+                    "matched": [render(item) for item in matched],
+                    "missing": [render(item) for item in missing],
+                },
+            )
+
+    @classmethod
+    def _parent_evidence_fingerprint(
+        cls,
+        evidence: KnowledgeParentEvidence,
+    ) -> str:
+        return cls._hash(
+            {
+                "contract_version": KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
+                "evidence": evidence.to_dict(),
+            }
+        )
+
     @staticmethod
     def _require_scope_target(
         scope: KnowledgePropagationScope,
@@ -923,11 +1753,21 @@ class KnowledgePropagationService:
         selection: KnowledgeSelection,
         scope: KnowledgePropagationScope,
     ) -> tuple[KnowledgeSelectableSource, ...]:
+        return KnowledgePropagationService._validated_sources_from(
+            selection,
+            scope.sources,
+        )
+
+    @staticmethod
+    def _validated_sources_from(
+        selection: KnowledgeSelection,
+        source_facts: tuple[KnowledgeSelectableSource, ...],
+    ) -> tuple[KnowledgeSelectableSource, ...]:
         if selection.selection_state is not KnowledgeSelectionState.EXPLICIT_IDS:
             return ()
         requested = selection.knowledge_ids
         by_requested = {
-            source.requested_knowledge_id: source for source in scope.sources
+            source.requested_knowledge_id: source for source in source_facts
         }
         matched = tuple(sorted(set(requested).intersection(by_requested)))
         missing = tuple(sorted(set(requested).difference(by_requested)))
@@ -972,6 +1812,7 @@ class KnowledgePropagationService:
         scope: KnowledgePropagationScope,
         sources: tuple[KnowledgeSelectableSource, ...],
         request_hash: str,
+        parent_evidence: KnowledgeParentEvidence | None = None,
     ) -> KnowledgeMutationPlan:
         now = self._operation_time()
         next_revision = scope.scope_revision + 1
@@ -1120,6 +1961,8 @@ class KnowledgePropagationService:
             idempotency_key=command.idempotency_key,
             request_hash=request_hash,
             occurred_at=now,
+            parent=command.parent,
+            parent_evidence=parent_evidence,
             assignments_to_open=tuple(assignments_to_open),
             assignment_ids_to_close=tuple(assignment_ids_to_close),
             tombstones_to_open=tuple(tombstones_to_open),
@@ -1127,6 +1970,7 @@ class KnowledgePropagationService:
             snapshots_to_open=tuple(snapshots_to_open),
             snapshot_ids_to_close=tuple(snapshot_ids_to_close),
             supersession_links=supersession_links,
+            creation_result=command.creation_result,
         )
 
     def _build_refresh_plan(
@@ -1297,6 +2141,227 @@ class KnowledgePropagationService:
             supersession_links=tuple(supersession_links),
         )
 
+    def _build_refresh_by_knowledge_ids_plan(
+        self,
+        command: KnowledgeRefreshByKnowledgeIdsCommand,
+        *,
+        scope: KnowledgePropagationScope,
+        request_hash: str,
+    ) -> KnowledgeMutationPlan:
+        if (
+            not scope.v2_active
+            or scope.selection_state is not KnowledgeSelectionState.EXPLICIT_IDS
+        ):
+            raise KnowledgePropagationServiceError(
+                "knowledge_assignment_not_refreshable",
+                "snapshot refresh requires an active v2 explicit-id scope",
+            )
+        sources_by_requested = {
+            source.requested_knowledge_id: source for source in scope.sources
+        }
+        matched = tuple(
+            knowledge_id
+            for knowledge_id in command.knowledge_ids
+            if knowledge_id in sources_by_requested
+        )
+        missing: set[str] = set(command.knowledge_ids) - set(matched)
+        invalid: set[str] = set()
+        ambiguous: set[str] = set()
+        roots_by_requested: dict[str, str] = {}
+        requested_by_root: dict[str, str] = {}
+        for knowledge_id in matched:
+            source = sources_by_requested[knowledge_id]
+            root_id = source.revision_stamp.root_id
+            prior = requested_by_root.get(root_id)
+            if prior is not None and prior != knowledge_id:
+                ambiguous.update((prior, knowledge_id))
+            requested_by_root[root_id] = knowledge_id
+            roots_by_requested[knowledge_id] = root_id
+            if (
+                source.source_deleted
+                or source.content_bytes is None
+                or hashlib.sha256(source.content_bytes).hexdigest()
+                != source.revision_stamp.source_content_sha256
+            ):
+                invalid.add(knowledge_id)
+
+        current_by_root: dict[
+            str,
+            list[TemporalKnowledgeAssignment],
+        ] = {}
+        for temporal in scope.assignments:
+            if not temporal.temporal.is_current:
+                continue
+            current_by_root.setdefault(
+                temporal.assignment.revision_stamp.root_id,
+                [],
+            ).append(temporal)
+        current_snapshots_by_assignment: dict[
+            str,
+            list[KnowledgePropagationSnapshot],
+        ] = {}
+        for snapshot in scope.snapshots:
+            if snapshot.temporal.is_current:
+                current_snapshots_by_assignment.setdefault(
+                    snapshot.assignment_id,
+                    [],
+                ).append(snapshot)
+        current_tombstones = tuple(
+            item for item in scope.tombstones if item.temporal.is_current
+        )
+        global_drop = any(item.root_id is None for item in current_tombstones)
+        dropped_roots = {
+            item.root_id for item in current_tombstones if item.root_id is not None
+        }
+
+        selected: list[
+            tuple[
+                str,
+                TemporalKnowledgeAssignment,
+                KnowledgeSelectableSource,
+                KnowledgePropagationSnapshot,
+            ]
+        ] = []
+        for knowledge_id in matched:
+            root_id = roots_by_requested[knowledge_id]
+            candidates = current_by_root.get(root_id, [])
+            if not candidates:
+                missing.add(knowledge_id)
+                continue
+            if len(candidates) != 1:
+                ambiguous.add(knowledge_id)
+                continue
+            temporal = candidates[0]
+            assignment = temporal.assignment
+            snapshots = current_snapshots_by_assignment.get(
+                assignment.assignment_id,
+                [],
+            )
+            source = sources_by_requested[knowledge_id]
+            if (
+                assignment.mode is not KnowledgePropagationMode.SNAPSHOT
+                or assignment.state
+                not in {
+                    KnowledgeAssignmentState.ACTIVE,
+                    KnowledgeAssignmentState.STALE,
+                }
+                or len(snapshots) != 1
+                or global_drop
+                or root_id in dropped_roots
+                or knowledge_id in invalid
+            ):
+                invalid.add(knowledge_id)
+                continue
+            selected.append(
+                (
+                    knowledge_id,
+                    temporal,
+                    source,
+                    snapshots[0],
+                )
+            )
+
+        if (
+            missing
+            or invalid
+            or ambiguous
+            or len(selected) != len(command.knowledge_ids)
+        ):
+            raise KnowledgePropagationServiceError(
+                "knowledge_assignment_not_refreshable",
+                "each requested Knowledge Base id must resolve to exactly one "
+                "current snapshot assignment on this target",
+                details={
+                    "requested": list(command.knowledge_ids),
+                    "matched": sorted(knowledge_id for knowledge_id, *_ in selected),
+                    "missing": sorted(missing),
+                    "invalid": sorted(invalid),
+                    "ambiguous": sorted(ambiguous),
+                },
+            )
+
+        now = self._operation_time()
+        next_revision = scope.scope_revision + 1
+        assignments_to_open: list[TemporalKnowledgeAssignment] = []
+        snapshots_to_open: list[KnowledgePropagationSnapshot] = []
+        assignment_ids_to_close: list[str] = []
+        snapshot_ids_to_close: list[str] = []
+        supersession_links: list[KnowledgeSupersessionLink] = []
+        for _, temporal, source, current_snapshot in selected:
+            old = temporal.assignment
+            assignment_id = self._id_factory("kbasg")
+            refreshed = KnowledgeAssignment(
+                assignment_id=assignment_id,
+                board_id=command.target.board_id,
+                target_type=command.target.target_type,
+                target_id=command.target.target_id,
+                source_knowledge_id=source.source_knowledge_id,
+                revision_stamp=source.revision_stamp,
+                mode=KnowledgePropagationMode.SNAPSHOT,
+                state=KnowledgeAssignmentState.ACTIVE,
+                origin_class=KnowledgeOriginClass.V2,
+                actor_id=command.actor_id,
+                revision=next_revision,
+                justification=old.justification,
+                relevance_links=old.relevance_links,
+            )
+            assignments_to_open.append(
+                TemporalKnowledgeAssignment(
+                    assignment=refreshed,
+                    temporal=KnowledgeTemporalWindow(effective_from=now),
+                )
+            )
+            assert source.content_bytes is not None
+            snapshot_id = self._id_factory("kbsnp")
+            snapshots_to_open.append(
+                KnowledgePropagationSnapshot(
+                    snapshot_id=snapshot_id,
+                    assignment_id=assignment_id,
+                    revision_stamp=source.revision_stamp,
+                    content_bytes=source.content_bytes,
+                    temporal=KnowledgeTemporalWindow(effective_from=now),
+                )
+            )
+            assignment_ids_to_close.append(old.assignment_id)
+            snapshot_ids_to_close.append(current_snapshot.snapshot_id)
+            supersession_links.extend(
+                (
+                    KnowledgeSupersessionLink(
+                        record_kind=KnowledgeRecordKind.ASSIGNMENT,
+                        previous_id=old.assignment_id,
+                        successor_id=assignment_id,
+                    ),
+                    KnowledgeSupersessionLink(
+                        record_kind=KnowledgeRecordKind.SNAPSHOT,
+                        previous_id=current_snapshot.snapshot_id,
+                        successor_id=snapshot_id,
+                    ),
+                )
+            )
+
+        return self._plan(
+            kind=KnowledgeMutationKind.REFRESH_SNAPSHOT,
+            target=command.target,
+            selection=None,
+            expected_revision=scope.scope_revision,
+            next_scope_selection_state=cast(
+                KnowledgeSelectionState,
+                scope.selection_state,
+            ),
+            actor_id=command.actor_id,
+            idempotency_key=command.idempotency_key,
+            request_hash=request_hash,
+            occurred_at=now,
+            assignments_to_open=tuple(assignments_to_open),
+            assignment_ids_to_close=tuple(assignment_ids_to_close),
+            snapshots_to_open=tuple(snapshots_to_open),
+            snapshot_ids_to_close=tuple(snapshot_ids_to_close),
+            supersession_links=tuple(supersession_links),
+            refreshed_knowledge_ids=tuple(
+                source.revision_stamp.root_id for _, _, source, _ in selected
+            ),
+        )
+
     @staticmethod
     def _mutation_supersession_links(
         *,
@@ -1419,6 +2484,8 @@ class KnowledgePropagationService:
         request_hash: str,
         occurred_at: datetime,
         next_scope_v2_active: bool = True,
+        parent: KnowledgeParentKey | None = None,
+        parent_evidence: KnowledgeParentEvidence | None = None,
         outcome: KnowledgeMutationOutcome = KnowledgeMutationOutcome.APPLIED,
         receipt_details: Mapping[str, object] | None = None,
         assignments_to_open: tuple[TemporalKnowledgeAssignment, ...] = (),
@@ -1428,8 +2495,22 @@ class KnowledgePropagationService:
         snapshots_to_open: tuple[KnowledgePropagationSnapshot, ...] = (),
         snapshot_ids_to_close: tuple[str, ...] = (),
         supersession_links: tuple[KnowledgeSupersessionLink, ...] = (),
+        refreshed_knowledge_ids: tuple[str, ...] = (),
+        creation_result: Mapping[str, object] | None = None,
     ) -> KnowledgeMutationPlan:
         operation_id = self._id_factory("kbop")
+        result_v2 = KnowledgeMutationResultV2Projector.project(
+            operation_id=operation_id,
+            target=target,
+            operation_kind=kind,
+            previous_revision=expected_revision,
+            selection_state=next_scope_selection_state,
+            assignments=assignments_to_open,
+            refreshed_knowledge_ids=refreshed_knowledge_ids,
+            creation_result=creation_result,
+        )
+        details = dict(receipt_details or {})
+        details["result_v2"] = result_v2.to_dict()
         receipt = KnowledgeMutationReceipt(
             operation_id=operation_id,
             target=target,
@@ -1439,7 +2520,7 @@ class KnowledgePropagationService:
             request_hash=request_hash,
             applied_at=occurred_at,
             outcome=outcome,
-            details=receipt_details or {},
+            details=details,
         )
         ledger = KnowledgeMutationLedgerEntry(
             target=target,
@@ -1463,6 +2544,8 @@ class KnowledgePropagationService:
             request_hash=request_hash,
             next_scope_selection_state=next_scope_selection_state,
             next_scope_v2_active=next_scope_v2_active,
+            parent=parent,
+            parent_evidence=parent_evidence,
             assignments_to_open=assignments_to_open,
             assignment_ids_to_close=assignment_ids_to_close,
             tombstones_to_open=tombstones_to_open,
@@ -1489,10 +2572,26 @@ class KnowledgePropagationService:
         expected = plan.ledger_entry
         assert expected is not None
         if receipt != expected.receipt:
-            raise KnowledgePropagationServiceError(
-                "knowledge_propagation_stage_receipt_mismatch",
-                "persistence returned a receipt that differs from the staged ledger",
+            late_replay = (
+                receipt.replayed
+                and receipt.target == plan.target
+                and receipt.operation_kind is plan.operation_kind
+                and receipt.request_hash == plan.request_hash
+                and receipt.original_outcome
+                in {
+                    KnowledgeMutationOutcome.APPLIED,
+                    KnowledgeMutationOutcome.GRANDFATHERED,
+                    KnowledgeMutationOutcome.NOOP,
+                }
             )
+            if not late_replay:
+                raise KnowledgePropagationServiceError(
+                    "knowledge_propagation_stage_receipt_mismatch",
+                    (
+                        "persistence returned a receipt that differs from "
+                        "the staged ledger"
+                    ),
+                )
         return receipt
 
     def _resolve_v2_assignments(
@@ -1638,6 +2737,11 @@ class KnowledgePropagationService:
                 "expected_revision": command.expected_revision,
                 "justification": command.justification,
                 "relevance_links": [item.to_dict() for item in command.relevance_links],
+                "semantic_creation_hash": command.semantic_creation_hash,
+                "parent": (
+                    None if command.parent is None else command.parent.to_dict()
+                ),
+                "creation_result": _thaw_json(command.creation_result),
             }
         )
 
@@ -1672,6 +2776,21 @@ class KnowledgePropagationService:
             }
         )
 
+    def _refresh_by_knowledge_ids_request_hash(
+        self,
+        command: KnowledgeRefreshByKnowledgeIdsCommand,
+    ) -> str:
+        return self._hash(
+            {
+                "contract_version": KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
+                "operation": "refresh_snapshot",
+                "target": command.target.to_dict(),
+                "knowledge_ids": list(command.knowledge_ids),
+                "actor_id": command.actor_id,
+                "expected_revision": command.expected_revision,
+            }
+        )
+
     @staticmethod
     def _hash(payload: Mapping[str, object]) -> str:
         encoded = json.dumps(
@@ -1693,14 +2812,20 @@ class KnowledgePropagationService:
 
 
 __all__ = [
+    "KnowledgeCreationPreflightCommand",
     "KnowledgeGrandfatherAttachment",
     "KnowledgeGrandfatherCommand",
     "KnowledgeGrandfatherEvidence",
     "KnowledgeMutationCommand",
+    "KnowledgeMutationPreparation",
+    "KnowledgeMutationResultV2",
+    "KnowledgeMutationResultV2Projector",
     "KnowledgePropagationReadResult",
     "KnowledgePropagationService",
     "KnowledgePropagationServiceError",
     "KnowledgeRefreshCommand",
+    "KnowledgeRefreshByKnowledgeIdsCommand",
     "ResolvedKnowledgeAssignment",
     "classify_legacy_origin",
+    "deterministic_knowledge_target_id",
 ]

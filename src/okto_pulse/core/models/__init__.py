@@ -47,6 +47,7 @@ if TYPE_CHECKING:  # real imports for static analysis only — never run at impo
         BoardSummary,
         BoardUpdate,
         CardCreate,
+        CardCreateResponse,
         CardMove,
         CardPageItem,
         CardResponse,
@@ -98,6 +99,7 @@ if TYPE_CHECKING:  # real imports for static analysis only — never run at impo
         RefinementSnapshotSummary,
         RefinementSummary,
         RefinementUpdate,
+        DeriveSpecResponse,
         SpecCreate,
         SpecKnowledgeCreate,
         SpecKnowledgeResponse,
@@ -134,6 +136,22 @@ if TYPE_CHECKING:  # real imports for static analysis only — never run at impo
         TopicResponse,
         TopicSummary,
         TopicUpdate,
+    )
+    from okto_pulse.core.models.knowledge_propagation import (
+        CardCreateKnowledgeMutationResponse,
+        DeriveSpecKnowledgeMutationResponse,
+        DeriveSpecKnowledgeRequest,
+        KnowledgeAssignmentDropRequest,
+        KnowledgeAssignmentRefreshRequest,
+        KnowledgeAssignmentReplaceRequest,
+        KnowledgeAssignmentTechnicalProjection,
+        KnowledgeMutationAssignmentResponse,
+        KnowledgeMutationResponse,
+        KnowledgePropagationEnvelopeV2,
+        KnowledgeRefreshItemResponse,
+        KnowledgeRefreshResponse,
+        KnowledgeRelevanceLinkRequest,
+        KnowledgeTechnicalReadResponse,
     )
     from okto_pulse.core.services.knowledge_governance_projection import (
         with_knowledge_governance,
@@ -181,6 +199,7 @@ _SCHEMA_NAMES = (
     "BoardSummary",
     "BoardUpdate",
     "CardCreate",
+    "CardCreateResponse",
     "CardMove",
     "CardPageItem",
     "CardResponse",
@@ -232,6 +251,7 @@ _SCHEMA_NAMES = (
     "RefinementSnapshotSummary",
     "RefinementSummary",
     "RefinementUpdate",
+    "DeriveSpecResponse",
     "SpecCreate",
     "SpecKnowledgeCreate",
     "SpecKnowledgeResponse",
@@ -270,6 +290,22 @@ _SCHEMA_NAMES = (
     "TopicUpdate",
 )
 _PROJECTION_NAMES = ("with_knowledge_governance",)
+_KNOWLEDGE_PROPAGATION_NAMES = (
+    "CardCreateKnowledgeMutationResponse",
+    "DeriveSpecKnowledgeMutationResponse",
+    "DeriveSpecKnowledgeRequest",
+    "KnowledgeAssignmentDropRequest",
+    "KnowledgeAssignmentRefreshRequest",
+    "KnowledgeAssignmentReplaceRequest",
+    "KnowledgeAssignmentTechnicalProjection",
+    "KnowledgeMutationAssignmentResponse",
+    "KnowledgeMutationResponse",
+    "KnowledgePropagationEnvelopeV2",
+    "KnowledgeRefreshItemResponse",
+    "KnowledgeRefreshResponse",
+    "KnowledgeRelevanceLinkRequest",
+    "KnowledgeTechnicalReadResponse",
+)
 
 _SOURCE: dict[str, str] = {}
 for _n in _ENUM_NAMES:
@@ -278,6 +314,8 @@ for _n in _SCHEMA_NAMES:
     _SOURCE[_n] = "okto_pulse.core.models.schemas"
 for _n in _PROJECTION_NAMES:
     _SOURCE[_n] = "okto_pulse.core.services.knowledge_governance_projection"
+for _n in _KNOWLEDGE_PROPAGATION_NAMES:
+    _SOURCE[_n] = "okto_pulse.core.models.knowledge_propagation"
 
 
 def __getattr__(name: str):
@@ -305,6 +343,21 @@ __all__ = [
     "SprintStatus",
     # Read projections
     "with_knowledge_governance",
+    # Selective Knowledge propagation v2
+    "CardCreateKnowledgeMutationResponse",
+    "DeriveSpecKnowledgeMutationResponse",
+    "DeriveSpecKnowledgeRequest",
+    "KnowledgeAssignmentDropRequest",
+    "KnowledgeAssignmentRefreshRequest",
+    "KnowledgeAssignmentReplaceRequest",
+    "KnowledgeAssignmentTechnicalProjection",
+    "KnowledgeMutationAssignmentResponse",
+    "KnowledgeMutationResponse",
+    "KnowledgePropagationEnvelopeV2",
+    "KnowledgeRefreshItemResponse",
+    "KnowledgeRefreshResponse",
+    "KnowledgeRelevanceLinkRequest",
+    "KnowledgeTechnicalReadResponse",
     # Schemas
     "ActivityLogResponse",
     "AgentBoardOverridesUpdate",
@@ -336,6 +389,7 @@ __all__ = [
     "BoardSummary",
     "BoardUpdate",
     "CardCreate",
+    "CardCreateResponse",
     "CardMove",
     "CardPageItem",
     "CardResponse",
@@ -387,6 +441,7 @@ __all__ = [
     "RefinementSnapshotSummary",
     "RefinementSummary",
     "RefinementUpdate",
+    "DeriveSpecResponse",
     "SpecCreate",
     "SpecKnowledgeCreate",
     "SpecKnowledgeResponse",

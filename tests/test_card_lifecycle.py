@@ -32,7 +32,11 @@ from sqlalchemy_test_models import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
+from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import CardResourceReadOnlyError, CardService
+from okto_pulse.core.services.knowledge_propagation import (
+    KnowledgePropagationServiceError,
+)
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
@@ -1148,6 +1152,112 @@ class TestBugCardCreation:
             assert card.origin_task_id == origin_card.id
             assert card.expected_behavior == data.expected_behavior
             assert card.observed_behavior == data.observed_behavior
+
+    async def test_v2_bug_creation_fences_origin_parent_change(self, db_factory):
+        """A stale preflight parent cannot be replaced during target staging."""
+
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            original_spec = (
+                await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))
+            ).scalars().first()
+            assert original_spec is not None
+            current_spec = Spec(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                title="Origin moved here",
+                status=SpecStatus.APPROVED,
+                created_by=USER_ID,
+            )
+            db.add(current_spec)
+            origin_card = Card(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                spec_id=current_spec.id,
+                title="Moved origin task",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                priority=CardPriority.NONE,
+                position=0,
+                created_by=USER_ID,
+            )
+            db.add(origin_card)
+            await db.flush()
+
+            with pytest.raises(KnowledgePropagationServiceError) as raised:
+                await svc.create_card(
+                    BOARD_ID,
+                    USER_ID,
+                    CardCreate(
+                        title="Stale governed bug",
+                        card_type="bug",
+                        origin_task_id=origin_card.id,
+                        severity="major",
+                        expected_behavior="Expected",
+                        observed_behavior="Observed",
+                        spec_id=original_spec.id,
+                    ),
+                    target_id=str(uuid.uuid4()),
+                    knowledge_propagation_v2=True,
+                )
+
+            assert raised.value.code == "knowledge_propagation_parent_changed"
+            assert raised.value.details["expected_spec_id"] == original_spec.id
+            assert raised.value.details["actual_spec_id"] == current_spec.id
+
+    async def test_v2_bug_creation_fails_closed_when_origin_fence_loses(
+        self,
+        db_factory,
+        monkeypatch,
+    ):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(db)
+            spec = (
+                await db.execute(select(Spec).where(Spec.board_id == BOARD_ID))
+            ).scalars().first()
+            assert spec is not None
+            origin_card = Card(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                spec_id=spec.id,
+                title="Origin changed after the fresh read",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                priority=CardPriority.NONE,
+                position=0,
+                created_by=USER_ID,
+            )
+            db.add(origin_card)
+            await db.flush()
+
+            async def _lost_fence(*_args, **_kwargs):
+                return False
+
+            monkeypatch.setattr(
+                main_service,
+                "_application_fence",
+                _lost_fence,
+            )
+            with pytest.raises(KnowledgePropagationServiceError) as raised:
+                await svc.create_card(
+                    BOARD_ID,
+                    USER_ID,
+                    CardCreate(
+                        title="Fenced governed bug",
+                        card_type="bug",
+                        origin_task_id=origin_card.id,
+                        severity="major",
+                        expected_behavior="Expected",
+                        observed_behavior="Observed",
+                        spec_id=spec.id,
+                    ),
+                    target_id=str(uuid.uuid4()),
+                    knowledge_propagation_v2=True,
+                )
+
+            assert raised.value.code == "knowledge_propagation_parent_changed"
 
     async def test_create_bug_card_inherits_origin_traceability_links(self, db_factory):
         """Bug card inherits spec item links from the origin task."""

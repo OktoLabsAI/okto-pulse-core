@@ -87,9 +87,33 @@ Args:
     observed_behavior: REQUIRED for bug cards — what actually happens
     steps_to_reproduce: Steps to reproduce the bug (optional)
     action_plan: Plan for fixing the bug (optional)
+    knowledge_propagation: Optional selective Knowledge contract-v2 envelope.
+        Omit the whole field to preserve legacy v1 card creation and automatic
+        Knowledge copy behavior. Supplying it selects v2, including when
+        selection_state="omitted". Fields:
+        - contract_version: 2 (default)
+        - selection_state: omitted | explicit_empty | explicit_ids
+        - mode: absent for omitted; drop for explicit_empty; reference,
+          snapshot, or drop for explicit_ids
+        - knowledge_ids: empty for omitted/explicit_empty; non-empty stable
+          source Knowledge IDs for explicit_ids
+        - justification: required and non-empty unless selection_state=omitted
+        - idempotency_key: required caller-stable key for exact retries
+        - expected_revision: omit or pass 0 for creation
+        - relevance_links: optional list of {entity_type, entity_id}; the input
+          alias linkage is also accepted. entity_type is
+          functional_requirement, acceptance_criterion, or test_scenario, and
+          every entity must belong to this card's linked spec.
 
 Returns:
-    JSON with created card details
+    Without knowledge_propagation: the unchanged v1 JSON with created card
+    details.
+
+    With knowledge_propagation: `{success, contract_version, card,
+    operation_id, revision, replayed, selection_state, assignments}`. The
+    `card` projection and operation result are rebuilt from the durable
+    idempotency receipt. Replaying the exact same request/key returns the same
+    result with `replayed=true`; reusing the key for a changed request fails.
 
 Bug regression decision rule:
     Path A is traceability-only reuse. Use
@@ -130,6 +154,110 @@ Delete a card from the board. This operation is permanent and cannot be undone.
 ## `okto_pulse_get_card`
 
 Get detailed card information including attachments, Q&A, and comments.
+
+## `okto_pulse_replace_card_knowledge_assignments`
+
+Atomically replace a card's effective v2 Knowledge selection with explicit
+`reference` or `snapshot` assignments. This is an optimistic compare-and-swap
+operation: read the current revision first and pass it as `expected_revision`.
+Every source and linkage is validated before any assignment is written.
+
+Args:
+    board_id: Board ID
+    card_id: Target card ID
+    request:
+        contract_version: 2 (default)
+        knowledge_ids: Required non-empty list of stable source Knowledge IDs
+        mode: reference | snapshot
+        linkage: Optional list of `{entity_type, entity_id}`. The accepted
+            entity types are functional_requirement, acceptance_criterion,
+            and test_scenario; every ID must exist on the card's linked spec.
+            `relevance_links` is accepted as an input alias.
+        justification: Required non-empty audit reason
+        idempotency_key: Required caller-stable key for an exact retry
+        expected_revision: Required current card Knowledge scope revision
+
+Returns:
+    `{success, contract_version, target_type, target_id, operation_id,
+    revision, replayed, selection_state, assignments}`. A successful new
+    mutation increments `revision`; an exact replay returns the original
+    receipt and does not increment it again.
+
+## `okto_pulse_drop_card_knowledge_assignments`
+
+Drop selected Knowledge roots from a card or establish an authoritative
+drop-all state. Dropping uses stable root Knowledge IDs, not assignment IDs.
+
+Args:
+    board_id: Board ID
+    card_id: Target card ID
+    request:
+        contract_version: 2 (default)
+        knowledge_ids: List of stable root Knowledge IDs. A non-empty list
+            drops only those roots; `[]` means explicit_empty/drop-all.
+        justification: Required non-empty audit reason
+        idempotency_key: Required caller-stable key for an exact retry
+        expected_revision: Required current card Knowledge scope revision
+
+Returns:
+    The canonical mutation result
+    `{success, contract_version, target_type, target_id, operation_id,
+    revision, replayed, selection_state, assignments}`.
+
+## `okto_pulse_refresh_card_knowledge_assignments`
+
+Refresh current snapshot assignments from their latest source revisions. IDs
+are stable **root Knowledge IDs**. Assignment-row IDs and snapshot-row IDs are
+not accepted because those rows are temporal and can be superseded. Reference
+and dropped assignments are not refreshable.
+
+Args:
+    board_id: Board ID
+    card_id: Target card ID
+    request:
+        contract_version: 2 (default)
+        knowledge_ids: Required non-empty list of root Knowledge IDs
+        idempotency_key: Required caller-stable key for an exact retry
+        expected_revision: Required current card Knowledge scope revision
+
+The refresh request intentionally has no `justification` field.
+
+Returns:
+    `{success, contract_version, operation_id, revision, replayed, refreshed}`.
+    Each `refreshed` item contains `root_knowledge_id`, `source_revision`,
+    `source_content_sha256`, and `stale=false`.
+
+## `okto_pulse_get_card_knowledge_propagation`
+
+Read the card's transport-neutral technical Knowledge projection. Use this
+before replace/drop/refresh to obtain the current `revision`; this read never
+mutates the scope.
+
+Args:
+    board_id: Board ID
+    card_id: Target card ID
+
+Returns:
+    `{contract_version, target, revision, v2_active, selection_state,
+    assignments, ...}`. Every assignment includes at least
+    `root_knowledge_id`, `mode`, `origin_class`, `state`, and `stale`.
+    Diagnostic fields also expose effective/history assignments, legacy
+    attachments, tombstones, snapshots, and `effective_count`.
+
+### v2 concurrency and replay rules
+
+- Creation uses `expected_revision` omitted or `0`; existing-card mutations
+  require the exact current revision returned by the technical read.
+- `knowledge_propagation_revision_conflict` is not an instruction to overwrite:
+  read again, decide whether the new state still represents the desired intent,
+  and submit a new request with a new idempotency key.
+- Reuse an `idempotency_key` only for a byte/semantically identical retry.
+  Exact replays return the original `operation_id`, projection, and
+  `replayed=true`; changed intent returns
+  `knowledge_propagation_idempotency_conflict`.
+- During v2 card creation, MCP retries `knowledge_creation_race` once with a
+  fresh unit of work. If it is still returned, `retryable=true`; retry the exact
+  request with the same key so the durable result can be recovered.
 
 ## `okto_pulse_get_card_dependencies`
 

@@ -35,6 +35,14 @@ async def test_f02_fake_uow_commits_once_and_isolates_transactions() -> None:
 
 
 @pytest.mark.asyncio
+async def test_f02_fake_uow_accepts_conflict_aware_synchronization() -> None:
+    factory = FakeSaaSUnitOfWorkFactory()
+
+    async with factory(realm_scope=RealmScope.tenant("realm-a")) as uow:
+        await uow.synchronize(conflict_error=RuntimeError("modeled conflict"))
+
+
+@pytest.mark.asyncio
 async def test_f02_fake_uow_rolls_back_each_modeled_failure() -> None:
     factory = FakeSaaSUnitOfWorkFactory()
     realm = RealmScope.tenant("realm-a")

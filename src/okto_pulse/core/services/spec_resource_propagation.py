@@ -44,6 +44,7 @@ class SpecResourcePropagationService:
         trigger: str,
         removed_kb_ids: set[str] | None = None,
         removed_architecture_design_ids: set[str] | None = None,
+        excluded_resource_types: set[str] | None = None,
     ) -> dict[str, Any]:
         store = get_spec_resource_propagation_store()
         board = await store.get_board(self.db, board_id=board_id)
@@ -53,6 +54,22 @@ class SpecResourcePropagationService:
         resource_types = self._resolve_resource_types(board)
         if not resource_types:
             return {"enabled": False, "reason": "disabled"}
+        excluded = {
+            resource_type
+            for resource_type in (excluded_resource_types or set())
+            if resource_type in SUPPORTED_RESOURCE_TYPES
+        }
+        resource_types = [
+            resource_type
+            for resource_type in resource_types
+            if resource_type not in excluded
+        ]
+        if not resource_types:
+            return {
+                "enabled": True,
+                "reason": "all_resource_types_excluded",
+                "resource_types": [],
+            }
 
         spec = await store.get_spec(self.db, spec_id=spec_id)
         card = await store.get_card(self.db, card_id=card_id)

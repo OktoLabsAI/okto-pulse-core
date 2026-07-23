@@ -10,6 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from okto_pulse.core.application.scope import QueryScope
@@ -55,6 +56,7 @@ from okto_pulse.core.ports.application_persistence import (
     ApplicationOperator,
     ApplicationQuery,
     ApplicationRecord,
+    ApplicationRecordConflictError,
     GroupCountRequest,
     PageRequest,
     PageResult,
@@ -147,7 +149,10 @@ from okto_pulse.core.services.bug_workflow_remediation import (
     serialize_bug_workflow_remediation,
 )
 from okto_pulse.core.services.cancellation import apply_cancellation_policy
-from okto_pulse.core.services.card_traceability import link_card_traceability
+from okto_pulse.core.services.card_traceability import (
+    TraceabilityTargetNotFoundError,
+    link_card_traceability,
+)
 from okto_pulse.core.services.critical_context_guard import (
     CRITICAL_CONTEXT_DECISION_ACTION,
     CriticalAction,
@@ -462,8 +467,32 @@ async def _application_get(
     )
 
 
-async def _application_add(context: Any, record: ApplicationRecord) -> ApplicationRecord:
-    return await get_application_persistence_port().add(context, record)
+async def _application_fence(
+    context: Any,
+    entity: str,
+    record_id: str,
+    *,
+    expected_values: Mapping[str, object],
+) -> bool:
+    return await get_application_persistence_port().fence(
+        context,
+        entity=entity,
+        record_id=record_id,
+        expected_values=expected_values,
+    )
+
+
+async def _application_add(
+    context: Any,
+    record: ApplicationRecord,
+    *,
+    conflict_error: Exception | None = None,
+) -> ApplicationRecord:
+    return await get_application_persistence_port().add(
+        context,
+        record,
+        conflict_error=conflict_error,
+    )
 
 
 async def _application_delete(context: Any, record: ApplicationRecord) -> None:
@@ -2391,6 +2420,120 @@ class CardOperationError(ValueError):
         return payload
 
 
+def _structured_item_ids(values: object) -> set[str]:
+    if not isinstance(values, list):
+        return set()
+    return {
+        str(
+            item.get("id")
+            if isinstance(item, Mapping)
+            else getattr(item, "id", "")
+        )
+        for item in values
+        if (
+            (isinstance(item, Mapping) and item.get("id"))
+            or getattr(item, "id", None)
+        )
+    }
+
+
+def _validate_card_traceability_targets(
+    spec: ApplicationRecord,
+    data: CardCreate,
+) -> None:
+    """Validate every requested traceability token before staging the card."""
+
+    available = {
+        "scenario": _structured_item_ids(spec.test_scenarios),
+        "fr": _structured_item_ids(spec.functional_requirements),
+        "rule": _structured_item_ids(spec.business_rules),
+    }
+    requested = (
+        (
+            "scenario",
+            tuple(getattr(data, "test_scenario_ids", None) or ()),
+        ),
+        (
+            "fr",
+            tuple(getattr(data, "functional_requirement_ids", None) or ()),
+        ),
+        (
+            "rule",
+            tuple(getattr(data, "business_rule_ids", None) or ()),
+        ),
+    )
+    for target_type, target_ids in requested:
+        for target_id in target_ids:
+            if target_id not in available[target_type]:
+                raise TraceabilityTargetNotFoundError(target_type, target_id)
+
+
+def _validate_card_knowledge_relevance_links(
+    spec: ApplicationRecord,
+    envelope: object,
+) -> None:
+    """Validate v2 relevance links against the linked Spec before ``add``.
+
+    This is deliberately a pure pre-persistence check.  It prevents a card row
+    (and all traceability/event side effects) from being staged when any FR,
+    AC, or scenario token is foreign or missing.
+    """
+
+    from okto_pulse.core.domain.knowledge_selection import (
+        KnowledgeRelevanceEntityType,
+    )
+    from okto_pulse.core.models.knowledge_propagation import (
+        KnowledgePropagationEnvelopeV2,
+    )
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgePropagationServiceError,
+    )
+
+    if not isinstance(envelope, KnowledgePropagationEnvelopeV2):
+        raise KnowledgePropagationServiceError(
+            "knowledge_propagation_envelope_required",
+            "the authoritative v2 envelope is required",
+        )
+    available = {
+        KnowledgeRelevanceEntityType.FUNCTIONAL_REQUIREMENT: _structured_item_ids(
+            spec.functional_requirements
+        ),
+        KnowledgeRelevanceEntityType.ACCEPTANCE_CRITERION: _structured_item_ids(
+            spec.acceptance_criteria
+        ),
+        KnowledgeRelevanceEntityType.TEST_SCENARIO: _structured_item_ids(
+            spec.test_scenarios
+        ),
+    }
+    requested = [
+        (link.entity_type.value, link.entity_id)
+        for link in envelope.relevance_links
+    ]
+    missing = [
+        {"entity_type": link.entity_type.value, "entity_id": link.entity_id}
+        for link in envelope.relevance_links
+        if link.entity_id not in available[link.entity_type]
+    ]
+    if missing:
+        raise KnowledgePropagationServiceError(
+            "knowledge_relevance_invalid",
+            "all relevance links must resolve on the card's linked spec",
+            details={
+                "requested": requested,
+                "matched": [
+                    item
+                    for item in requested
+                    if {
+                        "entity_type": item[0],
+                        "entity_id": item[1],
+                    }
+                    not in missing
+                ],
+                "missing": missing,
+            },
+        )
+
+
 class CardService:
     """Service for card operations."""
 
@@ -2468,8 +2611,20 @@ class CardService:
         skip_ownership_check: bool = False,
         *,
         query_scope: QueryScope | None = None,
+        target_id: str | None = None,
+        knowledge_propagation_v2: bool = False,
     ) -> ApplicationRecord | None:
-        """Create a new card in a board."""
+        """Create a new card in a board.
+
+        ``target_id`` and ``knowledge_propagation_v2`` are an opt-in pair used
+        by the governed selective-propagation boundary.  Legacy callers omit
+        both and retain the original generated identity plus automatic v1
+        snapshot behavior.
+        """
+        if (target_id is None) != (not knowledge_propagation_v2):
+            raise ValueError(
+                "knowledge_propagation_v2 requires an explicit deterministic target_id"
+            )
         board_query = _board_scope_select(
             board_id=board_id,
             user_id=user_id,
@@ -2505,6 +2660,48 @@ class CardService:
                 raise ValueError(
                     "Origin task has no linked spec — bug cards require a spec-linked task"
                 )
+
+            if knowledge_propagation_v2 and data.spec_id != origin_task.spec_id:
+                from okto_pulse.core.services.knowledge_propagation import (
+                    KnowledgePropagationServiceError,
+                )
+
+                raise KnowledgePropagationServiceError(
+                    "knowledge_propagation_parent_changed",
+                    "the bug origin moved to another Spec after propagation preflight",
+                    details={
+                        "origin_task_id": origin_task_id,
+                        "expected_spec_id": data.spec_id,
+                        "actual_spec_id": origin_task.spec_id,
+                    },
+                )
+
+            if knowledge_propagation_v2:
+                from okto_pulse.core.services.knowledge_propagation import (
+                    KnowledgePropagationServiceError,
+                )
+
+                expected_spec_id = data.spec_id
+                if not expected_spec_id or not await _application_fence(
+                    self.db,
+                    "card",
+                    origin_task_id,
+                    expected_values={
+                        "board_id": board_id,
+                        "spec_id": expected_spec_id,
+                    },
+                ):
+                    raise KnowledgePropagationServiceError(
+                        "knowledge_propagation_parent_changed",
+                        (
+                            "the bug origin changed after propagation "
+                            "preflight"
+                        ),
+                        details={
+                            "origin_task_id": origin_task_id,
+                            "expected_spec_id": expected_spec_id,
+                        },
+                    )
 
             # Auto-resolve spec_id from origin task
             data.spec_id = origin_task.spec_id
@@ -2572,6 +2769,13 @@ class CardService:
                 scenario_ids=list(data.test_scenario_ids),
             )
 
+        if knowledge_propagation_v2:
+            _validate_card_traceability_targets(spec, data)
+            _validate_card_knowledge_relevance_links(
+                spec,
+                getattr(data, "knowledge_propagation", None),
+            )
+
         await _authorize_critical_context_or_raise(
             self.db,
             board_id=board_id,
@@ -2596,6 +2800,7 @@ class CardService:
 
         card = _new_application_record(
             "card",
+            **({"id": target_id} if target_id is not None else {}),
             board_id=board_id,
             spec_id=data.spec_id,
             title=data.title,
@@ -2617,7 +2822,15 @@ class CardService:
             steps_to_reproduce=getattr(data, "steps_to_reproduce", None),
             action_plan=getattr(data, "action_plan", None),
         )
-        await _application_add(self.db, card)
+        await _application_add(
+            self.db,
+            card,
+            conflict_error=(
+                ApplicationRecordConflictError("card", card.id)
+                if knowledge_propagation_v2
+                else None
+            ),
+        )
 
         traceability_targets = [
             *(('scenario', target_id) for target_id in (data.test_scenario_ids or [])),
@@ -2643,6 +2856,9 @@ class CardService:
             card_id=card.id,
             actor_id=user_id,
             trigger="card_created",
+            excluded_resource_types=(
+                {"knowledge_base"} if knowledge_propagation_v2 else None
+            ),
         )
         card = await _application_refresh(self.db, card)
 
@@ -6071,8 +6287,14 @@ class SpecService:
         skip_ownership_check: bool = False,
         *,
         query_scope: QueryScope | None = None,
+        target_id: str | None = None,
+        knowledge_propagation_v2: bool = False,
     ) -> ApplicationRecord | None:
         """Create a new spec in a board."""
+        if (target_id is None) != (not knowledge_propagation_v2):
+            raise ValueError(
+                "knowledge_propagation_v2 requires an explicit deterministic target_id"
+            )
         require_ownership = (
             query_scope.require_ownership
             if query_scope is not None
@@ -6099,6 +6321,7 @@ class SpecService:
 
         spec = _new_application_record(
             "spec",
+            **({"id": target_id} if target_id is not None else {}),
             board_id=board_id,
             title=data.title,
             description=data.description,
@@ -6137,7 +6360,15 @@ class SpecService:
                 self.db, spec, _submitted_mockups, entity_type="spec"
             )
             spec.screen_mockups = _submitted_mockups
-        await _application_add(self.db, spec)
+        await _application_add(
+            self.db,
+            spec,
+            conflict_error=(
+                ApplicationRecordConflictError("spec", spec.id)
+                if knowledge_propagation_v2
+                else None
+            ),
+        )
 
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import SpecCreated
@@ -10819,6 +11050,9 @@ class RefinementService:
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
         query_scope: QueryScope | None = None,
+        *,
+        target_id: str | None = None,
+        knowledge_propagation_v2: bool = False,
     ) -> Spec | None:
         """Create a Spec draft linked to a refinement.
 
@@ -10829,6 +11063,10 @@ class RefinementService:
 
         Only allowed when refinement status is 'done'.
         """
+        if (target_id is None) != (not knowledge_propagation_v2):
+            raise ValueError(
+                "knowledge_propagation_v2 requires an explicit deterministic target_id"
+            )
         refinement = await self.get_refinement(refinement_id)
         if not refinement:
             return None
@@ -10880,9 +11118,9 @@ class RefinementService:
 
         validate_artifact_selections(
             source_mockups=snapshot_mockups,
-            source_knowledge_bases=snapshot_kbs,
+            source_knowledge_bases=([] if knowledge_propagation_v2 else snapshot_kbs),
             mockup_ids=mockup_ids,
-            kb_ids=kb_ids,
+            kb_ids=(None if knowledge_propagation_v2 else kb_ids),
             source_type="refinement",
             source_id=refinement_id,
         )
@@ -10909,6 +11147,8 @@ class RefinementService:
             spec_data,
             skip_ownership_check=skip_ownership_check,
             query_scope=query_scope,
+            target_id=target_id,
+            knowledge_propagation_v2=knowledge_propagation_v2,
         )
         if spec:
             # Propagate artifacts using pre-flush snapshots
@@ -10916,12 +11156,14 @@ class RefinementService:
                 db=self.db,
                 source_mockups=snapshot_mockups,
                 source_qa_items=snapshot_qa,
-                source_knowledge_bases=snapshot_kbs,
+                source_knowledge_bases=(
+                    [] if knowledge_propagation_v2 else snapshot_kbs
+                ),
                 target_entity=spec,
                 target_kb_entity="spec_knowledge_base",
                 user_id=user_id,
                 mockup_ids=mockup_ids,
-                kb_ids=kb_ids,
+                kb_ids=None if knowledge_propagation_v2 else kb_ids,
                 source_type="refinement",
                 source_id=refinement.id,
                 source_title=refinement.title,

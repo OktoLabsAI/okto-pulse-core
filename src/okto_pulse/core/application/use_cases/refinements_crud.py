@@ -424,17 +424,23 @@ class DeleteRefinementUseCase:
 
 
 class DeriveSpecFromRefinementCommand:
-    __slots__ = ("refinement_id",)
+    __slots__ = ("refinement_id", "knowledge_propagation")
 
-    def __init__(self, refinement_id: str) -> None:
+    def __init__(
+        self,
+        refinement_id: str,
+        knowledge_propagation: Any = None,
+    ) -> None:
         self.refinement_id = refinement_id
+        self.knowledge_propagation = knowledge_propagation
 
 
 class DeriveSpecFromRefinementResult:
-    __slots__ = ("spec",)
+    __slots__ = ("spec", "knowledge_mutation")
 
-    def __init__(self, spec: Any) -> None:
+    def __init__(self, spec: Any, knowledge_mutation: Any = None) -> None:
         self.spec = spec
+        self.knowledge_mutation = knowledge_mutation
 
 
 class DeriveSpecFromRefinementUseCase:
@@ -450,6 +456,24 @@ class DeriveSpecFromRefinementUseCase:
         refinement = await _require_accessible_refinement(
             uow, command.refinement_id, actor, write=True
         )
+        if command.knowledge_propagation is not None:
+            from okto_pulse.core.application.use_cases.knowledge_propagation import (
+                DeriveSpecKnowledgeV2Command,
+                DeriveSpecKnowledgeV2UseCase,
+            )
+
+            mutation = await DeriveSpecKnowledgeV2UseCase().execute(
+                DeriveSpecKnowledgeV2Command(
+                    command.refinement_id,
+                    command.knowledge_propagation,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+            return DeriveSpecFromRefinementResult(
+                None,
+                knowledge_mutation=mutation,
+            )
         spec = await uow.services.refinements.derive_spec(
             command.refinement_id,
             actor.actor_id,

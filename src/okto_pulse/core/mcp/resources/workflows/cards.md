@@ -27,10 +27,53 @@ matching copy tool to refresh the card snapshot while preserving the source
 identity used by the Resource Gate.
 
 Read `okto-pulse://reference/knowledge-governance` before deciding that content
-belongs in a KB. The active copy behavior is `legacy_all`: omitting explicit
-IDs copies everything selected by the existing path. Selective propagation v2
-is not available until delivery B; governance metadata does not alter
-selection, fan-out, Resource Gate, or lineage.
+belongs in a KB. When `knowledge_propagation` is absent from
+`okto_pulse_create_card`, the legacy v1 behavior remains unchanged:
+`auto_derive_spec_resources_enabled` and the existing copy path may attach all
+eligible spec Knowledge. Supplying the envelope opts that create into selective
+propagation v2 and bypasses the legacy Knowledge fan-out for that card.
+
+### Selective Knowledge propagation v2
+
+The envelope itself is the version switch. Do not infer intent from a missing
+field or an empty list:
+
+| Input on `okto_pulse_create_card` | Meaning |
+|---|---|
+| `knowledge_propagation` absent | Preserve the complete v1 create/copy behavior. |
+| `selection_state="omitted"`, no `mode`, no `knowledge_ids` | Authoritative v2 omission. This is NOT the legacy path merely because the selector is empty. |
+| `selection_state="explicit_empty"`, `mode="drop"`, empty `knowledge_ids` | Authoritative empty selection/drop-all. A non-empty `justification` is required. |
+| `selection_state="explicit_ids"`, non-empty `knowledge_ids`, `mode="reference"`, `"snapshot"`, or `"drop"` | Propagate only those stable roots, or explicitly drop the named roots. A non-empty `justification` is required. |
+
+Every v2 envelope has `contract_version=2` and a non-empty,
+caller-stable `idempotency_key`. A create accepts `expected_revision` omitted
+or `0`; it rejects another value. Repeating the semantically identical request
+with the same key returns the original durable result with `replayed=true`.
+Never reuse that key for a different card payload, selection, actor, or parent.
+
+For cards, optional `relevance_links` (also accepted as the input alias
+`linkage`) explain why the selected Knowledge matters. Each item is
+`{entity_type, entity_id}` and `entity_type` is exactly one of
+`functional_requirement`, `acceptance_criterion`, or `test_scenario`. The
+referenced FR, AC, or scenario must belong to the card's linked spec; the whole
+operation fails before creation when any source or linkage is invalid.
+
+After creation, use the v2 assignment tools instead of the legacy copy tool:
+
+- `okto_pulse_replace_card_knowledge_assignments` atomically replaces the
+  selection with `reference` or `snapshot` assignments.
+- `okto_pulse_drop_card_knowledge_assignments` drops named roots; an empty
+  `knowledge_ids` list is the explicit drop-all operation.
+- `okto_pulse_refresh_card_knowledge_assignments` refreshes snapshot content by
+  stable **root Knowledge ID**, never by assignment-row ID.
+- `okto_pulse_get_card_knowledge_propagation` reads the technical selection,
+  revision, assignments, stale state, legacy visibility, and history.
+
+Replace/drop/refresh require the current `expected_revision`. Read the
+technical projection immediately before a mutation when the revision is not
+already known. Each successful mutation increments `revision`. Retrying the
+same request with the same `idempotency_key` returns the original receipt;
+changing the request under that key is an idempotency conflict.
 
 **Mandatory before moving the card to `in_progress`:** Complete these steps
 before entering either execution state (`started`/`in_progress`); then follow
@@ -71,7 +114,12 @@ Full per-type rules (spec-status matrix, `max_scenarios_per_card` cap, scenario 
 6. **IMMEDIATELY link each test card to its scenario(s)** via `okto_pulse_link_task(target_type="scenario", board_id, spec_id, target_id=<scenario_id>, card_id)`.
 7. **Verify full linkage**: run `okto_pulse_list_test_scenarios` — every scenario must show at least one linked task.
 8. **THEN create implementation cards** (`card_type="normal"`) — always pass `spec_id`.
-9. **MANDATORY — Copy artifacts into every card**. Use `okto_pulse_copy_mockups_to_card`, `okto_pulse_copy_knowledge_to_card`, `okto_pulse_copy_architecture_to_card`, and `okto_pulse_copy_qa_to_card`.
+9. **MANDATORY — Attach artifacts to every card**. Use
+   `okto_pulse_copy_mockups_to_card`, `okto_pulse_copy_architecture_to_card`,
+   and `okto_pulse_copy_qa_to_card`. For Knowledge, either supply the
+   `knowledge_propagation` v2 envelope during card creation or, on the v1 path,
+   use `okto_pulse_copy_knowledge_to_card`. Do not combine the v2 create
+   envelope with a legacy Knowledge copy for the same intent.
 10. **Write detailed card descriptions** including: what specifically needs to be built, which FRs/TRs/BRs this card addresses, which test scenarios this card should satisfy, which API contracts define the interfaces, and relevant technical constraints.
 
 **Test card naming convention:** Prefix test cards with `[TEST]` to distinguish them.
@@ -85,6 +133,9 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 | Test card without `okto_pulse_link_task(target_type="scenario", ...)` | Scenario shows "no tasks" — no way to know which card validates it | Always call `okto_pulse_link_task(target_type="scenario", ...)` after creating a test card |
 | Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with `profile="full"` and all include flags BEFORE any work |
 | Card still `not_started` while writing code | Board is inaccurate | Query `okto_pulse_get_allowed_transitions`; move normal cards to `started` and then `in_progress` (or use a directly advertised test/bug edge) BEFORE first line of code |
+| Treating an absent v2 envelope as `selection_state="omitted"` | Absence deliberately preserves v1, while an in-envelope omission is authoritative v2 state | Choose the version explicitly: omit the envelope for v1, or send a coherent v2 tri-state envelope |
+| Refreshing by assignment ID | Assignment rows are temporal and may be superseded | Pass stable root Knowledge IDs to `okto_pulse_refresh_card_knowledge_assignments` |
+| Reusing an idempotency key after changing payload or selection | Replay identity no longer represents the same semantic request | Reuse a key only for an exact retry; generate a new key for new intent |
 
 ## 2.9 Bug Cards — Post-Delivery Bug Tracking
 

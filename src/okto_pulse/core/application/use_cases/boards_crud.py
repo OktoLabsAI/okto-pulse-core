@@ -331,10 +331,11 @@ class CreateCardInBoardCommand:
 
 
 class CreateCardInBoardResult:
-    __slots__ = ("card",)
+    __slots__ = ("card", "knowledge_mutation")
 
-    def __init__(self, card: Any) -> None:
+    def __init__(self, card: Any, knowledge_mutation: Any = None) -> None:
         self.card = card
+        self.knowledge_mutation = knowledge_mutation
 
 
 class CreateCardInBoardUseCase:
@@ -350,6 +351,19 @@ class CreateCardInBoardUseCase:
         self, command: CreateCardInBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateCardInBoardResult:
         await _require_owned_board(uow, command.board_id, actor)
+        if getattr(command.data, "knowledge_propagation", None) is not None:
+            from okto_pulse.core.application.use_cases.knowledge_propagation import (
+                CreateCardKnowledgeV2Command,
+                CreateCardKnowledgeV2UseCase,
+            )
+
+            mutation = await CreateCardKnowledgeV2UseCase().execute(
+                CreateCardKnowledgeV2Command(command.board_id, command.data),
+                actor=actor,
+                uow=uow,
+            )
+            return CreateCardInBoardResult(None, knowledge_mutation=mutation)
+
         service = uow.services.cards
         card = await service.create_card(
             command.board_id,

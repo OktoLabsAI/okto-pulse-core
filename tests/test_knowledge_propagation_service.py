@@ -13,6 +13,7 @@ from okto_pulse.core.domain.knowledge_selection import (
     KnowledgeAssignment,
     KnowledgeAssignmentState,
     KnowledgeOriginClass,
+    KnowledgeRelevanceLink,
     KnowledgeSelection,
     KnowledgeSelectionState,
 )
@@ -24,6 +25,8 @@ from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgeMutationOutcome,
     KnowledgeMutationPlan,
     KnowledgeMutationReceipt,
+    KnowledgeParentEvidence,
+    KnowledgeParentKey,
     KnowledgePropagationScope,
     KnowledgePropagationSnapshot,
     KnowledgePropagationTombstone,
@@ -34,14 +37,19 @@ from okto_pulse.core.ports.knowledge_propagation import (
     TemporalKnowledgeAssignment,
 )
 from okto_pulse.core.services.knowledge_propagation import (
+    KnowledgeCreationPreflightCommand,
     KnowledgeGrandfatherAttachment,
     KnowledgeGrandfatherCommand,
     KnowledgeGrandfatherEvidence,
     KnowledgeMutationCommand,
+    KnowledgeMutationPreparation,
+    KnowledgeMutationResultV2Projector,
     KnowledgePropagationService,
     KnowledgePropagationServiceError,
     KnowledgeRefreshCommand,
+    KnowledgeRefreshByKnowledgeIdsCommand,
     classify_legacy_origin,
+    deterministic_knowledge_target_id,
 )
 
 
@@ -115,6 +123,8 @@ def _assignment(
     stamp_revision: str = "1",
     stamp_content: bytes = b"content",
     current: bool = True,
+    justification: str = "acceptance evidence",
+    relevance_links: tuple[KnowledgeRelevanceLink, ...] = (),
 ) -> TemporalKnowledgeAssignment:
     return TemporalKnowledgeAssignment(
         assignment=KnowledgeAssignment(
@@ -133,7 +143,8 @@ def _assignment(
             origin_class="v2",
             actor_id="agent-1",
             revision=revision,
-            justification="acceptance evidence",
+            justification=justification,
+            relevance_links=relevance_links,
         ),
         temporal=_window(current=current),
     )
@@ -203,12 +214,15 @@ class _FakePort:
         *,
         replay_entry: KnowledgeMutationLedgerEntry | None = None,
         divergent_receipt: bool = False,
+        parent_evidence: KnowledgeParentEvidence | None = None,
     ) -> None:
         self.scope = scope
         self.replay_entry = replay_entry
         self.divergent_receipt = divergent_receipt
+        self.parent_evidence = parent_evidence
         self.idempotency_lookups = []
         self.scope_lookups = []
+        self.parent_lookups = []
         self.staged: list[KnowledgeMutationPlan] = []
         self.attempts = []
 
@@ -219,6 +233,11 @@ class _FakePort:
     async def load_scope(self, context, request):
         self.scope_lookups.append((context, request))
         return self.scope
+
+    async def load_parent_evidence(self, context, request):
+        self.parent_lookups.append((context, request))
+        assert self.parent_evidence is not None
+        return self.parent_evidence
 
     async def stage_mutation(self, context, plan):
         self.staged.append(plan)
@@ -259,6 +278,28 @@ def _command(
         expected_revision=expected_revision,
         idempotency_key=idempotency_key,
         justification=justification,
+    )
+
+
+def _parent_evidence(
+    parent: KnowledgeParentKey,
+    *,
+    sources: tuple[KnowledgeSelectableSource, ...] = (),
+    linked_spec_id: str | None = None,
+    functional_requirement_ids: tuple[str, ...] = (),
+    acceptance_criterion_ids: tuple[str, ...] = (),
+    test_scenario_ids: tuple[str, ...] = (),
+) -> KnowledgeParentEvidence:
+    return KnowledgeParentEvidence(
+        parent=parent,
+        parent_exists=True,
+        same_board=True,
+        parent_state="done",
+        sources=sources,
+        linked_spec_id=linked_spec_id,
+        functional_requirement_ids=functional_requirement_ids,
+        acceptance_criterion_ids=acceptance_criterion_ids,
+        test_scenario_ids=test_scenario_ids,
     )
 
 
@@ -1185,4 +1226,255 @@ async def test_grandfather_never_replaces_an_active_v2_scope() -> None:
 
     assert raised.value.code == "knowledge_propagation_grandfather_v2_active"
     assert raised.value.ledger_attempt is not None
+    assert port.staged == []
+
+
+@pytest.mark.asyncio
+async def test_creation_preflight_is_target_independent_revalidated_and_replay_safe() -> (
+    None
+):
+    parent = KnowledgeParentKey("board-1", "refinement", "refinement-1")
+    target_id = deterministic_knowledge_target_id(parent, "spec", "derive-1")
+    semantic_hash = hashlib.sha256(b"spec semantic payload").hexdigest()
+    command = KnowledgeCreationPreflightCommand(
+        parent=parent,
+        target_type="spec",
+        selection=KnowledgeSelection.explicit_ids(
+            ["kb-1"],
+            mode="reference",
+        ),
+        actor_id="agent-1",
+        idempotency_key="derive-1",
+        expected_revision=None,
+        justification="selected for this specification",
+        semantic_creation_hash=semantic_hash,
+        creation_result={
+            "spec": {
+                "id": target_id,
+                "title": "Deterministic spec",
+            }
+        },
+    )
+    source = _source("kb-1", "root-1")
+    target = command.target
+    port = _FakePort(
+        _scope(target=target, sources=(source,)),
+        parent_evidence=_parent_evidence(parent, sources=(source,)),
+    )
+    service = _service(port)
+
+    prepared = await service.preflight_creation(object(), command)
+
+    assert isinstance(prepared, KnowledgeMutationPreparation)
+    assert prepared.command.target == target
+    assert target.target_id == target_id
+    assert len(port.parent_lookups) == 1
+    assert port.scope_lookups == []
+    receipt = await service.mutate(object(), prepared)
+    assert len(port.parent_lookups) == 2
+    assert len(port.staged) == 1
+
+    result = KnowledgeMutationResultV2Projector.from_receipt(receipt)
+    assert result.operation_id == receipt.operation_id
+    assert result.assignments[0].source_knowledge_id == "kb-1"
+    assert result.creation_result["spec"]["id"] == target_id
+
+    replay_port = _FakePort(
+        _scope(target=target, revision=99),
+        replay_entry=port.staged[0].ledger_entry,
+    )
+    replay = await _service(replay_port).preflight_creation(object(), command)
+    assert isinstance(replay, KnowledgeMutationReceipt)
+    assert replay.replayed is True
+    assert replay.operation_id == receipt.operation_id
+    assert replay.details == receipt.details
+    assert replay_port.parent_lookups == []
+    assert replay_port.scope_lookups == []
+
+
+@pytest.mark.asyncio
+async def test_preflight_evidence_change_rejects_mutation_without_staging() -> None:
+    parent = KnowledgeParentKey("board-1", "refinement", "refinement-1")
+    command = KnowledgeCreationPreflightCommand(
+        parent=parent,
+        target_type="spec",
+        selection=KnowledgeSelection.explicit_ids(
+            ["kb-1"],
+            mode="reference",
+        ),
+        actor_id="agent-1",
+        idempotency_key="derive-stale",
+        justification="selected",
+    )
+    original = _source("kb-1", "root-1", revision="1")
+    port = _FakePort(
+        _scope(target=command.target, sources=(original,)),
+        parent_evidence=_parent_evidence(parent, sources=(original,)),
+    )
+    service = _service(port)
+    prepared = await service.preflight_creation(object(), command)
+    assert isinstance(prepared, KnowledgeMutationPreparation)
+    port.parent_evidence = _parent_evidence(
+        parent,
+        sources=(_source("kb-1", "root-1", revision="2"),),
+    )
+
+    with pytest.raises(KnowledgePropagationServiceError) as raised:
+        await service.mutate(object(), prepared)
+
+    assert raised.value.code == "knowledge_propagation_preflight_stale"
+    assert port.scope_lookups == []
+    assert port.staged == []
+
+
+@pytest.mark.asyncio
+async def test_public_refresh_resolves_root_and_inherits_assignment_semantics() -> None:
+    relevance = (KnowledgeRelevanceLink("acceptance_criterion", "ac-1"),)
+    old_content = b"old snapshot"
+    new_content = b"new source"
+    old_assignment = _assignment(
+        "assignment-old",
+        "kb-old-revision",
+        "root-1",
+        mode="snapshot",
+        stamp_content=old_content,
+        justification="original relevance rationale",
+        relevance_links=relevance,
+    )
+    port = _FakePort(
+        _scope(
+            revision=3,
+            v2_active=True,
+            state="explicit_ids",
+            assignments=(old_assignment,),
+            snapshots=(
+                _snapshot(
+                    "snapshot-old",
+                    "assignment-old",
+                    "root-1",
+                    content=old_content,
+                ),
+            ),
+            sources=(
+                _source(
+                    "kb-current",
+                    "root-1",
+                    revision="2",
+                    content=new_content,
+                ),
+            ),
+        )
+    )
+    command = KnowledgeRefreshByKnowledgeIdsCommand(
+        target=_target(),
+        knowledge_ids=("kb-current",),
+        actor_id="agent-2",
+        expected_revision=3,
+        idempotency_key="refresh-root-1",
+    )
+
+    receipt = await _service(port).refresh_by_knowledge_ids(object(), command)
+    plan = port.staged[0]
+    refreshed = plan.assignments_to_open[0].assignment
+
+    assert refreshed.justification == "original relevance rationale"
+    assert refreshed.relevance_links == relevance
+    assert plan.assignment_ids_to_close == ("assignment-old",)
+    assert plan.snapshot_ids_to_close == ("snapshot-old",)
+    result = KnowledgeMutationResultV2Projector.from_receipt(receipt)
+    assert result.refreshed_knowledge_ids == ("root-1",)
+    assert result.assignments == (refreshed,)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["reference", "missing", "ambiguous"])
+async def test_public_refresh_invalid_resolution_is_zero_effect(
+    failure: str,
+) -> None:
+    assignments = (
+        _assignment(
+            "assignment-1",
+            "kb-1",
+            "root-1",
+            mode="reference" if failure == "reference" else "snapshot",
+        ),
+    )
+    snapshots = (
+        ()
+        if failure == "reference"
+        else (_snapshot("snapshot-1", "assignment-1", "root-1"),)
+    )
+    sources = (
+        ()
+        if failure == "missing"
+        else (
+            _source("kb-requested", "root-1"),
+            *((_source("kb-alias", "root-1"),) if failure == "ambiguous" else ()),
+        )
+    )
+    knowledge_ids = (
+        ("kb-requested", "kb-alias") if failure == "ambiguous" else ("kb-requested",)
+    )
+    port = _FakePort(
+        _scope(
+            revision=2,
+            v2_active=True,
+            state="explicit_ids",
+            assignments=assignments,
+            snapshots=snapshots,
+            sources=sources,
+        )
+    )
+    command = KnowledgeRefreshByKnowledgeIdsCommand(
+        target=_target(),
+        knowledge_ids=knowledge_ids,
+        actor_id="agent-2",
+        expected_revision=2,
+        idempotency_key=f"refresh-{failure}",
+    )
+
+    with pytest.raises(KnowledgePropagationServiceError) as raised:
+        await _service(port).refresh_by_knowledge_ids(object(), command)
+
+    assert raised.value.code == "knowledge_assignment_not_refreshable"
+    assert port.staged == []
+
+
+@pytest.mark.asyncio
+async def test_existing_card_mutation_revalidates_relevance_against_linked_spec() -> (
+    None
+):
+    parent = KnowledgeParentKey("board-1", "spec", "spec-1")
+    source = _source("kb-1", "root-1")
+    port = _FakePort(
+        _scope(sources=(source,)),
+        parent_evidence=_parent_evidence(
+            parent,
+            sources=(source,),
+            linked_spec_id="spec-1",
+            functional_requirement_ids=("fr-owned",),
+        ),
+    )
+    command = KnowledgeMutationCommand(
+        target=_target(),
+        selection=KnowledgeSelection.explicit_ids(
+            ["kb-1"],
+            mode="reference",
+        ),
+        actor_id="agent-1",
+        expected_revision=0,
+        idempotency_key="put-card-kb",
+        justification="claimed relevance",
+        relevance_links=(
+            KnowledgeRelevanceLink("functional_requirement", "fr-foreign"),
+        ),
+        parent=parent,
+    )
+
+    with pytest.raises(KnowledgePropagationServiceError) as raised:
+        await _service(port).mutate(object(), command)
+
+    assert raised.value.code == "knowledge_relevance_invalid"
+    assert raised.value.details["missing"] == ["functional_requirement:fr-foreign"]
+    assert port.scope_lookups == []
     assert port.staged == []

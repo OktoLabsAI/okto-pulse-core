@@ -84,10 +84,11 @@ class McpCreateCardCommand:
 
 
 class McpCreateCardResult:
-    __slots__ = ("card",)
+    __slots__ = ("card", "knowledge_mutation")
 
-    def __init__(self, card: Any) -> None:
+    def __init__(self, card: Any, knowledge_mutation: Any = None) -> None:
         self.card = card
+        self.knowledge_mutation = knowledge_mutation
 
 
 class McpCreateCardUseCase:
@@ -105,6 +106,24 @@ class McpCreateCardUseCase:
             _require_actor_board(actor, command.board_id)
         except EntityNotFoundError as exc:
             raise ValueError("Board not found") from exc
+
+        if getattr(command.data, "knowledge_propagation", None) is not None:
+            from okto_pulse.core.application.use_cases.knowledge_propagation import (
+                CreateCardKnowledgeV2Command,
+                CreateCardKnowledgeV2UseCase,
+            )
+
+            mutation = await CreateCardKnowledgeV2UseCase().execute(
+                CreateCardKnowledgeV2Command(
+                    command.board_id,
+                    command.data,
+                    skip_ownership_check=True,
+                    activity_details=command.activity_details,
+                ),
+                actor=actor,
+                uow=uow,
+            )
+            return McpCreateCardResult(None, knowledge_mutation=mutation)
 
         spec = await uow.services.specs.get_spec(command.spec_id)
         if not spec or spec.board_id != command.board_id:

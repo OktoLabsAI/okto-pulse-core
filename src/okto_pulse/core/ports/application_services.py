@@ -133,6 +133,9 @@ class ApplicationServiceCatalog(Protocol):
     def ideations(self) -> "IdeationService": ...
 
     @property
+    def knowledge_propagation(self) -> object: ...
+
+    @property
     def kg(self) -> "KnowledgeGraphOperations": ...
 
     @property

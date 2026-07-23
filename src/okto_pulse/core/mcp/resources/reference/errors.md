@@ -18,6 +18,25 @@ This table is the **single source of truth** for MCP-level errors. Before any ad
 
 **`auto_derive_spec_resources_enabled` is Spec→Card-only — it does NOT auto-fill the ideation/refinement gate.** This board setting governs ONLY the Spec→Card resource copy (`SpecResourcePropagationService.propagate_for_card`, for `knowledge_base`/`architecture`/`mockup`) into tasks/tests/bugs. It is a separate mechanism from the gate's parent→child inheritance. The Resource Gate already inherits a parent's provided artifacts AND its N/A marks compulsorily down the chain ideation→refinement→spec→card: a single `okto_pulse_mark_resource_not_applicable` at the ideation resolves the same resource to `not_applicable` at the child levels (the summary marks it `na_mark.inherited=true` with the source entity) — no re-mark needed. So do NOT expect the setting to auto-attach resources at the ideation/refinement gate; attach or mark N/A once at the nearest level and let it inherit.
 
+## Selective Knowledge Propagation v2
+
+All v2 service errors use the MCP envelope
+`{error, code, detail, details, retryable}`. Only
+`knowledge_creation_race` is retryable at this boundary. Validation errors for
+an incoherent tri-state envelope are rejected before any target or assignment
+is created.
+
+| Error code | Cause | Fix |
+|---|---|---|
+| `conflicting_propagation_parameters` | `okto_pulse_derive_spec_from_refinement` received legacy `kb_ids` together with the v2 `knowledge_propagation` envelope | Choose one contract. Omit the envelope to keep v1, or remove `kb_ids` and send the complete v2 envelope. |
+| `knowledge_propagation_creation_expected_revision_invalid` | A spec/card creation envelope used `expected_revision` other than omitted/`0` | Omit it or pass `0`. Creation has no prior mutable scope. |
+| `knowledge_propagation_revision_conflict` | Replace/drop/refresh used a stale `expected_revision`; `details.current_revision` reports the current value | Call `okto_pulse_get_card_knowledge_propagation`, reconsider the desired mutation against the returned state, then submit the new intent with that revision and a new idempotency key. Do not blindly overwrite. |
+| `knowledge_propagation_idempotency_conflict` | The same idempotency key was reused with a different actor, parent, operation, selection, linkage, or semantic create payload | Generate a new key for the new intent. Reuse the old key only for an exact retry. |
+| `knowledge_creation_race` | Concurrent v2 creates reached the same deterministic target before the durable receipt became visible in the current unit of work | MCP automatically retries once with a fresh unit of work. If still returned, `retryable=true`: retry the exact request with the same idempotency key so replay can recover the one durable result. Do not change the request. |
+| `knowledge_creation_target_collision` / `knowledge_creation_replay_target_mismatch` | A deterministic target exists without the matching durable ledger result, or a replay target no longer belongs to the expected parent | Stop and investigate persistent state; this fails closed and is not a safe automatic retry. |
+| `knowledge_relevance_invalid` / `knowledge_relevance_spec_mismatch` / `knowledge_relevance_spec_missing` | A `linkage`/`relevance_links` item is not an FR, AC, or test scenario on the card's linked spec, or the card has no valid spec | Read the linked spec, use an exact `functional_requirement`, `acceptance_criterion`, or `test_scenario` ID from it, and retry with a new key. The original attempt writes no assignment. |
+| `knowledge_assignment_not_refreshable` | Refresh targeted a non-v2 scope, a non-snapshot selection, an unknown root, or an assignment that cannot be refreshed | Read the technical projection. Pass stable root Knowledge IDs for current snapshot assignments; use replace first if snapshot mode is desired. |
+
 ## Stories / Topics
 
 | Error message | Cause | Fix |

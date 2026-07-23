@@ -79,7 +79,12 @@ class SQLAlchemyUnitOfWork:
     async def rollback(self) -> None:
         await get_application_persistence_port().rollback(self._session)
 
-    async def synchronize(self) -> None:
+    async def synchronize(
+        self,
+        *,
+        conflict_error: Exception | None = None,
+    ) -> None:
+        del conflict_error
         await get_application_persistence_port().flush(self._session)
 
     async def reload(

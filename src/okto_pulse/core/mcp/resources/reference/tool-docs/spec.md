@@ -169,20 +169,49 @@ Context is compiled from the refinement's scope, analysis, decisions, and Q&A.
 
 Artifacts (mockups, KBs, Architecture Designs) from the refinement are
 automatically propagated to the spec. Use mockup_ids/kb_ids/
-architecture_design_ids to select specific ones (default: all).
+architecture_design_ids to select specific ones (default: all) on the legacy
+v1 path. Supplying `knowledge_propagation` opts only Knowledge propagation into
+contract v2; mockup and Architecture Design parameters remain independent.
 
 Args:
     board_id: Board ID
     refinement_id: Refinement ID (must be in 'done' status)
     mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
-    kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
+    kb_ids: Pipe-separated KB IDs to propagate on legacy v1 (optional,
+        empty = all). Mutually exclusive with knowledge_propagation.
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
         while reference_only/none keep only parent linkage.
+    knowledge_propagation: Optional contract-v2 envelope. Omit it to preserve
+        the complete v1 derivation behavior. Supplying it — even with
+        selection_state=omitted — selects v2. Fields:
+        - contract_version: 2 (default)
+        - selection_state: omitted | explicit_empty | explicit_ids
+        - mode: absent for omitted; drop for explicit_empty; reference,
+          snapshot, or drop for explicit_ids
+        - knowledge_ids: empty for omitted/explicit_empty; non-empty stable
+          source Knowledge IDs for explicit_ids
+        - justification: required and non-empty unless selection_state=omitted
+        - idempotency_key: required caller-stable key for exact retries
+        - expected_revision: omit or pass 0 for creation
+
+`kb_ids` plus `knowledge_propagation` is rejected with
+`conflicting_propagation_parameters`; choose exactly one contract. The v2
+preflight validates the done refinement, parent, selection, and source roots
+before the deterministic spec is inserted.
 
 Returns:
-    JSON with the created spec details
+    Without knowledge_propagation: the unchanged v1 JSON with created spec
+    details.
+
+    With knowledge_propagation: `{success, contract_version, target_type,
+    target_id, spec_id, operation_id, revision, replayed, selection_state,
+    assignments}`. An exact retry with the same idempotency key returns the
+    original durable result and `replayed=true`. MCP retries a
+    `knowledge_creation_race` once in a fresh unit of work; if the error is
+    still exposed, it carries `retryable=true` and the caller should retry the
+    exact same request/key.
 
 ## `okto_pulse_get_spec`
 

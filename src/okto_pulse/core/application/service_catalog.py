@@ -220,6 +220,47 @@ class CoreAnalyticsOperations:
         return await reader(self.__relational_context, board_id, entity_id)
 
 
+class CoreKnowledgePropagationOperations:
+    """Transaction-bound facade over selective Knowledge propagation."""
+
+    def __init__(self, relational_context: object) -> None:
+        self.__relational_context = relational_context
+
+    @staticmethod
+    def _service():  # noqa: ANN205
+        from okto_pulse.core.services.knowledge_propagation import (
+            KnowledgePropagationService,
+        )
+
+        return KnowledgePropagationService()
+
+    async def preflight_creation(self, command):  # noqa: ANN001, ANN201
+        return await self._service().preflight_creation(
+            self.__relational_context,
+            command,
+        )
+
+    async def mutate(self, command):  # noqa: ANN001, ANN201
+        return await self._service().mutate(self.__relational_context, command)
+
+    async def refresh_by_knowledge_ids(self, command):  # noqa: ANN001, ANN201
+        return await self._service().refresh_by_knowledge_ids(
+            self.__relational_context,
+            command,
+        )
+
+    async def read(self, target):  # noqa: ANN001, ANN201
+        return await self._service().read(self.__relational_context, target)
+
+    @staticmethod
+    def result_from_receipt(receipt):  # noqa: ANN001, ANN205
+        from okto_pulse.core.services.knowledge_propagation import (
+            KnowledgeMutationResultV2Projector,
+        )
+
+        return KnowledgeMutationResultV2Projector.from_receipt(receipt)
+
+
 class CoreApplicationServiceCatalog:
     """Lazily construct Core-owned application services for one transaction."""
 
@@ -371,6 +412,10 @@ class CoreApplicationServiceCatalog:
         )
 
         return CoreKnowledgeGraphOperations(self.__relational_context)
+
+    @cached_property
+    def knowledge_propagation(self) -> CoreKnowledgePropagationOperations:
+        return CoreKnowledgePropagationOperations(self.__relational_context)
 
     @cached_property
     def mockup_design_gate(self):  # noqa: ANN201

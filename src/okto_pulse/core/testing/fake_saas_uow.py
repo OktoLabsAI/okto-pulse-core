@@ -130,7 +130,12 @@ class FakeSaaSUnitOfWork:
             parent_boards=self._working_state.boards,
         )
 
-    async def synchronize(self) -> None:
+    async def synchronize(
+        self,
+        *,
+        conflict_error: Exception | None = None,
+    ) -> None:
+        del conflict_error
         return None
 
     async def reload(
