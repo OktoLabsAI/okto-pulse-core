@@ -300,10 +300,13 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
         async def _get_board(self, board_id: str):
             return SimpleNamespace(id=board_id, owner_id="test-user")
 
-        async def _dispatch_manual_tick(self, **kwargs) -> None:
+        async def _dispatch_manual_tick(self, **kwargs) -> list[str]:
             from okto_pulse.core.application.kg_tick import dispatch_manual_tick
 
-            await dispatch_manual_tick(relational_context=self, **kwargs)
+            return await dispatch_manual_tick(
+                relational_context=self,
+                **kwargs,
+            )
 
         async def commit(self) -> None:
             self.committed = True
@@ -318,7 +321,7 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     async def _fake_publish_tick_events(session, *, board_id=None, **kwargs):
         assert isinstance(session, _FakeSession)
         published.append({"board_id": board_id, **kwargs})
-        return ["fanout-tick-uuid"]
+        return [str(kwargs["tick_id"])]
 
     monkeypatch.setattr(
         kg_decay_tick, "publish_tick_events", _fake_publish_tick_events

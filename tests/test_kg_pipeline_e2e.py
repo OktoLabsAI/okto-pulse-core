@@ -123,6 +123,7 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
         add_edge_candidate,
         begin_consolidation,
         commit_consolidation,
+        finalize_deferred_consolidation,
         propose_reconciliation,
     )
     from kg_schema_testing import bootstrap_board_graph
@@ -329,6 +330,12 @@ async def test_full_pipeline_commits_and_all_layers_report_healthy(e2e_tempdir, 
             ),
             agent_id=agent_id,
             db=db,
+            defer_session_finalization=True,
+        )
+        await db.commit()
+        await finalize_deferred_consolidation(
+            begin.session_id,
+            agent_id=agent_id,
         )
         assert commit.nodes_added >= 4, commit
         assert commit.edges_added >= 4, commit

@@ -302,6 +302,65 @@ async def test_effective_resources_hydrate_inherited_payloads_with_provenance(db
 
 
 @pytest.mark.asyncio
+async def test_effective_resources_returns_one_representative_per_logical_root(
+    monkeypatch,
+) -> None:
+    owner = LineageEntityRef("spec", "spec-1", "Spec")
+
+    def attachment(
+        resource_id: str,
+        unique_id: str,
+        kind: str,
+    ) -> ResourceAttachment:
+        return ResourceAttachment(
+            resource_type="knowledge_base",
+            resource_id=resource_id,
+            title=resource_id,
+            unique_resource_id=unique_id,
+            attachment_kind=kind,
+            source_entity_type="spec" if kind == "direct" else "refinement",
+            source_entity_id="spec-1" if kind == "direct" else "ref-1",
+            source_entity_title=None,
+            coverage_state="not_required",
+            effective=True,
+            inherited=kind != "direct",
+            raw={"id": resource_id, "title": resource_id},
+        )
+
+    lineage = ResolvedResourceLineage(
+        owner=owner,
+        unique_resources=(),
+        attachments=(
+            attachment("root-a-local", "knowledge_base:root-a", "direct"),
+            attachment("root-a-parent", "knowledge_base:root-a", "inherited_reference"),
+            attachment("root-b-parent", "knowledge_base:root-b", "inherited_reference"),
+        ),
+        counts={"unique_effective_count": 2},
+        resource_states=(),
+    )
+
+    async def resolve(_self, *_args, **_kwargs):
+        return lineage
+
+    async def hydrate(_self, **request):
+        return {"id": request["ref"]["id"]}
+
+    monkeypatch.setattr(ResourceGateService, "_resolve_resource_lineage", resolve)
+    monkeypatch.setattr(ResourceGateService, "_effective_resource_item", hydrate)
+
+    result = await ResourceGateService(object()).get_effective_resources(
+        "board-1",
+        "spec",
+        "spec-1",
+    )
+
+    assert [item["id"] for item in result["resources"]["knowledge_base"]] == [
+        "root-a-local",
+        "root-b-parent",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_resource_gate_summary_delegates_to_resolver_projection(
     db_factory,
     monkeypatch,

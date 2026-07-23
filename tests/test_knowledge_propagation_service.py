@@ -20,6 +20,7 @@ from okto_pulse.core.domain.knowledge_selection import (
 from okto_pulse.core.domain.resource_revision import ResourceRevisionStamp
 from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgeLegacyAttachment,
+    KnowledgeLocalAttachment,
     KnowledgeMutationKind,
     KnowledgeMutationLedgerEntry,
     KnowledgeMutationOutcome,
@@ -28,6 +29,7 @@ from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgeParentEvidence,
     KnowledgeParentKey,
     KnowledgePropagationScope,
+    KnowledgePropagationPortError,
     KnowledgePropagationSnapshot,
     KnowledgePropagationTombstone,
     KnowledgeRecordKind,
@@ -46,6 +48,7 @@ from okto_pulse.core.services.knowledge_propagation import (
     KnowledgeMutationResultV2Projector,
     KnowledgePropagationService,
     KnowledgePropagationServiceError,
+    KnowledgeRelinkResetCommand,
     KnowledgeRefreshCommand,
     KnowledgeRefreshByKnowledgeIdsCommand,
     classify_legacy_origin,
@@ -193,6 +196,8 @@ def _scope(
     snapshots: tuple[KnowledgePropagationSnapshot, ...] = (),
     legacy: tuple[KnowledgeLegacyAttachment, ...] = (),
     sources: tuple[KnowledgeSelectableSource, ...] = (),
+    local: tuple[KnowledgeLocalAttachment, ...] = (),
+    v2_activated_at: datetime | None = None,
 ) -> KnowledgePropagationScope:
     return KnowledgePropagationScope(
         target=target or _target(),
@@ -204,6 +209,8 @@ def _scope(
         snapshots=snapshots,
         legacy_attachments=legacy,
         sources=sources,
+        local_attachments=local,
+        v2_activated_at=v2_activated_at,
     )
 
 
@@ -262,6 +269,26 @@ def _service(port: _FakePort) -> KnowledgePropagationService:
         now=lambda: NOW,
         id_factory=_next_id,
     )
+
+
+@pytest.mark.asyncio
+async def test_read_normalizes_persistence_port_error() -> None:
+    class _FailingReadPort(_FakePort):
+        async def load_scope(self, context, request):
+            raise KnowledgePropagationPortError(
+                "knowledge_read_unavailable",
+                "read backend unavailable",
+                details={"retryable": True},
+            )
+
+    service = _service(_FailingReadPort(_scope()))
+
+    with pytest.raises(KnowledgePropagationServiceError) as caught:
+        await service.read(object(), _target())
+
+    assert caught.value.code == "knowledge_read_unavailable"
+    assert caught.value.detail == "read backend unavailable"
+    assert caught.value.details == {"retryable": True}
 
 
 def _command(
@@ -1009,6 +1036,135 @@ async def test_dual_read_legacy_and_v2_resolution_preserves_history() -> None:
 
 
 @pytest.mark.asyncio
+async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics() -> (
+    None
+):
+    old_snapshot = b"immutable snapshot"
+    current_reference = b"current reference"
+    current_snapshot_source = b"changed snapshot source"
+    assignments = (
+        _assignment(
+            "assignment-reference",
+            "obsolete-reference-row",
+            "root-reference",
+            stamp_content=b"old reference",
+        ),
+        _assignment(
+            "assignment-snapshot",
+            "obsolete-snapshot-row",
+            "root-snapshot",
+            mode="snapshot",
+            stamp_content=old_snapshot,
+        ),
+    )
+    snapshot = _snapshot(
+        "snapshot-immutable",
+        "assignment-snapshot",
+        "root-snapshot",
+        content=old_snapshot,
+    )
+    reference_source = KnowledgeSelectableSource(
+        requested_knowledge_id="root-reference",
+        source_knowledge_id="current-reference-row",
+        revision_stamp=_stamp(
+            "root-reference",
+            revision="2",
+            content=current_reference,
+        ),
+        content_bytes=current_reference,
+    )
+    snapshot_source = KnowledgeSelectableSource(
+        requested_knowledge_id="root-snapshot",
+        source_knowledge_id="current-snapshot-row",
+        revision_stamp=_stamp(
+            "root-snapshot",
+            revision="2",
+            content=current_snapshot_source,
+        ),
+        content_bytes=current_snapshot_source,
+    )
+
+    result = await _service(
+        _FakePort(
+            _scope(
+                revision=5,
+                v2_active=True,
+                state="explicit_ids",
+                assignments=assignments,
+                snapshots=(snapshot,),
+                sources=(reference_source, snapshot_source),
+            )
+        )
+    ).read(object(), _target())
+    resolved = {
+        item.assignment.assignment_id: item for item in result.resolved_assignments
+    }
+
+    reference = resolved["assignment-reference"]
+    assert reference.state is KnowledgeAssignmentState.ACTIVE
+    assert reference.effective is True
+    assert reference.revision_stamp == reference_source.revision_stamp
+    assert reference.content_bytes == current_reference
+    assert reference.resolved_source_knowledge_id == "current-reference-row"
+    assert reference.to_dict()["resolved_source_knowledge_id"] == (
+        "current-reference-row"
+    )
+
+    snapshot_result = resolved["assignment-snapshot"]
+    assert snapshot_result.state is KnowledgeAssignmentState.STALE
+    assert snapshot_result.effective is True
+    assert snapshot_result.revision_stamp == snapshot.revision_stamp
+    assert snapshot_result.content_bytes == old_snapshot
+    assert snapshot_result.resolved_source_knowledge_id == "current-snapshot-row"
+    assert snapshot_result.reason == "source_changed"
+
+
+@pytest.mark.asyncio
+async def test_v2_read_includes_local_post_activation_attachments() -> None:
+    local_content = b"target local knowledge"
+    activation = NOW - timedelta(minutes=10)
+    local = KnowledgeLocalAttachment(
+        source_knowledge_id="local-kb",
+        revision_stamp=_stamp(
+            "local-root",
+            revision="3",
+            content=local_content,
+        ),
+        attached_at=NOW - timedelta(minutes=5),
+        content_bytes=local_content,
+    )
+    legacy = KnowledgeLegacyAttachment(
+        source_knowledge_id="legacy-kb",
+        revision_stamp=ResourceRevisionStamp(root_id="legacy-root"),
+        origin_class="legacy_all",
+        effective=True,
+    )
+
+    result = await _service(
+        _FakePort(
+            _scope(
+                revision=2,
+                v2_active=True,
+                state="omitted",
+                legacy=(legacy,),
+                local=(local,),
+                v2_activated_at=activation,
+            )
+        )
+    ).read(object(), _target())
+
+    assert result.effective_assignments == ()
+    assert result.effective_local_attachments == (local,)
+    assert result.effective_legacy_attachments == ()
+    assert result.v2_activated_at == activation
+    assert result.effective_count == 1
+    payload = result.to_dict()
+    assert payload["v2_activated_at"] == activation.isoformat()
+    assert payload["effective_local_attachments"] == [local.to_dict()]
+    assert payload["effective_count"] == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("tombstones", "expected_dropped"),
     [
@@ -1227,6 +1383,275 @@ async def test_grandfather_never_replaces_an_active_v2_scope() -> None:
     assert raised.value.code == "knowledge_propagation_grandfather_v2_active"
     assert raised.value.ledger_attempt is not None
     assert port.staged == []
+
+
+@pytest.mark.asyncio
+async def test_relink_reset_closes_current_records_without_legacy_fallback() -> None:
+    reference = _assignment(
+        "assignment-reference",
+        "kb-reference",
+        "root-reference",
+    )
+    snapshot_assignment = _assignment(
+        "assignment-snapshot",
+        "kb-snapshot",
+        "root-snapshot",
+        mode="snapshot",
+    )
+    snapshot = _snapshot(
+        "snapshot-current",
+        "assignment-snapshot",
+        "root-snapshot",
+    )
+    tombstone = _tombstone("tombstone-current", "root-dropped")
+    port = _FakePort(
+        _scope(
+            revision=7,
+            v2_active=True,
+            state="explicit_ids",
+            assignments=(reference, snapshot_assignment),
+            snapshots=(snapshot,),
+            tombstones=(tombstone,),
+        )
+    )
+    service = _service(port)
+    command = KnowledgeRelinkResetCommand(
+        target=_target(),
+        previous_parent=KnowledgeParentKey("board-1", "spec", "spec-old"),
+        next_parent=KnowledgeParentKey("board-1", "spec", "spec-new"),
+        actor_id="agent-1",
+        expected_revision=7,
+        idempotency_key="relink:spec-old:spec-new",
+    )
+
+    receipt = await service.reset_for_relink(object(), command)
+
+    assert receipt.operation_kind is KnowledgeMutationKind.RELINK_RESET
+    assert receipt.previous_revision == 7
+    assert receipt.revision == 8
+    plan = port.staged[0]
+    assert plan.next_scope_v2_active is True
+    assert plan.next_scope_selection_state is KnowledgeSelectionState.OMITTED
+    assert plan.parent == command.previous_parent
+    assert plan.assignment_ids_to_close == (
+        "assignment-reference",
+        "assignment-snapshot",
+    )
+    assert plan.snapshot_ids_to_close == ("snapshot-current",)
+    assert plan.tombstone_ids_to_close == ("tombstone-current",)
+    assert plan.assignments_to_open == ()
+    assert plan.snapshots_to_open == ()
+    assert plan.tombstones_to_open == ()
+    assert plan.supersession_links == ()
+    assert receipt.details["relink"] == {
+        "previous_parent": {
+            "board_id": "board-1",
+            "parent_type": "spec",
+            "parent_id": "spec-old",
+        },
+        "next_parent": {
+            "board_id": "board-1",
+            "parent_type": "spec",
+            "parent_id": "spec-new",
+        },
+    }
+    result = KnowledgeMutationResultV2Projector.from_receipt(receipt)
+    assert result.operation_kind is KnowledgeMutationKind.RELINK_RESET
+    assert result.selection_state is KnowledgeSelectionState.OMITTED
+    assert result.assignments == ()
+
+    closed_at = NOW
+    closed_reference = TemporalKnowledgeAssignment(
+        assignment=reference.assignment,
+        temporal=KnowledgeTemporalWindow(
+            effective_from=reference.temporal.effective_from,
+            effective_to=closed_at,
+        ),
+    )
+    closed_snapshot_assignment = TemporalKnowledgeAssignment(
+        assignment=snapshot_assignment.assignment,
+        temporal=KnowledgeTemporalWindow(
+            effective_from=snapshot_assignment.temporal.effective_from,
+            effective_to=closed_at,
+        ),
+    )
+    closed_snapshot = KnowledgePropagationSnapshot(
+        snapshot_id=snapshot.snapshot_id,
+        assignment_id=snapshot.assignment_id,
+        revision_stamp=snapshot.revision_stamp,
+        content_bytes=snapshot.content_bytes,
+        temporal=KnowledgeTemporalWindow(
+            effective_from=snapshot.temporal.effective_from,
+            effective_to=closed_at,
+        ),
+    )
+    closed_tombstone = KnowledgePropagationTombstone(
+        tombstone_id=tombstone.tombstone_id,
+        target=tombstone.target,
+        root_id=tombstone.root_id,
+        actor_id=tombstone.actor_id,
+        justification=tombstone.justification,
+        temporal=KnowledgeTemporalWindow(
+            effective_from=tombstone.temporal.effective_from,
+            effective_to=closed_at,
+        ),
+    )
+    post_reset = await _service(
+        _FakePort(
+            _scope(
+                revision=8,
+                v2_active=True,
+                state="omitted",
+                assignments=(closed_reference, closed_snapshot_assignment),
+                snapshots=(closed_snapshot,),
+                tombstones=(closed_tombstone,),
+                legacy=(
+                    KnowledgeLegacyAttachment(
+                        source_knowledge_id="legacy-json",
+                        revision_stamp=ResourceRevisionStamp(
+                            root_id="legacy-root"
+                        ),
+                        origin_class="legacy_all",
+                    ),
+                ),
+            )
+        )
+    ).read(object(), _target())
+    assert post_reset.v2_active is True
+    assert post_reset.selection_state is KnowledgeSelectionState.OMITTED
+    assert post_reset.effective_count == 0
+    assert post_reset.resolved_assignments == ()
+    assert post_reset.effective_legacy_attachments == ()
+
+    port.replay_entry = plan.ledger_entry
+    replay = await service.reset_for_relink(object(), command)
+    assert replay.outcome is KnowledgeMutationOutcome.REPLAYED
+    assert replay.original_outcome is KnowledgeMutationOutcome.APPLIED
+    assert replay.revision == 8
+    assert len(port.scope_lookups) == 1
+    assert len(port.staged) == 1
+    assert len(port.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_relink_reset_rejects_an_inactive_v2_scope_with_audit_attempt() -> None:
+    port = _FakePort(_scope(revision=2))
+    command = KnowledgeRelinkResetCommand(
+        target=_target(),
+        previous_parent=KnowledgeParentKey("board-1", "spec", "spec-old"),
+        next_parent=KnowledgeParentKey("board-1", "spec", "spec-new"),
+        actor_id="agent-1",
+        expected_revision=2,
+        idempotency_key="relink:inactive",
+    )
+
+    with pytest.raises(KnowledgePropagationServiceError) as raised:
+        await _service(port).reset_for_relink(object(), command)
+
+    assert raised.value.code == "knowledge_propagation_relink_v2_inactive"
+    assert raised.value.ledger_attempt is not None
+    assert raised.value.ledger_attempt.operation_kind is (
+        KnowledgeMutationKind.RELINK_RESET
+    )
+    assert port.staged == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target", "previous_parent", "next_parent"),
+    [
+        (
+            KnowledgeTargetKey("board-1", "card", "card-1"),
+            KnowledgeParentKey("board-1", "spec", "spec-old"),
+            None,
+        ),
+        (
+            KnowledgeTargetKey("board-1", "spec", "spec-target"),
+            KnowledgeParentKey("board-1", "ideation", "ideation-old"),
+            KnowledgeParentKey("board-1", "refinement", "refinement-new"),
+        ),
+        (
+            KnowledgeTargetKey("board-1", "card", "card-1"),
+            None,
+            KnowledgeParentKey("board-1", "spec", "spec-repaired"),
+        ),
+    ],
+)
+async def test_relink_reset_supports_unlink_spec_reparent_and_repair(
+    target: KnowledgeTargetKey,
+    previous_parent: KnowledgeParentKey | None,
+    next_parent: KnowledgeParentKey | None,
+) -> None:
+    port = _FakePort(
+        _scope(
+            target=target,
+            revision=4,
+            v2_active=True,
+            state="omitted",
+        )
+    )
+    command = KnowledgeRelinkResetCommand(
+        target=target,
+        previous_parent=previous_parent,
+        next_parent=next_parent,
+        actor_id="agent-1",
+        expected_revision=4,
+        idempotency_key=f"relink:{target.target_id}",
+    )
+
+    receipt = await _service(port).reset_for_relink(object(), command)
+
+    assert receipt.revision == 5
+    plan = port.staged[0]
+    assert plan.parent == previous_parent
+    assert plan.next_scope_v2_active is True
+    assert plan.next_scope_selection_state is KnowledgeSelectionState.OMITTED
+    assert receipt.details["relink"] == {
+        "previous_parent": (
+            None if previous_parent is None else previous_parent.to_dict()
+        ),
+        "next_parent": None if next_parent is None else next_parent.to_dict(),
+    }
+
+
+@pytest.mark.parametrize(
+    ("target", "previous_parent", "next_parent", "error"),
+    [
+        (
+            KnowledgeTargetKey("board-1", "card", "card-1"),
+            KnowledgeParentKey("board-1", "refinement", "refinement-1"),
+            None,
+            "relink_parent_target_invalid",
+        ),
+        (
+            KnowledgeTargetKey("board-1", "spec", "spec-1"),
+            KnowledgeParentKey("board-1", "spec", "spec-parent"),
+            None,
+            "relink_parent_target_invalid",
+        ),
+        (
+            KnowledgeTargetKey("board-1", "card", "card-1"),
+            None,
+            None,
+            "relink_parents_missing",
+        ),
+    ],
+)
+def test_relink_reset_command_rejects_incoherent_parent_scope(
+    target: KnowledgeTargetKey,
+    previous_parent: KnowledgeParentKey | None,
+    next_parent: KnowledgeParentKey | None,
+    error: str,
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        KnowledgeRelinkResetCommand(
+            target=target,
+            previous_parent=previous_parent,
+            next_parent=next_parent,
+            actor_id="agent-1",
+            expected_revision=1,
+            idempotency_key="relink:invalid",
+        )
 
 
 @pytest.mark.asyncio

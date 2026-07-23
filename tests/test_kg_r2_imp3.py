@@ -4,7 +4,8 @@ Spec 9aedfe78 / card d3263170 (FR6/TR6/TR11/TR12; ts_fe9fe207, ts_110b573e).
 
 Anti-test-theater: the canonical evidence comes from the REAL SQL source + the
 maturity classifier; the post-commit chain runs the REAL worker
-``_process_queue_entry``. No direct Kuzu/DecisionDigest seed of canonical state.
+``ConsolidationProcessor.process_batch``. No direct Kuzu/DecisionDigest seed of
+canonical state.
 """
 
 from __future__ import annotations
@@ -202,10 +203,10 @@ async def test_replay_does_not_touch_cognitive_pending(db_factory, _tmp_rebuild_
 
 @pytest.mark.asyncio
 async def test_worker_post_commit_chain_triggers_replay(db_factory):
-    """ts_110b573e: a real consolidation through the worker's _process_queue_entry
-    fires the post-commit replay, closing a now-canonical debt — the same chain a
-    rebuild drain uses (no theoretical-only coverage)."""
-    from okto_pulse.core.application.processors.consolidation import _process_queue_entry
+    """ts_110b573e: a real worker batch commits then replays canonical debt."""
+    from okto_pulse.core.application.processors.consolidation import (
+        ConsolidationProcessor,
+    )
     from sqlalchemy_test_models import ConsolidationQueue
 
     board_id = await _new_board(db_factory)
@@ -216,8 +217,10 @@ async def test_worker_post_commit_chain_triggers_replay(db_factory):
                           src["source_ref"], src.get("source_version"))
     assert await _open_debt_count(db_factory, board_id) == 1
 
-    # Enqueue + run the REAL worker entry processor (the path a rebuild drain uses).
+    # Keep the shared session DB hermetic, then run the public worker batch. It
+    # owns defer -> relational commit -> finalization and post-commit maintenance.
     async with db_factory() as db:
+        await db.execute(ConsolidationQueue.__table__.delete())
         entry = ConsolidationQueue(
             id=str(uuid.uuid4()), board_id=board_id, artifact_type="spec",
             artifact_id=spec_id, priority="high", source="r2i3_test",
@@ -225,9 +228,8 @@ async def test_worker_post_commit_chain_triggers_replay(db_factory):
         )
         db.add(entry)
         await db.commit()
-        await db.refresh(entry)
-        await _process_queue_entry(db, entry)
-        await db.commit()
+
+    assert await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
 
     # The post-commit replay closed the now-canonical debt via the real chain.
     assert await _open_debt_count(db_factory, board_id) == 0

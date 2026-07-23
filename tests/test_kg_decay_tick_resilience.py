@@ -534,23 +534,23 @@ def test_tick_next_run_catch_up_semantics():
     o next_run_time explícito honra o último tick persistido."""
     from datetime import timedelta
 
-    from okto_pulse.community.app import _tick_next_run_from_last
+    from okto_pulse.core.application.startup import tick_next_run_from_last
 
     now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=timezone.utc)
     floor = now + timedelta(seconds=120)
 
     # Sem histórico → dispara logo após o boot.
-    assert _tick_next_run_from_last(None, 1440, now) == floor
+    assert tick_next_run_from_last(None, 1440, now) == floor
     # Último tick vencido (3 dias atrás, interval 24h) → dispara logo.
     stale = now - timedelta(days=3)
-    assert _tick_next_run_from_last(stale, 1440, now) == floor
+    assert tick_next_run_from_last(stale, 1440, now) == floor
     # Último tick recente → respeita o vencimento real.
     fresh = now - timedelta(hours=2)
-    assert _tick_next_run_from_last(fresh, 1440, now) == fresh + timedelta(
+    assert tick_next_run_from_last(fresh, 1440, now) == fresh + timedelta(
         minutes=1440
     )
     # Naive datetime (SQLite) é tratado como UTC.
     naive_fresh = (now - timedelta(hours=2)).replace(tzinfo=None)
-    assert _tick_next_run_from_last(naive_fresh, 1440, now) == fresh + timedelta(
+    assert tick_next_run_from_last(naive_fresh, 1440, now) == fresh + timedelta(
         minutes=1440
     )

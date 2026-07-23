@@ -186,7 +186,7 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
 # --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_thirty_events():
+def test_registry_has_thirty_one_events():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
@@ -195,7 +195,8 @@ def test_registry_has_thirty_events():
     + 3 (structured-entity canonicalization — structured_entity.{created,
     updated,revoked}) + 1 (bug regression reuse decision audit)
     + 4 Story lifecycle events for working-graph ingestion + 1 durable
-    delivery-redrive continuation = 30.
+    delivery-redrive continuation + 1 dedicated fail-closed full-rebuild tick
+    intent = 31.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -204,12 +205,13 @@ def test_registry_has_thirty_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 30
+    assert len(EVENT_TYPES) == 31
     operational_kg_events = {
         "kg.hit_flushed",
         "card.priority_changed",
         "card.severity_changed",
         "kg.tick.daily",
+        "kg.tick.full_rebuild",
         "kg.tick.delivery_redrive",
     }
     for et in EVENT_TYPES:

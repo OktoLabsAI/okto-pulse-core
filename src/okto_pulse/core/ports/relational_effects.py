@@ -7,7 +7,11 @@ belong to an edition adapter.
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -56,8 +60,7 @@ class RelationalEffectsPort(Protocol):
         session: Any,
         *,
         board_id: str,
-    ) -> int:
-        ...
+    ) -> int: ...
 
     async def upsert_consolidation_queue_unless_tombstoned(
         self,
@@ -72,21 +75,31 @@ class RelationalEffectsPort(Protocol):
         """
         ...
 
-    async def list_board_ids(self, session: Any) -> Sequence[str]:
+    async def list_board_ids(self, session: Any) -> Sequence[str]: ...
+
+    async def is_global_recovery_active(self, session: Any) -> bool:
+        """Return durable global-recovery activity without mutating it."""
+        ...
+
+    async def fence_kg_tick_publication(self, session: Any) -> bool:
+        """Fence the caller transaction against recovery admission.
+
+        The implementation must acquire a transaction-scoped writer fence
+        before returning whether recovery is active. Callers must keep the
+        transaction short and publish the tick event before commit/rollback.
+        """
         ...
 
     async def read_latest_kg_tick_completed_at(
         self,
         session: Any,
-    ) -> datetime | None:
-        ...
+    ) -> datetime | None: ...
 
     async def upsert_kg_tick_run(
         self,
         session: Any,
         upsert: KGTickRunUpsert,
-    ) -> None:
-        ...
+    ) -> None: ...
 
 
 _RUNTIME_KEY = "ports.relational_effects.port"

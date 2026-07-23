@@ -19,6 +19,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from starlette.requests import Request
 
 from okto_pulse.community.api.boards import get_board_columns
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
@@ -235,8 +236,18 @@ async def test_card_columns_open_qa_count():
         )
         await db.commit()
 
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": f"/api/v1/boards/{board_id}/columns",
+                "query_string": b"",
+                "headers": [],
+            }
+        )
         payload = await get_board_columns(
             board_id,
+            request,
             user_id=USER,
             realm_id=LOCAL_REALM_ID,
             uow=SQLAlchemyUnitOfWork(db),

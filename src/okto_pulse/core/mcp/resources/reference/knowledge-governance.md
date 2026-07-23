@@ -138,11 +138,14 @@ Two mechanisms coexist and must not be confused:
 - **Physical snapshots** copy a KB through the existing derivation/card-copy
   paths and preserve source identity and governance metadata.
 
-The active behavior is **`legacy_all`**: omitting an explicit selection copies
-all resources selected by the existing path. Governance metadata is passthrough
-only; it does not change selection, count, fan-out, Resource Gate, or lineage.
-Selective propagation v2 is **not available** until delivery B is implemented
-and activated. Do not claim or simulate v2 behavior in plans, tests, or docs.
+The compatibility behavior remains **`legacy_all`** when the caller omits the
+v2 envelope: the existing path copies all selected resources. Selective
+propagation v2 is active and opt-in through a complete versioned envelope or
+the dedicated card-assignment tools. An in-envelope
+`selection_state="omitted"` is authoritative v2 state and never falls back to
+copy-all. Governance metadata remains passthrough and does not independently
+change selection, count, fan-out, Resource Gate, or lineage. Do not combine
+legacy selection parameters with a v2 envelope.
 
 When a governed Spec KB snapshot already exists on a Card, a metadata-only
 change refreshes that same snapshot id/source once. Repeating a semantically

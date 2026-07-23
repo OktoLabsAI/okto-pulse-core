@@ -423,6 +423,9 @@ class ConsolidationPipelinePersister:
             run_cancellation_atomic,
         )
         from okto_pulse.core.kg.write_barrier import under_safe_write
+        from okto_pulse.core.ports.consolidation import (
+            get_consolidation_persistence_port,
+        )
         from okto_pulse.core.kg.schemas import (
             AddEdgeCandidateRequest,
             AddNodeCandidateRequest,
@@ -499,7 +502,7 @@ class ConsolidationPipelinePersister:
 
                     async def _commit_and_finalize() -> None:
                         nonlocal relational_commit_confirmed
-                        await db.commit()
+                        await get_consolidation_persistence_port().commit(db)
                         relational_commit_confirmed = True
                         await finalize_deferred_consolidation(
                             begin.session_id,

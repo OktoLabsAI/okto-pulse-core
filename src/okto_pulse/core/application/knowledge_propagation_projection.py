@@ -149,7 +149,6 @@ def project_refresh_response(result: Any) -> KnowledgeRefreshResponse:
 def project_technical_read_response(
     read_result: Any,
 ) -> KnowledgeTechnicalReadResponse:
-    payload = read_result.to_dict()
     assignments = [
         KnowledgeAssignmentTechnicalProjection(
             root_knowledge_id=item.assignment.revision_stamp.root_id,
@@ -161,8 +160,8 @@ def project_technical_read_response(
         for item in read_result.resolved_assignments
     ]
     return KnowledgeTechnicalReadResponse(
-        **payload,
         revision=read_result.scope_revision,
+        selection_state=read_result.selection_state,
         assignments=assignments,
     )
 

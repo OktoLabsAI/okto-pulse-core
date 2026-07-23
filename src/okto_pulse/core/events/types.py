@@ -360,6 +360,26 @@ class KGDailyTick(DomainEvent):
     event_type: ClassVar[str] = "kg.tick.daily"
     tick_id: str  # uuid4 per tick run, propagates into kg_tick_runs row
     scheduled_at: str  # ISO datetime when the scheduler fired the trigger
+    # Manual full rebuilds are executed by the durable handler, after the
+    # delivery execution has been committed as ``processing``.  Keeping this
+    # intent in the event closes the recovery-admission race that existed when
+    # the API reset graph revisions before publishing the event.
+    # A forced rebuild must use KGFullRebuildTick's distinct event type.  Old
+    # consumers ignore additive payload fields, so accepting True here would
+    # allow the intent to be silently downgraded to an ordinary daily tick.
+    force_full_rebuild: Literal[False] = False
+
+
+class KGFullRebuildTick(KGDailyTick):
+    """Fail-closed durable intent for a forced full KG recomputation.
+
+    Deploy consumers before producers (or drain this event type before a
+    downgrade). Older consumers do not know this type and therefore retry it
+    instead of silently acknowledging an ordinary tick without the reset.
+    """
+
+    event_type: ClassVar[str] = "kg.tick.full_rebuild"
+    force_full_rebuild: Literal[True] = True
 
 
 class KGDeliveryRedriveTick(DomainEvent):
@@ -409,6 +429,7 @@ EVENT_TYPES: list[str] = [
     CardSeverityChanged.event_type,
     BugRegressionScenarioReuseDecision.event_type,
     KGDailyTick.event_type,
+    KGFullRebuildTick.event_type,
     KGDeliveryRedriveTick.event_type,
 ]
 
@@ -443,6 +464,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     CardSeverityChanged.event_type: CardSeverityChanged,
     BugRegressionScenarioReuseDecision.event_type: BugRegressionScenarioReuseDecision,
     KGDailyTick.event_type: KGDailyTick,
+    KGFullRebuildTick.event_type: KGFullRebuildTick,
     KGDeliveryRedriveTick.event_type: KGDeliveryRedriveTick,
 }
 

@@ -23,6 +23,7 @@ from okto_pulse.core.kg.primitives import (
     add_node_candidate,
     begin_consolidation,
     commit_consolidation,
+    finalize_deferred_consolidation,
     get_similar_nodes,
     propose_reconciliation,
 )
@@ -144,6 +145,12 @@ async def _commit_connected_learning_session(
             ),
             agent_id=SYSTEM_KG_WRITER,
             db=db,
+            defer_session_finalization=True,
+        )
+        await db.commit()
+        await finalize_deferred_consolidation(
+            begin.session_id,
+            agent_id=SYSTEM_KG_WRITER,
         )
     return begin, commit
 
@@ -204,8 +211,7 @@ class TestBootstrapSchema:
         assert h1.path == h2.path
 
     def test_kuzu_has_all_node_tables(self, board_id):
-        db, conn = open_board_connection(board_id)
-        try:
+        with open_board_connection(board_id) as (_db, conn):
             r = conn.execute("CALL SHOW_TABLES() RETURN *")
             tables = {}
             while r.has_next():
@@ -215,12 +221,9 @@ class TestBootstrapSchema:
                 assert nt in tables, f"Missing node table: {nt}"
                 assert tables[nt] == "NODE"
             assert "BoardMeta" in tables
-        finally:
-            del conn, db
 
     def test_kuzu_has_all_rel_tables(self, board_id):
-        db, conn = open_board_connection(board_id)
-        try:
+        with open_board_connection(board_id) as (_db, conn):
             r = conn.execute("CALL SHOW_TABLES() RETURN *")
             tables = {}
             while r.has_next():
@@ -229,20 +232,15 @@ class TestBootstrapSchema:
             for rel_name, _, _ in REL_TYPES:
                 assert rel_name in tables, f"Missing rel table: {rel_name}"
                 assert tables[rel_name] == "REL"
-        finally:
-            del conn, db
 
     def test_board_meta_recorded(self, board_id):
-        db, conn = open_board_connection(board_id)
-        try:
+        with open_board_connection(board_id) as (_db, conn):
             r = conn.execute(
                 "MATCH (m:BoardMeta {board_id: $b}) RETURN m.schema_version",
                 {"b": board_id},
             )
             assert r.has_next()
             assert r.get_next()[0] == SCHEMA_VERSION
-        finally:
-            del conn, db
 
     @pytest.mark.asyncio
     async def test_sqlite_tables_exist(self, db_factory):
@@ -832,7 +830,7 @@ class TestOwnershipHNSWIdempotency:
 class TestAuditRowSchema:
     @pytest.mark.asyncio
     async def test_audit_row_has_all_fields(self, board_id, agent_id, db_factory, board_handle):
-        b, _commit = await _commit_connected_learning_session(
+        b, commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
             artifact_type="spec",
@@ -867,7 +865,10 @@ class TestAuditRowSchema:
             assert row[7] >= 1                   # nodes_added
             assert row[8] >= 0                   # nodes_updated
             assert row[9] == 0                   # nodes_superseded
-            assert row[10] == 1                  # edges_added
+            # The commit may also attach a deterministic belongs_to
+            # provenance backbone when a source root already exists.
+            assert row[10] >= 1                  # edges_added
+            assert row[10] == commit.edges_added
             assert row[11] == "Audit test summary"  # summary_text
             assert len(row[12]) == 64            # content_hash (sha256 hex)
             assert row[13] == "none"             # undo_status

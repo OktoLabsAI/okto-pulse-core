@@ -198,14 +198,16 @@ class CoreKnowledgeGraphOperations:
         tick_id: str,
         board_id: str | None,
         force_full_rebuild: bool,
-    ) -> None:
+        scheduled_at: str | None = None,
+    ) -> list[str]:
         from okto_pulse.core.application.kg_tick import dispatch_manual_tick
 
-        await dispatch_manual_tick(
+        return await dispatch_manual_tick(
             tick_id=tick_id,
             board_id=board_id,
             force_full_rebuild=force_full_rebuild,
             relational_context=self.__relational_context,
+            scheduled_at=scheduled_at,
         )
 
     async def evaluate_bug_cognitive_closure(
@@ -744,7 +746,7 @@ class CoreKnowledgeGraphOperations:
             reason=reason,
         )
 
-    async def build_global_discovery_recovery_seeds(
+    async def capture_global_discovery_recovery_seed_inputs(
         self,
         *,
         boards: list[tuple[str, str, str]],
@@ -752,10 +754,10 @@ class CoreKnowledgeGraphOperations:
             str, Mapping[str, str]
         ],
     ) -> tuple[object, ...]:
-        """Build candidate inputs from the UoW-bound relational snapshot."""
+        """Capture UoW-bound overlays before graph-only seed materialization."""
 
         from okto_pulse.core.ports.global_discovery_recovery_control import (
-            GlobalDiscoveryRecoveryBoardSeedService,
+            GlobalDiscoveryRecoveryBoardSeedInputService,
         )
 
         board_rows = sorted(boards)
@@ -766,11 +768,11 @@ class CoreKnowledgeGraphOperations:
             raise ValueError(
                 "captured cognitive exclusions must cover every recovery board"
             )
-        seed_service = GlobalDiscoveryRecoveryBoardSeedService()
+        input_service = GlobalDiscoveryRecoveryBoardSeedInputService()
         rows = []
         for board_id, board_name, board_summary in board_rows:
             rows.append(
-                await seed_service.build_board_seed(
+                await input_service.capture_board_seed_input(
                     self.__relational_context,
                     board_id=board_id,
                     board_name=board_name,

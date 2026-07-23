@@ -45,24 +45,25 @@ _board_source_reader = pytest.importorskip(
     reason="AF-04 Community integration test requires the Community board source reader.",
 )
 BoardSourceStore = _board_source_reader.BoardSourceStore
+_REQUIRED_SOURCE_COLUMNS = _board_source_reader._REQUIRED_SOURCE_COLUMNS
 
 
 def _make_spec_db(tmp_path: Path, decisions_json: list[dict]) -> Path:
-    """Tiny SQLite schema mirroring the production columns used by
-    BoardSourceStore.fetch — enough to exercise the decision emission
-    path without spinning up the full SQLAlchemy stack."""
+    """Complete source realm exercising decision emission without SQLAlchemy."""
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
+        for table, columns in _REQUIRED_SOURCE_COLUMNS.items():
+            definition = ", ".join(
+                f'"{column}" TEXT' for column in sorted(columns)
+            )
+            conn.execute(f'CREATE TABLE "{table}" ({definition})')
+        conn.execute("INSERT INTO boards (id) VALUES ('b1')")
         conn.execute(
-            "CREATE TABLE specs ("
-            "id TEXT, board_id TEXT, status TEXT, created_at TEXT, "
-            "title TEXT, description TEXT, version INTEGER, decisions TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO specs VALUES "
-            "('s1', 'b1', 'validated', '2026-05-26T00:00:00Z', "
-            "'Spec', 'D', 2, ?)",
+            "INSERT INTO specs "
+            "(id, board_id, status, created_at, title, description, version, decisions) "
+            "VALUES ('s1', 'b1', 'validated', '2026-05-26T00:00:00Z', "
+            "'Spec', 'D', '2', ?)",
             (json.dumps(decisions_json),),
         )
         conn.commit()

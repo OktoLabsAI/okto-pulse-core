@@ -22,6 +22,7 @@ Scenario -> test-card map:
 from __future__ import annotations
 
 import inspect
+import json
 import uuid
 from types import SimpleNamespace
 
@@ -397,8 +398,11 @@ class _FakeSession:
     async def _get_board(self, board_id: str):
         return SimpleNamespace(id=board_id, owner_id="op")
 
-    async def _dispatch_manual_tick(self, **kwargs) -> None:
-        await kg_tick_policy.dispatch_manual_tick(relational_context=self, **kwargs)
+    async def _dispatch_manual_tick(self, **kwargs) -> list[str]:
+        return await kg_tick_policy.dispatch_manual_tick(
+            relational_context=self,
+            **kwargs,
+        )
 
     async def commit(self) -> None:
         self.committed = True
@@ -443,6 +447,16 @@ def _request_without_scheduler():
     )
 
 
+async def _assert_tick_lease_reacquirable() -> None:
+    lease_provider = get_lease_provider()
+    reacquired = await lease_provider.try_acquire(
+        "kg_daily_tick",
+        ttl_seconds=300,
+    )
+    assert reacquired is not None
+    await lease_provider.release(reacquired)
+
+
 def _spy_publish(monkeypatch):
     published: list[object] = []
 
@@ -453,6 +467,8 @@ def _spy_publish(monkeypatch):
         actor_id=None,
         actor_type=None,
         scheduled_at=None,
+        force_full_rebuild=False,
+        tick_id=None,
     ):
         published.append(
             SimpleNamespace(
@@ -460,9 +476,11 @@ def _spy_publish(monkeypatch):
                 actor_id=actor_id,
                 actor_type=actor_type,
                 scheduled_at=scheduled_at,
+                force_full_rebuild=force_full_rebuild,
+                tick_id=tick_id,
             )
         )
-        return ["tick-test"]
+        return [str(tick_id)]
 
     import okto_pulse.core.events.handlers.kg_decay_tick as kg_decay_tick
 
@@ -608,9 +626,228 @@ async def test_ts_67fe9fd2_mcp_twin_inherits_refusal(monkeypatch):
     assert not get_async_lock("kg_daily_tick", "global").locked()
 
     raw = await server.okto_pulse_kg_tick_run_now.fn(board_id="board-degraded")
-    import json
 
     payload = json.loads(raw)
     assert payload["error"] == "graph_recovery_needed"
     assert payload["graph_state"] == "recovery_needed"
     assert payload["board_id"] == "board-degraded"
+    await _assert_tick_lease_reacquirable()
+
+
+@pytest.mark.asyncio
+async def test_mcp_tick_releases_lease_when_health_probe_raises(monkeypatch):
+    async def _fake_ctx(_board_id):
+        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+
+    async def _failed_health(_board_id, _uow, scheduler_control=None):
+        del scheduler_control
+        raise RuntimeError("health probe unavailable")
+
+    health_session = _FakeSession()
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return health_session
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _fake_ctx)
+    monkeypatch.setattr(kg_tick_policy, "get_kg_health", _failed_health)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: lambda **_kwargs: _SessionContext(),
+    )
+
+    with pytest.raises(RuntimeError, match="health probe unavailable"):
+        await server.okto_pulse_kg_tick_run_now.fn(board_id="board-health-error")
+
+    await _assert_tick_lease_reacquirable()
+
+
+@pytest.mark.asyncio
+async def test_mcp_tick_maps_retryable_recovery_defer_and_releases_lease(
+    monkeypatch,
+):
+    _install_tick_health(monkeypatch, "healthy")
+
+    async def _fake_ctx(_board_id):
+        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+
+    class _DeferredSession(_FakeSession):
+        async def _dispatch_manual_tick(self, **_kwargs) -> None:
+            raise kg_tick_policy.KGTickAdmissionDeferred(
+                reason_code="global_recovery_active"
+            )
+
+    deferred_session = _DeferredSession()
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return deferred_session
+
+        async def __aexit__(self, exc_type, _exc, _tb):
+            if exc_type is not None:
+                await deferred_session.rollback()
+            return None
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _fake_ctx)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: lambda **_kwargs: _SessionContext(),
+    )
+
+    raw = await server.okto_pulse_kg_tick_run_now.fn(board_id="board-deferred")
+
+    payload = json.loads(raw)
+    assert payload == {
+        "error": "kg_tick_deferred_for_global_recovery",
+        "reason": "global_recovery_active",
+        "retryable": True,
+        "message": (
+            "KG tick deferred while Global Discovery recovery owns the "
+            "mutation fence"
+        ),
+    }
+    assert deferred_session.committed is False
+    assert deferred_session.rolled_back is True
+    await _assert_tick_lease_reacquirable()
+
+
+@pytest.mark.asyncio
+async def test_mcp_tick_releases_lease_after_success(monkeypatch):
+    _install_tick_health(monkeypatch, "healthy")
+    published = _spy_publish(monkeypatch)
+
+    async def _fake_ctx(_board_id):
+        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+
+    session = _FakeSession()
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _fake_ctx)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: lambda **_kwargs: _SessionContext(),
+    )
+
+    raw = await server.okto_pulse_kg_tick_run_now.fn(board_id="board-success")
+
+    payload = json.loads(raw)
+    assert payload["status"] == "running"
+    assert payload["tick_id"]
+    assert payload["correlation_id"] == payload["tick_id"]
+    assert payload["tick_ids"] == [payload["tick_id"]]
+    assert payload["scheduled_at"] == published[0].scheduled_at
+    assert published[0].tick_id == payload["tick_id"]
+    assert session.committed is True
+    assert len(published) == 1
+    await _assert_tick_lease_reacquirable()
+
+
+@pytest.mark.asyncio
+async def test_mcp_tick_release_failure_after_commit_does_not_mask_success(
+    monkeypatch,
+    caplog,
+):
+    _install_tick_health(monkeypatch, "healthy")
+    published = _spy_publish(monkeypatch)
+
+    class _ReleaseFailsAfterCleanup(FakeLeaseProvider):
+        async def release(self, handle):
+            await super().release(handle)
+            raise RuntimeError("coordination cleanup unavailable")
+
+    lease_provider = _ReleaseFailsAfterCleanup()
+    register_coordination_providers(lease_provider=lease_provider)
+
+    async def _fake_ctx(_board_id):
+        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+
+    session = _FakeSession()
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _fake_ctx)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: lambda **_kwargs: _SessionContext(),
+    )
+
+    with caplog.at_level(
+        "ERROR",
+        logger="okto_pulse.mcp.tick",
+    ):
+        raw = await server.okto_pulse_kg_tick_run_now.fn(
+            board_id="board-release-error"
+        )
+
+    payload = json.loads(raw)
+    assert payload["status"] == "running"
+    assert payload["tick_ids"] == [payload["tick_id"]]
+    assert session.committed is True
+    assert len(published) == 1
+    assert lease_provider.is_held("kg_daily_tick") is False
+    record = next(
+        item
+        for item in caplog.records
+        if getattr(item, "event", None) == "kg.tick.lease_release_failed"
+    )
+    assert record.committed is True
+    assert record.source == "mcp"
+
+
+@pytest.mark.asyncio
+async def test_mcp_tick_releases_lease_after_schedule_failure(monkeypatch):
+    _install_tick_health(monkeypatch, "healthy")
+
+    async def _fake_ctx(_board_id):
+        return SimpleNamespace(agent=SimpleNamespace(id="agent-mcp"))
+
+    class _FailedSession(_FakeSession):
+        async def _dispatch_manual_tick(self, **_kwargs) -> None:
+            raise RuntimeError("event store unavailable")
+
+    failed_session = _FailedSession()
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return failed_session
+
+        async def __aexit__(self, exc_type, _exc, _tb):
+            if exc_type is not None:
+                await failed_session.rollback()
+            return None
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _fake_ctx)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: lambda **_kwargs: _SessionContext(),
+    )
+
+    raw = await server.okto_pulse_kg_tick_run_now.fn(
+        board_id="board-schedule-error"
+    )
+
+    payload = json.loads(raw)
+    assert payload["error"] == "tick_schedule_failed"
+    assert payload["detail"] == "event store unavailable"
+    assert failed_session.committed is False
+    assert failed_session.rolled_back is True
+    await _assert_tick_lease_reacquirable()

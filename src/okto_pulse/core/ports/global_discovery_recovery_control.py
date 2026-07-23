@@ -6,6 +6,7 @@ implementation modules.
 """
 
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 
 from okto_pulse.core.kg.global_discovery_recovery import (
@@ -97,13 +98,80 @@ from okto_pulse.core.kg.global_discovery_recovery_control import (
 from okto_pulse.core.kg.rebuild_sources import cognitive_durable_digest_from_rows
 
 
-class GlobalDiscoveryRecoveryBoardSeedService:
-    """Narrow recovery-only board projection facade.
+@dataclass(frozen=True, slots=True)
+class GlobalDiscoveryRecoveryBoardSeedInput:
+    """Immutable handoff from the relational capture to graph materialization."""
 
-    Recovery callers must supply the cognitive overlay captured behind the
-    durable revision fence.  The facade therefore cannot fall back to the
-    processor's ordinary live overlay read.
-    """
+    board_id: str
+    board_name: str
+    board_summary: str
+    overlay_exclusions: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        board_id = str(self.board_id).strip()
+        if not board_id:
+            raise ValueError("board_id is required")
+        exclusions = tuple(
+            (str(artifact_id), str(reason))
+            for artifact_id, reason in self.overlay_exclusions
+        )
+        if any(not artifact_id or not reason for artifact_id, reason in exclusions):
+            raise ValueError("overlay exclusions must be non-empty")
+        if len({artifact_id for artifact_id, _reason in exclusions}) != len(
+            exclusions
+        ):
+            raise ValueError("overlay exclusions must be unique by artifact")
+        object.__setattr__(self, "board_id", board_id)
+        object.__setattr__(self, "board_name", str(self.board_name))
+        object.__setattr__(self, "board_summary", str(self.board_summary))
+        object.__setattr__(self, "overlay_exclusions", tuple(sorted(exclusions)))
+
+
+class GlobalDiscoveryRecoveryBoardSeedInputService:
+    """UoW-bound capture of the relational half of one recovery seed."""
+
+    async def capture_board_seed_input(
+        self,
+        db: object,
+        *,
+        board_id: str,
+        board_name: str,
+        board_summary: str,
+        captured_cognitive_pending_exclusions: Mapping[str, str],
+    ) -> GlobalDiscoveryRecoveryBoardSeedInput:
+        """Capture every relational overlay required by the graph-only phase."""
+
+        from okto_pulse.core.kg.canonical_partition_integrity import (
+            canonical_debt_exclusions,
+        )
+        from okto_pulse.core.kg.connectivity_guard import (
+            CANONICAL_LEARNING_WORKING_ONLY_REASON,
+        )
+
+        overlay = {
+            str(artifact_id): str(reason)
+            for artifact_id, reason in captured_cognitive_pending_exclusions.items()
+        }
+        if any(
+            not artifact_id
+            or reason != CANONICAL_LEARNING_WORKING_ONLY_REASON
+            for artifact_id, reason in overlay.items()
+        ):
+            raise ValueError("captured cognitive pending exclusions are invalid")
+
+        # Debt outranks a captured cognitive hold for the same artifact.  This
+        # is the final relational read; no session/context escapes in the DTO.
+        overlay.update(await canonical_debt_exclusions(db, board_id=board_id))
+        return GlobalDiscoveryRecoveryBoardSeedInput(
+            board_id=str(board_id),
+            board_name=str(board_name),
+            board_summary=str(board_summary),
+            overlay_exclusions=tuple(sorted(overlay.items())),
+        )
+
+
+class GlobalDiscoveryRecoveryBoardSeedService:
+    """Graph-only recovery projection facade with no relational capability."""
 
     def __init__(self, *, blocking_execution: object | None = None) -> None:
         from okto_pulse.core.application.processors.global_outbox import (
@@ -116,21 +184,19 @@ class GlobalDiscoveryRecoveryBoardSeedService:
 
     async def build_board_seed(
         self,
-        db: object,
-        *,
-        board_id: str,
-        board_name: str,
-        board_summary: str,
-        captured_cognitive_pending_exclusions: Mapping[str, str],
+        seed_input: GlobalDiscoveryRecoveryBoardSeedInput,
     ) -> GlobalDiscoveryBoardSeed:
+        """Materialize one seed without retaining a relational capability."""
+
+        if not isinstance(seed_input, GlobalDiscoveryRecoveryBoardSeedInput):
+            raise TypeError(
+                "seed_input must be GlobalDiscoveryRecoveryBoardSeedInput"
+            )
         return await self.__processor.build_recovery_board_seed(
-            db,
-            board_id=board_id,
-            board_name=board_name,
-            board_summary=board_summary,
-            captured_cognitive_pending_exclusions=(
-                captured_cognitive_pending_exclusions
-            ),
+            board_id=seed_input.board_id,
+            board_name=seed_input.board_name,
+            board_summary=seed_input.board_summary,
+            captured_overlay_exclusions=dict(seed_input.overlay_exclusions),
         )
 
 
@@ -269,6 +335,8 @@ __all__ = [
     "RECOVERY_PREPARED_TTL_SECONDS",
     "RECOVERY_WORKER_LEASE_MS",
     "GlobalDiscoveryBoardInventory",
+    "GlobalDiscoveryRecoveryBoardSeedInput",
+    "GlobalDiscoveryRecoveryBoardSeedInputService",
     "GlobalDiscoveryRecoveryBoardSeedService",
     "GlobalDiscoveryRecoveryWorkerInputStore",
     "GlobalDiscoveryRecoveryWorkerInputs",

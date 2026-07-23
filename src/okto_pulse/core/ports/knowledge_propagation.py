@@ -55,6 +55,7 @@ class KnowledgeMutationKind(str, Enum):
     DROP_DELTA = "drop_delta"
     REPLACE_EMPTY = "replace_empty"
     REFRESH_SNAPSHOT = "refresh_snapshot"
+    RELINK_RESET = "relink_reset"
     GRANDFATHER = "grandfather"
 
 
@@ -473,6 +474,60 @@ class KnowledgeLegacyAttachment:
 
 
 @dataclass(frozen=True, slots=True)
+class KnowledgeLocalAttachment:
+    """Physical target-local attachment created under v2 authority.
+
+    ``attached_at`` is durable classification evidence.  Adapters must only
+    project an attachment through this contract only when it was created
+    strictly after the target's immutable ``v2_activated_at`` boundary.
+    """
+
+    source_knowledge_id: str
+    revision_stamp: ResourceRevisionStamp
+    attached_at: datetime
+    content_bytes: bytes | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "source_knowledge_id",
+            _required_text(self.source_knowledge_id, "source_knowledge_id"),
+        )
+        stamp = _canonical_stamp(
+            self.revision_stamp,
+            require_revision_evidence=True,
+        )
+        if self.content_bytes is not None:
+            if not isinstance(self.content_bytes, bytes):
+                raise ValueError(
+                    "knowledge_propagation_local_attachment_content_invalid"
+                )
+            if hashlib.sha256(self.content_bytes).hexdigest() != (
+                stamp.source_content_sha256
+            ):
+                raise ValueError(
+                    "knowledge_propagation_local_attachment_hash_mismatch"
+                )
+        object.__setattr__(self, "revision_stamp", stamp)
+        object.__setattr__(
+            self,
+            "attached_at",
+            _utc(self.attached_at, "attached_at"),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "source_knowledge_id": self.source_knowledge_id,
+            "revision_stamp": self.revision_stamp.to_dict(),
+            "attached_at": self.attached_at.isoformat(),
+            "content_available": self.content_bytes is not None,
+            "content_size_bytes": (
+                None if self.content_bytes is None else len(self.content_bytes)
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class KnowledgeSelectableSource:
     """One verified source resolved for a requested Knowledge Base token."""
 
@@ -670,6 +725,8 @@ class KnowledgePropagationScope:
     snapshots: tuple[KnowledgePropagationSnapshot, ...] = ()
     legacy_attachments: tuple[KnowledgeLegacyAttachment, ...] = ()
     sources: tuple[KnowledgeSelectableSource, ...] = ()
+    local_attachments: tuple[KnowledgeLocalAttachment, ...] = ()
+    v2_activated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.target, KnowledgeTargetKey):
@@ -699,6 +756,11 @@ class KnowledgePropagationScope:
                 raise ValueError("knowledge_propagation_active_scope_state_invalid")
         elif state is not None:
             raise ValueError("knowledge_propagation_inactive_scope_state_invalid")
+        v2_activated_at = (
+            None
+            if self.v2_activated_at is None
+            else _utc(self.v2_activated_at, "v2_activated_at")
+        )
 
         assignments = _canonical_objects(
             self.assignments,
@@ -751,6 +813,18 @@ class KnowledgePropagationScope:
             field_name="sources",
             identity=lambda item: item.requested_knowledge_id,
         )
+        local = _canonical_objects(
+            self.local_attachments,
+            KnowledgeLocalAttachment,
+            field_name="local_attachments",
+            identity=lambda item: item.source_knowledge_id,
+        )
+        if v2_activated_at is not None and any(
+            item.attached_at <= v2_activated_at for item in local
+        ):
+            raise ValueError(
+                "knowledge_propagation_local_attachment_predates_v2_activation"
+            )
         for item in tombstones:
             if item.target != self.target:
                 raise ValueError("knowledge_propagation_tombstone_target_mismatch")
@@ -794,6 +868,8 @@ class KnowledgePropagationScope:
         object.__setattr__(self, "snapshots", snapshots)
         object.__setattr__(self, "legacy_attachments", legacy)
         object.__setattr__(self, "sources", sources)
+        object.__setattr__(self, "local_attachments", local)
+        object.__setattr__(self, "v2_activated_at", v2_activated_at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1518,6 +1594,17 @@ class KnowledgeMutationPlan:
                 or len(snapshot_links) != len(snapshots)
             ):
                 raise ValueError("knowledge_propagation_refresh_snapshot_plan_invalid")
+        elif kind is KnowledgeMutationKind.RELINK_RESET:
+            if (
+                self.selection is not None
+                or assignments
+                or tombstones
+                or snapshots
+                or supersession_links
+                or next_state is not KnowledgeSelectionState.OMITTED
+                or not self.next_scope_v2_active
+            ):
+                raise ValueError("knowledge_propagation_relink_reset_plan_invalid")
         elif kind is KnowledgeMutationKind.GRANDFATHER:
             if (
                 self.selection is not None
@@ -1671,6 +1758,7 @@ def reset_knowledge_mutation_audit_sink_for_tests() -> None:
 __all__ = [
     "KnowledgeIdempotencyLookup",
     "KnowledgeLegacyAttachment",
+    "KnowledgeLocalAttachment",
     "KnowledgeParentEvidence",
     "KnowledgeParentKey",
     "KnowledgeParentLookup",

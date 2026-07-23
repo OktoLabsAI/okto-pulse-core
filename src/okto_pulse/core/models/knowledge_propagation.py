@@ -350,7 +350,7 @@ class KnowledgeRefreshResponse(BaseModel):
 
 
 class KnowledgeAssignmentTechnicalProjection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     root_knowledge_id: str
     mode: KnowledgePropagationMode
@@ -360,27 +360,16 @@ class KnowledgeAssignmentTechnicalProjection(BaseModel):
 
 
 class KnowledgeTechnicalReadResponse(BaseModel):
-    """Technical dual-read projection for operators and diagnostic clients."""
+    """Minimal versioned projection of the current effective selection."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     contract_version: Literal[2] = KNOWLEDGE_PROPAGATION_CONTRACT_VERSION
-    target: dict[str, str]
     revision: int
-    v2_active: bool
     selection_state: KnowledgeSelectionState | None
     assignments: list[KnowledgeAssignmentTechnicalProjection] = Field(
         default_factory=list
     )
-    scope_revision: int | None = None
-    resolved_assignments: list[dict[str, Any]] = Field(default_factory=list)
-    effective_assignment_ids: list[str] = Field(default_factory=list)
-    effective_legacy_attachments: list[dict[str, Any]] = Field(default_factory=list)
-    history_assignments: list[dict[str, Any]] = Field(default_factory=list)
-    history_legacy_attachments: list[dict[str, Any]] = Field(default_factory=list)
-    tombstones: list[dict[str, Any]] = Field(default_factory=list)
-    snapshots: list[dict[str, Any]] = Field(default_factory=list)
-    effective_count: int
 
 
 __all__ = [

@@ -46,9 +46,9 @@ def _restore_core_settings():
 def test_community_settings_graph_defaults_are_safe():
     """AC3: Community owns safe defaults for its graph database adapter."""
     s = CommunitySettings()
-    assert s.kg_kuzu_buffer_pool_mb == 512
+    assert s.kg_kuzu_buffer_pool_mb == 256
     assert s.kg_kuzu_max_db_size_gb == 2
-    assert s.kg_connection_pool_size == 8
+    assert s.kg_connection_pool_size == 2
 
 
 def test_community_settings_rejects_unsupported_max_db_size():
@@ -91,7 +91,9 @@ def test_open_kuzu_db_passes_kwargs_in_bytes(tmp_path):
         schema_module._open_kuzu_db(fake_path)
 
     assert captured["path"] == str(fake_path)
-    assert captured["buffer_pool_size"] == 512 * 1024 * 1024  # 536_870_912
+    # The persisted 512 MB value is clamped by the embedded runtime's
+    # independent constructor ceiling.
+    assert captured["buffer_pool_size"] == 256 * 1024 * 1024
     assert captured["max_db_size"] == 2 * 1024 * 1024 * 1024  # 2_147_483_648
 
 
@@ -119,7 +121,7 @@ def test_open_kuzu_db_failure_message_includes_graph_settings(tmp_path):
             schema_module._open_kuzu_db(tmp_path / "graph.lbug")
 
     msg = str(exc_info.value)
-    assert "kg_kuzu_buffer_pool_mb=512MB" in msg
+    assert "kg_kuzu_buffer_pool_mb=256MB (configured=512MB)" in msg
     assert "kg_kuzu_max_db_size_gb=2GB" in msg
     assert "2, 4, 8, 16, 32 or 64 GB" in msg
 
@@ -219,7 +221,7 @@ def test_open_kuzu_db_controls_wal_salvage_flag():
 
     import okto_pulse.community.adapters.kg_runtime as kg_runtime
 
-    factory_src = inspect.getsource(kg_runtime._open_kuzu_db)
+    factory_src = inspect.getsource(kg_runtime._open_kuzu_db_unserialized)
     assert "throw_on_wal_replay_failure" in factory_src, (
         "_open_kuzu_db must pass throw_on_wal_replay_failure on its opens"
     )
@@ -252,13 +254,17 @@ def test_pool_cap_reads_core_settings(monkeypatch, caplog):
 
     monkeypatch.delenv("KG_CONNECTION_POOL_SIZE", raising=False)
     configure_settings(CommunitySettings(kg_connection_pool_size=8))
-    assert connection_pool._read_cap_from_env() == 8
+    with caplog.at_level(logging.WARNING, logger="okto_pulse.kg.connection_pool"):
+        cap = connection_pool._read_cap_from_env()
+    assert cap == 2
+    assert any("cap_clamped" in rec.message for rec in caplog.records)
 
     monkeypatch.setenv("KG_CONNECTION_POOL_SIZE", "16")
     with caplog.at_level(logging.WARNING, logger="okto_pulse.kg.connection_pool"):
         cap = connection_pool._read_cap_from_env()
-    assert cap == 16
+    assert cap == 2
     assert any("env_override_detected" in rec.message for rec in caplog.records)
+    assert any("cap_clamped" in rec.message for rec in caplog.records)
 
 
 def test_pool_cap_env_invalid_falls_back_to_settings(monkeypatch):
@@ -267,7 +273,7 @@ def test_pool_cap_env_invalid_falls_back_to_settings(monkeypatch):
 
     configure_settings(CommunitySettings(kg_connection_pool_size=12))
     monkeypatch.setenv("KG_CONNECTION_POOL_SIZE", "not-a-number")
-    assert connection_pool._read_cap_from_env() == 12
+    assert connection_pool._read_cap_from_env() == 2
 
 
 # ----------------------------------------------------------------------
@@ -322,9 +328,9 @@ async def test_settings_runtime_get_returns_defaults(settings_client):
     response = await settings_client.get("/api/v1/settings/runtime")
     assert response.status_code == 200
     data = response.json()
-    assert data["kg_kuzu_buffer_pool_mb"] == 512
+    assert data["kg_kuzu_buffer_pool_mb"] == 256
     assert data["kg_kuzu_max_db_size_gb"] == 2
-    assert data["kg_connection_pool_size"] == 8
+    assert data["kg_connection_pool_size"] == 2
     assert isinstance(data["restart_required"], bool)
 
 
@@ -337,17 +343,20 @@ async def test_settings_runtime_put_persists_and_flips_restart(settings_client):
 
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={"kg_kuzu_buffer_pool_mb": 256},
+        json={"kg_kuzu_buffer_pool_mb": 128},
     )
     assert put_resp.status_code == 200
     put_data = put_resp.json()
-    assert put_data["kg_kuzu_buffer_pool_mb"] == 512  # effective still the boot value
+    assert put_data["kg_kuzu_buffer_pool_mb"] == 256
+    assert put_data["desired_values"]["kg_kuzu_buffer_pool_mb"] == 128
     assert put_data["restart_required"] is True
 
     # Second GET confirms persistence.
     get_resp = await settings_client.get("/api/v1/settings/runtime")
     assert get_resp.status_code == 200
-    assert get_resp.json()["restart_required"] is True
+    get_data = get_resp.json()
+    assert get_data["restart_required"] is True
+    assert get_data["desired_values"]["kg_kuzu_buffer_pool_mb"] == 128
 
 
 @pytest.mark.asyncio
@@ -400,8 +409,10 @@ def test_commit_error_context_mentions_buffer_pool_settings():
     msg, details = _contextualize_graph_commit_error(mapped)
 
     assert "buffer manager exception" in msg.lower()
-    assert "512 MB" in details["remediation"]
+    assert "Reduce the local graph buffer pool" in details["remediation"]
     assert details["graph_buffer_pool_mb"] == 128
+    assert details["graph_buffer_pool_configured_mb"] == 128
+    assert details["graph_buffer_pool_effective_mb"] == 128
     assert details["graph_max_db_size_gb"] == 2
 
 

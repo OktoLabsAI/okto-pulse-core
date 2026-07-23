@@ -29,6 +29,11 @@ from okto_pulse.core.models.schemas import (
     SpecKnowledgeUpdate,
     SpecUpdate,
 )
+from okto_pulse.core.ports.knowledge_propagation import (
+    KnowledgePropagationScope,
+    register_knowledge_propagation_port,
+    reset_knowledge_propagation_port_for_tests,
+)
 from okto_pulse.core.services.architecture import ArchitectureDesignRepository
 from okto_pulse.core.services.main import (
     BoardService,
@@ -37,6 +42,25 @@ from okto_pulse.core.services.main import (
     SpecService,
 )
 from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
+
+
+class _LegacyKnowledgeScopePort:
+    async def load_scope(self, _context, request):
+        return KnowledgePropagationScope(
+            target=request.target,
+            scope_revision=0,
+            v2_active=False,
+            selection_state=None,
+        )
+
+
+@pytest.fixture(autouse=True)
+def _register_legacy_knowledge_scope_port():
+    register_knowledge_propagation_port(_LegacyKnowledgeScopePort())
+    try:
+        yield
+    finally:
+        reset_knowledge_propagation_port_for_tests()
 
 
 def _id(prefix: str) -> str:

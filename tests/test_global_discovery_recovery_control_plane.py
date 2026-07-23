@@ -34,11 +34,19 @@ from okto_pulse.core.kg.global_discovery_recovery_control import (
     recovery_attempt_id,
 )
 from okto_pulse.core.kg.providers.testing.memory_recovery_run_store import (
-    MemoryRecoveryControlStore,
+    MemoryRecoveryControlStore as _MemoryRecoveryControlStore,
 )
 
 
 NOW = datetime.now(timezone.utc)
+
+
+class MemoryRecoveryControlStore(_MemoryRecoveryControlStore):
+    """Use the scenario clock so prepared manifests cannot age during collection."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs.setdefault("clock", lambda: NOW)
+        super().__init__(*args, **kwargs)
 
 
 class RecordingDispatcher:

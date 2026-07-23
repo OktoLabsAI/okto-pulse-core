@@ -25,7 +25,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from okto_pulse.core.events.bus import register_handler
-from okto_pulse.core.events.types import KGDailyTick, KGDeliveryRedriveTick
+from okto_pulse.core.events.types import (
+    KGDailyTick,
+    KGDeliveryRedriveTick,
+    KGFullRebuildTick,
+)
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
@@ -422,9 +426,11 @@ async def publish_tick_events(
     session,
     *,
     board_id: str | None = None,
+    tick_id: str | None = None,
     actor_id: str | None = None,
     actor_type: str | None = None,
     scheduled_at: str | None = None,
+    force_full_rebuild: bool = False,
     clock: WorkerClockPort | None = None,
 ) -> list[str]:
     """Publica ``KGDailyTick`` com FAN-OUT por board real. Retorna os tick_ids.
@@ -443,11 +449,22 @@ async def publish_tick_events(
     ON DELETE CASCADE. O handler já suportava ``board_id`` concreto.
     """
     from okto_pulse.core.events import publish as event_publish
+    from okto_pulse.core.application.kg_tick import require_kg_tick_admission
+
+    await require_kg_tick_admission(
+        session,
+        trigger="event_publication",
+        fence_publication=True,
+    )
 
     if board_id and board_id != "*":
+        concrete_board = True
         board_ids = [board_id]
     else:
-        board_ids = list(await get_relational_effects_port().list_board_ids(session))
+        concrete_board = False
+        board_ids = sorted(
+            set(await get_relational_effects_port().list_board_ids(session))
+        )
 
     when = scheduled_at or _clock_now(clock).isoformat()
     extra_kwargs: dict[str, str] = {}
@@ -458,12 +475,29 @@ async def publish_tick_events(
 
     tick_ids: list[str] = []
     for bid in board_ids:
-        tid = str(uuid.uuid4())
+        tid = (
+            str(tick_id)
+            if tick_id is not None and concrete_board
+            else (
+                str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"urn:okto-pulse:kg-tick:{tick_id}:board:{bid}",
+                    )
+                )
+                if tick_id is not None
+                else str(uuid.uuid4())
+            )
+        )
+        event_class = (
+            KGFullRebuildTick if force_full_rebuild else KGDailyTick
+        )
         await event_publish(
-            KGDailyTick(
+            event_class(
                 board_id=bid,
                 tick_id=tid,
                 scheduled_at=when,
+                force_full_rebuild=force_full_rebuild,
                 **extra_kwargs,
             ),
             session=session,
@@ -515,7 +549,9 @@ def _fetch_stale_nodes(
             rows.append((node_type, str(row[0])))
     except Exception as exc:
         logger.warning(
-            "kg.tick.fetch_stale_failed node_type=%s err=%s", node_type, exc,
+            "kg.tick.fetch_stale_failed node_type=%s err=%s",
+            node_type,
+            exc,
         )
     return rows
 
@@ -546,13 +582,17 @@ def _count_stale_nodes_pre_tick(conn, cutoff_iso: str) -> int:
         except Exception as exc:
             logger.debug(
                 "kg.tick.stale_count_failed node_type=%s err=%s",
-                node_type, exc,
+                node_type,
+                exc,
             )
     return total
 
 
 def _process_board_sync(
-    board_id: str, cutoff_iso: str, *, batch_size: int,
+    board_id: str,
+    cutoff_iso: str,
+    *,
+    batch_size: int,
 ) -> tuple[int, int]:
     """Drain stale nodes for one board. Returns (recomputed, stale_pre_count).
 
@@ -573,21 +613,29 @@ def _process_board_sync(
                 cursor: str | None = None
                 while True:
                     stale = _fetch_stale_nodes(
-                        scope, node_type, cutoff_iso, cursor,
+                        scope,
+                        node_type,
+                        cutoff_iso,
+                        cursor,
                         limit=batch_size,
                     )
                     if not stale:
                         break
                     try:
                         persisted = _recompute_relevance_batch(
-                            scope, board_id, stale, trigger="daily_tick",
+                            scope,
+                            board_id,
+                            stale,
+                            trigger="daily_tick",
                         )
                         total += persisted
                     except Exception as exc:
                         # BR14 — a single batch failure does not abort the tick.
                         logger.warning(
                             "kg.tick.batch_failed board=%s node_type=%s err=%s",
-                            board_id, node_type, exc,
+                            board_id,
+                            node_type,
+                            exc,
                         )
                     cursor = stale[-1][1]
                     if len(stale) < batch_size:
@@ -700,7 +748,10 @@ async def _run_daily_tick(
     for bid in boards:
         try:
             recomputed, stale_pre = await asyncio.to_thread(
-                _process_board_sync, bid, cutoff_iso, batch_size=batch_size,
+                _process_board_sync,
+                bid,
+                cutoff_iso,
+                batch_size=batch_size,
             )
             boards_processed += 1
             total_recomputed += recomputed
@@ -711,7 +762,8 @@ async def _run_daily_tick(
             boards_failed += 1
             logger.warning(
                 "kg.tick.board_failed board_id=%s error=%s",
-                bid, str(exc),
+                bid,
+                str(exc),
                 extra={
                     "event": "kg.tick.board_failed",
                     "board_id": bid,
@@ -815,20 +867,66 @@ async def _run_daily_tick(
     return summary
 
 
-@register_handler("kg.tick.daily")
+@register_handler("kg.tick.daily", "kg.tick.full_rebuild")
 class KGDailyTickHandler:
     def __init__(self, *, clock: WorkerClockPort | None = None) -> None:
         self._clock = clock
 
-    async def handle(self, event: KGDailyTick, session: object) -> None:
+    async def handle(
+        self,
+        event: KGDailyTick | KGFullRebuildTick,
+        session: object,
+    ) -> None:
+        from okto_pulse.core.application.kg_tick import (
+            KGTickAdmissionDeferred,
+            KGTickFullRebuildResetFailed,
+            require_kg_tick_admission,
+        )
+
         started_at = _clock_now(self._clock)
         try:
+            await require_kg_tick_admission(
+                session,
+                trigger="daily_handler",
+            )
+            if event.force_full_rebuild:
+                # The dispatcher durably marks this event execution
+                # ``processing`` before invoking the handler.  Recovery
+                # admission observes that marker and cannot start between this
+                # graph mutation and the rest of the tick.
+                from okto_pulse.core.application.kg_tick import (
+                    reset_last_recomputed_at,
+                )
+
+                await reset_last_recomputed_at(
+                    None if event.board_id == "*" else event.board_id,
+                    relational_context=session,
+                    mutation_ref=event.tick_id,
+                )
             await _run_daily_tick(
                 tick_id=event.tick_id,
                 session=session,
                 board_id=event.board_id,
                 clock=self._clock,
             )
+        except KGTickAdmissionDeferred:
+            # The application gate already emitted the structured deferral.
+            # Propagate so the dispatcher rolls back and leaves the delivery
+            # retryable instead of acknowledging work that never ran.
+            raise
+        except KGTickFullRebuildResetFailed:
+            logger.exception(
+                "kg.tick.full_rebuild_reset_rollback "
+                "tick_id=%s board_id=%s",
+                event.tick_id,
+                event.board_id,
+                extra={
+                    "event": "kg.tick.full_rebuild_reset_rollback",
+                    "tick_id": event.tick_id,
+                    "board_id": event.board_id,
+                },
+            )
+            raise
         except (DeliveryMaintenanceFailed, StaleSweepMaintenanceFailed):
             # Cards 7/8: never attempt an error upsert in the tainted
             # transaction and never let the dispatcher ACK/commit partial
@@ -857,9 +955,7 @@ class KGDailyTickHandler:
                     started_at=started_at,
                     completed_at=completed_at,
                     nodes_recomputed=0,
-                    duration_ms=(
-                        completed_at - started_at
-                    ).total_seconds() * 1000.0,
+                    duration_ms=(completed_at - started_at).total_seconds() * 1000.0,
                     boards_processed=0,
                     boards_failed=0,
                     error=str(exc),
@@ -883,6 +979,12 @@ class KGDeliveryRedriveTickHandler:
         event: KGDeliveryRedriveTick,
         session: object,
     ) -> None:
+        from okto_pulse.core.application.kg_tick import require_kg_tick_admission
+
+        await require_kg_tick_admission(
+            session,
+            trigger="delivery_redrive_handler",
+        )
         port = _optional_delivery_ledger_port()
         if port is None:
             logger.warning(

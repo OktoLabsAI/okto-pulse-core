@@ -34,6 +34,7 @@ from okto_pulse.core.domain.resource_revision import ResourceRevisionStamp
 from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgeIdempotencyLookup,
     KnowledgeLegacyAttachment,
+    KnowledgeLocalAttachment,
     KnowledgeMutationAttempt,
     KnowledgeMutationKind,
     KnowledgeMutationLedgerEntry,
@@ -397,6 +398,78 @@ class KnowledgeRefreshByKnowledgeIdsCommand:
         if not knowledge_ids:
             raise ValueError("knowledge_propagation_knowledge_ids_empty")
         object.__setattr__(self, "knowledge_ids", knowledge_ids)
+        object.__setattr__(
+            self,
+            "actor_id",
+            _required_text(self.actor_id, "actor_id"),
+        )
+        object.__setattr__(
+            self,
+            "expected_revision",
+            _revision(self.expected_revision),
+        )
+        object.__setattr__(
+            self,
+            "idempotency_key",
+            _required_text(self.idempotency_key, "idempotency_key"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeRelinkResetCommand:
+    """Reset a target's v2 selection while its parent link is replaced.
+
+    Relinking never relinquishes v2 authority.  The reset closes temporal
+    records from the old parent and leaves an active, omitted v2 scope for the
+    target.  Knowledge from the new parent requires a later explicit
+    selection; relink itself never creates an assignment.  A missing next
+    parent represents unlink/delete-parent; a missing previous parent is
+    reserved for repairing an already-detached target.
+    """
+
+    target: KnowledgeTargetKey
+    previous_parent: KnowledgeParentKey | None
+    next_parent: KnowledgeParentKey | None
+    actor_id: str
+    expected_revision: int
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.target, KnowledgeTargetKey):
+            raise ValueError("knowledge_propagation_relink_target_invalid")
+        target_type = cast(KnowledgeTargetType, self.target.target_type)
+        allowed_parent_types = (
+            {KnowledgeParentType.SPEC}
+            if target_type is KnowledgeTargetType.CARD
+            else {
+                KnowledgeParentType.IDEATION,
+                KnowledgeParentType.REFINEMENT,
+            }
+        )
+        if target_type not in {
+            KnowledgeTargetType.CARD,
+            KnowledgeTargetType.SPEC,
+        }:
+            raise ValueError("knowledge_propagation_relink_target_type_invalid")
+        for field_name in ("previous_parent", "next_parent"):
+            parent = getattr(self, field_name)
+            if parent is None:
+                continue
+            if not isinstance(parent, KnowledgeParentKey):
+                raise ValueError(
+                    f"knowledge_propagation_relink_{field_name}_invalid"
+                )
+            if (
+                parent.board_id != self.target.board_id
+                or parent.parent_type not in allowed_parent_types
+            ):
+                raise ValueError(
+                    "knowledge_propagation_relink_parent_target_invalid"
+                )
+        if self.previous_parent is None and self.next_parent is None:
+            raise ValueError("knowledge_propagation_relink_parents_missing")
+        if self.previous_parent == self.next_parent:
+            raise ValueError("knowledge_propagation_relink_parent_unchanged")
         object.__setattr__(
             self,
             "actor_id",
@@ -1013,6 +1086,7 @@ class ResolvedKnowledgeAssignment:
     revision_stamp: ResourceRevisionStamp
     content_bytes: bytes | None = field(default=None, repr=False)
     reason: str | None = None
+    resolved_source_knowledge_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.assignment, KnowledgeAssignment):
@@ -1026,6 +1100,14 @@ class ResolvedKnowledgeAssignment:
         if self.content_bytes is not None and not isinstance(self.content_bytes, bytes):
             raise ValueError("knowledge_propagation_resolved_content_invalid")
         object.__setattr__(self, "reason", _optional_text(self.reason, "reason"))
+        object.__setattr__(
+            self,
+            "resolved_source_knowledge_id",
+            _optional_text(
+                self.resolved_source_knowledge_id,
+                "resolved_source_knowledge_id",
+            ),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1037,6 +1119,7 @@ class ResolvedKnowledgeAssignment:
             "content_size_bytes": (
                 None if self.content_bytes is None else len(self.content_bytes)
             ),
+            "resolved_source_knowledge_id": self.resolved_source_knowledge_id,
             "reason": self.reason,
         }
 
@@ -1055,6 +1138,8 @@ class KnowledgePropagationReadResult:
     history_legacy_attachments: tuple[KnowledgeLegacyAttachment, ...]
     tombstones: tuple[KnowledgePropagationTombstone, ...]
     snapshots: tuple[KnowledgePropagationSnapshot, ...]
+    effective_local_attachments: tuple[KnowledgeLocalAttachment, ...] = ()
+    v2_activated_at: datetime | None = None
 
     @property
     def effective_assignments(self) -> tuple[ResolvedKnowledgeAssignment, ...]:
@@ -1062,7 +1147,11 @@ class KnowledgePropagationReadResult:
 
     @property
     def effective_count(self) -> int:
-        return len(self.effective_assignments) + len(self.effective_legacy_attachments)
+        return (
+            len(self.effective_assignments)
+            + len(self.effective_local_attachments)
+            + len(self.effective_legacy_attachments)
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1070,6 +1159,11 @@ class KnowledgePropagationReadResult:
             "target": self.target.to_dict(),
             "scope_revision": self.scope_revision,
             "v2_active": self.v2_active,
+            "v2_activated_at": (
+                None
+                if self.v2_activated_at is None
+                else self.v2_activated_at.isoformat()
+            ),
             "selection_state": (
                 None if self.selection_state is None else self.selection_state.value
             ),
@@ -1081,6 +1175,9 @@ class KnowledgePropagationReadResult:
             ],
             "effective_legacy_attachments": [
                 item.to_dict() for item in self.effective_legacy_attachments
+            ],
+            "effective_local_attachments": [
+                item.to_dict() for item in self.effective_local_attachments
             ],
             "history_assignments": [
                 item.to_dict() for item in self.history_assignments
@@ -1246,6 +1343,115 @@ class KnowledgePropagationService:
                 actor_id=mutation_command.actor_id,
                 operation_kind=operation_kind,
                 idempotency_key=mutation_command.idempotency_key,
+                request_hash=request_hash,
+            )
+            if wrapped is exc:
+                raise
+            raise wrapped from exc
+
+    async def reset_for_relink(
+        self,
+        context: Any,
+        command: KnowledgeRelinkResetCommand,
+    ) -> KnowledgeMutationReceipt:
+        """Close old-parent records without re-enabling legacy fallback."""
+
+        if not isinstance(command, KnowledgeRelinkResetCommand):
+            raise TypeError("knowledge_propagation_relink_command_invalid")
+        request_hash = self._relink_reset_request_hash(command)
+        operation_kind = KnowledgeMutationKind.RELINK_RESET
+        try:
+            replay = await self._replay(
+                context,
+                target=command.target,
+                actor_id=command.actor_id,
+                operation_kind=operation_kind,
+                idempotency_key=command.idempotency_key,
+                request_hash=request_hash,
+            )
+            if replay is not None:
+                return replay
+
+            scope = await self._port.load_scope(
+                context,
+                KnowledgeScopeLookup(target=command.target),
+            )
+            self._require_scope_target(scope, command.target)
+            self._require_revision(scope, command.expected_revision)
+            if not scope.v2_active:
+                raise KnowledgePropagationServiceError(
+                    "knowledge_propagation_relink_v2_inactive",
+                    "relink reset requires an active v2 authority boundary",
+                )
+
+            current_assignments = tuple(
+                item
+                for item in scope.assignments
+                if item.temporal.is_current
+            )
+            current_snapshots = tuple(
+                item for item in scope.snapshots if item.temporal.is_current
+            )
+            current_tombstones = tuple(
+                item for item in scope.tombstones if item.temporal.is_current
+            )
+            plan = self._plan(
+                kind=operation_kind,
+                target=command.target,
+                selection=None,
+                expected_revision=command.expected_revision,
+                next_scope_selection_state=KnowledgeSelectionState.OMITTED,
+                next_scope_v2_active=True,
+                actor_id=command.actor_id,
+                idempotency_key=command.idempotency_key,
+                request_hash=request_hash,
+                occurred_at=self._operation_time(),
+                parent=command.previous_parent,
+                assignment_ids_to_close=tuple(
+                    item.assignment.assignment_id
+                    for item in current_assignments
+                ),
+                snapshot_ids_to_close=tuple(
+                    item.snapshot_id for item in current_snapshots
+                ),
+                tombstone_ids_to_close=tuple(
+                    item.tombstone_id for item in current_tombstones
+                ),
+                receipt_details={
+                    "relink": {
+                        "previous_parent": (
+                            None
+                            if command.previous_parent is None
+                            else command.previous_parent.to_dict()
+                        ),
+                        "next_parent": (
+                            None
+                            if command.next_parent is None
+                            else command.next_parent.to_dict()
+                        ),
+                    },
+                    "closed_record_ids": {
+                        "assignments": [
+                            item.assignment.assignment_id
+                            for item in current_assignments
+                        ],
+                        "snapshots": [
+                            item.snapshot_id for item in current_snapshots
+                        ],
+                        "tombstones": [
+                            item.tombstone_id for item in current_tombstones
+                        ],
+                    },
+                },
+            )
+            return await self._stage(context, plan)
+        except KnowledgePropagationServiceError as exc:
+            wrapped = self._with_rejection_attempt(
+                exc,
+                target=command.target,
+                actor_id=command.actor_id,
+                operation_kind=operation_kind,
+                idempotency_key=command.idempotency_key,
                 request_hash=request_hash,
             )
             if wrapped is exc:
@@ -1444,12 +1650,28 @@ class KnowledgePropagationService:
 
         if not isinstance(target, KnowledgeTargetKey):
             raise TypeError("knowledge_propagation_read_target_invalid")
-        scope = await self._port.load_scope(
-            context,
-            KnowledgeScopeLookup(target=target),
-        )
+        try:
+            scope = await self._port.load_scope(
+                context,
+                KnowledgeScopeLookup(target=target),
+            )
+        except KnowledgePropagationPortError as exc:
+            raise KnowledgePropagationServiceError(
+                exc.code,
+                exc.detail,
+                details=exc.details,
+            ) from exc
+        except RuntimeError as exc:
+            if str(exc) != "knowledge_propagation_port_not_configured":
+                raise
+            raise KnowledgePropagationServiceError(
+                "knowledge_propagation_port_not_configured",
+                "the Knowledge propagation persistence port is not configured",
+                details={"target": target.to_dict()},
+            ) from exc
         self._require_scope_target(scope, target)
         resolved = self._resolve_v2_assignments(scope) if scope.v2_active else ()
+        effective_local = scope.local_attachments if scope.v2_active else ()
         effective_legacy = (
             ()
             if scope.v2_active
@@ -1474,6 +1696,8 @@ class KnowledgePropagationService:
             history_legacy_attachments=scope.legacy_attachments,
             tombstones=scope.tombstones,
             snapshots=scope.snapshots,
+            effective_local_attachments=effective_local,
+            v2_activated_at=scope.v2_activated_at,
         )
 
     @staticmethod
@@ -2599,9 +2823,22 @@ class KnowledgePropagationService:
         scope: KnowledgePropagationScope,
     ) -> tuple[ResolvedKnowledgeAssignment, ...]:
         sources: dict[str, KnowledgeSelectableSource] = {}
+        sources_by_root: dict[str, KnowledgeSelectableSource] = {}
+        ambiguous_roots: set[str] = set()
         for source in scope.sources:
             sources[source.requested_knowledge_id] = source
             sources[source.source_knowledge_id] = source
+            root_id = source.revision_stamp.root_id
+            prior = sources_by_root.get(root_id)
+            if prior is None:
+                sources_by_root[root_id] = source
+            elif (
+                prior.source_knowledge_id != source.source_knowledge_id
+                or prior.revision_stamp != source.revision_stamp
+            ):
+                ambiguous_roots.add(root_id)
+        for root_id in ambiguous_roots:
+            sources_by_root.pop(root_id, None)
         current_snapshots = {
             item.assignment_id: item
             for item in scope.snapshots
@@ -2656,6 +2893,10 @@ class KnowledgePropagationService:
                 )
                 continue
             current_source = sources.get(assignment.source_knowledge_id)
+            if current_source is None:
+                current_source = sources_by_root.get(
+                    assignment.revision_stamp.root_id
+                )
             if mode is KnowledgePropagationMode.REFERENCE:
                 source_deleted = (
                     state is KnowledgeAssignmentState.SOURCE_DELETED
@@ -2675,6 +2916,16 @@ class KnowledgePropagationService:
                             assignment.revision_stamp
                             if current_source is None
                             else current_source.revision_stamp
+                        ),
+                        content_bytes=(
+                            None
+                            if source_deleted or current_source is None
+                            else current_source.content_bytes
+                        ),
+                        resolved_source_knowledge_id=(
+                            None
+                            if current_source is None
+                            else current_source.source_knowledge_id
                         ),
                         reason=("source_deleted" if source_deleted else None),
                     )
@@ -2714,6 +2965,11 @@ class KnowledgePropagationService:
                     effective=not source_deleted,
                     revision_stamp=snapshot.revision_stamp,
                     content_bytes=snapshot.content_bytes,
+                    resolved_source_knowledge_id=(
+                        None
+                        if current_source is None
+                        else current_source.source_knowledge_id
+                    ),
                     reason=(
                         "source_deleted"
                         if source_deleted
@@ -2776,6 +3032,30 @@ class KnowledgePropagationService:
             }
         )
 
+    def _relink_reset_request_hash(
+        self,
+        command: KnowledgeRelinkResetCommand,
+    ) -> str:
+        return self._hash(
+            {
+                "contract_version": KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
+                "operation": KnowledgeMutationKind.RELINK_RESET.value,
+                "target": command.target.to_dict(),
+                "previous_parent": (
+                    None
+                    if command.previous_parent is None
+                    else command.previous_parent.to_dict()
+                ),
+                "next_parent": (
+                    None
+                    if command.next_parent is None
+                    else command.next_parent.to_dict()
+                ),
+                "actor_id": command.actor_id,
+                "expected_revision": command.expected_revision,
+            }
+        )
+
     def _refresh_by_knowledge_ids_request_hash(
         self,
         command: KnowledgeRefreshByKnowledgeIdsCommand,
@@ -2823,6 +3103,7 @@ __all__ = [
     "KnowledgePropagationReadResult",
     "KnowledgePropagationService",
     "KnowledgePropagationServiceError",
+    "KnowledgeRelinkResetCommand",
     "KnowledgeRefreshCommand",
     "KnowledgeRefreshByKnowledgeIdsCommand",
     "ResolvedKnowledgeAssignment",

@@ -1,5 +1,5 @@
-"""TC-4 (TS4) — agent_instructions.md must include the mandatory auto-copy
-bullet for mockups+KEs at the started→in_progress transition.
+"""TC-4 (TS4) — agent_instructions.md must include the mandatory attachment
+step for card resources at the started→in_progress transition.
 
 This is a simple grep-style guard. If someone reverts or rewrites the
 Pre-Flight section without keeping the snapshot rule, this test fails.
@@ -37,15 +37,17 @@ def test_pre_flight_mentions_copy_architecture_to_card(text):
     assert "okto_pulse_copy_architecture_to_card" in text
 
 
-def test_pre_flight_marks_copy_steps_as_mandatory(text):
+def test_pre_flight_marks_attach_steps_as_mandatory(text):
     assert "Mandatory before moving the card to `in_progress`" in text
-    assert "MANDATORY — Copy artifacts into every card" in text
+    assert "MANDATORY — Attach artifacts to every card" in text
 
 
-def test_current_copy_semantics_are_legacy_all_and_v2_is_not_active(text):
+def test_legacy_fallback_and_active_v2_semantics_are_documented(text):
     assert "legacy_all" in text
-    assert "Selective propagation v2" in text
-    assert "not available until delivery B" in text or "unavailable until delivery B" in text
+    assert "propagation v2 is active and opt-in" in text
+    assert 'selection_state="omitted"' in text
+    assert "authoritative v2 state" in text
+    assert "copy-all" in text
 
 
 def test_knowledge_governance_resource_is_linked_and_authoritative(text):

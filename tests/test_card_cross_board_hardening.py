@@ -63,6 +63,11 @@ from okto_pulse.core.domain.enums import (
     SprintLaneType,
     SprintStatus,
 )
+from okto_pulse.core.ports.knowledge_propagation import (
+    KnowledgePropagationScope,
+    register_knowledge_propagation_port,
+    reset_knowledge_propagation_port_for_tests,
+)
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
     ActivityLog,
@@ -78,6 +83,28 @@ from sqlalchemy_test_models import (
     Sprint,
 )
 from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
+
+class _LegacyKnowledgeScopePort:
+    def __init__(self, *, v2_active: bool = False):
+        self.v2_active = v2_active
+
+    async def load_scope(self, _context, request):
+        return KnowledgePropagationScope(
+            target=request.target,
+            scope_revision=1 if self.v2_active else 0,
+            v2_active=self.v2_active,
+            selection_state=("omitted" if self.v2_active else None),
+        )
+
+
+@pytest.fixture(autouse=True)
+def _register_legacy_knowledge_scope_port():
+    register_knowledge_propagation_port(_LegacyKnowledgeScopePort())
+    try:
+        yield
+    finally:
+        reset_knowledge_propagation_port_for_tests()
 
 
 USER_ID = "card-cross-board-agent"
@@ -462,6 +489,31 @@ async def test_copy_knowledge_requires_source_and_target_on_command_board(
     )
     assert same_board["success"] is True
     assert same_board["copied"] == 1
+
+
+@pytest.mark.asyncio
+async def test_copy_knowledge_returns_stable_v2_legacy_write_error(
+    db_factory,
+    _graph,
+):
+    ids = _graph
+    register_knowledge_propagation_port(
+        _LegacyKnowledgeScopePort(v2_active=True)
+    )
+
+    result = await _call(
+        db_factory,
+        "okto_pulse_copy_knowledge_to_card",
+        board_id=ids["board_a"],
+        spec_id=ids["spec_a"],
+        card_id=ids["source_a"],
+    )
+
+    assert result["error"] == "knowledge_propagation_legacy_write_forbidden"
+    assert result["code"] == "knowledge_propagation_legacy_write_forbidden"
+    assert result["retryable"] is False
+    async with db_factory() as db:
+        assert (await db.get(Card, ids["source_a"])).knowledge_bases is None
 
 
 @pytest.mark.asyncio

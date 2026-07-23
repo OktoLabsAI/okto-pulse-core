@@ -124,7 +124,7 @@ def test_scheduler_job_spec_is_frozen_core_policy_snapshot() -> None:
         interval_minutes=45,
         max_instances=1,
         coalesce=True,
-        handler_ref="okto_pulse.core.infra.daily_tick.emit_daily_tick",
+        handler_ref="okto_pulse.core.application.startup.emit_daily_tick",
     )
 
     assert dataclasses.is_dataclass(spec)
@@ -133,7 +133,10 @@ def test_scheduler_job_spec_is_frozen_core_policy_snapshot() -> None:
     assert spec.max_instances == 1
     assert spec.coalesce is True
     assert spec.replace_existing is True
-    assert spec.handler_ref == "okto_pulse.core.infra.daily_tick.emit_daily_tick"
+    assert (
+        spec.handler_ref
+        == "okto_pulse.core.application.startup.emit_daily_tick"
+    )
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         spec.interval_minutes = 5

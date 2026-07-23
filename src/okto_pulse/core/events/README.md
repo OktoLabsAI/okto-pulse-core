@@ -54,7 +54,7 @@ plug in exactly the same way — one decorator, one `handle()` method.
                     └── ...
 ```
 
-## The 12 event types (MVP)
+## Event types
 
 | Event | Publisher | Key payload fields |
 |-------|-----------|--------------------|
@@ -70,11 +70,23 @@ plug in exactly the same way — one decorator, one `handle()` method.
 | `sprint.closed` | `SprintService.move_sprint` (→ closed) | `sprint_id` |
 | `ideation.derived_to_spec` | `IdeationService.derive_spec` | `ideation_id`, `spec_id` |
 | `refinement.derived_to_spec` | `RefinementService.derive_spec` | `refinement_id`, `spec_id` |
+| `kg.tick.daily` | scheduled/manual tick publisher | `tick_id`, `scheduled_at`; old payloads default `force_full_rebuild=false` |
+| `kg.tick.full_rebuild` | manual forced-rebuild publisher | `tick_id`, `scheduled_at`, `force_full_rebuild=true` |
 
 Every event also carries the common base fields: `event_id` (UUID),
 `board_id`, `actor_id`, `actor_type`, `occurred_at` (UTC). These live in
 dedicated columns on `domain_events` and are NOT duplicated inside
 `payload_json`.
+
+### Rolling deployment for forced rebuild ticks
+
+`kg.tick.full_rebuild` is a dedicated, fail-closed intent: a consumer that does
+not know the type leaves the execution pending with normal retry/backoff instead
+of acknowledging a daily tick without first resetting recomputation state.
+Deploy consumers that register this type before enabling its producers. Before
+a downgrade, stop producers and drain all pending `kg.tick.full_rebuild`
+executions. The legacy `kg.tick.daily` contract remains unchanged; payloads
+without `force_full_rebuild` continue to deserialize as `false`.
 
 ## Adding a new handler
 

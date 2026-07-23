@@ -69,7 +69,7 @@ async def test_core_registers_kg_daily_tick_through_jobspec(monkeypatch) -> None
     monkeypatch.delenv("KG_DAILY_TICK_DISABLED", raising=False)
     monkeypatch.setattr(
         app_mod,
-        "_compute_tick_catch_up_next_run",
+        "compute_tick_catch_up_next_run",
         lambda interval_minutes: _awaitable(next_run),
     )
 
@@ -89,8 +89,11 @@ async def test_core_registers_kg_daily_tick_through_jobspec(monkeypatch) -> None
     assert job_spec.coalesce is True
     assert job_spec.replace_existing is True
     assert job_spec.next_run_time == next_run
-    assert job_spec.handler_ref == "okto_pulse.core.infra.daily_tick.emit_daily_tick"
-    assert handler is app_mod._emit_daily_tick
+    assert (
+        job_spec.handler_ref
+        == "okto_pulse.core.application.startup.emit_daily_tick"
+    )
+    assert handler is app_mod.emit_daily_tick
 
 
 async def _awaitable(value):

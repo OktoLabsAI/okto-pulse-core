@@ -474,6 +474,13 @@ class ResourceLineageProvider(Protocol):
 
     async def collect_refs(self, ref: Any) -> dict[str, list[dict[str, Any]]]: ...
 
+    async def filter_inherited_refs(
+        self,
+        root: Any,
+        parent: Any,
+        refs: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, list[dict[str, Any]]]: ...
+
     async def load_active_marks(
         self,
         board_id: str,
@@ -561,6 +568,17 @@ class ResolvedResourceLineageService:
         for parent in parents:
             parent_ref = self._coerce_entity_ref(parent)
             parent_refs = await self._provider.collect_refs(parent)
+            filter_inherited = getattr(
+                self._provider,
+                "filter_inherited_refs",
+                None,
+            )
+            if callable(filter_inherited):
+                parent_refs = await filter_inherited(
+                    owner,
+                    parent_ref,
+                    parent_refs,
+                )
             for resource_type, refs in parent_refs.items():
                 inherited_refs.setdefault(resource_type, []).extend(refs)
             parent_marks = await self._provider.load_active_marks(
@@ -657,8 +675,9 @@ class ResolvedResourceLineageService:
                 effective_inherited_attachments = [
                     item for item in inherited_attachments if item.effective
                 ]
-                coverage_source = (
-                    effective_direct_attachments or effective_inherited_attachments
+                coverage_source = self._prefer_direct_per_unique_resource(
+                    effective_direct_attachments,
+                    effective_inherited_attachments,
                 )
                 coverage_obligations.extend(
                     self._coverage_obligation_from_attachment(item)
@@ -680,6 +699,27 @@ class ResolvedResourceLineageService:
             resource_states=tuple(resource_states),
             coverage_obligations=tuple(coverage_obligations),
         )
+
+    @staticmethod
+    def _prefer_direct_per_unique_resource(
+        direct: Iterable[ResourceAttachment],
+        inherited: Iterable[ResourceAttachment],
+    ) -> list[ResourceAttachment]:
+        """Choose one effective attachment per logical resource.
+
+        A direct attachment shadows only an inherited attachment with the same
+        canonical identity.  It must not suppress unrelated inherited roots of
+        the same resource type.
+        """
+
+        selected: list[ResourceAttachment] = []
+        seen: set[str] = set()
+        for attachment in (*tuple(direct), *tuple(inherited)):
+            if attachment.unique_resource_id in seen:
+                continue
+            seen.add(attachment.unique_resource_id)
+            selected.append(attachment)
+        return selected
 
     async def _load_checked_parents(
         self,

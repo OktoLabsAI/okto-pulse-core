@@ -2086,9 +2086,9 @@ class SpecKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     immediate_parent_kb_id: str | None = None
     content_hash: str | None = None
     governance_metadata: Any | None = None
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
+    created_by: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class SpecKnowledgeSummary(KnowledgeGovernanceResponseSchema):
@@ -2108,7 +2108,7 @@ class SpecKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     immediate_parent_kb_id: str | None = None
     content_hash: str | None = None
     governance_metadata: Any | None = None
-    created_at: datetime
+    created_at: datetime | None = None
 
 
 class CardSummaryForSpec(BaseSchema):

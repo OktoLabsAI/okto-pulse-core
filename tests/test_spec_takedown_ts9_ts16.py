@@ -199,7 +199,9 @@ async def test_ts12_invalid_durable_job_retries_without_ack_or_scope_expansion(
     assert fresh.status == "pending"
     assert fresh.attempts == 1
     assert len(failures) == 1
-    assert failures[0]["max_attempts"] == 3
+    from okto_pulse.core.infra import config
+
+    assert failures[0]["max_attempts"] == config.get_settings().kg_queue_max_attempts
 
 
 @pytest.mark.asyncio

@@ -105,10 +105,12 @@ async def test_put_buffer_change_persists_with_implicit_restart_required(
     configure_settings(CommunitySettings())
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={"kg_kuzu_buffer_pool_mb": 256},
+        json={"kg_kuzu_buffer_pool_mb": 128},
     )
     assert put_resp.status_code == 200
     body = put_resp.json()
+    assert body["kg_kuzu_buffer_pool_mb"] == 256
+    assert body["desired_values"]["kg_kuzu_buffer_pool_mb"] == 128
     assert body["restart_required"] is True
 
 
@@ -123,7 +125,8 @@ async def test_put_connection_pool_change_persists_with_implicit_restart_require
     )
     assert put_resp.status_code == 200
     body = put_resp.json()
-    assert body["kg_connection_pool_size"] == 8
+    assert body["kg_connection_pool_size"] == 2
+    assert body["desired_values"]["kg_connection_pool_size"] == 12
     assert body["restart_required"] is True
 
 
@@ -238,7 +241,7 @@ async def test_put_buffer_with_restart_policy_none_is_blocked(
     put_resp = await settings_client.put(
         "/api/v1/settings/runtime",
         json={
-            "kg_kuzu_buffer_pool_mb": 256,
+            "kg_kuzu_buffer_pool_mb": 128,
             "restart_policy": "none",
         },
     )

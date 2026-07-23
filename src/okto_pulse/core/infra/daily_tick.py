@@ -58,6 +58,7 @@ async def emit_daily_tick(
 ) -> None:
     """Emit KGDailyTick events when this replica owns the lease."""
 
+    from okto_pulse.core.application.kg_tick import KGTickAdmissionDeferred
     from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
     from okto_pulse.core.ports.coordination import (
         CoordinationProviderMissing,
@@ -110,6 +111,16 @@ async def emit_daily_tick(
                     "scheduled_at": scheduled_at,
                 },
             )
+        except KGTickAdmissionDeferred as exc:
+            logger.info(
+                "kg.tick.deferred reason=%s trigger=scheduled",
+                exc.reason_code,
+                extra={
+                    "event": "kg.tick.deferred",
+                    "reason": exc.reason_code,
+                    "trigger": "scheduled",
+                },
+            )
         except Exception as exc:
             logger.error(
                 "kg.tick.emit_failed err=%s",
@@ -117,7 +128,18 @@ async def emit_daily_tick(
                 extra={"event": "kg.tick.emit_failed", "error": str(exc)},
             )
     finally:
-        await lease_provider.release(lease)
+        try:
+            await lease_provider.release(lease)
+        except Exception as exc:
+            logger.exception(
+                "kg.tick.lease_release_failed source=scheduled err=%s",
+                exc,
+                extra={
+                    "event": "kg.tick.lease_release_failed",
+                    "source": "scheduled",
+                    "error_type": type(exc).__name__,
+                },
+            )
 
 
 __all__ = [

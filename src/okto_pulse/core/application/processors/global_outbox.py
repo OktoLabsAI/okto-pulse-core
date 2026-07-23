@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from okto_pulse.core.application.async_task_scope import AsyncTaskScope
 from okto_pulse.core.kg.global_discovery.metrics import (
     emit_digest_upsert,
     emit_missing_embedding_skipped,
@@ -189,37 +190,16 @@ class GlobalOutboxProcessor:
         )
 
         stop = asyncio.Event()
-        batch_task = asyncio.create_task(
+        task_scope = AsyncTaskScope()
+        batch_task = task_scope.start(
             self._process_once_under_writer(),
             name="core.global_outbox.batch",
         )
-        renewal_task = asyncio.create_task(
+        renewal_task = task_scope.start(
             self._renew_writer_lease_until_stopped(lease, stop),
             name="core.global_outbox.writer_lease_renewal",
         )
         tasks = (batch_task, renewal_task)
-
-        async def _drain_task(
-            task: asyncio.Task[Any],
-            *,
-            cancel: bool,
-        ) -> None:
-            """Reach a terminal child state despite repeated parent cancel."""
-
-            if cancel and not task.done():
-                task.cancel()
-            while not task.done():
-                try:
-                    await asyncio.shield(task)
-                except asyncio.CancelledError:
-                    continue
-                except BaseException:
-                    break
-            if task.done() and not task.cancelled():
-                # Consume a possible child failure. The main race path already
-                # propagates authoritative batch/fence errors; cleanup must not
-                # replace them or emit an unobserved-task warning.
-                task.exception()
 
         try:
             done, _pending = await asyncio.wait(
@@ -251,34 +231,27 @@ class GlobalOutboxProcessor:
             # which another process can acquire the lease while the cancelled
             # native statement is still executing. This order also survives a
             # second/third cancellation request.
-            await _drain_task(batch_task, cancel=not batch_task.done())
+            await task_scope.drain(batch_task, cancel=not batch_task.done())
             stop.set()
-            await _drain_task(renewal_task, cancel=False)
+            await task_scope.drain(renewal_task, cancel=False)
 
     async def build_recovery_board_seed(
         self,
-        db: Any,
         *,
         board_id: str,
         board_name: str,
         board_summary: str,
-        captured_cognitive_pending_exclusions: Mapping[str, str] | None = None,
+        captured_overlay_exclusions: Mapping[str, str],
     ):
         """Read one complete, stable board projection for recovery materialization.
 
         This deliberately never opens Global Discovery.  It reuses the same
         authoritative board reads and canonical-layer policy as normal outbox
         reconciliation, then rechecks the source identity inventory so a board
-        mutation cannot silently produce a torn candidate snapshot.
+        mutation cannot silently produce a torn candidate snapshot.  Relational
+        overlay/debt must already be captured in the immutable caller input.
         """
 
-        from okto_pulse.core.kg.canonical_partition_integrity import (
-            canonical_debt_exclusions,
-            pending_or_debt_exclusions,
-        )
-        from okto_pulse.core.kg.connectivity_guard import (
-            CANONICAL_LEARNING_WORKING_ONLY_REASON,
-        )
         from okto_pulse.core.kg.embedding import get_embedding_provider
         from okto_pulse.core.kg.global_discovery.layer_parity import (
             resolve_expected_digest_layer,
@@ -317,32 +290,10 @@ class GlobalOutboxProcessor:
             raise RuntimeError(
                 "outbox.read_board_failed: incomplete recovery source metadata"
             )
-        needs_overlay = any(
-            row.get("node_type") == "Learning" and row.get("graph_layer") == "canonical"
-            for row in layer_meta.values()
-        )
-        overlay: dict[str, str] = {}
-        if needs_overlay:
-            if captured_cognitive_pending_exclusions is None:
-                overlay = await pending_or_debt_exclusions(db, board_id=board_id)
-            else:
-                overlay = {
-                    str(artifact_id): str(reason)
-                    for artifact_id, reason in (
-                        captured_cognitive_pending_exclusions.items()
-                    )
-                }
-                if any(
-                    not artifact_id or reason != CANONICAL_LEARNING_WORKING_ONLY_REASON
-                    for artifact_id, reason in overlay.items()
-                ):
-                    raise ValueError(
-                        "captured cognitive pending exclusions are invalid"
-                    )
-                # Canonical debt is relational and therefore read from the
-                # caller's already-open recovery snapshot.  It outranks the
-                # captured cognitive hold for the same artifact.
-                overlay.update(await canonical_debt_exclusions(db, board_id=board_id))
+        overlay = {
+            str(artifact_id): str(reason)
+            for artifact_id, reason in captured_overlay_exclusions.items()
+        }
 
         seen: set[str] = set()
         digests: list[GlobalDiscoveryDigestSeed] = []
@@ -397,10 +348,12 @@ class GlobalOutboxProcessor:
                 ensure_ascii=False,
             ).encode("utf-8")
         ).hexdigest()
-        summary_embedding = tuple(
-            float(value)
-            for value in get_embedding_provider().encode(
-                f"Board {board_name or board_id}"
+        summary_embedding = await self._run_graph_io(
+            lambda: tuple(
+                float(value)
+                for value in get_embedding_provider().encode(
+                    f"Board {board_name or board_id}"
+                )
             )
         )
         return GlobalDiscoveryBoardSeed(

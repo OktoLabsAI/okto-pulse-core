@@ -17,6 +17,7 @@ from okto_pulse.core.domain.knowledge_selection import (
 from okto_pulse.core.domain.resource_revision import ResourceRevisionStamp
 from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgeLegacyAttachment,
+    KnowledgeLocalAttachment,
     KnowledgeMutationKind,
     KnowledgeMutationLedgerEntry,
     KnowledgeMutationPlan,
@@ -337,6 +338,76 @@ def test_scope_v2_marker_disables_legacy_fallback_without_erasing_history() -> N
             scope_revision=1,
             v2_active=True,
             selection_state=None,
+        )
+
+
+def test_scope_carries_immutable_activation_and_local_attachment_evidence() -> None:
+    activation = NOW - timedelta(minutes=2)
+    local = KnowledgeLocalAttachment(
+        source_knowledge_id="local-kb",
+        revision_stamp=_stamp(),
+        attached_at=NOW - timedelta(minutes=1),
+        content_bytes=CONTENT,
+    )
+    scope = KnowledgePropagationScope(
+        target=_target(),
+        scope_revision=3,
+        v2_active=True,
+        selection_state="omitted",
+        local_attachments=(local,),
+        v2_activated_at=activation,
+    )
+
+    assert scope.v2_activated_at == activation
+    assert scope.local_attachments == (local,)
+    local_payload = local.to_dict()
+    assert local_payload["attached_at"] == local.attached_at.isoformat()
+    assert local_payload["content_available"] is True
+    assert local_payload["content_size_bytes"] == len(CONTENT)
+    with pytest.raises(FrozenInstanceError):
+        scope.v2_activated_at = NOW  # type: ignore[misc]
+
+    with pytest.raises(
+        ValueError,
+        match="local_attachment_predates_v2_activation",
+    ):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=3,
+            v2_active=True,
+            selection_state="omitted",
+            local_attachments=(local,),
+            v2_activated_at=NOW,
+        )
+
+    boundary_local = KnowledgeLocalAttachment(
+        source_knowledge_id="local-at-boundary",
+        revision_stamp=_stamp(),
+        attached_at=activation,
+        content_bytes=CONTENT,
+    )
+    with pytest.raises(
+        ValueError,
+        match="local_attachment_predates_v2_activation",
+    ):
+        KnowledgePropagationScope(
+            target=_target(),
+            scope_revision=3,
+            v2_active=True,
+            selection_state="omitted",
+            local_attachments=(boundary_local,),
+            v2_activated_at=activation,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="local_attachment_hash_mismatch",
+    ):
+        KnowledgeLocalAttachment(
+            source_knowledge_id="tampered-local",
+            revision_stamp=_stamp(),
+            attached_at=NOW,
+            content_bytes=b"tampered",
         )
 
 

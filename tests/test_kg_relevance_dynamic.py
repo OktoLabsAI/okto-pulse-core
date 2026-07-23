@@ -664,9 +664,9 @@ def test_kg_hit_flushed_event_class_registered():
     assert "kg.hit_flushed" in EVENT_TYPES
     # Ideação #4 took it to 21; later structured-entity canonicalization,
     # story lifecycle, refinement semantic changes, and bug-regression reuse
-    # events expanded the registry; delivery-debt recovery later added its
-    # dedicated bounded continuation event.
-    assert len(EVENT_TYPES) == 30
+    # events expanded the registry; delivery-debt recovery and the distinct
+    # fail-closed full-rebuild intent added dedicated event types.
+    assert len(EVENT_TYPES) == 31
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1156,7 +1156,7 @@ def test_impl_d_kg_daily_tick_event_class_registered():
 
     assert KGDailyTick.event_type == "kg.tick.daily"
     assert "kg.tick.daily" in EVENT_TYPES
-    assert len(EVENT_TYPES) == 30
+    assert len(EVENT_TYPES) == 31
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 
@@ -1188,9 +1188,9 @@ def test_impl_d_apscheduler_dependency_installed():
 
 def test_impl_d_emit_daily_tick_callable_exists():
     """The lifespan callback exists and is module-level (APScheduler-friendly)."""
-    from okto_pulse.community.app import _emit_daily_tick
+    from okto_pulse.community.app import emit_daily_tick
 
-    assert callable(_emit_daily_tick)
+    assert callable(emit_daily_tick)
 
 
 @pytest.mark.asyncio

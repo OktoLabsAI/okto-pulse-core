@@ -32,6 +32,8 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
 )
 from okto_pulse.core.domain.enums import CardStatus
+from okto_pulse.core.domain.knowledge_selection import KnowledgeTargetType
+from okto_pulse.core.ports.knowledge_propagation import KnowledgeTargetKey
 from okto_pulse.core.services.activity_log import (
     activity_log_changes,
     activity_log_value,
@@ -39,6 +41,9 @@ from okto_pulse.core.services.activity_log import (
 from okto_pulse.core.services.card_knowledge_snapshot import (
     build_card_knowledge_snapshot,
     card_knowledge_snapshots_equivalent,
+)
+from okto_pulse.core.services.legacy_knowledge_write_guard import (
+    legacy_knowledge_write_forbidden_error,
 )
 
 
@@ -532,6 +537,19 @@ class McpCopyKnowledgeToCardUseCase:
         card = await uow.services.cards.get_card(command.card_id)
         if not card or card.board_id != command.board_id:
             raise EntityNotFoundError("card", command.card_id)
+
+        knowledge_state = await uow.services.knowledge_propagation.read(
+            KnowledgeTargetKey(
+                board_id=command.board_id,
+                target_type=KnowledgeTargetType.CARD,
+                target_id=command.card_id,
+            )
+        )
+        if knowledge_state.v2_active:
+            raise legacy_knowledge_write_forbidden_error(
+                board_id=command.board_id,
+                card_id=command.card_id,
+            )
 
         direct_kbs = await uow.services.spec_knowledge.list_knowledge(
             command.spec_id

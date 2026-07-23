@@ -76,6 +76,7 @@ _BASELINE_CORE_SETTING_NAMES: tuple[str, ...] = (
     "kg_decay_tick_interval_minutes",
     "kg_decay_tick_staleness_days",
     "kg_decay_tick_max_age_days",
+    "kg_stale_sweep_budget",
 )
 
 _EDITION_COMMUNITY_OWNERS: dict[str, tuple[str, str, str]] = {
@@ -187,6 +188,10 @@ _CORE_CONTRACT_OWNERS: dict[str, tuple[str, str]] = {
     "kg_decay_tick_interval_minutes": ("okto-pulse-core/kg", "decay tick interval"),
     "kg_decay_tick_staleness_days": ("okto-pulse-core/kg", "decay staleness"),
     "kg_decay_tick_max_age_days": ("okto-pulse-core/kg", "decay max-age cap"),
+    "kg_stale_sweep_budget": (
+        "okto-pulse-core/kg",
+        "bounded stale-sweep work per decay tick",
+    ),
 }
 
 _LOCAL_FIRST_UPLOAD_DEFAULT_REPRS: frozenset[str] = frozenset(

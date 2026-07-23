@@ -163,6 +163,35 @@ def test_rest_response_models_emit_the_canonical_governance_projection(
     )
 
 
+def test_inherited_v2_spec_knowledge_validates_without_storage_timestamps() -> None:
+    inherited = {
+        "id": "source-kb-1",
+        "spec_id": "spec-1",
+        "title": "Inherited reference",
+        "description": None,
+        "content": "canonical source bytes",
+        "mime_type": "text/markdown",
+        "knowledge_assignment": {
+            "assignment_id": "assignment-1",
+            "mode": "reference",
+            "state": "active",
+            "stale": False,
+            "origin_class": "v2",
+        },
+    }
+
+    response = SpecKnowledgeResponse.model_validate(inherited)
+    summary = SpecKnowledgeSummary.model_validate(inherited)
+
+    assert response.spec_id == "spec-1"
+    assert response.created_by is None
+    assert response.created_at is None
+    assert response.updated_at is None
+    assert summary.spec_id == "spec-1"
+    assert summary.created_at is None
+    assert "content" not in summary.model_dump(mode="json")
+
+
 @pytest.mark.parametrize(
     "schema_type",
     (IdeationKnowledgeUpdate, RefinementKnowledgeUpdate, SpecKnowledgeUpdate),

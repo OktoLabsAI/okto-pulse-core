@@ -48,6 +48,18 @@ def _source(
     )
 
 
+def _source_row() -> dict[str, str]:
+    return {
+        "artifact_type": "spec",
+        "id": "spec-test",
+        "source_ref": "spec:spec-test",
+        "source_version": "1",
+        "content_hash": "a" * 64,
+        "created_at": "2026-05-01T00:00:00Z",
+        "status": "validated",
+    }
+
+
 def _service(health=None, source=None, status_probe=None) -> RebuildPreflightService:
     return RebuildPreflightService(
         source_probe=lambda _b: source if source else _source(),
@@ -310,6 +322,11 @@ def test_post_preflight_endpoint_returns_safe_payload_via_test_client(monkeypatc
                 "current_kg_generation_id": None}
 
     monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
+    monkeypatch.setattr(
+        kg_rebuild_mod,
+        "_build_source_store",
+        lambda: lambda _board_id: [_source_row()],
+    )
 
     app = FastAPI()
     app.include_router(api_router)

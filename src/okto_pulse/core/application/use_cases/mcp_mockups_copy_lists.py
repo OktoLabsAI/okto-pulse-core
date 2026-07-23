@@ -83,14 +83,23 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[
             "source_title",
             "source_version",
             "source_kb_id",
+            "root_source_kb_id",
+            "immediate_parent_kb_id",
+            "content_hash",
+            "knowledge_assignment",
         ):
             if kb.get(attr):
                 data[attr] = kb[attr]
         if include_content:
             data["content"] = kb.get("content")
         for attr in ("created_by", "created_at", "updated_at"):
-            if kb.get(attr):
-                data[attr] = kb[attr]
+            value = kb.get(attr)
+            if value:
+                data[attr] = (
+                    value.isoformat()
+                    if callable(getattr(value, "isoformat", None))
+                    else value
+                )
         return with_knowledge_governance(data, kb)
 
     data: dict[str, Any] = {
@@ -108,6 +117,10 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[
         "source_title",
         "source_version",
         "source_kb_id",
+        "root_source_kb_id",
+        "immediate_parent_kb_id",
+        "content_hash",
+        "knowledge_assignment",
     ):
         value = getattr(kb, attr, None)
         if value:
@@ -342,7 +355,11 @@ class McpGetCardKnowledgeUseCase:
         card = await uow.services.cards.get_card(command.card_id)
         if not _in_board_scope(card, command.board_id, actor):
             raise EntityNotFoundError("card", command.card_id)
-        for kb in card.knowledge_bases or []:
+        from okto_pulse.core.application.effective_knowledge_read import (
+            load_effective_card_knowledge,
+        )
+
+        for kb in await load_effective_card_knowledge(uow.services, card):
             if kb.get("id") == command.knowledge_id:
                 return McpPayloadResult(
                     {
@@ -705,25 +722,22 @@ class McpListKnowledgeUseCase:
 
         mime_filter: str | None = command.filters.get("mime_type")
         if command.entity_type == "spec":
-            items = await uow.services.spec_knowledge.list_knowledge(command.entity_id)
+            from okto_pulse.core.application.effective_knowledge_read import (
+                load_effective_spec_knowledge,
+            )
+
+            items = await load_effective_spec_knowledge(uow.services, parent)
             if mime_filter:
-                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+                items = [
+                    kb for kb in items if kb.get("mime_type") == mime_filter
+                ]
             return McpPayloadResult(
                 {
                     "entity_type": command.entity_type,
                     "entity_id": command.entity_id,
                     "count": len(items),
                     "knowledge_bases": [
-                        with_knowledge_governance(
-                            {
-                                "id": kb.id,
-                                "title": kb.title,
-                                "description": kb.description,
-                                "mime_type": kb.mime_type,
-                                "created_at": kb.created_at.isoformat(),
-                            },
-                            kb,
-                        )
+                        _serialize_knowledge_base(kb, include_content=False)
                         for kb in items
                     ],
                 }
@@ -768,7 +782,11 @@ class McpListKnowledgeUseCase:
                 }
             )
         card = parent
-        kbs = list(card.knowledge_bases or [])
+        from okto_pulse.core.application.effective_knowledge_read import (
+            load_effective_card_knowledge,
+        )
+
+        kbs = await load_effective_card_knowledge(uow.services, card)
         if mime_filter:
             kbs = [kb for kb in kbs if kb.get("mime_type") == mime_filter]
         return McpPayloadResult(

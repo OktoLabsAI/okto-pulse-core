@@ -9,6 +9,7 @@ from okto_pulse.core.models.schemas import (
     ArchitectureDesignUpdate,
     ArchitectureWarningAcknowledgementRequest,
 )
+from okto_pulse.core.ports.knowledge_propagation import KnowledgePropagationPort
 from okto_pulse.core.ports.spec_resource_propagation import (
     ResourcePropagationBoardFact,
     ResourcePropagationCardRecord,
@@ -23,6 +24,9 @@ from okto_pulse.core.services.card_knowledge_snapshot import (
     build_card_knowledge_snapshot,
     card_knowledge_snapshots_equivalent,
 )
+from okto_pulse.core.services.legacy_knowledge_write_guard import (
+    load_card_knowledge_scope,
+)
 
 
 SUPPORTED_RESOURCE_TYPES = ("knowledge_base", "architecture", "mockup")
@@ -31,8 +35,14 @@ SUPPORTED_RESOURCE_TYPES = ("knowledge_base", "architecture", "mockup")
 class SpecResourcePropagationService:
     """Copy selected Spec resources to a card according to board settings."""
 
-    def __init__(self, db: Any):
+    def __init__(
+        self,
+        db: Any,
+        *,
+        knowledge_propagation_port: KnowledgePropagationPort | None = None,
+    ):
         self.db = db
+        self._knowledge_propagation_port = knowledge_propagation_port
 
     async def propagate_for_card(
         self,
@@ -76,10 +86,35 @@ class SpecResourcePropagationService:
         if not spec or not card or spec.board_id != board_id or card.board_id != board_id:
             return {"enabled": True, "reason": "spec_or_card_not_found"}
 
+        # Resolve authority before the first resource mutation.  A port/read
+        # failure aborts the whole propagation attempt, so mockup or architecture
+        # writes cannot precede an indeterminate Knowledge authority decision.
+        knowledge_v2_active = False
+        if "knowledge_base" in resource_types:
+            scope = await load_card_knowledge_scope(
+                self.db,
+                board_id=board_id,
+                card_id=card_id,
+                port=self._knowledge_propagation_port,
+            )
+            knowledge_v2_active = scope.v2_active
+
         results: dict[str, dict[str, Any]] = {}
         for resource_type in resource_types:
             if resource_type == "knowledge_base":
-                if removed_kb_ids:
+                if knowledge_v2_active:
+                    results[resource_type] = {
+                        "source_count": 0,
+                        "copied_count": 0,
+                        "ignored_count": 0,
+                        "copied_ids": [],
+                        "removed_count": 0,
+                        "removed_ids": [],
+                        "warnings": [],
+                        "skipped": True,
+                        "reason": "v2_active",
+                    }
+                elif removed_kb_ids:
                     results[resource_type] = await self._remove_knowledge(spec, card, removed_kb_ids)
                 else:
                     results[resource_type] = await self._copy_knowledge(spec, card, actor_id)

@@ -229,27 +229,30 @@ class ResourceGateService:
         resources: dict[str, list[dict[str, Any]]] = {
             resource_type: [] for resource_type in RESOURCE_TYPES
         }
-        for state in lineage.resource_states:
-            for ref in state.direct_refs:
-                resources[state.resource_type].append(
-                    await self._effective_resource_item(
-                        board_id=board_id,
-                        resource_type=state.resource_type,
-                        ref=dict(ref),
-                        attachment_kind="direct",
-                        inherited=False,
-                    )
+        representatives: dict[str, Any] = {}
+        for attachment in lineage.attachments:
+            if (
+                not attachment.effective
+                or attachment.attachment_kind == "not_applicable"
+            ):
+                continue
+            current = representatives.get(attachment.unique_resource_id)
+            if current is None or (
+                current.attachment_kind != "direct"
+                and attachment.attachment_kind == "direct"
+            ):
+                representatives[attachment.unique_resource_id] = attachment
+
+        for attachment in representatives.values():
+            resources[attachment.resource_type].append(
+                await self._effective_resource_item(
+                    board_id=board_id,
+                    resource_type=attachment.resource_type,
+                    ref=dict(attachment.raw),
+                    attachment_kind=attachment.attachment_kind,
+                    inherited=attachment.inherited,
                 )
-            for ref in state.inherited_refs:
-                resources[state.resource_type].append(
-                    await self._effective_resource_item(
-                        board_id=board_id,
-                        resource_type=state.resource_type,
-                        ref=dict(ref),
-                        attachment_kind="inherited_reference",
-                        inherited=True,
-                    )
-                )
+            )
         return {
             "board_id": board_id,
             "entity_type": str(entity_type),
@@ -839,6 +842,16 @@ class ResourceGateService:
 
     async def collect_refs(self, *args: Any, **kwargs: Any) -> dict[str, list[dict]]:
         return await self._adapter.collect_refs(*args, **kwargs)
+
+    async def filter_inherited_refs(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> dict[str, list[dict]]:
+        filter_refs = getattr(self._adapter, "filter_inherited_refs", None)
+        if not callable(filter_refs):
+            return args[2] if len(args) > 2 else kwargs["refs"]
+        return await filter_refs(*args, **kwargs)
 
     async def load_active_marks(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return await self._adapter.load_active_marks(*args, **kwargs)

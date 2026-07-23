@@ -66,6 +66,9 @@ from okto_pulse.core.ports.card_repository import (
     ColumnResequenceOp,
     get_card_repository_port,
 )
+from okto_pulse.core.ports.knowledge_propagation import (
+    KnowledgePropagationPort,
+)
 
 from okto_pulse.core.models.schemas import (
     AgentCreate,
@@ -171,6 +174,9 @@ from okto_pulse.core.domain.knowledge_fingerprint import (
 )
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
 from okto_pulse.core.services.resource_gate import ResourceGateService
+from okto_pulse.core.services.legacy_knowledge_write_guard import (
+    require_legacy_card_knowledge_write_allowed,
+)
 from okto_pulse.core.services.reviewer_separation import (
     evaluate_reviewer_separation,
     evaluate_task_reviewer_separation,
@@ -2534,11 +2540,125 @@ def _validate_card_knowledge_relevance_links(
         )
 
 
+def _governed_spec_knowledge_parent(
+    *,
+    ideation_id: str | None,
+    refinement_id: str | None,
+) -> tuple[str, str] | None:
+    """Resolve the one authoritative parent used by Spec Knowledge v2."""
+
+    if refinement_id:
+        return ("refinement", str(refinement_id))
+    if ideation_id:
+        return ("ideation", str(ideation_id))
+    return None
+
+
+async def _validate_spec_parent_on_board(
+    db: Any,
+    *,
+    board_id: str,
+    parent_type: str,
+    parent_id: str,
+) -> Any:
+    """Validate a prospective governed Spec parent before staging any write."""
+
+    parent = await _application_get(db, parent_type, parent_id)
+    if parent is None or parent.board_id != board_id:
+        label = parent_type.capitalize()
+        raise ValueError(f"{label} not found on this board")
+    return parent
+
+
+async def _reset_v2_knowledge_for_relink(
+    db: Any,
+    *,
+    board_id: str,
+    target_type: str,
+    target_id: str,
+    previous_parent: tuple[str, str] | None,
+    next_parent: tuple[str, str] | None,
+    actor_id: str,
+    port: KnowledgePropagationPort | None = None,
+) -> bool:
+    """Reset active v2 selection before changing a governed parent link.
+
+    The persistence authority is mandatory.  Tests or Core-only compositions
+    that intentionally exercise legacy behavior must inject an explicit
+    legacy/null port; absence is not evidence that no durable v2 scope exists.
+    """
+
+    if previous_parent == next_parent:
+        return False
+
+    from okto_pulse.core.ports.knowledge_propagation import (
+        KnowledgeParentKey,
+        KnowledgeTargetKey,
+    )
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgePropagationService,
+        KnowledgeRelinkResetCommand,
+    )
+
+    target = KnowledgeTargetKey(
+        board_id=board_id,
+        target_type=target_type,
+        target_id=target_id,
+    )
+    service = KnowledgePropagationService(port)
+    current = await service.read(db, target)
+    if not current.v2_active:
+        return False
+
+    def parent_key(value: tuple[str, str] | None) -> KnowledgeParentKey | None:
+        if value is None:
+            return None
+        return KnowledgeParentKey(
+            board_id=board_id,
+            parent_type=value[0],
+            parent_id=value[1],
+        )
+
+    idempotency_material = "|".join(
+        (
+            board_id,
+            target_type,
+            target_id,
+            *(previous_parent or ("none", "none")),
+            *(next_parent or ("none", "none")),
+            str(current.scope_revision),
+        )
+    )
+    idempotency_key = (
+        "knowledge-relink:v2:"
+        f"{target_type}:"
+        f"{hashlib.sha256(idempotency_material.encode('utf-8')).hexdigest()}"
+    )
+    await service.reset_for_relink(
+        db,
+        KnowledgeRelinkResetCommand(
+            target=target,
+            previous_parent=parent_key(previous_parent),
+            next_parent=parent_key(next_parent),
+            actor_id=actor_id,
+            expected_revision=current.scope_revision,
+            idempotency_key=idempotency_key,
+        ),
+    )
+    return True
+
+
 class CardService:
     """Service for card operations."""
 
-    def __init__(self, db: Any):
+    def __init__(
+        self,
+        db: Any,
+        *,
+        knowledge_propagation_port: KnowledgePropagationPort | None = None,
+    ):
         self.db = db
+        self._knowledge_propagation_port = knowledge_propagation_port
         self._cognitive_closeout_gate_factory: Callable[
             [], Any
         ] = _build_default_cognitive_closeout_gate
@@ -2993,6 +3113,13 @@ class CardService:
             update_data,
             allow=allow_card_resource_write,
         )
+        if "knowledge_bases" in update_data:
+            await require_legacy_card_knowledge_write_allowed(
+                self.db,
+                board_id=card.board_id,
+                card_id=card.id,
+                port=self._knowledge_propagation_port,
+            )
 
         # Validate relationship changes before authorization auditing, entity
         # mutation, or an implicit/explicit flush.  Besides turning raw FK
@@ -3124,6 +3251,22 @@ class CardService:
             field: activity_log_value(value)
             for field, value in update_data.items()
         }
+        knowledge_v2_relinked = False
+        if "spec_id" in update_data and next_spec_id != old_spec_id:
+            knowledge_v2_relinked = await _reset_v2_knowledge_for_relink(
+                self.db,
+                board_id=card.board_id,
+                target_type="card",
+                target_id=card.id,
+                previous_parent=(
+                    None if old_spec_id is None else ("spec", old_spec_id)
+                ),
+                next_parent=(
+                    None if next_spec_id is None else ("spec", next_spec_id)
+                ),
+                actor_id=user_id,
+                port=self._knowledge_propagation_port,
+            )
         for key, value in update_data.items():
             setattr(card, key, value)
             if key in card_json_fields:
@@ -3137,6 +3280,9 @@ class CardService:
                 card_id=card.id,
                 actor_id=user_id,
                 trigger="card_linked_via_update",
+                excluded_resource_types=(
+                    {"knowledge_base"} if knowledge_v2_relinked else None
+                ),
             )
             card = await _application_refresh(self.db, card)
 
@@ -6206,8 +6352,14 @@ async def _validate_spec_linked_refs(
 class SpecService:
     """Service for spec operations."""
 
-    def __init__(self, db: Any):
+    def __init__(
+        self,
+        db: Any,
+        *,
+        knowledge_propagation_port: KnowledgePropagationPort | None = None,
+    ):
         self.db = db
+        self._knowledge_propagation_port = knowledge_propagation_port
         self._cognitive_closeout_gate_factory: Callable[
             [], Any
         ] = _build_default_cognitive_closeout_gate
@@ -7065,6 +7217,48 @@ class SpecService:
             raise ValueError("This spec is archived. Restore it first before making changes.")
 
         update_data = data.model_dump(exclude_unset=True)
+        next_ideation_id = (
+            update_data["ideation_id"]
+            if "ideation_id" in update_data
+            else spec.ideation_id
+        )
+        next_refinement_id = (
+            update_data["refinement_id"]
+            if "refinement_id" in update_data
+            else spec.refinement_id
+        )
+        parent_link_changed = bool(
+            {"ideation_id", "refinement_id"} & set(update_data)
+        )
+        if "ideation_id" in update_data and next_ideation_id is not None:
+            await _validate_spec_parent_on_board(
+                self.db,
+                board_id=spec.board_id,
+                parent_type="ideation",
+                parent_id=next_ideation_id,
+            )
+        next_refinement = None
+        if parent_link_changed and next_refinement_id is not None:
+            next_refinement = await _validate_spec_parent_on_board(
+                self.db,
+                board_id=spec.board_id,
+                parent_type="refinement",
+                parent_id=next_refinement_id,
+            )
+        if next_refinement is not None and (
+            getattr(next_refinement, "ideation_id", None) != next_ideation_id
+        ):
+            raise ValueError(
+                "Refinement does not belong to the selected Ideation"
+            )
+        previous_knowledge_parent = _governed_spec_knowledge_parent(
+            ideation_id=spec.ideation_id,
+            refinement_id=spec.refinement_id,
+        )
+        next_knowledge_parent = _governed_spec_knowledge_parent(
+            ideation_id=next_ideation_id,
+            refinement_id=next_refinement_id,
+        )
         content_fields = {
             "functional_requirements", "technical_requirements",
             "acceptance_criteria", "context", "description",
@@ -7234,6 +7428,17 @@ class SpecService:
             "acceptance_criteria",
             "labels",
         }
+        if previous_knowledge_parent != next_knowledge_parent:
+            await _reset_v2_knowledge_for_relink(
+                self.db,
+                board_id=spec.board_id,
+                target_type="spec",
+                target_id=spec.id,
+                previous_parent=previous_knowledge_parent,
+                next_parent=next_knowledge_parent,
+                actor_id=user_id,
+                port=self._knowledge_propagation_port,
+            )
         for key, value in update_data.items():
             setattr(spec, key, value)
             if key in json_fields:
@@ -7813,6 +8018,17 @@ class SpecService:
             filters=(_apf("spec_id", "eq", spec_id),),
         )
         for linked_card in linked_cards:
+            await _reset_v2_knowledge_for_relink(
+                self.db,
+                board_id=spec.board_id,
+                target_type="card",
+                target_id=linked_card.id,
+                previous_parent=("spec", spec_id),
+                next_parent=None,
+                actor_id=user_id,
+                port=self._knowledge_propagation_port,
+            )
+        for linked_card in linked_cards:
             linked_card.spec_id = None
         await _application_flush(self.db)
 
@@ -7854,6 +8070,20 @@ class SpecService:
         card = await _application_get(self.db, "card", card_id)
         if not card or card.board_id != spec.board_id:
             return False
+        old_spec_id = card.spec_id
+        actor_id = user_id or card.created_by
+        knowledge_v2_relinked = await _reset_v2_knowledge_for_relink(
+            self.db,
+            board_id=spec.board_id,
+            target_type="card",
+            target_id=card.id,
+            previous_parent=(
+                None if old_spec_id is None else ("spec", old_spec_id)
+            ),
+            next_parent=("spec", spec_id),
+            actor_id=actor_id,
+            port=self._knowledge_propagation_port,
+        )
         card.spec_id = spec_id
         await _application_flush(self.db)
 
@@ -7861,8 +8091,11 @@ class SpecService:
             board_id=spec.board_id,
             spec_id=spec_id,
             card_id=card_id,
-            actor_id=user_id or card.created_by,
+            actor_id=actor_id,
             trigger="card_linked_to_spec",
+            excluded_resource_types=(
+                {"knowledge_base"} if knowledge_v2_relinked else None
+            ),
         )
 
         from okto_pulse.core.events import publish as event_publish
@@ -7892,6 +8125,16 @@ class SpecService:
         if not card or not card.spec_id:
             return False
         old_spec_id = card.spec_id
+        await _reset_v2_knowledge_for_relink(
+            self.db,
+            board_id=card.board_id,
+            target_type="card",
+            target_id=card.id,
+            previous_parent=("spec", old_spec_id),
+            next_parent=None,
+            actor_id=user_id or card.created_by,
+            port=self._knowledge_propagation_port,
+        )
         card.spec_id = None
 
         from okto_pulse.core.events import publish as event_publish

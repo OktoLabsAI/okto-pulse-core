@@ -326,7 +326,15 @@ class TestArtifactDistributionContract:
             "assert 'asyncpg' in rep.removed_dependencies\n"
             "print('CLEAN_REINSTALL_OK')\n"
         )
-        run = subprocess.run((str(venv_py), "-c", probe), capture_output=True, text=True, timeout=180)
+        clean_env = os.environ.copy()
+        clean_env.pop("PYTHONPATH", None)
+        run = subprocess.run(
+            (str(venv_py), "-c", probe),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=clean_env,
+        )
         assert run.returncode == 0, f"stdout={run.stdout!r} stderr={run.stderr[-800:]!r}"
         assert "CLEAN_REINSTALL_OK" in run.stdout
 

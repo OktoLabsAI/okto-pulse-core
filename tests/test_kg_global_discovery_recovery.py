@@ -40,6 +40,7 @@ from okto_pulse.core.kg.interfaces.global_discovery_recovery import (
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.kg.rebuild_sources import cognitive_durable_digest_from_rows
 from okto_pulse.core.ports.global_discovery_recovery_control import (
+    GlobalDiscoveryRecoveryBoardSeedInputService,
     GlobalDiscoveryRecoveryBoardSeedService,
     GlobalDiscoveryRecoveryPreparationService,
 )
@@ -308,7 +309,12 @@ def test_public_preparation_facade_cannot_reach_legacy_preflight_or_run() -> Non
 
     seed_facade = GlobalDiscoveryRecoveryBoardSeedService()
     assert hasattr(seed_facade, "build_board_seed")
+    assert not hasattr(seed_facade, "capture_board_seed_input")
     assert not hasattr(seed_facade, "process_once")
+
+    input_facade = GlobalDiscoveryRecoveryBoardSeedInputService()
+    assert hasattr(input_facade, "capture_board_seed_input")
+    assert not hasattr(input_facade, "build_board_seed")
 
 
 def test_empty_recovery_seed_uses_canonical_zero_source_projection(
@@ -347,6 +353,9 @@ async def test_recovery_seed_uses_captured_overlay_without_live_ledger_read(
         GlobalOutboxProcessor,
     )
     from okto_pulse.core.kg import canonical_partition_integrity as partition
+    from okto_pulse.core.kg.canonical_learning_partition import (
+        HISTORICAL_DEBT_REASON,
+    )
     from okto_pulse.core.kg.connectivity_guard import (
         CANONICAL_LEARNING_WORKING_ONLY_REASON,
     )
@@ -378,9 +387,9 @@ async def test_recovery_seed_uses_captured_overlay_without_live_ledger_read(
                 }
             }
 
-    async def no_debt(_db, *, board_id):
+    async def captured_debt(_db, *, board_id):
         assert board_id == "board-1"
-        return {}
+        return {"bug:ticket-1": HISTORICAL_DEBT_REASON}
 
     async def forbidden_live_overlay(*_args, **_kwargs):
         raise AssertionError("recovery must not read the live cognitive ledger")
@@ -390,7 +399,7 @@ async def test_recovery_seed_uses_captured_overlay_without_live_ledger_read(
             assert text == "Board Board One"
             return [0.3, 0.4]
 
-    monkeypatch.setattr(partition, "canonical_debt_exclusions", no_debt)
+    monkeypatch.setattr(partition, "canonical_debt_exclusions", captured_debt)
     monkeypatch.setattr(
         partition,
         "pending_or_debt_exclusions",
@@ -401,7 +410,8 @@ async def test_recovery_seed_uses_captured_overlay_without_live_ledger_read(
         lambda: _EmbeddingProvider(),
     )
 
-    seed = await _Processor().build_recovery_board_seed(
+    seed_input_service = GlobalDiscoveryRecoveryBoardSeedInputService()
+    seed_input = await seed_input_service.capture_board_seed_input(
         object(),
         board_id="board-1",
         board_name="Board One",
@@ -409,6 +419,15 @@ async def test_recovery_seed_uses_captured_overlay_without_live_ledger_read(
         captured_cognitive_pending_exclusions={
             "bug:ticket-1": CANONICAL_LEARNING_WORKING_ONLY_REASON
         },
+    )
+    assert dict(seed_input.overlay_exclusions) == {
+        "bug:ticket-1": HISTORICAL_DEBT_REASON
+    }
+    seed = await _Processor().build_recovery_board_seed(
+        board_id=seed_input.board_id,
+        board_name=seed_input.board_name,
+        board_summary=seed_input.board_summary,
+        captured_overlay_exclusions=dict(seed_input.overlay_exclusions),
     )
 
     assert len(seed.digests) == 1
@@ -2666,7 +2685,7 @@ async def test_delivery_requeues_only_global_open_dlq_and_leaves_commit_to_uow(
 
 
 @pytest.mark.asyncio
-async def test_uow_seed_builder_requires_exact_captured_overlay_coverage(
+async def test_uow_seed_input_capture_requires_exact_overlay_coverage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from okto_pulse.core.application.kg_operations import CoreKnowledgeGraphOperations
@@ -2674,7 +2693,7 @@ async def test_uow_seed_builder_requires_exact_captured_overlay_coverage(
     relational_context = object()
     calls: list[tuple[object, str, dict[str, str]]] = []
 
-    async def build_seed(
+    async def capture_seed_input(
         _self,
         db,
         *,
@@ -2692,19 +2711,19 @@ async def test_uow_seed_builder_requires_exact_captured_overlay_coverage(
         return board_id
 
     monkeypatch.setattr(
-        GlobalDiscoveryRecoveryBoardSeedService,
-        "build_board_seed",
-        build_seed,
+        GlobalDiscoveryRecoveryBoardSeedInputService,
+        "capture_board_seed_input",
+        capture_seed_input,
     )
     operations = CoreKnowledgeGraphOperations(relational_context)
 
     with pytest.raises(ValueError, match="cover every recovery board"):
-        await operations.build_global_discovery_recovery_seeds(
+        await operations.capture_global_discovery_recovery_seed_inputs(
             boards=[("b1", "One", "Summary")],
             captured_cognitive_pending_exclusions={},
         )
 
-    result = await operations.build_global_discovery_recovery_seeds(
+    result = await operations.capture_global_discovery_recovery_seed_inputs(
         boards=[("b2", "Two", "Summary"), ("b1", "One", "Summary")],
         captured_cognitive_pending_exclusions={
             "b1": {"bug:1": "canonical_learning_working_only"},

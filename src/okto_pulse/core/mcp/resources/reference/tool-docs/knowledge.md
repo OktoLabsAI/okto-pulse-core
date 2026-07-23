@@ -8,9 +8,12 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 Read `okto-pulse://reference/knowledge-governance` before authoring a KB or
 promoting a finding. KB bodies are advisory/untrusted; first-class SDLC
-artifacts remain authoritative. The active propagation behavior is
-`legacy_all`: an omitted ID filter copies all resources selected by the
-existing path. Selective propagation v2 is unavailable until delivery B.
+artifacts remain authoritative. Legacy calls still use `legacy_all`: an
+omitted ID filter copies all resources selected by the existing path.
+Selective propagation v2 is opt-in through a complete versioned envelope or
+the dedicated card-assignment tools below. An omitted v2 envelope stays on the
+legacy path; a supplied envelope is authoritative and never implies legacy
+copy-all.
 
 ## `okto_pulse_add_card_knowledge`
 
@@ -109,6 +112,98 @@ Args:
 
 Returns:
     JSON with count of knowledge entries copied and total card KEs
+
+## `okto_pulse_replace_card_knowledge_assignments`
+
+Atomically replace a card's authoritative v2 Knowledge selection. This is a
+complete replacement, not an additive patch. Every source and relevance link
+is validated before any assignment is written. Relevance links may target only
+FR, AC, or test-scenario IDs on the card's linked spec.
+
+Args:
+    board_id: Board ID
+    card_id: Card ID
+    request:
+        contract_version: Must be 2
+        knowledge_ids: Non-empty unique stable Knowledge root IDs
+        mode: `reference` or `snapshot`
+        linkage: Optional list of `{entity_type, entity_id}` relevance links
+        justification: Required non-empty reason
+        idempotency_key: Required non-empty replay key
+        expected_revision: Current non-negative selection revision (CAS)
+
+Returns:
+    JSON with `success`, `contract_version`, `operation_id`, `revision`,
+    `replayed`, `selection_state`, and the effective assignments. A stale
+    `expected_revision` fails closed without a partial write.
+
+## `okto_pulse_drop_card_knowledge_assignments`
+
+Authoritatively remove selected card Knowledge assignments. IDs are stable
+Knowledge roots, never assignment-row IDs. An empty `knowledge_ids` list means
+drop all assignments; use this operation rather than encoding removal through
+replace or refresh.
+
+Args:
+    board_id: Board ID
+    card_id: Card ID
+    request:
+        contract_version: Must be 2
+        knowledge_ids: Unique stable roots; empty means all
+        justification: Required non-empty reason
+        idempotency_key: Required non-empty replay key
+        expected_revision: Current non-negative selection revision (CAS)
+
+Returns:
+    The same versioned mutation projection as replace. Revision conflicts and
+    invalid roots fail closed.
+
+## `okto_pulse_refresh_card_knowledge_assignments`
+
+Refresh existing `snapshot` assignments from their current source revisions.
+This operation does not change selection and accepts stable Knowledge root IDs,
+never assignment-row IDs. Reference-mode assignments are not refresh targets.
+
+Args:
+    board_id: Board ID
+    card_id: Card ID
+    request:
+        contract_version: Must be 2
+        knowledge_ids: Non-empty unique stable Knowledge root IDs
+        idempotency_key: Required non-empty replay key
+        expected_revision: Current non-negative selection revision (CAS)
+
+Returns:
+    JSON with `success`, `contract_version`, `operation_id`, `revision`,
+    `replayed`, and `refreshed` source revision/hash records.
+
+## `okto_pulse_get_card_knowledge_propagation`
+
+Read the card's technical v2 Knowledge state without mutating it. Use the
+returned revision as `expected_revision` for the next replace, drop, or refresh
+operation.
+
+Args:
+    board_id: Board ID
+    card_id: Card ID
+
+Returns:
+    JSON with `contract_version`, `revision`, `selection_state`, and assignments
+    projected as stable root ID, mode, origin class, state, and stale flag.
+
+### v2 concurrency and replay rules
+
+- Existing-card mutations require the exact current revision returned by
+  `okto_pulse_get_card_knowledge_propagation`.
+- `knowledge_propagation_revision_conflict` is not permission to overwrite:
+  read again, confirm the desired intent, then submit it with a new
+  idempotency key and current revision.
+- Reuse an `idempotency_key` only for an identical retry. Exact replays return
+  the original operation/result with `replayed=true`; changed intent returns
+  `knowledge_propagation_idempotency_conflict`.
+- V2 creation uses `expected_revision=0`. If a bounded creation race remains
+  retryable, repeat the exact request with the same key so the durable result
+  can be recovered.
 
 ## `okto_pulse_delete_card_knowledge`
 

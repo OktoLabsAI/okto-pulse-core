@@ -48,9 +48,12 @@ def _force_strict_mode():
 def test_kg_tick_reset_calls_require_write_token():
     from okto_pulse.core.application import kg_tick
 
-    src = inspect.getsource(kg_tick.reset_last_recomputed_at)
-    assert "require_write_token" in src
-    assert "require_write_token(current_board_id)" in src
+    public_src = inspect.getsource(kg_tick.reset_last_recomputed_at)
+    reset_src = inspect.getsource(kg_tick._reset_board_last_recomputed_at)
+    assert "_reset_board_last_recomputed_at(" in public_src
+    assert "with under_safe_write(" in reset_src
+    assert "require_write_token(" in reset_src
+    assert "expected_owner_token=owner_token" in reset_src
 
 
 def test_outbox_worker_apply_event_calls_require_global_write_token():

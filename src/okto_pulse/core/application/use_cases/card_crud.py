@@ -16,6 +16,9 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from typing import Any
 
 from okto_pulse.core.application.use_cases.board_access import load_accessible_card
+from okto_pulse.core.application.effective_knowledge_read import (
+    project_effective_knowledge,
+)
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
@@ -124,7 +127,13 @@ class GetCardUseCase:
         self, command: GetCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardResult:
         card = await _get_card_for_actor(uow, command.card_id, actor)
-        return GetCardResult(card)
+        return GetCardResult(
+            await project_effective_knowledge(
+                uow.services,
+                card,
+                target_type="card",
+            )
+        )
 
 
 # --- update -----------------------------------------------------------------
@@ -166,7 +175,15 @@ class UpdateCardUseCase:
         if not card:
             raise EntityNotFoundError("card", command.card_id)
         await commit(uow)
-        return UpdateCardResult(await service.get_card(command.card_id))
+        refreshed = await service.get_card(command.card_id)
+        if not refreshed:
+            raise EntityNotFoundError("card", command.card_id)
+        projected = await project_effective_knowledge(
+            uow.services,
+            refreshed,
+            target_type="card",
+        )
+        return UpdateCardResult(projected)
 
 
 # --- delete -----------------------------------------------------------------
@@ -257,7 +274,15 @@ class MoveCardUseCase:
         if not card:
             raise EntityNotFoundError("card", command.card_id)
         await commit(uow)
-        return MoveCardResult(await service.get_card(command.card_id))
+        refreshed = await service.get_card(command.card_id)
+        if not refreshed:
+            raise EntityNotFoundError("card", command.card_id)
+        projected = await project_effective_knowledge(
+            uow.services,
+            refreshed,
+            target_type="card",
+        )
+        return MoveCardResult(projected)
 
 
 # --- dependencies (read) ----------------------------------------------------
@@ -981,7 +1006,13 @@ class ListCardKnowledgeUseCase:
         self, command: ListCardKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCardKnowledgeResult:
         card = await _get_card_for_actor(uow, command.card_id, actor)
-        return ListCardKnowledgeResult(list(card.knowledge_bases or []))
+        from okto_pulse.core.application.effective_knowledge_read import (
+            load_effective_card_knowledge,
+        )
+
+        return ListCardKnowledgeResult(
+            await load_effective_card_knowledge(uow.services, card)
+        )
 
 
 class GetCardKnowledgeCommand:
@@ -1012,7 +1043,11 @@ class GetCardKnowledgeUseCase:
         self, command: GetCardKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetCardKnowledgeResult:
         card = await _get_card_for_actor(uow, command.card_id, actor)
-        for kb in card.knowledge_bases or []:
+        from okto_pulse.core.application.effective_knowledge_read import (
+            load_effective_card_knowledge,
+        )
+
+        for kb in await load_effective_card_knowledge(uow.services, card):
             if kb.get("id") == command.kb_id:
                 return GetCardKnowledgeResult(kb)
         raise EntityNotFoundError("card_knowledge", command.kb_id)

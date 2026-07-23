@@ -3198,6 +3198,28 @@ async def okto_pulse_get_task_context(
 
         if not card or card.board_id != board_id:
             return json.dumps({"error": "Card not found"})
+        if _inc_kb:
+            from okto_pulse.core.application.effective_knowledge_read import (
+                project_effective_knowledge,
+            )
+            from okto_pulse.core.ports.knowledge_propagation import (
+                KnowledgePropagationPortError,
+            )
+            from okto_pulse.core.services.knowledge_propagation import (
+                KnowledgePropagationServiceError,
+            )
+
+            try:
+                card = await project_effective_knowledge(
+                    uow.services,
+                    card,
+                    target_type="card",
+                )
+            except (
+                KnowledgePropagationPortError,
+                KnowledgePropagationServiceError,
+            ) as exc:
+                return _knowledge_propagation_error(exc)
 
         result: dict = {
             "card": {
@@ -3277,6 +3299,18 @@ async def okto_pulse_get_task_context(
             await uow.commit()
 
             if spec:
+                if _inc_kb:
+                    try:
+                        spec = await project_effective_knowledge(
+                            uow.services,
+                            spec,
+                            target_type="spec",
+                        )
+                    except (
+                        KnowledgePropagationPortError,
+                        KnowledgePropagationServiceError,
+                    ) as exc:
+                        return _knowledge_propagation_error(exc)
                 spec_data: dict = {
                     "id": spec.id,
                     "title": spec.title,
@@ -6073,18 +6107,9 @@ async def okto_pulse_derive_spec_from_ideation(
     architecture_design_ids: list[str] | str = "",
     architecture_propagation_mode: str = "copy",
 ) -> str:
-    """Create a spec draft from a DONE ideation (fully reviewed and
-    snapshotted). The spec gets rich context compiled from the ideation —
-    its description/context embed the FULL parent ideation context (large) —
-    while structured fields (requirements, criteria) stay empty for deliberate
-    analysis.
-
-    Artifacts (mockups, KBs, Architecture Designs) from the ideation are
-    automatically propagated to the spec; use mockup_ids/kb_ids/
-    architecture_design_ids to select specific ones (default: all).
-    architecture_propagation_mode accepts copy, derive, reference_only, or
-    none; "snapshot" is not a mode.
-    """
+    """Derive a draft spec from a DONE ideation; parent context and selected
+    resources propagate (default all).
+    Full docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7169,17 +7194,9 @@ async def okto_pulse_derive_spec_from_refinement(
     architecture_propagation_mode: str = "copy",
     knowledge_propagation: KnowledgePropagationEnvelopeV2 = None,  # type: ignore[assignment]
 ) -> str:
-    """Create a spec draft from a DONE refinement. Context is compiled from the
-    refinement's scope, analysis, decisions, and Q&A — the refinement
-    description (and thus the spec) embeds the FULL parent ideation context
-    (large).
-
-    Artifacts (mockups, KBs, Architecture Designs) from the refinement are
-    automatically propagated to the spec; use mockup_ids/kb_ids/
-    architecture_design_ids to select specific ones (default: all).
-    architecture_propagation_mode accepts copy, derive, reference_only, or
-    none; "snapshot" is not a mode.
-    """
+    """Derive a draft spec from a DONE refinement; analysis, parent context,
+    and selected resources propagate (default all). Knowledge v2 needs a
+    complete envelope. Full docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7806,6 +7823,28 @@ async def okto_pulse_get_spec_context(
             ).spec
         except EntityNotFoundError:
             return json.dumps({"error": "Spec not found"})
+        if _inc_kb:
+            from okto_pulse.core.application.effective_knowledge_read import (
+                project_effective_knowledge,
+            )
+            from okto_pulse.core.ports.knowledge_propagation import (
+                KnowledgePropagationPortError,
+            )
+            from okto_pulse.core.services.knowledge_propagation import (
+                KnowledgePropagationServiceError,
+            )
+
+            try:
+                spec = await project_effective_knowledge(
+                    uow.services,
+                    spec,
+                    target_type="spec",
+                )
+            except (
+                KnowledgePropagationPortError,
+                KnowledgePropagationServiceError,
+            ) as exc:
+                return _knowledge_propagation_error(exc)
 
         result: dict = {
             "id": spec.id,
@@ -10228,6 +10267,12 @@ async def okto_pulse_copy_knowledge_to_card(
     from okto_pulse.core.services.effective_resource_propagation import (
         ResourceLineageResolutionError,
     )
+    from okto_pulse.core.ports.knowledge_propagation import (
+        KnowledgePropagationPortError,
+    )
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgePropagationServiceError,
+    )
 
     # MCP-FU6 strangler: the spec/card lookup + R3-IMP2 effective fallback + dedup +
     # update + commit move into McpCopyKnowledgeToCardUseCase over the MCP UoW. The
@@ -10254,6 +10299,11 @@ async def okto_pulse_copy_knowledge_to_card(
         return json.dumps(exc.to_error_dict())
     except ResourceLineageResolutionError as exc:
         return json.dumps(exc.to_error_dict())
+    except (
+        KnowledgePropagationPortError,
+        KnowledgePropagationServiceError,
+    ) as exc:
+        return _knowledge_propagation_error(exc)
 
     if result.empty_plan is not None:
         return _effective_empty_copy_response("knowledge_base", result.empty_plan)
@@ -10337,11 +10387,8 @@ async def okto_pulse_replace_card_knowledge_assignments(
     card_id: str,
     request: KnowledgeAssignmentReplaceRequest,
 ) -> str:
-    """Replace a card's v2 Knowledge assignments atomically.
-
-    ``linkage`` may reference only FR, AC, and test-scenario IDs on the card's
-    linked spec. Every source/link is validated before the CAS write.
-    """
+    """Replace card Knowledge v2 assignments atomically with revision CAS.
+    Full docs: okto-pulse://reference/tool-docs/knowledge."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10374,7 +10421,8 @@ async def okto_pulse_drop_card_knowledge_assignments(
     card_id: str,
     request: KnowledgeAssignmentDropRequest,
 ) -> str:
-    """Drop selected roots, or pass an empty list for authoritative drop-all."""
+    """Drop selected stable Knowledge roots (empty means all) with revision CAS.
+    Full docs: okto-pulse://reference/tool-docs/knowledge."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10407,7 +10455,8 @@ async def okto_pulse_refresh_card_knowledge_assignments(
     card_id: str,
     request: KnowledgeAssignmentRefreshRequest,
 ) -> str:
-    """Refresh snapshots by stable Knowledge root ID, never assignment-row ID."""
+    """Refresh snapshots by stable Knowledge root ID without changing selection.
+    Full docs: okto-pulse://reference/tool-docs/knowledge."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10439,7 +10488,8 @@ async def okto_pulse_get_card_knowledge_propagation(
     board_id: str,
     card_id: str,
 ) -> str:
-    """Get the technical v2 selection/revision/assignment state for a card."""
+    """Read card Knowledge v2 selection, revision, and assignment state.
+    Full docs: okto-pulse://reference/tool-docs/knowledge."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -14119,20 +14169,7 @@ async def okto_pulse_get_spec_knowledge(
     except EntityNotFoundError:
         return json.dumps({"error": "Knowledge base item not found"})
 
-    return json.dumps(
-        with_knowledge_governance(
-            {
-                "id": kb.id,
-                "title": kb.title,
-                "description": kb.description,
-                "content": kb.content,
-                "mime_type": kb.mime_type,
-                "created_at": kb.created_at.isoformat(),
-            },
-            kb,
-        ),
-        default=str,
-    )
+    return json.dumps(_serialize_knowledge_base(kb), default=str)
 
 
 @mcp.tool()
@@ -18490,56 +18527,88 @@ async def okto_pulse_kg_tick_run_now(
             }
         )
 
-    # F17 admission gate (gemelar): refuse a degraded concrete board with the
-    # SAME structured graph_recovery_needed refusal as the REST endpoint, via the
-    # SAME shared _refuse_tick_if_degraded gate (one predicate, no MCP-side
-    # duplication). The MCP path owns no request session, so probe under a
-    # short-lived one. Runs after the lease check, before tick_id allocation.
-    if board_id:
+    tick_id: str | None = None
+    tick_ids: list[str] = []
+    committed = False
+    try:
         from okto_pulse.core.application.kg_tick import (
+            KGTickAdmissionDeferred,
             refuse_tick_if_degraded as _refuse_tick_if_degraded,
         )
 
-        async with get_unit_of_work_factory_for_mcp()() as uow:
-            refusal = await _refuse_tick_if_degraded(
-                board_id,
-                uow,
-                scheduler_control=get_scheduler_control_for_mcp(),
-            )
-        if refusal is not None:
-            return json.dumps(refusal)
+        # F17 admission gate (gemelar): refuse a degraded concrete board with
+        # the SAME structured graph_recovery_needed refusal as the REST
+        # endpoint, via the SAME shared _refuse_tick_if_degraded gate (one
+        # predicate, no MCP-side duplication). The MCP path owns no request
+        # session, so probe under a short-lived one. Runs after the lease check,
+        # before tick_id allocation.
+        if board_id:
+            async with get_unit_of_work_factory_for_mcp()() as uow:
+                refusal = await _refuse_tick_if_degraded(
+                    board_id,
+                    uow,
+                    scheduler_control=get_scheduler_control_for_mcp(),
+                )
+            if refusal is not None:
+                return json.dumps(refusal)
 
-    import uuid as _uuid
-    from datetime import datetime, timezone
+        import uuid as _uuid
+        from datetime import datetime, timezone
 
-    tick_id = str(_uuid.uuid4())
-    scheduled_at = datetime.now(timezone.utc).isoformat()
+        tick_id = str(_uuid.uuid4())
+        scheduled_at = datetime.now(timezone.utc).isoformat()
 
-    _tick_logger.info(
-        "kg.tick.manual_triggered tick_id=%s user=%s board=%s force=%s source=mcp",
-        tick_id,
-        triggered_by,
-        board_id or None,
-        force_full_rebuild,
-        extra={
-            "event": "kg.tick.manual_triggered",
-            "tick_id": tick_id,
-            "triggered_by_user_id": triggered_by,
-            "board_id": board_id or None,
-            "force_full_rebuild": force_full_rebuild,
-            "source": "mcp",
-        },
-    )
+        _tick_logger.info(
+            "kg.tick.manual_triggered "
+            "tick_id=%s user=%s board=%s force=%s source=mcp",
+            tick_id,
+            triggered_by,
+            board_id or None,
+            force_full_rebuild,
+            extra={
+                "event": "kg.tick.manual_triggered",
+                "tick_id": tick_id,
+                "triggered_by_user_id": triggered_by,
+                "board_id": board_id or None,
+                "force_full_rebuild": force_full_rebuild,
+                "source": "mcp",
+            },
+        )
 
-    try:
         try:
             async with get_unit_of_work_factory_for_mcp()() as uow:
-                await uow.services.kg.dispatch_manual_tick(
+                dispatched = await uow.services.kg.dispatch_manual_tick(
                     tick_id=tick_id,
                     board_id=board_id or None,
                     force_full_rebuild=force_full_rebuild,
+                    scheduled_at=scheduled_at,
                 )
+                tick_ids = list(dispatched or ([tick_id] if board_id else []))
                 await uow.commit()
+                committed = True
+        except KGTickAdmissionDeferred as exc:
+            _tick_logger.info(
+                "kg.tick.manual_deferred reason=%s board=%s source=mcp",
+                exc.reason_code,
+                board_id or None,
+                extra={
+                    "event": "kg.tick.manual_deferred",
+                    "reason": exc.reason_code,
+                    "board_id": board_id or None,
+                    "source": "mcp",
+                },
+            )
+            return json.dumps(
+                {
+                    "error": exc.code,
+                    "reason": exc.reason_code,
+                    "retryable": exc.retryable,
+                    "message": (
+                        "KG tick deferred while Global Discovery recovery "
+                        "owns the mutation fence"
+                    ),
+                }
+            )
         except Exception as exc:
             _tick_logger.error(
                 "kg.tick.manual_schedule_failed tick_id=%s err=%s source=mcp",
@@ -18564,16 +18633,39 @@ async def okto_pulse_kg_tick_run_now(
                     "detail": str(exc),
                 }
             )
-    finally:
-        await lease_provider.release(lease)
 
-    return json.dumps(
-        {
-            "tick_id": tick_id,
-            "status": "running",
-            "scheduled_at": scheduled_at,
-        }
-    )
+        return json.dumps(
+            {
+                "tick_id": tick_id,
+                "correlation_id": tick_id,
+                "tick_ids": tick_ids,
+                "status": "running",
+                "scheduled_at": scheduled_at,
+            }
+        )
+    finally:
+        try:
+            await lease_provider.release(lease)
+        except Exception as exc:
+            # The event commit is authoritative. A coordination cleanup
+            # failure must not turn an already-durable schedule into an
+            # apparent request failure that invites duplicate client retries.
+            _tick_logger.exception(
+                "kg.tick.lease_release_failed "
+                "tick_id=%s board=%s committed=%s source=mcp err=%s",
+                tick_id,
+                board_id or None,
+                committed,
+                exc,
+                extra={
+                    "event": "kg.tick.lease_release_failed",
+                    "tick_id": tick_id,
+                    "board_id": board_id or None,
+                    "committed": committed,
+                    "source": "mcp",
+                    "error_type": type(exc).__name__,
+                },
+            )
 
 
 # ============================================================================
@@ -19854,21 +19946,15 @@ async def okto_pulse_list_by_board(
     limit: int = 100,
     offset: int = 0,
 ) -> str:
-    """List top-level entities of a board by type (replaces the entity-specific
-    list_* tools: specs, ideations, refinements, sprints, stories, topics).
-    Returns FULL entity bodies — prefer a low limit for spec listings.
-
-    filters by entity_type: spec: status, labels, assignee_id; ideation:
+    """List full board entities; replaces entity-specific list tools.
+    Filters by entity_type — spec: status, labels, assignee_id; ideation:
     status, labels, derivation_pending; refinement: ideation_id (required),
     status, labels, derivation_pending; sprint: spec_id (required), status;
     story: status, topic_id, linked, converted, include_archived; topic:
-    include_archived. derivation_pending (bool) — triage for done
-    ideations/refinements still lacking a derived child; example:
-    {"derivation_pending": true}. Follow with
-    derive_spec_from_ideation / derive_spec_from_refinement.
-    Errors: invalid_filter (unknown keys; returns allowed keys),
-    missing_required_filter. Docs: okto-pulse://reference/list_tools
-    """
+    include_archived. derivation_pending finds DONE parents without a derived
+    child; example: {"derivation_pending": true}. Unknown keys return
+    invalid_filter with allowed keys. Full docs:
+    okto-pulse://reference/list_tools."""
     from okto_pulse.core.mcp.filters import (
         invalid_filter_keys,
         supported_filter_keys,
@@ -20279,6 +20365,12 @@ async def okto_pulse_list_knowledge(
         McpListKnowledgeUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.knowledge_propagation import (
+        KnowledgePropagationPortError,
+    )
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgePropagationServiceError,
+    )
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -20296,6 +20388,11 @@ async def okto_pulse_list_knowledge(
         if exc.entity_type == "card":
             return json.dumps({"error": "Card not found"})
         return _mcp_entity_not_found_error(exc)
+    except (
+        KnowledgePropagationPortError,
+        KnowledgePropagationServiceError,
+    ) as exc:
+        return _knowledge_propagation_error(exc)
     return json.dumps(result.payload, default=str)
 
 

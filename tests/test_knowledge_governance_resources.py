@@ -10,11 +10,17 @@ def test_canonical_resource_is_catalogued_and_readable() -> None:
     catalog = server.effective_resource_catalog()
     spec = next(item for item in catalog.specs() if item.uri == URI)
     body = spec.read()
+    normalized = " ".join(body.split())
 
     assert "# Knowledge Base Governance" in body
     assert "KnowledgeGovernanceMetadataV1" in body
     assert "legacy_all" in body
-    assert "Selective propagation v2 is **not available**" in body
+    assert "Selective propagation v2 is active and opt-in" in normalized
+    assert '`selection_state="omitted"` is authoritative v2 state' in normalized
+    assert (
+        "Do not combine legacy selection parameters with a v2 envelope"
+        in normalized
+    )
 
 
 def test_quick_navigation_and_workflows_point_to_canonical_policy() -> None:

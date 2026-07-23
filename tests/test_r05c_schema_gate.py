@@ -160,7 +160,8 @@ def test_ts_fe24d781_class_a_sites_consume_graph_transaction_port():
     tick_application_src = Path(inspect.getsourcefile(kg_tick_application)).read_text(
         encoding="utf-8"
     )
-    assert "get_kg_registry().graph_transaction" in tick_application_src
+    assert "get_kg_registry()" in tick_application_src
+    assert "registry.graph_transaction.begin" in tick_application_src
     assert "transaction.begin" in tick_application_src
     assert "open_board_connection" not in tick_application_src
 

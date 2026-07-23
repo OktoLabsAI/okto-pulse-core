@@ -16,6 +16,10 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from typing import Any
 
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
+from okto_pulse.core.application.effective_knowledge_read import (
+    load_effective_spec_knowledge,
+    project_effective_knowledge,
+)
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -226,7 +230,13 @@ class GetSpecUseCase:
         self, command: GetSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> GetSpecResult:
         spec = await _require_actor_board_spec(uow, command.spec_id, actor)
-        return GetSpecResult(spec)
+        return GetSpecResult(
+            await project_effective_knowledge(
+                uow.services,
+                spec,
+                target_type="spec",
+            )
+        )
 
 
 # --- move (status transition) -----------------------------------------------
@@ -262,7 +272,15 @@ class MoveSpecUseCase:
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
         await commit(uow)
-        return MoveSpecResult(await service.get_spec(command.spec_id))
+        refreshed = await service.get_spec(command.spec_id)
+        if not refreshed:
+            raise EntityNotFoundError("spec", command.spec_id)
+        projected = await project_effective_knowledge(
+            uow.services,
+            refreshed,
+            target_type="spec",
+        )
+        return MoveSpecResult(projected)
 
 
 # --- delete -----------------------------------------------------------------
@@ -487,7 +505,15 @@ class UpdateSpecUseCase:
         if not spec:
             raise EntityNotFoundError("spec", command.spec_id)
         await commit(uow)
-        return UpdateSpecResult(await service.get_spec(command.spec_id))
+        refreshed = await service.get_spec(command.spec_id)
+        if not refreshed:
+            raise EntityNotFoundError("spec", command.spec_id)
+        projected = await project_effective_knowledge(
+            uow.services,
+            refreshed,
+            target_type="spec",
+        )
+        return UpdateSpecResult(projected)
 
 
 # --- structured spec entities (REST-FU3b-S1) --------------------------------
@@ -1341,8 +1367,8 @@ class ListSpecKnowledgeUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> ListSpecKnowledgeResult:
-        await _require_actor_board_spec(uow, command.spec_id, actor)
-        items = await uow.services.spec_knowledge.list_knowledge(command.spec_id)
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor)
+        items = await load_effective_spec_knowledge(uow.services, spec)
         return ListSpecKnowledgeResult(items)
 
 
@@ -1376,13 +1402,11 @@ class GetSpecKnowledgeUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> GetSpecKnowledgeResult:
-        kb = await _require_actor_board_spec_knowledge(
-            uow,
-            command.spec_id,
-            command.knowledge_id,
-            actor,
-        )
-        return GetSpecKnowledgeResult(kb)
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor)
+        for kb in await load_effective_spec_knowledge(uow.services, spec):
+            if str(kb.get("id") or "") == command.knowledge_id:
+                return GetSpecKnowledgeResult(kb)
+        raise EntityNotFoundError("spec_knowledge", command.knowledge_id)
 
 
 # --- spec knowledge: create -------------------------------------------------

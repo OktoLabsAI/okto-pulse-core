@@ -25,11 +25,13 @@ class FakeLineageProvider:
         parents: dict[str, list[LineageEntityRef]] | None = None,
         refs: dict[str, dict[str, list[dict]]] | None = None,
         marks: dict[tuple[str, str], dict[str, dict]] | None = None,
+        inherited_filter=None,
     ):
         self.roots = roots
         self.parents = parents or {}
         self.refs = refs or {}
         self.marks = marks or {}
+        self.inherited_filter = inherited_filter
 
     async def load_entity_ref(
         self,
@@ -51,6 +53,16 @@ class FakeLineageProvider:
     async def collect_refs(self, ref: LineageEntityRef) -> dict[str, list[dict]]:
         empty = {"architecture": [], "mockup": [], "knowledge_base": []}
         return {**empty, **self.refs.get(ref.ref, {})}
+
+    async def filter_inherited_refs(
+        self,
+        root: LineageEntityRef,
+        parent: LineageEntityRef,
+        refs: dict[str, list[dict]],
+    ) -> dict[str, list[dict]]:
+        if self.inherited_filter is None:
+            return refs
+        return self.inherited_filter(root, parent, refs)
 
     async def load_active_marks(
         self,
@@ -273,6 +285,123 @@ async def test_resolver_dedupes_direct_and_inherited_architecture_by_origin() ->
             "resource_type",
             "coverage_state",
         }
+
+
+@pytest.mark.asyncio
+async def test_direct_resource_shadows_only_the_same_inherited_root() -> None:
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        parents={spec.ref: [refinement]},
+        refs={
+            spec.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "kb-a-local",
+                        "title": "A local",
+                        "root_source_kb_id": "root-a",
+                        "source_entity_type": "spec",
+                        "source_entity_id": "spec-1",
+                    }
+                ]
+            },
+            refinement.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "kb-a-parent",
+                        "title": "A parent",
+                        "root_source_kb_id": "root-a",
+                        "source_entity_type": "refinement",
+                        "source_entity_id": "ref-1",
+                    },
+                    {
+                        "id": "kb-b-parent",
+                        "title": "B parent",
+                        "root_source_kb_id": "root-b",
+                        "source_entity_type": "refinement",
+                        "source_entity_id": "ref-1",
+                    },
+                ]
+            },
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1",
+        "spec",
+        "spec-1",
+    )
+
+    assert {
+        item.unique_resource_id for item in resolved.coverage_obligations
+    } == {"knowledge_base:root-a", "knowledge_base:root-b"}
+    by_root = {
+        item.unique_resource_id: item
+        for item in resolved.coverage_obligations
+    }
+    assert by_root["knowledge_base:root-a"].resource_id == "kb-a-local"
+    assert by_root["knowledge_base:root-b"].resource_id == "kb-b-parent"
+
+
+@pytest.mark.asyncio
+async def test_provider_can_suppress_unselected_inherited_knowledge_refs() -> None:
+    card = LineageEntityRef("card", "card-1", "Card")
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+
+    def filter_refs(_root, _parent, refs):
+        return {
+            **refs,
+            "knowledge_base": [
+                {**item, "effective": item["id"] == "kb-selected"}
+                for item in refs["knowledge_base"]
+            ],
+        }
+
+    provider = FakeLineageProvider(
+        roots={("card", "card-1"): card},
+        parents={card.ref: [spec]},
+        inherited_filter=filter_refs,
+        refs={
+            spec.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "kb-selected",
+                        "root_source_kb_id": "root-selected",
+                        "source_entity_type": "spec",
+                        "source_entity_id": "spec-1",
+                    },
+                    {
+                        "id": "kb-hidden",
+                        "root_source_kb_id": "root-hidden",
+                        "source_entity_type": "spec",
+                        "source_entity_id": "spec-1",
+                    },
+                ]
+            }
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1",
+        "card",
+        "card-1",
+    )
+    knowledge_state = next(
+        item
+        for item in resolved.resource_states
+        if item.resource_type == "knowledge_base"
+    )
+
+    assert [item["id"] for item in knowledge_state.inherited_refs] == [
+        "kb-selected"
+    ]
+    assert resolved.counts["unique_effective_count"] == 1
+    assert {
+        item.resource_id: item.effective
+        for item in resolved.attachments
+        if item.resource_type == "knowledge_base"
+    } == {"kb-selected": True, "kb-hidden": False}
 
 
 @pytest.mark.asyncio

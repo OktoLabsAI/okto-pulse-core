@@ -23,12 +23,20 @@ from okto_pulse.core.kg.global_discovery_recovery_control import (
     reset_recovery_control_plane,
 )
 from okto_pulse.core.kg.providers.testing.memory_recovery_run_store import (
-    MemoryRecoveryControlStore,
+    MemoryRecoveryControlStore as _MemoryRecoveryControlStore,
 )
 from okto_pulse.core.mcp import server
 
 
 NOW = datetime.now(timezone.utc)
+
+
+class MemoryRecoveryControlStore(_MemoryRecoveryControlStore):
+    """Keep preparation expiry deterministic across long regression runs."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs.setdefault("clock", lambda: NOW)
+        super().__init__(*args, **kwargs)
 
 
 def test_global_recovery_progress_invariant_error_exposes_only_code() -> None:

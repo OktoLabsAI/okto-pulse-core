@@ -471,7 +471,8 @@ class KnowledgeGraphOperations(Protocol):
         tick_id: str,
         board_id: str | None,
         force_full_rebuild: bool,
-    ) -> None: ...
+        scheduled_at: str | None = None,
+    ) -> list[str]: ...
 
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object
@@ -649,7 +650,7 @@ class KnowledgeGraphOperations(Protocol):
         self, *, board_id: str, reason: str
     ) -> dict[str, object]: ...
 
-    async def build_global_discovery_recovery_seeds(
+    async def capture_global_discovery_recovery_seed_inputs(
         self,
         *,
         boards: list[tuple[str, str, str]],

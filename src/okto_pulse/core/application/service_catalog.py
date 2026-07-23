@@ -249,6 +249,12 @@ class CoreKnowledgePropagationOperations:
             command,
         )
 
+    async def reset_for_relink(self, command):  # noqa: ANN001, ANN201
+        return await self._service().reset_for_relink(
+            self.__relational_context,
+            command,
+        )
+
     async def read(self, target):  # noqa: ANN001, ANN201
         return await self._service().read(self.__relational_context, target)
 

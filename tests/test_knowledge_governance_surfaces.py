@@ -169,14 +169,29 @@ class _KnowledgeService:
         return [self.kb]
 
 
+class _LegacyPropagationRead:
+    async def read(self, _target: object) -> SimpleNamespace:
+        return SimpleNamespace(v2_active=False)
+
+
+class _V2PropagationRead:
+    async def read(self, _target: object) -> SimpleNamespace:
+        return SimpleNamespace(v2_active=True)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("entity_type", ["ideation", "refinement", "spec"])
 async def test_consolidated_list_projects_governance_for_each_entity_type(
     entity_type: str,
 ) -> None:
-    parent = SimpleNamespace(id="entity-1", board_id="board-1")
+    kb = _kb(metadata=_valid_metadata())
+    parent = SimpleNamespace(
+        id="entity-1",
+        board_id="board-1",
+        knowledge_bases=[kb],
+    )
     parent_service = _ParentService(parent)
-    knowledge_service = _KnowledgeService(_kb(metadata=_valid_metadata()))
+    knowledge_service = _KnowledgeService(kb)
     services = SimpleNamespace(
         specs=parent_service,
         ideations=parent_service,
@@ -184,6 +199,7 @@ async def test_consolidated_list_projects_governance_for_each_entity_type(
         spec_knowledge=knowledge_service,
         ideation_knowledge=knowledge_service,
         refinement_knowledge=knowledge_service,
+        knowledge_propagation=_LegacyPropagationRead(),
     )
     result = await McpListKnowledgeUseCase().execute(
         McpListKnowledgeCommand(
@@ -201,3 +217,101 @@ async def test_consolidated_list_projects_governance_for_each_entity_type(
     assert item["created_at"] == "2026-07-22T00:00:00+00:00"
     assert item["governance"]["metadata_status"] == "complete"
     assert item["governance"]["metadata"] == _valid_metadata()
+    assert "content" not in item
+
+
+@pytest.mark.asyncio
+async def test_spec_consolidated_list_keeps_v2_summary_bounded() -> None:
+    parent = SimpleNamespace(
+        id="spec-1",
+        board_id="board-1",
+        knowledge_bases=[{"id": "physical-history", "content": "must not leak"}],
+    )
+    parent_service = _ParentService(parent)
+
+    class _ResourceGate:
+        async def get_effective_resources(
+            self,
+            board_id: str,
+            entity_type: str,
+            entity_id: str,
+        ) -> dict:
+            assert (board_id, entity_type, entity_id) == (
+                "board-1",
+                "spec",
+                "spec-1",
+            )
+            return {
+                "resources": {
+                    "knowledge_base": [
+                        {
+                            "id": "root-1",
+                            "hydrated": True,
+                            "resource": {
+                                "id": "kb-current",
+                                "title": "Current",
+                                "description": None,
+                                "content": "large canonical body",
+                                "mime_type": "text/markdown",
+                                "root_source_kb_id": "root-1",
+                                "created_at": datetime(
+                                    2026,
+                                    7,
+                                    23,
+                                    tzinfo=timezone.utc,
+                                ),
+                            },
+                            "ref": {
+                                "knowledge_assignment_id": "assignment-1",
+                                "knowledge_assignment_mode": "reference",
+                                "knowledge_assignment_state": "active",
+                                "knowledge_assignment_stale": False,
+                                "origin_class": "v2",
+                            },
+                        }
+                    ]
+                }
+            }
+
+    services = SimpleNamespace(
+        specs=parent_service,
+        knowledge_propagation=_V2PropagationRead(),
+        resource_gate=_ResourceGate(),
+    )
+
+    result = await McpListKnowledgeUseCase().execute(
+        McpListKnowledgeCommand(
+            board_id="board-1",
+            entity_type="spec",
+            entity_id="spec-1",
+            filters={},
+        ),
+        actor=ActorContext("agent", "mcp", board_id="board-1"),
+        uow=SimpleNamespace(services=services),
+    )
+
+    item = result.payload["knowledge_bases"][0]
+    assert item == {
+        "id": "kb-current",
+        "title": "Current",
+        "description": None,
+        "mime_type": "text/markdown",
+        "spec_id": "spec-1",
+        "root_source_kb_id": "root-1",
+        "knowledge_assignment": {
+            "assignment_id": "assignment-1",
+            "mode": "reference",
+            "state": "active",
+            "stale": False,
+            "origin_class": "v2",
+        },
+        "created_at": "2026-07-23T00:00:00+00:00",
+        "governance": {
+            "authority": "advisory",
+            "metadata_status": "legacy_incomplete",
+            "missing_fields": [
+                "governance_metadata",
+            ],
+            "metadata": None,
+        },
+    }

@@ -65,55 +65,56 @@ def _seed_data():
     clear_cache()
 
     _handle = bootstrap_board_graph(BOARD)
-    db, conn = open_board_connection(BOARD)
     emb_a = [0.1] * 384
     emb_b = [0.2] * 384
     emb_c = [0.3] * 384
 
-    for nid, title, content, emb, score in [
-        ("dec-1", "Use Kuzu for KG", "Embedded graph DB", emb_a, 0.8),
-        ("dec-2", "Use DuckDB for analytics", "Columnar DB", emb_b, 0.8),
-        ("dec-3", "Deprecated SQLite KG", "Old approach", emb_c, 0.2),
-    ]:
+    with open_board_connection(BOARD) as (_db, conn):
+        for nid, title, content, emb, score in [
+            ("dec-1", "Use Kuzu for KG", "Embedded graph DB", emb_a, 0.8),
+            ("dec-2", "Use DuckDB for analytics", "Columnar DB", emb_b, 0.8),
+            ("dec-3", "Deprecated SQLite KG", "Old approach", emb_c, 0.2),
+        ]:
+            conn.execute(
+                "CREATE (d:Decision {id: $id, title: $t, content: $c, "
+                "source_artifact_ref: $ref, source_session_id: 's1', "
+                "source_confidence: 0.9, relevance_score: $score, "
+                "query_hits: 0, created_at: timestamp('2026-04-15T10:00:00'), "
+                "created_by_agent: 'agent-1', embedding: $emb})",
+                {"id": nid, "t": title, "c": content, "ref": "spec-1",
+                 "score": score, "emb": emb},
+            )
         conn.execute(
-            "CREATE (d:Decision {id: $id, title: $t, content: $c, "
-            "source_artifact_ref: $ref, source_session_id: 's1', "
-            "source_confidence: 0.9, relevance_score: $score, "
+            "CREATE (c:Constraint {id: 'cst-1', title: 'No Docker', "
+            "content: 'Embedded only', source_artifact_ref: 'spec-1', "
+            "source_session_id: 's1', source_confidence: 0.85, "
+            "relevance_score: 0.8, query_hits: 0, "
+            "created_at: timestamp('2026-04-15T10:00:00'), "
+            "created_by_agent: 'agent-1', embedding: $emb})",
+            {"emb": emb_b},
+        )
+        conn.execute(
+            "CREATE (a:Alternative {id: 'alt-1', title: 'Use Neo4j', "
+            "content: 'Server-based', justification: 'Rejected: Docker', "
+            "source_artifact_ref: 'spec-1', source_session_id: 's1', "
+            "source_confidence: 0.7, relevance_score: 0.6, "
             "query_hits: 0, created_at: timestamp('2026-04-15T10:00:00'), "
             "created_by_agent: 'agent-1', embedding: $emb})",
-            {"id": nid, "t": title, "c": content, "ref": "spec-1",
-             "score": score, "emb": emb},
+            {"emb": emb_c},
         )
-    conn.execute(
-        "CREATE (c:Constraint {id: 'cst-1', title: 'No Docker', "
-        "content: 'Embedded only', source_artifact_ref: 'spec-1', "
-        "source_session_id: 's1', source_confidence: 0.85, "
-        "relevance_score: 0.8, query_hits: 0, "
-        "created_at: timestamp('2026-04-15T10:00:00'), "
-        "created_by_agent: 'agent-1', embedding: $emb})",
-        {"emb": emb_b},
-    )
-    conn.execute(
-        "CREATE (a:Alternative {id: 'alt-1', title: 'Use Neo4j', "
-        "content: 'Server-based', justification: 'Rejected: Docker', "
-        "source_artifact_ref: 'spec-1', source_session_id: 's1', "
-        "source_confidence: 0.7, relevance_score: 0.6, "
-        "query_hits: 0, created_at: timestamp('2026-04-15T10:00:00'), "
-        "created_by_agent: 'agent-1', embedding: $emb})",
-        {"emb": emb_c},
-    )
-    # Rels
-    conn.execute(
-        "MATCH (d:Decision {id: 'dec-1'}), (a:Alternative {id: 'alt-1'}) "
-        "CREATE (d)-[:relates_to {confidence: 0.8, created_by_session_id: 's1', "
-        "created_at: timestamp('2026-04-15T10:00:00')}]->(a)"
-    )
-    conn.execute(
-        "MATCH (a:Decision {id: 'dec-1'}), (b:Decision {id: 'dec-2'}) "
-        "CREATE (a)-[:contradicts {confidence: 0.6, created_by_session_id: 's1', "
-        "created_at: timestamp('2026-04-15T10:00:00')}]->(b)"
-    )
-    del conn, db
+        # Rels
+        conn.execute(
+            "MATCH (d:Decision {id: 'dec-1'}), (a:Alternative {id: 'alt-1'}) "
+            "CREATE (d)-[:relates_to {confidence: 0.8, "
+            "created_by_session_id: 's1', "
+            "created_at: timestamp('2026-04-15T10:00:00')}]->(a)"
+        )
+        conn.execute(
+            "MATCH (a:Decision {id: 'dec-1'}), (b:Decision {id: 'dec-2'}) "
+            "CREATE (a)-[:contradicts {confidence: 0.6, "
+            "created_by_session_id: 's1', "
+            "created_at: timestamp('2026-04-15T10:00:00')}]->(b)"
+        )
     yield
     # R-P2-03: at module teardown the function-scope conftest fixture has already
     # reset the registry, so reconfigure the fakes before the teardown clear_cache.

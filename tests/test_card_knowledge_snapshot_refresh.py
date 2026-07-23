@@ -11,6 +11,8 @@ from okto_pulse.core.application.use_cases.mcp_card_crud import (
     McpCopyKnowledgeToCardCommand,
     McpCopyKnowledgeToCardUseCase,
 )
+from okto_pulse.core.domain.knowledge_selection import KnowledgeSelectionState
+from okto_pulse.core.ports.knowledge_propagation import KnowledgePropagationScope
 from okto_pulse.core.ports.spec_resource_propagation import (
     ResourcePropagationBoardFact,
     ResourcePropagationCardRecord,
@@ -42,6 +44,26 @@ class _KnowledgeService:
         return self.items
 
 
+class _KnowledgePropagationService:
+    async def read(self, _target):
+        return SimpleNamespace(v2_active=False)
+
+
+class _KnowledgePropagationPort:
+    def __init__(self, *, v2_active: bool):
+        self.v2_active = v2_active
+
+    async def load_scope(self, _context, request):
+        return KnowledgePropagationScope(
+            target=request.target,
+            scope_revision=1 if self.v2_active else 0,
+            v2_active=self.v2_active,
+            selection_state=(
+                KnowledgeSelectionState.OMITTED if self.v2_active else None
+            ),
+        )
+
+
 class _CardService:
     def __init__(self, card):
         self.card = card
@@ -71,6 +93,7 @@ class _Uow:
             specs=_LookupService(spec),
             cards=self.card_service,
             spec_knowledge=_KnowledgeService(knowledge_items),
+            knowledge_propagation=_KnowledgePropagationService(),
         )
         self.commit_count = 0
 
@@ -260,7 +283,10 @@ async def test_manual_then_auto_refresh_preserves_lineage_and_writes_only_on_cha
         "get_spec_resource_propagation_store",
         lambda: store,
     )
-    service = SpecResourcePropagationService(object())
+    service = SpecResourcePropagationService(
+        object(),
+        knowledge_propagation_port=_KnowledgePropagationPort(v2_active=False),
+    )
 
     equivalent = await service.propagate_for_card(
         board_id="board-1",

@@ -652,6 +652,11 @@ def test_confirm_endpoint_rejects_non_rebuild_operations(
         }
 
     monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
+    monkeypatch.setattr(
+        kg_rebuild_mod,
+        "_build_source_store",
+        lambda: lambda _board_id: [_row()],
+    )
 
     app = _make_rebuild_test_app(board_id="b-reset")
 
@@ -701,6 +706,11 @@ def test_post_rebuild_run_endpoint_is_registered_and_callable(
         }
 
     monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
+    monkeypatch.setattr(
+        kg_rebuild_mod,
+        "_build_source_store",
+        lambda: lambda _board_id: [_row()],
+    )
 
     app = _make_rebuild_test_app(board_id="b-endpoint")
     paths = set(app.openapi()["paths"])

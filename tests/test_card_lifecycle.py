@@ -32,6 +32,8 @@ from sqlalchemy_test_models import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
+from okto_pulse.core.domain.knowledge_selection import KnowledgeSelectionState
+from okto_pulse.core.ports.knowledge_propagation import KnowledgePropagationScope
 from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import CardResourceReadOnlyError, CardService
 from okto_pulse.core.services.knowledge_propagation import (
@@ -43,6 +45,21 @@ from okto_pulse.core.services.resource_gate import ResourceGateService
 BOARD_ID = "card-lifecycle-board-001"
 AGENT_ID = "card-lifecycle-agent-001"
 USER_ID = AGENT_ID
+
+
+class _CardKnowledgeScopePort:
+    def __init__(self, *, v2_active: bool) -> None:
+        self.v2_active = v2_active
+
+    async def load_scope(self, _context, request):
+        return KnowledgePropagationScope(
+            target=request.target,
+            scope_revision=1 if self.v2_active else 0,
+            v2_active=self.v2_active,
+            selection_state=(
+                KnowledgeSelectionState.OMITTED if self.v2_active else None
+            ),
+        )
 
 
 async def _mark_all_resources_na(db, entity_type: str, entity_id: str) -> None:
@@ -740,7 +757,12 @@ class TestCardUpdates:
         """Card KB/mockup snapshots can only be refreshed by propagation/copy paths."""
         await _seed_board(db_factory)
         async with db_factory() as db:
-            svc = CardService(db)
+            svc = CardService(
+                db,
+                knowledge_propagation_port=_CardKnowledgeScopePort(
+                    v2_active=False
+                ),
+            )
             card = (await db.execute(
                 __import__("sqlalchemy").select(Card).where(Card.board_id == BOARD_ID)
             )).scalars().first()
@@ -759,6 +781,44 @@ class TestCardUpdates:
                 allow_card_resource_write=True,
             )
             assert updated.knowledge_bases == [{"id": "cardkb_copied"}]
+
+    async def test_internal_resource_write_is_forbidden_for_v2_target(
+        self,
+        db_factory,
+    ):
+        await _seed_board(db_factory)
+        async with db_factory() as db:
+            svc = CardService(
+                db,
+                knowledge_propagation_port=_CardKnowledgeScopePort(
+                    v2_active=True
+                ),
+            )
+            card = (
+                await db.execute(
+                    __import__("sqlalchemy")
+                    .select(Card)
+                    .where(Card.board_id == BOARD_ID)
+                )
+            ).scalars().first()
+            before = list(card.knowledge_bases or [])
+
+            with pytest.raises(KnowledgePropagationServiceError) as caught:
+                await svc.update_card(
+                    card.id,
+                    USER_ID,
+                    CardUpdate(
+                        knowledge_bases=[{"id": "cardkb_forbidden"}]
+                    ),
+                    allow_card_resource_write=True,
+                )
+
+            assert (
+                caught.value.code
+                == "knowledge_propagation_legacy_write_forbidden"
+            )
+            await db.refresh(card)
+            assert list(card.knowledge_bases or []) == before
 
     async def test_update_assignee(self, db_factory):
         """Change card assignee."""

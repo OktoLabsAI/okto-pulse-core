@@ -195,9 +195,7 @@ class _CoreTestDatabaseRuntime:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logging.getLogger(__name__).exception(
-                "db.session.cancel_safe_close_failed"
-            )
+            logging.getLogger(__name__).exception("db.session.cancel_safe_close_failed")
 
     @asynccontextmanager
     async def transactional_session(self):
@@ -344,8 +342,7 @@ class _CoreTestRelationalEffects(RelationalEffectsPort):
             ~exists(
                 select(1).where(
                     ArtifactDeletionTombstone.board_id == upsert.board_id,
-                    ArtifactDeletionTombstone.artifact_type
-                    == upsert.artifact_type,
+                    ArtifactDeletionTombstone.artifact_type == upsert.artifact_type,
                     ArtifactDeletionTombstone.artifact_id == upsert.artifact_id,
                 )
             )
@@ -394,6 +391,14 @@ class _CoreTestRelationalEffects(RelationalEffectsPort):
     async def list_board_ids(self, session) -> list[str]:
         result = await session.execute(select(Board.id))
         return list(result.scalars().all())
+
+    async def is_global_recovery_active(self, session) -> bool:
+        del session
+        return False
+
+    async def fence_kg_tick_publication(self, session) -> bool:
+        del session
+        return False
 
     async def read_latest_kg_tick_completed_at(self, session):
         return (
@@ -1307,14 +1312,18 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             or 0
         )
         rows = (
-            await context.execute(
-                select(ConsolidationDeadLetter)
-                .where(ConsolidationDeadLetter.board_id == board_id)
-                .order_by(ConsolidationDeadLetter.id)
-                .limit(limit)
-                .offset(offset)
+            (
+                await context.execute(
+                    select(ConsolidationDeadLetter)
+                    .where(ConsolidationDeadLetter.board_id == board_id)
+                    .order_by(ConsolidationDeadLetter.id)
+                    .limit(limit)
+                    .offset(offset)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return total, list(rows)
 
     async def reprocess_dead_letter_rows(
@@ -1329,9 +1338,7 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             ConsolidationDeadLetter.board_id == board_id
         )
         if dead_letter_ids:
-            query = query.where(
-                ConsolidationDeadLetter.id.in_(dead_letter_ids)
-            )
+            query = query.where(ConsolidationDeadLetter.id.in_(dead_letter_ids))
         rows = list(
             (
                 await context.execute(
@@ -1339,7 +1346,9 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
                         ConsolidationDeadLetter.dead_lettered_at.asc()
                     ).limit(limit)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
         requeued = []
         already_queued = []
@@ -1760,6 +1769,65 @@ def _coordination_test_fakes():
     )
     yield
     reset_coordination_providers_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
+    """Make legacy Knowledge reads explicit in Core-only test compositions.
+
+    Production composition remains fail-closed when the edition-owned port is
+    absent.  Tests that exercise the port registry itself own that registry and
+    therefore intentionally opt out of this compatibility fake.
+    """
+
+    from okto_pulse.core.ports.knowledge_propagation import (
+        KnowledgePropagationScope,
+        register_knowledge_propagation_port,
+        reset_knowledge_propagation_port_for_tests,
+    )
+
+    if (
+        request.node.path.name == "test_knowledge_propagation_port.py"
+        or "_register_legacy_knowledge_scope_port" in request.fixturenames
+    ):
+        yield
+        return
+
+    class _ExplicitLegacyKnowledgePropagationPort:
+        async def load_scope(self, _context, lookup):
+            return KnowledgePropagationScope(
+                target=lookup.target,
+                scope_revision=0,
+                v2_active=False,
+                selection_state=None,
+            )
+
+        async def get_idempotency_entry(self, _context, _lookup):
+            raise AssertionError(
+                "legacy Knowledge test port does not support mutations"
+            )
+
+        async def load_parent_evidence(self, _context, _lookup):
+            raise AssertionError(
+                "legacy Knowledge test port does not support mutations"
+            )
+
+        async def stage_mutation(self, _context, _plan):
+            raise AssertionError(
+                "legacy Knowledge test port does not support mutations"
+            )
+
+        async def stage_attempt(self, _context, _attempt):
+            raise AssertionError(
+                "legacy Knowledge test port does not support mutations"
+            )
+
+    reset_knowledge_propagation_port_for_tests()
+    register_knowledge_propagation_port(_ExplicitLegacyKnowledgePropagationPort())
+    try:
+        yield
+    finally:
+        reset_knowledge_propagation_port_for_tests()
 
 
 @pytest.fixture(autouse=True)
