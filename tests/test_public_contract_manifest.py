@@ -44,6 +44,10 @@ def test_public_contract_resolution_is_exact_or_descendant_only() -> None:
     assert is_public_core_contract(
         "okto_pulse.core.services.resource_lineage.ResolvedResourceLineageService"
     )
+    assert is_public_core_contract(
+        "okto_pulse.core.domain.knowledge_fingerprint."
+        "resolve_knowledge_content_sha256"
+    )
     assert not is_public_core_contract("okto_pulse.core.services.main")
     assert not is_public_core_contract("okto_pulse.core.models.db.Card")
     assert not is_public_core_contract("okto_pulse.community.app")

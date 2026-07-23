@@ -120,10 +120,17 @@ from okto_pulse.core.services.resource_gate import (
     ResourceGateViolation,
 )
 from okto_pulse.core.services.resource_lineage import (
+    ResourceRevisionStamp,
     ResolvedResourceLineageProjection,
     ResolvedResourceLineageService,
     get_resource_lineage_metric_samples,
     reset_resource_lineage_observability_for_tests,
+)
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    KNOWLEDGE_CONTENT_HASH_FIELDS,
+    compute_knowledge_content_sha256,
+    knowledge_content_sha256,
+    resolve_knowledge_content_sha256,
 )
 from okto_pulse.core.services.spec_resource_propagation import (
     SpecResourcePropagationService,
@@ -240,10 +247,15 @@ __all__ = [
     "ResourceGateNotFound",
     "ResourceGateService",
     "ResourceGateViolation",
+    "ResourceRevisionStamp",
     "ResolvedResourceLineageProjection",
     "ResolvedResourceLineageService",
     "get_resource_lineage_metric_samples",
     "reset_resource_lineage_observability_for_tests",
+    "KNOWLEDGE_CONTENT_HASH_FIELDS",
+    "compute_knowledge_content_sha256",
+    "knowledge_content_sha256",
+    "resolve_knowledge_content_sha256",
     "SpecResourcePropagationService",
     "InMemoryStructuredSpecEntityMetricsSink",
     "StructuredSpecEntityCommand",

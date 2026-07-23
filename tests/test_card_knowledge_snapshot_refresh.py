@@ -18,6 +18,9 @@ from okto_pulse.core.ports.spec_resource_propagation import (
     ResourcePropagationSpecFact,
 )
 from okto_pulse.core.services import spec_resource_propagation as propagation_module
+from okto_pulse.core.services.card_knowledge_snapshot import (
+    build_card_knowledge_snapshot,
+)
 from okto_pulse.core.services.spec_resource_propagation import (
     SpecResourcePropagationService,
 )
@@ -84,6 +87,8 @@ def _source_kb(*, content: str, purpose: str):
         mime_type="text/markdown",
         source_kb_id="kb-parent",
         root_source_kb_id="kb-root",
+        source_version=3,
+        content_hash=None,
         governance_metadata=valid_governance_metadata(purpose=purpose),
     )
 
@@ -123,7 +128,7 @@ async def test_manual_copy_refreshes_changed_snapshot_then_true_noops_when_equiv
         board_id="board-1",
         knowledge_bases=[current],
     )
-    spec = SimpleNamespace(id="spec-1", board_id="board-1")
+    spec = SimpleNamespace(id="spec-1", board_id="board-1", version=7)
     uow = _Uow(spec=spec, card=card, knowledge_items=[source])
     use_case = McpCopyKnowledgeToCardUseCase()
 
@@ -135,6 +140,8 @@ async def test_manual_copy_refreshes_changed_snapshot_then_true_noops_when_equiv
     assert uow.commit_count == 1
     snapshot = card.knowledge_bases[0]
     assert snapshot["content"] == "new content"
+    assert snapshot["source_version"] == 7
+    assert len(snapshot["content_hash"]) == 64
     assert snapshot["governance_metadata"]["purpose"] == "new purpose"
     assert {
         key: snapshot[key]
@@ -189,6 +196,7 @@ class _AutoStore:
             id=spec_id,
             board_id="board-1",
             screen_mockups=(),
+            version=7,
         )
 
     async def get_card(self, _context, *, card_id: str):
@@ -218,12 +226,14 @@ async def test_manual_then_auto_refresh_preserves_lineage_and_writes_only_on_cha
 ):
     source = _source_kb(content="v1", purpose="purpose v1")
     card = SimpleNamespace(id="card-1", board_id="board-1", knowledge_bases=[])
-    spec = SimpleNamespace(id="spec-1", board_id="board-1")
+    spec = SimpleNamespace(id="spec-1", board_id="board-1", version=7)
     uow = _Uow(spec=spec, card=card, knowledge_items=[source])
     await McpCopyKnowledgeToCardUseCase().execute(
         _command(), actor=_actor(), uow=uow
     )
     manual_snapshot = copy.deepcopy(card.knowledge_bases[0])
+    original_hash = manual_snapshot["content_hash"]
+    assert manual_snapshot["source_version"] == 7
     preserved = {
         key: manual_snapshot[key]
         for key in (
@@ -281,6 +291,8 @@ async def test_manual_then_auto_refresh_preserves_lineage_and_writes_only_on_cha
     assert changed["results"]["knowledge_base"]["copied_count"] == 1
     assert store.save_count == 1
     assert card.knowledge_bases[0]["content"] == "v2"
+    assert card.knowledge_bases[0]["source_version"] == 7
+    assert card.knowledge_bases[0]["content_hash"] != original_hash
     assert {
         key: card.knowledge_bases[0][key] for key in preserved
     } == preserved
@@ -295,3 +307,29 @@ async def test_manual_then_auto_refresh_preserves_lineage_and_writes_only_on_cha
     assert retry["results"]["knowledge_base"]["ignored_count"] == 1
     assert store.save_count == 1
 
+
+def test_card_snapshot_never_promotes_a_legacy_grandparent_to_canonical_root():
+    source = {
+        "id": "kb-current",
+        "title": "Legacy child",
+        "description": None,
+        "content": "body",
+        "mime_type": "text/markdown",
+        "source_kb_id": "kb-grandparent",
+        "root_source_kb_id": None,
+        "source_version": 4,
+    }
+
+    snapshot = build_card_knowledge_snapshot(
+        source,
+        source_entity_type="spec",
+        source_entity_id="spec-1",
+        actor_id="actor-1",
+        source_version=9,
+    )
+
+    assert snapshot["source_kb_id"] == "kb-current"
+    assert snapshot["immediate_parent_kb_id"] == "kb-current"
+    assert snapshot["root_source_kb_id"] == "kb-current"
+    assert snapshot["source_version"] == 9
+    assert len(snapshot["content_hash"]) == 64

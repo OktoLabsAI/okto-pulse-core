@@ -1439,6 +1439,9 @@ class IdeationKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
     governance_metadata: Any | None = None
     created_by: str
     created_at: datetime
@@ -1458,6 +1461,9 @@ class IdeationKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
     governance_metadata: Any | None = None
     created_at: datetime
 
@@ -1751,6 +1757,9 @@ class RefinementKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
     governance_metadata: Any | None = None
     created_by: str
     created_at: datetime
@@ -1770,6 +1779,9 @@ class RefinementKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
     governance_metadata: Any | None = None
     created_at: datetime
 
@@ -2065,6 +2077,9 @@ class SpecKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
     governance_metadata: Any | None = None
     created_by: str
     created_at: datetime
@@ -2084,6 +2099,9 @@ class SpecKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
     governance_metadata: Any | None = None
     created_at: datetime
 

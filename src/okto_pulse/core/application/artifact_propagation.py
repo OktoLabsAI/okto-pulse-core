@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.ports.application_persistence import (
     ApplicationRecord,
     get_application_persistence_port,
+)
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    knowledge_content_sha256,
 )
 
 _PROPAGATED_KB_PREFIX = "[propagated from parent]"
@@ -260,7 +264,9 @@ async def propagate_artifacts(
                 )
                 parent_kb_id = get_value("id")
                 parent_root = get_value("root_source_kb_id")
+                target_kb_id = str(uuid.uuid4())
                 payload = {
+                    "id": target_kb_id,
                     target_id_field: target_entity.id,
                     "title": get_value("title"),
                     "description": _propagated_kb_description(
@@ -277,6 +283,7 @@ async def propagate_artifacts(
                     "immediate_parent_kb_id": parent_kb_id,
                     "root_source_kb_id": parent_root or parent_kb_id,
                 }
+                payload["content_hash"] = knowledge_content_sha256(payload)
                 governance_metadata = get_value("governance_metadata")
                 if governance_metadata is not None:
                     payload["governance_metadata"] = governance_metadata

@@ -281,6 +281,37 @@ async def test_resolver_allows_architecture_source_ref_hop_with_canonical_root()
 
 
 @pytest.mark.asyncio
+async def test_revision_stamp_uses_the_same_source_ref_fallback_as_dedup() -> None:
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        refs={
+            spec.ref: {
+                "architecture": [
+                    {
+                        "id": "physical-snapshot",
+                        "source_ref": "architecture_design:logical-root",
+                        "source_version": 4,
+                    }
+                ]
+            }
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1", "spec", "spec-1"
+    )
+
+    attachment = resolved.attachments[0]
+    assert attachment.unique_resource_id == (
+        "architecture:architecture_design:logical-root"
+    )
+    assert attachment.revision_stamp is not None
+    assert attachment.revision_stamp.root_id == "architecture_design:logical-root"
+    assert attachment.revision_stamp.source_revision == "4"
+
+
+@pytest.mark.asyncio
 async def test_multihop_mockup_and_kb_snapshots_dedupe_on_canonical_root() -> None:
     spec = LineageEntityRef("spec", "spec-1", "Spec")
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
@@ -336,6 +367,126 @@ async def test_multihop_mockup_and_kb_snapshots_dedupe_on_canonical_root() -> No
         "mockup:mock-root": 3,
         "knowledge_base:kb-root": 3,
     }
+
+
+@pytest.mark.asyncio
+async def test_revision_v2_dedupes_one_root_and_preserves_divergent_stamps() -> None:
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        parents={spec.ref: [refinement]},
+        refs={
+            spec.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "kb-spec",
+                        "root_source_kb_id": "kb-root",
+                        "immediate_parent_kb_id": "kb-refinement",
+                        "source_revision": 2,
+                        "source_content_sha256": "b" * 64,
+                    }
+                ]
+            },
+            refinement.ref: {
+                "knowledge_base": [
+                    {
+                        "id": "kb-refinement",
+                        "root_source_kb_id": "kb-root",
+                        "immediate_parent_kb_id": "kb-root",
+                        "source_version": 1,
+                        "content_hash": "a" * 64,
+                    }
+                ]
+            },
+        },
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1", "spec", "spec-1"
+    )
+
+    assert resolved.counts["unique_resources_count"] == 1
+    assert resolved.counts["attachment_count"] == 2
+    unique = resolved.unique_resources[0]
+    assert unique.unique_resource_id == "knowledge_base:kb-root"
+    stamps_by_revision = {
+        stamp.source_revision: stamp.to_dict() for stamp in unique.revision_stamps
+    }
+    assert stamps_by_revision == {
+        "1": {
+            "root_id": "kb-root",
+            "immediate_parent_id": "kb-root",
+            "source_revision": "1",
+            "source_content_sha256": "a" * 64,
+        },
+        "2": {
+            "root_id": "kb-root",
+            "immediate_parent_id": "kb-refinement",
+            "source_revision": "2",
+            "source_content_sha256": "b" * 64,
+        },
+    }
+
+    unique_payload = unique.to_dict()
+    assert unique_payload["contract_version"] == 2
+    assert unique_payload["root_id"] == "kb-root"
+    assert unique_payload["source_revision"] is None
+    assert unique_payload["source_content_sha256"] is None
+    assert len(unique_payload["revision_stamps"]) == 2
+
+    attachment_payload = resolved.attachments[0].to_dict()
+    assert attachment_payload["root_id"] == "kb-root"
+    assert attachment_payload["immediate_parent_id"] == "kb-refinement"
+    assert attachment_payload["source_revision"] == "2"
+    assert attachment_payload["source_content_sha256"] == "b" * 64
+    assert attachment_payload["revision_stamp"] == {
+        "root_id": "kb-root",
+        "immediate_parent_id": "kb-refinement",
+        "source_revision": "2",
+        "source_content_sha256": "b" * 64,
+    }
+
+    coverage = resolved.coverage_obligations[0].to_dict()
+    assert coverage["revision_stamp"] == attachment_payload["revision_stamp"]
+    assert coverage["source_content_sha256"] == "b" * 64
+
+    legacy_projection = resolved.to_dict()
+    public_projection = ResolvedResourceLineageProjection.project(resolved)
+    assert legacy_projection["contract_version"] == 2
+    assert public_projection["contract_version"] == 2
+    assert public_projection["attachments"][0]["revision_stamp"] == (
+        attachment_payload["revision_stamp"]
+    )
+    assert "raw" not in public_projection["attachments"][0]
+
+
+@pytest.mark.asyncio
+async def test_revision_v2_keeps_legacy_null_evidence_readable() -> None:
+    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    provider = FakeLineageProvider(
+        roots={("spec", "spec-1"): spec},
+        refs={spec.ref: {"knowledge_base": [{"id": "legacy-kb"}]}},
+    )
+
+    resolved = await ResolvedResourceLineageService(provider).resolve(
+        "board-1", "spec", "spec-1"
+    )
+
+    attachment = resolved.attachments[0].to_dict()
+    assert attachment["root_id"] == "legacy-kb"
+    assert attachment["immediate_parent_id"] is None
+    assert attachment["source_revision"] is None
+    assert attachment["source_content_sha256"] is None
+    assert attachment["revision_stamp"] == {
+        "root_id": "legacy-kb",
+        "immediate_parent_id": None,
+        "source_revision": None,
+        "source_content_sha256": None,
+    }
+    assert resolved.unique_resources[0].to_dict()["revision_stamps"] == [
+        attachment["revision_stamp"]
+    ]
 
 
 @pytest.mark.asyncio

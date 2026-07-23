@@ -19,6 +19,7 @@ class ResourcePropagationSpecFact:
     id: str
     board_id: str
     screen_mockups: tuple[Any, ...]
+    version: int | None = None
 
 
 @dataclass(slots=True)
@@ -36,9 +37,11 @@ class ResourcePropagationKnowledgeBaseFact:
     description: str | None
     content: str
     mime_type: str
+    source_version: int | None = None
     source_kb_id: str | None = None
     root_source_kb_id: str | None = None
     immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
     governance_metadata: dict[str, Any] | None = None
 
 

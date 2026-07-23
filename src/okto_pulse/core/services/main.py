@@ -161,6 +161,9 @@ from okto_pulse.core.services.governance_observability import (
     build_board_missing_context_warning_details,
     emit_governance_metric,
 )
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    knowledge_content_sha256,
+)
 from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
 from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.reviewer_separation import (
@@ -315,6 +318,44 @@ def _apf(
 
 def _new_application_record(entity: str, **values: Any) -> ApplicationRecord:
     return ApplicationRecord(entity=entity, values=values)
+
+
+def _new_knowledge_application_record(
+    entity: str,
+    *,
+    parent_field: str,
+    parent_id: str,
+    parent_version: int | None,
+    title: str,
+    description: str | None,
+    content: str,
+    mime_type: str,
+    governance_metadata: dict[str, Any] | None,
+    created_by: str,
+) -> ApplicationRecord:
+    """Create a forward-stamped, self-rooted knowledge artifact."""
+
+    knowledge_id = str(uuid.uuid4())
+    values: dict[str, Any] = {
+        "id": knowledge_id,
+        parent_field: parent_id,
+        "title": title,
+        "description": description,
+        "content": content,
+        "mime_type": mime_type,
+        "source_version": parent_version,
+        "root_source_kb_id": knowledge_id,
+        "governance_metadata": governance_metadata,
+        "created_by": created_by,
+    }
+    values["content_hash"] = knowledge_content_sha256(values)
+    return _new_application_record(entity, **values)
+
+
+def _refresh_knowledge_content_hash(knowledge: ApplicationRecord) -> None:
+    """Refresh the artifact fingerprint without changing its lineage revision."""
+
+    knowledge.content_hash = knowledge_content_sha256(knowledge)
 
 
 async def _application_list(
@@ -1542,7 +1583,9 @@ async def _legacy_propagate_artifacts(
         if target_id_field:
             for kb in kbs:
                 _get = (lambda k: kb.get(k)) if isinstance(kb, dict) else (lambda k: getattr(kb, k, None))
+                target_kb_id = str(uuid.uuid4())
                 kb_payload = {
+                    "id": target_kb_id,
                     target_id_field: target_entity.id,
                     "title": _get("title"),
                     # R6-IMP1: idempotent prefix — never stack across multi-hop chains.
@@ -1569,6 +1612,7 @@ async def _legacy_propagate_artifacts(
                 for attr, value in source_values.items():
                     if value is not None:
                         kb_payload[attr] = value
+                kb_payload["content_hash"] = knowledge_content_sha256(kb_payload)
                 await _application_add(
                     db,
                     _new_application_record(
@@ -8121,9 +8165,11 @@ class SpecKnowledgeService:
         spec = await _application_get(self.db, "spec", spec_id)
         if not spec:
             return None
-        kb = _new_application_record(
+        kb = _new_knowledge_application_record(
             "spec_knowledge_base",
-            spec_id=spec_id,
+            parent_field="spec_id",
+            parent_id=spec_id,
+            parent_version=getattr(spec, "version", None),
             title=data.title,
             description=data.description,
             content=data.content,
@@ -8169,6 +8215,7 @@ class SpecKnowledgeService:
             return None
         for key, value in update_data.items():
             setattr(kb, key, value)
+        _refresh_knowledge_content_hash(kb)
         await _application_flush(self.db)
         spec = await _application_get(self.db, "spec", kb.spec_id)
         if spec is not None:
@@ -8221,9 +8268,11 @@ class IdeationKnowledgeService:
         ideation = await _application_get(self.db, "ideation", ideation_id)
         if not ideation:
             return None
-        kb = _new_application_record(
+        kb = _new_knowledge_application_record(
             "ideation_knowledge_base",
-            ideation_id=ideation_id,
+            parent_field="ideation_id",
+            parent_id=ideation_id,
+            parent_version=getattr(ideation, "version", None),
             title=data.title,
             description=data.description,
             content=data.content,
@@ -8265,6 +8314,7 @@ class IdeationKnowledgeService:
             return None
         for key, value in update_data.items():
             setattr(kb, key, value)
+        _refresh_knowledge_content_hash(kb)
         return kb
 
     async def delete_knowledge(self, knowledge_id: str) -> bool:
@@ -11043,9 +11093,11 @@ class RefinementKnowledgeService:
         refinement = await _application_get(self.db, "refinement", refinement_id)
         if not refinement:
             return None
-        kb = _new_application_record(
+        kb = _new_knowledge_application_record(
             "refinement_knowledge_base",
-            refinement_id=refinement_id,
+            parent_field="refinement_id",
+            parent_id=refinement_id,
+            parent_version=getattr(refinement, "version", None),
             title=data.title,
             description=data.description,
             content=data.content,
@@ -11087,6 +11139,7 @@ class RefinementKnowledgeService:
             return None
         for key, value in update_data.items():
             setattr(kb, key, value)
+        _refresh_knowledge_content_hash(kb)
         return kb
 
     async def delete_knowledge(self, knowledge_id: str) -> bool:

@@ -21,6 +21,25 @@ ResourceState = Literal["provided", "not_applicable", "missing"]
 CoverageState = Literal["not_required", "covered", "uncovered", "not_applicable"]
 AttachmentKind = Literal["direct", "inherited_reference", "not_applicable"]
 
+
+@dataclass(frozen=True, slots=True)
+class ResourceRevisionStamp:
+    """Storage-neutral revision evidence for one physical resource snapshot."""
+
+    root_id: str
+    immediate_parent_id: str | None = None
+    source_revision: str | None = None
+    source_content_sha256: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {
+            "root_id": self.root_id,
+            "immediate_parent_id": self.immediate_parent_id,
+            "source_revision": self.source_revision,
+            "source_content_sha256": self.source_content_sha256,
+        }
+
+
 ENTITY_TYPES: tuple[str, ...] = ("ideation", "refinement", "spec", "card")
 RESOURCE_TYPES: tuple[str, ...] = ("architecture", "mockup", "knowledge_base")
 ORIGIN_FIELD_ORDER: tuple[str, ...] = (
@@ -241,9 +260,12 @@ class ResourceAttachment:
     effective: bool = True
     inherited: bool = False
     raw: dict[str, Any] = field(default_factory=dict)
+    revision_stamp: ResourceRevisionStamp | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        stamp = self.revision_stamp.to_dict() if self.revision_stamp else None
         return {
+            "contract_version": 2,
             "resource_type": self.resource_type,
             "resource_id": self.resource_id,
             "id": self.resource_id,
@@ -258,6 +280,13 @@ class ResourceAttachment:
             "effective": self.effective,
             "inherited": self.inherited,
             "raw": dict(self.raw),
+            "root_id": stamp["root_id"] if stamp else None,
+            "immediate_parent_id": stamp["immediate_parent_id"] if stamp else None,
+            "source_revision": stamp["source_revision"] if stamp else None,
+            "source_content_sha256": (
+                stamp["source_content_sha256"] if stamp else None
+            ),
+            "revision_stamp": stamp,
         }
 
 
@@ -270,9 +299,12 @@ class UniqueResource:
     origin_evidence: dict[str, Any]
     attachment_count: int
     attachment_kinds: tuple[str, ...]
+    revision_stamps: tuple[ResourceRevisionStamp, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
+        stamps = [stamp.to_dict() for stamp in self.revision_stamps]
         return {
+            "contract_version": 2,
             "resource_type": self.resource_type,
             "unique_resource_id": self.unique_resource_id,
             "representative_resource_id": self.representative_resource_id,
@@ -280,6 +312,15 @@ class UniqueResource:
             "origin_evidence": dict(self.origin_evidence),
             "attachment_count": self.attachment_count,
             "attachment_kinds": list(self.attachment_kinds),
+            "root_id": _common_stamp_field(stamps, "root_id"),
+            "immediate_parent_id": _common_stamp_field(
+                stamps, "immediate_parent_id"
+            ),
+            "source_revision": _common_stamp_field(stamps, "source_revision"),
+            "source_content_sha256": _common_stamp_field(
+                stamps, "source_content_sha256"
+            ),
+            "revision_stamps": stamps,
         }
 
 
@@ -322,9 +363,12 @@ class CoverageObligation:
     reason: str | None = None
     remediation: str | None = None
     origin_evidence: dict[str, Any] = field(default_factory=dict)
+    revision_stamp: ResourceRevisionStamp | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        stamp = self.revision_stamp.to_dict() if self.revision_stamp else None
         return {
+            "contract_version": 2,
             "resource_type": self.resource_type,
             "resource_id": self.resource_id,
             "id": self.resource_id,
@@ -337,6 +381,13 @@ class CoverageObligation:
             "reason": self.reason,
             "remediation": self.remediation,
             "origin_evidence": dict(self.origin_evidence),
+            "root_id": stamp["root_id"] if stamp else None,
+            "immediate_parent_id": stamp["immediate_parent_id"] if stamp else None,
+            "source_revision": stamp["source_revision"] if stamp else None,
+            "source_content_sha256": (
+                stamp["source_content_sha256"] if stamp else None
+            ),
+            "revision_stamp": stamp,
         }
 
 
@@ -352,6 +403,7 @@ class ResolvedResourceLineage:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "contract_version": 2,
             "owner": {
                 "entity_type": self.owner.entity_type,
                 "entity_id": self.owner.entity_id,
@@ -385,6 +437,7 @@ class ResolvedResourceLineageProjection:
             for item in lineage.attachments
         ]
         return {
+            "contract_version": 2,
             "owner": {
                 "entity_type": lineage.owner.entity_type,
                 "entity_id": lineage.owner.entity_id,
@@ -704,6 +757,11 @@ class ResolvedResourceLineageService:
             effective=True,
             inherited=inherited,
             raw=dict(ref),
+            revision_stamp=self._revision_stamp_from_ref(
+                resource_type=resource_type,
+                ref=ref,
+                unique_resource_id=unique_resource_id,
+            ),
         )
 
     def _attachment_from_na_mark(
@@ -751,6 +809,46 @@ class ResolvedResourceLineageService:
             source_entity_id=attachment.source_entity_id,
             source_entity_title=attachment.source_entity_title,
             origin_evidence=dict(attachment.origin_evidence),
+            revision_stamp=attachment.revision_stamp,
+        )
+
+    @staticmethod
+    def _revision_stamp_from_ref(
+        *,
+        resource_type: str,
+        ref: Mapping[str, Any],
+        unique_resource_id: str,
+    ) -> ResourceRevisionStamp | None:
+        # The revision stamp and dedup projection must name the same logical
+        # root, including legacy/source_ref fallbacks where no typed root id is
+        # available.  Derive it from the already-validated unique identity
+        # instead of independently selecting a physical attachment id.
+        prefix = f"{resource_type}:"
+        root_id = (
+            _optional_str(unique_resource_id[len(prefix) :])
+            if unique_resource_id.startswith(prefix)
+            else None
+        )
+        if root_id is None:
+            return None
+
+        immediate_fields: tuple[str, ...]
+        if resource_type == "knowledge_base":
+            immediate_fields = ("immediate_parent_kb_id", "source_kb_id")
+        elif resource_type == "mockup":
+            immediate_fields = ("immediate_parent_mockup_id", "source_mockup_id")
+        else:
+            immediate_fields = ("immediate_parent_design_id",)
+
+        return ResourceRevisionStamp(
+            root_id=root_id,
+            immediate_parent_id=_first_present(ref, immediate_fields),
+            source_revision=_first_present(
+                ref, ("source_revision", "source_version")
+            ),
+            source_content_sha256=_first_present(
+                ref, ("source_content_sha256", "content_hash")
+            ),
         )
 
     @staticmethod
@@ -811,8 +909,12 @@ class ResolvedResourceLineageService:
             representative = items[0]
             kinds = tuple(sorted({item.attachment_kind for item in items}))
             evidence: dict[str, Any] = {}
+            stamps: list[ResourceRevisionStamp] = []
             for item in items:
                 evidence.update(item.origin_evidence)
+                if item.revision_stamp is not None and item.revision_stamp not in stamps:
+                    stamps.append(item.revision_stamp)
+            stamps.sort(key=_revision_stamp_sort_key)
             unique.append(
                 UniqueResource(
                     resource_type=representative.resource_type,
@@ -822,6 +924,7 @@ class ResolvedResourceLineageService:
                     origin_evidence=evidence,
                     attachment_count=len(items),
                     attachment_kinds=kinds,
+                    revision_stamps=tuple(stamps),
                 )
             )
         return unique
@@ -890,6 +993,24 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value)
     return text if text else None
+
+
+def _common_stamp_field(
+    stamps: Iterable[Mapping[str, str | None]], field_name: str
+) -> str | None:
+    """Return one common value without selecting between divergent stamps."""
+
+    values = {stamp.get(field_name) for stamp in stamps}
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _revision_stamp_sort_key(stamp: ResourceRevisionStamp) -> tuple[str, ...]:
+    return (
+        stamp.root_id,
+        stamp.immediate_parent_id or "",
+        stamp.source_revision or "",
+        stamp.source_content_sha256 or "",
+    )
 
 
 def _first_present(values: Mapping[str, Any], keys: Iterable[str]) -> str | None:

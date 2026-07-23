@@ -12,6 +12,9 @@ from sqlalchemy_test_models import (
     Spec,
     SpecKnowledgeBase,
 )
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    resolve_knowledge_content_sha256,
+)
 
 
 class TestSqlAlchemyEffectiveResourcePersistence:
@@ -49,7 +52,13 @@ class TestSqlAlchemyEffectiveResourcePersistence:
                 "description": getattr(row, "description", None),
                 "content": row.content,
                 "mime_type": getattr(row, "mime_type", None) or "text/markdown",
+                "source_version": getattr(row, "source_version", None),
+                "source_kb_id": getattr(row, "source_kb_id", None),
                 "root_source_kb_id": getattr(row, "root_source_kb_id", None),
+                "immediate_parent_kb_id": getattr(
+                    row, "immediate_parent_kb_id", None
+                ),
+                "content_hash": resolve_knowledge_content_sha256(row),
             }
             for row in rows
         ]

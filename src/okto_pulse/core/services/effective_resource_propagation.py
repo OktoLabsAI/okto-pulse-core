@@ -41,6 +41,9 @@ from okto_pulse.core.application.artifact_propagation import propagate_artifacts
 from okto_pulse.core.ports.effective_resource import (
     get_effective_resource_persistence_port,
 )
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    resolve_knowledge_content_sha256,
+)
 
 logger = logging.getLogger("okto_pulse.core.services.effective_resource_propagation")
 
@@ -334,10 +337,15 @@ def _kb_dicts(entity, *, source_type: str, source_id: str | None,
             # R6-IMP4: carry the parent's canonical root forward so a later hop
             # (e.g. card copy) preserves the initial origin, not the effective kb.
             "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
+            "immediate_parent_kb_id": getattr(
+                kb, "immediate_parent_kb_id", None
+            ),
+            "source_kb_id": getattr(kb, "source_kb_id", None),
             "source_type": source_type,
             "source_id": source_id,
             "source_title": source_title,
             "source_version": source_version,
+            "content_hash": resolve_knowledge_content_sha256(kb),
         }
         governance_metadata = getattr(kb, "governance_metadata", None)
         if governance_metadata is not None:

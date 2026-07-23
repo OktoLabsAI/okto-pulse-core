@@ -530,6 +530,11 @@ class McpCopyKnowledgeToCardUseCase:
                     "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
                     "source_kb_id": getattr(kb, "source_kb_id", None),
                     "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
+                    "immediate_parent_kb_id": getattr(
+                        kb, "immediate_parent_kb_id", None
+                    ),
+                    "source_version": getattr(kb, "source_version", None),
+                    "content_hash": getattr(kb, "content_hash", None),
                     "governance_metadata": getattr(
                         kb, "governance_metadata", None
                     ),
@@ -612,6 +617,9 @@ class McpCopyKnowledgeToCardUseCase:
                 source_entity_type=src_type,
                 source_entity_id=src_id,
                 actor_id=actor.actor_id,
+                source_version=(
+                    getattr(spec, "version", None) if src_type == "spec" else None
+                ),
                 existing=current if isinstance(current, dict) else None,
             )
             if target_idx is not None:

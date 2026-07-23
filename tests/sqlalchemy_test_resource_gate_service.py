@@ -37,6 +37,9 @@ from okto_pulse.core.services.architecture import (
 from okto_pulse.core.services.resource_lineage import (
     LineageEntityRef,
 )
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    resolve_knowledge_content_sha256,
+)
 
 
 class TestSqlAlchemyResourceGateAdapter:
@@ -389,9 +392,12 @@ class TestSqlAlchemyResourceGateAdapter:
                         "origin_ref",
                         "source_ref",
                         "source",
+                        "source_version",
+                        "content_hash",
                     ):
-                        if item.get(key):
+                        if item.get(key) is not None:
                             item_ref[key] = item[key]
+                    item_ref["content_hash"] = resolve_knowledge_content_sha256(item)
                 refs.append(item_ref)
             return refs
 
@@ -404,6 +410,11 @@ class TestSqlAlchemyResourceGateAdapter:
             select(
                 kb_model.id,
                 kb_model.title,
+                kb_model.description,
+                kb_model.content,
+                kb_model.mime_type,
+                kb_model.content_hash,
+                kb_model.source_version,
                 kb_model.source_kb_id,
                 kb_model.root_source_kb_id,
                 kb_model.immediate_parent_kb_id,
@@ -424,9 +435,12 @@ class TestSqlAlchemyResourceGateAdapter:
                 "immediate_parent_kb_id",
                 "source_type",
                 "source_id",
+                "source_version",
+                "content_hash",
             ):
-                if row.get(key):
+                if row.get(key) is not None:
                     item_ref[key] = row[key]
+            item_ref["content_hash"] = resolve_knowledge_content_sha256(row)
             refs.append(item_ref)
         return refs
 
@@ -524,6 +538,7 @@ class TestSqlAlchemyResourceGateAdapter:
             "source_kb_id": kb.source_kb_id,
             "root_source_kb_id": kb.root_source_kb_id,
             "immediate_parent_kb_id": kb.immediate_parent_kb_id,
+            "content_hash": resolve_knowledge_content_sha256(kb),
             "created_by": kb.created_by,
             "created_at": self._isoformat(kb.created_at),
             "updated_at": self._isoformat(kb.updated_at),

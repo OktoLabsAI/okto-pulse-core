@@ -243,6 +243,7 @@ class SpecResourcePropagationService:
                 source_entity_type="spec",
                 source_entity_id=spec.id,
                 actor_id=actor_id,
+                source_version=spec.version,
                 existing=current if isinstance(current, dict) else None,
             )
             if target_idx is not None:
@@ -432,7 +433,9 @@ class SpecResourcePropagationService:
                 diagrams=design.diagrams or [],
                 source_ref=source_ref,
                 source_version=spec_version,
-                source_design_id=design.id,
+                source_design_id=(
+                    getattr(design, "source_design_id", None) or design.id
+                ),
                 change_summary=f"Refresh from spec design {design.id} v{spec_version}",
                 # Bug eded2f0e (R3, option B): the card design is an internal
                 # snapshot of an already-acknowledged spec design (source_design_id

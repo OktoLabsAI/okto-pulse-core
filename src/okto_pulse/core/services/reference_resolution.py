@@ -13,6 +13,9 @@ from typing import Any
 from okto_pulse.core.services.knowledge_governance_projection import (
     with_knowledge_governance,
 )
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    resolve_knowledge_content_sha256,
+)
 
 from okto_pulse.core.services.analytics_service import (
     resolve_linked_criteria_to_indices,
@@ -192,12 +195,15 @@ def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
             "source_title",
             "source_version",
             "source_kb_id",
+            "root_source_kb_id",
+            "immediate_parent_kb_id",
             "created_by",
             "created_at",
             "updated_at",
         ):
             if kb.get(attr) is not None:
                 data[attr] = kb.get(attr)
+        data["content_hash"] = resolve_knowledge_content_sha256(kb)
         return with_knowledge_governance(data, kb)
 
     data: dict[str, Any] = {
@@ -214,6 +220,8 @@ def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
         "source_title",
         "source_version",
         "source_kb_id",
+        "root_source_kb_id",
+        "immediate_parent_kb_id",
         "created_by",
         "created_at",
         "updated_at",
@@ -221,6 +229,7 @@ def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
         value = getattr(kb, attr, None)
         if value is not None:
             data[attr] = value.isoformat() if hasattr(value, "isoformat") else value
+    data["content_hash"] = resolve_knowledge_content_sha256(kb)
     return with_knowledge_governance(data, kb)
 
 

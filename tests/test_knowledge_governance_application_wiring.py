@@ -113,6 +113,19 @@ def test_all_kb_transport_schemas_expose_raw_governance_metadata() -> None:
     )
 
     assert all("governance_metadata" in schema.model_fields for schema in schema_types)
+    for schema in (
+        IdeationKnowledgeResponse,
+        IdeationKnowledgeSummary,
+        RefinementKnowledgeResponse,
+        RefinementKnowledgeSummary,
+        SpecKnowledgeResponse,
+        SpecKnowledgeSummary,
+    ):
+        assert {
+            "root_source_kb_id",
+            "immediate_parent_kb_id",
+            "content_hash",
+        } <= set(schema.model_fields)
 
 
 @pytest.mark.parametrize(
@@ -197,7 +210,7 @@ async def test_create_normalizes_metadata_before_persisting(
         assert record_id == parent_id
         return ApplicationRecord(
             entity=entity,
-            values={"id": record_id, "board_id": "board-1"},
+            values={"id": record_id, "board_id": "board-1", "version": 5},
         )
 
     async def _add(_db: object, record: ApplicationRecord) -> ApplicationRecord:
@@ -225,6 +238,9 @@ async def test_create_normalizes_metadata_before_persisting(
     assert created.governance_metadata["provenance"][0]["reference"] == (
         "repository:core@abc123"
     )
+    assert created.root_source_kb_id == created.id
+    assert created.source_version == 5
+    assert len(created.content_hash) == 64
     assert len(propagation_calls) == (1 if parent_entity == "spec" else 0)
 
 
@@ -363,7 +379,7 @@ async def test_update_normalizes_metadata_before_record_mutation(
     assert record.governance_metadata["purpose"] == (
         "Describe the persistence contract"
     )
-    assert record.dirty_fields == {"governance_metadata"}
+    assert record.dirty_fields == {"governance_metadata", "content_hash"}
     assert len(flush_calls) == (1 if knowledge_entity == "spec_knowledge_base" else 0)
 
 

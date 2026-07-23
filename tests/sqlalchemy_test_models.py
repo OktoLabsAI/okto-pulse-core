@@ -602,6 +602,7 @@ class IdeationKnowledgeBase(Base):
     # parent. source_kb_id stays == immediate parent for back-compat.
     root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -706,6 +707,7 @@ class RefinementKnowledgeBase(Base):
     # parent. source_kb_id stays == immediate parent for back-compat.
     root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -985,6 +987,7 @@ class SpecKnowledgeBase(Base):
     # parent. source_kb_id stays == immediate parent for back-compat.
     root_source_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     immediate_parent_kb_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

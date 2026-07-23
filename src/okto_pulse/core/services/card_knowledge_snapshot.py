@@ -14,6 +14,9 @@ from okto_pulse.core.domain.knowledge_governance import (
     KnowledgeGovernanceInvalidMetadata,
     knowledge_governance_semantically_equal,
 )
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    resolve_knowledge_content_sha256,
+)
 
 
 CARD_KNOWLEDGE_LINEAGE_FIELDS: tuple[str, ...] = (
@@ -30,6 +33,8 @@ _CARD_KNOWLEDGE_COMPARISON_FIELDS: tuple[str, ...] = (
     "mime_type",
     "source",
     "author_id",
+    "source_version",
+    "content_hash",
     *CARD_KNOWLEDGE_LINEAGE_FIELDS,
 )
 
@@ -46,6 +51,7 @@ def build_card_knowledge_snapshot(
     source_entity_type: str,
     source_entity_id: str,
     actor_id: str,
+    source_version: int | None = None,
     existing: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the canonical card snapshot, preserving durable target identity.
@@ -62,9 +68,14 @@ def build_card_knowledge_snapshot(
     )
     root_source_kb_id = (
         _value(source_item, "root_source_kb_id")
-        or _value(source_item, "source_kb_id")
         or source_kb_id
     )
+    resolved_source_version = (
+        source_version
+        if source_version is not None
+        else _value(source_item, "source_version")
+    )
+    content_hash = resolve_knowledge_content_sha256(source_item)
     payload: dict[str, Any] = {
         "id": f"cardkb_{source_kb_id}",
         "title": _value(source_item, "title"),
@@ -75,6 +86,8 @@ def build_card_knowledge_snapshot(
         "source_kb_id": source_kb_id,
         "root_source_kb_id": str(root_source_kb_id),
         "immediate_parent_kb_id": source_kb_id,
+        "source_version": resolved_source_version,
+        "content_hash": content_hash,
         "author_id": actor_id,
     }
     governance_metadata = _value(source_item, "governance_metadata")
