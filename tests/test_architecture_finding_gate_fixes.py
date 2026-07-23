@@ -27,6 +27,9 @@ from okto_pulse.core.services.architecture import (
     ArchitectureFindingRunStore,
     backfill_architecture_finding_runs,
 )
+from okto_pulse.core.ports.architecture_persistence import (
+    get_architecture_persistence_port,
+)
 from okto_pulse.core.services.resource_gate import (
     ResourceGateService,
     ResourceGateViolation,
@@ -91,6 +94,33 @@ async def _seed_spec_with_design(db_factory) -> tuple[str, str, str]:
     return board_id, spec_id, design_id
 
 
+async def _seed_additional_design(
+    db_factory,
+    *,
+    board_id: str,
+    spec_id: str,
+) -> str:
+    design_id = _id("afg-design")
+    payload = _design_payload_with_orphan_entity()
+    async with db_factory() as db:
+        db.add(
+            ArchitectureDesign(
+                id=design_id,
+                board_id=board_id,
+                parent_type="spec",
+                spec_id=spec_id,
+                title=payload["title"],
+                global_description=payload["global_description"],
+                entities=payload["entities"],
+                interfaces=payload["interfaces"],
+                diagrams=payload["diagrams"],
+                created_by=USER,
+            )
+        )
+        await db.commit()
+    return design_id
+
+
 @pytest.mark.asyncio
 async def test_backfill_materializes_findings_for_designs_without_runs(db_factory):
     board_id, _spec_id, design_id = await _seed_spec_with_design(db_factory)
@@ -121,6 +151,107 @@ async def test_backfill_materializes_findings_for_designs_without_runs(db_factor
         )
     assert again["designs"] == 0
     assert again["skipped"] == 1
+
+
+@pytest.mark.asyncio
+async def test_backfill_commits_each_design_as_an_independent_unit(
+    db_factory,
+    monkeypatch,
+):
+    board_id, spec_id, _design_id = await _seed_spec_with_design(db_factory)
+    await _seed_additional_design(
+        db_factory,
+        board_id=board_id,
+        spec_id=spec_id,
+    )
+
+    persistence = get_architecture_persistence_port()
+    original_commit = persistence.commit
+    original_upsert = ArchitectureFindingRunStore.upsert_latest_run
+    events: list[tuple[str, str | None]] = []
+
+    async def observed_upsert(self, **kwargs):
+        events.append(("upsert", kwargs["design_id"]))
+        return await original_upsert(self, **kwargs)
+
+    async def observed_commit(context):
+        events.append(("commit", None))
+        await original_commit(context)
+
+    monkeypatch.setattr(
+        ArchitectureFindingRunStore,
+        "upsert_latest_run",
+        observed_upsert,
+    )
+    monkeypatch.setattr(persistence, "commit", observed_commit)
+
+    async with db_factory() as db:
+        stats = await backfill_architecture_finding_runs(db, board_id=board_id)
+
+    assert stats["designs"] == 2
+    assert stats["errors"] == 0
+    assert [event for event, _design_id in events] == [
+        "upsert",
+        "commit",
+        "upsert",
+        "commit",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_backfill_rolls_back_failed_design_and_continues(
+    db_factory,
+    monkeypatch,
+):
+    board_id, spec_id, _design_id = await _seed_spec_with_design(db_factory)
+    await _seed_additional_design(
+        db_factory,
+        board_id=board_id,
+        spec_id=spec_id,
+    )
+
+    persistence = get_architecture_persistence_port()
+    original_rollback = persistence.rollback
+    original_upsert = ArchitectureFindingRunStore.upsert_latest_run
+    failed_design_ids: list[str] = []
+    rollback_calls = 0
+
+    async def fail_first_after_write(self, **kwargs):
+        result = await original_upsert(self, **kwargs)
+        if not failed_design_ids:
+            failed_design_ids.append(kwargs["design_id"])
+            raise RuntimeError("injected_backfill_failure_after_write")
+        return result
+
+    async def observed_rollback(context):
+        nonlocal rollback_calls
+        rollback_calls += 1
+        await original_rollback(context)
+
+    monkeypatch.setattr(
+        ArchitectureFindingRunStore,
+        "upsert_latest_run",
+        fail_first_after_write,
+    )
+    monkeypatch.setattr(persistence, "rollback", observed_rollback)
+
+    async with db_factory() as db:
+        stats = await backfill_architecture_finding_runs(db, board_id=board_id)
+
+    assert stats["designs"] == 1
+    assert stats["errors"] == 1
+    assert rollback_calls == 1
+
+    async with db_factory() as db:
+        runs = (
+            await db.execute(
+                select(ArchitectureFindingRun).where(
+                    ArchitectureFindingRun.board_id == board_id
+                )
+            )
+        ).scalars().all()
+    assert len(runs) == 1
+    assert runs[0].design_id not in failed_design_ids
 
 
 @pytest.mark.asyncio

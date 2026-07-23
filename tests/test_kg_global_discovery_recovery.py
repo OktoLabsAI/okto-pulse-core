@@ -2632,8 +2632,12 @@ async def test_delivery_requeues_only_global_open_dlq_and_leaves_commit_to_uow(
     from okto_pulse.core.ports import global_outbox as outbox_module
 
     global_open = _outbox_row("global", "graph_unavailable: bad WAL")
+    memory_pressure = _outbox_row(
+        "memory-pressure",
+        "graph_memory_pressure: allocator cooldown",
+    )
     semantic = _outbox_row("semantic", "candidate_not_found")
-    store = _OutboxStore([global_open, semantic])
+    store = _OutboxStore([global_open, memory_pressure, semantic])
     enqueued = []
 
     async def enqueue(_context, *, board_id, reason, idempotency_key):
@@ -2649,9 +2653,10 @@ async def test_delivery_requeues_only_global_open_dlq_and_leaves_commit_to_uow(
         board_ids=["b2", "b1", "b1"],
         dead_letter_limit=100,
     )
-    assert result["dead_letters_requeued"] == 1
-    assert [row.event_id for row in store.saved] == ["global"]
+    assert result["dead_letters_requeued"] == 2
+    assert [row.event_id for row in store.saved] == ["global", "memory-pressure"]
     assert global_open.retry_count == 0 and global_open.last_error is None
+    assert memory_pressure.retry_count == 0 and memory_pressure.last_error is None
     assert semantic.retry_count == -1 and semantic.last_error == "candidate_not_found"
     assert enqueued == [
         ("b1", "global_discovery_recovery", "gdr_test:b1"),

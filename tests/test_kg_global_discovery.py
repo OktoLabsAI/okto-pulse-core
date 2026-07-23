@@ -236,6 +236,9 @@ class TestGlobalOutboxProcessor:
         assert _is_retryable_global_open_error(
             "graph_lock_contention:global lifecycle reader still active"
         )
+        assert _is_retryable_global_open_error(
+            "graph_memory_pressure:global allocator is cooling down"
+        )
 
     @pytest.mark.asyncio
     async def _case_post_flush_verification_isolated_per_board(

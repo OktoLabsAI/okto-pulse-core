@@ -11,7 +11,11 @@ from okto_pulse.core.ports.package_version import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
-from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    reset_runtime_values,
+    resolve_runtime_value,
+)
 
 
 _VERSION_PROVIDER_KEY = "infra.config.version_provider"
@@ -117,8 +121,26 @@ class CoreSettings(BaseModel):
     kg_decay_tick_max_age_days: int = Field(0, ge=0, le=365)
     kg_stale_sweep_budget: int = Field(50, ge=1, le=1000)
 
+
 def configure_settings(s: "CoreSettings") -> None:
-    """Register a pre-built CoreSettings instance."""
+    """Register a pre-built settings instance.
+
+    A composed runtime may keep a stateful provider in its frozen wiring.  When
+    that provider exposes the snapshot replacement seam, update it first so
+    later reads in the same composition observe the new validated snapshot.
+    The runtime-value registration remains for legacy/non-composed callers.
+    """
+    from okto_pulse.core.composition import current_runtime_composition
+
+    composition = current_runtime_composition()
+    if composition is not None and composition.settings_provider is not None:
+        replace_snapshot = getattr(
+            composition.settings_provider,
+            "replace_settings_snapshot",
+            None,
+        )
+        if callable(replace_snapshot):
+            replace_snapshot(s)
     register_runtime_value(_SETTINGS_KEY, s)
 
 
@@ -136,7 +158,11 @@ def get_settings() -> "CoreSettings":
 
     composition = current_runtime_composition()
     if composition is not None and composition.settings_provider is not None:
-        return composition.settings_provider
+        provider = composition.settings_provider
+        get_snapshot = getattr(provider, "get_settings_snapshot", None)
+        if callable(get_snapshot):
+            return get_snapshot()
+        return provider
     settings = resolve_runtime_value(_SETTINGS_KEY)
     if settings is None:
         raise RuntimeError(

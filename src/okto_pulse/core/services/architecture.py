@@ -1857,6 +1857,7 @@ async def backfill_architecture_finding_runs(
     antes do fix da re-hidratação).
     """
     repo = ArchitectureDesignRepository(db)
+    persistence = get_architecture_persistence_port()
     filters: tuple[ArchitectureFilter, ...] = ()
     if board_id:
         filters = (_arf("board_id", "eq", board_id),)
@@ -1868,17 +1869,17 @@ async def backfill_architecture_finding_runs(
 
     stats = {"designs": 0, "skipped": 0, "with_findings": 0, "findings": 0, "errors": 0}
     for design in designs:
-        if only_missing:
-            existing = await _architecture_list(
-                db,
-                "architecture_finding_run",
-                filters=(_arf("design_id", "eq", design.id),),
-                limit=1,
-            )
-            if existing:
-                stats["skipped"] += 1
-                continue
         try:
+            if only_missing:
+                existing = await _architecture_list(
+                    db,
+                    "architecture_finding_run",
+                    filters=(_arf("design_id", "eq", design.id),),
+                    limit=1,
+                )
+                if existing:
+                    stats["skipped"] += 1
+                    continue
             diagrams = await repo._diagrams_for_validation(design.diagrams or [])
             critique = repo.critique_payload(
                 {
@@ -1923,6 +1924,10 @@ async def backfill_architecture_finding_runs(
                 },
                 structured_warnings=warnings,
             )
+            # The sweep is best-effort per design. Commit each successful unit
+            # immediately so SQLite never holds its single writer lock while
+            # the remaining designs are hydrated and critiqued.
+            await persistence.commit(db)
             stats["designs"] += 1
             if warnings:
                 stats["with_findings"] += 1
@@ -1933,7 +1938,14 @@ async def backfill_architecture_finding_runs(
                 design.id,
             )
             stats["errors"] += 1
-    await get_architecture_persistence_port().commit(db)
+            try:
+                await persistence.rollback(db)
+            except Exception:
+                logger.exception(
+                    "architecture.finding_backfill.rollback_failed design_id=%s",
+                    design.id,
+                )
+                raise
     return stats
 
 

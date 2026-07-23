@@ -76,6 +76,8 @@ class ArchitecturePersistencePort(Protocol):
 
     async def commit(self, context: Any) -> None: ...
 
+    async def rollback(self, context: Any) -> None: ...
+
 
 _RUNTIME_KEY = "ports.architecture_persistence.store"
 

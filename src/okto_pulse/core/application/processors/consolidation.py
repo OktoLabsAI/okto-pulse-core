@@ -69,6 +69,10 @@ from okto_pulse.core.kg.primitives import (
 )
 from okto_pulse.core.kg.memory_pressure import FailureEvent
 from okto_pulse.core.kg.memory_pressure_collector import record_failure
+from okto_pulse.core.kg.interfaces.graph_errors import (
+    GraphError,
+    graph_memory_pressure_retry_after_seconds,
+)
 from okto_pulse.core.application.processors.dead_letter import route_to_dead_letter
 from okto_pulse.core.kg.schema_layer_guard import (
     ensure_graph_layer_schema,
@@ -2590,16 +2594,72 @@ class ConsolidationProcessor:
                             )
                         )
                         if claim_is_current and fresh is not None:
-                            await self._mark_failed(
-                                db, fresh,
-                                error_text=f"{type(exc).__name__}: {str(exc)[:480]}",
-                                max_attempts=max_attempts,
+                            error_text = (
+                                f"{exc.code}:{str(exc)[:480]}"
+                                if isinstance(exc, GraphError)
+                                else f"{type(exc).__name__}: {str(exc)[:480]}"
                             )
+                            retry_after_s = (
+                                graph_memory_pressure_retry_after_seconds(exc)
+                            )
+                            if retry_after_s is not None:
+                                await self._defer_graph_memory_pressure(
+                                    db,
+                                    fresh,
+                                    error_text=error_text,
+                                    retry_after_s=retry_after_s,
+                                )
+                            else:
+                                await self._mark_failed(
+                                    db,
+                                    fresh,
+                                    error_text=error_text,
+                                    max_attempts=max_attempts,
+                                )
                         await store.commit(db)
                 except Exception:
                     pass
 
         return processed
+
+    async def _defer_graph_memory_pressure(
+        self,
+        db: Any,
+        entry: ConsolidationQueueRecord,
+        *,
+        error_text: str,
+        retry_after_s: int,
+    ) -> None:
+        """Re-pend typed allocation pressure without spending delivery budget."""
+
+        entry.last_error = error_text
+        entry.status = "pending"
+        entry.next_retry_at = self._now() + timedelta(seconds=retry_after_s)
+        entry.claim_timeout_at = None
+        entry.worker_id = None
+        entry.claimed_at = None
+        entry.claimed_by_session_id = None
+        entry.claim_token = None
+        await get_consolidation_persistence_port().save_queue_entries(
+            db,
+            (entry,),
+        )
+        logger.warning(
+            "consolidation.graph_memory_pressure_deferred "
+            "artifact=%s:%s attempts=%d retry_after_s=%d",
+            entry.artifact_type,
+            entry.artifact_id,
+            int(entry.attempts or 0),
+            retry_after_s,
+            extra={
+                "event": "consolidation.graph_memory_pressure_deferred",
+                "board_id": entry.board_id,
+                "artifact_type": entry.artifact_type,
+                "artifact_id": entry.artifact_id,
+                "attempts": int(entry.attempts or 0),
+                "retry_after_s": retry_after_s,
+            },
+        )
 
     async def _mark_failed(
         self,
@@ -2644,6 +2704,16 @@ class ConsolidationProcessor:
             raise _QueueClaimLostOrFenced(
                 f"queue_claim_lost_or_fenced entry_id={claimed_entry.id}"
             )
+
+        retry_after_s = graph_memory_pressure_retry_after_seconds(error_text)
+        if retry_after_s is not None:
+            await self._defer_graph_memory_pressure(
+                db,
+                entry,
+                error_text=error_text,
+                retry_after_s=retry_after_s,
+            )
+            return
 
         if is_graph_layer_schema_error(error_text):
             remediation = ensure_graph_layer_schema(

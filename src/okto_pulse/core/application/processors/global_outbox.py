@@ -22,7 +22,11 @@ from okto_pulse.core.domain.worker_policy import RetryPolicy
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.cypher_templates import layer_label_projection
 from okto_pulse.core.kg.interfaces import get_kg_registry
-from okto_pulse.core.kg.interfaces.graph_errors import GraphError
+from okto_pulse.core.kg.interfaces.graph_errors import (
+    GRAPH_MEMORY_PRESSURE_CODE,
+    GraphError,
+    graph_memory_pressure_retry_after_seconds,
+)
 from okto_pulse.core.kg.schema_contract import VECTOR_INDEX_TYPES
 from okto_pulse.core.ports.coordination import ClaimRepository, get_claim_repository
 from okto_pulse.core.ports.delivery_ledger import (
@@ -53,6 +57,7 @@ GLOBAL_OPEN_ERROR_CODES = (
     "graph_corruption",
     "graph_unavailable",
     "graph_lock_contention",
+    GRAPH_MEMORY_PRESSURE_CODE,
 )
 
 # Node types mirrored into the global discovery layer as DecisionDigest.
@@ -476,8 +481,28 @@ class GlobalOutboxProcessor:
                     processed_events.append((event, expected_state))
                     processed += 1
                 except Exception as exc:
-                    event.retry_count += 1
                     event.last_error = _semantic_error_detail(exc)[:500]
+                    retry_after_s = graph_memory_pressure_retry_after_seconds(exc)
+                    if retry_after_s is not None:
+                        logger.warning(
+                            "outbox.graph_memory_pressure_deferred "
+                            "event=%s board=%s retry_after_s=%d",
+                            event.event_id,
+                            event.board_id,
+                            retry_after_s,
+                            extra={
+                                "event": "outbox.graph_memory_pressure_deferred",
+                                "event_id": event.event_id,
+                                "board_id": event.board_id,
+                                "retry_after_s": retry_after_s,
+                            },
+                        )
+                        # The process-wide graph-open circuit applies to every
+                        # remaining event. Stop this batch after the first
+                        # typed pressure signal so untouched rows do not spend
+                        # retries while the adapter is deliberately cooling.
+                        break
+                    event.retry_count += 1
                     if self._retry_policy.after_failure(event.retry_count).terminal:
                         event.retry_count = DEAD_LETTER_SENTINEL
                         logger.warning(
@@ -497,6 +522,9 @@ class GlobalOutboxProcessor:
                 )
 
                 if batch_flush_error is not None:
+                    retry_after_s = graph_memory_pressure_retry_after_seconds(
+                        batch_flush_error
+                    )
                     logger.warning(
                         "outbox.global_discovery_post_flush_failed count=%d err=%s",
                         len(processed_events),
@@ -508,13 +536,30 @@ class GlobalOutboxProcessor:
                     )
                     for event, _expected in processed_events:
                         event.processed_at = None
-                        event.retry_count += 1
                         event.last_error = (
                             "global_discovery_post_flush_failed: "
                             f"{_semantic_error_detail(batch_flush_error)}"
                         )[:500]
-                        if self._retry_policy.after_failure(event.retry_count).terminal:
-                            event.retry_count = DEAD_LETTER_SENTINEL
+                        if retry_after_s is None:
+                            event.retry_count += 1
+                            if self._retry_policy.after_failure(
+                                event.retry_count
+                            ).terminal:
+                                event.retry_count = DEAD_LETTER_SENTINEL
+                    if retry_after_s is not None:
+                        logger.warning(
+                            "outbox.graph_memory_pressure_batch_deferred "
+                            "count=%d retry_after_s=%d",
+                            len(processed_events),
+                            retry_after_s,
+                            extra={
+                                "event": (
+                                    "outbox.graph_memory_pressure_batch_deferred"
+                                ),
+                                "count": len(processed_events),
+                                "retry_after_s": retry_after_s,
+                            },
+                        )
                     processed = 0
                 else:
                     processed = 0
@@ -526,13 +571,16 @@ class GlobalOutboxProcessor:
                             processed += 1
                             continue
                         event.processed_at = None
-                        event.retry_count += 1
                         event.last_error = (
                             "global_discovery_post_flush_verification_failed: "
                             f"{_semantic_error_detail(error)}"
                         )[:500]
-                        if self._retry_policy.after_failure(event.retry_count).terminal:
-                            event.retry_count = DEAD_LETTER_SENTINEL
+                        if graph_memory_pressure_retry_after_seconds(error) is None:
+                            event.retry_count += 1
+                            if self._retry_policy.after_failure(
+                                event.retry_count
+                            ).terminal:
+                                event.retry_count = DEAD_LETTER_SENTINEL
             outbox_store = get_global_outbox_store()
             await outbox_store.save_events(db, events)
             delivery_outcomes: list[DeliveryAttemptResult] = []
@@ -637,6 +685,29 @@ class GlobalOutboxProcessor:
                             },
                         )
                     except Exception as exc:
+                        retry_after_s = graph_memory_pressure_retry_after_seconds(exc)
+                        if retry_after_s is not None:
+                            # No board in this batch has a freshly verified
+                            # handle once the process-wide allocator circuit
+                            # opens. Treat the whole verification phase as
+                            # deferred instead of accidentally ACKing boards
+                            # that were not reached after this break.
+                            batch_flush_error = exc
+                            logger.warning(
+                                "outbox.global_discovery_post_flush_memory_"
+                                "pressure board=%s retry_after_s=%d",
+                                board_id,
+                                retry_after_s,
+                                extra={
+                                    "event": (
+                                        "outbox.global_discovery_post_flush_"
+                                        "memory_pressure"
+                                    ),
+                                    "board_id": board_id,
+                                    "retry_after_s": retry_after_s,
+                                },
+                            )
+                            break
                         verification_errors[board_id] = exc
                         logger.warning(
                             "outbox.global_discovery_post_flush_verification_"

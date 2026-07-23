@@ -18,7 +18,11 @@ from okto_pulse.core.composition import (
     runtime_composition_scope,
 )
 from okto_pulse.core.infra.auth import get_auth_provider
-from okto_pulse.core.infra.config import get_settings
+from okto_pulse.core.infra.config import (
+    CoreSettings,
+    configure_settings,
+    get_settings,
+)
 from okto_pulse.core.infra.storage import get_storage_provider
 from okto_pulse.core.runtime_context import (
     capture_runtime_values_for_tests,
@@ -125,6 +129,43 @@ def test_concurrent_scopes_resolve_independent_providers_without_fallbacks() -> 
     )
     assert first[-1] is not second[-1]
     assert runtime_bridge_usage_snapshot() == {}
+
+
+def test_composed_mutable_settings_provider_replaces_only_its_snapshot() -> None:
+    class MutableSettingsProvider:
+        def __init__(self, settings: CoreSettings) -> None:
+            self.settings = settings
+
+        def get_settings_snapshot(self) -> CoreSettings:
+            return self.settings
+
+        def replace_settings_snapshot(self, settings: CoreSettings) -> None:
+            self.settings = settings
+
+    first_provider = MutableSettingsProvider(CoreSettings(app_name="first-before"))
+    second_provider = MutableSettingsProvider(CoreSettings(app_name="second"))
+    first = RuntimeComposition(
+        settings_provider=first_provider,
+        auth_provider=object(),
+        storage_provider=object(),
+        event_bus=object(),
+        uow_factory=object(),
+    )
+    second = RuntimeComposition(
+        settings_provider=second_provider,
+        auth_provider=object(),
+        storage_provider=object(),
+        event_bus=object(),
+        uow_factory=object(),
+    )
+
+    with runtime_composition_scope(first):
+        assert get_settings().app_name == "first-before"
+        configure_settings(CoreSettings(app_name="first-after"))
+        assert get_settings().app_name == "first-after"
+
+    with runtime_composition_scope(second):
+        assert get_settings().app_name == "second"
 
 
 def test_runtime_compositions_do_not_share_mcp_catalog_mutations() -> None:
