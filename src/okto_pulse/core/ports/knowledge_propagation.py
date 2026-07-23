@@ -1076,7 +1076,8 @@ class KnowledgeMutationPlan:
     occurred_at: datetime
     idempotency_key: str
     request_hash: str
-    next_scope_selection_state: KnowledgeSelectionState | str
+    next_scope_selection_state: KnowledgeSelectionState | str | None
+    next_scope_v2_active: bool = True
     assignments_to_open: tuple[TemporalKnowledgeAssignment, ...] = ()
     assignment_ids_to_close: tuple[str, ...] = ()
     tombstones_to_open: tuple[KnowledgePropagationTombstone, ...] = ()
@@ -1111,11 +1112,24 @@ class KnowledgeMutationPlan:
         request_hash = _required_text(self.request_hash, "request_hash")
         if _SHA256_HEX.fullmatch(request_hash) is None:
             raise ValueError("knowledge_propagation_request_hash_invalid")
-        next_state = _coerce_enum(
-            self.next_scope_selection_state,
-            KnowledgeSelectionState,
-            "next_scope_selection_state",
+        if type(self.next_scope_v2_active) is not bool:
+            raise ValueError("knowledge_propagation_next_scope_v2_active_invalid")
+        next_state = (
+            None
+            if self.next_scope_selection_state is None
+            else _coerce_enum(
+                self.next_scope_selection_state,
+                KnowledgeSelectionState,
+                "next_scope_selection_state",
+            )
         )
+        if kind is KnowledgeMutationKind.GRANDFATHER:
+            if self.next_scope_v2_active or next_state is not None:
+                raise ValueError(
+                    "knowledge_propagation_grandfather_scope_state_invalid"
+                )
+        elif not self.next_scope_v2_active or next_state is None:
+            raise ValueError("knowledge_propagation_next_scope_state_invalid")
         if self.selection is not None and not isinstance(
             self.selection,
             KnowledgeSelection,
@@ -1346,8 +1360,20 @@ class KnowledgeMutationPlan:
                 or len(snapshot_links) != len(snapshots)
             ):
                 raise ValueError("knowledge_propagation_refresh_snapshot_plan_invalid")
-        elif self.selection is not None:
-            raise ValueError("knowledge_propagation_grandfather_plan_invalid")
+        elif kind is KnowledgeMutationKind.GRANDFATHER:
+            if (
+                self.selection is not None
+                or assignments
+                or assignment_ids
+                or tombstones
+                or tombstone_ids
+                or snapshots
+                or snapshot_ids
+                or supersession_links
+                or self.next_scope_v2_active
+                or next_state is not None
+            ):
+                raise ValueError("knowledge_propagation_grandfather_plan_invalid")
 
         if not isinstance(self.ledger_entry, KnowledgeMutationLedgerEntry):
             raise ValueError("knowledge_propagation_ledger_entry_required")
@@ -1381,6 +1407,11 @@ class KnowledgeMutationPlan:
         object.__setattr__(self, "idempotency_key", idempotency_key)
         object.__setattr__(self, "request_hash", request_hash)
         object.__setattr__(self, "next_scope_selection_state", next_state)
+        object.__setattr__(
+            self,
+            "next_scope_v2_active",
+            self.next_scope_v2_active,
+        )
         object.__setattr__(self, "assignments_to_open", assignments)
         object.__setattr__(self, "assignment_ids_to_close", assignment_ids)
         object.__setattr__(self, "tombstones_to_open", tombstones)

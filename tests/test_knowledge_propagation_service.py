@@ -34,6 +34,8 @@ from okto_pulse.core.ports.knowledge_propagation import (
     TemporalKnowledgeAssignment,
 )
 from okto_pulse.core.services.knowledge_propagation import (
+    KnowledgeGrandfatherAttachment,
+    KnowledgeGrandfatherCommand,
     KnowledgeGrandfatherEvidence,
     KnowledgeMutationCommand,
     KnowledgePropagationService,
@@ -257,6 +259,26 @@ def _command(
         expected_revision=expected_revision,
         idempotency_key=idempotency_key,
         justification=justification,
+    )
+
+
+def _grandfather_attachment(
+    source_id: str,
+    *,
+    evidence: KnowledgeGrandfatherEvidence | None = None,
+    storage_kind: str = "card_json",
+) -> KnowledgeGrandfatherAttachment:
+    table = "cards" if storage_kind == "card_json" else "spec_knowledge_bases"
+    return KnowledgeGrandfatherAttachment(
+        source_knowledge_id=source_id,
+        revision_stamp=_stamp(f"{source_id}-root"),
+        evidence=evidence or KnowledgeGrandfatherEvidence(),
+        physical_locator={
+            "storage_kind": storage_kind,
+            "table": table,
+            "owner_id": "card-1",
+            "attachment_id": source_id,
+        },
     )
 
 
@@ -1041,3 +1063,126 @@ def test_grandfather_classification_is_conservative(
     expected: KnowledgeOriginClass,
 ) -> None:
     assert classify_legacy_origin(evidence) is expected
+
+
+@pytest.mark.asyncio
+async def test_grandfather_stages_canonical_non_activating_ledger_and_replays() -> None:
+    unresolved = _grandfather_attachment(
+        "kb-unresolved",
+        evidence=KnowledgeGrandfatherEvidence(origin_missing=True),
+    )
+    selected = _grandfather_attachment(
+        "kb-selected",
+        evidence=KnowledgeGrandfatherEvidence(
+            durable_selection_evidence=True,
+        ),
+    )
+    legacy_all = _grandfather_attachment("kb-all")
+    physical = tuple(
+        item.to_legacy_attachment() for item in (legacy_all, selected, unresolved)
+    )
+    port = _FakePort(_scope(legacy=physical))
+    service = _service(port)
+    command = KnowledgeGrandfatherCommand(
+        target=_target(),
+        attachments=(unresolved, legacy_all, selected),
+        actor_id="migration-v2",
+        expected_revision=0,
+        idempotency_key="grandfather:card-1",
+    )
+
+    receipt = await service.grandfather(object(), command)
+
+    assert receipt.outcome is KnowledgeMutationOutcome.GRANDFATHERED
+    assert receipt.previous_revision == 0
+    assert receipt.revision == 1
+    assert len(port.staged) == 1
+    plan = port.staged[0]
+    assert plan.operation_kind is KnowledgeMutationKind.GRANDFATHER
+    assert plan.next_scope_v2_active is False
+    assert plan.next_scope_selection_state is None
+    assert plan.assignments_to_open == ()
+    assert plan.snapshots_to_open == ()
+    details = plan.ledger_entry.receipt.details
+    assert details["legacy_content_preserved"] is True
+    attachments = details["grandfathered_attachments"]
+    assert [item["source_knowledge_id"] for item in attachments] == [
+        "kb-all",
+        "kb-selected",
+        "kb-unresolved",
+    ]
+    assert [item["origin_class"] for item in attachments] == [
+        "legacy_all",
+        "selected_legacy",
+        "legacy_unresolved",
+    ]
+    assert [item["effective"] for item in attachments] == [
+        True,
+        True,
+        False,
+    ]
+
+    port.replay_entry = plan.ledger_entry
+    replay = await service.grandfather(object(), command)
+    assert replay.outcome is KnowledgeMutationOutcome.REPLAYED
+    assert replay.original_outcome is KnowledgeMutationOutcome.GRANDFATHERED
+    assert replay.revision == 1
+    assert len(port.staged) == 1
+    assert len(port.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_grandfather_rejects_partial_inventory_with_audit_attempt() -> None:
+    first = _grandfather_attachment("kb-1")
+    second = _grandfather_attachment("kb-2")
+    port = _FakePort(
+        _scope(
+            legacy=(
+                first.to_legacy_attachment(),
+                second.to_legacy_attachment(),
+            )
+        )
+    )
+    command = KnowledgeGrandfatherCommand(
+        target=_target(),
+        attachments=(first,),
+        actor_id="migration-v2",
+        expected_revision=0,
+        idempotency_key="grandfather:partial",
+    )
+
+    with pytest.raises(KnowledgePropagationServiceError) as raised:
+        await _service(port).grandfather(object(), command)
+
+    assert raised.value.code == "knowledge_propagation_grandfather_attachment_mismatch"
+    assert raised.value.details["unclassified"] == ["kb-2"]
+    assert raised.value.ledger_attempt is not None
+    assert raised.value.ledger_attempt.outcome is KnowledgeMutationOutcome.REJECTED
+    assert port.staged == []
+
+
+@pytest.mark.asyncio
+async def test_grandfather_never_replaces_an_active_v2_scope() -> None:
+    attachment = _grandfather_attachment("kb-1")
+    port = _FakePort(
+        _scope(
+            revision=4,
+            v2_active=True,
+            state="omitted",
+            legacy=(attachment.to_legacy_attachment(),),
+        )
+    )
+    command = KnowledgeGrandfatherCommand(
+        target=_target(),
+        attachments=(attachment,),
+        actor_id="migration-v2",
+        expected_revision=4,
+        idempotency_key="grandfather:active",
+    )
+
+    with pytest.raises(KnowledgePropagationServiceError) as raised:
+        await _service(port).grandfather(object(), command)
+
+    assert raised.value.code == "knowledge_propagation_grandfather_v2_active"
+    assert raised.value.ledger_attempt is not None
+    assert port.staged == []

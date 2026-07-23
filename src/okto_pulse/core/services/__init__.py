@@ -134,6 +134,8 @@ from okto_pulse.core.domain.knowledge_fingerprint import (
     resolve_knowledge_content_sha256,
 )
 from okto_pulse.core.services.knowledge_propagation import (
+    KnowledgeGrandfatherAttachment,
+    KnowledgeGrandfatherCommand,
     KnowledgeGrandfatherEvidence,
     KnowledgeMutationCommand,
     KnowledgePropagationReadResult,
@@ -268,6 +270,8 @@ __all__ = [
     "knowledge_content_bytes",
     "knowledge_content_sha256",
     "resolve_knowledge_content_sha256",
+    "KnowledgeGrandfatherAttachment",
+    "KnowledgeGrandfatherCommand",
     "KnowledgeGrandfatherEvidence",
     "KnowledgeMutationCommand",
     "KnowledgePropagationReadResult",

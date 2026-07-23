@@ -241,6 +241,14 @@ class KnowledgeGrandfatherEvidence:
             if type(getattr(self, field_name)) is not bool:
                 raise ValueError(f"knowledge_propagation_{field_name}_invalid")
 
+    def to_dict(self) -> dict[str, bool]:
+        return {
+            "durable_selection_evidence": self.durable_selection_evidence,
+            "origin_missing": self.origin_missing,
+            "origin_cycle": self.origin_cycle,
+            "content_divergent": self.content_divergent,
+        }
+
 
 def classify_legacy_origin(
     evidence: KnowledgeGrandfatherEvidence,
@@ -254,6 +262,169 @@ def classify_legacy_origin(
     if evidence.durable_selection_evidence:
         return KnowledgeOriginClass.SELECTED_LEGACY
     return KnowledgeOriginClass.LEGACY_ALL
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeGrandfatherAttachment:
+    """One physical legacy attachment and its bounded classification evidence."""
+
+    source_knowledge_id: str
+    revision_stamp: ResourceRevisionStamp
+    evidence: KnowledgeGrandfatherEvidence
+    physical_locator: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        source_knowledge_id = _required_text(
+            self.source_knowledge_id,
+            "source_knowledge_id",
+        )
+        if not isinstance(self.evidence, KnowledgeGrandfatherEvidence):
+            raise ValueError("knowledge_propagation_grandfather_evidence_invalid")
+        origin_class = classify_legacy_origin(self.evidence)
+        canonical_legacy = KnowledgeLegacyAttachment(
+            source_knowledge_id=source_knowledge_id,
+            revision_stamp=self.revision_stamp,
+            origin_class=origin_class,
+            effective=origin_class is not KnowledgeOriginClass.LEGACY_UNRESOLVED,
+        )
+        if not isinstance(self.physical_locator, Mapping):
+            raise ValueError(
+                "knowledge_propagation_grandfather_physical_locator_invalid"
+            )
+        required_locator_fields = (
+            "storage_kind",
+            "table",
+            "owner_id",
+            "attachment_id",
+        )
+        if set(self.physical_locator) != set(required_locator_fields):
+            raise ValueError(
+                "knowledge_propagation_grandfather_physical_locator_invalid"
+            )
+        locator = {
+            field_name: _required_text(
+                self.physical_locator[field_name],
+                f"physical_locator_{field_name}",
+            )
+            for field_name in required_locator_fields
+        }
+        if locator["storage_kind"] not in {"entity_row", "card_json"}:
+            raise ValueError("knowledge_propagation_grandfather_storage_kind_invalid")
+        object.__setattr__(
+            self,
+            "source_knowledge_id",
+            canonical_legacy.source_knowledge_id,
+        )
+        object.__setattr__(
+            self,
+            "revision_stamp",
+            canonical_legacy.revision_stamp,
+        )
+        object.__setattr__(
+            self,
+            "physical_locator",
+            MappingProxyType(locator),
+        )
+
+    @property
+    def origin_class(self) -> KnowledgeOriginClass:
+        return classify_legacy_origin(self.evidence)
+
+    @property
+    def effective(self) -> bool:
+        return self.origin_class is not KnowledgeOriginClass.LEGACY_UNRESOLVED
+
+    def to_legacy_attachment(self) -> KnowledgeLegacyAttachment:
+        return KnowledgeLegacyAttachment(
+            source_knowledge_id=self.source_knowledge_id,
+            revision_stamp=self.revision_stamp,
+            origin_class=self.origin_class,
+            effective=self.effective,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        stamp = self.revision_stamp
+        return {
+            "source_knowledge_id": self.source_knowledge_id,
+            "root_id": stamp.root_id,
+            "immediate_parent_id": stamp.immediate_parent_id,
+            "source_revision": stamp.source_revision,
+            "source_content_sha256": stamp.source_content_sha256,
+            "origin_class": self.origin_class.value,
+            "effective": self.effective,
+            "evidence": self.evidence.to_dict(),
+            "physical_locator": dict(self.physical_locator),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeGrandfatherCommand:
+    """Classify all physical legacy attachments for one inactive target."""
+
+    target: KnowledgeTargetKey
+    attachments: tuple[KnowledgeGrandfatherAttachment, ...]
+    actor_id: str
+    expected_revision: int
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.target, KnowledgeTargetKey):
+            raise ValueError("knowledge_propagation_grandfather_target_invalid")
+        if isinstance(self.attachments, (str, bytes)) or not isinstance(
+            self.attachments,
+            Sequence,
+        ):
+            raise ValueError("knowledge_propagation_grandfather_attachments_invalid")
+        attachments: dict[str, KnowledgeGrandfatherAttachment] = {}
+        physical_identities: set[tuple[str, str, str, str]] = set()
+        for item in self.attachments:
+            if not isinstance(item, KnowledgeGrandfatherAttachment):
+                raise ValueError(
+                    "knowledge_propagation_grandfather_attachments_invalid"
+                )
+            if item.source_knowledge_id in attachments:
+                raise ValueError("knowledge_propagation_grandfather_source_duplicate")
+            locator = item.physical_locator
+            physical_identity = (
+                locator["storage_kind"],
+                locator["table"],
+                locator["owner_id"],
+                locator["attachment_id"],
+            )
+            if physical_identity in physical_identities:
+                raise ValueError("knowledge_propagation_grandfather_locator_duplicate")
+            attachments[item.source_knowledge_id] = item
+            physical_identities.add(physical_identity)
+        if not attachments:
+            raise ValueError("knowledge_propagation_grandfather_attachments_empty")
+        ordered = tuple(
+            sorted(
+                attachments.values(),
+                key=lambda item: (
+                    item.source_knowledge_id,
+                    item.physical_locator["storage_kind"],
+                    item.physical_locator["table"],
+                    item.physical_locator["owner_id"],
+                    item.physical_locator["attachment_id"],
+                ),
+            )
+        )
+        object.__setattr__(self, "attachments", ordered)
+        object.__setattr__(
+            self,
+            "actor_id",
+            _required_text(self.actor_id, "actor_id"),
+        )
+        object.__setattr__(
+            self,
+            "expected_revision",
+            _revision(self.expected_revision),
+        )
+        object.__setattr__(
+            self,
+            "idempotency_key",
+            _required_text(self.idempotency_key, "idempotency_key"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,6 +628,91 @@ class KnowledgePropagationService:
                 command,
                 scope=scope,
                 request_hash=request_hash,
+            )
+            return await self._stage(context, plan)
+        except KnowledgePropagationServiceError as exc:
+            wrapped = self._with_rejection_attempt(
+                exc,
+                target=command.target,
+                actor_id=command.actor_id,
+                operation_kind=operation_kind,
+                idempotency_key=command.idempotency_key,
+                request_hash=request_hash,
+            )
+            if wrapped is exc:
+                raise
+            raise wrapped from exc
+
+    async def grandfather(
+        self,
+        context: Any,
+        command: KnowledgeGrandfatherCommand,
+    ) -> KnowledgeMutationReceipt:
+        """Stage one durable, non-activating classification of legacy history."""
+
+        if not isinstance(command, KnowledgeGrandfatherCommand):
+            raise TypeError("knowledge_propagation_grandfather_command_invalid")
+        request_hash = self._grandfather_request_hash(command)
+        operation_kind = KnowledgeMutationKind.GRANDFATHER
+        try:
+            replay = await self._replay(
+                context,
+                target=command.target,
+                actor_id=command.actor_id,
+                operation_kind=operation_kind,
+                idempotency_key=command.idempotency_key,
+                request_hash=request_hash,
+            )
+            if replay is not None:
+                return replay
+
+            scope = await self._port.load_scope(
+                context,
+                KnowledgeScopeLookup(target=command.target),
+            )
+            self._require_scope_target(scope, command.target)
+            self._require_revision(scope, command.expected_revision)
+            if scope.v2_active:
+                raise KnowledgePropagationServiceError(
+                    "knowledge_propagation_grandfather_v2_active",
+                    "legacy classification cannot replace an active v2 scope",
+                )
+            physical_ids = {
+                item.source_knowledge_id for item in scope.legacy_attachments
+            }
+            requested_ids = {item.source_knowledge_id for item in command.attachments}
+            if physical_ids != requested_ids:
+                raise KnowledgePropagationServiceError(
+                    "knowledge_propagation_grandfather_attachment_mismatch",
+                    "grandfathering must classify every current physical "
+                    "legacy attachment exactly once",
+                    details={
+                        "requested": sorted(requested_ids),
+                        "matched": sorted(physical_ids & requested_ids),
+                        "missing": sorted(requested_ids - physical_ids),
+                        "unclassified": sorted(physical_ids - requested_ids),
+                    },
+                )
+            occurred_at = self._operation_time()
+            plan = self._plan(
+                kind=operation_kind,
+                target=command.target,
+                selection=None,
+                expected_revision=command.expected_revision,
+                next_scope_selection_state=None,
+                next_scope_v2_active=False,
+                actor_id=command.actor_id,
+                idempotency_key=command.idempotency_key,
+                request_hash=request_hash,
+                occurred_at=occurred_at,
+                outcome=KnowledgeMutationOutcome.GRANDFATHERED,
+                receipt_details={
+                    "contract_version": KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
+                    "legacy_content_preserved": True,
+                    "grandfathered_attachments": [
+                        item.to_dict() for item in command.attachments
+                    ],
+                },
             )
             return await self._stage(context, plan)
         except KnowledgePropagationServiceError as exc:
@@ -1157,11 +1413,14 @@ class KnowledgePropagationService:
         target: KnowledgeTargetKey,
         selection: KnowledgeSelection | None,
         expected_revision: int,
-        next_scope_selection_state: KnowledgeSelectionState,
+        next_scope_selection_state: KnowledgeSelectionState | None,
         actor_id: str,
         idempotency_key: str,
         request_hash: str,
         occurred_at: datetime,
+        next_scope_v2_active: bool = True,
+        outcome: KnowledgeMutationOutcome = KnowledgeMutationOutcome.APPLIED,
+        receipt_details: Mapping[str, object] | None = None,
         assignments_to_open: tuple[TemporalKnowledgeAssignment, ...] = (),
         assignment_ids_to_close: tuple[str, ...] = (),
         tombstones_to_open: tuple[KnowledgePropagationTombstone, ...] = (),
@@ -1179,6 +1438,8 @@ class KnowledgePropagationService:
             revision=expected_revision + 1,
             request_hash=request_hash,
             applied_at=occurred_at,
+            outcome=outcome,
+            details=receipt_details or {},
         )
         ledger = KnowledgeMutationLedgerEntry(
             target=target,
@@ -1201,6 +1462,7 @@ class KnowledgePropagationService:
             idempotency_key=idempotency_key,
             request_hash=request_hash,
             next_scope_selection_state=next_scope_selection_state,
+            next_scope_v2_active=next_scope_v2_active,
             assignments_to_open=assignments_to_open,
             assignment_ids_to_close=assignment_ids_to_close,
             tombstones_to_open=tombstones_to_open,
@@ -1395,6 +1657,21 @@ class KnowledgePropagationService:
             }
         )
 
+    def _grandfather_request_hash(
+        self,
+        command: KnowledgeGrandfatherCommand,
+    ) -> str:
+        return self._hash(
+            {
+                "contract_version": KNOWLEDGE_PROPAGATION_CONTRACT_VERSION,
+                "operation": "grandfather",
+                "target": command.target.to_dict(),
+                "attachments": [item.to_dict() for item in command.attachments],
+                "actor_id": command.actor_id,
+                "expected_revision": command.expected_revision,
+            }
+        )
+
     @staticmethod
     def _hash(payload: Mapping[str, object]) -> str:
         encoded = json.dumps(
@@ -1416,6 +1693,8 @@ class KnowledgePropagationService:
 
 
 __all__ = [
+    "KnowledgeGrandfatherAttachment",
+    "KnowledgeGrandfatherCommand",
     "KnowledgeGrandfatherEvidence",
     "KnowledgeMutationCommand",
     "KnowledgePropagationReadResult",

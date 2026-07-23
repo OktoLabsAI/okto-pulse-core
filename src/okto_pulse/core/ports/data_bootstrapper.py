@@ -18,6 +18,7 @@ Domains (``BOOTSTRAP_DOMAINS``):
   * ``presets``           — built-in permission presets seed + reconcile.
   * ``permissions``       — agent permission-flag reconcile.
   * ``discovery_intents`` — discovery-intent seed catalog bootstrap.
+  * ``knowledge_propagation`` — resumable selective-propagation data backfill.
 
 Failure semantics are fail-closed: a missing bootstrapper, an invalid plan or a
 failing step yields a structured failure carrying ``step_id`` / ``domain`` /
@@ -41,12 +42,18 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
 #: The data-bootstrap domain a step belongs to.
-BootstrapDomain = Literal["presets", "permissions", "discovery_intents"]
+BootstrapDomain = Literal[
+    "presets",
+    "permissions",
+    "discovery_intents",
+    "knowledge_propagation",
+]
 #: Canonical domains the data-bootstrap fatia covers.
 BOOTSTRAP_DOMAINS: tuple[BootstrapDomain, ...] = (
     "presets",
     "permissions",
     "discovery_intents",
+    "knowledge_propagation",
 )
 
 #: Top-level bootstrap outcome. ``partial`` is a NON-SUCCESS diagnostic state.
@@ -77,9 +84,7 @@ class DataBootstrapError(Exception):
         self.domain = domain
         self.remediation = remediation
         detail = f"step_id={step_id} domain={domain}" if step_id or domain else ""
-        super().__init__(
-            f"{failure_reason}{(' [' + detail + ']') if detail else ''}"
-        )
+        super().__init__(f"{failure_reason}{(' [' + detail + ']') if detail else ''}")
 
 
 @dataclass(frozen=True)
