@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Iterable, Literal, Mapping, Protocol
 
+from okto_pulse.core.domain.resource_revision import ResourceRevisionStamp
 from okto_pulse.core.observability.sample_buffer import runtime_sample_buffer
 
 EntityType = Literal["ideation", "refinement", "spec", "card"]
@@ -20,24 +21,6 @@ ResourceType = Literal["architecture", "mockup", "knowledge_base"]
 ResourceState = Literal["provided", "not_applicable", "missing"]
 CoverageState = Literal["not_required", "covered", "uncovered", "not_applicable"]
 AttachmentKind = Literal["direct", "inherited_reference", "not_applicable"]
-
-
-@dataclass(frozen=True, slots=True)
-class ResourceRevisionStamp:
-    """Storage-neutral revision evidence for one physical resource snapshot."""
-
-    root_id: str
-    immediate_parent_id: str | None = None
-    source_revision: str | None = None
-    source_content_sha256: str | None = None
-
-    def to_dict(self) -> dict[str, str | None]:
-        return {
-            "root_id": self.root_id,
-            "immediate_parent_id": self.immediate_parent_id,
-            "source_revision": self.source_revision,
-            "source_content_sha256": self.source_content_sha256,
-        }
 
 
 ENTITY_TYPES: tuple[str, ...] = ("ideation", "refinement", "spec", "card")
