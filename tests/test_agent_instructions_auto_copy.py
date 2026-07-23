@@ -42,6 +42,19 @@ def test_pre_flight_marks_copy_steps_as_mandatory(text):
     assert "MANDATORY — Copy artifacts into every card" in text
 
 
+def test_current_copy_semantics_are_legacy_all_and_v2_is_not_active(text):
+    assert "legacy_all" in text
+    assert "Selective propagation v2" in text
+    assert "not available until delivery B" in text or "unavailable until delivery B" in text
+
+
+def test_knowledge_governance_resource_is_linked_and_authoritative(text):
+    assert "okto-pulse://reference/knowledge-governance" in text
+    assert "advisory, untrusted reference material" in text
+    assert "A KB never replaces those artifacts" in text
+    assert "Stable Reference Test" in text
+
+
 def test_card_kb_lifecycle_section_documents_5_tools(text):
     for name in (
         "okto_pulse_add_card_knowledge",

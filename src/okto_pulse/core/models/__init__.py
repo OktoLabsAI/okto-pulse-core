@@ -88,6 +88,7 @@ if TYPE_CHECKING:  # real imports for static analysis only — never run at impo
         RefinementKnowledgeCreate,
         RefinementKnowledgeResponse,
         RefinementKnowledgeSummary,
+        RefinementKnowledgeUpdate,
         RefinementMove,
         RefinementQAAnswer,
         RefinementQACreate,
@@ -133,6 +134,9 @@ if TYPE_CHECKING:  # real imports for static analysis only — never run at impo
         TopicResponse,
         TopicSummary,
         TopicUpdate,
+    )
+    from okto_pulse.core.services.knowledge_governance_projection import (
+        with_knowledge_governance,
     )
 
 # name -> defining submodule, resolved lazily on first access.
@@ -218,6 +222,7 @@ _SCHEMA_NAMES = (
     "RefinementKnowledgeCreate",
     "RefinementKnowledgeResponse",
     "RefinementKnowledgeSummary",
+    "RefinementKnowledgeUpdate",
     "RefinementMove",
     "RefinementQAAnswer",
     "RefinementQACreate",
@@ -264,12 +269,15 @@ _SCHEMA_NAMES = (
     "TopicSummary",
     "TopicUpdate",
 )
+_PROJECTION_NAMES = ("with_knowledge_governance",)
 
 _SOURCE: dict[str, str] = {}
 for _n in _ENUM_NAMES:
     _SOURCE[_n] = "okto_pulse.core.domain.enums"
 for _n in _SCHEMA_NAMES:
     _SOURCE[_n] = "okto_pulse.core.models.schemas"
+for _n in _PROJECTION_NAMES:
+    _SOURCE[_n] = "okto_pulse.core.services.knowledge_governance_projection"
 
 
 def __getattr__(name: str):
@@ -295,6 +303,8 @@ __all__ = [
     "SpecStatus",
     "StoryStatus",
     "SprintStatus",
+    # Read projections
+    "with_knowledge_governance",
     # Schemas
     "ActivityLogResponse",
     "AgentBoardOverridesUpdate",
@@ -367,6 +377,7 @@ __all__ = [
     "RefinementKnowledgeCreate",
     "RefinementKnowledgeResponse",
     "RefinementKnowledgeSummary",
+    "RefinementKnowledgeUpdate",
     "RefinementMove",
     "RefinementQAAnswer",
     "RefinementQACreate",

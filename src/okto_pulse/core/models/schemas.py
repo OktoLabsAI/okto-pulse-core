@@ -10,6 +10,7 @@ from pydantic import (
     Field,
     RootModel,
     ValidationInfo,
+    computed_field,
     field_validator,
     model_validator,
 )
@@ -31,6 +32,9 @@ from okto_pulse.core.domain.enums import (
     SprintStatus,
     StoryStatus,
 )
+from okto_pulse.core.domain.knowledge_governance import (
+    project_knowledge_governance,
+)
 
 # ============================================================================
 # Base Schemas
@@ -48,6 +52,17 @@ class BaseSchema(BaseModel):
     """
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class KnowledgeGovernanceResponseSchema(BaseSchema):
+    """Shared additive read projection for every Knowledge Base surface."""
+
+    governance_metadata: Any | None = None
+
+    @computed_field(return_type=dict[str, Any])
+    @property
+    def governance(self) -> dict[str, Any]:
+        return project_knowledge_governance(self.governance_metadata).as_dict()
 
 
 # ============================================================================
@@ -1385,6 +1400,13 @@ class IdeationKnowledgeCreate(BaseModel):
     description: str | None = Field(None, description="Descricao resumida do KB item da ideacao.")
     content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
     mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Envelope opcional e versionado de governanca semantica. "
+            "A validacao canonica ocorre no servico de aplicacao."
+        ),
+    )
 
 
 class IdeationKnowledgeUpdate(BaseModel):
@@ -1394,9 +1416,16 @@ class IdeationKnowledgeUpdate(BaseModel):
     description: str | None = Field(None, description="Nova descricao resumida (opcional).")
     content: str | None = Field(None, min_length=1, description="Novo conteudo do KB item (opcional).")
     mime_type: str | None = Field(None, description="Novo MIME type do conteudo (opcional).")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Novo envelope de governanca; omitido preserva o valor atual e "
+            "null remove o envelope."
+        ),
+    )
 
 
-class IdeationKnowledgeResponse(BaseSchema):
+class IdeationKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     """Full ideation knowledge base item response."""
 
     id: str
@@ -1410,12 +1439,13 @@ class IdeationKnowledgeResponse(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    governance_metadata: Any | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
 
 
-class IdeationKnowledgeSummary(BaseSchema):
+class IdeationKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     """Lightweight ideation KB summary (without content)."""
 
     id: str
@@ -1428,6 +1458,7 @@ class IdeationKnowledgeSummary(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    governance_metadata: Any | None = None
     created_at: datetime
 
 
@@ -1670,9 +1701,43 @@ class RefinementKnowledgeCreate(BaseModel):
     description: str | None = Field(None, description="Descricao resumida do KB item do refinement.")
     content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
     mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Envelope opcional e versionado de governanca semantica. "
+            "A validacao canonica ocorre no servico de aplicacao."
+        ),
+    )
 
 
-class RefinementKnowledgeResponse(BaseSchema):
+class RefinementKnowledgeUpdate(BaseModel):
+    """Schema for updating a refinement knowledge base item."""
+
+    title: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Novo titulo do KB item (opcional).",
+    )
+    description: str | None = Field(
+        None, description="Nova descricao resumida (opcional)."
+    )
+    content: str | None = Field(
+        None, min_length=1, description="Novo conteudo do KB item (opcional)."
+    )
+    mime_type: str | None = Field(
+        None, description="Novo MIME type do conteudo (opcional)."
+    )
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Novo envelope de governanca; omitido preserva o valor atual e "
+            "null remove o envelope."
+        ),
+    )
+
+
+class RefinementKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     """Full refinement knowledge base item response."""
 
     id: str
@@ -1686,12 +1751,13 @@ class RefinementKnowledgeResponse(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    governance_metadata: Any | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
 
 
-class RefinementKnowledgeSummary(BaseSchema):
+class RefinementKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     """Lightweight refinement KB summary (without content)."""
 
     id: str
@@ -1704,6 +1770,7 @@ class RefinementKnowledgeSummary(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    governance_metadata: Any | None = None
     created_at: datetime
 
 
@@ -1959,6 +2026,13 @@ class SpecKnowledgeCreate(BaseModel):
     description: str | None = Field(None, description="Descricao resumida do conteudo do KB item.")
     content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
     mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Envelope opcional e versionado de governanca semantica. "
+            "A validacao canonica ocorre no servico de aplicacao."
+        ),
+    )
 
 
 class SpecKnowledgeUpdate(BaseModel):
@@ -1968,9 +2042,16 @@ class SpecKnowledgeUpdate(BaseModel):
     description: str | None = Field(None, description="Nova descricao resumida (opcional).")
     content: str | None = Field(None, description="Novo conteudo do KB item (opcional).")
     mime_type: str | None = Field(None, description="Novo MIME type do conteudo (opcional).")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Novo envelope de governanca; omitido preserva o valor atual e "
+            "null remove o envelope."
+        ),
+    )
 
 
-class SpecKnowledgeResponse(BaseSchema):
+class SpecKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     """Full knowledge base item response."""
 
     id: str
@@ -1984,12 +2065,13 @@ class SpecKnowledgeResponse(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    governance_metadata: Any | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
 
 
-class SpecKnowledgeSummary(BaseSchema):
+class SpecKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     """Lightweight KB summary (without content)."""
 
     id: str
@@ -2002,6 +2084,7 @@ class SpecKnowledgeSummary(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    governance_metadata: Any | None = None
     created_at: datetime
 
 
@@ -2394,6 +2477,23 @@ class CardResponse(BaseSchema):
     cancellation_reason: str | None = None
     cancelled_at: datetime | None = None
     cancelled_by: str | None = None
+
+    @field_validator("knowledge_bases", mode="before")
+    @classmethod
+    def project_knowledge_base_governance(
+        cls, value: list[dict] | None
+    ) -> list[dict] | None:
+        if value is None:
+            return None
+        return [
+            {
+                **item,
+                "governance": project_knowledge_governance(
+                    item.get("governance_metadata")
+                ).as_dict(),
+            }
+            for item in value
+        ]
 
 
 class CardSummary(BaseSchema):

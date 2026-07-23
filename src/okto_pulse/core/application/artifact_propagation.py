@@ -277,6 +277,9 @@ async def propagate_artifacts(
                     "immediate_parent_kb_id": parent_kb_id,
                     "root_source_kb_id": parent_root or parent_kb_id,
                 }
+                governance_metadata = get_value("governance_metadata")
+                if governance_metadata is not None:
+                    payload["governance_metadata"] = governance_metadata
                 await persistence.add(
                     db,
                     ApplicationRecord(

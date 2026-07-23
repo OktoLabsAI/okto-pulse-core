@@ -2,6 +2,10 @@
 version: "1.0"
 ---
 
+Knowledge Base placement and promotion are governed by
+`okto-pulse://reference/knowledge-governance`. Put consequential findings in
+the appropriate first-class artifact and retain only supporting evidence in KB.
+
 # Refinements Workflow — Deep Investigation
 
 ## 2.2 Refinements

@@ -31,6 +31,7 @@ from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.specs import router as specs_router
 from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from knowledge_governance_test_data import valid_governance_metadata
 
 USER = "r01a-fu3d-s4-user"
 OTHER = "r01a-fu3d-s4-other"
@@ -134,6 +135,7 @@ async def test_knowledge_lifecycle_create_get_list_delete(client) -> None:
     created = client.post(f"{PREFIX}/specs/{spec_id}/knowledge", json=_kb_payload())
     assert created.status_code == 201, created.text
     kb_id = created.json()["id"]
+    assert created.json()["governance"]["metadata_status"] == "legacy_incomplete"
 
     got = client.get(f"{PREFIX}/specs/{spec_id}/knowledge/{kb_id}")
     assert got.status_code == 200, got.text
@@ -147,6 +149,27 @@ async def test_knowledge_lifecycle_create_get_list_delete(client) -> None:
     assert deleted.status_code == 204
     # delete really committed: the item is gone on a fresh request.
     assert client.get(f"{PREFIX}/specs/{spec_id}/knowledge/{kb_id}").status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_spec_governance_round_trip_and_invalid_write(client) -> None:
+    spec_id = await _seed_spec()
+    metadata = valid_governance_metadata()
+    payload = {**_kb_payload(), "governance_metadata": metadata}
+
+    created = client.post(f"{PREFIX}/specs/{spec_id}/knowledge", json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["governance"]["metadata"] == metadata
+    kb_id = created.json()["id"]
+    got = client.get(f"{PREFIX}/specs/{spec_id}/knowledge/{kb_id}")
+    assert got.json()["governance"] == created.json()["governance"]
+
+    rejected = client.post(
+        f"{PREFIX}/specs/{spec_id}/knowledge",
+        json={**_kb_payload(), "governance_metadata": {}},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["code"] == "knowledge_governance_invalid_metadata"
 
 
 @pytest.mark.asyncio

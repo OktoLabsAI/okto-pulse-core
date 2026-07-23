@@ -30,13 +30,19 @@ from r3_scenario_helpers import (
 
 from sqlalchemy_test_models import (
     ArchitectureDesign,
+    Board,
     Card,
     Ideation,
     IdeationStatus,
+    Refinement,
+    RefinementKnowledgeBase,
+    RefinementStatus,
     ResourceNotApplicable,
     Spec,
     SpecKnowledgeBase,
+    SpecStatus,
 )
+from knowledge_governance_test_data import valid_governance_metadata
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
 
@@ -292,6 +298,179 @@ async def test_ts_e59fe6ad_derive_spec_from_refinement_still_propagates(db_facto
         getattr(kb, "source_kb_id", None) for kb in kbs
     ]
     assert any(m.get("origin_id") == ref["mockup_id"] for m in mockups), mockups
+
+
+@pytest.mark.asyncio
+async def test_governance_metadata_survives_ideation_refinement_spec_card_chain(
+    db_factory,
+):
+    """AC-A8: governance is additive across the complete real KB pipeline.
+
+    Status assignments are fixture preparation only.  Every artifact creation,
+    KB propagation and read assertion crosses the production MCP/service path.
+    Resource identity, lineage cardinality and gate coverage retain their
+    pre-governance baseline semantics (one effective KB, one covered obligation).
+    """
+    board_id = await new_board(db_factory)
+    metadata = valid_governance_metadata(
+        purpose="Prove AC-A8 end-to-end governance propagation"
+    )
+
+    async with db_factory() as db:
+        board = await db.get(Board, board_id)
+        board.settings = {
+            "auto_derive_spec_resources_enabled": True,
+            "auto_derive_spec_resource_types": ["knowledge_base"],
+        }
+        await db.commit()
+
+    ideation_result = await call_tool(
+        "okto_pulse_create_ideation",
+        board_id=board_id,
+        title="AC-A8 governed source",
+    )
+    assert ideation_result.get("success") is True, ideation_result
+    ideation_id = ideation_result["ideation"]["id"]
+
+    knowledge_result = await call_tool(
+        "okto_pulse_add_ideation_knowledge",
+        board_id=board_id,
+        ideation_id=ideation_id,
+        title="AC-A8 governed KB",
+        content="Reference-only material",
+        governance_metadata=metadata,
+    )
+    assert knowledge_result.get("success") is True, knowledge_result
+    ideation_kb_id = knowledge_result["knowledge"]["id"]
+    assert knowledge_result["knowledge"]["governance"]["metadata"] == metadata
+
+    async with db_factory() as db:
+        ideation = await db.get(Ideation, ideation_id)
+        ideation.status = IdeationStatus.DONE
+        await db.commit()
+
+    refinement_result = await call_tool(
+        "okto_pulse_create_refinement",
+        board_id=board_id,
+        ideation_id=ideation_id,
+        title="AC-A8 governed refinement",
+    )
+    assert refinement_result.get("success") is True, refinement_result
+    refinement_id = refinement_result["refinement"]["id"]
+
+    refinement_context = await call_tool(
+        "okto_pulse_get_refinement_context",
+        board_id=board_id,
+        refinement_id=refinement_id,
+        profile="full",
+    )
+    assert len(refinement_context["knowledge_bases"]) == 1
+    refinement_kb = refinement_context["knowledge_bases"][0]
+    assert refinement_kb["governance"]["metadata"] == metadata
+    assert refinement_kb["source_kb_id"] == ideation_kb_id
+
+    async with db_factory() as db:
+        refinement = await db.get(Refinement, refinement_id)
+        refinement.status = RefinementStatus.DONE
+        await db.commit()
+
+    spec_result = await call_tool(
+        "okto_pulse_derive_spec_from_refinement",
+        board_id=board_id,
+        refinement_id=refinement_id,
+    )
+    assert spec_result.get("success") is True, spec_result
+    spec_id = spec_result["spec"]["id"]
+
+    spec_context_before = await call_tool(
+        "okto_pulse_get_spec_context",
+        board_id=board_id,
+        spec_id=spec_id,
+        profile="full",
+    )
+    assert len(spec_context_before["knowledge_bases"]) == 1
+    spec_kb = spec_context_before["knowledge_bases"][0]
+    assert spec_kb["governance"]["metadata"] == metadata
+    assert spec_kb["source_kb_id"] == refinement_kb["id"]
+
+    baseline_counts = spec_context_before["resource_gate_summary"]["lineage_counts"]
+    assert baseline_counts["unique_effective_count"] == 1
+    # The established lineage baseline reports all three physical hops while
+    # deduplicating them into one effective obligation.
+    assert baseline_counts["raw_attachment_count"] == 3
+    assert baseline_counts["coverage_basis"] == "unique_effective"
+
+    async with db_factory() as db:
+        source = await db.get(RefinementKnowledgeBase, refinement_kb["id"])
+        derived = (
+            await db.execute(
+                select(SpecKnowledgeBase).where(SpecKnowledgeBase.spec_id == spec_id)
+            )
+        ).scalar_one()
+        spec = await db.get(Spec, spec_id)
+        spec.status = SpecStatus.IN_PROGRESS
+        assert source.governance_metadata == metadata
+        assert derived.governance_metadata == metadata
+        assert derived.root_source_kb_id == ideation_kb_id
+        assert derived.immediate_parent_kb_id == source.id
+        await db.commit()
+
+    card_result = await call_tool(
+        "okto_pulse_create_card",
+        board_id=board_id,
+        title="AC-A8 governed task",
+        spec_id=spec_id,
+    )
+    assert card_result.get("success") is True, card_result
+    card_id = card_result["card"]["id"]
+
+    task_context = await call_tool(
+        "okto_pulse_get_task_context",
+        board_id=board_id,
+        card_id=card_id,
+        profile="full",
+    )
+    assert len(task_context["card_knowledge_bases"]) == 1
+    card_kb = task_context["card_knowledge_bases"][0]
+    assert card_kb["governance"]["metadata"] == metadata
+    assert card_kb["source_kb_id"] == spec_kb["id"]
+    assert card_kb["root_source_kb_id"] == ideation_kb_id
+    assert card_kb["immediate_parent_kb_id"] == spec_kb["id"]
+
+    # Card creation/copy does not inflate or reinterpret the Spec's lineage.
+    after_counts = task_context["spec"]["resource_gate_summary"]["lineage_counts"]
+    assert after_counts == baseline_counts
+
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        assert len(card.knowledge_bases) == 1
+        assert card.knowledge_bases[0]["governance_metadata"] == metadata
+        coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
+            board_id,
+            spec_id,
+        )
+
+    assert coverage["allowed"] is True, coverage["uncovered_resources"]
+    assert len(coverage["required_resources"]) == 1
+    obligation = coverage["required_resources"][0]
+    assert obligation["resource_type"] == "knowledge_base"
+    assert obligation["id"] == spec_kb["id"]
+    assert obligation["unique_resource_id"] == f"knowledge_base:{ideation_kb_id}"
+    assert obligation["origin_evidence"]["root_source_kb_id"] == ideation_kb_id
+    coverage_counts = coverage["summary"]["lineage_counts"]
+    for key in (
+        "attachment_count",
+        "raw_attachment_count",
+        "unique_resources_count",
+        "unique_effective_count",
+        "direct_resources_count",
+        "inherited_references_count",
+        "dedup_groups_count",
+        "coverage_basis",
+        "by_unique_resource",
+        "by_resource_type",
+    ):
+        assert coverage_counts[key] == baseline_counts[key]
 
 
 @pytest.mark.asyncio

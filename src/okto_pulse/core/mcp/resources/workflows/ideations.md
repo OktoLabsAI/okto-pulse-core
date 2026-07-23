@@ -2,6 +2,10 @@
 version: "1.0"
 ---
 
+Knowledge Base placement and promotion are governed by
+`okto-pulse://reference/knowledge-governance`. A KB supports the Ideation; it
+does not replace its scope, questions, or first-class downstream artifacts.
+
 # Ideations Workflow — Scope Evaluation & Ambiguity-Killer Protocol
 
 ## 2.1 Ideations

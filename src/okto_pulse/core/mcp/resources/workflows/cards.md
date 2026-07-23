@@ -26,6 +26,12 @@ card; update the source ideation/refinement/spec resource and then run the
 matching copy tool to refresh the card snapshot while preserving the source
 identity used by the Resource Gate.
 
+Read `okto-pulse://reference/knowledge-governance` before deciding that content
+belongs in a KB. The active copy behavior is `legacy_all`: omitting explicit
+IDs copies everything selected by the existing path. Selective propagation v2
+is not available until delivery B; governance metadata does not alter
+selection, fan-out, Resource Gate, or lineage.
+
 **Mandatory before moving the card to `in_progress`:** Complete these steps
 before entering either execution state (`started`/`in_progress`); then follow
 the exact transition edge advertised for the concrete card.

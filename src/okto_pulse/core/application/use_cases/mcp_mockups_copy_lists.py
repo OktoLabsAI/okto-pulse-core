@@ -21,6 +21,9 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases._service_payload import ServicePayload, payload
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
+from okto_pulse.core.services.knowledge_governance_projection import (
+    with_knowledge_governance,
+)
 
 
 @dataclass(frozen=True)
@@ -88,7 +91,7 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[
         for attr in ("created_by", "created_at", "updated_at"):
             if kb.get(attr):
                 data[attr] = kb[attr]
-        return data
+        return with_knowledge_governance(data, kb)
 
     data: dict[str, Any] = {
         "id": getattr(kb, "id", None),
@@ -117,7 +120,7 @@ def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[
         data["created_at"] = kb.created_at.isoformat()
     if getattr(kb, "updated_at", None):
         data["updated_at"] = kb.updated_at.isoformat()
-    return data
+    return with_knowledge_governance(data, kb)
 
 
 def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
@@ -341,7 +344,12 @@ class McpGetCardKnowledgeUseCase:
             raise EntityNotFoundError("card", command.card_id)
         for kb in card.knowledge_bases or []:
             if kb.get("id") == command.knowledge_id:
-                return McpPayloadResult({"success": True, "knowledge": kb})
+                return McpPayloadResult(
+                    {
+                        "success": True,
+                        "knowledge": with_knowledge_governance(dict(kb), kb),
+                    }
+                )
         raise EntityNotFoundError("card_knowledge", command.knowledge_id)
 
 
@@ -706,13 +714,16 @@ class McpListKnowledgeUseCase:
                     "entity_id": command.entity_id,
                     "count": len(items),
                     "knowledge_bases": [
-                        {
-                            "id": kb.id,
-                            "title": kb.title,
-                            "description": kb.description,
-                            "mime_type": kb.mime_type,
-                            "created_at": kb.created_at.isoformat(),
-                        }
+                        with_knowledge_governance(
+                            {
+                                "id": kb.id,
+                                "title": kb.title,
+                                "description": kb.description,
+                                "mime_type": kb.mime_type,
+                                "created_at": kb.created_at.isoformat(),
+                            },
+                            kb,
+                        )
                         for kb in items
                     ],
                 }
@@ -727,7 +738,16 @@ class McpListKnowledgeUseCase:
                     "entity_id": command.entity_id,
                     "count": len(items),
                     "knowledge_bases": [
-                        _serialize_knowledge_base(kb, include_content=False)
+                        with_knowledge_governance(
+                            {
+                                "id": kb.id,
+                                "title": kb.title,
+                                "description": kb.description,
+                                "mime_type": kb.mime_type,
+                                "created_at": kb.created_at.isoformat(),
+                            },
+                            kb,
+                        )
                         for kb in items
                     ],
                 }
@@ -742,13 +762,7 @@ class McpListKnowledgeUseCase:
                     "entity_id": command.entity_id,
                     "count": len(items),
                     "knowledge_bases": [
-                        {
-                            "id": kb.id,
-                            "title": kb.title,
-                            "description": kb.description,
-                            "mime_type": kb.mime_type,
-                            "created_at": kb.created_at.isoformat(),
-                        }
+                        _serialize_knowledge_base(kb, include_content=False)
                         for kb in items
                     ],
                 }
@@ -762,7 +776,9 @@ class McpListKnowledgeUseCase:
                 "entity_type": command.entity_type,
                 "entity_id": command.entity_id,
                 "count": len(kbs),
-                "knowledge_bases": kbs,
+                "knowledge_bases": [
+                    with_knowledge_governance(dict(kb), kb) for kb in kbs
+                ],
             }
         )
 

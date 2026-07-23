@@ -43,6 +43,7 @@ from sqlalchemy_test_models import (
     Spec,
     SpecStatus,
 )
+from knowledge_governance_test_data import valid_governance_metadata
 
 BOARD_ID = "r01a-mcpideation"
 OTHER_BOARD_ID = "r01a-mcpideation-other"
@@ -743,14 +744,53 @@ async def test_knowledge_add_get_roundtrip(_seed):
     added = await _call(
         "okto_pulse_add_ideation_knowledge", board_id=BOARD_ID, ideation_id=iid,
         title="Notes", content="some markdown",
+        governance_metadata=valid_governance_metadata(),
     )
     assert added["success"] is True
+    assert added["knowledge"]["governance"]["metadata_status"] == "complete"
     kb_id = added["knowledge"]["id"]
     got = await _call(
         "okto_pulse_get_ideation_knowledge", board_id=BOARD_ID, ideation_id=iid,
         knowledge_id=kb_id,
     )
     assert got["id"] == kb_id
+    assert got["governance"] == added["knowledge"]["governance"]
+
+    rejected = await _call(
+        "okto_pulse_add_ideation_knowledge",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        title="Invalid",
+        content="body",
+        governance_metadata={},
+    )
+    assert rejected["code"] == "knowledge_governance_invalid_metadata"
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async def kb_count() -> int:
+        async with get_session_factory()() as db:
+            return int(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(IdeationKnowledgeBase)
+                    .where(IdeationKnowledgeBase.ideation_id == iid)
+                )
+                or 0
+            )
+
+    before_blank = await kb_count()
+    blank = await _call(
+        "okto_pulse_add_ideation_knowledge",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        title="Blank metadata",
+        content="body",
+        governance_metadata="",
+    )
+    assert blank["code"] == "knowledge_governance_invalid_metadata"
+    assert blank["issues"][0]["code"] == "invalid_json"
+    assert await kb_count() == before_blank
 
 
 @pytest.mark.asyncio

@@ -36,6 +36,10 @@ from okto_pulse.core.services.activity_log import (
     activity_log_changes,
     activity_log_value,
 )
+from okto_pulse.core.services.card_knowledge_snapshot import (
+    build_card_knowledge_snapshot,
+    card_knowledge_snapshots_equivalent,
+)
 
 
 def _require_actor_board(actor: ActorContext, board_id: str) -> None:
@@ -526,6 +530,9 @@ class McpCopyKnowledgeToCardUseCase:
                     "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
                     "source_kb_id": getattr(kb, "source_kb_id", None),
                     "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
+                    "governance_metadata": getattr(
+                        kb, "governance_metadata", None
+                    ),
                 }
                 for kb in direct_kbs
             ]
@@ -577,52 +584,59 @@ class McpCopyKnowledgeToCardUseCase:
         from okto_pulse.core.services.application_schemas import CardUpdate
 
         existing = list(card.knowledge_bases or [])
-        existing_sources = {
-            str(kb.get("source") or "") for kb in existing if isinstance(kb, dict)
+        source_index = {
+            str(kb.get("source") or ""): index
+            for index, kb in enumerate(existing)
+            if isinstance(kb, dict)
         }
-        existing_ids = {
-            str(kb.get("id") or "") for kb in existing if isinstance(kb, dict)
+        id_index = {
+            str(kb.get("id") or ""): index
+            for index, kb in enumerate(existing)
+            if isinstance(kb, dict)
         }
         copied = 0
         copied_ids: list[str] = []
+        mutated = False
         for it in items:
             if src_type == "spec":
                 source = f"copied_from_spec:{src_id}:{it['id']}"
             else:
                 source = f"copied_from_{src_type}:{src_id}:{it['id']}"
             card_kb_id = f"cardkb_{it['id']}"
-            if source in existing_sources or card_kb_id in existing_ids:
-                continue
-            existing.append(
-                {
-                    "id": card_kb_id,
-                    "title": it["title"],
-                    "description": it.get("description"),
-                    "content": it["content"],
-                    "mime_type": it.get("mime_type") or "text/markdown",
-                    "source": source,
-                    "source_kb_id": it["id"],
-                    "root_source_kb_id": (
-                        it.get("root_source_kb_id")
-                        or it.get("source_kb_id")
-                        or it["id"]
-                    ),
-                    "immediate_parent_kb_id": it["id"],
-                    "author_id": actor.actor_id,
-                }
+            target_idx = source_index.get(source)
+            if target_idx is None:
+                target_idx = id_index.get(card_kb_id)
+            current = existing[target_idx] if target_idx is not None else None
+            copied_payload = build_card_knowledge_snapshot(
+                it,
+                source_entity_type=src_type,
+                source_entity_id=src_id,
+                actor_id=actor.actor_id,
+                existing=current if isinstance(current, dict) else None,
             )
-            existing_sources.add(source)
-            existing_ids.add(card_kb_id)
-            copied_ids.append(card_kb_id)
+            if target_idx is not None:
+                if card_knowledge_snapshots_equivalent(current, copied_payload):
+                    continue
+                existing[target_idx] = copied_payload
+                source_index[source] = target_idx
+                id_index[card_kb_id] = target_idx
+            else:
+                existing.append(copied_payload)
+                new_idx = len(existing) - 1
+                source_index[source] = new_idx
+                id_index[card_kb_id] = new_idx
+            copied_ids.append(str(copied_payload["id"]))
             copied += 1
+            mutated = True
 
-        await uow.services.cards.update_card(
-            command.card_id,
-            actor.actor_id,
-            CardUpdate(knowledge_bases=existing),
-            allow_card_resource_write=True,
-        )
-        await commit(uow)
+        if mutated:
+            await uow.services.cards.update_card(
+                command.card_id,
+                actor.actor_id,
+                CardUpdate(knowledge_bases=existing),
+                allow_card_resource_write=True,
+            )
+            await commit(uow)
         return McpCopyKnowledgeToCardResult(
             copied=copied,
             copied_ids=copied_ids,

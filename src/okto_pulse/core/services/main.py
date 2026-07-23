@@ -41,6 +41,9 @@ from okto_pulse.core.domain.enums import (
     SprintStatus,
     StoryStatus,
 )
+from okto_pulse.core.domain.knowledge_governance import (
+    normalize_knowledge_governance_metadata,
+)
 from okto_pulse.core.domain.sdlc_registry import (
     is_transition_allowed,
     transition_contracts,
@@ -87,6 +90,7 @@ from okto_pulse.core.models.schemas import (
     QAAnswer,
     RefinementCreate,
     RefinementKnowledgeCreate,
+    RefinementKnowledgeUpdate,
     RefinementMove,
     RefinementQAAnswer,
     RefinementQACreate,
@@ -8111,6 +8115,9 @@ class SpecKnowledgeService:
         self, spec_id: str, user_id: str, data: SpecKnowledgeCreate
     ) -> ApplicationRecord | None:
         """Create a knowledge base item on a spec."""
+        governance_metadata = normalize_knowledge_governance_metadata(
+            data.governance_metadata
+        )
         spec = await _application_get(self.db, "spec", spec_id)
         if not spec:
             return None
@@ -8121,6 +8128,7 @@ class SpecKnowledgeService:
             description=data.description,
             content=data.content,
             mime_type=data.mime_type,
+            governance_metadata=governance_metadata,
             created_by=user_id,
         )
         await _application_add(self.db, kb)
@@ -8149,10 +8157,16 @@ class SpecKnowledgeService:
         self, knowledge_id: str, data: SpecKnowledgeUpdate
     ) -> ApplicationRecord | None:
         """Update a knowledge base item."""
+        update_data = data.model_dump(exclude_unset=True)
+        if "governance_metadata" in update_data:
+            update_data["governance_metadata"] = (
+                normalize_knowledge_governance_metadata(
+                    update_data["governance_metadata"]
+                )
+            )
         kb = await self.get_knowledge(knowledge_id)
         if not kb:
             return None
-        update_data = data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(kb, key, value)
         await _application_flush(self.db)
@@ -8201,6 +8215,9 @@ class IdeationKnowledgeService:
         data: IdeationKnowledgeCreate,
     ) -> ApplicationRecord | None:
         """Create a knowledge base item on an ideation."""
+        governance_metadata = normalize_knowledge_governance_metadata(
+            data.governance_metadata
+        )
         ideation = await _application_get(self.db, "ideation", ideation_id)
         if not ideation:
             return None
@@ -8211,6 +8228,7 @@ class IdeationKnowledgeService:
             description=data.description,
             content=data.content,
             mime_type=data.mime_type,
+            governance_metadata=governance_metadata,
             created_by=user_id,
         )
         await _application_add(self.db, kb)
@@ -8235,10 +8253,16 @@ class IdeationKnowledgeService:
         data: IdeationKnowledgeUpdate,
     ) -> ApplicationRecord | None:
         """Update a knowledge base item."""
+        update_data = data.model_dump(exclude_unset=True)
+        if "governance_metadata" in update_data:
+            update_data["governance_metadata"] = (
+                normalize_knowledge_governance_metadata(
+                    update_data["governance_metadata"]
+                )
+            )
         kb = await self.get_knowledge(knowledge_id)
         if not kb:
             return None
-        update_data = data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(kb, key, value)
         return kb
@@ -10799,7 +10823,8 @@ class RefinementService:
              "source_version": getattr(kb, "source_version", None),
              "source_kb_id": getattr(kb, "source_kb_id", None),
              "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
-             "immediate_parent_kb_id": getattr(kb, "immediate_parent_kb_id", None)}
+             "immediate_parent_kb_id": getattr(kb, "immediate_parent_kb_id", None),
+             "governance_metadata": getattr(kb, "governance_metadata", None)}
             for kb in (refinement.knowledge_bases or [])
         ]
 
@@ -11012,6 +11037,9 @@ class RefinementKnowledgeService:
 
     async def create_knowledge(self, refinement_id: str, user_id: str, data: RefinementKnowledgeCreate) -> RefinementKnowledgeBase | None:
         """Create a knowledge base item on a refinement."""
+        governance_metadata = normalize_knowledge_governance_metadata(
+            data.governance_metadata
+        )
         refinement = await _application_get(self.db, "refinement", refinement_id)
         if not refinement:
             return None
@@ -11022,6 +11050,7 @@ class RefinementKnowledgeService:
             description=data.description,
             content=data.content,
             mime_type=data.mime_type,
+            governance_metadata=governance_metadata,
             created_by=user_id,
         )
         await _application_add(self.db, kb)
@@ -11039,6 +11068,26 @@ class RefinementKnowledgeService:
             filters=(_apf("refinement_id", "eq", refinement_id),),
             order_by=(("created_at", False),),
         )
+
+    async def update_knowledge(
+        self,
+        knowledge_id: str,
+        data: RefinementKnowledgeUpdate,
+    ) -> RefinementKnowledgeBase | None:
+        """Update a refinement knowledge base item."""
+        update_data = data.model_dump(exclude_unset=True)
+        if "governance_metadata" in update_data:
+            update_data["governance_metadata"] = (
+                normalize_knowledge_governance_metadata(
+                    update_data["governance_metadata"]
+                )
+            )
+        kb = await self.get_knowledge(knowledge_id)
+        if not kb:
+            return None
+        for key, value in update_data.items():
+            setattr(kb, key, value)
+        return kb
 
     async def delete_knowledge(self, knowledge_id: str) -> bool:
         """Delete a knowledge base item."""

@@ -325,7 +325,7 @@ def _kb_dicts(entity, *, source_type: str, source_id: str | None,
     ``source_kb_id`` on the target so the gate can match the obligation."""
     out: list[dict[str, Any]] = []
     for kb in (getattr(entity, "knowledge_bases", None) or []):
-        out.append({
+        payload = {
             "id": kb.id,
             "title": kb.title,
             "description": getattr(kb, "description", None),
@@ -338,7 +338,11 @@ def _kb_dicts(entity, *, source_type: str, source_id: str | None,
             "source_id": source_id,
             "source_title": source_title,
             "source_version": source_version,
-        })
+        }
+        governance_metadata = getattr(kb, "governance_metadata", None)
+        if governance_metadata is not None:
+            payload["governance_metadata"] = governance_metadata
+        out.append(payload)
     return out
 
 

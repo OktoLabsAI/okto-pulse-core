@@ -49,6 +49,7 @@ async def call_tool(name: str, **kwargs) -> dict:
     register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
+         patch.object(mcp_server, "_mcp_check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_architecture_copy_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
         raw = await tool.fn(**kwargs)

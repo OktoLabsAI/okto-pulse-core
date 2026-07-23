@@ -43,6 +43,7 @@ from sqlalchemy_test_models import (
     SpecQAItem,
     SpecStatus,
 )
+from knowledge_governance_test_data import valid_governance_metadata
 
 BOARD_ID = "r01a-mcpspec"
 OTHER_BOARD_ID = "r01a-mcpspec-other"
@@ -844,9 +845,55 @@ async def test_spec_knowledge_same_board_lifecycle(_seed) -> None:
         spec_id=_seed,
         title="same-board KB",
         content="same-board content",
+        governance_metadata=valid_governance_metadata(),
     )
     assert added["success"] is True
+    assert added["knowledge"]["governance"]["metadata_status"] == "complete"
     added_id = added["knowledge"]["id"]
+
+    governed = await _call(
+        "okto_pulse_get_spec_knowledge",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        knowledge_id=added_id,
+    )
+    assert governed["governance"] == added["knowledge"]["governance"]
+
+    rejected = await _call(
+        "okto_pulse_add_spec_knowledge",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        title="Invalid",
+        content="body",
+        governance_metadata={},
+    )
+    assert rejected["code"] == "knowledge_governance_invalid_metadata"
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async def kb_count() -> int:
+        async with get_session_factory()() as db:
+            return int(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(SpecKnowledgeBase)
+                    .where(SpecKnowledgeBase.spec_id == _seed)
+                )
+                or 0
+            )
+
+    before_blank = await kb_count()
+    blank = await _call(
+        "okto_pulse_add_spec_knowledge",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+        title="Blank metadata",
+        content="body",
+        governance_metadata="",
+    )
+    assert blank["code"] == "knowledge_governance_invalid_metadata"
+    assert blank["issues"][0]["code"] == "invalid_json"
+    assert await kb_count() == before_blank
 
     deleted = await _call(
         "okto_pulse_delete_spec_knowledge",

@@ -44,6 +44,7 @@ from okto_pulse.community.api.refinements import router as refinements_router
 from okto_pulse.community.api.auth_deps import get_realm_id, require_user
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from knowledge_governance_test_data import valid_governance_metadata
 
 USER = "r01a-fu6-s3-user"
 OTHER = "r01a-fu6-s3-other"
@@ -403,6 +404,7 @@ async def test_refinement_knowledge_create_list_get_delete(client) -> None:
     )
     assert created.status_code == 201, created.text
     kid = created.json()["id"]
+    assert created.json()["governance"]["metadata_status"] == "legacy_incomplete"
 
     listed = client.get(f"{PREFIX}/refinements/{rid}/knowledge")
     assert listed.status_code == 200
@@ -418,6 +420,31 @@ async def test_refinement_knowledge_create_list_get_delete(client) -> None:
     second = client.delete(f"{PREFIX}/refinements/{rid}/knowledge/{kid}")
     assert second.status_code == 404
     assert second.json()["detail"] == "Knowledge base item not found"
+
+
+@pytest.mark.asyncio
+async def test_refinement_governance_round_trip_and_invalid_write(client) -> None:
+    _, ideation_id = await _seed_ideation(status="done")
+    rid = await _seed_refinement(ideation_id)
+    metadata = valid_governance_metadata()
+
+    created = client.post(
+        f"{PREFIX}/refinements/{rid}/knowledge",
+        json={"title": "Governed", "content": "body", "governance_metadata": metadata},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["governance"]["metadata"] == metadata
+    kid = created.json()["id"]
+    assert client.get(
+        f"{PREFIX}/refinements/{rid}/knowledge/{kid}"
+    ).json()["governance"] == created.json()["governance"]
+
+    rejected = client.post(
+        f"{PREFIX}/refinements/{rid}/knowledge",
+        json={"title": "Invalid", "content": "body", "governance_metadata": {}},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["code"] == "knowledge_governance_invalid_metadata"
 
 
 @pytest.mark.asyncio

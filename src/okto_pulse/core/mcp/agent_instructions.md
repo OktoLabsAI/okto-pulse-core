@@ -17,6 +17,7 @@ You MUST `resources/read` the matching URI below before operating on that entity
 | Create or evaluate a sprint | `okto-pulse://workflows/sprints` |
 | Query or consolidate the KG | `okto-pulse://workflows/kg` |
 | Diagnose an error message | `okto-pulse://reference/errors` |
+| Decide what belongs in a Knowledge Base or promote a KB finding | `okto-pulse://reference/knowledge-governance` |
 | Pass a value that may contain `\|` | `okto-pulse://reference/multivalue` |
 | Delete/archive something (destructive ops) | `okto-pulse://reference/destructive_ops` |
 | Understand card type rules (test/bug/normal) | `okto-pulse://reference/card_types` |

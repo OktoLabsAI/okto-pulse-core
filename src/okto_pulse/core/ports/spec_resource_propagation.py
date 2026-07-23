@@ -36,6 +36,10 @@ class ResourcePropagationKnowledgeBaseFact:
     description: str | None
     content: str
     mime_type: str
+    source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    governance_metadata: dict[str, Any] | None = None
 
 
 class SpecResourcePropagationStore(Protocol):

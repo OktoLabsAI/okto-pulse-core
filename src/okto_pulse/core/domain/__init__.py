@@ -5,6 +5,13 @@ resolver/gate without pulling heavy database dependencies.
 """
 
 from okto_pulse.core.domain.entities import Board, Ideation, Spec
+from okto_pulse.core.domain.knowledge_governance import (
+    KnowledgeGovernanceInvalidMetadata,
+    KnowledgeGovernanceMetadataV1,
+    normalize_knowledge_governance_metadata,
+    parse_knowledge_governance_metadata,
+    project_knowledge_governance,
+)
 from okto_pulse.core.domain.realm import (
     LOCAL_REALM_ID,
     MissingRealmScope,
@@ -16,10 +23,15 @@ from okto_pulse.core.domain.realm import (
 __all__ = [
     "Board",
     "Ideation",
+    "KnowledgeGovernanceInvalidMetadata",
+    "KnowledgeGovernanceMetadataV1",
     "LOCAL_REALM_ID",
     "MissingRealmScope",
     "RealmIsolationViolation",
     "RealmScope",
     "Spec",
+    "normalize_knowledge_governance_metadata",
+    "parse_knowledge_governance_metadata",
+    "project_knowledge_governance",
     "require_realm_scope",
 ]

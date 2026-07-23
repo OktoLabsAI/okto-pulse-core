@@ -95,6 +95,12 @@ from okto_pulse.core.services.gate_contracts import (
 from okto_pulse.core.services.human_control_metrics import (
     emit_human_control_required,
 )
+from okto_pulse.core.services.knowledge_governance_projection import (
+    with_knowledge_governance,
+)
+from okto_pulse.core.domain.knowledge_governance import (
+    KnowledgeGovernanceInvalidMetadata,
+)
 from okto_pulse.core.services.main import (
     CARD_RESOURCE_READ_ONLY_MESSAGE,
     CardOperationError,
@@ -331,6 +337,11 @@ _CORE_RESOURCE_TABLE = [
         "okto-pulse://reference/errors",
         "reference/errors.md",
         "MCP errors matrix com fixes canônicos.",
+    ),
+    (
+        "okto-pulse://reference/knowledge-governance",
+        "reference/knowledge-governance.md",
+        "Canonical Knowledge Base authority, placement, metadata, and promotion policy.",
     ),
     (
         "okto-pulse://reference/multivalue",
@@ -1422,7 +1433,7 @@ def _serialize_knowledge_base(
         for attr in ("created_by", "created_at", "updated_at"):
             if kb.get(attr):
                 data[attr] = kb[attr]
-        return data
+        return with_knowledge_governance(data, kb)
 
     data: dict[str, Any] = {
         "id": getattr(kb, "id", None),
@@ -1451,7 +1462,7 @@ def _serialize_knowledge_base(
         data["created_at"] = kb.created_at.isoformat()
     if getattr(kb, "updated_at", None):
         data["updated_at"] = kb.updated_at.isoformat()
-    return data
+    return with_knowledge_governance(data, kb)
 
 
 def _mcp_spec_coverage_summary(spec: Any) -> dict[str, Any]:
@@ -1501,6 +1512,29 @@ def _parse_json_arg(value: Any, default: Any) -> tuple[Any, str | None]:
         return json.loads(value), None
     except Exception as exc:
         return None, f"Invalid JSON argument: {exc}"
+
+
+def _parse_knowledge_governance_arg(
+    value: dict[str, Any] | str | None,
+) -> tuple[Any, str | None]:
+    if value is None or isinstance(value, dict):
+        return value, None
+    try:
+        return json.loads(value), None
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        error = f"Invalid JSON argument: {exc}"
+    return None, json.dumps(
+        {
+            "code": "knowledge_governance_invalid_metadata",
+            "issues": [
+                {
+                    "path": "governance_metadata",
+                    "code": "invalid_json",
+                    "detail": error,
+                }
+            ],
+        }
+    )
 
 
 def _mcp_architecture_error(exc: Exception) -> str:
@@ -3060,7 +3094,10 @@ async def okto_pulse_get_task_context(
 
                 # Card-own knowledge bases (JSON field)
                 if _inc_kb and card.knowledge_bases:
-                    result["card_knowledge_bases"] = card.knowledge_bases
+                    result["card_knowledge_bases"] = [
+                        with_knowledge_governance(dict(kb), kb)
+                        for kb in card.knowledge_bases
+                    ]
 
                 # Filter test scenarios relevant to this card
                 if card.test_scenario_ids and spec.test_scenarios:
@@ -6015,6 +6052,7 @@ async def okto_pulse_add_ideation_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
+    governance_metadata: dict[str, Any] | str | None = None,
 ) -> str:
     """
     Add a knowledge base item to an ideation.
@@ -6037,6 +6075,12 @@ async def okto_pulse_add_ideation_knowledge(
     if err:
         return json.dumps({"error": err})
 
+    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+        governance_metadata
+    )
+    if governance_error:
+        return governance_error
+
     from okto_pulse.core.models.schemas import IdeationKnowledgeCreate
 
     kb_data = IdeationKnowledgeCreate(
@@ -6044,6 +6088,7 @@ async def okto_pulse_add_ideation_knowledge(
         description=description or None,
         content=resolved_content,
         mime_type=mime_type,
+        governance_metadata=parsed_governance,
     )
 
     from okto_pulse.core.application.use_cases import (
@@ -6063,6 +6108,8 @@ async def okto_pulse_add_ideation_knowledge(
             )
         except EntityNotFoundError:
             return json.dumps({"error": "Ideation not found"})
+        except KnowledgeGovernanceInvalidMetadata as exc:
+            return json.dumps(exc.to_error_dict())
         if not _r.kb:
             return json.dumps({"error": "Failed to create knowledge base item"})
         return json.dumps(
@@ -13562,14 +13609,17 @@ async def okto_pulse_get_spec_knowledge(
         return json.dumps({"error": "Knowledge base item not found"})
 
     return json.dumps(
-        {
-            "id": kb.id,
-            "title": kb.title,
-            "description": kb.description,
-            "content": kb.content,
-            "mime_type": kb.mime_type,
-            "created_at": kb.created_at.isoformat(),
-        },
+        with_knowledge_governance(
+            {
+                "id": kb.id,
+                "title": kb.title,
+                "description": kb.description,
+                "content": kb.content,
+                "mime_type": kb.mime_type,
+                "created_at": kb.created_at.isoformat(),
+            },
+            kb,
+        ),
         default=str,
     )
 
@@ -13583,6 +13633,7 @@ async def okto_pulse_add_spec_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
+    governance_metadata: dict[str, Any] | str | None = None,
 ) -> str:
     """
     Add a knowledge base item to a spec. Use this to attach reference documents,
@@ -13602,6 +13653,12 @@ async def okto_pulse_add_spec_knowledge(
     )
     if err:
         return json.dumps({"error": err})
+
+    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+        governance_metadata
+    )
+    if governance_error:
+        return governance_error
 
     from okto_pulse.core.application.use_cases import (
         CreateSpecKnowledgeCommand,
@@ -13623,6 +13680,7 @@ async def okto_pulse_add_spec_knowledge(
                             description=description or None,
                             content=resolved_content,
                             mime_type=mime_type,
+                            governance_metadata=parsed_governance,
                         ),
                     ),
                     actor=actor,
@@ -13633,15 +13691,13 @@ async def okto_pulse_add_spec_knowledge(
         return json.dumps(
             {"error": "Failed to create knowledge base item — spec not found"}
         )
+    except KnowledgeGovernanceInvalidMetadata as exc:
+        return json.dumps(exc.to_error_dict())
 
     return json.dumps(
         {
             "success": True,
-            "knowledge": {
-                "id": kb.id,
-                "title": kb.title,
-                "mime_type": kb.mime_type,
-            },
+            "knowledge": _serialize_knowledge_base(kb),
         },
         default=str,
     )
@@ -13789,14 +13845,17 @@ async def okto_pulse_get_refinement_knowledge(
             return json.dumps({"error": "Knowledge base item not found"})
         kb = _r.kb
         return json.dumps(
-            {
-                "id": kb.id,
-                "title": kb.title,
-                "description": kb.description,
-                "content": kb.content,
-                "mime_type": kb.mime_type,
-                "created_at": kb.created_at.isoformat(),
-            },
+            with_knowledge_governance(
+                {
+                    "id": kb.id,
+                    "title": kb.title,
+                    "description": kb.description,
+                    "content": kb.content,
+                    "mime_type": kb.mime_type,
+                    "created_at": kb.created_at.isoformat(),
+                },
+                kb,
+            ),
             default=str,
         )
 
@@ -13810,6 +13869,7 @@ async def okto_pulse_add_refinement_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
+    governance_metadata: dict[str, Any] | str | None = None,
 ) -> str:
     """
     Add a knowledge base item to a refinement. Use this to attach reference documents,
@@ -13830,6 +13890,12 @@ async def okto_pulse_add_refinement_knowledge(
     if err:
         return json.dumps({"error": err})
 
+    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+        governance_metadata
+    )
+    if governance_error:
+        return governance_error
+
     from okto_pulse.core.models.schemas import RefinementKnowledgeCreate
 
     kb_data = RefinementKnowledgeCreate(
@@ -13837,6 +13903,7 @@ async def okto_pulse_add_refinement_knowledge(
         description=description or None,
         content=resolved_content,
         mime_type=mime_type,
+        governance_metadata=parsed_governance,
     )
 
     from okto_pulse.core.application.use_cases import (
@@ -13847,11 +13914,14 @@ async def okto_pulse_add_refinement_knowledge(
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        _r = await McpAddRefinementKnowledgeUseCase().execute(
-            McpAddRefinementKnowledgeCommand(refinement_id, board_id, kb_data),
-            actor=actor,
-            uow=uow,
-        )
+        try:
+            _r = await McpAddRefinementKnowledgeUseCase().execute(
+                McpAddRefinementKnowledgeCommand(refinement_id, board_id, kb_data),
+                actor=actor,
+                uow=uow,
+            )
+        except KnowledgeGovernanceInvalidMetadata as exc:
+            return json.dumps(exc.to_error_dict())
         if not _r.kb:
             return json.dumps(
                 {"error": "Failed to create knowledge base item — refinement not found"}
@@ -13860,11 +13930,7 @@ async def okto_pulse_add_refinement_knowledge(
         return json.dumps(
             {
                 "success": True,
-                "knowledge": {
-                    "id": kb.id,
-                    "title": kb.title,
-                    "mime_type": kb.mime_type,
-                },
+                "knowledge": _serialize_knowledge_base(kb),
             },
             default=str,
         )

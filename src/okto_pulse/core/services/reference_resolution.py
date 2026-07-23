@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from okto_pulse.core.services.knowledge_governance_projection import (
+    with_knowledge_governance,
+)
+
 from okto_pulse.core.services.analytics_service import (
     resolve_linked_criteria_to_indices,
     resolve_linked_fr_indices,
@@ -194,7 +198,7 @@ def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
         ):
             if kb.get(attr) is not None:
                 data[attr] = kb.get(attr)
-        return data
+        return with_knowledge_governance(data, kb)
 
     data: dict[str, Any] = {
         "id": getattr(kb, "id", None),
@@ -217,7 +221,7 @@ def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
         value = getattr(kb, attr, None)
         if value is not None:
             data[attr] = value.isoformat() if hasattr(value, "isoformat") else value
-    return data
+    return with_knowledge_governance(data, kb)
 
 
 def _serialize_mockup(mockup: Any) -> dict[str, Any] | None:

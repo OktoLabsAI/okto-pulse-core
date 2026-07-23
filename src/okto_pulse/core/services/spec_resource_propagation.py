@@ -19,6 +19,10 @@ from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitecturePropagationService,
 )
+from okto_pulse.core.services.card_knowledge_snapshot import (
+    build_card_knowledge_snapshot,
+    card_knowledge_snapshots_equivalent,
+)
 
 
 SUPPORTED_RESOURCE_TYPES = ("knowledge_base", "architecture", "mockup")
@@ -233,28 +237,19 @@ class SpecResourcePropagationService:
             target_idx = source_index.get(source)
             if target_idx is None:
                 target_idx = id_index.get(card_kb_id)
-            new_payload = {
-                "id": card_kb_id,
-                "title": kb.title,
-                "description": getattr(kb, "description", None),
-                "content": kb.content,
-                "mime_type": getattr(kb, "mime_type", None) or "text/markdown",
-                "source": source,
-                "author_id": actor_id,
-            }
+            current = existing[target_idx] if target_idx is not None else None
+            new_payload = build_card_knowledge_snapshot(
+                kb,
+                source_entity_type="spec",
+                source_entity_id=spec.id,
+                actor_id=actor_id,
+                existing=current if isinstance(current, dict) else None,
+            )
             if target_idx is not None:
-                current = existing[target_idx]
-                preserved_author = (
-                    current.get("author_id") if isinstance(current, dict) else None
-                ) or actor_id
-                refreshed = {**new_payload, "author_id": preserved_author}
-                if isinstance(current, dict) and all(
-                    current.get(key) == refreshed.get(key)
-                    for key in ("title", "description", "content", "mime_type", "source")
-                ):
+                if card_knowledge_snapshots_equivalent(current, new_payload):
                     ignored += 1
                     continue
-                existing[target_idx] = refreshed
+                existing[target_idx] = new_payload
                 source_index[source] = target_idx
                 id_index[card_kb_id] = target_idx
                 copied_ids.append(card_kb_id)

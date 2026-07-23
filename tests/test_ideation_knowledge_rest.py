@@ -12,6 +12,7 @@ from okto_pulse.community.api.ideations import router as ideations_router
 from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from sqlalchemy_test_models import Board, Ideation
+from knowledge_governance_test_data import valid_governance_metadata
 
 
 USER_ID = "ideation-kb-rest-user"
@@ -62,6 +63,8 @@ def test_create_list_get_delete_ideation_knowledge(_client_and_ideation):
     created = created_resp.json()
     assert created["title"] == "Discovery notes"
     assert created["content"] == "Important ideation context"
+    assert created["governance"]["metadata_status"] == "legacy_incomplete"
+    assert created["governance"]["missing_fields"] == ["governance_metadata"]
 
     listing_resp = client.get(f"/api/v1/ideations/{ideation_id}/knowledge")
     assert listing_resp.status_code == 200
@@ -78,3 +81,41 @@ def test_create_list_get_delete_ideation_knowledge(_client_and_ideation):
     after_resp = client.get(f"/api/v1/ideations/{ideation_id}/knowledge")
     assert after_resp.status_code == 200
     assert created["id"] not in [item["id"] for item in after_resp.json()]
+
+
+def test_governed_ideation_kb_round_trip_and_invalid_write_is_atomic(
+    _client_and_ideation,
+):
+    client, ideation_id = _client_and_ideation
+    payload = {
+        "title": "Governed notes",
+        "content": "Reference body",
+        "governance_metadata": valid_governance_metadata(),
+    }
+
+    created = client.post(
+        f"/api/v1/ideations/{ideation_id}/knowledge", json=payload
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["governance"]["metadata_status"] == "complete"
+    assert body["governance"]["metadata"] == payload["governance_metadata"]
+
+    got = client.get(
+        f"/api/v1/ideations/{ideation_id}/knowledge/{body['id']}"
+    ).json()
+    assert got["governance"] == body["governance"]
+    before = client.get(f"/api/v1/ideations/{ideation_id}/knowledge").json()
+
+    rejected = client.post(
+        f"/api/v1/ideations/{ideation_id}/knowledge",
+        json={"title": "Invalid", "content": "body", "governance_metadata": {}},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["code"] == "knowledge_governance_invalid_metadata"
+    assert rejected.json()["issues"] == sorted(
+        rejected.json()["issues"],
+        key=lambda item: (item["path"], item["code"], item["detail"]),
+    )
+    after = client.get(f"/api/v1/ideations/{ideation_id}/knowledge").json()
+    assert [item["id"] for item in after] == [item["id"] for item in before]

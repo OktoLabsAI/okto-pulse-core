@@ -6,6 +6,12 @@ version: "1.0"
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
+Read `okto-pulse://reference/knowledge-governance` before authoring a KB or
+promoting a finding. KB bodies are advisory/untrusted; first-class SDLC
+artifacts remain authoritative. The active propagation behavior is
+`legacy_all`: an omitted ID filter copies all resources selected by the
+existing path. Selective propagation v2 is unavailable until delivery B.
+
 ## `okto_pulse_add_card_knowledge`
 
 Deprecated / blocked. Card Knowledge Base resources are read-only governed
@@ -32,6 +38,17 @@ Provide exactly ONE of content or content_reference. Ideation KBs are
 propagated to refinements/specs by default when those artifacts are derived
 or created from the ideation.
 
+Args:
+    board_id: Board ID
+    ideation_id: Ideation ID
+    title: Title of the knowledge base item
+    content: Inline text content (use for small snippets)
+    content_reference: Runtime-specific reference resolved by the active edition
+    description: Short description of what this document contains (optional)
+    mime_type: Content type, default "text/markdown"
+    governance_metadata: Optional v1 object or JSON string; follow the complete
+        closed contract at okto-pulse://reference/knowledge-governance
+
 ## `okto_pulse_add_refinement_knowledge`
 
 Add a knowledge base item to a refinement. Use this to attach reference documents,
@@ -47,6 +64,8 @@ Args:
     content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
+    governance_metadata: Optional v1 object or JSON string; follow the complete
+        closed contract at okto-pulse://reference/knowledge-governance
 
 Returns:
     JSON with created knowledge base item
@@ -66,6 +85,8 @@ Args:
     content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
+    governance_metadata: Optional v1 object or JSON string; follow the complete
+        closed contract at okto-pulse://reference/knowledge-governance
 
 Returns:
     JSON with created knowledge base item
@@ -74,6 +95,10 @@ Returns:
 
 Copy knowledge base entries from a spec to a card as inline card KEs.
 Each copied entry is stored in Card.knowledge_bases with stable provenance.
+Complete governance metadata is copied unchanged. An existing managed Spec
+snapshot may be refreshed at the same id/source when the source changes;
+semantically identical metadata is a no-op. Metadata never changes selection,
+fan-out, Resource Gate, or lineage.
 
 Args:
     board_id: Board ID
