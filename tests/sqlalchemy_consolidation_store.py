@@ -8,9 +8,18 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import selectinload
 
 from sqlalchemy_test_models import (
-    AmendmentHotfixRevision, ArtifactDeletionTombstone, Board, CanonicalDebt, Card,
-    ConsolidationDeadLetter, ConsolidationQueue, Ideation, Refinement, Spec,
-    Sprint, Story,
+    AmendmentHotfixRevision,
+    ArtifactDeletionTombstone,
+    Board,
+    CanonicalDebt,
+    Card,
+    ConsolidationDeadLetter,
+    ConsolidationQueue,
+    Ideation,
+    Refinement,
+    Spec,
+    Sprint,
+    Story,
 )
 from okto_pulse.core.ports.consolidation import (
     ConsolidationPoisonRow,
@@ -27,19 +36,29 @@ from okto_pulse.core.ports.tombstone import (
 
 
 _MODELS = {
-    "story": Story, "ideation": Ideation, "refinement": Refinement,
-    "spec": Spec, "sprint": Sprint, "card": Card,
+    "story": Story,
+    "ideation": Ideation,
+    "refinement": Refinement,
+    "spec": Spec,
+    "sprint": Sprint,
+    "card": Card,
     "amendment_hotfix_revision": AmendmentHotfixRevision,
 }
 
 
 def _record(row: Any) -> ConsolidationQueueRecord:
     return ConsolidationQueueRecord(
-        id=str(row.id), board_id=str(row.board_id), artifact_type=str(row.artifact_type),
-        artifact_id=str(row.artifact_id), status=str(row.status),
-        attempts=int(row.attempts or 0), last_error=row.last_error,
-        next_retry_at=row.next_retry_at, claimed_at=row.claimed_at,
-        claim_timeout_at=row.claim_timeout_at, worker_id=row.worker_id,
+        id=str(row.id),
+        board_id=str(row.board_id),
+        artifact_type=str(row.artifact_type),
+        artifact_id=str(row.artifact_id),
+        status=str(row.status),
+        attempts=int(row.attempts or 0),
+        last_error=row.last_error,
+        next_retry_at=row.next_retry_at,
+        claimed_at=row.claimed_at,
+        claim_timeout_at=row.claim_timeout_at,
+        worker_id=row.worker_id,
         claimed_by_session_id=row.claimed_by_session_id,
         triggered_at=row.triggered_at,
         priority=str(getattr(row.priority, "value", row.priority)),
@@ -53,8 +72,15 @@ def _record(row: Any) -> ConsolidationQueueRecord:
 
 def _apply(row: Any, record: ConsolidationQueueRecord) -> None:
     for name in (
-        "status", "attempts", "last_error", "next_retry_at", "claimed_at",
-        "claim_timeout_at", "worker_id", "claimed_by_session_id", "claim_token",
+        "status",
+        "attempts",
+        "last_error",
+        "next_retry_at",
+        "claimed_at",
+        "claim_timeout_at",
+        "worker_id",
+        "claimed_by_session_id",
+        "claim_token",
     ):
         setattr(row, name, getattr(record, name))
 
@@ -99,20 +125,24 @@ class TestSqlAlchemyConsolidationPersistence:
         self, context, *, now, legacy_cutoff
     ) -> tuple[ConsolidationQueueRecord, ...]:
         rows = (
-            await context.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.status == "claimed",
-                    or_(
-                        ConsolidationQueue.claim_token.is_(None),
-                        ConsolidationQueue.claim_timeout_at.is_not(None)
-                        & (ConsolidationQueue.claim_timeout_at < now),
-                        ConsolidationQueue.claim_timeout_at.is_(None)
-                        & ConsolidationQueue.claimed_at.is_not(None)
-                        & (ConsolidationQueue.claimed_at < legacy_cutoff),
-                    ),
+            (
+                await context.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.status == "claimed",
+                        or_(
+                            ConsolidationQueue.claim_token.is_(None),
+                            ConsolidationQueue.claim_timeout_at.is_not(None)
+                            & (ConsolidationQueue.claim_timeout_at < now),
+                            ConsolidationQueue.claim_timeout_at.is_(None)
+                            & ConsolidationQueue.claimed_at.is_not(None)
+                            & (ConsolidationQueue.claimed_at < legacy_cutoff),
+                        ),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return tuple(_record(row) for row in rows)
 
     async def count_pending(self, context) -> int:
@@ -123,36 +153,44 @@ class TestSqlAlchemyConsolidationPersistence:
 
     async def list_claimed_board_ids(self, context) -> frozenset[str]:
         rows = (
-            await context.execute(
-                select(ConsolidationQueue.board_id).where(
-                    ConsolidationQueue.status == "claimed"
+            (
+                await context.execute(
+                    select(ConsolidationQueue.board_id).where(
+                        ConsolidationQueue.status == "claimed"
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return frozenset(str(value) for value in rows)
 
     async def list_ready_pending(
         self, context, *, now
     ) -> tuple[ConsolidationQueueRecord, ...]:
         rows = (
-            await context.execute(
-                select(ConsolidationQueue)
-                .where(
-                    ConsolidationQueue.status == "pending",
-                    ConsolidationQueue.work_kind.in_(
-                        ("consolidate", "stale_reconcile")
-                    ),
-                    or_(
-                        ConsolidationQueue.next_retry_at.is_(None),
-                        ConsolidationQueue.next_retry_at <= now,
-                    ),
-                )
-                .order_by(
-                    ConsolidationQueue.priority.asc(),
-                    ConsolidationQueue.triggered_at.asc(),
+            (
+                await context.execute(
+                    select(ConsolidationQueue)
+                    .where(
+                        ConsolidationQueue.status == "pending",
+                        ConsolidationQueue.work_kind.in_(
+                            ("consolidate", "stale_reconcile")
+                        ),
+                        or_(
+                            ConsolidationQueue.next_retry_at.is_(None),
+                            ConsolidationQueue.next_retry_at <= now,
+                        ),
+                    )
+                    .order_by(
+                        ConsolidationQueue.priority.asc(),
+                        ConsolidationQueue.triggered_at.asc(),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return tuple(_record(row) for row in rows)
 
     async def get_queue_entry(
@@ -347,14 +385,19 @@ class TestSqlAlchemyConsolidationPersistence:
             raise ValueError("invalid_reconcile_intent_identity")
 
         tombstone = (
-            await context.execute(
-                select(ArtifactDeletionTombstone).where(
-                    ArtifactDeletionTombstone.board_id == request.board_id,
-                    ArtifactDeletionTombstone.artifact_type == request.artifact_type,
-                    ArtifactDeletionTombstone.artifact_id == request.artifact_id,
+            (
+                await context.execute(
+                    select(ArtifactDeletionTombstone).where(
+                        ArtifactDeletionTombstone.board_id == request.board_id,
+                        ArtifactDeletionTombstone.artifact_type
+                        == request.artifact_type,
+                        ArtifactDeletionTombstone.artifact_id == request.artifact_id,
+                    )
                 )
             )
-        ).scalars().one_or_none()
+            .scalars()
+            .one_or_none()
+        )
         if (
             tombstone is None
             or int(tombstone.generation) != request.generation
@@ -399,16 +442,20 @@ class TestSqlAlchemyConsolidationPersistence:
         persisted_id = (await context.execute(statement)).scalar_one_or_none()
         if persisted_id is None:
             existing = (
-                await context.execute(
-                    select(ConsolidationQueue).where(
-                        ConsolidationQueue.board_id == request.board_id,
-                        ConsolidationQueue.artifact_type == request.artifact_type,
-                        ConsolidationQueue.artifact_id == request.artifact_id,
-                        ConsolidationQueue.work_kind == "stale_reconcile",
-                        ConsolidationQueue.generation == request.generation,
+                (
+                    await context.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == request.board_id,
+                            ConsolidationQueue.artifact_type == request.artifact_type,
+                            ConsolidationQueue.artifact_id == request.artifact_id,
+                            ConsolidationQueue.work_kind == "stale_reconcile",
+                            ConsolidationQueue.generation == request.generation,
+                        )
                     )
                 )
-            ).scalars().one()
+                .scalars()
+                .one()
+            )
             if (
                 str(existing.delete_event_id) != request.delete_event_id
                 or existing.payload != payload
@@ -427,8 +474,10 @@ class TestSqlAlchemyConsolidationPersistence:
     async def list_dlq_auto_drain_board_ids(self, context) -> tuple[str, ...]:
         rows = (await context.execute(select(Board))).scalars().all()
         return tuple(
-            str(row.id) for row in rows
-            if isinstance(row.settings, dict) and row.settings.get("dlq_auto_drain_enabled")
+            str(row.id)
+            for row in rows
+            if isinstance(row.settings, dict)
+            and row.settings.get("dlq_auto_drain_enabled")
         )
 
     async def count_dead_letters(self, context, *, board_id: str) -> int:
@@ -441,13 +490,17 @@ class TestSqlAlchemyConsolidationPersistence:
         self, context, *, board_id: str, max_attempts: int
     ) -> tuple[ConsolidationPoisonRow, ...]:
         rows = (
-            await context.execute(
-                select(ConsolidationDeadLetter).where(
-                    ConsolidationDeadLetter.board_id == board_id,
-                    ConsolidationDeadLetter.attempts >= max_attempts,
+            (
+                await context.execute(
+                    select(ConsolidationDeadLetter).where(
+                        ConsolidationDeadLetter.board_id == board_id,
+                        ConsolidationDeadLetter.attempts >= max_attempts,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         result = tuple(
             ConsolidationPoisonRow(str(row.id), int(row.attempts)) for row in rows
         )
@@ -470,7 +523,7 @@ __all__ = ["TestSqlAlchemyConsolidationPersistence"]
 def _validate_deletion_identity(
     *, artifact_type: str, artifact_id: str, delete_event_id: str
 ) -> None:
-    if artifact_type not in {"card", "spec", "ideation", "refinement"}:
+    if artifact_type not in {"card", "spec", "ideation", "refinement", "sprint"}:
         raise ValueError("invalid_governed_deletion_artifact_type")
     if not artifact_id or not delete_event_id or len(delete_event_id) > 255:
         raise ValueError("invalid_governed_deletion_identity")

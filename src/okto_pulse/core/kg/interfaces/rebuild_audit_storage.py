@@ -111,6 +111,15 @@ class RebuildAuditArtifactStore(Protocol):
 
     def delete_json(self, key: RebuildAuditKey) -> bool: ...
 
+    def purge_board_artifacts(self, board_id: str) -> Mapping[str, object]:
+        """Physically erase every rebuild/audit/quarantine artifact for a board.
+
+        Implementations must keep the operation within their configured storage
+        boundary and fail closed when the board scope of an artifact cannot be
+        established.
+        """
+        ...
+
     def list_json(self, prefix: RebuildAuditKey) -> Sequence[dict[str, Any]]: ...
 
     def list_json_bounded(

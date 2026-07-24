@@ -159,6 +159,10 @@ class GraphRuntimeStore(Protocol):
         """Purge board graph data through the edition-owned runtime."""
         ...
 
+    def erase_board_graph(self, board_id: str, *, reason: str) -> GraphPurgeResult:
+        """Irreversibly erase board graph data, including recovery copies."""
+        ...
+
     def footprint(self, board_id: str) -> GraphStorageFootprint:
         """Return a logical storage footprint projection if the adapter has one."""
         ...

@@ -40,6 +40,7 @@ from kg_schema_testing import (
 from okto_pulse.core.kg.scoring import (
     SEVERITY_BOOST_BY_LEVEL,
     _persist_score,
+    _recompute_relevance,
     _recompute_relevance_batch,
     _resolve_priority_boost,
     _resolve_severity_boost,
@@ -112,6 +113,7 @@ def test_ts29_schema_version_is_0_3_3():
         "0.3.8",
         "0.3.9",
         "0.3.10",
+        "0.3.11",
     }
 
 
@@ -201,8 +203,9 @@ def test_ts30_persist_score_honours_caller_supplied_now_iso():
 class _BatchStubConn:
     """Stub returning enough rows for _fetch_node_inputs + capturing UNWIND."""
 
-    def __init__(self, *, rows_to_serve: int):
+    def __init__(self, *, rows_to_serve: int, cancelled: bool = False):
         self._remaining = rows_to_serve
+        self._cancelled = cancelled
         self.unwind_calls: list[tuple[str, dict]] = []
         self.fetch_calls = 0
 
@@ -212,7 +215,10 @@ class _BatchStubConn:
             self.fetch_calls += 1
             # source_conf, out_deg, in_deg, query_hits, last_queried_at,
             # score_before, raw_penalty, priority_boost
-            return GraphStatementResult.from_rows([[1.0, 0, 0, 0, None, 0.5, 0.0, 0.0]])
+            tail = [1, "source_cancelled", 0.5] if self._cancelled else [1, None, None]
+            return GraphStatementResult.from_rows(
+                [[1.0, 0, 0, 0, None, 0.5, 0.0, 0.0, *tail]]
+            )
 
         # The batch UPDATE is the UNWIND path.
         if cypher.startswith("UNWIND"):
@@ -249,6 +255,53 @@ def test_ts31_recompute_batch_unwind_persists_last_recomputed_at():
     assert {row["now"] for row in rows} == {iso_marker}
     # And every row carries the score the function computed for it.
     assert all("score" in row for row in rows)
+
+
+def test_cancelled_single_recompute_preserves_penalty_and_refreshes_base_score():
+    class _CancelledConn:
+        def __init__(self):
+            self.persisted: list[tuple[str, dict]] = []
+
+        def execute(self, cypher: str, params: dict | None = None):
+            if "OPTIONAL MATCH" in cypher:
+                # Base formula: 0.4 * confidence(1) + 0.3 * saturated
+                # degree(99) = 0.7; cancellation keeps effective score at 0.2.
+                return GraphStatementResult.from_rows(
+                    [[1.0, 99, 0, 0, None, 0.3, 0.0, 0.0, 1, "source_cancelled", 0.8]]
+                )
+            self.persisted.append((cypher, params or {}))
+            return GraphStatementResult()
+
+    conn = _CancelledConn()
+    score = _recompute_relevance(
+        conn,
+        KG_REL_BOARD_ID,
+        "Decision",
+        "cancelled-decision",
+    )
+
+    assert score == pytest.approx(0.2)
+    assert len(conn.persisted) == 1
+    cypher, params = conn.persisted[0]
+    assert "n.pre_cancellation_relevance_score = $base_score" in cypher
+    assert params["base_score"] == pytest.approx(0.7)
+    assert params["score"] == pytest.approx(0.2)
+
+
+def test_cancelled_batch_recompute_preserves_penalty_and_refreshes_base_score():
+    endpoints = [("Decision", f"cancelled-{i}") for i in range(60)]
+    conn = _BatchStubConn(rows_to_serve=len(endpoints), cancelled=True)
+
+    assert _recompute_relevance_batch(conn, KG_REL_BOARD_ID, endpoints) == len(
+        endpoints
+    )
+    assert len(conn.unwind_calls) == 1
+    cypher, params = conn.unwind_calls[0]
+    assert "n.pre_cancellation_relevance_score = r.base_score" in cypher
+    assert all(
+        row["score"] == pytest.approx(max(0.0, row["base_score"] - 0.5))
+        for row in params["rows"]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +719,7 @@ def test_kg_hit_flushed_event_class_registered():
     # story lifecycle, refinement semantic changes, and bug-regression reuse
     # events expanded the registry; delivery-debt recovery and the distinct
     # fail-closed full-rebuild intent added dedicated event types.
-    assert len(EVENT_TYPES) == 31
+    assert len(EVENT_TYPES) == 34
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1156,7 +1209,7 @@ def test_impl_d_kg_daily_tick_event_class_registered():
 
     assert KGDailyTick.event_type == "kg.tick.daily"
     assert "kg.tick.daily" in EVENT_TYPES
-    assert len(EVENT_TYPES) == 31
+    assert len(EVENT_TYPES) == 34
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 

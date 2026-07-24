@@ -112,7 +112,9 @@ def classify_analytics_card(card: Any) -> CardAnalyticsCategory:
     return "implementation"
 
 
-def partition_analytics_cards(cards: list[Any]) -> dict[CardAnalyticsCategory, list[Any]]:
+def partition_analytics_cards(
+    cards: list[Any],
+) -> dict[CardAnalyticsCategory, list[Any]]:
     partitions: dict[CardAnalyticsCategory, list[Any]] = {
         "implementation": [],
         "test": [],
@@ -137,9 +139,12 @@ def normalize_activity_timestamp(value: datetime | str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _cursor_scope_hash(*, action: str, card_id: str, direction: str) -> str:
+def _cursor_scope_hash(
+    *, board_id: str, action: str, card_id: str, direction: str
+) -> str:
     scope = json.dumps(
         {
+            "board_id": board_id or "",
             "action": action or "",
             "card_id": card_id or "",
             "direction": direction,
@@ -171,6 +176,7 @@ def encode_activity_cursor(
     created_at: datetime | str,
     row_id: str,
     *,
+    board_id: str = "",
     action: str = "",
     card_id: str = "",
     direction: str = ACTIVITY_CURSOR_DIRECTION,
@@ -187,6 +193,7 @@ def encode_activity_cursor(
         "id": row_id,
         "direction": direction,
         "scope_hash": _cursor_scope_hash(
+            board_id=board_id,
             action=action,
             card_id=card_id,
             direction=direction,
@@ -213,6 +220,7 @@ class ActivityCursorDecodeResult:
 def decode_activity_cursor(
     cursor: str,
     *,
+    board_id: str = "",
     action: str = "",
     card_id: str = "",
     direction: str = ACTIVITY_CURSOR_DIRECTION,
@@ -244,7 +252,7 @@ def decode_activity_cursor(
     # Read-only compatibility for cursors issued before v2. They had no scope,
     # so accepting them with filters would silently change the result set.
     if set(envelope) == {"ts", "id"}:
-        if action or card_id or direction != ACTIVITY_CURSOR_DIRECTION:
+        if board_id or action or card_id or direction != ACTIVITY_CURSOR_DIRECTION:
             return ActivityCursorDecodeResult(None, "cursor_scope_mismatch", version=1)
         try:
             position = (
@@ -283,6 +291,7 @@ def decode_activity_cursor(
             version=ACTIVITY_CURSOR_VERSION,
         )
     expected_scope = _cursor_scope_hash(
+        board_id=board_id,
         action=action,
         card_id=card_id,
         direction=direction,

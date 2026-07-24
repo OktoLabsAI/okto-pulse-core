@@ -13,6 +13,10 @@ from okto_pulse.core.application.use_cases.mcp_card_crud import (
     McpDeleteCardCommand,
     McpDeleteCardUseCase,
 )
+from okto_pulse.core.application.use_cases.spec_crud import (
+    DeleteSpecCommand,
+    DeleteSpecUseCase,
+)
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.mcp import server as mcp_server
 
@@ -59,14 +63,18 @@ async def test_takedown_status_reads_exact_selector_through_uow() -> None:
         return _UowContext(uow)
 
     tool = await mcp_server.mcp.get_tool("okto_pulse_kg_takedown_status")
-    with patch.object(
-        mcp_server,
-        "_get_agent_ctx",
-        AsyncMock(return_value=_mcp_ctx()),
-    ), patch.object(mcp_server, "check_permission", return_value=None), patch.object(
-        mcp_server,
-        "get_unit_of_work_factory_for_mcp",
-        return_value=factory,
+    with (
+        patch.object(
+            mcp_server,
+            "_get_agent_ctx",
+            AsyncMock(return_value=_mcp_ctx()),
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(
+            mcp_server,
+            "get_unit_of_work_factory_for_mcp",
+            return_value=factory,
+        ),
     ):
         payload = json.loads(
             await tool.fn(
@@ -86,8 +94,9 @@ async def test_takedown_status_reads_exact_selector_through_uow() -> None:
 
 
 @pytest.mark.asyncio
-async def test_takedown_status_keeps_transport_board_check_as_defense_in_depth(
-) -> None:
+async def test_takedown_status_keeps_transport_board_check_as_defense_in_depth() -> (
+    None
+):
     class _Kg:
         async def query_takedown_telemetry(self, **_selector: str | None):
             return {
@@ -103,14 +112,18 @@ async def test_takedown_status_keeps_transport_board_check_as_defense_in_depth(
         return _UowContext(uow)
 
     tool = await mcp_server.mcp.get_tool("okto_pulse_kg_takedown_status")
-    with patch.object(
-        mcp_server,
-        "_get_agent_ctx",
-        AsyncMock(return_value=_mcp_ctx()),
-    ), patch.object(mcp_server, "check_permission", return_value=None), patch.object(
-        mcp_server,
-        "get_unit_of_work_factory_for_mcp",
-        return_value=factory,
+    with (
+        patch.object(
+            mcp_server,
+            "_get_agent_ctx",
+            AsyncMock(return_value=_mcp_ctx()),
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(
+            mcp_server,
+            "get_unit_of_work_factory_for_mcp",
+            return_value=factory,
+        ),
     ):
         payload = json.loads(
             await tool.fn(
@@ -129,14 +142,18 @@ async def test_takedown_status_keeps_transport_board_check_as_defense_in_depth(
 @pytest.mark.asyncio
 async def test_takedown_status_rejects_ambiguous_selector_before_uow() -> None:
     tool = await mcp_server.mcp.get_tool("okto_pulse_kg_takedown_status")
-    with patch.object(
-        mcp_server,
-        "_get_agent_ctx",
-        AsyncMock(return_value=_mcp_ctx()),
-    ), patch.object(mcp_server, "check_permission", return_value=None), patch.object(
-        mcp_server,
-        "get_unit_of_work_factory_for_mcp",
-        side_effect=AssertionError("UoW must not open for an invalid selector"),
+    with (
+        patch.object(
+            mcp_server,
+            "_get_agent_ctx",
+            AsyncMock(return_value=_mcp_ctx()),
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(
+            mcp_server,
+            "get_unit_of_work_factory_for_mcp",
+            side_effect=AssertionError("UoW must not open for an invalid selector"),
+        ),
     ):
         payload = json.loads(
             await tool.fn(
@@ -213,3 +230,100 @@ async def test_mcp_delete_use_case_returns_durable_takedown_receipt() -> None:
     assert result.deleted is True
     assert result.takedown == receipt_payload
     assert uow.committed is True
+
+
+@pytest.mark.asyncio
+async def test_delete_spec_use_case_returns_durable_takedown_receipt() -> None:
+    receipt_payload = {
+        "board_id": "board-takedown",
+        "artifact_type": "spec",
+        "artifact_id": "spec-1",
+        "delete_event_id": "delete-spec-1",
+        "generation": 1,
+        "reconcile_intent_id": "intent-spec-1",
+        "delivery_key": "gd_parity:board-takedown:spec:spec-1:1",
+    }
+    receipt = SimpleNamespace(to_dict=lambda: dict(receipt_payload))
+
+    class _Specs:
+        async def get_spec(self, spec_id: str) -> object:
+            assert spec_id == "spec-1"
+            return SimpleNamespace(board_id="board-takedown")
+
+        async def delete_spec(
+            self,
+            spec_id: str,
+            actor_id: str,
+            *,
+            return_receipt: bool,
+        ) -> object:
+            assert (spec_id, actor_id, return_receipt) == (
+                "spec-1",
+                "agent-1",
+                True,
+            )
+            return receipt
+
+    class _Uow:
+        def __init__(self) -> None:
+            self.services = SimpleNamespace(specs=_Specs())
+            self.committed = False
+
+        async def commit(self) -> None:
+            self.committed = True
+
+    uow = _Uow()
+    result = await DeleteSpecUseCase().execute(
+        DeleteSpecCommand("spec-1"),
+        actor=ActorContext(
+            "agent-1",
+            "mcp",
+            actor_name="Agent 1",
+            board_id="board-takedown",
+            realm_id=LOCAL_REALM_ID,
+        ),
+        uow=uow,
+    )
+
+    assert result.takedown == receipt_payload
+    assert uow.committed is True
+
+
+@pytest.mark.asyncio
+async def test_delete_spec_mcp_envelope_exposes_takedown_receipt() -> None:
+    receipt_payload = {
+        "board_id": "board-takedown",
+        "artifact_type": "spec",
+        "artifact_id": "spec-1",
+        "delete_event_id": "delete-spec-1",
+        "generation": 1,
+        "reconcile_intent_id": "intent-spec-1",
+        "delivery_key": "gd_parity:board-takedown:spec:spec-1:1",
+    }
+    uow = SimpleNamespace(services=SimpleNamespace())
+
+    def factory(**_kwargs: object) -> _UowContext:
+        return _UowContext(uow)
+
+    tool = await mcp_server.mcp.get_tool("okto_pulse_delete_spec")
+    with (
+        patch.object(
+            mcp_server,
+            "_get_agent_ctx",
+            AsyncMock(return_value=_mcp_ctx()),
+        ),
+        patch.object(mcp_server, "check_permission", return_value=None),
+        patch.object(
+            mcp_server,
+            "get_unit_of_work_factory_for_mcp",
+            return_value=factory,
+        ),
+        patch.object(
+            DeleteSpecUseCase,
+            "execute",
+            AsyncMock(return_value=SimpleNamespace(takedown=receipt_payload)),
+        ),
+    ):
+        payload = json.loads(await tool.fn(board_id="board-takedown", spec_id="spec-1"))
+
+    assert payload == {"success": True, "takedown": receipt_payload}

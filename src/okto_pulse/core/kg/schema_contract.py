@@ -14,7 +14,7 @@ from okto_pulse.core.kg.cognitive_policy import (
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.3.10"
+SCHEMA_VERSION = "0.3.11"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -125,8 +125,7 @@ def stable_rel_type_entries() -> list[dict[str, Any]]:
             "to": "multiple",
             "multi": True,
             "pairs": [
-                {"from": from_type, "to": to_type}
-                for from_type, to_type in pairs
+                {"from": from_type, "to": to_type} for from_type, to_type in pairs
             ],
         }
         for rel_name, pairs in MULTI_REL_TYPES
@@ -202,6 +201,7 @@ STABLE_NODE_PROPERTIES: tuple[str, ...] = (
     "created_by_agent",
     "source_confidence",
     "relevance_score",
+    "pre_cancellation_relevance_score",
     "query_hits",
     "last_queried_at",
     "last_recomputed_at",
@@ -228,13 +228,16 @@ RELEVANCE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("last_queried_at", "STRING"),
 )
 
-PRIORITY_BOOST_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("priority_boost", "DOUBLE"),
+CANCELLATION_COLUMNS: tuple[tuple[str, str], ...] = (
+    # v0.3.11: cancellation decay clamps scores at zero. Persisting the
+    # pre-decay value is the only lossless way to make card.restore exactly
+    # reversible for scores below the penalty.
+    ("pre_cancellation_relevance_score", "DOUBLE"),
 )
 
-HUMAN_CURATED_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("human_curated", "BOOLEAN"),
-)
+PRIORITY_BOOST_COLUMNS: tuple[tuple[str, str], ...] = (("priority_boost", "DOUBLE"),)
+
+HUMAN_CURATED_COLUMNS: tuple[tuple[str, str], ...] = (("human_curated", "BOOLEAN"),)
 
 LAST_RECOMPUTED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("last_recomputed_at", "STRING"),
@@ -276,9 +279,7 @@ ATTESTATION_COLUMNS: tuple[tuple[str, str], ...] = (
 # closed physical primitives (registry-validated at commit); the physical
 # enforcement (typed tables, endpoint pairs, connectivity guard, per-type
 # HNSW) stays untouched.
-SUBTYPE_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("kind_of", "STRING"),
-)
+SUBTYPE_COLUMNS: tuple[tuple[str, str], ...] = (("kind_of", "STRING"),)
 
 LEGACY_NODE_COLUMNS: tuple[str, ...] = (
     "validation_status",
@@ -292,6 +293,7 @@ def vector_index_name(node_type: str) -> str:
 
 
 __all__ = [
+    "CANCELLATION_COLUMNS",
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
     "ATTESTATION_COLUMNS",

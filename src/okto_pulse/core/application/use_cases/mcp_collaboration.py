@@ -187,11 +187,14 @@ class McpAskQuestionCommand:
 
 class McpAskQuestionUseCase:
     async def execute(
-        self, command: McpAskQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAskQuestionCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         if command.target_type == "card":
-
             card = await _get_card_in_scope(
                 uow.services,
                 command.parent_id,
@@ -233,21 +236,17 @@ class McpAskQuestionUseCase:
             )
 
         if command.target_type in ("ideation", "refinement", "spec"):
-
             if command.target_type == "ideation":
-
                 action = "ideation_question_added"
                 not_found = "Ideation not found"
                 key = "ideation_id"
                 qa_service = uow.services.ideation_qa
             elif command.target_type == "refinement":
-
                 action = "refinement_question_added"
                 not_found = "Refinement not found"
                 key = "refinement_id"
                 qa_service = uow.services.refinement_qa
             else:
-
                 action = "spec_question_added"
                 not_found = "Spec not found"
                 key = "spec_id"
@@ -332,7 +331,11 @@ class McpAnswerQuestionCommand:
 
 class McpAnswerQuestionUseCase:
     async def execute(
-        self, command: McpAnswerQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAnswerQuestionCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
@@ -388,7 +391,11 @@ class McpDeleteQuestionCommand:
 
 class McpDeleteQuestionUseCase:
     async def execute(
-        self, command: McpDeleteQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpDeleteQuestionCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         qa = await _get_qa_in_scope(
@@ -416,7 +423,11 @@ class McpAddCommentCommand:
 
 class McpAddCommentUseCase:
     async def execute(
-        self, command: McpAddCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAddCommentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         card = await _get_card_in_scope(
@@ -441,7 +452,9 @@ class McpAddCommentUseCase:
             ),
         )
         if not comment:
-            return McpPayloadResult({"error": "Failed to create comment (card not found)"})
+            return McpPayloadResult(
+                {"error": "Failed to create comment (card not found)"}
+            )
         await _log_card_activity(
             uow.services,
             command.board_id,
@@ -476,7 +489,11 @@ class McpAddChoiceCommentCommand:
 
 class McpAddChoiceCommentUseCase:
     async def execute(
-        self, command: McpAddChoiceCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpAddChoiceCommentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         card = await _get_card_in_scope(
@@ -547,7 +564,11 @@ class McpRespondToChoiceCommand:
 
 class McpRespondToChoiceUseCase:
     async def execute(
-        self, command: McpRespondToChoiceCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpRespondToChoiceCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         existing = await _get_comment_in_scope(
@@ -595,7 +616,11 @@ class McpGetChoiceResponsesCommand:
 
 class McpGetChoiceResponsesUseCase:
     async def execute(
-        self, command: McpGetChoiceResponsesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetChoiceResponsesCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         comment = await _get_comment_in_scope(
@@ -627,7 +652,11 @@ class McpListCommentsCommand:
 
 class McpListCommentsUseCase:
     async def execute(
-        self, command: McpListCommentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListCommentsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         card = await _get_card_in_scope(
@@ -666,7 +695,11 @@ class McpUpdateCommentCommand:
 
 class McpUpdateCommentUseCase:
     async def execute(
-        self, command: McpUpdateCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateCommentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         existing = await _get_comment_in_scope(
@@ -706,9 +739,7 @@ class McpUpdateCommentUseCase:
                     "id": comment.id,
                     "content": comment.content,
                     "updated_at": (
-                        comment.updated_at.isoformat()
-                        if comment.updated_at
-                        else None
+                        comment.updated_at.isoformat() if comment.updated_at else None
                     ),
                 },
             }
@@ -723,7 +754,11 @@ class McpDeleteCommentCommand:
 
 class McpDeleteCommentUseCase:
     async def execute(
-        self, command: McpDeleteCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpDeleteCommentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         comment_service = uow.services.comments
@@ -768,7 +803,11 @@ class McpUploadAttachmentCommand:
 
 class McpUploadAttachmentUseCase:
     async def execute(
-        self, command: McpUploadAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUploadAttachmentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         card = await _get_card_in_scope(
@@ -782,7 +821,8 @@ class McpUploadAttachmentUseCase:
                 {"error": "Failed to upload attachment (card not found)"}
             )
 
-        attachment = await uow.services.attachments.upload_attachment(
+        service = uow.services.attachments
+        attachment = await service.upload_attachment(
             card_id=command.card_id,
             user_id=actor.actor_id,
             filename=command.filename,
@@ -793,7 +833,11 @@ class McpUploadAttachmentUseCase:
             return McpPayloadResult(
                 {"error": "Failed to upload attachment (card not found)"}
             )
-        await commit(uow)
+        try:
+            await commit(uow)
+        except BaseException:
+            await service.discard_uploaded_attachment(attachment)
+            raise
         return McpPayloadResult(
             {
                 "success": True,
@@ -815,7 +859,11 @@ class McpListAttachmentsCommand:
 
 class McpListAttachmentsUseCase:
     async def execute(
-        self, command: McpListAttachmentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListAttachmentsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         card = await _get_card_in_scope(
@@ -849,7 +897,11 @@ class McpDeleteAttachmentCommand:
 
 class McpDeleteAttachmentUseCase:
     async def execute(
-        self, command: McpDeleteAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpDeleteAttachmentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
 
         attachment = await uow.services.attachments.get_attachment(
@@ -867,10 +919,15 @@ class McpDeleteAttachmentUseCase:
         if not card:
             return McpPayloadResult({"error": "Attachment not found"})
 
-        deleted = await uow.services.attachments.delete_attachment(command.attachment_id)
-        if not deleted:
+        service = uow.services.attachments
+        receipt = await service.delete_attachment(command.attachment_id)
+        if not receipt:
             return McpPayloadResult({"error": "Attachment not found"})
-        await commit(uow)
+        try:
+            await commit(uow)
+        except BaseException:
+            await service.restore_deleted_attachment(receipt)
+            raise
         return McpPayloadResult({"success": True})
 
 
@@ -883,7 +940,11 @@ class McpCreateTopicCommand:
 
 class McpCreateTopicUseCase:
     async def execute(
-        self, command: McpCreateTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpCreateTopicCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         from okto_pulse.core.services import TopicOperationError
 
@@ -921,7 +982,11 @@ class McpUpdateTopicCommand:
 
 class McpUpdateTopicUseCase:
     async def execute(
-        self, command: McpUpdateTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateTopicCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         from okto_pulse.core.services import TopicOperationError
 
@@ -971,7 +1036,11 @@ class McpSetTopicArchivedCommand:
 
 class McpSetTopicArchivedUseCase:
     async def execute(
-        self, command: McpSetTopicArchivedCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpSetTopicArchivedCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         from okto_pulse.core.services import TopicOperationError
 
@@ -1027,7 +1096,11 @@ class McpDeleteTopicCommand:
 
 class McpDeleteTopicUseCase:
     async def execute(
-        self, command: McpDeleteTopicCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpDeleteTopicCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         from okto_pulse.core.services import TopicOperationError
 
@@ -1081,7 +1154,11 @@ class McpMergeTopicsCommand:
 
 class McpMergeTopicsUseCase:
     async def execute(
-        self, command: McpMergeTopicsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpMergeTopicsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         from okto_pulse.core.services import TopicOperationError
 

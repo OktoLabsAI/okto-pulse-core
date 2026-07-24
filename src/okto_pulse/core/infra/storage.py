@@ -26,7 +26,7 @@ from okto_pulse.core.runtime_context import (
 )
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 
 #: Default streaming chunk size — mirrors Starlette ``FileResponse.chunk_size`` so
@@ -60,6 +60,35 @@ class StorageProvider(ABC):
 
     @abstractmethod
     async def delete(self, path: str) -> bool: ...
+
+    async def restore(self, path: str, content: bytes) -> None:
+        """Restore an object at its exact opaque path for UoW compensation.
+
+        Providers that support relational/file atomicity must override this
+        operation with the same containment and lifecycle fencing used by
+        :meth:`save`. The default fails closed: Core cannot reconstruct an
+        edition-specific object namespace from an opaque path.
+        """
+
+        del path, content
+        raise NotImplementedError(
+            "StorageProvider does not implement exact object restoration"
+        )
+
+    async def purge_board(self, board_id: str) -> Mapping[str, object]:
+        """Physically erase every object owned by ``board_id``.
+
+        This is an explicit destructive capability, separate from deleting one
+        opaque object reference. Runtime editions whose storage layout supports
+        board-scoped erasure must override it and enforce their own containment
+        boundary. The default fails closed so a strict right-to-erasure flow
+        can never report success while uploaded objects remain.
+        """
+
+        del board_id
+        raise NotImplementedError(
+            "StorageProvider does not implement board-scoped physical erasure"
+        )
 
     async def stat(self, path: str) -> StorageObjectStat:
         """Return read-side metadata (size + optional mtime) for ``path``.

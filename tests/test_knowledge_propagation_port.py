@@ -26,6 +26,7 @@ from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgePropagationSnapshot,
     KnowledgePropagationTombstone,
     KnowledgeRecordKind,
+    KnowledgeSelectableSource,
     KnowledgeSupersessionLink,
     KnowledgeTargetKey,
     KnowledgeTemporalWindow,
@@ -124,6 +125,7 @@ def _snapshot(
     content_hash: str = CONTENT_HASH,
     root_id: str = "kb-root",
     current: bool = True,
+    governance_metadata: object | None = None,
 ) -> KnowledgePropagationSnapshot:
     return KnowledgePropagationSnapshot(
         snapshot_id=snapshot_id,
@@ -138,6 +140,7 @@ def _snapshot(
                 superseded_by_id="snapshot-successor",
             )
         ),
+        governance_metadata=governance_metadata,
     )
 
 
@@ -409,6 +412,47 @@ def test_scope_carries_immutable_activation_and_local_attachment_evidence() -> N
             attached_at=NOW,
             content_bytes=b"tampered",
         )
+
+
+def test_governance_metadata_is_tolerant_defensive_and_not_technical_payload() -> None:
+    raw = {
+        "purpose": "original",
+        "provenance": [{"reference": "source-v1"}],
+    }
+    snapshot = _snapshot(governance_metadata=raw)
+    local = KnowledgeLocalAttachment(
+        source_knowledge_id="local-kb",
+        revision_stamp=_stamp(),
+        attached_at=NOW,
+        content_bytes=CONTENT,
+        governance_metadata=raw,
+    )
+    source = KnowledgeSelectableSource(
+        requested_knowledge_id="kb-1",
+        source_knowledge_id="kb-1",
+        revision_stamp=_stamp(),
+        content_bytes=CONTENT,
+        governance_metadata=raw,
+    )
+
+    raw["purpose"] = "mutated"
+    raw["provenance"][0]["reference"] = "source-v2"
+
+    for item in (snapshot, local, source):
+        assert item.governance_metadata == {
+            "purpose": "original",
+            "provenance": [{"reference": "source-v1"}],
+        }
+        assert "governance_metadata" not in item.to_dict()
+
+    legacy_shape = KnowledgeSelectableSource(
+        requested_knowledge_id="legacy-kb",
+        source_knowledge_id="legacy-kb",
+        revision_stamp=_stamp(root_id="legacy-root"),
+        content_bytes=CONTENT,
+        governance_metadata="legacy opaque value",
+    )
+    assert legacy_shape.governance_metadata == "legacy opaque value"
 
 
 def test_legacy_unresolved_is_always_history_only() -> None:

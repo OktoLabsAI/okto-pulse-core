@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from okto_pulse.core.application.processors.dead_letter import list_dead_letter
+from okto_pulse.core.ports.application_persistence import bounded_page_offset
 from okto_pulse.core.ports.kg_operational import get_kg_worker_queue_port
 
 
@@ -15,52 +15,28 @@ def _normalise_errors(value: Any) -> list[dict[str, Any]]:
             if isinstance(item, dict):
                 normalised.append(item)
             else:
-                normalised.append({
-                    "attempt": index,
-                    "occurred_at": "",
-                    "error_type": "LegacyError",
-                    "message": str(item),
-                    "traceback": None,
-                })
+                normalised.append(
+                    {
+                        "attempt": index,
+                        "occurred_at": "",
+                        "error_type": "LegacyError",
+                        "message": str(item),
+                        "traceback": None,
+                    }
+                )
         return normalised
     if isinstance(value, dict):
         return [value]
     if value:
-        return [{
-            "attempt": 1,
-            "occurred_at": "",
-            "error_type": "LegacyError",
-            "message": str(value),
-            "traceback": None,
-        }]
-    return []
-
-
-def _normalise_errors(value: Any) -> list[dict[str, Any]]:
-    if isinstance(value, list):
-        normalised: list[dict[str, Any]] = []
-        for index, item in enumerate(value, start=1):
-            if isinstance(item, dict):
-                normalised.append(item)
-            else:
-                normalised.append({
-                    "attempt": index,
-                    "occurred_at": "",
-                    "error_type": "LegacyError",
-                    "message": str(item),
-                    "traceback": None,
-                })
-        return normalised
-    if isinstance(value, dict):
-        return [value]
-    if value:
-        return [{
-            "attempt": 1,
-            "occurred_at": "",
-            "error_type": "LegacyError",
-            "message": str(value),
-            "traceback": None,
-        }]
+        return [
+            {
+                "attempt": 1,
+                "occurred_at": "",
+                "error_type": "LegacyError",
+                "message": str(value),
+                "traceback": None,
+            }
+        ]
     return []
 
 
@@ -88,9 +64,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         # terminal consolidation failure → inspect the error then reprocess.
         "next_action": "inspect_last_error_then_reprocess_via_okto_pulse_kg_dead_letter_reprocess",
         "dead_lettered_at": (
-            row.dead_lettered_at.isoformat()
-            if row.dead_lettered_at
-            else None
+            row.dead_lettered_at.isoformat() if row.dead_lettered_at else None
         ),
     }
 
@@ -127,22 +101,27 @@ async def list_dead_letter_rows(
     """Paginated list of DLQ rows for a board.
 
     Returns ``{rows, total, limit, offset}`` matching the REST + MCP
-    response shape. ``rows`` is the window ``[offset:offset+limit]``;
-    ``total`` is the count of all DLQ rows for the board (capped at
-    ``limit + offset`` due to underlying helper signature — fine for
-    MVP where max limit is 200).
+    response shape. The queue port applies ``LIMIT`` and ``OFFSET`` in
+    storage, so a large valid offset never materializes all preceding rows
+    in application memory.
     """
-    rows = await list_dead_letter(db, board_id, limit=limit + offset)
-    sliced = rows[offset:offset + limit]
-    projected = [_row_to_dict(r) for r in sliced]
+    bounded_limit = max(1, min(int(limit or 50), 200))
+    bounded_offset = bounded_page_offset(offset)
+    total, rows = await get_kg_worker_queue_port().list_dead_letter_page(
+        db,
+        board_id=board_id,
+        limit=bounded_limit,
+        offset=bounded_offset,
+    )
+    projected = [_row_to_dict(row) for row in rows]
     return {
         "rows": projected,
         # FR6/AC6 alias (spec 007d1308): `items` is the contract name; `rows`
         # is preserved for the existing DLQ Inspector consumer.
         "items": projected,
-        "total": len(rows),
-        "limit": limit,
-        "offset": offset,
+        "total": total,
+        "limit": bounded_limit,
+        "offset": bounded_offset,
     }
 
 

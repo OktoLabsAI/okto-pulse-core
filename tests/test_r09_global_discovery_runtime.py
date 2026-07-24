@@ -36,7 +36,9 @@ class _FakeCypherExecutor:
         max_rows: int = 1000,
     ) -> dict:
         assert board_id == "board-a"
-        assert "MATCH (n) WHERE n.id IN $ids RETURN n.id" in cypher
+        assert "MATCH (n) WHERE n.id IN $ids" in cypher
+        assert "n.revocation_reason IS NULL" in cypher
+        assert "n.superseded_by IS NULL" in cypher
         return {"rows": [["node-a"]], "row_count": 1, "truncated": False}
 
 
@@ -221,9 +223,7 @@ class _RuntimeConnection:
     def execute(self, cypher: str, params: dict[str, Any] | None = None) -> _FakeResult:
         self.executed.append(cypher)
         if "CALL SHOW_TABLES()" in cypher:
-            return _FakeResult(
-                [["Board"], ["Topic"], ["Entity"], ["DecisionDigest"]]
-            )
+            return _FakeResult([["Board"], ["Topic"], ["Entity"], ["DecisionDigest"]])
         if "CALL SHOW_INDEXES()" in cypher:
             return _FakeResult(
                 [

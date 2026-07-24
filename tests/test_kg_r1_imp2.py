@@ -140,15 +140,17 @@ async def _ensure_outbox_audit_parent(db, board_id: str, session_id: str) -> Non
         await db.flush()
     if await db.get(ConsolidationAudit, session_id) is None:
         now = datetime.now(timezone.utc)
-        db.add(ConsolidationAudit(
-            session_id=session_id,
-            board_id=board_id,
-            artifact_id=f"outbox-{session_id[-16:]}",
-            artifact_type="test_fixture",
-            agent_id=USER_ID,
-            started_at=now,
-            committed_at=now,
-        ))
+        db.add(
+            ConsolidationAudit(
+                session_id=session_id,
+                board_id=board_id,
+                artifact_id=f"outbox-{session_id[-16:]}",
+                artifact_type="test_fixture",
+                agent_id=USER_ID,
+                started_at=now,
+                committed_at=now,
+            )
+        )
         await db.flush()
 
 
@@ -158,15 +160,24 @@ async def _run_outbox(db_factory, board_id, refs) -> int:
         await db.execute(delete(GlobalUpdateOutbox))
         await _ensure_outbox_audit_parent(db, board_id, session_id)
         for node_type, node_id in refs:
-            db.add(KuzuNodeRef(
-                session_id=session_id, board_id=board_id,
-                kuzu_node_id=node_id, kuzu_node_type=node_type, operation="add",
-            ))
-        db.add(GlobalUpdateOutbox(
-            event_id=str(uuid.uuid4()), board_id=board_id, session_id=session_id,
-            event_type="consolidation_committed",
-            payload={"session_id": session_id, "nodes_added": len(refs)},
-        ))
+            db.add(
+                KuzuNodeRef(
+                    session_id=session_id,
+                    board_id=board_id,
+                    kuzu_node_id=node_id,
+                    kuzu_node_type=node_type,
+                    operation="add",
+                )
+            )
+        db.add(
+            GlobalUpdateOutbox(
+                event_id=str(uuid.uuid4()),
+                board_id=board_id,
+                session_id=session_id,
+                event_type="consolidation_committed",
+                payload={"session_id": session_id, "nodes_added": len(refs)},
+            )
+        )
         await db.commit()
     return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
@@ -175,11 +186,15 @@ async def _run_outbox_no_refs(db_factory, board_id) -> int:
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     async with db_factory() as db:
         await db.execute(delete(GlobalUpdateOutbox))
-        db.add(GlobalUpdateOutbox(
-            event_id=str(uuid.uuid4()), board_id=board_id, session_id=session_id,
-            event_type="consolidation_committed",
-            payload={"session_id": session_id, "nodes_added": 0},
-        ))
+        db.add(
+            GlobalUpdateOutbox(
+                event_id=str(uuid.uuid4()),
+                board_id=board_id,
+                session_id=session_id,
+                event_type="consolidation_committed",
+                payload={"session_id": session_id, "nodes_added": 0},
+            )
+        )
         await db.commit()
     return await GlobalOutboxProcessor(db_factory, interval_seconds=5).process_once()
 
@@ -276,36 +291,48 @@ def test_collector_uses_board_type_for_mixed_duplicate_rows_and_skips_ghosts(
                 for token in (" SET ", " DELETE ", " CREATE ", " MERGE ")
             )
             assert params == {"bid": board_id}
-            return type("Rows", (), {"rows": [
-                [digest_id, source_id, "working"],
-                [digest_id, source_id, "canonical"],
-                [f"dd_{board_id[:8]}_{ghost_id}", ghost_id, "working"],
-            ]})()
+            return type(
+                "Rows",
+                (),
+                {
+                    "rows": [
+                        [digest_id, source_id, "working"],
+                        [digest_id, source_id, "canonical"],
+                        [f"dd_{board_id[:8]}_{ghost_id}", ghost_id, "working"],
+                    ]
+                },
+            )()
 
     class _BoardInventory:
         def __init__(self):
             self.labels: list[str] = []
 
         def execute_read_only(
-                self, selected_board_id, statement, params=None, *, max_rows=1000
-            ):
-                assert selected_board_id == board_id
-                assert params == {"after_id": ""}
-                assert max_rows > 0
-                assert statement.startswith("MATCH (n:")
-                assert "n.embedding IS NOT NULL" in statement
-                assert " RETURN n.id" in statement
-                label = statement.removeprefix("MATCH (n:").split(")", 1)[0]
-                self.labels.append(label)
-                rows = [[source_id, 1]] if label == "Decision" else []
-                return {"rows": rows}
+            self, selected_board_id, statement, params=None, *, max_rows=1000
+        ):
+            assert selected_board_id == board_id
+            assert params == {"after_id": ""}
+            assert max_rows > 0
+            assert statement.startswith("MATCH (n:")
+            assert "n.embedding IS NOT NULL" in statement
+            assert "n.revocation_reason IS NULL" in statement
+            assert "n.superseded_by IS NULL" in statement
+            assert " RETURN n.id" in statement
+            label = statement.removeprefix("MATCH (n:").split(")", 1)[0]
+            self.labels.append(label)
+            rows = [[source_id, 1]] if label == "Decision" else []
+            return {"rows": rows}
 
     inventory = _BoardInventory()
     runtime = _ReadOnlyGlobalRuntime()
-    registry = type("Registry", (), {
-        "cypher_executor": inventory,
-        "require_global_discovery_runtime": lambda self: runtime,
-    })()
+    registry = type(
+        "Registry",
+        (),
+        {
+            "cypher_executor": inventory,
+            "require_global_discovery_runtime": lambda self: runtime,
+        },
+    )()
     monkeypatch.setattr(
         interfaces_module,
         "get_kg_registry",
@@ -347,10 +374,12 @@ def test_collector_uses_board_type_for_mixed_duplicate_rows_and_skips_ghosts(
         for row in inputs["digests"]
         if row["original_node_id"] == source_id
     ] == ["Decision", "Decision"]
-    assert next(
-        row for row in inputs["digests"]
-        if row["original_node_id"] == ghost_id
-    )["node_type"] == ""
+    assert (
+        next(row for row in inputs["digests"] if row["original_node_id"] == ghost_id)[
+            "node_type"
+        ]
+        == ""
+    )
 
     # One duplicate row is stale against the board's canonical Decision.  The
     # other duplicate agrees, and the vanished source is prune territory.
@@ -358,15 +387,17 @@ def test_collector_uses_board_type_for_mixed_duplicate_rows_and_skips_ghosts(
         "status": PARITY_STATUS_AVAILABLE,
         "evaluation": PARITY_EVALUATED,
         "reason": "ok",
-        "items": [{
-            "board_id": board_id,
-            "digest_id": digest_id,
-            "original_node_id": source_id,
-            "node_type": "Decision",
-            "expected_layer": "canonical",
-            "actual_layer": "working",
-            "source_artifact_ref": "",
-        }],
+        "items": [
+            {
+                "board_id": board_id,
+                "digest_id": digest_id,
+                "original_node_id": source_id,
+                "node_type": "Decision",
+                "expected_layer": "canonical",
+                "actual_layer": "working",
+                "source_artifact_ref": "",
+            }
+        ],
     }
 
 
@@ -376,9 +407,7 @@ async def test_detector_finds_stale_digest_then_reconcile_clears(db_factory):
     nid = await _make_stale_canonical_digest(db_factory, board_id)
 
     async with db_factory() as db:
-        evaluation = await detect_digest_layer_mismatches(
-            db, board_id=board_id
-        )
+        evaluation = await detect_digest_layer_mismatches(db, board_id=board_id)
     assert evaluation["status"] == PARITY_STATUS_AVAILABLE
     assert evaluation["evaluation"] == PARITY_EVALUATED
     mismatches = evaluation["items"]
@@ -393,9 +422,7 @@ async def test_detector_finds_stale_digest_then_reconcile_clears(db_factory):
     assert await _run_outbox_no_refs(db_factory, board_id) == 1
     assert _digest_layer(board_id, nid) == "working"
     async with db_factory() as db:
-        evaluation = await detect_digest_layer_mismatches(
-            db, board_id=board_id
-        )
+        evaluation = await detect_digest_layer_mismatches(db, board_id=board_id)
     assert evaluation["status"] == PARITY_STATUS_AVAILABLE
     assert evaluation["evaluation"] == PARITY_EVALUATED
     assert evaluation["items"] == []
@@ -447,10 +474,15 @@ async def test_mismatch_does_not_override_canonical_debt(db_factory):
     await _make_stale_canonical_digest(db_factory, board_id)  # a real mismatch
     async with db_factory() as db:
         await upsert_canonical_debt(
-            db, board_id=board_id, artifact_type="bug", artifact_id="bug-prec",
+            db,
+            board_id=board_id,
+            artifact_type="bug",
+            artifact_id="bug-prec",
             source_ref=f"card:bug:{uuid.uuid4()}:learning:p",
-            content_hash="r1i2_prec", target_status=PARTITION_TARGET_STATUS,
-            canonical_state="pending", failure_reason="some_reason",
+            content_hash="r1i2_prec",
+            target_status=PARTITION_TARGET_STATUS,
+            canonical_state="pending",
+            failure_reason="some_reason",
         )
         await db.commit()
         health = await get_kg_health(board_id, db)
@@ -487,9 +519,14 @@ async def test_drilldown_lists_mismatch_and_emits_metric(db_factory):
     assert "source_artifact_ref" in item and "digest_id" in item
     # Bounded metric is queryable by board + expected/actual layer.
     assert gdm.get_digest_layer_mismatch_count(board_id=board_id) == 1
-    assert gdm.get_digest_layer_mismatch_count(
-        board_id=board_id, expected_layer="working", actual_layer="canonical",
-    ) == 1
+    assert (
+        gdm.get_digest_layer_mismatch_count(
+            board_id=board_id,
+            expected_layer="working",
+            actual_layer="canonical",
+        )
+        == 1
+    )
     assert "board_id" in gdm.get_digest_layer_mismatch_labels()
 
 
@@ -507,16 +544,27 @@ async def test_query_global_layer_coherence_and_legacy_fail_closed(db_factory):
     _seed_node(board_id, "Decision", canon, layer="canonical")
     _seed_node(board_id, "Decision", work, layer="working")
     _seed_node(board_id, "Requirement", legacy, layer=None)  # no graph_layer
-    assert await _run_outbox(
-        db_factory, board_id,
-        [("Decision", canon), ("Decision", work), ("Requirement", legacy)],
-    ) == 1
+    assert (
+        await _run_outbox(
+            db_factory,
+            board_id,
+            [("Decision", canon), ("Decision", work), ("Requirement", legacy)],
+        )
+        == 1
+    )
 
     svc = get_kg_service()
 
     def _ids(layer):
-        return {r["id"] for r in svc.query_global(
-            QUERY_TEXT, user_boards=[board_id], graph_layer=layer, min_similarity=0.1)}
+        return {
+            r["id"]
+            for r in svc.query_global(
+                QUERY_TEXT,
+                user_boards=[board_id],
+                graph_layer=layer,
+                min_similarity=0.1,
+            )
+        }
 
     canonical_ids = _ids("canonical")
     working_ids = _ids("working")
@@ -596,15 +644,19 @@ async def test_seed_only_digest_rejected_by_pipeline(db_factory):
     # (a) GHOST: fabricated canonical digest with NO board node behind it.
     ghost = "ghost_node_theater"
     _seed_digest_directly(
-        board_id, digest_id=f"dd_{board_id[:8]}_{ghost}",
-        original_node_id=ghost, layer="canonical",
+        board_id,
+        digest_id=f"dd_{board_id[:8]}_{ghost}",
+        original_node_id=ghost,
+        layer="canonical",
     )
     # (b) LIAR: a real board node at 'working' but a digest fabricating 'canonical'.
     liar = f"dec_liar_{uuid.uuid4().hex[:8]}"
     _seed_node(board_id, "Decision", liar, layer="working")
     _seed_digest_directly(
-        board_id, digest_id=f"dd_{board_id[:8]}_{liar}",
-        original_node_id=liar, layer="canonical",
+        board_id,
+        digest_id=f"dd_{board_id[:8]}_{liar}",
+        original_node_id=liar,
+        layer="canonical",
     )
 
     # One pipeline drain (prune + reconcile) — no fresh add refs.

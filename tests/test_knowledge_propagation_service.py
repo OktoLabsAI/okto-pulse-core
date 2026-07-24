@@ -54,6 +54,9 @@ from okto_pulse.core.services.knowledge_propagation import (
     classify_legacy_origin,
     deterministic_knowledge_target_id,
 )
+from okto_pulse.core.services.knowledge_governance_projection import (
+    project_knowledge_governance_from_resource,
+)
 
 
 NOW = datetime(2026, 7, 23, 13, 0, tzinfo=timezone.utc)
@@ -88,6 +91,7 @@ def _source(
     revision: str = "1",
     content: bytes | None = b"content",
     source_deleted: bool = False,
+    governance_metadata: object | None = None,
 ) -> KnowledgeSelectableSource:
     digest_content = b"content" if content is None else content
     return KnowledgeSelectableSource(
@@ -100,6 +104,7 @@ def _source(
         ),
         content_bytes=content,
         source_deleted=source_deleted,
+        governance_metadata=governance_metadata,
     )
 
 
@@ -161,6 +166,7 @@ def _snapshot(
     revision: str = "1",
     content: bytes = b"content",
     current: bool = True,
+    governance_metadata: object | None = None,
 ) -> KnowledgePropagationSnapshot:
     return KnowledgePropagationSnapshot(
         snapshot_id=snapshot_id,
@@ -168,6 +174,7 @@ def _snapshot(
         revision_stamp=_stamp(root_id, revision=revision, content=content),
         content_bytes=content,
         temporal=_window(current=current),
+        governance_metadata=governance_metadata,
     )
 
 
@@ -738,6 +745,8 @@ async def test_invalid_source_or_hash_fails_before_any_stage() -> None:
 async def test_refresh_replaces_only_current_snapshot_and_closes_old_records() -> None:
     old_content = b"old snapshot"
     new_content = b"new source"
+    old_metadata = {"purpose": "frozen old governance"}
+    new_metadata = {"purpose": "current source governance"}
     old_assignment = _assignment(
         "assignment-old",
         "kb-1",
@@ -752,12 +761,14 @@ async def test_refresh_replaces_only_current_snapshot_and_closes_old_records() -
         "root-1",
         revision="1",
         content=old_content,
+        governance_metadata=old_metadata,
     )
     source = _source(
         "kb-1",
         "root-1",
         revision="2",
         content=new_content,
+        governance_metadata=new_metadata,
     )
     port = _FakePort(
         _scope(
@@ -792,6 +803,8 @@ async def test_refresh_replaces_only_current_snapshot_and_closes_old_records() -
     assert new_assignment.revision_stamp == source.revision_stamp
     assert new_snapshot.assignment_id == new_assignment.assignment_id
     assert new_snapshot.content_bytes == new_content
+    assert new_snapshot.governance_metadata == new_metadata
+    assert "governance_metadata" not in new_snapshot.to_dict()
     assert {
         (
             link.record_kind,
@@ -812,6 +825,33 @@ async def test_refresh_replaces_only_current_snapshot_and_closes_old_records() -
         ),
     }
     assert len(port.staged) == 1
+
+    source_without_metadata = _source(
+        "kb-1",
+        "root-1",
+        revision="2",
+        content=new_content,
+    )
+    assert source_without_metadata.revision_stamp == source.revision_stamp
+    assert source_without_metadata == source
+    without_metadata_port = _FakePort(
+        _scope(
+            revision=4,
+            v2_active=True,
+            state="explicit_ids",
+            assignments=(old_assignment,),
+            snapshots=(old_snapshot,),
+            sources=(source_without_metadata,),
+        )
+    )
+    await _service(without_metadata_port).refresh(object(), command)
+    without_metadata_plan = without_metadata_port.staged[0]
+
+    assert without_metadata_plan.request_hash == plan.request_hash
+    assert without_metadata_plan.snapshots_to_open[0].governance_metadata is None
+    assert isinstance(source.governance_metadata, dict)
+    source.governance_metadata["purpose"] = "changed after refresh"
+    assert new_snapshot.governance_metadata == {"purpose": "current source governance"}
 
 
 @pytest.mark.asyncio
@@ -1042,6 +1082,9 @@ async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics
     old_snapshot = b"immutable snapshot"
     current_reference = b"current reference"
     current_snapshot_source = b"changed snapshot source"
+    reference_metadata = {"purpose": "current reference governance"}
+    frozen_snapshot_metadata = {"purpose": "frozen snapshot governance"}
+    current_snapshot_metadata = {"purpose": "changed source governance"}
     assignments = (
         _assignment(
             "assignment-reference",
@@ -1062,6 +1105,7 @@ async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics
         "assignment-snapshot",
         "root-snapshot",
         content=old_snapshot,
+        governance_metadata=frozen_snapshot_metadata,
     )
     reference_source = KnowledgeSelectableSource(
         requested_knowledge_id="root-reference",
@@ -1072,6 +1116,7 @@ async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics
             content=current_reference,
         ),
         content_bytes=current_reference,
+        governance_metadata=reference_metadata,
     )
     snapshot_source = KnowledgeSelectableSource(
         requested_knowledge_id="root-snapshot",
@@ -1082,6 +1127,7 @@ async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics
             content=current_snapshot_source,
         ),
         content_bytes=current_snapshot_source,
+        governance_metadata=current_snapshot_metadata,
     )
 
     result = await _service(
@@ -1106,9 +1152,14 @@ async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics
     assert reference.revision_stamp == reference_source.revision_stamp
     assert reference.content_bytes == current_reference
     assert reference.resolved_source_knowledge_id == "current-reference-row"
+    assert reference.governance_metadata == reference_metadata
+    assert "governance_metadata" not in reference.to_dict()
     assert reference.to_dict()["resolved_source_knowledge_id"] == (
         "current-reference-row"
     )
+    assert isinstance(reference_source.governance_metadata, dict)
+    reference_source.governance_metadata["purpose"] = "changed after read"
+    assert reference.governance_metadata == reference_metadata
 
     snapshot_result = resolved["assignment-snapshot"]
     assert snapshot_result.state is KnowledgeAssignmentState.STALE
@@ -1117,6 +1168,55 @@ async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics
     assert snapshot_result.content_bytes == old_snapshot
     assert snapshot_result.resolved_source_knowledge_id == "current-snapshot-row"
     assert snapshot_result.reason == "source_changed"
+    assert snapshot_result.governance_metadata == frozen_snapshot_metadata
+    assert snapshot_result.governance_metadata != current_snapshot_metadata
+    assert "governance_metadata" not in snapshot_result.to_dict()
+
+
+@pytest.mark.asyncio
+async def test_legacy_snapshot_without_governance_metadata_projects_incomplete() -> (
+    None
+):
+    content = b"legacy snapshot"
+    assignment = _assignment(
+        "assignment-legacy-snapshot",
+        "kb-legacy",
+        "root-legacy",
+        mode="snapshot",
+        stamp_content=content,
+    )
+    snapshot = _snapshot(
+        "snapshot-legacy",
+        "assignment-legacy-snapshot",
+        "root-legacy",
+        content=content,
+    )
+    source = _source(
+        "kb-legacy",
+        "root-legacy",
+        content=content,
+        governance_metadata={"purpose": "metadata added after snapshot"},
+    )
+
+    result = await _service(
+        _FakePort(
+            _scope(
+                revision=1,
+                v2_active=True,
+                state="explicit_ids",
+                assignments=(assignment,),
+                snapshots=(snapshot,),
+                sources=(source,),
+            )
+        )
+    ).read(object(), _target())
+    resolved = result.resolved_assignments[0]
+
+    assert resolved.governance_metadata is None
+    assert (
+        project_knowledge_governance_from_resource(resolved)["metadata_status"]
+        == "legacy_incomplete"
+    )
 
 
 @pytest.mark.asyncio
@@ -1508,9 +1608,7 @@ async def test_relink_reset_closes_current_records_without_legacy_fallback() -> 
                 legacy=(
                     KnowledgeLegacyAttachment(
                         source_knowledge_id="legacy-json",
-                        revision_stamp=ResourceRevisionStamp(
-                            root_id="legacy-root"
-                        ),
+                        revision_stamp=ResourceRevisionStamp(root_id="legacy-root"),
                         origin_class="legacy_all",
                     ),
                 ),

@@ -75,6 +75,48 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
             self._records.pop(identity, None)
             return existed
 
+    def purge_board_artifacts(self, board_id: str) -> Mapping[str, object]:
+        def _mentions_board(value: object) -> bool:
+            if isinstance(value, Mapping):
+                for raw_key, item in value.items():
+                    key = str(raw_key)
+                    if (
+                        key == "board_id" or key.endswith("_board_id")
+                    ) and item == board_id:
+                        return True
+                    if key == "board_ids" and isinstance(item, (list, tuple)):
+                        if board_id in item:
+                            return True
+                    if _mentions_board(item):
+                        return True
+            elif isinstance(value, (list, tuple)):
+                return any(_mentions_board(item) for item in value)
+            return False
+
+        with self._lock:
+            selected = [
+                identity
+                for identity, payload in self._records.items()
+                if identity[1] == board_id or _mentions_board(payload)
+            ]
+            for identity in selected:
+                self._records.pop(identity, None)
+            residual = any(
+                identity[1] == board_id or _mentions_board(payload)
+                for identity, payload in self._records.items()
+            )
+            if residual:
+                raise RuntimeError(
+                    f"in-memory board artifacts remained after purge: {board_id}"
+                )
+        return {
+            "board_id": board_id,
+            "files_removed": len(selected),
+            "directories_removed": 0,
+            "verified_absent": True,
+            "status": "purged" if selected else "not_found",
+        }
+
     def list_json(self, prefix: RebuildAuditKey) -> Sequence[dict[str, Any]]:
         with self._lock:
             rows: list[dict[str, Any]] = []
@@ -164,13 +206,9 @@ class InMemoryRebuildAuditArtifactStore(RebuildAuditArtifactStore):
                 if current_revision is not None
                 else None
             )
-            self._records[revision_identity] = copy.deepcopy(
-                dict(pending_revision)
-            )
+            self._records[revision_identity] = copy.deepcopy(dict(pending_revision))
             self._records[identity] = copy.deepcopy(next_payload)
-            self._records[revision_identity] = copy.deepcopy(
-                dict(committed_revision)
-            )
+            self._records[revision_identity] = copy.deepcopy(dict(committed_revision))
             return (
                 copy.deepcopy(next_payload),
                 copy.deepcopy(dict(committed_revision)),

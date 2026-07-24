@@ -32,6 +32,8 @@ class RebuildState(str, Enum):
 class RebuildOutcomeCode(str, Enum):
     COMPLETED = "completed"
     SALVAGE_PENDING = "salvage_pending"
+    CANCELLED = "cancelled"
+    LEASE_LOST = "lease_lost"
     SNAPSHOT_FAILED = "snapshot_failed"
     QUARANTINE_FAILED = "quarantine_failed"
     ENQUEUE_FAILED = "enqueue_failed"
@@ -82,6 +84,7 @@ class RebuildCommand:
     source_rows: tuple[Mapping[str, object], ...] = ()
     previous_generation_id: str | None = None
     candidate_generation_id: str | None = None
+    owner_token: str | None = field(default=None, repr=False, compare=False)
     salvage_pending: bool = False
 
 
@@ -91,9 +94,7 @@ class RebuildEffectReceipt:
     effect: str
     ok: bool
     code: str = "ok"
-    details: Mapping[str, object] = field(
-        default_factory=lambda: MappingProxyType({})
-    )
+    details: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,7 @@ class QueueObservation:
     depth: int
     observed_at: datetime
     sequence: int
+    blocking_reason: str | None = None
 
 
 class QueueDrainDecision(str, Enum):
@@ -135,9 +137,7 @@ class QueueDrainEvaluation:
     tracker: QueueDrainTracker
 
 
-def start_queue_drain(
-    policy: QueueDrainPolicy, *, now: datetime
-) -> QueueDrainTracker:
+def start_queue_drain(policy: QueueDrainPolicy, *, now: datetime) -> QueueDrainTracker:
     return QueueDrainTracker(
         started_at=now,
         stall_deadline=now + timedelta(seconds=policy.stall_timeout_seconds),
@@ -162,9 +162,8 @@ def evaluate_queue_depth(
         tracker = replace(
             tracker,
             best_depth=depth,
-            progress_events=tracker.progress_events + (
-                0 if tracker.best_depth is None else 1
-            ),
+            progress_events=tracker.progress_events
+            + (0 if tracker.best_depth is None else 1),
             stall_deadline=now + timedelta(seconds=policy.stall_timeout_seconds),
         )
     if now >= tracker.hard_deadline:
@@ -279,10 +278,14 @@ class RebuildProcessor:
         *,
         clock: Clock = _utc_now,
         plan: RebuildPlan | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
+        lease_renew: Callable[[], bool] | None = None,
     ) -> None:
         self._effects = effects
         self._clock = clock
         self._plan = plan or RebuildPlan()
+        self._cancel_requested = cancel_requested
+        self._lease_renew = lease_renew
 
     def execute(self, command: RebuildCommand) -> RebuildOutcome:
         if command.salvage_pending:
@@ -306,13 +309,25 @@ class RebuildProcessor:
             self._effects.save_checkpoint(checkpoint)
         elif checkpoint.command != command:
             raise ValueError("run_id already belongs to a different rebuild command")
+        else:
+            # Runtime-only capabilities (for example the current writer token)
+            # are deliberately excluded from checkpoint identity/persistence.
+            # Reattach them from the live invocation before any resumed effect.
+            checkpoint = replace(checkpoint, command=command)
 
         step_specs = (
             ("snapshot", RebuildState.SNAPSHOTTED, RebuildOutcomeCode.SNAPSHOT_FAILED),
-            ("quarantine", RebuildState.QUARANTINED, RebuildOutcomeCode.QUARANTINE_FAILED),
+            (
+                "quarantine",
+                RebuildState.QUARANTINED,
+                RebuildOutcomeCode.QUARANTINE_FAILED,
+            ),
             ("enqueue", RebuildState.ENQUEUED, RebuildOutcomeCode.ENQUEUE_FAILED),
         )
         for effect_name, target_state, failure_code in step_specs:
+            control_failure = self._check_control(checkpoint)
+            if control_failure is not None:
+                return control_failure
             checkpoint, receipt = self._run_effect(
                 checkpoint, effect_name=effect_name, target_state=target_state
             )
@@ -325,6 +340,9 @@ class RebuildProcessor:
             return drain_failure
         checkpoint = drain_failure
 
+        control_failure = self._check_control(checkpoint)
+        if control_failure is not None:
+            return control_failure
         checkpoint, restore = self._run_effect(
             checkpoint,
             effect_name="restore",
@@ -337,6 +355,9 @@ class RebuildProcessor:
                 restore.code,
             )
 
+        control_failure = self._check_control(checkpoint)
+        if control_failure is not None:
+            return control_failure
         checkpoint, promotion = self._run_effect(
             checkpoint,
             effect_name="promote",
@@ -349,6 +370,9 @@ class RebuildProcessor:
                 promotion.code,
             )
 
+        control_failure = self._check_control(checkpoint)
+        if control_failure is not None:
+            return control_failure
         checkpoint = self._set_state(checkpoint, RebuildState.COMPLETED)
         return self._finish(
             command,
@@ -414,6 +438,9 @@ class RebuildProcessor:
         )
 
         while True:
+            control_failure = self._check_control(checkpoint)
+            if control_failure is not None:
+                return control_failure
             now = self._clock()
             observation = self._effects.wait_for_queue_observation(
                 checkpoint.command,
@@ -445,6 +472,12 @@ class RebuildProcessor:
                 queue_grace_reason=tracker.grace_reason,
             )
             self._effects.save_checkpoint(checkpoint)
+            if observation.blocking_reason and observation.depth > 0:
+                return self._fail(
+                    checkpoint,
+                    RebuildOutcomeCode.DRAIN_STALLED,
+                    f"queue blocked:{observation.blocking_reason}",
+                )
             if evaluation.decision is QueueDrainDecision.IDLE:
                 return checkpoint
             if evaluation.decision is QueueDrainDecision.HARD_TIMEOUT:
@@ -459,6 +492,59 @@ class RebuildProcessor:
                     RebuildOutcomeCode.DRAIN_STALLED,
                     "queue made no semantic progress",
                 )
+
+    def _check_control(self, checkpoint: RebuildCheckpoint) -> RebuildOutcome | None:
+        # Prove/renew the writer fence before honoring cancellation.  A caller
+        # may request cancellation immediately after a long effect; restoring
+        # quarantine without a live fence would be a second unsafe mutation.
+        if self._lease_renew is not None:
+            try:
+                renewed = bool(self._lease_renew())
+            except Exception as exc:
+                return self._block_after_lease_loss(
+                    checkpoint,
+                    f"lease renewal failed:{type(exc).__name__}",
+                )
+            if not renewed:
+                return self._block_after_lease_loss(
+                    checkpoint,
+                    "single-writer lease lost",
+                )
+
+        if self._cancel_requested is not None:
+            try:
+                cancelled = bool(self._cancel_requested())
+            except Exception as exc:
+                return self._fail(
+                    checkpoint,
+                    RebuildOutcomeCode.CANCELLED,
+                    f"cancellation probe failed:{type(exc).__name__}",
+                )
+            if cancelled:
+                return self._fail(
+                    checkpoint,
+                    RebuildOutcomeCode.CANCELLED,
+                    "cancellation requested",
+                )
+        return None
+
+    def _block_after_lease_loss(
+        self,
+        checkpoint: RebuildCheckpoint,
+        detail: str,
+    ) -> RebuildOutcome:
+        # No compensation is legal after the writer fence is lost.  Preserve
+        # the durable checkpoint and require governed recovery/manual salvage
+        # instead of mutating graph storage with a stale token.
+        checkpoint = self._set_state(checkpoint, RebuildState.BLOCKED)
+        return self._finish(
+            checkpoint.command,
+            checkpoint.state,
+            RebuildOutcomeCode.LEASE_LOST,
+            promotion_allowed=False,
+            receipts=tuple(checkpoint.receipts.values()),
+            detail=detail,
+        )
 
     def _set_state(
         self, checkpoint: RebuildCheckpoint, state: RebuildState

@@ -13,6 +13,7 @@ fail-closed.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -217,6 +218,28 @@ def _canonical_stamp(
     )
 
 
+def _copy_governance_metadata(value: object | None) -> object | None:
+    """Best-effort defensive copy of opaque governance evidence.
+
+    Selective propagation deliberately does not validate this payload.  Older
+    rows and future governance contract versions must remain readable so the
+    projection layer can classify them (for example as ``legacy_incomplete``).
+    JSON-compatible values are fully detached; unusual legacy values degrade
+    to the least surprising copy operation without making the propagation
+    boundary fail.
+    """
+
+    if value is None:
+        return None
+    try:
+        return copy.deepcopy(value)
+    except Exception:
+        try:
+            return copy.copy(value)
+        except Exception:
+            return value
+
+
 @dataclass(frozen=True, slots=True)
 class KnowledgeTargetKey:
     """Board-scoped identity of a spec or card propagation target."""
@@ -390,6 +413,12 @@ class KnowledgePropagationSnapshot:
     revision_stamp: ResourceRevisionStamp
     content_bytes: bytes
     temporal: KnowledgeTemporalWindow
+    governance_metadata: object | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        hash=False,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -415,6 +444,11 @@ class KnowledgePropagationSnapshot:
         if not isinstance(self.temporal, KnowledgeTemporalWindow):
             raise ValueError("knowledge_propagation_snapshot_temporal_invalid")
         object.__setattr__(self, "revision_stamp", stamp)
+        object.__setattr__(
+            self,
+            "governance_metadata",
+            _copy_governance_metadata(self.governance_metadata),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -486,6 +520,12 @@ class KnowledgeLocalAttachment:
     revision_stamp: ResourceRevisionStamp
     attached_at: datetime
     content_bytes: bytes | None = field(default=None, repr=False)
+    governance_metadata: object | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        hash=False,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -505,14 +545,17 @@ class KnowledgeLocalAttachment:
             if hashlib.sha256(self.content_bytes).hexdigest() != (
                 stamp.source_content_sha256
             ):
-                raise ValueError(
-                    "knowledge_propagation_local_attachment_hash_mismatch"
-                )
+                raise ValueError("knowledge_propagation_local_attachment_hash_mismatch")
         object.__setattr__(self, "revision_stamp", stamp)
         object.__setattr__(
             self,
             "attached_at",
             _utc(self.attached_at, "attached_at"),
+        )
+        object.__setattr__(
+            self,
+            "governance_metadata",
+            _copy_governance_metadata(self.governance_metadata),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -536,6 +579,12 @@ class KnowledgeSelectableSource:
     revision_stamp: ResourceRevisionStamp
     content_bytes: bytes | None = field(default=None, repr=False)
     source_deleted: bool = False
+    governance_metadata: object | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        hash=False,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -565,6 +614,11 @@ class KnowledgeSelectableSource:
         if type(self.source_deleted) is not bool:
             raise ValueError("knowledge_propagation_source_deleted_invalid")
         object.__setattr__(self, "revision_stamp", stamp)
+        object.__setattr__(
+            self,
+            "governance_metadata",
+            _copy_governance_metadata(self.governance_metadata),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1337,17 +1391,13 @@ class KnowledgeMutationPlan:
                 raise ValueError("knowledge_propagation_plan_parent_board_mismatch")
         if self.parent_evidence is not None:
             if not isinstance(self.parent_evidence, KnowledgeParentEvidence):
-                raise ValueError(
-                    "knowledge_propagation_plan_parent_evidence_invalid"
-                )
+                raise ValueError("knowledge_propagation_plan_parent_evidence_invalid")
             if self.parent is None:
                 raise ValueError(
                     "knowledge_propagation_plan_parent_evidence_without_parent"
                 )
             if self.parent_evidence.parent != self.parent:
-                raise ValueError(
-                    "knowledge_propagation_plan_parent_evidence_mismatch"
-                )
+                raise ValueError("knowledge_propagation_plan_parent_evidence_mismatch")
         next_state = (
             None
             if self.next_scope_selection_state is None

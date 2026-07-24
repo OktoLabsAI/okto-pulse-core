@@ -56,9 +56,19 @@ class InMemoryGlobalDiscoveryRuntime:
         return ()
 
     def execute(self, statement: str, params=None) -> GraphStatementResult:
-        del statement, params
         if not self._exists:
             raise RuntimeError("global_graph_absent")
+        if "SET d.source_revoked = $revoked" in statement and params:
+            matched = 0
+            identities = {str(value) for value in params.get("ids", [])}
+            for digest in self.digests.values():
+                if (
+                    str(digest.get("board_id")) == str(params.get("bid"))
+                    and str(digest.get("original_node_id")) in identities
+                ):
+                    digest["source_revoked"] = bool(params.get("revoked"))
+                    matched += 1
+            return GraphStatementResult.from_rows([[matched]])
         return GraphStatementResult()
 
     def search_decision_digests(
@@ -86,7 +96,7 @@ class InMemoryGlobalDiscoveryRuntime:
     def upsert_decision_digest(self, **values) -> str:
         digest_id = str(values["digest_id"])
         outcome = "updated" if digest_id in self.digests else "created"
-        self.digests[digest_id] = dict(values)
+        self.digests[digest_id] = {**values, "source_revoked": False}
         return outcome
 
     def replace_decision_digest_identity(self, **values) -> int:
@@ -102,7 +112,7 @@ class InMemoryGlobalDiscoveryRuntime:
             self.digests.pop(digest_id, None)
             self.links.discard((board_id, digest_id))
         digest_id = str(values["digest_id"])
-        self.digests[digest_id] = dict(values)
+        self.digests[digest_id] = {**values, "source_revoked": False}
         self.links.add((board_id, digest_id))
         return len(removed)
 
@@ -130,6 +140,19 @@ class InMemoryGlobalDiscoveryRuntime:
             self.digests.pop(digest_id, None)
             self.links = {link for link in self.links if link[1] != digest_id}
         return len(removed)
+
+    def delete_decision_digests_for_absent_sources(
+        self,
+        *,
+        board_id: str,
+        original_node_ids: tuple[str, ...],
+        include_malformed: bool = False,
+    ) -> int:
+        return self.delete_decision_digests_guarded(
+            board_id=board_id,
+            original_node_ids=original_node_ids,
+            include_malformed=include_malformed,
+        )
 
     def normalize_board_digest_link(
         self,
@@ -184,6 +207,56 @@ class InMemoryGlobalDiscoveryRuntime:
             reason=reason,
             backend="memory_graph",
         )
+
+    def erase_storage_for_privacy(
+        self,
+        *,
+        board_id: str,
+        reason: str,
+        survivor_board_ids: tuple[str, ...] | None = None,
+    ) -> dict[str, object]:
+        authoritative = (
+            set(survivor_board_ids)
+            if survivor_board_ids is not None
+            else set(self.boards) - {board_id}
+        )
+        target_digest_ids = {
+            digest_id
+            for digest_id, digest in self.digests.items()
+            if str(digest.get("board_id")) == board_id
+        }
+        existed = board_id in self.boards or bool(target_digest_ids)
+        self.purged_reasons.append(reason)
+        self.boards.pop(board_id, None)
+        self.boards = {
+            key: value for key, value in self.boards.items() if key in authoritative
+        }
+        for digest_id in target_digest_ids:
+            self.digests.pop(digest_id, None)
+        self.digests = {
+            key: value
+            for key, value in self.digests.items()
+            if str(value.get("board_id")) in authoritative
+        }
+        self.links = {
+            link
+            for link in self.links
+            if link[0] in authoritative and link[1] in self.digests
+        }
+        self._exists = True
+        self.closed = True
+        return {
+            "board_id": board_id,
+            "objects_removed": int(existed),
+            "directories_removed": 0,
+            "verified_absent": True,
+            "survivors_restored": {
+                "boards": len(self.boards),
+                "digests": len(self.digests),
+                "relationships": len(self.links),
+            },
+            "status": "purged" if existed else "not_found",
+        }
 
     def reset_for_tests(self) -> None:
         self.close()

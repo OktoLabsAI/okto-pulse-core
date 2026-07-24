@@ -82,11 +82,13 @@ def test_activity_cursor_v2_round_trip_is_exclusive_scope_bound_and_utc():
     cursor = encode_activity_cursor(
         timestamp,
         "row-2",
+        board_id="board-a",
         action="card_moved",
         card_id="card-7",
     )
     decoded = decode_activity_cursor(
         cursor,
+        board_id="board-a",
         action="card_moved",
         card_id="card-7",
     )
@@ -117,10 +119,21 @@ def test_activity_cursor_rejects_filter_mismatch_and_byte_tampering():
     assert rejected.error_code == "cursor_integrity_failed"
 
 
-def test_activity_cursor_cannot_be_resigned_with_public_context_constant():
+def test_activity_cursor_rejects_cross_board_replay():
     cursor = encode_activity_cursor(
-        datetime(2026, 7, 14, tzinfo=timezone.utc), "row-1"
+        "2026-07-14T00:00:00Z",
+        "row-board-a",
+        board_id="board-a",
     )
+
+    assert (
+        decode_activity_cursor(cursor, board_id="board-b").error_code
+        == "cursor_scope_mismatch"
+    )
+
+
+def test_activity_cursor_cannot_be_resigned_with_public_context_constant():
+    cursor = encode_activity_cursor(datetime(2026, 7, 14, tzinfo=timezone.utc), "row-1")
     envelope = json.loads(base64.urlsafe_b64decode(cursor).decode("utf-8"))
     envelope["payload"]["id"] = "forged-row"
     canonical = json.dumps(
@@ -149,10 +162,17 @@ def test_activity_cursor_reads_legacy_only_without_filter_scope():
         decode_activity_cursor(legacy, action="card_moved").error_code
         == "cursor_scope_mismatch"
     )
+    assert (
+        decode_activity_cursor(legacy, board_id="board-a").error_code
+        == "cursor_scope_mismatch"
+    )
 
 
 def test_resources_publish_temporal_category_and_cursor_contracts():
-    root = Path(__file__).parents[1] / "src/okto_pulse/core/mcp/resources/reference/tool-docs"
+    root = (
+        Path(__file__).parents[1]
+        / "src/okto_pulse/core/mcp/resources/reference/tool-docs"
+    )
     analytics = (root / "analytics.md").read_text(encoding="utf-8")
     activity = (root / "activity.md").read_text(encoding="utf-8")
 

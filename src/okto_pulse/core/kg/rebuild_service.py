@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import threading
 from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -97,6 +98,7 @@ class RebuildBlockReason(str, Enum):
     MANIFEST_NOT_FOUND = "manifest_not_found"
     MANIFEST_DRIFT = "manifest_drift"
     LOCK_CONTENTION = "lock_contention"
+    LEASE_LOST = "lease_lost"
     LIFECYCLE_FAILED = "lifecycle_failed"
     STEP_EXCEPTION = "step_exception"
     QUARANTINE_FAILED = "quarantine_failed"
@@ -288,6 +290,20 @@ class RebuildStepInput:
     # generating its own (UUID v4 / TR3 lives in the repository).
     previous_kg_generation_id: str | None = None
     candidate_kg_generation_id: str | None = None
+    # Cooperative controls supplied by the outer orchestrator.  Edition
+    # adapters poll these while executing long-running rebuild phases so an
+    # MCP cancellation cannot leave a background thread holding the writer
+    # lease, and the lease cannot expire during a valid long drain.
+    cancel_requested: Callable[[], bool] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    lease_renew: Callable[[], bool] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +347,67 @@ def _default_event_emitter(_event: dict[str, Any]) -> None:
     return None
 
 
+class _RebuildLeaseHeartbeat:
+    """Renew one exact single-writer token while blocking rebuild code runs."""
+
+    def __init__(
+        self,
+        renew: Callable[[], bool],
+        *,
+        board_id: str,
+        interval_seconds: float,
+    ) -> None:
+        if interval_seconds <= 0:
+            raise ValueError("lease heartbeat interval must be positive")
+        self._renew = renew
+        self._board_id = board_id
+        self._interval_seconds = interval_seconds
+        self._stop = threading.Event()
+        self._lost = threading.Event()
+        self._renew_lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"kg-rebuild-lease:{self._board_id}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def renew_now(self) -> bool:
+        if self._lost.is_set():
+            return False
+        with self._renew_lock:
+            if self._lost.is_set():
+                return False
+            try:
+                renewed = bool(self._renew())
+            except Exception as exc:
+                logger.error(
+                    "kg.rebuild.lease_renew_failed board=%s err=%s",
+                    self._board_id,
+                    exc,
+                )
+                renewed = False
+            if not renewed:
+                self._lost.set()
+            return renewed
+
+    def stop(self) -> None:
+        self._stop.set()
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=max(1.0, self._interval_seconds * 2))
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval_seconds):
+            if not self.renew_now():
+                return
+
+
 # --- The service -------------------------------------------------------------
 
 
@@ -364,9 +441,15 @@ class KGRebuildService:
     # Lock TTL while the rebuild runs. Default 1h — enough for the
     # 1000-iter stress at KG-01.6 plus headroom.
     lock_ttl_seconds: int = 3600
+    lease_heartbeat_interval_seconds: float | None = None
     artifact_store: RebuildAuditArtifactStore | None = None
 
     def __post_init__(self) -> None:
+        if (
+            self.lease_heartbeat_interval_seconds is not None
+            and self.lease_heartbeat_interval_seconds <= 0
+        ):
+            raise ValueError("lease_heartbeat_interval_seconds must be positive")
         object.__setattr__(
             self,
             "artifact_store",
@@ -388,6 +471,7 @@ class KGRebuildService:
         preflight_hash: str,
         manifest_ref: str,
         reason: str,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> RebuildRunResult:
         """Execute the rebuild under the KG-01 admin lane.
 
@@ -598,6 +682,21 @@ class KGRebuildService:
                 )
             candidate_generation_id = generate_kg_generation_id()
 
+        lease_heartbeat = _RebuildLeaseHeartbeat(
+            lambda: self.single_writer_lock.renew(
+                board_id=board_id,
+                owner_token=owner_token,
+                ttl_seconds=self.lock_ttl_seconds,
+            ),
+            board_id=board_id,
+            interval_seconds=(
+                self.lease_heartbeat_interval_seconds
+                if self.lease_heartbeat_interval_seconds is not None
+                else max(0.1, min(30.0, self.lock_ttl_seconds / 3))
+            ),
+        )
+        lease_heartbeat.start()
+
         try:
             with under_safe_write(board_id, owner_token, operation):
                 # Optional pre-step quarantine (reset/rebuild may need
@@ -617,6 +716,8 @@ class KGRebuildService:
                     owner_token=owner_token,
                     previous_kg_generation_id=previous_generation,
                     candidate_kg_generation_id=candidate_generation_id,
+                    cancel_requested=cancel_requested,
+                    lease_renew=lease_heartbeat.renew_now,
                 )
                 try:
                     step_result = self.rebuild_step_adapter(step_input)
@@ -640,6 +741,7 @@ class KGRebuildService:
                         triggered_by=actor_id,
                         step_result=None,
                         candidate_kg_generation_id=candidate_generation_id,
+                        lease_heartbeat=lease_heartbeat,
                     )
 
                 affected = step_result.affected_files
@@ -651,10 +753,22 @@ class KGRebuildService:
                 )
 
                 if not step_result.ok:
+                    lease_lost = (
+                        step_result.detail is not None
+                        and step_result.detail.startswith("lease_lost:")
+                    )
                     return self._finalise_with_release(
                         run_id=run_id,
-                        outcome=RebuildOutcome.FAILED,
-                        reason=RebuildBlockReason.LIFECYCLE_FAILED,
+                        outcome=(
+                            RebuildOutcome.REBUILD_FAILED
+                            if lease_lost
+                            else RebuildOutcome.FAILED
+                        ),
+                        reason=(
+                            RebuildBlockReason.LEASE_LOST
+                            if lease_lost
+                            else RebuildBlockReason.LIFECYCLE_FAILED
+                        ),
                         board_id=board_id,
                         actor_id=actor_id,
                         operation=operation,
@@ -670,6 +784,7 @@ class KGRebuildService:
                         triggered_by=actor_id,
                         step_result=step_result,
                         candidate_kg_generation_id=candidate_generation_id,
+                        lease_heartbeat=lease_heartbeat,
                     )
 
                 # 5b. Run safe write lifecycle (checkpoint/flush/fsync/
@@ -704,6 +819,29 @@ class KGRebuildService:
                         triggered_by=actor_id,
                         step_result=step_result,
                         candidate_kg_generation_id=candidate_generation_id,
+                        lease_heartbeat=lease_heartbeat,
+                    )
+                if not lease_heartbeat.renew_now():
+                    return self._finalise_with_release(
+                        run_id=run_id,
+                        outcome=RebuildOutcome.REBUILD_FAILED,
+                        reason=RebuildBlockReason.LEASE_LOST,
+                        board_id=board_id,
+                        actor_id=actor_id,
+                        operation=operation,
+                        confirmation_id=confirmation_id,
+                        manifest_ref=manifest_ref,
+                        user_reason=reason,
+                        started_at=started_at,
+                        owner_token=owner_token,
+                        affected_files=affected,
+                        previous_kg_generation_id=previous_generation,
+                        current_kg_generation_id=None,
+                        detail="single-writer lease lost after lifecycle",
+                        triggered_by=actor_id,
+                        step_result=step_result,
+                        candidate_kg_generation_id=candidate_generation_id,
+                        lease_heartbeat=lease_heartbeat,
                     )
         except Exception as exc:
             # Catch-all so we never leak the lock.
@@ -726,6 +864,7 @@ class KGRebuildService:
                 triggered_by=actor_id,
                 step_result=step_result_holder.get("result"),
                 candidate_kg_generation_id=candidate_generation_id,
+                lease_heartbeat=lease_heartbeat,
             )
 
         # 5c. G1 (SPEC4 card 619e58e1): per-layer materialization guard. The graph
@@ -760,6 +899,7 @@ class KGRebuildService:
                 triggered_by=actor_id,
                 step_result=_final_step,
                 candidate_kg_generation_id=candidate_generation_id,
+                lease_heartbeat=lease_heartbeat,
             )
 
         # 6. Happy path: COMPLETED.
@@ -782,6 +922,7 @@ class KGRebuildService:
             triggered_by=actor_id,
             step_result=step_result_holder.get("result"),
             candidate_kg_generation_id=candidate_generation_id,
+            lease_heartbeat=lease_heartbeat,
         )
 
     # --- internals ---------------------------------------------------------
@@ -807,64 +948,75 @@ class KGRebuildService:
         triggered_by: str | None = None,
         step_result: RebuildStepResult | None = None,
         candidate_kg_generation_id: str | None = None,
+        lease_heartbeat: _RebuildLeaseHeartbeat | None = None,
     ) -> RebuildRunResult:
-        # Always release the lock — even on failure. The lock is the
-        # KG-01 single-writer; leaving it orphaned blocks every future
-        # writer until TTL.
         try:
-            self.single_writer_lock.release(board_id=board_id, owner_token=owner_token)
-        except Exception as exc:
-            logger.error(
-                "kg.rebuild.lock_release_failed board=%s err=%s",
-                board_id,
-                exc,
+            # KG-02.4 report-first terminal gate. Reports, generation
+            # promotion, terminal events and audit/counter effects remain under
+            # the same board writer fence as the graph rebuild. Releasing here
+            # earlier allows a concurrent board erasure to verify absence and
+            # then have this finalisation recreate board-scoped state.
+            report_first_decision = self._apply_report_first_gate(
+                run_id=run_id,
+                outcome=outcome,
+                reason=reason,
+                board_id=board_id,
+                actor_id=actor_id,
+                operation=operation,
+                manifest_ref=manifest_ref,
+                user_reason=user_reason,
+                started_at=started_at,
+                affected_files=affected_files,
+                previous_kg_generation_id=previous_kg_generation_id,
+                candidate_kg_generation_id=(
+                    current_kg_generation_id or candidate_kg_generation_id
+                ),
+                detail=detail,
+                triggered_by=triggered_by or actor_id,
+                step_result=step_result,
             )
 
-        # KG-02.4 report-first terminal gate. Only runs when the four
-        # primitives are wired; otherwise we fall back to the KG-02.3
-        # finalisation (audit + counter, no promotion).
-        report_first_decision = self._apply_report_first_gate(
-            run_id=run_id,
-            outcome=outcome,
-            reason=reason,
-            board_id=board_id,
-            actor_id=actor_id,
-            operation=operation,
-            manifest_ref=manifest_ref,
-            user_reason=user_reason,
-            started_at=started_at,
-            affected_files=affected_files,
-            previous_kg_generation_id=previous_kg_generation_id,
-            candidate_kg_generation_id=(
-                current_kg_generation_id or candidate_kg_generation_id
-            ),
-            detail=detail,
-            triggered_by=triggered_by or actor_id,
-            step_result=step_result,
-        )
-
-        return self._emit_audit_and_counter(
-            run_id=run_id,
-            outcome=report_first_decision["outcome"],
-            reason=report_first_decision["reason"],
-            board_id=board_id,
-            actor_id=actor_id,
-            operation=operation,
-            confirmation_id=confirmation_id,
-            manifest_ref=manifest_ref,
-            user_reason=user_reason,
-            started_at=started_at,
-            affected_files=affected_files,
-            previous_kg_generation_id=previous_kg_generation_id,
-            current_kg_generation_id=report_first_decision["current_kg_generation_id"],
-            detail=report_first_decision["detail"] or detail,
-            report_ref=report_first_decision["report_ref"],
-            report_id=report_first_decision["report_id"],
-            publishable_status=report_first_decision["publishable_status"],
-            promotion_outcome=report_first_decision["promotion_outcome"],
-            operator_action=report_first_decision["operator_action"],
-            event_emitted=report_first_decision["event_emitted"],
-        )
+            return self._emit_audit_and_counter(
+                run_id=run_id,
+                outcome=report_first_decision["outcome"],
+                reason=report_first_decision["reason"],
+                board_id=board_id,
+                actor_id=actor_id,
+                operation=operation,
+                confirmation_id=confirmation_id,
+                manifest_ref=manifest_ref,
+                user_reason=user_reason,
+                started_at=started_at,
+                affected_files=affected_files,
+                previous_kg_generation_id=previous_kg_generation_id,
+                current_kg_generation_id=report_first_decision[
+                    "current_kg_generation_id"
+                ],
+                detail=report_first_decision["detail"] or detail,
+                report_ref=report_first_decision["report_ref"],
+                report_id=report_first_decision["report_id"],
+                publishable_status=report_first_decision["publishable_status"],
+                promotion_outcome=report_first_decision["promotion_outcome"],
+                operator_action=report_first_decision["operator_action"],
+                event_emitted=report_first_decision["event_emitted"],
+            )
+        finally:
+            # Always release the lock — even when report/audit finalisation
+            # fails. Stop the heartbeat immediately before release so it cannot
+            # renew a token that has already been relinquished.
+            if lease_heartbeat is not None:
+                lease_heartbeat.stop()
+            try:
+                self.single_writer_lock.release(
+                    board_id=board_id,
+                    owner_token=owner_token,
+                )
+            except Exception as exc:
+                logger.error(
+                    "kg.rebuild.lock_release_failed board=%s err=%s",
+                    board_id,
+                    exc,
+                )
 
     # --- KG-02.4 report-first terminal gate -------------------------------
 

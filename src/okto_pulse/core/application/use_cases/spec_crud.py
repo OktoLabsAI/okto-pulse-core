@@ -78,9 +78,7 @@ async def _require_actor_board_spec(
         uow,
         spec.board_id,
         actor,
-        allowed_share_permissions=(
-            _SPEC_WRITE_SHARE_PERMISSIONS if write else None
-        ),
+        allowed_share_permissions=(_SPEC_WRITE_SHARE_PERMISSIONS if write else None),
     )
     if board is None:
         raise EntityNotFoundError("spec", spec_id)
@@ -125,12 +123,15 @@ class CreateSpecUseCase:
         self, command: CreateSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> CreateSpecResult:
         service = uow.services.specs
-        if await load_accessible_board(
-            uow,
-            command.board_id,
-            actor,
-            allowed_share_permissions=_SPEC_WRITE_SHARE_PERMISSIONS,
-        ) is None:
+        if (
+            await load_accessible_board(
+                uow,
+                command.board_id,
+                actor,
+                allowed_share_permissions=_SPEC_WRITE_SHARE_PERMISSIONS,
+            )
+            is None
+        ):
             raise EntityNotFoundError("board", command.board_id)
         ideation_id = getattr(command.data, "ideation_id", None)
         refinement_id = getattr(command.data, "refinement_id", None)
@@ -294,7 +295,10 @@ class DeleteSpecCommand:
 
 
 class DeleteSpecResult:
-    __slots__ = ()
+    __slots__ = ("takedown",)
+
+    def __init__(self, takedown: dict[str, object]) -> None:
+        self.takedown = takedown
 
 
 class DeleteSpecUseCase:
@@ -305,11 +309,21 @@ class DeleteSpecUseCase:
     ) -> DeleteSpecResult:
         service = uow.services.specs
         await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
-        deleted = await service.delete_spec(command.spec_id, actor.actor_id)
-        if not deleted:
+        delete_result = await service.delete_spec(
+            command.spec_id,
+            actor.actor_id,
+            return_receipt=True,
+        )
+        if not delete_result:
             raise EntityNotFoundError("spec", command.spec_id)
+        receipt_serializer = getattr(delete_result, "to_dict", None)
+        if not callable(receipt_serializer):
+            raise RuntimeError("governed_delete_receipt_missing")
+        takedown = receipt_serializer()
+        if not isinstance(takedown, dict):
+            raise RuntimeError("governed_delete_receipt_invalid")
         await commit(uow)
-        return DeleteSpecResult()
+        return DeleteSpecResult(takedown)
 
 
 # --- history ----------------------------------------------------------------
@@ -582,9 +596,7 @@ class RunStructuredSpecEntityUseCase:
             StructuredSpecEntityCommand,
         )
 
-        spec = await _require_actor_board_spec(
-            uow, command.spec_id, actor, write=True
-        )
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         permission_set = await uow.services.resolve_user_permissions(
             actor.actor_id,
             spec.board_id,
@@ -698,9 +710,7 @@ class LinkCardToSpecUseCase:
         uow: PulseUnitOfWork,
     ) -> LinkCardToSpecResult:
         service = uow.services.specs
-        spec = await _require_actor_board_spec(
-            uow, command.spec_id, actor, write=True
-        )
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         await _require_spec_board_card(uow.services, command.card_id, spec)
         linked = await service.link_card(
             command.spec_id, command.card_id, user_id=actor.actor_id
@@ -742,9 +752,7 @@ class UnlinkCardFromSpecUseCase:
         uow: PulseUnitOfWork,
     ) -> UnlinkCardFromSpecResult:
         service = uow.services.specs
-        spec = await _require_actor_board_spec(
-            uow, command.spec_id, actor, write=True
-        )
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         card = await _require_spec_board_card(uow.services, command.card_id, spec)
         if card.spec_id != command.spec_id:
             raise EntityNotFoundError("card", command.card_id)
@@ -873,9 +881,7 @@ class UnlinkTaskFromScenarioUseCase:
         from okto_pulse.core.services.application_schemas import CardUpdate
 
         spec_service = uow.services.specs
-        spec = await _require_actor_board_spec(
-            uow, command.spec_id, actor, write=True
-        )
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
 
         card_service = uow.services.cards
         card = await _require_spec_board_card(uow.services, command.card_id, spec)
@@ -953,9 +959,7 @@ class SetTestScenarioStatusUseCase:
     ) -> SetTestScenarioStatusResult:
         service = uow.services.specs
         try:
-            await _require_actor_board_spec(
-                uow, command.spec_id, actor, write=True
-            )
+            await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         except EntityNotFoundError as exc:
             raise ValueError("scenario_not_found: spec not found") from exc
         result = await service.set_test_scenario_status(
@@ -1174,9 +1178,7 @@ class LinkTaskToIntegrationRequirementUseCase:
     ) -> LinkTaskToIntegrationRequirementResult:
 
         spec_service = uow.services.specs
-        spec = await _require_actor_board_spec(
-            uow, command.spec_id, actor, write=True
-        )
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         await _require_spec_board_card(uow.services, command.card_id, spec)
 
         await _check_requirement_link_permissions(
@@ -1250,9 +1252,7 @@ class LinkTaskToObservabilityRequirementUseCase:
     ) -> LinkTaskToObservabilityRequirementResult:
 
         spec_service = uow.services.specs
-        spec = await _require_actor_board_spec(
-            uow, command.spec_id, actor, write=True
-        )
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
         await _require_spec_board_card(uow.services, command.card_id, spec)
 
         await _check_requirement_link_permissions(
@@ -1262,9 +1262,7 @@ class LinkTaskToObservabilityRequirementUseCase:
             ("spec.observability_requirements.link_task", "card.link_to.or"),
         )
 
-        requirements = [
-            dict(item) for item in (spec.observability_requirements or [])
-        ]
+        requirements = [dict(item) for item in (spec.observability_requirements or [])]
         target = next(
             (item for item in requirements if item.get("id") == command.requirement_id),
             None,
@@ -1701,9 +1699,7 @@ class SubmitSpecEvaluationUseCase:
         )
 
         service = uow.services.specs
-        spec = await _require_actor_board_spec(
-            uow, command.spec_id, actor, write=True
-        )
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
 
         try:
             evaluator_name = await uow.services.resolve_actor_name(

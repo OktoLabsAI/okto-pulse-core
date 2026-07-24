@@ -49,11 +49,20 @@ USER_ID = "r01a-mcprefinement-agent"
 OTHER_USER_ID = "r01a-mcprefinement-other-agent"
 
 _MIGRATED = (
-    "create_refinement", "get_refinement", "update_refinement", "move_refinement",
-    "delete_refinement", "get_refinement_context", "get_refinement_snapshot",
-    "get_refinement_history", "get_refinement_knowledge", "add_refinement_knowledge",
-    "delete_refinement_knowledge", "ask_refinement_choice_question",
-    "answer_refinement_question", "delete_refinement_question",
+    "create_refinement",
+    "get_refinement",
+    "update_refinement",
+    "move_refinement",
+    "delete_refinement",
+    "get_refinement_context",
+    "get_refinement_snapshot",
+    "get_refinement_history",
+    "get_refinement_knowledge",
+    "add_refinement_knowledge",
+    "delete_refinement_knowledge",
+    "ask_refinement_choice_question",
+    "answer_refinement_question",
+    "delete_refinement_question",
 )
 
 
@@ -90,7 +99,9 @@ def test_mcp_refinement_crud_is_transport_free():
         if isinstance(n, (ast.Import, ast.ImportFrom))
         and (getattr(n, "module", None) or "").startswith("okto_pulse.core.mcp")
     ]
-    assert not bad, f"mcp_refinement_crud must not import the MCP transport package: {bad}"
+    assert not bad, (
+        f"mcp_refinement_crud must not import the MCP transport package: {bad}"
+    )
 
 
 def test_qa_activity_log_is_atomic_in_use_case():
@@ -114,15 +125,20 @@ def _stub_ctx():
     return type(
         "Ctx",
         (),
-        {"agent_id": USER_ID, "agent_name": "mcp-refinement-test", "permissions": ["*"]},
+        {
+            "agent_id": USER_ID,
+            "agent_name": "mcp-refinement-test",
+            "permissions": ["*"],
+        },
     )()
 
 
 @pytest.fixture(autouse=True)
 def _auth():
-    with patch.object(
-        mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())
-    ), patch.object(mcp_server, "check_permission", return_value=None):
+    with (
+        patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())),
+        patch.object(mcp_server, "check_permission", return_value=None),
+    ):
         yield
 
 
@@ -139,14 +155,19 @@ async def _seed():
                 db.add(Board(id=bid, name="MCP Refinement", owner_id=USER_ID))
         await db.flush()
         ideation = Ideation(
-            board_id=BOARD_ID, title="Parent", status=IdeationStatus.DONE,
+            board_id=BOARD_ID,
+            title="Parent",
+            status=IdeationStatus.DONE,
             created_by=USER_ID,
         )
         db.add(ideation)
         await db.flush()
         refinement = Refinement(
-            board_id=BOARD_ID, ideation_id=ideation.id, title="Refine A",
-            status=RefinementStatus.DRAFT, created_by=USER_ID,
+            board_id=BOARD_ID,
+            ideation_id=ideation.id,
+            title="Refine A",
+            status=RefinementStatus.DRAFT,
+            created_by=USER_ID,
             # draft->review has a content gate (>=1 non-empty in_scope item).
             in_scope=["the in-scope item"],
         )
@@ -199,9 +220,7 @@ async def _refinement_count() -> int:
     from okto_pulse.core.infra.database import get_session_factory
 
     async with get_session_factory()() as db:
-        return int(
-            await db.scalar(select(func.count()).select_from(Refinement)) or 0
-        )
+        return int(await db.scalar(select(func.count()).select_from(Refinement)) or 0)
 
 
 @pytest.fixture
@@ -320,8 +339,7 @@ async def _refinement_graph_state(graph: dict[str, dict[str, str]]) -> dict:
                 or 0
             ),
             "qa_count": int(
-                await db.scalar(select(func.count()).select_from(RefinementQAItem))
-                or 0
+                await db.scalar(select(func.count()).select_from(RefinementQAItem)) or 0
             ),
             "activity_count": int(
                 await db.scalar(select(func.count()).select_from(ActivityLog)) or 0
@@ -386,17 +404,23 @@ async def test_create_refinement_missing_parent_is_not_found_and_writes_nothing(
 
 @pytest.mark.asyncio
 async def test_get_update_move_delete_roundtrip(_seed):
-    got = await _call("okto_pulse_get_refinement", board_id=BOARD_ID, refinement_id=_seed)
+    got = await _call(
+        "okto_pulse_get_refinement", board_id=BOARD_ID, refinement_id=_seed
+    )
     assert got["id"] == _seed
 
     updated = await _call(
-        "okto_pulse_update_refinement", board_id=BOARD_ID, refinement_id=_seed,
+        "okto_pulse_update_refinement",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
         title="Refine A v2",
     )
     assert updated["refinement"]["title"] == "Refine A v2"
 
     moved = await _call(
-        "okto_pulse_move_refinement", board_id=BOARD_ID, refinement_id=_seed,
+        "okto_pulse_move_refinement",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
         status="review",
     )
     assert moved["from_status"] == "draft" and moved["to_status"] == "review"
@@ -797,19 +821,26 @@ async def test_refinement_same_board_matrix_preserves_all_capabilities(
 @pytest.mark.asyncio
 async def test_knowledge_add_get_roundtrip(_seed):
     added = await _call(
-        "okto_pulse_add_refinement_knowledge", board_id=BOARD_ID, refinement_id=_seed,
-        title="Notes", content="some markdown",
+        "okto_pulse_add_refinement_knowledge",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+        title="Notes",
+        content="some markdown",
         governance_metadata=valid_governance_metadata(),
     )
     assert added["success"] is True
     assert added["knowledge"]["governance"]["metadata_status"] == "complete"
     kb_id = added["knowledge"]["id"]
     got = await _call(
-        "okto_pulse_get_refinement_knowledge", board_id=BOARD_ID, refinement_id=_seed,
+        "okto_pulse_get_refinement_knowledge",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
         knowledge_id=kb_id,
     )
     assert got["id"] == kb_id
     assert got["governance"] == added["knowledge"]["governance"]
+    assert got == added["knowledge"]
+    assert len(got["content_hash"]) == 64
 
     rejected = await _call(
         "okto_pulse_add_refinement_knowledge",
@@ -851,15 +882,21 @@ async def test_knowledge_add_get_roundtrip(_seed):
 @pytest.mark.asyncio
 async def test_qa_ask_and_answer(_seed):
     asked = await _call(
-        "okto_pulse_ask_refinement_choice_question", board_id=BOARD_ID,
-        refinement_id=_seed, question="A or B?", options="A|B",
+        "okto_pulse_ask_refinement_choice_question",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+        question="A or B?",
+        options="A|B",
     )
     assert asked["success"] is True
     qa_id = asked["qa"]["id"]
     opt_id = asked["qa"]["choices"][0]["id"]
     answered = await _call(
-        "okto_pulse_answer_refinement_question", board_id=BOARD_ID,
-        refinement_id=_seed, qa_id=qa_id, selected=opt_id,
+        "okto_pulse_answer_refinement_question",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+        qa_id=qa_id,
+        selected=opt_id,
     )
     # Same agent asked + answers -> McpAnswerRefinementQuestionUseCase catches
     # QASelfAnsweringNotAllowedError (committing, legacy parity) -> error envelope.

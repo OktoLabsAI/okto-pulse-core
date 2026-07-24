@@ -35,6 +35,7 @@ _STRUCTURED_ENTITY_EVENT_PREFIX = "structured_entity."
 _SPRINT_EVENT_PREFIX = "sprint."
 _REFINEMENT_EVENT_PREFIX = "refinement."
 _STORY_EVENT_PREFIX = "story."
+_IDEATION_EVENT_PREFIX = "ideation."
 _DERIVED_EVENTS = {
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
@@ -58,6 +59,7 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
 
 
 @register_handler(
+    "artifact.archive_changed",
     "card.created",
     "card.moved",
     "card.conclusion_added",
@@ -73,9 +75,11 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "structured_entity.updated",
     "structured_entity.revoked",
     "refinement.semantic_changed",
+    "refinement.moved",
     "sprint.created",
     "sprint.moved",
     "sprint.closed",
+    "ideation.moved",
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
     "story.created",
@@ -96,7 +100,9 @@ class ConsolidationEnqueuer:
         priority = "high" if event.event_type in _HIGH_PRIORITY_EVENTS else "normal"
 
         for artifact_type, artifact_id in targets:
-            await self._enqueue_one(event, artifact_type, artifact_id, priority, session)
+            await self._enqueue_one(
+                event, artifact_type, artifact_id, priority, session
+            )
 
     async def _enqueue_one(
         self,
@@ -174,6 +180,7 @@ class ConsolidationEnqueuer:
             from okto_pulse.core.services.queue_health_service import (
                 record_alert_fired,
             )
+
             record_alert_fired()
 
         # Spec 4007e4a3 (Ideação #3, FR5): structured counter for dual-target
@@ -187,7 +194,9 @@ class ConsolidationEnqueuer:
             logger.info(
                 "kg.consolidation.reenqueue.fired event_type=%s board=%s "
                 "spec_id=%s card_id=%s",
-                event.event_type, event.board_id, artifact_id,
+                event.event_type,
+                event.board_id,
+                artifact_id,
                 getattr(event, "card_id", None),
                 extra={
                     "event": "kg.consolidation.reenqueue.fired",
@@ -222,9 +231,7 @@ class ConsolidationEnqueuer:
                 },
             )
 
-    def _map_targets(
-        self, event: DomainEvent
-    ) -> list[tuple[str, str]]:
+    def _map_targets(self, event: DomainEvent) -> list[tuple[str, str]]:
         """Return one or more (artifact_type, artifact_id) targets per event.
 
         Most events map to a single target. Spec 4007e4a3 (Ideação #3)
@@ -235,6 +242,18 @@ class ConsolidationEnqueuer:
         """
         et = event.event_type
         targets: list[tuple[str, str]] = []
+
+        if et == "artifact.archive_changed":
+            # Archive is handled synchronously by the reversible KG tombstone
+            # handler. Restore re-enqueues the authoritative source so it also
+            # rematerializes after an intervening rebuild physically omitted it.
+            if bool(getattr(event, "archived", False)):
+                return targets
+            artifact_type = str(getattr(event, "artifact_type", ""))
+            artifact_id = getattr(event, "artifact_id", None)
+            if artifact_type and artifact_id:
+                targets.append((artifact_type, artifact_id))
+            return targets
 
         # Dual-target spec-only events (Ideação #2): spec re-enqueue, no card.
         if et in _CARD_TO_SPEC_EVENTS:
@@ -255,7 +274,9 @@ class ConsolidationEnqueuer:
                 logger.debug(
                     "kg.consolidation.reenqueue.skipped reason=orphan_card "
                     "event_type=%s board=%s card_id=%s",
-                    et, event.board_id, card_id,
+                    et,
+                    event.board_id,
+                    card_id,
                     extra={
                         "event": "kg.consolidation.reenqueue.skipped",
                         "reason": "orphan_card",
@@ -281,6 +302,11 @@ class ConsolidationEnqueuer:
             sid = getattr(event, "spec_id", None)
             if sid:
                 targets.append(("spec", sid))
+            return targets
+        if et.startswith(_IDEATION_EVENT_PREFIX):
+            iid = getattr(event, "ideation_id", None)
+            if iid:
+                targets.append(("ideation", iid))
             return targets
         if et == _BUG_REGRESSION_DECISION_EVENT:
             bug_id = getattr(event, "bug_id", None)

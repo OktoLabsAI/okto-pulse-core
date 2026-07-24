@@ -25,6 +25,7 @@ ApplicationOperator = Literal[
     "is_none",
     "not_none",
     "contains",
+    "json_member",
     "ilike",
 ]
 
@@ -128,6 +129,24 @@ class ApplicationRecordConflictError(RuntimeError):
 #: restricts limit to {25, 50, 100}; MCP caps at 200.
 PAGE_LIMIT_MIN = 1
 PAGE_LIMIT_MAX = 200
+
+#: Largest offset that fits SQLite's signed 64-bit INTEGER. A larger OFFSET
+#: overflows the sqlite3 driver with ``OverflowError``, so every pagination
+#: boundary (REST adapters + the Core executor) must reject an offset above this
+#: with a typed validation error instead of letting it reach the database.
+PAGE_OFFSET_MAX = (1 << 63) - 1
+
+
+def bounded_page_offset(offset: Any) -> int:
+    """Clamp ``offset`` to ``>= 0`` and REJECT (raise ``ValueError``) an offset
+    above :data:`PAGE_OFFSET_MAX`, which would overflow SQLite's signed 64-bit
+    OFFSET binding with ``OverflowError``. Boundaries with a typed error contract
+    (MCP ``invalid_pagination`` / REST 400) catch the ``ValueError`` and map it.
+    """
+    value = int(offset)
+    if value > PAGE_OFFSET_MAX:
+        raise ValueError(f"offset exceeds the maximum {PAGE_OFFSET_MAX}")
+    return max(0, value)
 
 
 @dataclass(frozen=True, slots=True)

@@ -157,9 +157,7 @@ async def test_guidelines_roundtrip_export_import_clean_board():
     assert match[0]["scope"] == "global"
 
     board_b_items = client_b.get(f"{PREFIX}/boards/{board_b}/guidelines").json()
-    inline_match = [
-        e for e in board_b_items if e["guideline"]["title"] == inline_title
-    ]
+    inline_match = [e for e in board_b_items if e["guideline"]["title"] == inline_title]
     assert len(inline_match) == 1
     assert inline_match[0]["guideline"]["scope"] == "inline"
     assert inline_match[0]["guideline"]["board_id"] == board_b
@@ -187,8 +185,20 @@ async def test_guidelines_import_dry_run_does_not_mutate():
         "kind": "guidelines",
         "exported_at": "2026-07-10T00:00:00+00:00",
         "items": [
-            {"title": "Dry global", "content": "c", "tags": None, "scope": "global", "board_id": None},
-            {"title": "Dry inline", "content": "c", "tags": None, "scope": "inline", "board_id": None},
+            {
+                "title": "Dry global",
+                "content": "c",
+                "tags": None,
+                "scope": "global",
+                "board_id": None,
+            },
+            {
+                "title": "Dry inline",
+                "content": "c",
+                "tags": None,
+                "scope": "inline",
+                "board_id": None,
+            },
         ],
     }
     resp = client.post(
@@ -251,12 +261,21 @@ def test_design_systems_roundtrip_single_and_bulk():
     title_2 = _uid("DS Beta")
     ds1 = client.post(
         f"{PREFIX}/design-systems",
-        json={"title": title_1, "scope": "global", "payload": {"tokens": {"radius": 8}}},
+        json={
+            "title": title_1,
+            "scope": "global",
+            "payload": {"tokens": {"radius": 8}},
+        },
     )
     assert ds1.status_code == 200, ds1.text
     ds2 = client.post(
         f"{PREFIX}/design-systems",
-        json={"title": title_2, "scope": "global", "payload": {"content": "text"}, "status": "active"},
+        json={
+            "title": title_2,
+            "scope": "global",
+            "payload": {"content": "text"},
+            "status": "active",
+        },
     )
     assert ds2.status_code == 200, ds2.text
     ds1_id = ds1.json()["id"]
@@ -285,19 +304,31 @@ def test_design_systems_roundtrip_single_and_bulk():
 
     # "Clean" the catalog of the originals, then import them back.
     assert client.delete(f"{PREFIX}/design-systems/{ds1_id}").status_code == 204
-    assert client.delete(f"{PREFIX}/design-systems/{ds2.json()['id']}").status_code == 204
+    assert (
+        client.delete(f"{PREFIX}/design-systems/{ds2.json()['id']}").status_code == 204
+    )
 
     import_env = {"schema_version": "1", "kind": "design_systems", "items": mine}
     imported = client.post(f"{PREFIX}/design-systems/import", json=import_env)
     assert imported.status_code == 200, imported.text
-    assert imported.json() == {"created": 2, "skipped": [], "errors": [], "dry_run": False}
+    assert imported.json() == {
+        "created": 2,
+        "skipped": [],
+        "errors": [],
+        "dry_run": False,
+    }
 
-    catalog = client.get(f"{PREFIX}/design-systems").json()
+    catalog = client.get(f"{PREFIX}/design-systems").json()["items"]
     by_title = {d["title"]: d for d in catalog if d["title"] in {title_1, title_2}}
     assert set(by_title) == {title_1, title_2}
-    assert by_title[title_1]["payload"] == {"tokens": {"radius": 8}}
+    # Catalog lists use the bounded summary projection; the full payload is
+    # available only through the explicit detail read.
+    assert "payload" not in by_title[title_1]
     assert by_title[title_1]["status"] == "active"
-    assert by_title[title_1]["version"] == 1  # recreated via the normal path
+    imported_detail = client.get(f"{PREFIX}/design-systems/{by_title[title_1]['id']}")
+    assert imported_detail.status_code == 200, imported_detail.text
+    assert imported_detail.json()["payload"] == {"tokens": {"radius": 8}}
+    assert imported_detail.json()["version"] == 1  # recreated via the normal path
 
     # Re-import: (scope, board_id, title) natural key → skipped duplicates.
     again = client.post(f"{PREFIX}/design-systems/import", json=import_env)
@@ -318,13 +349,20 @@ def test_design_systems_import_dry_run_and_invalid_item():
             "schema_version": "1",
             "kind": "design_systems",
             "items": [
-                {"title": dry_title, "scope": "global", "payload": None, "status": "active"}
+                {
+                    "title": dry_title,
+                    "scope": "global",
+                    "payload": None,
+                    "status": "active",
+                }
             ],
         },
     )
     assert dry.status_code == 200, dry.text
     assert dry.json() == {"created": 1, "skipped": [], "errors": [], "dry_run": True}
-    titles = {d["title"] for d in client.get(f"{PREFIX}/design-systems").json()}
+    titles = {
+        d["title"] for d in client.get(f"{PREFIX}/design-systems").json()["items"]
+    }
     assert dry_title not in titles
 
     # Second item hits the SERVICE creation validator (inline requires board):
@@ -345,8 +383,12 @@ def test_design_systems_import_dry_run_and_invalid_item():
     detail = bad.json()["detail"]
     assert detail["created"] == 0
     assert detail["errors"][0]["index"] == 1
-    assert detail["errors"][0]["detail"]["code"] == "design_system_inline_requires_board"
-    titles = {d["title"] for d in client.get(f"{PREFIX}/design-systems").json()}
+    assert (
+        detail["errors"][0]["detail"]["code"] == "design_system_inline_requires_board"
+    )
+    titles = {
+        d["title"] for d in client.get(f"{PREFIX}/design-systems").json()["items"]
+    }
     assert valid_title not in titles
 
     # Unknown fields are rejected by the SAME create request model (extra=forbid).
@@ -409,7 +451,12 @@ def test_presets_roundtrip_clean_tenant_and_duplicates():
         json={"schema_version": "1", "kind": "presets", "items": mine},
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json() == {"created": 1, "skipped": [], "errors": [], "dry_run": False}
+    assert imported.json() == {
+        "created": 1,
+        "skipped": [],
+        "errors": [],
+        "dry_run": False,
+    }
     listed = client_b.get(f"{PREFIX}/presets").json()
     match = [p for p in listed if p["name"] == preset_name]
     assert len(match) == 1
@@ -459,7 +506,9 @@ def test_presets_import_dry_run_and_invalid_item():
 def test_board_config_global_writes_require_real_admin_principal():
     user = _uid("impexp-dbc-denied")
     client = _client(user, roles=())
-    before = len(client.get(f"{PREFIX}/default-board-config/versions").json()["versions"])
+    before = len(
+        client.get(f"{PREFIX}/default-board-config/versions").json()["versions"]
+    )
     template_id = f"missing-{uuid.uuid4().hex}"
     calls = (
         (
@@ -498,7 +547,9 @@ def test_board_config_global_writes_require_real_admin_principal():
         assert denied.status_code == 403, denied.text
         assert "admin or operator capability" in denied.json()["detail"]
 
-    after = len(client.get(f"{PREFIX}/default-board-config/versions").json()["versions"])
+    after = len(
+        client.get(f"{PREFIX}/default-board-config/versions").json()["versions"]
+    )
     assert after == before
 
     capability_client = _client(
@@ -566,7 +617,9 @@ def test_board_config_import_dry_run_and_invalid_item():
     user = _uid("impexp-dbc2")
     client = _client(user)
 
-    before = len(client.get(f"{PREFIX}/default-board-config/versions").json()["versions"])
+    before = len(
+        client.get(f"{PREFIX}/default-board-config/versions").json()["versions"]
+    )
 
     dry = client.post(
         f"{PREFIX}/default-board-config/import",

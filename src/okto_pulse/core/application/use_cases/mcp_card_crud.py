@@ -105,7 +105,11 @@ class McpCreateCardUseCase:
     """
 
     async def execute(
-        self, command: McpCreateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpCreateCardCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpCreateCardResult:
         try:
             _require_actor_board(actor, command.board_id)
@@ -215,7 +219,11 @@ class McpUpdateCardUseCase:
     (``CardOperationError``/``ValueError``) propagate for the adapter to map."""
 
     async def execute(
-        self, command: McpUpdateCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateCardCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpUpdateCardResult:
         service = uow.services.cards
         card = await _get_card_in_scope(
@@ -316,7 +324,11 @@ class McpDeleteCardUseCase:
     ``EntityNotFoundError`` (adapter ``"Card not found"``)."""
 
     async def execute(
-        self, command: McpDeleteCardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpDeleteCardCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpDeleteCardResult:
         service = uow.services.cards
         card = await _get_card_in_scope(
@@ -344,7 +356,11 @@ class McpDeleteCardUseCase:
             actor_name=actor.actor_name,
             details={"title": card.title},
         )
-        await commit(uow)
+        try:
+            await commit(uow)
+        except BaseException:
+            await service.restore_deleted_card_attachments(delete_result)
+            raise
         return McpDeleteCardResult(True, takedown)
 
 
@@ -383,12 +399,14 @@ class McpGetCardDependenciesUseCase:
     ``blocking_titles``. The legacy read-only ``db.commit()`` is skipped."""
 
     async def execute(
-        self, command: McpGetCardDependenciesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetCardDependenciesCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpGetCardDependenciesResult:
         service = uow.services.cards
-        await _get_card_in_scope(
-            service, command.card_id, actor.board_id or "", actor
-        )
+        await _get_card_in_scope(service, command.card_id, actor.board_id or "", actor)
 
         deps = [
             dependency
@@ -484,8 +502,13 @@ class McpCopyKnowledgeToCardResult:
     otherwise the copy counters/provenance the adapter shapes into JSON."""
 
     __slots__ = (
-        "empty_plan", "copied", "copied_ids", "fallback",
-        "src_type", "src_id", "total_on_card",
+        "empty_plan",
+        "copied",
+        "copied_ids",
+        "fallback",
+        "src_type",
+        "src_id",
+        "total_on_card",
     )
 
     def __init__(
@@ -551,9 +574,7 @@ class McpCopyKnowledgeToCardUseCase:
                 card_id=command.card_id,
             )
 
-        direct_kbs = await uow.services.spec_knowledge.list_knowledge(
-            command.spec_id
-        )
+        direct_kbs = await uow.services.spec_knowledge.list_knowledge(command.spec_id)
 
         fallback = False
         if direct_kbs:
@@ -572,9 +593,7 @@ class McpCopyKnowledgeToCardUseCase:
                     ),
                     "source_version": getattr(kb, "source_version", None),
                     "content_hash": getattr(kb, "content_hash", None),
-                    "governance_metadata": getattr(
-                        kb, "governance_metadata", None
-                    ),
+                    "governance_metadata": getattr(kb, "governance_metadata", None),
                 }
                 for kb in direct_kbs
             ]

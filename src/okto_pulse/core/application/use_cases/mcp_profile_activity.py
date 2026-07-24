@@ -43,7 +43,11 @@ class McpUpdateMyProfileResult:
 
 class McpUpdateMyProfileUseCase:
     async def execute(
-        self, command: McpUpdateMyProfileCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUpdateMyProfileCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpUpdateMyProfileResult:
 
         service = uow.services.agents
@@ -75,7 +79,11 @@ class McpListMyBoardsResult:
 
 class McpListMyBoardsUseCase:
     async def execute(
-        self, command: McpListMyBoardsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListMyBoardsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListMyBoardsResult:
 
         boards = await uow.services.agents.list_boards_for_agent(actor.actor_id)
@@ -101,7 +109,11 @@ class McpListMyMentionsResult:
 
 class McpListMyMentionsUseCase:
     async def execute(
-        self, command: McpListMyMentionsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListMyMentionsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListMyMentionsResult:
         mentions, show_all = await uow.services.list_my_mentions(
             board_id=command.board_id,
@@ -131,7 +143,11 @@ class McpMarkMentionsSeenResult:
 
 class McpMarkMentionsSeenUseCase:
     async def execute(
-        self, command: McpMarkMentionsSeenCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpMarkMentionsSeenCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpMarkMentionsSeenResult:
         marked, total = await uow.services.mark_mentions_seen(
             board_id=command.board_id,
@@ -160,7 +176,11 @@ class McpGetUnseenSummaryResult:
 
 class McpGetUnseenSummaryUseCase:
     async def execute(
-        self, command: McpGetUnseenSummaryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetUnseenSummaryCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpGetUnseenSummaryResult:
         payload = await uow.services.get_unseen_summary(
             board_id=command.board_id,
@@ -187,7 +207,11 @@ class McpListAgentsResult:
 
 class McpListAgentsUseCase:
     async def execute(
-        self, command: McpListAgentsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListAgentsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListAgentsResult:
 
         agents = await uow.services.agents.list_agents(command.board_id)
@@ -234,13 +258,19 @@ class McpGetActivityLogResult:
         self.next_cursor = next_cursor
 
 
-def _encode_activity_cursor(created_at: datetime, row_id: str) -> str:
-    return encode_activity_cursor(created_at, row_id)
+def _encode_activity_cursor(
+    created_at: datetime, row_id: str, *, board_id: str = ""
+) -> str:
+    return encode_activity_cursor(created_at, row_id, board_id=board_id)
 
 
 class McpGetActivityLogUseCase:
     async def execute(
-        self, command: McpGetActivityLogCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetActivityLogCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpGetActivityLogResult:
         rows, next_cursor_pair = await uow.services.get_activity_log_rows(
             board_id=command.board_id,
@@ -257,6 +287,7 @@ class McpGetActivityLogUseCase:
         if next_cursor_pair:
             next_cursor = encode_activity_cursor(
                 *next_cursor_pair,
+                board_id=command.board_id,
                 action=command.action,
                 card_id=command.card_id,
             )

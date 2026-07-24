@@ -171,9 +171,7 @@ async def _require_card_access(
         card_id,
         actor,
         expected_board_id=board_id,
-        allowed_share_permissions=(
-            _CARD_COLLABORATION_WRITE_SHARES if write else None
-        ),
+        allowed_share_permissions=(_CARD_COLLABORATION_WRITE_SHARES if write else None),
     )
     if card is None:
         if denied_error is not None:
@@ -194,12 +192,14 @@ async def _refresh(
 
 class CreateCardCommentUseCase:
     async def execute(
-        self, command: CreateCardCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: CreateCardCommentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> CommentResult:
 
-        await _require_card_access(
-            uow, command.card_id, actor, write=True
-        )
+        await _require_card_access(uow, command.card_id, actor, write=True)
         comment = await uow.services.comments.create_comment(
             command.card_id, actor.actor_id, command.data
         )
@@ -223,7 +223,11 @@ class CreateCardCommentUseCase:
 
 class UpdateCardCommentUseCase:
     async def execute(
-        self, command: UpdateCardCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: UpdateCardCommentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> CommentResult:
 
         card_id = await uow.services.comment_card_id(command.comment_id)
@@ -259,7 +263,11 @@ class UpdateCardCommentUseCase:
 
 class RespondToChoiceCommentUseCase:
     async def execute(
-        self, command: RespondToChoiceCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: RespondToChoiceCommentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> CommentResult:
         card_id = await uow.services.comment_card_id(command.comment_id)
         if card_id is None:
@@ -293,7 +301,11 @@ class RespondToChoiceCommentUseCase:
 
 class DeleteCardCommentUseCase:
     async def execute(
-        self, command: DeleteCardCommentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: DeleteCardCommentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> None:
         card_id = await uow.services.comment_card_id(command.comment_id)
         if card_id is None:
@@ -324,12 +336,14 @@ class DeleteCardCommentUseCase:
 
 class CreateCardQuestionUseCase:
     async def execute(
-        self, command: CreateCardQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: CreateCardQuestionCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> QAResult:
 
-        await _require_card_access(
-            uow, command.card_id, actor, write=True
-        )
+        await _require_card_access(uow, command.card_id, actor, write=True)
         qa = await uow.services.qa.create_question(
             command.card_id, actor.actor_id, command.data
         )
@@ -362,7 +376,11 @@ class CreateCardQuestionUseCase:
 
 class AnswerCardQuestionUseCase:
     async def execute(
-        self, command: AnswerCardQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: AnswerCardQuestionCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> QAResult:
         from okto_pulse.core.services import QASelfAnsweringNotAllowedError
 
@@ -416,7 +434,11 @@ class AnswerCardQuestionUseCase:
 
 class DeleteCardQuestionUseCase:
     async def execute(
-        self, command: DeleteCardQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: DeleteCardQuestionCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> None:
         card_id = await uow.services.qa_card_id(command.qa_id)
         if card_id is None:
@@ -434,14 +456,22 @@ class DeleteCardQuestionUseCase:
             raise QuestionNotFoundError(command.qa_id)
         if card_id:
             await _log_card_activity(
-                uow.services, card_id, "question_deleted", actor, {"qa_id": command.qa_id}
+                uow.services,
+                card_id,
+                "question_deleted",
+                actor,
+                {"qa_id": command.qa_id},
             )
         await commit(uow)
 
 
 class UploadCardAttachmentUseCase:
     async def execute(
-        self, command: UploadCardAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: UploadCardAttachmentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> AttachmentResult:
 
         await _require_card_access(
@@ -451,7 +481,8 @@ class UploadCardAttachmentUseCase:
             board_id=command.board_id,
             write=True,
         )
-        attachment = await uow.services.attachments.upload_attachment(
+        service = uow.services.attachments
+        attachment = await service.upload_attachment(
             card_id=command.card_id,
             user_id=actor.actor_id,
             filename=command.filename,
@@ -460,14 +491,18 @@ class UploadCardAttachmentUseCase:
         )
         if not attachment:
             raise CardNotFoundError(command.card_id)
-        await _log_card_activity(
-            uow.services,
-            command.card_id,
-            "attachment_uploaded",
-            actor,
-            {"filename": command.filename, "size": len(command.content)},
-        )
-        await commit(uow)
+        try:
+            await _log_card_activity(
+                uow.services,
+                command.card_id,
+                "attachment_uploaded",
+                actor,
+                {"filename": command.filename, "size": len(command.content)},
+            )
+            await commit(uow)
+        except BaseException:
+            await service.discard_uploaded_attachment(attachment)
+            raise
         await _refresh(
             uow,
             attachment,
@@ -487,7 +522,11 @@ class UploadCardAttachmentUseCase:
 
 class GetCardAttachmentUseCase:
     async def execute(
-        self, command: GetCardAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: GetCardAttachmentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> AttachmentResult:
 
         await _require_card_access(
@@ -506,7 +545,11 @@ class GetCardAttachmentUseCase:
 
 class DeleteCardAttachmentUseCase:
     async def execute(
-        self, command: DeleteCardAttachmentCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: DeleteCardAttachmentCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> None:
 
         await _require_card_access(
@@ -521,14 +564,18 @@ class DeleteCardAttachmentUseCase:
         if not attachment or attachment.card_id != command.card_id:
             raise AttachmentNotFoundError(command.attachment_id)
 
-        deleted = await service.delete_attachment(command.attachment_id)
-        if not deleted:
+        receipt = await service.delete_attachment(command.attachment_id)
+        if not receipt:
             raise AttachmentNotFoundError(command.attachment_id)
-        await _log_card_activity(
-            uow.services,
-            command.card_id,
-            "attachment_deleted",
-            actor,
-            {"attachment_id": command.attachment_id},
-        )
-        await commit(uow)
+        try:
+            await _log_card_activity(
+                uow.services,
+                command.card_id,
+                "attachment_deleted",
+                actor,
+                {"attachment_id": command.attachment_id},
+            )
+            await commit(uow)
+        except BaseException:
+            await service.restore_deleted_attachment(receipt)
+            raise

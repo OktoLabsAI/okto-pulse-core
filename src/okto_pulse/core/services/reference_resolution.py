@@ -11,10 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from okto_pulse.core.services.knowledge_governance_projection import (
-    with_knowledge_governance,
-)
-from okto_pulse.core.domain.knowledge_fingerprint import (
-    resolve_knowledge_content_sha256,
+    serialize_knowledge_base as _serialize_kb,
 )
 
 from okto_pulse.core.services.analytics_service import (
@@ -78,12 +75,18 @@ def _serialize_qa_item(qa: Any) -> dict[str, Any]:
         "selected": getattr(qa, "selected", None),
         "asked_by": getattr(qa, "asked_by", None),
         "answered_by": getattr(qa, "answered_by", None),
-        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
-        "answered_at": answered_at.isoformat() if hasattr(answered_at, "isoformat") else answered_at,
+        "created_at": created_at.isoformat()
+        if hasattr(created_at, "isoformat")
+        else created_at,
+        "answered_at": answered_at.isoformat()
+        if hasattr(answered_at, "isoformat")
+        else answered_at,
     }
 
 
-def serialize_parent_ideation_context(ideation: Any, *, include_qa: bool = True) -> dict[str, Any] | None:
+def serialize_parent_ideation_context(
+    ideation: Any, *, include_qa: bool = True
+) -> dict[str, Any] | None:
     """Return the structured parent ideation payload used by derived contexts."""
 
     if not ideation:
@@ -109,7 +112,9 @@ def serialize_parent_ideation_context(ideation: Any, *, include_qa: bool = True)
     return payload
 
 
-def compile_ideation_parent_context(ideation: Any, *, include_description: bool = True) -> str | None:
+def compile_ideation_parent_context(
+    ideation: Any, *, include_description: bool = True
+) -> str | None:
     """Compile the parent ideation's structured intent into markdown context."""
 
     if not ideation:
@@ -133,7 +138,9 @@ def compile_ideation_parent_context(ideation: Any, *, include_description: bool 
         context_parts.append(f"### Proposed Approach\n{ideation.proposed_approach}")
     if getattr(ideation, "scope_assessment", None):
         sa = ideation.scope_assessment
-        complexity = _enum_value(getattr(ideation, "complexity", None)) or "not evaluated"
+        complexity = (
+            _enum_value(getattr(ideation, "complexity", None)) or "not evaluated"
+        )
         context_parts.append(
             "### Scope Assessment\n"
             f"- Domains: {sa.get('domains', '?')}/5\n"
@@ -143,8 +150,7 @@ def compile_ideation_parent_context(ideation: Any, *, include_description: bool 
         )
 
     answered_qa = [
-        qa for qa in (getattr(ideation, "qa_items", None) or [])
-        if _qa_answered(qa)
+        qa for qa in (getattr(ideation, "qa_items", None) or []) if _qa_answered(qa)
     ]
     if answered_qa:
         qa_lines = []
@@ -153,10 +159,16 @@ def compile_ideation_parent_context(ideation: Any, *, include_description: bool 
             answer = serialized.get("answer")
             selected = serialized.get("selected")
             rendered_answer = answer if answer else ", ".join(selected or [])
-            qa_lines.append(f"**Q:** {serialized.get('question')}\n**A:** {rendered_answer}")
+            qa_lines.append(
+                f"**Q:** {serialized.get('question')}\n**A:** {rendered_answer}"
+            )
         context_parts.append("### Q&A Decisions\n" + "\n\n".join(qa_lines))
 
-    return "\n\n".join(part for part in context_parts if part.strip()) if len(context_parts) > 1 else None
+    return (
+        "\n\n".join(part for part in context_parts if part.strip())
+        if len(context_parts) > 1
+        else None
+    )
 
 
 def resolve_parent_ideation_context_reference(
@@ -176,61 +188,6 @@ def resolve_parent_ideation_context_reference(
         )
     )
     return payload
-
-
-def _serialize_kb(kb: Any, *, include_content: bool) -> dict[str, Any]:
-    if isinstance(kb, dict):
-        data = {
-            "id": kb.get("id"),
-            "title": kb.get("title") or kb.get("name"),
-            "description": kb.get("description"),
-            "mime_type": kb.get("mime_type") or kb.get("content_type") or "text/markdown",
-        }
-        if include_content:
-            data["content"] = kb.get("content")
-        for attr in (
-            "source",
-            "source_type",
-            "source_id",
-            "source_title",
-            "source_version",
-            "source_kb_id",
-            "root_source_kb_id",
-            "immediate_parent_kb_id",
-            "created_by",
-            "created_at",
-            "updated_at",
-        ):
-            if kb.get(attr) is not None:
-                data[attr] = kb.get(attr)
-        data["content_hash"] = resolve_knowledge_content_sha256(kb)
-        return with_knowledge_governance(data, kb)
-
-    data: dict[str, Any] = {
-        "id": getattr(kb, "id", None),
-        "title": getattr(kb, "title", None),
-        "description": getattr(kb, "description", None),
-        "mime_type": getattr(kb, "mime_type", "text/markdown"),
-    }
-    if include_content:
-        data["content"] = getattr(kb, "content", None)
-    for attr in (
-        "source_type",
-        "source_id",
-        "source_title",
-        "source_version",
-        "source_kb_id",
-        "root_source_kb_id",
-        "immediate_parent_kb_id",
-        "created_by",
-        "created_at",
-        "updated_at",
-    ):
-        value = getattr(kb, attr, None)
-        if value is not None:
-            data[attr] = value.isoformat() if hasattr(value, "isoformat") else value
-    data["content_hash"] = resolve_knowledge_content_sha256(kb)
-    return with_knowledge_governance(data, kb)
 
 
 def _serialize_mockup(mockup: Any) -> dict[str, Any] | None:
@@ -329,7 +286,9 @@ def resolve_artifact_references(
     }
 
 
-def merge_reference_groups(*groups: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+def merge_reference_groups(
+    *groups: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
     merged: dict[str, list[dict[str, Any]]] = {}
     for group in groups:
         for key, values in group.items():
@@ -412,11 +371,18 @@ def resolve_spec_references(
     scenarios = list(getattr(spec, "test_scenarios", None) or [])
     rules = list(getattr(spec, "business_rules", None) or [])
     contracts = list(getattr(spec, "api_contracts", None) or [])
-    integration_requirements = list(getattr(spec, "integration_requirements", None) or [])
-    observability_requirements = list(getattr(spec, "observability_requirements", None) or [])
+    integration_requirements = list(
+        getattr(spec, "integration_requirements", None) or []
+    )
+    observability_requirements = list(
+        getattr(spec, "observability_requirements", None) or []
+    )
     decisions = [
-        item for item in (getattr(spec, "decisions", None) or [])
-        if include_superseded or not isinstance(item, dict) or item.get("status", "active") == "active"
+        item
+        for item in (getattr(spec, "decisions", None) or [])
+        if include_superseded
+        or not isinstance(item, dict)
+        or item.get("status", "active") == "active"
     ]
 
     linked_scenarios = {
@@ -424,7 +390,10 @@ def resolve_spec_references(
         for item in scenarios
         if isinstance(item, dict)
         and card_id
-        and (card_id in (item.get("linked_task_ids") or []) or item.get("id") in (getattr(card, "test_scenario_ids", None) or []))
+        and (
+            card_id in (item.get("linked_task_ids") or [])
+            or item.get("id") in (getattr(card, "test_scenario_ids", None) or [])
+        )
     }
     linked_ac_indices: set[int] = set()
     for item in scenarios:
@@ -434,7 +403,13 @@ def resolve_spec_references(
             )
 
     linked_fr_indices: set[int] = set()
-    for collection in (rules, contracts, integration_requirements, observability_requirements, decisions):
+    for collection in (
+        rules,
+        contracts,
+        integration_requirements,
+        observability_requirements,
+        decisions,
+    ):
         for item in collection:
             if isinstance(item, dict) and _is_linked_to_card(item, card_id):
                 linked_fr_indices |= resolve_linked_fr_indices(
@@ -462,10 +437,12 @@ def resolve_spec_references(
                 source_id=spec_id,
                 source_title=spec_title,
                 reference_type=(
-                    "linked_task" if isinstance(item, dict) and _is_linked_to_card(item, card_id)
+                    "linked_task"
+                    if isinstance(item, dict) and _is_linked_to_card(item, card_id)
                     else structured_reference_type
                 ),
-                referenced_by_task=isinstance(item, dict) and _is_linked_to_card(item, card_id),
+                referenced_by_task=isinstance(item, dict)
+                and _is_linked_to_card(item, card_id),
             )
             for i, item in enumerate(trs)
         ],
@@ -476,7 +453,9 @@ def resolve_spec_references(
                 source_type="spec",
                 source_id=spec_id,
                 source_title=spec_title,
-                reference_type="linked_task" if i in linked_ac_indices else structured_reference_type,
+                reference_type="linked_task"
+                if i in linked_ac_indices
+                else structured_reference_type,
                 referenced_by_task=i in linked_ac_indices,
             )
             for i, item in enumerate(criteria)
@@ -631,4 +610,3 @@ def resolve_task_context_references(
         architecture_designs=spec_architecture_designs,
     )
     return merge_reference_groups(card_refs, spec_refs)
-

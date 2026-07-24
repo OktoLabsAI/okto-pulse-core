@@ -14,7 +14,6 @@ legacy ``e.to_dict()`` envelope.
 
 from __future__ import annotations
 
-import json
 
 from okto_pulse.core.domain.enums import CardStatus, RefinementStatus, SpecStatus
 from okto_pulse.core.ports.application_persistence import (
@@ -41,7 +40,9 @@ _MCP_HUMAN_ONLY_DEFAULT_BOARD_CONFIG_FIELDS = (
 )
 
 
-def _query_scope_for_actor(actor: ActorContext, *, board_id: str | None = None) -> QueryScope:
+def _query_scope_for_actor(
+    actor: ActorContext, *, board_id: str | None = None
+) -> QueryScope:
     actor_scope = ActorScope.from_context(actor)
     if board_id is None:
         return actor_scope.query_scope(target_board_id=board_id)
@@ -102,7 +103,11 @@ class McpGetBoardUseCase:
         agents = await uow.services.agents.list_agents_for_board(command.board_id)
         specs = await uow.services.specs.list_specs(command.board_id)
         ideations = await uow.services.ideations.list_ideations(command.board_id)
-        ds_effective_raw = await uow.services.design_systems.get_board_effective_design_system(command.board_id)
+        ds_effective_raw = (
+            await uow.services.design_systems.get_board_effective_design_system(
+                command.board_id
+            )
+        )
         return McpGetBoardResult(board, agents, specs, ideations, ds_effective_raw)
 
 
@@ -128,7 +133,11 @@ class McpListBoardMembersUseCase:
     ``{"error": "Board not found"}``)."""
 
     async def execute(
-        self, command: McpListBoardMembersCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListBoardMembersCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpListBoardMembersResult:
 
         board = await uow.services.boards.get_board(command.board_id)
@@ -161,7 +170,11 @@ class McpGetActiveDefaultBoardConfigUseCase:
     """Active default board-config template for a scope (read, no commit)."""
 
     async def execute(
-        self, command: McpGetActiveDefaultBoardConfigCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetActiveDefaultBoardConfigCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         data = await uow.services.default_board_config.get_active(scope=command.scope)
         return _DataResult(data)
@@ -184,7 +197,9 @@ class McpListDefaultBoardConfigVersionsUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> _DataResult:
-        data = await uow.services.default_board_config.list_versions(scope=command.scope)
+        data = await uow.services.default_board_config.list_versions(
+            scope=command.scope
+        )
         return _DataResult(data)
 
 
@@ -217,8 +232,11 @@ class McpGetBoardDefaultConfigDiffUseCase:
 
 class McpCreateDefaultBoardConfigVersionCommand:
     __slots__ = (
-        "settings_payload", "scope", "guideline_default_refs",
-        "design_system_default_ref", "activate",
+        "settings_payload",
+        "scope",
+        "guideline_default_refs",
+        "design_system_default_ref",
+        "activate",
     )
 
     def __init__(
@@ -353,7 +371,11 @@ class McpGetBoardGuidelinesUseCase:
     """Board guidelines merged + sorted for the MCP surface (read, no commit)."""
 
     async def execute(
-        self, command: McpGetBoardGuidelinesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetBoardGuidelinesCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
 
         query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
@@ -381,7 +403,11 @@ class McpLinkGuidelineToBoardUseCase:
     Returns the link (the adapter reads ``.priority``)."""
 
     async def execute(
-        self, command: McpLinkGuidelineToBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpLinkGuidelineToBoardCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
 
         service = uow.services.guidelines
@@ -419,7 +445,11 @@ class McpUnlinkGuidelineFromBoardUseCase:
     ``EntityNotFoundError("guideline_link", ...)`` → adapter ``"Link not found"``."""
 
     async def execute(
-        self, command: McpUnlinkGuidelineFromBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUnlinkGuidelineFromBoardCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
 
         query_scope = _query_scope_for_actor(actor, board_id=command.board_id)
@@ -501,7 +531,11 @@ class McpLinkBoardDesignSystemUseCase:
     adapter reads ``.board_id``/``.design_system_id``/``.design_system_version``)."""
 
     async def execute(
-        self, command: McpLinkBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpLinkBoardDesignSystemCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         await _require_design_system_board(uow, command.board_id, actor)
         link = await uow.services.design_systems.link_design_system_to_board(
@@ -526,7 +560,11 @@ class McpUnlinkBoardDesignSystemUseCase:
     propagates UNCAUGHT for the adapter. Returns the ``unlinked`` flag."""
 
     async def execute(
-        self, command: McpUnlinkBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpUnlinkBoardDesignSystemCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         await _require_design_system_board(uow, command.board_id, actor)
         unlinked = await uow.services.design_systems.unlink_design_system_from_board(
@@ -548,7 +586,11 @@ class McpGetBoardDesignSystemUseCase:
     commit). ``DesignSystemError`` propagates UNCAUGHT for the adapter."""
 
     async def execute(
-        self, command: McpGetBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpGetBoardDesignSystemCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
         await _require_design_system_board(uow, command.board_id, actor)
         from okto_pulse.core.services.design_system import (
@@ -625,8 +667,7 @@ def _page_scope(
 ) -> tuple[ApplicationFilter, ...]:
     scope = [ApplicationFilter("board_id", "eq", board_id)]
     scope.extend(
-        ApplicationFilter(field, "eq", value)
-        for field, value in parents.items()
+        ApplicationFilter(field, "eq", value) for field, value in parents.items()
     )
     if not include_archived:
         scope.append(ApplicationFilter("archived", "is_false"))
@@ -641,8 +682,8 @@ def _label_groups(raw: Any) -> tuple[tuple[ApplicationFilter, ...], ...]:
         (
             ApplicationFilter(
                 "labels",
-                "contains",
-                json.dumps(label, ensure_ascii=False),
+                "json_member",
+                label,
             ),
         )
         for label in labels
@@ -660,6 +701,7 @@ class McpListCardsByStatusCommand:
         "spec_id",
         "priority",
         "assignee_id",
+        "include_archived",
         "offset",
         "limit",
     )
@@ -672,6 +714,7 @@ class McpListCardsByStatusCommand:
         spec_id: str = "",
         priority: str = "",
         assignee_id: str = "",
+        include_archived: bool = False,
         offset: int = 0,
         limit: int = 50,
     ) -> None:
@@ -680,6 +723,7 @@ class McpListCardsByStatusCommand:
         self.spec_id = spec_id
         self.priority = priority
         self.assignee_id = assignee_id
+        self.include_archived = include_archived
         self.offset = offset
         self.limit = limit
 
@@ -718,14 +762,15 @@ class McpListCardsByStatusUseCase:
         if command.priority:
             filters.append(ApplicationFilter("priority", "eq", command.priority))
         if command.assignee_id:
-            filters.append(
-                ApplicationFilter("assignee_id", "eq", command.assignee_id)
-            )
+            filters.append(ApplicationFilter("assignee_id", "eq", command.assignee_id))
 
         page = await uow.services.entity_pages.list(
             PageRequest(
                 surface="mcp_card_status_list",
-                scope=(ApplicationFilter("board_id", "eq", command.board_id),),
+                scope=_page_scope(
+                    command.board_id,
+                    include_archived=command.include_archived,
+                ),
                 filters=tuple(filters),
                 offset=command.offset,
                 limit=command.limit,
@@ -774,7 +819,11 @@ class McpListByBoardUseCase:
     """
 
     async def execute(
-        self, command: McpListByBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListByBoardCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> _DataResult:
 
         et = command.entity_type
@@ -797,9 +846,7 @@ class McpListByBoardUseCase:
             if f.get("status"):
                 filters.append(ApplicationFilter("status", "eq", f["status"]))
             if f.get("assignee_id"):
-                filters.append(
-                    ApplicationFilter("assignee_id", "eq", f["assignee_id"])
-                )
+                filters.append(ApplicationFilter("assignee_id", "eq", f["assignee_id"]))
             any_groups = _label_groups(f.get("labels"))
         elif et == "ideation":
             surface = "mcp_ideation_list"
@@ -856,13 +903,9 @@ class McpListByBoardUseCase:
                 include_archived=bool(args.get("include_archived")),
             )
             if args.get("status_filter"):
-                filters.append(
-                    ApplicationFilter("status", "eq", args["status_filter"])
-                )
+                filters.append(ApplicationFilter("status", "eq", args["status_filter"]))
             if args.get("topic_id"):
-                filters.append(
-                    ApplicationFilter("topic_id", "eq", args["topic_id"])
-                )
+                filters.append(ApplicationFilter("topic_id", "eq", args["topic_id"]))
             for field in ("linked", "converted"):
                 value = args.get(field)
                 if value is not None:
@@ -872,14 +915,11 @@ class McpListByBoardUseCase:
                             "is_true" if value else "is_false",
                         )
                     )
-            includes = ("ideation_links",)
         else:  # topic
             surface = "mcp_topic_list"
             scope = _page_scope(
                 command.board_id,
-                include_archived=bool(
-                    command.topic_args.get("include_archived")
-                ),
+                include_archived=bool(command.topic_args.get("include_archived")),
             )
 
         page = await uow.services.entity_pages.list(
@@ -962,9 +1002,7 @@ async def _attach_mcp_page_derivatives(
         refinement_counts = {row.values[0]: row.count for row in refinement_rows}
         spec_counts = {row.values[0]: row.count for row in spec_rows}
         for item in items:
-            item.attach(
-                "active_refinement_count", refinement_counts.get(item.id, 0)
-            )
+            item.attach("active_refinement_count", refinement_counts.get(item.id, 0))
             item.attach("active_spec_count", spec_counts.get(item.id, 0))
     elif entity_type == "refinement":
         rows = await uow.services.entity_pages.group_count(
@@ -994,7 +1032,9 @@ async def _attach_mcp_page_derivatives(
             item.attach("active_spec_count", counts.get(item.id, 0))
     elif entity_type == "sprint":
         for item in items:
-            item.attach("normal_sprint_created", _enum_value(item.lane_type) == "normal")
+            item.attach(
+                "normal_sprint_created", _enum_value(item.lane_type) == "normal"
+            )
     elif entity_type == "topic":
         rows = await uow.services.entity_pages.group_count(
             GroupCountRequest(
@@ -1014,9 +1054,7 @@ async def _attach_mcp_page_derivatives(
             key = "archived_count" if bool(archived) else "active_count"
             bucket[key] += row.count
         for item in items:
-            bucket = counts.get(
-                item.id, {"active_count": 0, "archived_count": 0}
-            )
+            bucket = counts.get(item.id, {"active_count": 0, "archived_count": 0})
             item.attach("story_count", bucket["active_count"])
             item.attach("active_count", bucket["active_count"])
             item.attach("archived_count", bucket["archived_count"])

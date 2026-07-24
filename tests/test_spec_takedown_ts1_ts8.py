@@ -112,6 +112,7 @@ from sqlalchemy_test_models import (
     RefinementStatus,
     Spec,
     SpecStatus,
+    Sprint,
 )
 
 
@@ -139,9 +140,7 @@ class _CrashAfterGraphCommit(BaseException):
     pass
 
 
-class _TargetedConsolidationPersistence(
-    CommunitySqlAlchemyConsolidationPersistence
-):
+class _TargetedConsolidationPersistence(CommunitySqlAlchemyConsolidationPersistence):
     """Production adapter whose worker inventory is scoped to chosen ids."""
 
     def __init__(self) -> None:
@@ -164,13 +163,17 @@ class _TargetedConsolidationPersistence(
         if not self.target_entry_ids:
             return frozenset()
         rows = (
-            await context.execute(
-                select(CommunityConsolidationQueue.board_id).where(
-                    CommunityConsolidationQueue.id.in_(self.target_entry_ids),
-                    CommunityConsolidationQueue.status == "claimed",
+            (
+                await context.execute(
+                    select(CommunityConsolidationQueue.board_id).where(
+                        CommunityConsolidationQueue.id.in_(self.target_entry_ids),
+                        CommunityConsolidationQueue.status == "claimed",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return frozenset(str(value) for value in rows)
 
     async def list_ready_pending(self, context, *, now):
@@ -340,11 +343,14 @@ async def _assert_ts1_original_state(
         )
     assert (legacy_count, intent_count, tombstone_count) == (1, 0, 0)
     assert (dlq_count, debt_count, activity_count) == (1, 1, 0)
-    assert await node_layer(
-        board_id,
-        "Requirement",
-        requirement_id,
-    ) == "canonical"
+    assert (
+        await node_layer(
+            board_id,
+            "Requirement",
+            requirement_id,
+        )
+        == "canonical"
+    )
 
 
 @pytest.mark.asyncio
@@ -507,11 +513,14 @@ async def test_ts45_targeted_intent_crash_retry_is_order_independent(
             await processor.process_batch()
 
         assert len(observed) == 1 and observed[0].demoted
-        assert await node_layer(
-            board_id,
-            "Requirement",
-            requirement_id,
-        ) == "working"
+        assert (
+            await node_layer(
+                board_id,
+                "Requirement",
+                requirement_id,
+            )
+            == "working"
+        )
 
         async with db_factory() as session:
             claimed = await session.get(ConsolidationQueue, intent_id)
@@ -532,19 +541,27 @@ async def test_ts45_targeted_intent_crash_retry_is_order_independent(
         async with db_factory() as session:
             assert await session.get(ConsolidationQueue, intent_id) is None
             ledgers = (
-                await session.execute(
-                    select(GlobalDiscoveryDeliveryLedger).where(
-                        GlobalDiscoveryDeliveryLedger.board_id == board_id
+                (
+                    await session.execute(
+                        select(GlobalDiscoveryDeliveryLedger).where(
+                            GlobalDiscoveryDeliveryLedger.board_id == board_id
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             outbox = (
-                await session.execute(
-                    select(GlobalUpdateOutbox).where(
-                        GlobalUpdateOutbox.board_id == board_id
+                (
+                    await session.execute(
+                        select(GlobalUpdateOutbox).where(
+                            GlobalUpdateOutbox.board_id == board_id
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
     assert len(ledgers) == len(outbox) == 1
     assert ledgers[0].state == DeliveryState.OUTBOX_PERSISTED.value
@@ -723,7 +740,9 @@ async def test_ts6_deleted_bug_preserves_learning_and_persists_visible_debt(
             artifact_id=bug_id,
         )
         queue.target_entry_ids.add(intent_id)
-        assert await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
+        assert (
+            await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
+        )
 
     assert await _node_state(board_id, "Learning", learning_id) == before_learning
     assert await _node_state(board_id, "Bug", graph_bug_id) == (
@@ -925,6 +944,54 @@ async def _seed_done_tree(db_factory, board_id: str):
 
 
 @pytest.mark.asyncio
+async def test_spec_delete_mints_takedown_for_cascaded_sprint(
+    db_factory,
+) -> None:
+    board_id = await new_board(db_factory, "spec-sprint-cascade-takedown")
+    spec_id, _source_ref = await seed_done_spec_canonical(db_factory, board_id)
+    async with db_factory() as session:
+        sprint = Sprint(
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Sprint removed with spec",
+            created_by=USER_ID,
+        )
+        session.add(sprint)
+        await session.commit()
+        await session.refresh(sprint)
+        sprint_id = sprint.id
+
+    with _registered_targeted_adapters():
+        async with db_factory() as session:
+            assert await SpecService(session).delete_spec(spec_id, USER_ID)
+            await session.commit()
+
+    async with db_factory() as session:
+        intents = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.work_kind == "stale_reconcile",
+                        ConsolidationQueue.artifact_type.in_(("spec", "sprint")),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert {(intent.artifact_type, intent.artifact_id) for intent in intents} == {
+        ("spec", spec_id),
+        ("sprint", sprint_id),
+    }
+    sprint_intent = next(
+        intent for intent in intents if intent.artifact_type == "sprint"
+    )
+    assert sprint_intent.payload["source_refs"] == [f"sprint:{sprint_id}"]
+
+
+@pytest.mark.asyncio
 async def test_ts7_three_delete_uows_converge_independent_intents(
     db_factory,
     monkeypatch: pytest.MonkeyPatch,
@@ -953,13 +1020,10 @@ async def test_ts7_three_delete_uows_converge_independent_intents(
     }
     assert all(before.values())
     for identity, rows in before.items():
-        deterministic = [
-            row for row in rows if row[0] not in COGNITIVE_NODE_TYPES
-        ]
+        deterministic = [row for row in rows if row[0] not in COGNITIVE_NODE_TYPES]
         assert deterministic, identity
         assert all(
-            row[3:] == ("canonical", "canonical_eligible")
-            for row in deterministic
+            row[3:] == ("canonical", "canonical_eligible") for row in deterministic
         ), identity
     assert await _node_state(board_id, "Alternative", cognitive_id) == (
         "canonical",
@@ -1021,9 +1085,7 @@ async def test_ts7_three_delete_uows_converge_independent_intents(
     } == set(identities)
     for identity in identities:
         after = await _owner_graph_snapshot(board_id, *identity)
-        deterministic = [
-            row for row in after if row[0] not in COGNITIVE_NODE_TYPES
-        ]
+        deterministic = [row for row in after if row[0] not in COGNITIVE_NODE_TYPES]
         assert deterministic
         assert all(row[3:] == ("working", "working_stale") for row in deterministic)
     assert await _node_state(board_id, "Alternative", cognitive_id) == (
@@ -1098,12 +1160,15 @@ async def test_ts8_fast_path_and_stale_sweep_converge_same_graph_and_digest(
         fast_requirement = await first_canonical_node(board_fast, "Requirement")
         assert fast_requirement is not None
         requirement_id, _ = fast_requirement
-        assert await _digest_node_via_gd_worker(
-            db_factory,
-            board_fast,
-            requirement_id,
-            "Requirement",
-        ) == 1
+        assert (
+            await _digest_node_via_gd_worker(
+                db_factory,
+                board_fast,
+                requirement_id,
+                "Requirement",
+            )
+            == 1
+        )
 
         async with db_factory() as session:
             assert await SpecService(session).delete_spec(artifact_id, USER_ID)
@@ -1115,7 +1180,9 @@ async def test_ts8_fast_path_and_stale_sweep_converge_same_graph_and_digest(
             artifact_id=artifact_id,
         )
         queue.target_entry_ids.add(fast_intent)
-        assert await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
+        assert (
+            await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
+        )
         assert await _drain_global_outbox(db_factory) >= 1
 
         # The first delete freed the globally unique relational id, allowing
@@ -1128,12 +1195,15 @@ async def test_ts8_fast_path_and_stale_sweep_converge_same_graph_and_digest(
         sweep_requirement = await first_canonical_node(board_sweep, "Requirement")
         assert sweep_requirement is not None
         sweep_requirement_id, _ = sweep_requirement
-        assert await _digest_node_via_gd_worker(
-            db_factory,
-            board_sweep,
-            sweep_requirement_id,
-            "Requirement",
-        ) == 1
+        assert (
+            await _digest_node_via_gd_worker(
+                db_factory,
+                board_sweep,
+                sweep_requirement_id,
+                "Requirement",
+            )
+            == 1
+        )
 
         # Suppress the fast-path deliberately: the source disappears without
         # a tombstone or intent and must be discovered by the real stale sweep.
@@ -1162,7 +1232,9 @@ async def test_ts8_fast_path_and_stale_sweep_converge_same_graph_and_digest(
             await session.commit()
         assert schedule.scheduled is True and schedule.sweep_id is not None
         queue.target_entry_ids.add(schedule.sweep_id)
-        assert await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
+        assert (
+            await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
+        )
 
         sweep_intent = await _intent_id(
             db_factory,
@@ -1172,7 +1244,9 @@ async def test_ts8_fast_path_and_stale_sweep_converge_same_graph_and_digest(
         )
         assert sweep_intent != fast_intent
         queue.target_entry_ids.add(sweep_intent)
-        assert await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
+        assert (
+            await ConsolidationProcessor(db_factory, batch_size=1).process_batch() == 1
+        )
         assert await _drain_global_outbox(db_factory) >= 1
 
     fast_snapshot = await _owner_graph_snapshot(
@@ -1185,6 +1259,7 @@ async def test_ts8_fast_path_and_stale_sweep_converge_same_graph_and_digest(
         "spec",
         artifact_id,
     )
+
     # Node ids include the board namespace. Compare the complete publication
     # shape after removing only that expected physical identity difference.
     def _normalized(rows):

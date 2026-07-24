@@ -62,7 +62,9 @@ _ENTITY_CLASSES = {
 _CLASS_ENTITIES = {value: key for key, value in _ENTITY_CLASSES.items()}
 
 _DIRECT_COMMIT_RECORDS_KEY = "okto_pulse.application_persistence.direct_commit_records"
-_DIRECT_COMMIT_LISTENER_KEY = "okto_pulse.application_persistence.direct_commit_listener"
+_DIRECT_COMMIT_LISTENER_KEY = (
+    "okto_pulse.application_persistence.direct_commit_listener"
+)
 
 
 def _synchronize_records_before_direct_commit(sync_session: Any) -> None:
@@ -141,9 +143,7 @@ def _predicate(model: Any, item: ApplicationFilter):
             ),
             false(),
         )
-        if item.operator == "is_true" or (
-            item.operator == "eq" and item.value is True
-        ):
+        if item.operator == "is_true" or (item.operator == "eq" and item.value is True):
             return pending
         if item.operator == "is_false" or (
             item.operator == "eq" and item.value is False
@@ -165,9 +165,7 @@ def _predicate(model: Any, item: ApplicationFilter):
             models.Refinement.status == "done",
             ~active_spec_exists,
         )
-        if item.operator == "is_true" or (
-            item.operator == "eq" and item.value is True
-        ):
+        if item.operator == "is_true" or (item.operator == "eq" and item.value is True):
             return pending
         if item.operator == "is_false" or (
             item.operator == "eq" and item.value is False
@@ -180,9 +178,7 @@ def _predicate(model: Any, item: ApplicationFilter):
             .where(models.StoryIdeationLink.story_id == models.Story.id)
             .exists()
         )
-        if item.operator == "is_true" or (
-            item.operator == "eq" and item.value is True
-        ):
+        if item.operator == "is_true" or (item.operator == "eq" and item.value is True):
             return link_exists
         if item.operator == "is_false" or (
             item.operator == "eq" and item.value is False
@@ -191,9 +187,7 @@ def _predicate(model: Any, item: ApplicationFilter):
         raise ValueError(f"unsupported_application_operator:{item.operator}")
     if model is models.Story and item.field == "converted":
         is_converted = models.Story.status == "converted"
-        if item.operator == "is_true" or (
-            item.operator == "eq" and item.value is True
-        ):
+        if item.operator == "is_true" or (item.operator == "eq" and item.value is True):
             return is_converted
         if item.operator == "is_false" or (
             item.operator == "eq" and item.value is False
@@ -227,6 +221,15 @@ def _predicate(model: Any, item: ApplicationFilter):
         return column.is_not(None)
     if item.operator == "contains":
         return column.contains(item.value)
+    if item.operator == "json_member":
+        values = func.json_each(column).table_valued(
+            "key",
+            "value",
+            joins_implicitly=True,
+        )
+        return (
+            select(1).select_from(values).where(values.c.value == item.value).exists()
+        )
     if item.operator == "ilike":
         return column.ilike(item.value)
     raise ValueError(f"unsupported_application_operator:{item.operator}")
@@ -276,7 +279,9 @@ def _record(entity: str, row: Any, includes: tuple[str, ...] = ()) -> Applicatio
             values[name] = [_record(related_entity, item, nested) for item in related]
         else:
             values[name] = (
-                _record(related_entity, related, nested) if related is not None else None
+                _record(related_entity, related, nested)
+                if related is not None
+                else None
             )
     return ApplicationRecord(entity=entity, values=values)
 
@@ -309,7 +314,32 @@ class TestSqlAlchemyApplicationPersistence:
         self, context: Any, query: ApplicationQuery
     ) -> tuple[ApplicationRecord, ...]:
         model = _model(query.entity)
-        statement = select(model)
+        if query.select_fields and model is models.Story:
+            if query.includes:
+                raise ValueError("application_projection_includes_conflict")
+
+            def _story_projection(field_name: str):
+                if field_name == "screen_mockups_count":
+                    return func.coalesce(
+                        func.json_array_length(models.Story.screen_mockups),
+                        0,
+                    ).label(field_name)
+                if field_name == "ideation_links_count":
+                    return (
+                        select(func.count())
+                        .select_from(models.StoryIdeationLink)
+                        .where(models.StoryIdeationLink.story_id == models.Story.id)
+                        .correlate(models.Story)
+                        .scalar_subquery()
+                        .label(field_name)
+                    )
+                return getattr(models.Story, field_name).label(field_name)
+
+            statement = select(
+                *(_story_projection(field) for field in query.select_fields)
+            )
+        else:
+            statement = select(model)
         if query.filters:
             statement = statement.where(
                 *(_predicate(model, item) for item in query.filters)
@@ -321,7 +351,10 @@ class TestSqlAlchemyApplicationPersistence:
         if query.any_groups:
             statement = statement.where(
                 or_(
-                    *(and_(*(_predicate(model, item) for item in group)) for group in query.any_groups)
+                    *(
+                        and_(*(_predicate(model, item) for item in group))
+                        for group in query.any_groups
+                    )
                 )
             )
         if query.includes:
@@ -337,9 +370,18 @@ class TestSqlAlchemyApplicationPersistence:
             statement = statement.offset(query.offset)
         if query.limit is not None:
             statement = statement.limit(query.limit)
-        rows = (
-            await context.execute(statement.execution_options(populate_existing=True))
-        ).scalars().all()
+        result = await context.execute(
+            statement.execution_options(populate_existing=True)
+        )
+        if query.select_fields and model is models.Story:
+            return tuple(
+                ApplicationRecord(
+                    entity=query.entity,
+                    values=copy.deepcopy(dict(row)),
+                )
+                for row in result.mappings().all()
+            )
+        rows = result.scalars().all()
         return tuple(
             self._track(context, _record(query.entity, row, query.includes), row)
             for row in rows
@@ -359,7 +401,10 @@ class TestSqlAlchemyApplicationPersistence:
         if query.any_groups:
             statement = statement.where(
                 or_(
-                    *(and_(*(_predicate(model, item) for item in group)) for group in query.any_groups)
+                    *(
+                        and_(*(_predicate(model, item) for item in group))
+                        for group in query.any_groups
+                    )
                 )
             )
         result = await context.execute(statement)
@@ -531,7 +576,9 @@ class TestSqlAlchemyApplicationPersistence:
         await self.flush(context)
         row = await context.get(_model(record.entity), record.id)
         if row is None:
-            raise ValueError(f"application record not found: {record.entity}:{record.id}")
+            raise ValueError(
+                f"application record not found: {record.entity}:{record.id}"
+            )
         await context.refresh(row)
         fresh = _record(record.entity, row)
         record.values.clear()

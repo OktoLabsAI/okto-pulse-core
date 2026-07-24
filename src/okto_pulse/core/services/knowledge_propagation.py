@@ -10,6 +10,7 @@ identity.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
@@ -132,6 +133,20 @@ def _optional_sha256(value: object | None, field_name: str) -> str | None:
     ):
         raise ValueError(f"knowledge_propagation_{field_name}_invalid")
     return normalized
+
+
+def _copy_governance_metadata(value: object | None) -> object | None:
+    """Detach opaque governance evidence without validating legacy shapes."""
+
+    if value is None:
+        return None
+    try:
+        return copy.deepcopy(value)
+    except Exception:
+        try:
+            return copy.copy(value)
+        except Exception:
+            return value
 
 
 def deterministic_knowledge_target_id(
@@ -456,16 +471,12 @@ class KnowledgeRelinkResetCommand:
             if parent is None:
                 continue
             if not isinstance(parent, KnowledgeParentKey):
-                raise ValueError(
-                    f"knowledge_propagation_relink_{field_name}_invalid"
-                )
+                raise ValueError(f"knowledge_propagation_relink_{field_name}_invalid")
             if (
                 parent.board_id != self.target.board_id
                 or parent.parent_type not in allowed_parent_types
             ):
-                raise ValueError(
-                    "knowledge_propagation_relink_parent_target_invalid"
-                )
+                raise ValueError("knowledge_propagation_relink_parent_target_invalid")
         if self.previous_parent is None and self.next_parent is None:
             raise ValueError("knowledge_propagation_relink_parents_missing")
         if self.previous_parent == self.next_parent:
@@ -1087,6 +1098,12 @@ class ResolvedKnowledgeAssignment:
     content_bytes: bytes | None = field(default=None, repr=False)
     reason: str | None = None
     resolved_source_knowledge_id: str | None = None
+    governance_metadata: object | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        hash=False,
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.assignment, KnowledgeAssignment):
@@ -1107,6 +1124,11 @@ class ResolvedKnowledgeAssignment:
                 self.resolved_source_knowledge_id,
                 "resolved_source_knowledge_id",
             ),
+        )
+        object.__setattr__(
+            self,
+            "governance_metadata",
+            _copy_governance_metadata(self.governance_metadata),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -1385,9 +1407,7 @@ class KnowledgePropagationService:
                 )
 
             current_assignments = tuple(
-                item
-                for item in scope.assignments
-                if item.temporal.is_current
+                item for item in scope.assignments if item.temporal.is_current
             )
             current_snapshots = tuple(
                 item for item in scope.snapshots if item.temporal.is_current
@@ -1408,8 +1428,7 @@ class KnowledgePropagationService:
                 occurred_at=self._operation_time(),
                 parent=command.previous_parent,
                 assignment_ids_to_close=tuple(
-                    item.assignment.assignment_id
-                    for item in current_assignments
+                    item.assignment.assignment_id for item in current_assignments
                 ),
                 snapshot_ids_to_close=tuple(
                     item.snapshot_id for item in current_snapshots
@@ -1435,9 +1454,7 @@ class KnowledgePropagationService:
                             item.assignment.assignment_id
                             for item in current_assignments
                         ],
-                        "snapshots": [
-                            item.snapshot_id for item in current_snapshots
-                        ],
+                        "snapshots": [item.snapshot_id for item in current_snapshots],
                         "tombstones": [
                             item.tombstone_id for item in current_tombstones
                         ],
@@ -2154,6 +2171,7 @@ class KnowledgePropagationService:
                             revision_stamp=source.revision_stamp,
                             content_bytes=source.content_bytes,
                             temporal=KnowledgeTemporalWindow(effective_from=now),
+                            governance_metadata=source.governance_metadata,
                         )
                     )
 
@@ -2323,6 +2341,7 @@ class KnowledgePropagationService:
                     revision_stamp=source.revision_stamp,
                     content_bytes=source.content_bytes,
                     temporal=KnowledgeTemporalWindow(effective_from=now),
+                    governance_metadata=source.governance_metadata,
                 )
             )
             assignment_ids_to_close.append(old.assignment_id)
@@ -2544,6 +2563,7 @@ class KnowledgePropagationService:
                     revision_stamp=source.revision_stamp,
                     content_bytes=source.content_bytes,
                     temporal=KnowledgeTemporalWindow(effective_from=now),
+                    governance_metadata=source.governance_metadata,
                 )
             )
             assignment_ids_to_close.append(old.assignment_id)
@@ -2894,9 +2914,7 @@ class KnowledgePropagationService:
                 continue
             current_source = sources.get(assignment.source_knowledge_id)
             if current_source is None:
-                current_source = sources_by_root.get(
-                    assignment.revision_stamp.root_id
-                )
+                current_source = sources_by_root.get(assignment.revision_stamp.root_id)
             if mode is KnowledgePropagationMode.REFERENCE:
                 source_deleted = (
                     state is KnowledgeAssignmentState.SOURCE_DELETED
@@ -2928,6 +2946,11 @@ class KnowledgePropagationService:
                             else current_source.source_knowledge_id
                         ),
                         reason=("source_deleted" if source_deleted else None),
+                        governance_metadata=(
+                            None
+                            if current_source is None
+                            else current_source.governance_metadata
+                        ),
                     )
                 )
                 continue
@@ -2975,6 +2998,7 @@ class KnowledgePropagationService:
                         if source_deleted
                         else ("source_changed" if stale else None)
                     ),
+                    governance_metadata=snapshot.governance_metadata,
                 )
             )
         return tuple(resolved)

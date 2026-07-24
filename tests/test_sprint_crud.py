@@ -27,6 +27,7 @@ from sqlalchemy_test_models import (
     Card,
     CardStatus,
     CardType,
+    ConsolidationQueue,
     Spec,
     SpecStatus,
     Sprint,
@@ -73,51 +74,74 @@ async def _seed_board(db_factory) -> None:
 
         board = Board(id=BOARD_ID, name="Sprint CRUD Board", owner_id=AGENT_ID)
         db.add(board)
-        db.add(Spec(
-            id=SPEC_ID,
-            board_id=BOARD_ID,
-            title="Sprint CRUD Spec",
-            status=SpecStatus.IN_PROGRESS,
-            archived=False,
-            acceptance_criteria=["AC1", "AC2", "AC3"],
-            functional_requirements=["FR1", "FR2", "FR3"],
-            test_scenarios=[
-                {"id": TS_1_ID, "title": "Test Scenario 1", "linked_criteria": [0], "status": "draft", "linked_task_ids": []},
-                {"id": TS_2_ID, "title": "Test Scenario 2", "linked_criteria": [1], "status": "draft", "linked_task_ids": []},
-            ],
-            business_rules=[
-                {"id": BR_1_ID, "title": "Business Rule 1", "linked_requirements": [0], "linked_task_ids": []},
-            ],
-            api_contracts=[],
-            technical_requirements=[],
-            decisions=[],
-            created_by=AGENT_ID,
-        ))
+        db.add(
+            Spec(
+                id=SPEC_ID,
+                board_id=BOARD_ID,
+                title="Sprint CRUD Spec",
+                status=SpecStatus.IN_PROGRESS,
+                archived=False,
+                acceptance_criteria=["AC1", "AC2", "AC3"],
+                functional_requirements=["FR1", "FR2", "FR3"],
+                test_scenarios=[
+                    {
+                        "id": TS_1_ID,
+                        "title": "Test Scenario 1",
+                        "linked_criteria": [0],
+                        "status": "draft",
+                        "linked_task_ids": [],
+                    },
+                    {
+                        "id": TS_2_ID,
+                        "title": "Test Scenario 2",
+                        "linked_criteria": [1],
+                        "status": "draft",
+                        "linked_task_ids": [],
+                    },
+                ],
+                business_rules=[
+                    {
+                        "id": BR_1_ID,
+                        "title": "Business Rule 1",
+                        "linked_requirements": [0],
+                        "linked_task_ids": [],
+                    },
+                ],
+                api_contracts=[],
+                technical_requirements=[],
+                decisions=[],
+                created_by=AGENT_ID,
+            )
+        )
         yesterday = datetime.now(timezone.utc) - timedelta(hours=12)
-        db.add(Card(
-            id=CARD_1_ID,
-            board_id=BOARD_ID,
-            spec_id=SPEC_ID,
-            title="Card 1",
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.NORMAL,
-            archived=False,
-            created_by=AGENT_ID,
-            created_at=yesterday,
-            updated_at=yesterday,
-        ))
-        db.add(Card(
-            id=CARD_2_ID,
-            board_id=BOARD_ID,
-            spec_id=SPEC_ID,
-            title="Card 2",
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.NORMAL,
-            archived=False,
-            created_by=AGENT_ID,
-            created_at=yesterday,
-            updated_at=yesterday,
-        ))
+        db.add(
+            Card(
+                id=CARD_1_ID,
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Card 1",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                archived=False,
+                created_by=AGENT_ID,
+                created_at=yesterday,
+                updated_at=yesterday,
+            )
+        )
+        db.add(
+            Card(
+                id=CARD_2_ID,
+                board_id=BOARD_ID,
+                spec_id=SPEC_ID,
+                title="Card 2",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                archived=False,
+                created_by=AGENT_ID,
+                created_at=yesterday,
+                updated_at=yesterday,
+            )
+        )
         await db.commit()
 
 
@@ -130,31 +154,35 @@ async def _seed_different_spec(db_factory) -> None:
         if existing is not None:
             return
 
-        db.add(Spec(
-            id="sprint-crud-spec-diff",
-            board_id=BOARD_ID,
-            title="Different Spec",
-            status=SpecStatus.IN_PROGRESS,
-            archived=False,
-            acceptance_criteria=["AC1"],
-            functional_requirements=["FR1"],
-            test_scenarios=[],
-            business_rules=[],
-            api_contracts=[],
-            technical_requirements=[],
-            decisions=[],
-            created_by=AGENT_ID,
-        ))
-        db.add(Card(
-            id=CARD_3_ID,
-            board_id=BOARD_ID,
-            spec_id="sprint-crud-spec-diff",
-            title="Card from different spec",
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.NORMAL,
-            archived=False,
-            created_by=AGENT_ID,
-        ))
+        db.add(
+            Spec(
+                id="sprint-crud-spec-diff",
+                board_id=BOARD_ID,
+                title="Different Spec",
+                status=SpecStatus.IN_PROGRESS,
+                archived=False,
+                acceptance_criteria=["AC1"],
+                functional_requirements=["FR1"],
+                test_scenarios=[],
+                business_rules=[],
+                api_contracts=[],
+                technical_requirements=[],
+                decisions=[],
+                created_by=AGENT_ID,
+            )
+        )
+        db.add(
+            Card(
+                id=CARD_3_ID,
+                board_id=BOARD_ID,
+                spec_id="sprint-crud-spec-diff",
+                title="Card from different spec",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.NORMAL,
+                archived=False,
+                created_by=AGENT_ID,
+            )
+        )
         await db.commit()
 
 
@@ -195,6 +223,7 @@ async def _clean_sprints(db_factory, board_id: str) -> None:
     """Delete all existing sprints for a board to ensure test isolation."""
     async with db_factory() as db:
         from sqlalchemy import delete
+
         stmt = delete(Sprint).where(Sprint.board_id == board_id)
         await db.execute(stmt)
         await db.commit()
@@ -308,6 +337,7 @@ class TestSprintCreation:
         """Sprint creation using SprintCreate schema — title only."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintCreate(title="Schema Sprint", spec_id=SPEC_ID)
@@ -323,7 +353,9 @@ class TestSprintCreation:
         assert sprint.normal_sprint_created is True
         assert sprint.board_id == BOARD_ID
 
-    async def test_existing_sprint_row_serializes_default_normal_lane_metadata(self, db_factory):
+    async def test_existing_sprint_row_serializes_default_normal_lane_metadata(
+        self, db_factory
+    ):
         """Legacy-style sprint rows serialize as normal lanes on public schemas."""
         await _seed_board(db_factory)
         sprint_id = "legacy-normal-lane-sprint"
@@ -359,6 +391,7 @@ class TestSprintCreation:
         """Eligible closed-origin bug creates a hotfix lane without reopening origin sprint."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             base = Sprint(
                 board_id=BOARD_ID,
@@ -399,10 +432,13 @@ class TestSprintCreation:
         assert sprint.normal_sprint_created is False
         assert origin_after.status == SprintStatus.CLOSED
 
-    async def test_hotfix_creation_rejects_active_origin_when_spec_not_done(self, db_factory):
+    async def test_hotfix_creation_rejects_active_origin_when_spec_not_done(
+        self, db_factory
+    ):
         """Ineligible hotfix creation returns a deterministic typed error."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             origin = Sprint(
                 board_id=BOARD_ID,
@@ -429,7 +465,10 @@ class TestSprintCreation:
             ).scalar_one_or_none()
 
         assert exc.value.code == "hotfix_lane_not_eligible"
-        assert exc.value.remediation == "assign_hotfix_lane_after_done_spec_or_closed_origin_sprint"
+        assert (
+            exc.value.remediation
+            == "assign_hotfix_lane_after_done_spec_or_closed_origin_sprint"
+        )
         assert exc.value.facts["spec_status"] == SpecStatus.IN_PROGRESS.value
         assert exc.value.facts["origin_sprint_status"] == SprintStatus.ACTIVE.value
         assert created is None
@@ -439,6 +478,7 @@ class TestSprintCreation:
         await _seed_board(db_factory)
         await _seed_different_spec(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             origin = Sprint(
                 board_id=BOARD_ID,
@@ -465,6 +505,7 @@ class TestSprintCreation:
         """origin_bug_id must reference a bug card in the same board/spec."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             origin = Sprint(
                 board_id=BOARD_ID,
@@ -506,6 +547,7 @@ class TestSprintCreation:
             sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             sprint = await service.get_sprint(sprint_id)
@@ -519,6 +561,7 @@ class TestSprintCreation:
         """Sprint creation using SprintCreate schema — all fields."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         now = datetime.now(timezone.utc)
         end = now + timedelta(days=14)
         async with db_factory() as db:
@@ -550,9 +593,12 @@ class TestSprintCreation:
         """Sprint creation with test scenario IDs not in spec should raise."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
-            data = SprintCreate(title="Bad TS", spec_id=SPEC_ID, test_scenario_ids=["nonexistent-ts"])
+            data = SprintCreate(
+                title="Bad TS", spec_id=SPEC_ID, test_scenario_ids=["nonexistent-ts"]
+            )
             with pytest.raises(ValueError, match="Test scenario IDs not found in spec"):
                 await service.create_sprint(BOARD_ID, AGENT_ID, data)
 
@@ -560,9 +606,12 @@ class TestSprintCreation:
         """Sprint creation with business rule IDs not in spec should raise."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
-            data = SprintCreate(title="Bad BR", spec_id=SPEC_ID, business_rule_ids=["nonexistent-br"])
+            data = SprintCreate(
+                title="Bad BR", spec_id=SPEC_ID, business_rule_ids=["nonexistent-br"]
+            )
             with pytest.raises(ValueError, match="Business rule IDs not found in spec"):
                 await service.create_sprint(BOARD_ID, AGENT_ID, data)
 
@@ -570,6 +619,7 @@ class TestSprintCreation:
         """Sprint creation with non-existent spec should return None."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintCreate(title="No spec", spec_id="nonexistent-spec")
@@ -580,6 +630,7 @@ class TestSprintCreation:
         """Sprint creation with non-existent board should return None."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintCreate(title="No board", spec_id=SPEC_ID)
@@ -614,6 +665,7 @@ class TestSprintUpdate:
         """Test 5: Update title, description, and labels."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(
@@ -632,6 +684,7 @@ class TestSprintUpdate:
         """Test 6: Add test_scenario_ids to sprint."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(test_scenario_ids=[TS_1_ID, TS_2_ID])
@@ -658,6 +711,7 @@ class TestSprintUpdate:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(test_scenario_ids=[TS_1_ID])
@@ -684,6 +738,7 @@ class TestSprintUpdate:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(test_scenario_ids=[])
@@ -696,6 +751,7 @@ class TestSprintUpdate:
         """Test 7: Add business_rule_ids to sprint."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(business_rule_ids=[BR_1_ID])
@@ -722,6 +778,7 @@ class TestSprintUpdate:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(business_rule_ids=[])
@@ -733,6 +790,7 @@ class TestSprintUpdate:
     async def test_update_nonexistent_sprint(self, db_factory):
         """Update a non-existent sprint should return None."""
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(title="Nope")
@@ -743,6 +801,7 @@ class TestSprintUpdate:
         """Update with test scenario IDs not in spec should raise."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(test_scenario_ids=["invalid-ts"])
@@ -753,6 +812,7 @@ class TestSprintUpdate:
         """Update with business rule IDs not in spec should raise."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(business_rule_ids=["invalid-br"])
@@ -763,6 +823,7 @@ class TestSprintUpdate:
         """Update skip_test_coverage and skip_rules_coverage flags."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(
@@ -809,6 +870,7 @@ class TestSprintStateMachine:
         """Test 8: draft → active should fail without cards assigned."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintMove(status=SprintStatus.ACTIVE)
@@ -819,10 +881,13 @@ class TestSprintStateMachine:
         """Test 9: draft → active should succeed with cards assigned."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # Assign cards first
-            count = await service.assign_tasks(sprint_id, [CARD_1_ID, CARD_2_ID], AGENT_ID)
+            count = await service.assign_tasks(
+                sprint_id, [CARD_1_ID, CARD_2_ID], AGENT_ID
+            )
             assert count == 2
             # Now move to active
             data = SprintMove(status=SprintStatus.ACTIVE)
@@ -837,6 +902,7 @@ class TestSprintStateMachine:
             test_scenario_ids=[TS_1_ID],
         )
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # Assign a card so we can activate
@@ -868,6 +934,7 @@ class TestSprintStateMachine:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # Assign card and activate
@@ -877,9 +944,9 @@ class TestSprintStateMachine:
 
             # Update the test scenario to "passed" status
             spec = await db.get(Spec, SPEC_ID)
-            for ts in (spec.test_scenarios or []):
+            for ts in spec.test_scenarios or []:
                 if ts.get("id") == TS_1_ID:
-                   ts["status"] = "passed"
+                    ts["status"] = "passed"
             flag_modified(spec, "test_scenarios")
             await db.commit()
 
@@ -906,6 +973,7 @@ class TestSprintStateMachine:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # Activate
@@ -915,7 +983,7 @@ class TestSprintStateMachine:
 
             # Update scenario to passed
             spec = await db.get(Spec, SPEC_ID)
-            for ts in (spec.test_scenarios or []):
+            for ts in spec.test_scenarios or []:
                 if ts.get("id") == TS_1_ID:
                     ts["status"] = "passed"
 
@@ -952,6 +1020,7 @@ class TestSprintStateMachine:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # Activate
@@ -961,7 +1030,7 @@ class TestSprintStateMachine:
 
             # Update scenario to passed
             spec = await db.get(Spec, SPEC_ID)
-            for ts in (spec.test_scenarios or []):
+            for ts in spec.test_scenarios or []:
                 if ts.get("id") == TS_1_ID:
                     ts["status"] = "passed"
 
@@ -1015,6 +1084,7 @@ class TestSprintStateMachine:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
@@ -1022,7 +1092,7 @@ class TestSprintStateMachine:
             await service.move_sprint(sprint_id, AGENT_ID, data)
 
             spec = await db.get(Spec, SPEC_ID)
-            for ts in (spec.test_scenarios or []):
+            for ts in spec.test_scenarios or []:
                 if ts.get("id") == TS_1_ID:
                     ts["status"] = "passed"
 
@@ -1059,6 +1129,7 @@ class TestSprintStateMachine:
         """draft → review directly should fail (must go through active)."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintMove(status=SprintStatus.REVIEW)
@@ -1069,6 +1140,7 @@ class TestSprintStateMachine:
         """active → closed directly should fail (must go through review)."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
@@ -1083,6 +1155,7 @@ class TestSprintStateMachine:
         """draft → cancelled should always succeed."""
         sprint_id = await self._create_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintMove(
@@ -1112,6 +1185,7 @@ class TestSprintStateMachine:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
@@ -1142,7 +1216,7 @@ class TestSprintEvaluation:
         async with db_factory() as db:
             # Ensure TS_1_ID is "passed" for review gate
             spec = await db.get(Spec, SPEC_ID)
-            for ts in (spec.test_scenarios or []):
+            for ts in spec.test_scenarios or []:
                 if ts.get("id") == TS_1_ID:
                     ts["status"] = "passed"
             flag_modified(spec, "test_scenarios")
@@ -1161,6 +1235,7 @@ class TestSprintEvaluation:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
@@ -1172,8 +1247,12 @@ class TestSprintEvaluation:
 
             # Verify the sprint is in review status
             sprint = await db.get(Sprint, sprint_id)
-            print(f"DEBUG helper: sprint_id={sprint_id}, status_after_review={sprint.status}")
-            assert sprint.status == SprintStatus.REVIEW, f"Sprint is {sprint.status}, expected REVIEW"
+            print(
+                f"DEBUG helper: sprint_id={sprint_id}, status_after_review={sprint.status}"
+            )
+            assert sprint.status == SprintStatus.REVIEW, (
+                f"Sprint is {sprint.status}, expected REVIEW"
+            )
 
         return sprint_id
 
@@ -1181,10 +1260,13 @@ class TestSprintEvaluation:
         """Test 14: Submit evaluation with all dimensions."""
         sprint_id = await self._create_review_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             # Debug: check sprint status before submit_evaluation
             sprint_before = await db.get(Sprint, sprint_id)
-            print(f"DEBUG: sprint_id={sprint_id}, status_before={sprint_before.status if sprint_before else 'NOT FOUND'}")
+            print(
+                f"DEBUG: sprint_id={sprint_id}, status_before={sprint_before.status if sprint_before else 'NOT FOUND'}"
+            )
             service = SprintService(db)
             evaluation = {
                 "breakdown_completeness": 90,
@@ -1219,6 +1301,7 @@ class TestSprintEvaluation:
         """Test 15: Submit evaluation with low scores — should not auto-close."""
         sprint_id = await self._create_review_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             evaluation = {
@@ -1268,6 +1351,7 @@ class TestSprintEvaluation:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
@@ -1275,7 +1359,7 @@ class TestSprintEvaluation:
             await service.move_sprint(sprint_id, AGENT_ID, data)
 
             spec = await db.get(Spec, SPEC_ID)
-            for ts in (spec.test_scenarios or []):
+            for ts in spec.test_scenarios or []:
                 if ts.get("id") == TS_1_ID:
                     ts["status"] = "passed"
 
@@ -1327,6 +1411,7 @@ class TestSprintEvaluation:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             evaluation = {
@@ -1349,6 +1434,7 @@ class TestSprintEvaluation:
         """Multiple evaluations can be submitted for the same sprint."""
         sprint_id = await self._create_review_sprint(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             for i in range(3):
@@ -1398,9 +1484,12 @@ class TestSprintCardAssignment:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
-            count = await service.assign_tasks(sprint_id, [CARD_1_ID, CARD_2_ID], AGENT_ID)
+            count = await service.assign_tasks(
+                sprint_id, [CARD_1_ID, CARD_2_ID], AGENT_ID
+            )
             assert count == 2
 
             # Verify cards are linked
@@ -1426,6 +1515,7 @@ class TestSprintCardAssignment:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             with pytest.raises(ValueError, match="different spec"):
@@ -1447,6 +1537,7 @@ class TestSprintCardAssignment:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             with pytest.raises(SprintOperationError) as exc:
@@ -1474,6 +1565,7 @@ class TestSprintCardAssignment:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             card = await db.get(Card, CARD_1_ID)
@@ -1520,6 +1612,7 @@ class TestSprintCardAssignment:
             sprint_id = sprint.id
 
             from okto_pulse.core.services.main import SprintService
+
             service = SprintService(db)
             count = await service.assign_tasks(
                 sprint_id,
@@ -1533,7 +1626,9 @@ class TestSprintCardAssignment:
             assert bug.sprint_id == sprint_id
             assert test.sprint_id == sprint_id
 
-    async def test_hotfix_lane_rejects_normal_cards_without_partial_assignment(self, db_factory):
+    async def test_hotfix_lane_rejects_normal_cards_without_partial_assignment(
+        self, db_factory
+    ):
         """Normal implementation cards are forbidden in hotfix lanes."""
         await _seed_board(db_factory)
         async with db_factory() as db:
@@ -1563,6 +1658,7 @@ class TestSprintCardAssignment:
             await db.refresh(sprint)
 
             from okto_pulse.core.services.main import SprintService
+
             service = SprintService(db)
             with pytest.raises(SprintOperationError) as exc:
                 await service.assign_tasks(
@@ -1605,6 +1701,7 @@ class TestSprintCardAssignment:
             await db.refresh(sprint)
 
             from okto_pulse.core.services.main import SprintService
+
             service = SprintService(db)
             with pytest.raises(ValueError, match="different spec"):
                 await service.assign_tasks(sprint.id, [cross_spec_bug.id], AGENT_ID)
@@ -1651,13 +1748,18 @@ class TestSprintListing:
             await db.commit()
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
-            draft_sprints = await service.list_board_sprints(BOARD_ID, status_filter="draft")
+            draft_sprints = await service.list_board_sprints(
+                BOARD_ID, status_filter="draft"
+            )
             assert len(draft_sprints) == 1
             assert draft_sprints[0].title == "Draft Sprint"
 
-            active_sprints = await service.list_board_sprints(BOARD_ID, status_filter="active")
+            active_sprints = await service.list_board_sprints(
+                BOARD_ID, status_filter="active"
+            )
             assert len(active_sprints) == 1
             assert active_sprints[0].status == SprintStatus.ACTIVE
 
@@ -1683,6 +1785,7 @@ class TestSprintListing:
             await db.commit()
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # List by first spec
@@ -1691,7 +1794,9 @@ class TestSprintListing:
             assert spec1_sprints[0].title == "Sprint for Spec 1"
 
             # List by second spec
-            spec2_sprints = await service.list_board_sprints(BOARD_ID, spec_id="sprint-crud-spec-diff")
+            spec2_sprints = await service.list_board_sprints(
+                BOARD_ID, spec_id="sprint-crud-spec-diff"
+            )
             assert len(spec2_sprints) == 1
             assert spec2_sprints[0].title == "Sprint for Spec 2"
 
@@ -1700,6 +1805,7 @@ class TestSprintListing:
         await _seed_board(db_factory)
         await _clean_sprints(db_factory, BOARD_ID)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             sprints = await service.list_board_sprints(BOARD_ID)
@@ -1726,6 +1832,7 @@ class TestSprintListing:
             await db.commit()
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             sprints = await service.list_board_sprints(BOARD_ID, spec_id=SPEC_ID)
@@ -1767,6 +1874,7 @@ class TestSprintRetrieval:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             sprint = await service.get_sprint(sprint_id)
@@ -1823,6 +1931,7 @@ class TestSprintRetrieval:
             sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             sprint = await service.get_sprint(sprint_id)
@@ -1836,6 +1945,7 @@ class TestSprintRetrieval:
     async def test_get_nonexistent_sprint(self, db_factory):
         """Test 25: Retrieve non-existent sprint should return None."""
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             sprint = await service.get_sprint("nonexistent-sprint-id")
@@ -1866,6 +1976,7 @@ class TestSprintHistory:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # Assign card for activation
@@ -1918,6 +2029,7 @@ class TestSprintHistory:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(title="Updated Title", description="New desc")
@@ -1948,6 +2060,7 @@ class TestSprintHistory:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(lane_type=SprintLaneType.HOTFIX)
@@ -1958,6 +2071,7 @@ class TestSprintHistory:
         """History should be logged on sprint creation."""
         await _seed_board(db_factory)
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintCreate(title="History Test Sprint", spec_id=SPEC_ID)
@@ -2008,9 +2122,11 @@ class TestSprintHistory:
             )
             bug.linked_test_task_ids = [regression.id]
             await db.flush()
-            original_cards_before = set((await db.execute(
-                select(Card.id).where(Card.sprint_id == origin.id)
-            )).scalars().all())
+            original_cards_before = set(
+                (await db.execute(select(Card.id).where(Card.sprint_id == origin.id)))
+                .scalars()
+                .all()
+            )
 
             service = SprintService(db)
             sprint = await service.create_sprint(
@@ -2052,17 +2168,25 @@ class TestSprintHistory:
             )
 
             history = await service.list_history(sprint.id)
-            activity = list((await db.execute(
-                select(ActivityLog).where(
-                    ActivityLog.board_id == BOARD_ID,
-                    ActivityLog.action.in_([
-                        "sprint_created",
-                        "sprint_tasks_assigned",
-                        "sprint_moved",
-                        "sprint_evaluation_submitted",
-                    ]),
+            activity = list(
+                (
+                    await db.execute(
+                        select(ActivityLog).where(
+                            ActivityLog.board_id == BOARD_ID,
+                            ActivityLog.action.in_(
+                                [
+                                    "sprint_created",
+                                    "sprint_tasks_assigned",
+                                    "sprint_moved",
+                                    "sprint_evaluation_submitted",
+                                ]
+                            ),
+                        )
+                    )
                 )
-            )).scalars().all())
+                .scalars()
+                .all()
+            )
             activity = [
                 log
                 for log in activity
@@ -2071,9 +2195,11 @@ class TestSprintHistory:
             ]
             origin_after = await db.get(Sprint, origin.id)
             hotfix_after = await db.get(Sprint, sprint.id)
-            original_cards_after = set((await db.execute(
-                select(Card.id).where(Card.sprint_id == origin.id)
-            )).scalars().all())
+            original_cards_after = set(
+                (await db.execute(select(Card.id).where(Card.sprint_id == origin.id)))
+                .scalars()
+                .all()
+            )
             bug_after = await db.get(Card, bug.id)
             regression_after = await db.get(Card, regression.id)
 
@@ -2185,9 +2311,16 @@ class TestSprintAnalyticsLaneBreakdown:
         assert summary["active_hotfix_lanes"] == 1
 
         by_id = {row["sprint_id"]: row for row in payload["sprints"]}
-        normal_rows = [row for row in payload["sprints"] if row["lane_type"] == "normal"]
-        hotfix_rows = [row for row in payload["sprints"] if row["lane_type"] == "hotfix"]
-        assert {row["sprint_id"] for row in normal_rows} == {normal_one.id, normal_two.id}
+        normal_rows = [
+            row for row in payload["sprints"] if row["lane_type"] == "normal"
+        ]
+        hotfix_rows = [
+            row for row in payload["sprints"] if row["lane_type"] == "hotfix"
+        ]
+        assert {row["sprint_id"] for row in normal_rows} == {
+            normal_one.id,
+            normal_two.id,
+        }
         assert {row["sprint_id"] for row in hotfix_rows} == {hotfix.id}
         assert by_id[normal_one.id]["normal_sprint_created"] is True
         assert by_id[normal_two.id]["normal_sprint_created"] is True
@@ -2222,6 +2355,7 @@ class TestSprintDeletion:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             result = await service.delete_sprint(sprint_id, AGENT_ID)
@@ -2230,6 +2364,17 @@ class TestSprintDeletion:
             # Verify deletion
             retrieved = await service.get_sprint(sprint_id)
             assert retrieved is None
+            intent = (
+                await db.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_type == "sprint",
+                        ConsolidationQueue.artifact_id == sprint_id,
+                        ConsolidationQueue.work_kind == "stale_reconcile",
+                    )
+                )
+            ).scalar_one()
+            assert intent.payload["source_refs"] == [f"sprint:{sprint_id}"]
 
     async def test_delete_sprint_in_active(self, db_factory):
         """Test 21: Delete sprint in active status."""
@@ -2248,6 +2393,7 @@ class TestSprintDeletion:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             result = await service.delete_sprint(sprint_id, AGENT_ID)
@@ -2273,6 +2419,7 @@ class TestSprintDeletion:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             result = await service.delete_sprint(sprint_id, AGENT_ID)
@@ -2284,6 +2431,7 @@ class TestSprintDeletion:
     async def test_delete_nonexistent_sprint(self, db_factory):
         """Test 23: Delete non-existent sprint should return False."""
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             result = await service.delete_sprint("nonexistent-sprint-id", AGENT_ID)
@@ -2305,6 +2453,7 @@ class TestSprintDeletion:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # Assign cards
@@ -2349,6 +2498,7 @@ class TestSprintSkipFlags:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             # Assign card and activate
@@ -2369,7 +2519,7 @@ class TestSprintSkipFlags:
         async with db_factory() as db:
             # Ensure TS_1_ID is "draft" (not passed)
             spec = await db.get(Spec, SPEC_ID)
-            for ts in (spec.test_scenarios or []):
+            for ts in spec.test_scenarios or []:
                 if ts.get("id") == TS_1_ID:
                     ts["status"] = "draft"
             flag_modified(spec, "test_scenarios")
@@ -2389,6 +2539,7 @@ class TestSprintSkipFlags:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
@@ -2418,6 +2569,7 @@ class TestSprintSkipFlags:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             await service.assign_tasks(sprint_id, [CARD_1_ID], AGENT_ID)
@@ -2426,7 +2578,7 @@ class TestSprintSkipFlags:
 
             # Update scenario to passed
             spec = await db.get(Spec, SPEC_ID)
-            for ts in (spec.test_scenarios or []):
+            for ts in spec.test_scenarios or []:
                 if ts.get("id") == TS_1_ID:
                     ts["status"] = "passed"
 
@@ -2463,6 +2615,7 @@ class TestSprintSkipFlags:
         sprint_id = sprint.id
 
         from okto_pulse.core.services.main import SprintService
+
         async with db_factory() as db:
             service = SprintService(db)
             data = SprintUpdate(

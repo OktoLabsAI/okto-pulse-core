@@ -19,10 +19,13 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
-from okto_pulse.core.application.use_cases._service_payload import ServicePayload, payload
+from okto_pulse.core.application.use_cases._service_payload import (
+    ServicePayload,
+    payload,
+)
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.services.knowledge_governance_projection import (
-    with_knowledge_governance,
+    serialize_knowledge_base as _serialize_knowledge_base,
 )
 
 
@@ -60,89 +63,16 @@ def _qa_answer_text(qa: Any) -> str | None:
 
 def _sanitize_html(html: str) -> str:
     sanitized = re.sub(r"<script[\s\S]*?</script>", "", html, flags=re.IGNORECASE)
-    sanitized = re.sub(r"\s+on\w+\s*=\s*[\"'][^\"']*[\"']", "", sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(
+        r"\s+on\w+\s*=\s*[\"'][^\"']*[\"']", "", sanitized, flags=re.IGNORECASE
+    )
     sanitized = re.sub(r"\s+on\w+\s*=\s*\S+", "", sanitized, flags=re.IGNORECASE)
     return sanitized
 
 
-def _serialize_knowledge_base(kb: Any, *, include_content: bool = True) -> dict[str, Any]:
-    if isinstance(kb, dict):
-        data = {
-            "id": kb.get("id"),
-            "title": kb.get("title") or kb.get("name"),
-            "description": kb.get("description"),
-            "mime_type": kb.get("mime_type") or kb.get("content_type") or "text/markdown",
-        }
-        for attr in (
-            "ideation_id",
-            "refinement_id",
-            "spec_id",
-            "source",
-            "source_type",
-            "source_id",
-            "source_title",
-            "source_version",
-            "source_kb_id",
-            "root_source_kb_id",
-            "immediate_parent_kb_id",
-            "content_hash",
-            "knowledge_assignment",
-        ):
-            if kb.get(attr):
-                data[attr] = kb[attr]
-        if include_content:
-            data["content"] = kb.get("content")
-        for attr in ("created_by", "created_at", "updated_at"):
-            value = kb.get(attr)
-            if value:
-                data[attr] = (
-                    value.isoformat()
-                    if callable(getattr(value, "isoformat", None))
-                    else value
-                )
-        return with_knowledge_governance(data, kb)
-
-    data: dict[str, Any] = {
-        "id": getattr(kb, "id", None),
-        "title": getattr(kb, "title", None),
-        "description": getattr(kb, "description", None),
-        "mime_type": getattr(kb, "mime_type", "text/markdown"),
-    }
-    for attr in (
-        "ideation_id",
-        "refinement_id",
-        "spec_id",
-        "source_type",
-        "source_id",
-        "source_title",
-        "source_version",
-        "source_kb_id",
-        "root_source_kb_id",
-        "immediate_parent_kb_id",
-        "content_hash",
-        "knowledge_assignment",
-    ):
-        value = getattr(kb, attr, None)
-        if value:
-            data[attr] = value
-    if include_content:
-        data["content"] = getattr(kb, "content", None)
-    if getattr(kb, "created_by", None):
-        data["created_by"] = kb.created_by
-    if getattr(kb, "created_at", None):
-        data["created_at"] = kb.created_at.isoformat()
-    if getattr(kb, "updated_at", None):
-        data["updated_at"] = kb.updated_at.isoformat()
-    return with_knowledge_governance(data, kb)
-
-
 def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
     """Require actor, command, and canonical entity to share one board."""
-    return bool(
-        record
-        and actor.board_id == board_id
-        and record.board_id == board_id
-    )
+    return bool(record and actor.board_id == board_id and record.board_id == board_id)
 
 
 async def _load_entity_mockups(
@@ -204,15 +134,25 @@ async def _save_entity_mockups(
     update_class: Any,
 ) -> None:
     if entity_type == "spec":
-        await service.update_spec(entity_id, agent_id, update_class(screen_mockups=screens))
+        await service.update_spec(
+            entity_id, agent_id, update_class(screen_mockups=screens)
+        )
     elif entity_type == "ideation":
-        await service.update_ideation(entity_id, agent_id, update_class(screen_mockups=screens))
+        await service.update_ideation(
+            entity_id, agent_id, update_class(screen_mockups=screens)
+        )
     elif entity_type == "refinement":
-        await service.update_refinement(entity_id, agent_id, update_class(screen_mockups=screens))
+        await service.update_refinement(
+            entity_id, agent_id, update_class(screen_mockups=screens)
+        )
     elif entity_type == "card":
-        await service.update_card(entity_id, agent_id, update_class(screen_mockups=screens))
+        await service.update_card(
+            entity_id, agent_id, update_class(screen_mockups=screens)
+        )
     elif entity_type == "story":
-        await service.update_story(entity_id, agent_id, update_class(screen_mockups=screens))
+        await service.update_story(
+            entity_id, agent_id, update_class(screen_mockups=screens)
+        )
 
 
 @dataclass(frozen=True)
@@ -364,7 +304,7 @@ class McpGetCardKnowledgeUseCase:
                 return McpPayloadResult(
                     {
                         "success": True,
-                        "knowledge": with_knowledge_governance(dict(kb), kb),
+                        "knowledge": _serialize_knowledge_base(kb),
                     }
                 )
         raise EntityNotFoundError("card_knowledge", command.knowledge_id)
@@ -436,7 +376,11 @@ class McpScreenMockupCommand:
 
 class McpAddScreenMockupUseCase:
     async def execute(
-        self, command: McpScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpScreenMockupCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         from okto_pulse.core.services.design_system import (
             DesignSystemError,
@@ -453,9 +397,12 @@ class McpAddScreenMockupUseCase:
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
 
-        screen_id = "sm_" + hashlib.md5(
-            f"{command.entity_id}{command.title}{time.time()}".encode()
-        ).hexdigest()[:8]
+        screen_id = (
+            "sm_"
+            + hashlib.md5(
+                f"{command.entity_id}{command.title}{time.time()}".encode()
+            ).hexdigest()[:8]
+        )
         screen = {
             "id": screen_id,
             "title": command.title,
@@ -482,7 +429,12 @@ class McpAddScreenMockupUseCase:
         screen["order"] = len(screens)
         screens.append(screen)
         await _save_entity_mockups(
-            service, command.entity_type, command.entity_id, actor.actor_id, screens, update_class
+            service,
+            command.entity_type,
+            command.entity_id,
+            actor.actor_id,
+            screens,
+            update_class,
         )
         await commit(uow)
         return McpPayloadResult(
@@ -497,7 +449,11 @@ class McpAddScreenMockupUseCase:
 
 class McpUpdateScreenMockupUseCase:
     async def execute(
-        self, command: McpScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpScreenMockupCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         from okto_pulse.core.services.design_system import (
             DesignSystemError,
@@ -543,21 +499,32 @@ class McpUpdateScreenMockupUseCase:
         except DesignSystemError as exc:
             return McpPayloadResult(exc.to_dict())
         await _save_entity_mockups(
-            service, command.entity_type, command.entity_id, actor.actor_id, screens, update_class
+            service,
+            command.entity_type,
+            command.entity_id,
+            actor.actor_id,
+            screens,
+            update_class,
         )
         await commit(uow)
         return McpPayloadResult(
             {
                 "success": True,
                 "screen": screen,
-                "design_system_gate": outcomes[0] if outcomes else {"outcome": "not_applicable"},
+                "design_system_gate": outcomes[0]
+                if outcomes
+                else {"outcome": "not_applicable"},
             }
         )
 
 
 class McpAnnotateMockupUseCase:
     async def execute(
-        self, command: McpScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpScreenMockupCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         entity, service, update_class = await _load_entity_mockups(
             uow.services,
@@ -569,7 +536,8 @@ class McpAnnotateMockupUseCase:
         if not entity:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
         annotation = {
-            "id": "an_" + hashlib.md5(
+            "id": "an_"
+            + hashlib.md5(
                 f"{command.screen_id}{command.text}{time.time()}".encode()
             ).hexdigest()[:8],
             "text": command.text,
@@ -583,7 +551,12 @@ class McpAnnotateMockupUseCase:
         anns.append(annotation)
         screen["annotations"] = anns
         await _save_entity_mockups(
-            service, command.entity_type, command.entity_id, actor.actor_id, screens, update_class
+            service,
+            command.entity_type,
+            command.entity_id,
+            actor.actor_id,
+            screens,
+            update_class,
         )
         await commit(uow)
         return McpPayloadResult({"success": True, "annotation": annotation})
@@ -591,7 +564,11 @@ class McpAnnotateMockupUseCase:
 
 class McpListScreenMockupsUseCase:
     async def execute(
-        self, command: McpScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpScreenMockupCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         entity, _service, _update_class = await _load_entity_mockups(
             uow.services,
@@ -604,9 +581,11 @@ class McpListScreenMockupsUseCase:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
         screens = list(entity.screen_mockups or [])
         if command.screen_type:
-            screens = [s for s in screens if s.get("screen_type") == command.screen_type]
+            screens = [
+                s for s in screens if s.get("screen_type") == command.screen_type
+            ]
         total = len(screens)
-        paginated = screens[command.offset:command.offset + command.limit]
+        paginated = screens[command.offset : command.offset + command.limit]
         return McpPayloadResult(
             {
                 "entity_type": command.entity_type,
@@ -621,7 +600,11 @@ class McpListScreenMockupsUseCase:
 
 class McpDeleteScreenMockupUseCase:
     async def execute(
-        self, command: McpScreenMockupCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpScreenMockupCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         entity, service, update_class = await _load_entity_mockups(
             uow.services,
@@ -638,10 +621,24 @@ class McpDeleteScreenMockupUseCase:
         if len(screens) == original_len:
             raise EntityNotFoundError("screen", command.screen_id)
         await _save_entity_mockups(
-            service, command.entity_type, command.entity_id, actor.actor_id, screens, update_class
+            service,
+            command.entity_type,
+            command.entity_id,
+            actor.actor_id,
+            screens,
+            update_class,
         )
         await commit(uow)
         return McpPayloadResult({"success": True, "screen_id": command.screen_id})
+
+
+# Canonical Q&A answer-state filter tokens (okto_pulse_list_qa filters.status).
+# "answered" ⇔ answered_at IS NOT NULL; "unanswered"/"open" ⇔ answered_at IS NULL —
+# the only reliable predicate, because choice/multi_choice answers leave `answer`
+# NULL but always stamp answered_at (see services/main.py _attach_open_qa_counts).
+QA_STATUS_ANSWERED = "answered"
+QA_STATUS_UNANSWERED = frozenset({"unanswered", "open"})
+QA_STATUS_VALUES = frozenset({QA_STATUS_ANSWERED}) | QA_STATUS_UNANSWERED
 
 
 @dataclass(frozen=True)
@@ -673,6 +670,20 @@ class McpListQaUseCase:
             items = await uow.services.refinement_qa.list_qa(command.entity_id)
         if command.filters.get("asked_by"):
             items = [q for q in items if q.asked_by == command.filters["asked_by"]]
+        status_filter = command.filters.get("status")
+        if status_filter is not None:
+            normalized = str(status_filter).strip().lower()
+            if normalized == QA_STATUS_ANSWERED:
+                items = [q for q in items if q.answered_at is not None]
+            elif normalized in QA_STATUS_UNANSWERED:
+                items = [q for q in items if q.answered_at is None]
+            else:
+                # Fail-closed domain guard (the MCP handler pre-validates the same
+                # vocabulary; this keeps a direct use-case call honest too).
+                raise ValueError(
+                    f"status='{status_filter}' is not a valid Q&A answer-state "
+                    f"filter; expected one of {sorted(QA_STATUS_VALUES)}"
+                )
         return McpPayloadResult(
             {
                 "entity_type": command.entity_type,
@@ -690,7 +701,9 @@ class McpListQaUseCase:
                         "asked_by": qa.asked_by,
                         "answered_by": qa.answered_by,
                         "created_at": qa.created_at.isoformat(),
-                        "answered_at": qa.answered_at.isoformat() if qa.answered_at else None,
+                        "answered_at": qa.answered_at.isoformat()
+                        if qa.answered_at
+                        else None,
                     }
                     for qa in items
                 ],
@@ -708,7 +721,11 @@ class McpListKnowledgeCommand:
 
 class McpListKnowledgeUseCase:
     async def execute(
-        self, command: McpListKnowledgeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListKnowledgeCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         parent, _service, _update_class = await _load_entity_mockups(
             uow.services,
@@ -728,9 +745,7 @@ class McpListKnowledgeUseCase:
 
             items = await load_effective_spec_knowledge(uow.services, parent)
             if mime_filter:
-                items = [
-                    kb for kb in items if kb.get("mime_type") == mime_filter
-                ]
+                items = [kb for kb in items if kb.get("mime_type") == mime_filter]
             return McpPayloadResult(
                 {
                     "entity_type": command.entity_type,
@@ -743,33 +758,35 @@ class McpListKnowledgeUseCase:
                 }
             )
         if command.entity_type == "ideation":
-            items = await uow.services.ideation_knowledge.list_knowledge(command.entity_id)
+            items = await uow.services.ideation_knowledge.list_knowledge(
+                command.entity_id
+            )
             if mime_filter:
-                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+                items = [
+                    kb for kb in items if getattr(kb, "mime_type", None) == mime_filter
+                ]
             return McpPayloadResult(
                 {
                     "entity_type": command.entity_type,
                     "entity_id": command.entity_id,
                     "count": len(items),
                     "knowledge_bases": [
-                        with_knowledge_governance(
-                            {
-                                "id": kb.id,
-                                "title": kb.title,
-                                "description": kb.description,
-                                "mime_type": kb.mime_type,
-                                "created_at": kb.created_at.isoformat(),
-                            },
+                        _serialize_knowledge_base(
                             kb,
+                            include_content=False,
                         )
                         for kb in items
                     ],
                 }
             )
         if command.entity_type == "refinement":
-            items = await uow.services.refinement_knowledge.list_knowledge(command.entity_id)
+            items = await uow.services.refinement_knowledge.list_knowledge(
+                command.entity_id
+            )
             if mime_filter:
-                items = [kb for kb in items if getattr(kb, "mime_type", None) == mime_filter]
+                items = [
+                    kb for kb in items if getattr(kb, "mime_type", None) == mime_filter
+                ]
             return McpPayloadResult(
                 {
                     "entity_type": command.entity_type,
@@ -794,8 +811,13 @@ class McpListKnowledgeUseCase:
                 "entity_type": command.entity_type,
                 "entity_id": command.entity_id,
                 "count": len(kbs),
+                # Bounded projection (same serializer as the spec branch): omit
+                # `content` from a card knowledge LISTING while preserving governance
+                # + metadata/lineage. `with_knowledge_governance(dict(kb), kb)` copied
+                # the whole effective dict, leaking `content` — read the body via the
+                # single-item get, not the list.
                 "knowledge_bases": [
-                    with_knowledge_governance(dict(kb), kb) for kb in kbs
+                    _serialize_knowledge_base(kb, include_content=False) for kb in kbs
                 ],
             }
         )
@@ -810,7 +832,11 @@ class McpListSnapshotsCommand:
 
 class McpListSnapshotsUseCase:
     async def execute(
-        self, command: McpListSnapshotsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: McpListSnapshotsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> McpPayloadResult:
         parent, _service, _update_class = await _load_entity_mockups(
             uow.services,
@@ -822,9 +848,7 @@ class McpListSnapshotsUseCase:
         if not parent:
             raise EntityNotFoundError(command.entity_type, command.entity_id)
         if command.entity_type == "ideation":
-            snapshots = await uow.services.ideations.list_snapshots(
-                command.entity_id
-            )
+            snapshots = await uow.services.ideations.list_snapshots(command.entity_id)
             return McpPayloadResult(
                 {
                     "entity_type": command.entity_type,
@@ -842,9 +866,7 @@ class McpListSnapshotsUseCase:
                     ],
                 }
             )
-        snapshots = await uow.services.refinements.list_snapshots(
-            command.entity_id
-        )
+        snapshots = await uow.services.refinements.list_snapshots(command.entity_id)
         return McpPayloadResult(
             {
                 "entity_type": command.entity_type,

@@ -13,13 +13,19 @@ from okto_pulse.core.kg.interfaces import get_kg_registry, reset_registry_for_te
 
 class _PathAccessForbidden:
     def board_graph_path(self, board_id: str) -> Path:
-        raise AssertionError(f"core must not resolve a physical graph path for {board_id}")
+        raise AssertionError(
+            f"core must not resolve a physical graph path for {board_id}"
+        )
 
     def exists(self, board_id: str) -> bool:
-        raise AssertionError(f"core must not call graph_path_resolver.exists for {board_id}")
+        raise AssertionError(
+            f"core must not call graph_path_resolver.exists for {board_id}"
+        )
 
     def storage_state(self, board_id: str) -> Any:
-        raise AssertionError(f"core must not inspect path-backed storage state for {board_id}")
+        raise AssertionError(
+            f"core must not inspect path-backed storage state for {board_id}"
+        )
 
 
 class _CountingCypher:
@@ -126,6 +132,7 @@ def test_ts1_graph_runtime_store_contract_has_no_path_surface() -> None:
         "graph_state",
         "exists",
         "purge_board_graph",
+        "erase_board_graph",
         "footprint",
     }
     for method_name in required_methods:
@@ -224,7 +231,9 @@ def test_ts1_ts3_footprint_uses_runtime_capability_without_path() -> None:
     assert "backend_classification" not in rendered
 
 
-def test_ts4_graph_runtime_surface_gate_blocks_path_and_backend_terms(tmp_path: Path) -> None:
+def test_ts4_graph_runtime_surface_gate_blocks_path_and_backend_terms(
+    tmp_path: Path,
+) -> None:
     from okto_pulse.core.application.boundary import (
         GraphRuntimeSurfaceGate,
         GraphRuntimeSurfaceGateInput,
@@ -284,8 +293,7 @@ def test_ts4_graph_runtime_gate_scans_services_outside_contract_package(
     services_dir = tmp_path / "okto_pulse" / "core" / "services"
     services_dir.mkdir(parents=True)
     (services_dir / "bad_health.py").write_text(
-        "def inspect_backend(conn):\n"
-        "    return conn.execute('CALL SHOW_TABLES()')\n",
+        "def inspect_backend(conn):\n    return conn.execute('CALL SHOW_TABLES()')\n",
         encoding="utf-8",
     )
 

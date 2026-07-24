@@ -51,10 +51,35 @@ _ENDPOINTS = (
 
 
 @pytest.fixture
-def client():
+def client(tmp_path):
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.community.adapters.storage import CommunityFileSystemStorage
+    from okto_pulse.core.infra.storage import (
+        configure_storage,
+        reset_storage_provider_for_tests,
+    )
+    from okto_pulse.core.kg.providers.testing.memory_global_discovery_runtime import (
+        InMemoryGlobalDiscoveryRuntime,
+    )
+
     app = FastAPI()
     app.include_router(boards_router, prefix=PREFIX)
     session_factory = get_session_factory()
+    configure_storage(CommunityFileSystemStorage(str(tmp_path / "uploads")))
+    # The governed board-deletion path (DELETE /boards/{id}) runs a STRICT physical
+    # Global Discovery erasure via ``global_runtime.erase_storage_for_privacy``. The
+    # suite's real-if-available registry supplies a GlobalDiscovery runtime WITHOUT
+    # that physical-erasure capability, so in isolation the delete fails 503
+    # ``global_discovery_physical_erasure_unavailable``. Override ONLY the
+    # GlobalDiscovery slot with the in-memory runtime — it implements the strict
+    # erasure/verified-absence contract (nothing relaxed); the real graph providers
+    # stay in place for the per-board graph purge. Bootstrap it so its global graph
+    # "exists": the erasure cascade issues cypher DELETEs through ``execute()``, which
+    # raises ``global_graph_absent`` on an un-bootstrapped graph; erase_storage_for_privacy
+    # then flips ``exists`` back to False (the post-delete assertion).
+    global_discovery_runtime = InMemoryGlobalDiscoveryRuntime()
+    global_discovery_runtime.bootstrap()
+    configure_test_kg_registry(global_discovery_runtime=global_discovery_runtime)
 
     async def _override_db():
         async with session_factory() as session:
@@ -63,7 +88,12 @@ def client():
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[require_user] = lambda: USER
     app.dependency_overrides[get_realm_id] = lambda: LOCAL_REALM_ID
-    return TestClient(app)
+    try:
+        yield TestClient(app)
+    finally:
+        reset_storage_provider_for_tests()
+        # Restore the ambient (real-if-available) test registry for subsequent tests.
+        configure_test_kg_registry()
 
 
 async def _seed_board(
@@ -106,7 +136,11 @@ async def _seed_board_spec_card(owner: str = USER) -> tuple[str, str, str]:
             )
         )
         db.add(Spec(id=sid, board_id=bid, title="fu7s1-spec", created_by=owner))
-        db.add(Card(id=cid, board_id=bid, spec_id=sid, title="fu7s1-card", created_by=owner))
+        db.add(
+            Card(
+                id=cid, board_id=bid, spec_id=sid, title="fu7s1-card", created_by=owner
+            )
+        )
         await db.commit()
         return bid, sid, cid
 
@@ -195,9 +229,12 @@ async def test_update_board_404(client) -> None:
 
 @pytest.mark.asyncio
 async def test_delete_board_204_then_404(client) -> None:
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
     board_id = await _seed_board()
     resp = client.delete(f"{PREFIX}/{board_id}")
     assert resp.status_code == 204, resp.text
+    assert get_kg_registry().require_global_discovery_runtime().state().exists is False
     gone = client.delete(f"{PREFIX}/{board_id}")
     assert gone.status_code == 404
     assert client.get(f"{PREFIX}/{board_id}").status_code == 404
@@ -208,6 +245,468 @@ async def test_delete_board_404(client) -> None:
     resp = client.delete(f"{PREFIX}/{_missing()}")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Board not found"
+
+
+@pytest.mark.asyncio
+async def test_delete_board_commits_relational_erasure_before_external_stores(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.use_cases import boards_crud
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.boards_crud import (
+        DeleteBoardCommand,
+        DeleteBoardUseCase,
+    )
+
+    events: list[object] = []
+
+    async def _require_owned(_uow, board_id, actor):
+        events.append(("authorize", board_id, actor.actor_id))
+        return object()
+
+    class _Erasure:
+        def ensure_owned(self):
+            events.append("ensure_lease")
+
+    class _Scope:
+        async def __aenter__(self):
+            events.append("enter_erasure_scope")
+            return _Erasure()
+
+        async def __aexit__(self, *_exc):
+            events.append("exit_erasure_scope")
+
+    class _KG:
+        async def get_board_erasure_job(self, _board_id):
+            return None
+
+        def board_erasure_scope(self, board_id, *, actor_id):
+            events.append(("create_erasure_scope", board_id, actor_id))
+            return _Scope()
+
+        async def stage_board_relational_erasure(self, board_id, *, actor_id):
+            events.append(("stage_relational_erasure", board_id, actor_id))
+
+        async def right_to_erasure(
+            self,
+            board_id,
+            *,
+            strict,
+            commit,
+            global_writer_guarded,
+            purge_relational,
+        ):
+            events.append(
+                (
+                    "erase_kg",
+                    board_id,
+                    strict,
+                    commit,
+                    global_writer_guarded,
+                    purge_relational,
+                )
+            )
+            return {"board_id": board_id, "sqlite_purged": True}
+
+        async def complete_board_erasure_job(self, board_id):
+            events.append(("complete_erasure_job", board_id))
+            return True
+
+    class _Boards:
+        async def delete_board(self, board_id, user_id):
+            events.append(("delete_source", board_id, user_id))
+            return True
+
+    class _Uow:
+        services = SimpleNamespace(kg=_KG(), boards=_Boards())
+
+        async def synchronize(self):
+            events.append("synchronize")
+
+        async def commit(self):
+            events.append("commit")
+
+    monkeypatch.setattr(boards_crud, "_require_owned_board", _require_owned)
+    await DeleteBoardUseCase().execute(
+        DeleteBoardCommand("board-strict-erasure"),
+        actor=ActorContext("owner", "rest"),
+        uow=_Uow(),
+    )
+
+    assert events == [
+        ("authorize", "board-strict-erasure", "owner"),
+        ("create_erasure_scope", "board-strict-erasure", "owner"),
+        "enter_erasure_scope",
+        ("delete_source", "board-strict-erasure", "owner"),
+        "synchronize",
+        ("stage_relational_erasure", "board-strict-erasure", "owner"),
+        "ensure_lease",
+        "commit",
+        "ensure_lease",
+        ("erase_kg", "board-strict-erasure", True, False, True, False),
+        "ensure_lease",
+        ("complete_erasure_job", "board-strict-erasure"),
+        "commit",
+        "exit_erasure_scope",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_delete_board_relational_erasure_failure_skips_commit_and_physical_purge(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.use_cases import boards_crud
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.boards_crud import (
+        DeleteBoardCommand,
+        DeleteBoardUseCase,
+    )
+
+    events: list[str] = []
+
+    async def _require_owned(_uow, _board_id, _actor):
+        events.append("authorize")
+        return object()
+
+    class _Erasure:
+        def ensure_owned(self):
+            events.append("ensure_lease")
+
+    class _Scope:
+        async def __aenter__(self):
+            events.append("enter_erasure_scope")
+            return _Erasure()
+
+        async def __aexit__(self, *_exc):
+            events.append("exit_erasure_scope")
+
+    class _KG:
+        async def get_board_erasure_job(self, _board_id):
+            return None
+
+        def board_erasure_scope(self, _board_id, *, actor_id):
+            assert actor_id == "owner"
+            events.append("create_erasure_scope")
+            return _Scope()
+
+        async def stage_board_relational_erasure(self, _board_id, *, actor_id):
+            assert actor_id == "owner"
+            events.append("stage_relational_erasure")
+            raise RuntimeError("relational erasure failed")
+
+        async def right_to_erasure(self, *_args, **_kwargs):
+            pytest.fail("physical purge must not start before relational commit")
+
+    class _Boards:
+        async def delete_board(self, _board_id, _user_id):
+            events.append("delete_source")
+            return True
+
+    class _Uow:
+        services = SimpleNamespace(kg=_KG(), boards=_Boards())
+
+        async def synchronize(self):
+            events.append("synchronize")
+
+        async def commit(self):
+            events.append("commit")
+
+    monkeypatch.setattr(boards_crud, "_require_owned_board", _require_owned)
+    with pytest.raises(RuntimeError, match="relational erasure failed"):
+        await DeleteBoardUseCase().execute(
+            DeleteBoardCommand("board-strict-erasure"),
+            actor=ActorContext("owner", "rest"),
+            uow=_Uow(),
+        )
+
+    assert events == [
+        "authorize",
+        "create_erasure_scope",
+        "enter_erasure_scope",
+        "delete_source",
+        "synchronize",
+        "stage_relational_erasure",
+        "exit_erasure_scope",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_delete_board_external_failure_occurs_only_after_source_commit(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.use_cases import boards_crud
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.boards_crud import (
+        DeleteBoardCommand,
+        DeleteBoardUseCase,
+    )
+
+    events: list[str] = []
+
+    async def _require_owned(*_args):
+        events.append("authorize")
+        return object()
+
+    class _Erasure:
+        def ensure_owned(self):
+            events.append("ensure")
+
+    class _Scope:
+        async def __aenter__(self):
+            events.append("enter")
+            return _Erasure()
+
+        async def __aexit__(self, *_exc):
+            events.append("exit")
+
+    class _KG:
+        async def get_board_erasure_job(self, _board_id):
+            return None
+
+        def board_erasure_scope(self, *_args, **_kwargs):
+            return _Scope()
+
+        async def stage_board_relational_erasure(self, _board_id, *, actor_id):
+            assert actor_id == "owner"
+            events.append("stage_relational")
+
+        async def right_to_erasure(self, *_args, **kwargs):
+            assert kwargs["purge_relational"] is False
+            events.append("external")
+            raise RuntimeError("external purge failed")
+
+        async def record_board_erasure_failure(self, _board_id, error):
+            assert str(error) == "external purge failed"
+            events.append("record_failure")
+
+    class _Boards:
+        async def delete_board(self, *_args):
+            events.append("delete")
+            return True
+
+    class _Uow:
+        services = SimpleNamespace(kg=_KG(), boards=_Boards())
+
+        async def synchronize(self):
+            events.append("synchronize")
+
+        async def commit(self):
+            events.append("commit")
+
+    monkeypatch.setattr(boards_crud, "_require_owned_board", _require_owned)
+    with pytest.raises(RuntimeError, match="external purge failed"):
+        await DeleteBoardUseCase().execute(
+            DeleteBoardCommand("board-external-failure"),
+            actor=ActorContext("owner", "rest"),
+            uow=_Uow(),
+        )
+
+    assert events.index("commit") < events.index("external")
+    assert events.index("external") < events.index("record_failure")
+    assert events.count("commit") == 2
+    assert events[-1] == "exit"
+
+
+@pytest.mark.asyncio
+async def test_delete_board_resumes_durable_erasure_after_source_is_absent(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.use_cases import boards_crud
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.boards_crud import (
+        DeleteBoardCommand,
+        DeleteBoardUseCase,
+    )
+
+    events: list[str] = []
+    pending = SimpleNamespace(actor_id="owner")
+
+    async def _unexpected_authorize(*_args):
+        pytest.fail("a durable continuation must not require the deleted Board")
+
+    class _Erasure:
+        def ensure_owned(self):
+            events.append("ensure")
+
+    class _Scope:
+        async def __aenter__(self):
+            events.append("enter")
+            return _Erasure()
+
+        async def __aexit__(self, *_exc):
+            events.append("exit")
+
+    class _KG:
+        async def get_board_erasure_job(self, _board_id):
+            return pending
+
+        def board_erasure_scope(self, *_args, **_kwargs):
+            return _Scope()
+
+        async def right_to_erasure(self, *_args, **kwargs):
+            assert kwargs["purge_relational"] is False
+            events.append("external")
+
+        async def complete_board_erasure_job(self, _board_id):
+            events.append("complete")
+            return True
+
+    class _Boards:
+        async def delete_board(self, *_args):
+            pytest.fail("resume must not attempt a second source deletion")
+
+    class _Uow:
+        services = SimpleNamespace(kg=_KG(), boards=_Boards())
+
+        async def commit(self):
+            events.append("commit")
+
+    monkeypatch.setattr(boards_crud, "_require_owned_board", _unexpected_authorize)
+    await DeleteBoardUseCase().execute(
+        DeleteBoardCommand("board-resume-erasure"),
+        actor=ActorContext("owner", "rest"),
+        uow=_Uow(),
+    )
+
+    assert events == [
+        "enter",
+        "external",
+        "ensure",
+        "complete",
+        "commit",
+        "exit",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_delete_board_does_not_disclose_another_actors_erasure_job() -> None:
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
+    from okto_pulse.core.application.use_cases.boards_crud import (
+        DeleteBoardCommand,
+        DeleteBoardUseCase,
+    )
+
+    class _KG:
+        async def get_board_erasure_job(self, _board_id):
+            return SimpleNamespace(actor_id="original-owner")
+
+    class _Uow:
+        services = SimpleNamespace(kg=_KG())
+
+    with pytest.raises(EntityNotFoundError):
+        await DeleteBoardUseCase().execute(
+            DeleteBoardCommand("board-private-erasure"),
+            actor=ActorContext("different-actor", "rest"),
+            uow=_Uow(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_delete_board_cancellation_drains_terminal_erasure(
+    monkeypatch,
+) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.use_cases import boards_crud
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.core.application.use_cases.boards_crud import (
+        DeleteBoardCommand,
+        DeleteBoardUseCase,
+    )
+
+    events: list[str] = []
+    external_started = asyncio.Event()
+    finish_external = asyncio.Event()
+
+    async def _require_owned(*_args):
+        return object()
+
+    class _Erasure:
+        def ensure_owned(self):
+            events.append("ensure")
+
+    class _Scope:
+        async def __aenter__(self):
+            events.append("enter")
+            return _Erasure()
+
+        async def __aexit__(self, *_exc):
+            events.append("exit")
+
+    class _KG:
+        async def get_board_erasure_job(self, _board_id):
+            return None
+
+        def board_erasure_scope(self, *_args, **_kwargs):
+            return _Scope()
+
+        async def stage_board_relational_erasure(self, _board_id, *, actor_id):
+            assert actor_id == "owner"
+            events.append("stage_relational")
+
+        async def right_to_erasure(self, *_args, **_kwargs):
+            events.append("external_started")
+            external_started.set()
+            await finish_external.wait()
+            events.append("external_finished")
+
+        async def complete_board_erasure_job(self, _board_id):
+            events.append("complete_job")
+            return True
+
+    class _Boards:
+        async def delete_board(self, *_args):
+            events.append("delete")
+            return True
+
+    class _Uow:
+        services = SimpleNamespace(kg=_KG(), boards=_Boards())
+
+        async def synchronize(self):
+            events.append("synchronize")
+
+        async def commit(self):
+            events.append("commit")
+
+    monkeypatch.setattr(boards_crud, "_require_owned_board", _require_owned)
+    request = asyncio.create_task(
+        DeleteBoardUseCase().execute(
+            DeleteBoardCommand("board-cancel-terminal"),
+            actor=ActorContext("owner", "rest"),
+            uow=_Uow(),
+        )
+    )
+    await asyncio.wait_for(external_started.wait(), timeout=2)
+    request.cancel()
+    await asyncio.sleep(0)
+    assert not request.done()
+
+    finish_external.set()
+    with pytest.raises(asyncio.CancelledError):
+        await request
+
+    assert "commit" in events
+    assert events[-5:] == [
+        "external_finished",
+        "ensure",
+        "complete_job",
+        "commit",
+        "exit",
+    ]
 
 
 # --- create card ------------------------------------------------------------
@@ -303,7 +802,9 @@ async def test_tree_root_foreign_board_matches_missing_without_mutation(
     from sqlalchemy_test_models import ActivityLog, Card, Spec
 
     owned_board = await _seed_board()
-    _foreign_board, foreign_spec, foreign_card = await _seed_board_spec_card(owner=OTHER)
+    _foreign_board, foreign_spec, foreign_card = await _seed_board_spec_card(
+        owner=OTHER
+    )
     async with get_session_factory()() as db:
         spec = await db.get(Spec, foreign_spec)
         card = await db.get(Card, foreign_card)
@@ -311,12 +812,8 @@ async def test_tree_root_foreign_board_matches_missing_without_mutation(
         card.archived = initial_archived
         await db.commit()
 
-    foreign = client.post(
-        f"{PREFIX}/{owned_board}/{operation}/spec/{foreign_spec}"
-    )
-    missing = client.post(
-        f"{PREFIX}/{owned_board}/{operation}/spec/{_missing('spec')}"
-    )
+    foreign = client.post(f"{PREFIX}/{owned_board}/{operation}/spec/{foreign_spec}")
+    missing = client.post(f"{PREFIX}/{owned_board}/{operation}/spec/{_missing('spec')}")
 
     assert foreign.status_code == missing.status_code == 404
     assert foreign.content == missing.content
@@ -324,13 +821,17 @@ async def test_tree_root_foreign_board_matches_missing_without_mutation(
         assert (await db.get(Spec, foreign_spec)).archived is initial_archived
         assert (await db.get(Card, foreign_card)).archived is initial_archived
         activities = (
-            await db.execute(
-                select(ActivityLog).where(
-                    ActivityLog.board_id == owned_board,
-                    ActivityLog.action.in_(["tree_archived", "tree_restored"]),
+            (
+                await db.execute(
+                    select(ActivityLog).where(
+                        ActivityLog.board_id == owned_board,
+                        ActivityLog.action.in_(["tree_archived", "tree_restored"]),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert activities == []
 
 
@@ -358,9 +859,7 @@ async def test_shared_board_read_and_columns_follow_share_permission(
     assert board.status_code == 200, board.text
     assert columns.status_code == 200, columns.text
     assert card_id in {
-        card["id"]
-        for column in columns.json()["columns"].values()
-        for card in column
+        card["id"] for column in columns.json()["columns"].values() for card in column
     }
 
 
@@ -369,12 +868,14 @@ async def test_unshared_board_read_and_columns_are_same_not_found(client) -> Non
     board_id = await _seed_board(owner=OTHER)
     missing_id = _missing()
 
-    assert client.get(f"{PREFIX}/{board_id}").content == client.get(
-        f"{PREFIX}/{missing_id}"
-    ).content
-    assert client.get(f"{PREFIX}/{board_id}/columns").content == client.get(
-        f"{PREFIX}/{missing_id}/columns"
-    ).content
+    assert (
+        client.get(f"{PREFIX}/{board_id}").content
+        == client.get(f"{PREFIX}/{missing_id}").content
+    )
+    assert (
+        client.get(f"{PREFIX}/{board_id}/columns").content
+        == client.get(f"{PREFIX}/{missing_id}/columns").content
+    )
 
 
 @pytest.mark.asyncio
@@ -527,7 +1028,10 @@ async def test_share_id_cannot_cross_the_board_route_parent(client) -> None:
     assert update.status_code == revoke.status_code == 404
     assert update.json() == revoke.json() == {"detail": "Board or share not found"}
     shares = client.get(f"{PREFIX}/{board_a}/shares").json()
-    assert next(item for item in shares if item["id"] == share_id)["permission"] == "viewer"
+    assert (
+        next(item for item in shares if item["id"] == share_id)["permission"]
+        == "viewer"
+    )
 
 
 # --- use case + AST ---------------------------------------------------------
@@ -535,12 +1039,16 @@ async def test_share_id_cannot_cross_the_board_route_parent(client) -> None:
 
 @pytest.mark.asyncio
 async def test_get_board_use_case_raises_for_missing_board() -> None:
-    from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError
+    from okto_pulse.core.application.use_cases.base import (
+        ActorContext,
+        EntityNotFoundError,
+    )
     from okto_pulse.core.application.use_cases.boards_crud import (
         GetBoardCommand,
         GetBoardUseCase,
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     actor = ActorContext(USER, "rest", realm_id=LOCAL_REALM_ID)
     with pytest.raises(EntityNotFoundError):

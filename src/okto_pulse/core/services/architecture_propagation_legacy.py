@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from okto_pulse.core.ports.application_persistence import bounded_page_offset
 from okto_pulse.core.ports.architecture_legacy import (
     get_architecture_legacy_snapshot_read_port,
 )
@@ -27,9 +28,11 @@ from okto_pulse.core.services.architecture_observability import (
 )
 
 # legacy_status taxonomy (locked by Spec C).
-LEGACY_STATUS_SOURCE_BLOCKED = "source_blocked"        # source exists with active findings
-LEGACY_STATUS_VERDICT_MISSING = "verdict_missing"      # no current run / had to revalidate
-LEGACY_STATUS_SOURCE_UNAVAILABLE = "source_unavailable"  # source gone / verdict unloadable
+LEGACY_STATUS_SOURCE_BLOCKED = "source_blocked"  # source exists with active findings
+LEGACY_STATUS_VERDICT_MISSING = "verdict_missing"  # no current run / had to revalidate
+LEGACY_STATUS_SOURCE_UNAVAILABLE = (
+    "source_unavailable"  # source gone / verdict unloadable
+)
 
 LEGACY_STATUS_VALUES = (
     LEGACY_STATUS_SOURCE_BLOCKED,
@@ -69,7 +72,11 @@ async def build_propagation_legacy_report(
     items unless ``include_clean`` is true. Never mutates anything.
     """
     limit = max(1, min(int(limit), _MAX_LIMIT))
-    offset = max(0, int(offset))
+    # Backstop: reject an offset above int64 before it reaches the read port's
+    # SQL OFFSET binding (which would raise a raw OverflowError). Boundaries
+    # (REST le=PAGE_OFFSET_MAX / MCP invalid_pagination) reject earlier; this
+    # keeps a direct/service-level call fail-closed with a typed ValueError.
+    offset = bounded_page_offset(offset)
 
     page = await get_architecture_legacy_snapshot_read_port().list_page(
         db,

@@ -129,14 +129,18 @@ async def _seed() -> dict[str, str]:
 async def _state(ids: dict[str, str]) -> tuple[dict, dict, int]:
     async with get_session_factory()() as db:
         rows = (
-            await db.execute(
-                select(DesignSystem).where(
-                    DesignSystem.id.in_(
-                        [ids["global_a"], ids["global_b"], ids["inline_a"]]
+            (
+                await db.execute(
+                    select(DesignSystem).where(
+                        DesignSystem.id.in_(
+                            [ids["global_a"], ids["global_b"], ids["inline_a"]]
+                        )
                     )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         systems = {
             row.id: (
                 row.scope,
@@ -154,17 +158,13 @@ async def _state(ids: dict[str, str]) -> tuple[dict, dict, int]:
             for row in (
                 await db.execute(
                     select(BoardDesignSystem).where(
-                        BoardDesignSystem.board_id.in_(
-                            [ids["board_a"], ids["board_b"]]
-                        )
+                        BoardDesignSystem.board_id.in_([ids["board_a"], ids["board_b"]])
                     )
                 )
             ).scalars()
         }
         audit_count = int(
-            await db.scalar(
-                select(func.count()).select_from(DesignSystemGateAudit)
-            )
+            await db.scalar(select(func.count()).select_from(DesignSystemGateAudit))
             or 0
         )
         return systems, links, audit_count
@@ -325,13 +325,13 @@ async def test_catalog_lists_exports_import_duplicates_and_mcp_pages_are_owner_s
 
         listed_a = client_a.get(f"{PREFIX}/design-systems")
         assert listed_a.status_code == 200, listed_a.text
-        assert {item["id"] for item in listed_a.json()} == {
+        assert {item["id"] for item in listed_a.json()["items"]} == {
             ids["global_a"],
             extra.id,
         }
         listed_b = client_b.get(f"{PREFIX}/design-systems")
         assert listed_b.status_code == 200, listed_b.text
-        assert {item["id"] for item in listed_b.json()} == {ids["global_b"]}
+        assert {item["id"] for item in listed_b.json()["items"]} == {ids["global_b"]}
 
         exported_a = client_a.get(f"{PREFIX}/design-systems/export")
         assert exported_a.status_code == 200, exported_a.text
@@ -427,12 +427,14 @@ async def test_board_design_system_reads_allow_viewer_and_writes_require_editor(
             params={"scope": "inline", "board_id": ids["board_a"]},
         )
         assert viewer_inline.status_code == 200, viewer_inline.text
-        assert {item["id"] for item in viewer_inline.json()} == {ids["inline_a"]}
-        viewer_effective = viewer.get(
-            f"{PREFIX}/boards/{ids['board_a']}/design-system"
-        )
+        assert {item["id"] for item in viewer_inline.json()["items"]} == {
+            ids["inline_a"]
+        }
+        viewer_effective = viewer.get(f"{PREFIX}/boards/{ids['board_a']}/design-system")
         assert viewer_effective.status_code == 200, viewer_effective.text
-        assert viewer_effective.json()["effective"]["design_system_id"] == ids["global_a"]
+        assert (
+            viewer_effective.json()["effective"]["design_system_id"] == ids["global_a"]
+        )
 
         denied_create = viewer.post(
             f"{PREFIX}/design-systems",
@@ -444,15 +446,11 @@ async def test_board_design_system_reads_allow_viewer_and_writes_require_editor(
         )
         assert denied_create.status_code == 404
         assert denied_create.json()["detail"]["code"] == "board_not_found"
-        denied_unlink = viewer.delete(
-            f"{PREFIX}/boards/{ids['board_a']}/design-system"
-        )
+        denied_unlink = viewer.delete(f"{PREFIX}/boards/{ids['board_a']}/design-system")
         assert denied_unlink.status_code == 404
         assert denied_unlink.json()["detail"]["code"] == "board_not_found"
 
-        outsider_read = outsider.get(
-            f"{PREFIX}/boards/{ids['board_a']}/design-system"
-        )
+        outsider_read = outsider.get(f"{PREFIX}/boards/{ids['board_a']}/design-system")
         assert outsider_read.status_code == 404
         assert outsider_read.json()["detail"]["code"] == "board_not_found"
 
@@ -487,9 +485,10 @@ async def test_board_design_system_reads_allow_viewer_and_writes_require_editor(
         )
         assert linked.status_code == 200, linked.text
         assert linked.json()["design_system_id"] == editor_global.json()["id"]
-        assert editor.delete(
-            f"{PREFIX}/boards/{ids['board_a']}/design-system"
-        ).status_code == 204
+        assert (
+            editor.delete(f"{PREFIX}/boards/{ids['board_a']}/design-system").status_code
+            == 204
+        )
     finally:
         owner.close()
         viewer.close()
@@ -504,9 +503,7 @@ async def test_rest_detail_export_update_delete_hide_cross_scope_without_mutatio
     client_a = _rest_client(ids["owner_a"])
     client_b = _rest_client(ids["owner_b"])
     try:
-        owner_only = client_a.get(
-            f"{PREFIX}/design-systems/{ids['global_a']}"
-        )
+        owner_only = client_a.get(f"{PREFIX}/design-systems/{ids['global_a']}")
         assert owner_only.status_code == 200
         assert owner_only.json()["id"] == ids["global_a"]
 

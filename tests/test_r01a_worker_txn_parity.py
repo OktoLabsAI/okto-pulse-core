@@ -35,16 +35,20 @@ class _TestClaimRepository:
         from sqlalchemy_test_models import GlobalUpdateOutbox
 
         rows = (
-            await session.execute(
-                select(GlobalUpdateOutbox)
-                .where(
-                    GlobalUpdateOutbox.processed_at.is_(None),
-                    GlobalUpdateOutbox.retry_count >= 0,
+            (
+                await session.execute(
+                    select(GlobalUpdateOutbox)
+                    .where(
+                        GlobalUpdateOutbox.processed_at.is_(None),
+                        GlobalUpdateOutbox.retry_count >= 0,
+                    )
+                    .order_by(GlobalUpdateOutbox.created_at.asc())
+                    .limit(limit)
                 )
-                .order_by(GlobalUpdateOutbox.created_at.asc())
-                .limit(limit)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return list(rows)
 
     async def claim_domain_event_executions(self, session, *, limit: int, now):
@@ -88,7 +92,9 @@ async def _seed_queue_entry(factory, board_id: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_consolidation_rolls_back_partial_writes_on_mid_flow_failure(monkeypatch) -> None:
+async def test_consolidation_rolls_back_partial_writes_on_mid_flow_failure(
+    monkeypatch,
+) -> None:
     """AC3/ac_e7064abb: a failure in the middle of the per-entry flow persists NO
     partial data; the entry is failure-handled (not acked)."""
     from okto_pulse.core.infra.database import get_session_factory
@@ -126,12 +132,16 @@ async def test_consolidation_rolls_back_partial_writes_on_mid_flow_failure(monke
             assert fresh.last_error and "mid-flow failure" in fresh.last_error
         else:
             dlq = (
-                await db.execute(
-                    select(ConsolidationDeadLetter).where(
-                        ConsolidationDeadLetter.board_id == board_id
+                (
+                    await db.execute(
+                        select(ConsolidationDeadLetter).where(
+                            ConsolidationDeadLetter.board_id == board_id
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert dlq, "entry neither re-pended nor dead-lettered"
 
 
@@ -285,7 +295,71 @@ async def test_consolidation_commit_failure_compensates_before_queue_retry(
 
 
 @pytest.mark.asyncio
-async def test_outbox_worker_failure_does_not_falsely_mark_processed(monkeypatch) -> None:
+async def test_semantic_event_invalidating_claim_compensates_stale_graph_commit(
+    monkeypatch,
+) -> None:
+    """A cancel/archive event that wins the ACK race keeps its follow-up work.
+
+    The graph pipeline is represented as already committed-but-deferred when
+    the event transaction changes the queue row back to pending. The stale
+    worker must lose its exact ACK CAS and compensate that graph mutation,
+    while the pending successor remains durable for authoritative re-read.
+    """
+
+    from okto_pulse.core.infra.database import get_session_factory
+    from sqlalchemy_test_models import ConsolidationQueue
+
+    factory = get_session_factory()
+    board_id = _board_id()
+    entry_id = await _seed_queue_entry(factory, board_id)
+    events: list[str] = []
+
+    async def _process(_db, entry, **kwargs):
+        kwargs["deferred_session_ids"].append("kgses-stale-snapshot")
+        async with factory() as event_db:
+            current = await event_db.get(ConsolidationQueue, entry.id)
+            assert current is not None
+            assert current.status == "claimed"
+            current.status = "pending"
+            current.claim_token = None
+            current.claimed_by_session_id = None
+            current.claimed_at = None
+            current.worker_id = None
+            current.claim_timeout_at = None
+            current.triggered_by_event = "card.cancelled"
+            await event_db.commit()
+        events.append("event_invalidated_claim")
+        return True
+
+    async def _finalize(*_args, **_kwargs) -> None:
+        pytest.fail("a stale graph snapshot must never be finalized")
+
+    async def _abort(session_id: str, *, agent_id: str, blocking_execution) -> None:
+        assert session_id == "kgses-stale-snapshot"
+        assert agent_id == consolidation_mod.AGENT_ID
+        assert blocking_execution is not None
+        events.append("graph_compensated")
+
+    monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _process)
+    monkeypatch.setattr(consolidation_mod, "finalize_deferred_consolidation", _finalize)
+    monkeypatch.setattr(consolidation_mod, "abort_deferred_consolidation", _abort)
+
+    worker = ConsolidationProcessor(relational_scope_factory=factory)
+    assert await worker.process_batch() == 0
+
+    assert events == ["event_invalidated_claim", "graph_compensated"]
+    async with factory() as db:
+        successor = await db.get(ConsolidationQueue, entry_id)
+    assert successor is not None
+    assert successor.status == "pending"
+    assert successor.claim_token is None
+    assert successor.triggered_by_event == "card.cancelled"
+
+
+@pytest.mark.asyncio
+async def test_outbox_worker_failure_does_not_falsely_mark_processed(
+    monkeypatch,
+) -> None:
     """GlobalOutboxProcessor witness (session factory outside HTTP): a per-event apply
     failure leaves the event unprocessed with retry_count incremented — the batch
     commit never falsely marks a failed event done."""
@@ -318,7 +392,9 @@ async def test_outbox_worker_failure_does_not_falsely_mark_processed(monkeypatch
     async with factory() as db:
         row = (
             await db.execute(
-                select(GlobalUpdateOutbox).where(GlobalUpdateOutbox.event_id == event_id)
+                select(GlobalUpdateOutbox).where(
+                    GlobalUpdateOutbox.event_id == event_id
+                )
             )
         ).scalar_one()
         assert row.processed_at is None  # NOT falsely marked done

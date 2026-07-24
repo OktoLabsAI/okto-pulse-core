@@ -24,7 +24,7 @@ STALE_SWEEP_WORK_KIND = "stale_sweep"
 STALE_SWEEP_ARTIFACT_TYPE = "board"
 STALE_SWEEP_CATCHUP_EPOCH = 1
 GOVERNED_SWEEP_ARTIFACT_TYPES = frozenset(
-    {"card", "ideation", "refinement", "spec"}
+    {"card", "ideation", "refinement", "spec", "sprint"}
 )
 
 
@@ -78,8 +78,7 @@ class StaleSweepCandidate:
         if not board_id or isinstance(epoch, bool) or epoch < 1:
             raise ValueError("stale_sweep_synthetic_identity_invalid")
         return (
-            f"catchup:{board_id}:{self.artifact_type}:{self.artifact_id}:"
-            f"epoch:{epoch}"
+            f"catchup:{board_id}:{self.artifact_type}:{self.artifact_id}:epoch:{epoch}"
         )
 
 
@@ -171,14 +170,8 @@ class StaleSweepBatchRequest:
                 )
             )
             or any(
-                (
-                    current_candidate is not None
-                    and candidate <= current_candidate
-                )
-                or (
-                    following_candidate is not None
-                    and candidate > following_candidate
-                )
+                (current_candidate is not None and candidate <= current_candidate)
+                or (following_candidate is not None and candidate > following_candidate)
                 for candidate in self.candidates
             )
         ):

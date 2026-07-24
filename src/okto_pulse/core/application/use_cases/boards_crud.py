@@ -26,6 +26,9 @@ is applied inside the read/update use cases exactly as ``create_board`` does.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
@@ -39,6 +42,8 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
 from okto_pulse.core.services.board_governance import BoardGovernanceService
+
+logger = logging.getLogger(__name__)
 
 
 def _attach_value(entity: Any, name: str, value: Any) -> None:
@@ -56,9 +61,7 @@ def _attach_effective_board_settings(board: Any) -> Any:
         _attach_value(
             board,
             "settings",
-            BoardGovernanceService.normalize_settings(
-                getattr(board, "settings", None)
-            ),
+            BoardGovernanceService.normalize_settings(getattr(board, "settings", None)),
         )
     return board
 
@@ -302,20 +305,127 @@ class DeleteBoardResult:
 
 
 class DeleteBoardUseCase:
-    """Delete a board and all its cards (write). ``EntityNotFoundError("board")``
-    when missing/not owned (adapter → 404 "Board not found"); commits after the
-    delete."""
+    """Delete a board, its cards, and every board-scoped KG projection.
+
+    The source delete is flushed under an administrative KG writer lease, then
+    strict KG erasure is verified. Relational KG cleanup and the board delete
+    share one UoW commit while the lease remains held; any KG failure prevents
+    that commit.
+    """
 
     async def execute(
         self, command: DeleteBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeleteBoardResult:
-        await _require_owned_board(uow, command.board_id, actor)
-        deleted = await uow.services.boards.delete_board(
-            command.board_id, actor.actor_id
-        )
-        if not deleted:
+        pending_job = await uow.services.kg.get_board_erasure_job(command.board_id)
+        if pending_job is None:
+            await _require_owned_board(uow, command.board_id, actor)
+        elif getattr(pending_job, "actor_id", None) != actor.actor_id:
+            # A continuation must not turn an erased board identifier into an
+            # existence oracle for another actor.
             raise EntityNotFoundError("board", command.board_id)
-        await commit(uow)
+
+        async def _terminal_erasure() -> None:
+            async with uow.services.kg.board_erasure_scope(
+                command.board_id,
+                actor_id=actor.actor_id,
+            ) as erasure:
+                current_job = await uow.services.kg.get_board_erasure_job(
+                    command.board_id
+                )
+                if current_job is not None:
+                    if getattr(current_job, "actor_id", None) != actor.actor_id:
+                        raise EntityNotFoundError("board", command.board_id)
+                else:
+                    deleted = await uow.services.boards.delete_board(
+                        command.board_id, actor.actor_id
+                    )
+                    if not deleted:
+                        raise EntityNotFoundError("board", command.board_id)
+                    await uow.synchronize()
+                    await uow.services.kg.stage_board_relational_erasure(
+                        command.board_id,
+                        actor_id=actor.actor_id,
+                    )
+                    erasure.ensure_owned()
+                    # Source deletion, relational KG cleanup and the durable
+                    # continuation are atomic.
+                    await commit(uow)
+                    erasure.ensure_owned()
+
+                # External stores are touched only after the source Board and
+                # relational KG/KB rows are durably gone. The idempotent
+                # physical phase remains under both board and global fences.
+                # If it fails, the committed continuation is retried by the
+                # dedicated runtime worker without requiring the Board row.
+                try:
+                    await uow.services.kg.right_to_erasure(
+                        command.board_id,
+                        strict=True,
+                        commit=False,
+                        global_writer_guarded=True,
+                        purge_relational=False,
+                    )
+                    erasure.ensure_owned()
+                    completed = await uow.services.kg.complete_board_erasure_job(
+                        command.board_id
+                    )
+                    if not completed:
+                        raise RuntimeError(
+                            "board_erasure_continuation_missing "
+                            f"board={command.board_id}"
+                        )
+                    await commit(uow)
+                except Exception as exc:
+                    try:
+                        await uow.services.kg.record_board_erasure_failure(
+                            command.board_id,
+                            exc,
+                        )
+                        await commit(uow)
+                    except Exception:
+                        # The initial transaction already made the continuation
+                        # durable. A failed diagnostic update must not mask the
+                        # physical-erasure error or destroy the retry handle.
+                        logger.exception(
+                            "board_erasure.failure_record_failed board=%s",
+                            command.board_id,
+                        )
+                    try:
+                        from okto_pulse.core.application.runtime_workers import (
+                            signal_runtime_worker,
+                        )
+
+                        signal_runtime_worker("board_erasure_worker")
+                    except Exception:
+                        logger.exception(
+                            "board_erasure.worker_signal_failed board=%s",
+                            command.board_id,
+                        )
+                    raise
+
+        terminal = asyncio.create_task(
+            _terminal_erasure(),
+            name=f"board-erasure:{command.board_id}",
+        )
+        try:
+            await asyncio.shield(terminal)
+        except asyncio.CancelledError:
+            # Once the source delete starts, request cancellation must not
+            # strand a half-erased board. Drain the terminal saga while its UoW
+            # and writer fences are still alive, then preserve cancellation for
+            # the caller.
+            while not terminal.done():
+                try:
+                    await asyncio.shield(terminal)
+                except asyncio.CancelledError:
+                    continue
+            if not terminal.cancelled() and terminal.exception() is not None:
+                logger.error(
+                    "board_erasure.failed_after_request_cancellation board=%s error=%r",
+                    command.board_id,
+                    terminal.exception(),
+                )
+            raise
         return DeleteBoardResult()
 
 
@@ -348,7 +458,11 @@ class CreateCardInBoardUseCase:
     loaded — exactly as the legacy endpoint did."""
 
     async def execute(
-        self, command: CreateCardInBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: CreateCardInBoardCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> CreateCardInBoardResult:
         await _require_owned_board(uow, command.board_id, actor)
         if getattr(command.data, "knowledge_propagation", None) is not None:
@@ -402,7 +516,11 @@ class GetBoardColumnsUseCase:
     filtering stay in the adapter, exactly as the legacy endpoint shaped them."""
 
     async def preflight(
-        self, command: GetBoardColumnsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: GetBoardColumnsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> Any:
         """Authorize a columns read without hydrating the legacy board graph.
 
@@ -417,7 +535,11 @@ class GetBoardColumnsUseCase:
         return board
 
     async def execute(
-        self, command: GetBoardColumnsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: GetBoardColumnsCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> GetBoardColumnsResult:
         board = await _load_readable_board(uow, command.board_id, actor)
         if not board:
@@ -487,12 +609,15 @@ async def _preflight_archive_root(
     _validate_archive_entity_type(command.entity_type)
     if not await _archive_board_write_allowed(uow, command.board_id, actor):
         raise EntityNotFoundError(command.entity_type, command.entity_id)
-    if await _resolve_archive_root(
-        uow,
-        board_id=command.board_id,
-        entity_type=command.entity_type,
-        entity_id=command.entity_id,
-    ) is None:
+    if (
+        await _resolve_archive_root(
+            uow,
+            board_id=command.board_id,
+            entity_type=command.entity_type,
+            entity_id=command.entity_id,
+        )
+        is None
+    ):
         raise EntityNotFoundError(command.entity_type, command.entity_id)
 
 
@@ -688,7 +813,11 @@ class ListBoardSharesUseCase:
     the legacy endpoint did."""
 
     async def execute(
-        self, command: ListBoardSharesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: ListBoardSharesCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> ListBoardSharesResult:
         service = uow.services.shares
         perm = await service.get_user_permission(
@@ -724,7 +853,11 @@ class UpdateBoardShareUseCase:
     carrying the legacy 403 detail; commits after the update."""
 
     async def execute(
-        self, command: UpdateBoardShareCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: UpdateBoardShareCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> UpdateBoardShareResult:
         await _require_readable_board(uow, command.board_id, actor)
         await _require_share_on_board(uow, command.board_id, command.share_id)
@@ -759,7 +892,11 @@ class RevokeBoardShareUseCase:
     detail; commits after the revoke."""
 
     async def execute(
-        self, command: RevokeBoardShareCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: RevokeBoardShareCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> RevokeBoardShareResult:
         await _require_readable_board(uow, command.board_id, actor)
         await _require_share_on_board(uow, command.board_id, command.share_id)

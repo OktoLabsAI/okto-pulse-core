@@ -9,6 +9,7 @@ construction.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
@@ -464,6 +465,10 @@ class AnalyticsOperations(Protocol):
     ) -> object | None: ...
 
 
+class BoardErasureLease(Protocol):
+    def ensure_owned(self) -> None: ...
+
+
 class KnowledgeGraphOperations(Protocol):
     async def dispatch_manual_tick(
         self,
@@ -522,7 +527,9 @@ class KnowledgeGraphOperations(Protocol):
         scheduler_control: object | None,
     ) -> dict[str, object]: ...
 
-    async def begin_consolidation(self, request: object, *, agent_id: str) -> object: ...
+    async def begin_consolidation(
+        self, request: object, *, agent_id: str
+    ) -> object: ...
 
     async def propose_reconciliation(
         self, request: object, *, agent_id: str
@@ -561,7 +568,39 @@ class KnowledgeGraphOperations(Protocol):
 
     async def get_historical_progress(self, board_id: str) -> object: ...
 
-    async def right_to_erasure(self, board_id: str) -> object: ...
+    def board_erasure_scope(
+        self,
+        board_id: str,
+        *,
+        actor_id: str,
+    ) -> AbstractAsyncContextManager[BoardErasureLease]: ...
+
+    async def get_board_erasure_job(self, board_id: str) -> object | None: ...
+
+    async def stage_board_relational_erasure(
+        self,
+        board_id: str,
+        *,
+        actor_id: str,
+    ) -> None: ...
+
+    async def record_board_erasure_failure(
+        self,
+        board_id: str,
+        error: Exception,
+    ) -> None: ...
+
+    async def complete_board_erasure_job(self, board_id: str) -> bool: ...
+
+    async def right_to_erasure(
+        self,
+        board_id: str,
+        *,
+        strict: bool = False,
+        commit: bool = True,
+        global_writer_guarded: bool = False,
+        purge_relational: bool = True,
+    ) -> object: ...
 
     async def list_pending_entries(self, board_id: str) -> object: ...
 
@@ -654,9 +693,7 @@ class KnowledgeGraphOperations(Protocol):
         self,
         *,
         boards: list[tuple[str, str, str]],
-        captured_cognitive_pending_exclusions: Mapping[
-            str, Mapping[str, str]
-        ],
+        captured_cognitive_pending_exclusions: Mapping[str, Mapping[str, str]],
     ) -> tuple[object, ...]: ...
 
     async def recover_global_discovery_delivery(

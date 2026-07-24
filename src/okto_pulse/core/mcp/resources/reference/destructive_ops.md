@@ -10,8 +10,9 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 
 | Tool | What it destroys |
 |---|---|
+| `DELETE /api/v1/boards/{board_id}` | The board, every source entity, relational KG/KB history, uploaded attachment, board graph, rebuild/audit/quarantine artifact, and every physical Global Discovery generation that could retain the board. Because Global Discovery is a derived cross-board store, the delete invalidates it for all boards; rebuild/recovery must rematerialize it from the remaining relational sources. |
 | `okto_pulse_delete_card` | The card and all its Q&A, comments, attachments, validations, conclusions. |
-| `okto_pulse_delete_spec` | The spec. Cards that referenced it become orphaned (spec_id preserved but `okto_pulse_get_spec` fails). |
+| `okto_pulse_delete_spec` | The spec and its derived sprints. Cards survive as orphans with `spec_id=null`. |
 | `okto_pulse_delete_ideation` / `okto_pulse_delete_refinement` | The ideation/refinement and every derived child (refinements, specs). |
 | `okto_pulse_delete_attachment` | The file blob. |
 | `okto_pulse_delete_comment` / `okto_pulse_delete_question` | The comment or Q&A item. |

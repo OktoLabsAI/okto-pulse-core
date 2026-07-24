@@ -231,9 +231,7 @@ async def scope_graph(db_factory):
                     title="Local spec",
                     status=SpecStatus.DRAFT,
                     created_by=USER_ID,
-                    screen_mockups=[
-                        _screen(ids["screen_spec_a"], "Local spec screen")
-                    ],
+                    screen_mockups=[_screen(ids["screen_spec_a"], "Local spec screen")],
                 ),
                 Spec(
                     id=ids["spec_b"],
@@ -505,9 +503,7 @@ def _without_opaque_id(result: dict, opaque_id: str) -> dict:
     return json.loads(json.dumps(result).replace(opaque_id, "<opaque>"))
 
 
-async def test_copy_tools_and_card_knowledge_contain_both_ends(
-    db_factory, scope_graph
-):
+async def test_copy_tools_and_card_knowledge_contain_both_ends(db_factory, scope_graph):
     ids = scope_graph
     before = await _graph_state(db_factory, ids)
 
@@ -562,10 +558,35 @@ async def test_copy_tools_and_card_knowledge_contain_both_ends(
         knowledge_id=ids["card_kb_b"],
     )
     assert foreign_knowledge == missing_knowledge == {"error": "Card not found"}
-    assert SECRET not in json.dumps(
-        [foreign_source, foreign_target, foreign_knowledge]
-    )
+    assert SECRET not in json.dumps([foreign_source, foreign_target, foreign_knowledge])
     assert await _graph_state(db_factory, ids) == before
+
+
+async def test_list_card_knowledge_is_bounded_no_content_leak(db_factory, scope_graph):
+    """Regression (E2E finding: list_knowledge(card) leaked content). The card
+    branch of okto_pulse_list_knowledge must return a BOUNDED projection — the same
+    serializer as the spec/refinement branches (governance + metadata/IDs, NO body).
+    The body is read via the single-item get_card_knowledge, never the listing."""
+    ids = scope_graph
+    result = await _call(
+        db_factory,
+        "okto_pulse_list_knowledge",
+        board_id=ids["board_b"],
+        entity_type="card",
+        entity_id=ids["card_b"],
+    )
+    kbs = result["knowledge_bases"]
+    assert kbs, "card knowledge listing should be non-empty"
+    target = next(kb for kb in kbs if kb.get("id") == ids["card_kb_b"])
+
+    # The knowledge BODY must not appear in a listing (the leak being fixed).
+    assert "content" not in target
+    assert f"{SECRET} card knowledge" not in json.dumps(result)
+    # Metadata / IDs ARE preserved (the title legitimately carries SECRET — metadata,
+    # not body — so it stays; only the content body is dropped).
+    assert target["id"] == ids["card_kb_b"]
+    assert target.get("mime_type")
+    assert f"{SECRET} inline knowledge" in json.dumps(result)
 
 
 async def test_screen_mockup_crud_contains_every_mutable_parent(
@@ -618,9 +639,9 @@ async def test_screen_mockup_crud_contains_every_mutable_parent(
                 entity_id=missing_id,
                 **extra,
             )
-            assert _without_opaque_id(
-                foreign, foreign_id
-            ) == _without_opaque_id(missing, missing_id)
+            assert _without_opaque_id(foreign, foreign_id) == _without_opaque_id(
+                missing, missing_id
+            )
             assert SECRET not in json.dumps(foreign)
 
     foreign_card = await _call(
@@ -638,9 +659,9 @@ async def test_screen_mockup_crud_contains_every_mutable_parent(
         entity_type="card",
         entity_id=missing_card_id,
     )
-    assert _without_opaque_id(
-        foreign_card, ids["card_b"]
-    ) == _without_opaque_id(missing_card, missing_card_id)
+    assert _without_opaque_id(foreign_card, ids["card_b"]) == _without_opaque_id(
+        missing_card, missing_card_id
+    )
     assert await _graph_state(db_factory, ids) == before
 
 
@@ -831,16 +852,12 @@ async def test_actor_command_board_mismatch_fails_closed_before_any_payload(
         ),
         (
             McpCopyQaToCardUseCase(),
-            McpCopyQaToCardCommand(
-                ids["board_b"], ids["spec_b"], ids["card_b"]
-            ),
+            McpCopyQaToCardCommand(ids["board_b"], ids["spec_b"], ids["card_b"]),
             "spec",
         ),
         (
             McpGetCardKnowledgeUseCase(),
-            McpGetCardKnowledgeCommand(
-                ids["board_b"], ids["card_b"], ids["card_kb_b"]
-            ),
+            McpGetCardKnowledgeCommand(ids["board_b"], ids["card_b"], ids["card_kb_b"]),
             "card",
         ),
         (
@@ -850,16 +867,12 @@ async def test_actor_command_board_mismatch_fails_closed_before_any_payload(
         ),
         (
             McpListKnowledgeUseCase(),
-            McpListKnowledgeCommand(
-                ids["board_b"], "card", ids["card_b"], {}
-            ),
+            McpListKnowledgeCommand(ids["board_b"], "card", ids["card_b"], {}),
             "card",
         ),
         (
             McpListSnapshotsUseCase(),
-            McpListSnapshotsCommand(
-                ids["board_b"], "ideation", ids["ideation_b"]
-            ),
+            McpListSnapshotsCommand(ids["board_b"], "ideation", ids["ideation_b"]),
             "ideation",
         ),
     )

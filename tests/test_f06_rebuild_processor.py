@@ -48,6 +48,7 @@ class FakeEffects:
         self.crash_after: str | None = None
         self.crashed = False
         self.receipt_creations: dict[str, int] = {}
+        self.blocking_reason: str | None = None
 
     def load_checkpoint(self, run_id: str):  # noqa: ANN201
         return self.checkpoints.get(run_id)
@@ -88,13 +89,22 @@ class FakeEffects:
         return self._effect("promote", effect_key)
 
     def wait_for_queue_observation(
-        self, command, *, after_sequence, max_wait_seconds  # noqa: ANN001
+        self,
+        command,
+        *,
+        after_sequence,
+        max_wait_seconds,  # noqa: ANN001
     ) -> QueueObservation:
         del command
         self.calls.append("observe")
         self.clock.advance(max_wait_seconds)
         depth = self.depths.pop(0) if self.depths else 0
-        return QueueObservation(depth, self.clock(), after_sequence + 1)
+        return QueueObservation(
+            depth,
+            self.clock(),
+            after_sequence + 1,
+            blocking_reason=self.blocking_reason,
+        )
 
     def compensate(self, command, *, effect_key):  # noqa: ANN001, ANN201
         self.calls.append("compensate")
@@ -166,6 +176,71 @@ def test_f06_stalled_drain_compensates_without_promotion() -> None:
     assert "promote" not in effects.calls
 
 
+def test_f06_known_queue_blocker_compensates_without_waiting_for_stall() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [11])
+    effects.blocking_reason = "graph_memory_pressure"
+
+    outcome = _processor(effects, clock).execute(_command())
+
+    assert outcome.code is RebuildOutcomeCode.DRAIN_STALLED
+    assert outcome.detail == "queue blocked:graph_memory_pressure"
+    assert effects.calls.count("observe") == 1
+    assert CompensationAction.RESTORE_QUARANTINE in outcome.compensation_actions
+    assert "promote" not in effects.calls
+
+
+def test_f06_cancellation_after_enqueue_compensates_and_stops() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [4])
+    checks = iter((False, False, False, True))
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        plan=RebuildPlan(
+            stall_timeout_seconds=3,
+            hard_timeout_seconds=8,
+            observation_wait_seconds=1,
+        ),
+        cancel_requested=lambda: next(checks),
+    )
+
+    outcome = processor.execute(_command())
+
+    assert outcome.code is RebuildOutcomeCode.CANCELLED
+    assert outcome.detail == "cancellation requested"
+    assert CompensationAction.CANCEL_ENQUEUED_SOURCES in outcome.compensation_actions
+    assert CompensationAction.RESTORE_QUARANTINE in outcome.compensation_actions
+    assert "observe" not in effects.calls
+    assert "promote" not in effects.calls
+
+
+def test_f06_lease_loss_after_enqueue_blocks_without_unsafe_compensation() -> None:
+    clock = FakeClock()
+    effects = FakeEffects(clock, [4])
+    renewals = iter((True, True, True, False))
+    processor = RebuildProcessor(
+        effects,
+        clock=clock,
+        plan=RebuildPlan(
+            stall_timeout_seconds=3,
+            hard_timeout_seconds=8,
+            observation_wait_seconds=1,
+        ),
+        lease_renew=lambda: next(renewals),
+    )
+
+    outcome = processor.execute(_command())
+
+    assert outcome.code is RebuildOutcomeCode.LEASE_LOST
+    assert outcome.state is RebuildState.BLOCKED
+    assert outcome.detail == "single-writer lease lost"
+    assert outcome.compensation_actions == ()
+    assert "compensate" not in effects.calls
+    assert "observe" not in effects.calls
+    assert "promote" not in effects.calls
+
+
 def test_f06_hard_timeout_is_monotonic_even_while_progressing() -> None:
     clock = FakeClock()
     effects = FakeEffects(clock, list(range(20, 0, -1)))
@@ -212,10 +287,14 @@ def test_f06_retry_after_each_durable_effect_has_no_duplicate(
 
     assert second.code is RebuildOutcomeCode.COMPLETED
     assert effects.receipt_creations[crash_after] == 1
-    assert len([key for key in effects.receipts if key.endswith(f":{crash_after}")]) == 1
+    assert (
+        len([key for key in effects.receipts if key.endswith(f":{crash_after}")]) == 1
+    )
 
 
-def test_f06_retry_stops_before_destructive_effect_when_salvage_becomes_pending() -> None:
+def test_f06_retry_stops_before_destructive_effect_when_salvage_becomes_pending() -> (
+    None
+):
     clock = FakeClock()
     effects = FakeEffects(clock, [0])
     effects.crash_after = "snapshot"
@@ -237,7 +316,9 @@ def test_f06_salvage_pending_blocks_before_any_destructive_effect() -> None:
     outcome = _processor(effects, clock).execute(_command(salvage_pending=True))
     assert outcome.code is RebuildOutcomeCode.SALVAGE_PENDING
     assert outcome.state is RebuildState.BLOCKED
-    assert not any(call in effects.calls for call in ("snapshot", "quarantine", "enqueue"))
+    assert not any(
+        call in effects.calls for call in ("snapshot", "quarantine", "enqueue")
+    )
 
 
 def test_f06_processor_has_no_local_runtime_primitives() -> None:
@@ -252,9 +333,7 @@ def test_f06_processor_has_no_local_runtime_primitives() -> None:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     modules = {
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
+        node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
     }
     modules.update(
         alias.name

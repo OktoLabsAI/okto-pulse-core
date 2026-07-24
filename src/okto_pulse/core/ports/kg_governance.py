@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from okto_pulse.core.runtime_context import register_runtime_value, require_runtime_value, reset_runtime_values
+from okto_pulse.core.runtime_context import (
+    register_runtime_value,
+    require_runtime_value,
+    reset_runtime_values,
+)
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -59,18 +63,25 @@ class BoostAuditRecord:
     committed_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class BoardErasureJobFact:
+    """Durable continuation for physical erasure after the source commit."""
+
+    board_id: str
+    actor_id: str
+    attempts: int
+    last_error: str | None
+    next_attempt_at: datetime
+
+
 class KGGovernanceStore(Protocol):
     async def get_board(
         self, context: Any, *, board_id: str
     ) -> HistoricalBoardRecord | None: ...
 
-    async def save_board(
-        self, context: Any, board: HistoricalBoardRecord
-    ) -> None: ...
+    async def save_board(self, context: Any, board: HistoricalBoardRecord) -> None: ...
 
-    async def queue_counts(
-        self, context: Any, *, board_id: str
-    ) -> dict[str, int]: ...
+    async def queue_counts(self, context: Any, *, board_id: str) -> dict[str, int]: ...
 
     async def list_historical_artifacts(
         self, context: Any, *, board_id: str
@@ -115,6 +126,45 @@ class KGGovernanceStore(Protocol):
 
     async def purge_board_metadata(self, context: Any, *, board_id: str) -> None: ...
 
+    async def stage_board_erasure_job(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        actor_id: str,
+    ) -> BoardErasureJobFact: ...
+
+    async def get_board_erasure_job(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+    ) -> BoardErasureJobFact | None: ...
+
+    async def list_due_board_erasure_jobs(
+        self,
+        context: Any,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> tuple[BoardErasureJobFact, ...]: ...
+
+    async def record_board_erasure_failure(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        error: str,
+        next_attempt_at: datetime,
+    ) -> None: ...
+
+    async def complete_board_erasure_job(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+    ) -> bool: ...
+
     def add_boost_audit(self, context: Any, audit: BoostAuditRecord) -> None: ...
 
     async def commit(self, context: Any) -> None: ...
@@ -136,6 +186,7 @@ def reset_kg_governance_store_for_tests() -> None:
 
 
 __all__ = [
+    "BoardErasureJobFact",
     "BoostAuditRecord",
     "GovernanceUndoFact",
     "HistoricalArtifactFact",

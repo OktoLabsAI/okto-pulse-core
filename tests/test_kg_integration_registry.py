@@ -210,8 +210,11 @@ class TestBackwardCompat:
         from okto_pulse.core.kg.cache import emit_tool_metrics
 
         emit_tool_metrics(
-            tool_name="test", board_id="b", cache_hit=False,
-            duration_ms=1.0, result_count=0,
+            tool_name="test",
+            board_id="b",
+            cache_hit=False,
+            duration_ms=1.0,
+            result_count=0,
         )
 
     def test_get_embedding_provider_import_works(self):
@@ -236,7 +239,9 @@ class TestBackwardCompat:
         assert hit is True
         assert val == "from_compat"
 
-        get_kg_registry().cache_backend.put("tool", "board-z", {"x": 2}, "from_registry")
+        get_kg_registry().cache_backend.put(
+            "tool", "board-z", {"x": 2}, "from_registry"
+        )
         hit, val = cache_get("tool", "board-z", {"x": 2})
         assert hit is True
         assert val == "from_registry"
@@ -263,5 +268,16 @@ class TestBackwardCompat:
 
         assert len(NODE_TYPES) == 11
         assert len(REL_TYPES) == 10
-        assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7", "0.3.8", "0.3.9", "0.3.10"}
+        assert SCHEMA_VERSION in {
+            "0.3.2",
+            "0.3.3",
+            "0.3.4",
+            "0.3.5",
+            "0.3.6",
+            "0.3.7",
+            "0.3.8",
+            "0.3.9",
+            "0.3.10",
+            "0.3.11",
+        }
         assert get_embedding_provider() is not None

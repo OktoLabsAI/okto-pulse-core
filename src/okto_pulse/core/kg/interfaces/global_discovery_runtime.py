@@ -102,6 +102,21 @@ class GlobalDiscoveryRuntime(Protocol):
         """Delete stale identities only when no derived relations would be lost."""
         ...
 
+    def delete_decision_digests_for_absent_sources(
+        self,
+        *,
+        board_id: str,
+        original_node_ids: tuple[str, ...],
+        include_malformed: bool = False,
+    ) -> int:
+        """Atomically delete cache rows whose authoritative sources are absent.
+
+        Unlike the generic guarded repair primitive, this lifecycle-authorized
+        operation may detach derived relationships because Core has already
+        proved that the owning board source no longer exists.
+        """
+        ...
+
     def link_board_digest(self, *, board_id: str, digest_id: str) -> None: ...
 
     def normalize_board_digest_link(
@@ -131,6 +146,16 @@ class GlobalDiscoveryRuntime(Protocol):
     def close(self) -> None: ...
 
     def purge(self, *, reason: str = "manual") -> GraphPurgeResult: ...
+
+    def erase_storage_for_privacy(
+        self,
+        *,
+        board_id: str,
+        reason: str,
+        survivor_board_ids: tuple[str, ...] | None = None,
+    ) -> dict[str, object]:
+        """Physically invalidate every global snapshot that could retain a board."""
+        ...
 
 
 __all__ = [

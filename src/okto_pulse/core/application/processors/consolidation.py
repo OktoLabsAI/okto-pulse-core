@@ -92,6 +92,7 @@ from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_NONE,
     GRAPH_LAYER_WORKING,
+    DISPOSITION_SKIPPED_CANCELLED,
     MATURITY_CANONICAL_ELIGIBLE,
     classify_source_for_kg,
 )
@@ -119,11 +120,9 @@ logger = logging.getLogger("okto_pulse.kg.consolidation_worker")
 
 AGENT_ID = "system:historical_consolidation"
 CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
-_CLAIMABLE_WORK_KINDS = frozenset(
-    {"consolidate", "stale_reconcile", "stale_sweep"}
-)
+_CLAIMABLE_WORK_KINDS = frozenset({"consolidate", "stale_reconcile", "stale_sweep"})
 _GOVERNED_DELETION_ARTIFACT_TYPES = frozenset(
-    {"card", "ideation", "refinement", "spec"}
+    {"card", "ideation", "refinement", "spec", "sprint"}
 )
 
 
@@ -182,16 +181,18 @@ async def _queue_claim_is_current_and_unfenced(
     kind = _work_kind(entry)
     if token is None:
         return False
-    return await get_consolidation_persistence_port().queue_claim_is_current_and_unfenced(
-        db,
-        entry_id=entry.id,
-        claim_token=token,
-        board_id=entry.board_id,
-        artifact_type=entry.artifact_type,
-        artifact_id=entry.artifact_id,
-        work_kind=kind,
-        generation=_generation(entry),
-        delete_event_id=_delete_event_id(entry),
+    return (
+        await get_consolidation_persistence_port().queue_claim_is_current_and_unfenced(
+            db,
+            entry_id=entry.id,
+            claim_token=token,
+            board_id=entry.board_id,
+            artifact_type=entry.artifact_type,
+            artifact_id=entry.artifact_id,
+            work_kind=kind,
+            generation=_generation(entry),
+            delete_event_id=_delete_event_id(entry),
+        )
     )
 
 
@@ -253,16 +254,14 @@ async def _transfer_stale_reconcile_ownership(
             DeliveryState.DELIVERED,
         }:
             receipt_mismatch = (
-                receipt_mismatch
-                or receipt.attempt_event_key != current_event_key
+                receipt_mismatch or receipt.attempt_event_key != current_event_key
             )
         else:
             allowed_event_keys = {current_event_key}
             if receipt.attempt == 0:
                 allowed_event_keys.add(None)
             receipt_mismatch = (
-                receipt_mismatch
-                or receipt.attempt_event_key not in allowed_event_keys
+                receipt_mismatch or receipt.attempt_event_key not in allowed_event_keys
             )
     else:
         expected_event_key = (
@@ -461,9 +460,7 @@ def _stale_reconcile_is_complete(result: Any) -> bool:
             return False
         incomplete = bool(result.incomplete)
         failed_types = result.failed_types or ()
-        target_values = {
-            field: getattr(result, field) for field in target_fields
-        }
+        target_values = {field: getattr(result, field) for field in target_fields}
     if incomplete or bool(failed_types):
         return False
     if any(
@@ -500,9 +497,7 @@ def _stale_reconcile_telemetry_details(
     details: dict[str, object] = {
         "queue_attempt": int(entry.attempts or 0),
         "scanned": int(_value("scanned", 0) or 0),
-        "demoted_count": int(
-            _value("demoted_count", len(demoted)) or 0
-        ),
+        "demoted_count": int(_value("demoted_count", len(demoted)) or 0),
         "routed_to_debt_count": int(
             _value("routed_to_debt_count", len(routed_to_debt)) or 0
         ),
@@ -595,6 +590,7 @@ async def _abort_open_consolidation_after_fence(
             session_id,
         )
 
+
 class _DirectBlockingExecution:
     """Task-free fallback for direct processor tests.
 
@@ -609,6 +605,7 @@ class _DirectBlockingExecution:
         del timeout
         return 0
 
+
 # Spec 3d89c192 (FR-4): o commit incremental do worker usa o subset
 # não-destrutivo do lifecycle — checkpoint real + verificação + fsync, SEM o
 # close_reopen_probe. O probe fecha o Database compartilhado (use-after-close
@@ -620,6 +617,7 @@ WORKER_COMMIT_LIFECYCLE_STEPS: tuple[str, ...] = (
     STEP_FLUSH,
     STEP_FSYNC,
 )
+
 
 def _worker_owner_probe(_board_id: str, owner_token: str) -> bool:
     """Validate process-local consolidation owner tokens.
@@ -641,7 +639,9 @@ def _worker_health_probe(
     status: SafeWriteLifecycleStatus,
     _step: str | None,
 ) -> str:
-    return "healthy" if status is SafeWriteLifecycleStatus.APPLIED else "recovery_needed"
+    return (
+        "healthy" if status is SafeWriteLifecycleStatus.APPLIED else "recovery_needed"
+    )
 
 
 def _apply_board_graph_lifecycle_after_commit(
@@ -718,13 +718,12 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     """
 
     owner_token = (
-        f"consolidation-worker:{entry.id}:"
-        f"{_claim_token(entry) or uuid.uuid4().hex}"
+        f"consolidation-worker:{entry.id}:{_claim_token(entry) or uuid.uuid4().hex}"
     )
     mutation_ref = f"{entry.artifact_type}:{entry.artifact_id}:{session_id}"
-    if _claim_token(entry) is not None and not await (
-        _queue_claim_is_current_and_unfenced(db, entry)
-    ):
+    if _claim_token(
+        entry
+    ) is not None and not await _queue_claim_is_current_and_unfenced(db, entry):
         # The deterministic session is process-local and has not committed to
         # the graph yet. Drop it explicitly so a delete that won after claim
         # cannot leave an orphaned session behind.
@@ -732,9 +731,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
             entry=entry,
             session_id=session_id,
         )
-        raise _QueueClaimLostOrFenced(
-            f"queue_claim_lost_or_fenced entry_id={entry.id}"
-        )
+        raise _QueueClaimLostOrFenced(f"queue_claim_lost_or_fenced entry_id={entry.id}")
     with under_safe_write(entry.board_id, owner_token, CONSOLIDATION_COMMIT_OPERATION):
         commit_resp = await commit_consolidation(
             CommitConsolidationRequest(
@@ -818,15 +815,19 @@ def _spec_to_dict(spec: Any) -> dict:
         "title": spec.title,
         "description": spec.description,
         "context": spec.context,
-        "status": getattr(getattr(spec, "status", None), "value", getattr(spec, "status", None)),
+        "status": getattr(
+            getattr(spec, "status", None), "value", getattr(spec, "status", None)
+        ),
         "functional_requirements": spec.functional_requirements or [],
         "technical_requirements": spec.technical_requirements or [],
         "acceptance_criteria": spec.acceptance_criteria or [],
         "business_rules": spec.business_rules or [],
         "test_scenarios": spec.test_scenarios or [],
         "api_contracts": spec.api_contracts or [],
-        "integration_requirements": getattr(spec, "integration_requirements", None) or [],
-        "observability_requirements": getattr(spec, "observability_requirements", None) or [],
+        "integration_requirements": getattr(spec, "integration_requirements", None)
+        or [],
+        "observability_requirements": getattr(spec, "observability_requirements", None)
+        or [],
         "decisions": spec.decisions or [],
         "architecture_designs": [
             _architecture_design_to_dict(design)
@@ -862,7 +863,9 @@ def _ideation_to_dict(ideation: Any) -> dict:
         "problem_statement": ideation.problem_statement,
         "proposed_approach": ideation.proposed_approach,
         "scope_assessment": ideation.scope_assessment or {},
-        "complexity": getattr(complexity, "value", complexity) if complexity is not None else None,
+        "complexity": getattr(complexity, "value", complexity)
+        if complexity is not None
+        else None,
         "status": getattr(status, "value", status) if status is not None else None,
         "labels": ideation.labels or [],
         "story_ids": [
@@ -898,9 +901,16 @@ def _sprint_to_dict(sprint: Any) -> dict:
         "description": sprint.description,
         "objective": sprint.objective,
         "expected_outcome": sprint.expected_outcome,
-        "status": getattr(getattr(sprint, "status", None), "value", getattr(sprint, "status", None)),
+        "status": getattr(
+            getattr(sprint, "status", None), "value", getattr(sprint, "status", None)
+        ),
         "spec_id": sprint.spec_id,
-        "lane_type": getattr(getattr(sprint, "lane_type", None), "value", getattr(sprint, "lane_type", None)) or "normal",
+        "lane_type": getattr(
+            getattr(sprint, "lane_type", None),
+            "value",
+            getattr(sprint, "lane_type", None),
+        )
+        or "normal",
         "origin_sprint_id": getattr(sprint, "origin_sprint_id", None),
         "origin_bug_id": getattr(sprint, "origin_bug_id", None),
     }
@@ -914,14 +924,22 @@ def _card_to_dict(card) -> dict:
         "board_id": card.board_id,
         "title": card.title,
         "description": card.description,
-        "status": getattr(getattr(card, "status", None), "value", getattr(card, "status", None)),
-        "card_type": getattr(card.card_type, "value", card.card_type) if getattr(card, "card_type", None) else "normal",
+        "status": getattr(
+            getattr(card, "status", None), "value", getattr(card, "status", None)
+        ),
+        "card_type": getattr(card.card_type, "value", card.card_type)
+        if getattr(card, "card_type", None)
+        else "normal",
         "spec_id": card.spec_id,
         "sprint_id": card.sprint_id,
         "origin_task_id": getattr(card, "origin_task_id", None),
         "linked_test_task_ids": getattr(card, "linked_test_task_ids", None) or [],
-        "priority": getattr(priority, "value", priority) if priority is not None else None,
-        "severity": getattr(severity, "value", severity) if severity is not None else None,
+        "priority": getattr(priority, "value", priority)
+        if priority is not None
+        else None,
+        "severity": getattr(severity, "value", severity)
+        if severity is not None
+        else None,
         "has_minimal_evidence": _card_has_minimal_evidence(card),
         "architecture_designs": [
             _architecture_design_to_dict(design)
@@ -945,9 +963,14 @@ def _amendment_to_dict(amendment) -> dict:
         "origin_task_ids": getattr(amendment, "origin_task_ids", None) or [],
         "affected_task_ids": getattr(amendment, "affected_task_ids", None) or [],
         "revision_spec_id": getattr(amendment, "revision_spec_id", None),
-        "regression_scenario_ids": getattr(amendment, "regression_scenario_ids", None) or [],
-        "regression_test_task_ids": getattr(amendment, "regression_test_task_ids", None) or [],
-        "automated_regression_refs": getattr(amendment, "automated_regression_refs", None) or [],
+        "regression_scenario_ids": getattr(amendment, "regression_scenario_ids", None)
+        or [],
+        "regression_test_task_ids": getattr(amendment, "regression_test_task_ids", None)
+        or [],
+        "automated_regression_refs": getattr(
+            amendment, "automated_regression_refs", None
+        )
+        or [],
     }
 
 
@@ -996,7 +1019,9 @@ def _card_source_artifact_type(card_type: Any) -> str:
 
 
 def _card_has_minimal_evidence(card: Any) -> bool:
-    card_type = getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    card_type = (
+        getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    )
     if card_type != "bug":
         return True
     has_text = any(
@@ -1054,23 +1079,29 @@ def _node_exists(result: WorkerResult, candidate_id: str) -> bool:
 
 def _append_card_entity_node(result: WorkerResult, card: Any) -> str:
     cid = f"card_{card.id[:8]}_entity"
-    card_type = getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    card_type = (
+        getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    )
     if not _node_exists(result, cid):
         graph_layer, maturity_status = _layer_attrs_for_artifact(
             _card_source_artifact_type(card_type),
-            getattr(getattr(card, "status", None), "value", getattr(card, "status", None)),
+            getattr(
+                getattr(card, "status", None), "value", getattr(card, "status", None)
+            ),
             has_minimal_evidence=_card_has_minimal_evidence(card),
         )
-        result.nodes.append(EmittedNode(
-            candidate_id=cid,
-            node_type="Bug" if card_type == "bug" else "Entity",
-            title=card.title or f"Card {card.id}",
-            content=card.description or "",
-            source_artifact_ref=f"card:{card.id}",
-            graph_layer=graph_layer,
-            maturity_status=maturity_status,
-            source_confidence=1.0,
-        ))
+        result.nodes.append(
+            EmittedNode(
+                candidate_id=cid,
+                node_type="Bug" if card_type == "bug" else "Entity",
+                title=card.title or f"Card {card.id}",
+                content=card.description or "",
+                source_artifact_ref=f"card:{card.id}",
+                graph_layer=graph_layer,
+                maturity_status=maturity_status,
+                source_confidence=1.0,
+            )
+        )
     if getattr(card, "board_id", None):
         _attach_entity_node_to_board_root(
             result,
@@ -1091,7 +1122,9 @@ def _append_card_edge_target_entity_node(result: WorkerResult, card: Any) -> str
     schema to allow ``Bug -> Bug``.
     """
 
-    card_type = getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    card_type = (
+        getattr(card.card_type, "value", card.card_type) if card.card_type else "normal"
+    )
     if card_type != "bug":
         return _append_card_entity_node(result, card)
 
@@ -1099,19 +1132,23 @@ def _append_card_edge_target_entity_node(result: WorkerResult, card: Any) -> str
     if not _node_exists(result, cid):
         graph_layer, maturity_status = _layer_attrs_for_artifact(
             _card_source_artifact_type(card_type),
-            getattr(getattr(card, "status", None), "value", getattr(card, "status", None)),
+            getattr(
+                getattr(card, "status", None), "value", getattr(card, "status", None)
+            ),
             has_minimal_evidence=_card_has_minimal_evidence(card),
         )
-        result.nodes.append(EmittedNode(
-            candidate_id=cid,
-            node_type="Entity",
-            title=card.title or f"Card {card.id}",
-            content=card.description or "",
-            source_artifact_ref=f"card_relationship_target:{card.id}",
-            graph_layer=graph_layer,
-            maturity_status=maturity_status,
-            source_confidence=1.0,
-        ))
+        result.nodes.append(
+            EmittedNode(
+                candidate_id=cid,
+                node_type="Entity",
+                title=card.title or f"Card {card.id}",
+                content=card.description or "",
+                source_artifact_ref=f"card_relationship_target:{card.id}",
+                graph_layer=graph_layer,
+                maturity_status=maturity_status,
+                source_confidence=1.0,
+            )
+        )
     if getattr(card, "board_id", None):
         _attach_entity_node_to_board_root(
             result,
@@ -1126,7 +1163,8 @@ def _append_spec_entity_node(result: WorkerResult, spec: Any) -> str:
     cid = f"spec_{spec.id[:8]}_entity"
     if not _node_exists(result, cid):
         content = "\n\n".join(
-            p for p in (
+            p
+            for p in (
                 getattr(spec, "description", None),
                 getattr(spec, "context", None),
             )
@@ -1134,18 +1172,22 @@ def _append_spec_entity_node(result: WorkerResult, spec: Any) -> str:
         )
         graph_layer, maturity_status = _layer_attrs_for_artifact(
             "spec",
-            getattr(getattr(spec, "status", None), "value", getattr(spec, "status", None)),
+            getattr(
+                getattr(spec, "status", None), "value", getattr(spec, "status", None)
+            ),
         )
-        result.nodes.append(EmittedNode(
-            candidate_id=cid,
-            node_type="Entity",
-            title=getattr(spec, "title", None) or f"Spec {spec.id}",
-            content=content or getattr(spec, "title", None) or "",
-            source_artifact_ref=f"spec:{spec.id}",
-            graph_layer=graph_layer,
-            maturity_status=maturity_status,
-            source_confidence=1.0,
-        ))
+        result.nodes.append(
+            EmittedNode(
+                candidate_id=cid,
+                node_type="Entity",
+                title=getattr(spec, "title", None) or f"Spec {spec.id}",
+                content=content or getattr(spec, "title", None) or "",
+                source_artifact_ref=f"spec:{spec.id}",
+                graph_layer=graph_layer,
+                maturity_status=maturity_status,
+                source_confidence=1.0,
+            )
+        )
     if getattr(spec, "board_id", None):
         _attach_entity_node_to_board_root(
             result,
@@ -1162,18 +1204,22 @@ def _append_story_entity_node(result: WorkerResult, story: Any) -> str:
         return cid
     graph_layer, maturity_status = _layer_attrs_for_artifact(
         "story",
-        getattr(getattr(story, "status", None), "value", getattr(story, "status", None)),
+        getattr(
+            getattr(story, "status", None), "value", getattr(story, "status", None)
+        ),
     )
-    result.nodes.append(EmittedNode(
-        candidate_id=cid,
-        node_type="Entity",
-        title=story.title or f"Story {story.id}",
-        content=story.description or "",
-        source_artifact_ref=f"story:{story.id}",
-        graph_layer=graph_layer,
-        maturity_status=maturity_status,
-        source_confidence=1.0,
-    ))
+    result.nodes.append(
+        EmittedNode(
+            candidate_id=cid,
+            node_type="Entity",
+            title=story.title or f"Story {story.id}",
+            content=story.description or "",
+            source_artifact_ref=f"story:{story.id}",
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+            source_confidence=1.0,
+        )
+    )
     return cid
 
 
@@ -1182,7 +1228,8 @@ def _append_ideation_entity_node(result: WorkerResult, ideation: Any) -> str:
     if _node_exists(result, cid):
         return cid
     content = "\n\n".join(
-        p for p in (
+        p
+        for p in (
             ideation.description,
             ideation.problem_statement,
             ideation.proposed_approach,
@@ -1191,18 +1238,24 @@ def _append_ideation_entity_node(result: WorkerResult, ideation: Any) -> str:
     )
     graph_layer, maturity_status = _layer_attrs_for_artifact(
         "ideation",
-        getattr(getattr(ideation, "status", None), "value", getattr(ideation, "status", None)),
+        getattr(
+            getattr(ideation, "status", None),
+            "value",
+            getattr(ideation, "status", None),
+        ),
     )
-    result.nodes.append(EmittedNode(
-        candidate_id=cid,
-        node_type="Entity",
-        title=ideation.title or f"Ideation {ideation.id}",
-        content=content or ideation.title or "",
-        source_artifact_ref=f"ideation:{ideation.id}",
-        graph_layer=graph_layer,
-        maturity_status=maturity_status,
-        source_confidence=1.0,
-    ))
+    result.nodes.append(
+        EmittedNode(
+            candidate_id=cid,
+            node_type="Entity",
+            title=ideation.title or f"Ideation {ideation.id}",
+            content=content or ideation.title or "",
+            source_artifact_ref=f"ideation:{ideation.id}",
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+            source_confidence=1.0,
+        )
+    )
     return cid
 
 
@@ -1210,23 +1263,27 @@ def _append_refinement_entity_node(result: WorkerResult, refinement: Any) -> str
     cid = f"refinement_{refinement.id[:8]}_entity"
     if _node_exists(result, cid):
         return cid
-    content = "\n\n".join(
-        p for p in (refinement.description, refinement.analysis) if p
-    )
+    content = "\n\n".join(p for p in (refinement.description, refinement.analysis) if p)
     graph_layer, maturity_status = _layer_attrs_for_artifact(
         "refinement",
-        getattr(getattr(refinement, "status", None), "value", getattr(refinement, "status", None)),
+        getattr(
+            getattr(refinement, "status", None),
+            "value",
+            getattr(refinement, "status", None),
+        ),
     )
-    result.nodes.append(EmittedNode(
-        candidate_id=cid,
-        node_type="Entity",
-        title=refinement.title or f"Refinement {refinement.id}",
-        content=content or refinement.title or "",
-        source_artifact_ref=f"refinement:{refinement.id}",
-        graph_layer=graph_layer,
-        maturity_status=maturity_status,
-        source_confidence=1.0,
-    ))
+    result.nodes.append(
+        EmittedNode(
+            candidate_id=cid,
+            node_type="Entity",
+            title=refinement.title or f"Refinement {refinement.id}",
+            content=content or refinement.title or "",
+            source_artifact_ref=f"refinement:{refinement.id}",
+            graph_layer=graph_layer,
+            maturity_status=maturity_status,
+            source_confidence=1.0,
+        )
+    )
     return cid
 
 
@@ -1238,14 +1295,16 @@ def _append_board_root_entity_node(result: WorkerResult, board_id: str) -> str:
     cid = _board_root_candidate_id(board_id)
     if _node_exists(result, cid):
         return cid
-    result.nodes.append(EmittedNode(
-        candidate_id=cid,
-        node_type="Entity",
-        title=f"Board {board_id}",
-        content="Deterministic KG board root.",
-        source_artifact_ref=f"board:{board_id}",
-        source_confidence=1.0,
-    ))
+    result.nodes.append(
+        EmittedNode(
+            candidate_id=cid,
+            node_type="Entity",
+            title=f"Board {board_id}",
+            content="Deterministic KG board root.",
+            source_artifact_ref=f"board:{board_id}",
+            source_confidence=1.0,
+        )
+    )
     return cid
 
 
@@ -1260,14 +1319,16 @@ def _attach_entity_node_to_board_root(
     edge_id = f"{child_candidate_id}_belongs_to_board"
     if _edge_exists(result, edge_id):
         return
-    result.edges.append(EmittedEdge(
-        candidate_id=edge_id,
-        edge_type="belongs_to",
-        from_candidate_id=child_candidate_id,
-        to_candidate_id=board_root_id,
-        confidence=1.0,
-        rule_id=f"belongs_to/{rule_slot}_to_board@{WORKER_VERSION}",
-    ))
+    result.edges.append(
+        EmittedEdge(
+            candidate_id=edge_id,
+            edge_type="belongs_to",
+            from_candidate_id=child_candidate_id,
+            to_candidate_id=board_root_id,
+            confidence=1.0,
+            rule_id=f"belongs_to/{rule_slot}_to_board@{WORKER_VERSION}",
+        )
+    )
 
 
 async def _materialize_lineage_endpoint_nodes(
@@ -1456,16 +1517,20 @@ async def _resolve_missing_link_candidates(
                 unresolved.append(candidate)
                 continue
             target_cid = _append_card_edge_target_entity_node(result, origin_card)
-            edge_id = f"{candidate.from_candidate_id}_originates_from_{origin_card.id[:8]}"
+            edge_id = (
+                f"{candidate.from_candidate_id}_originates_from_{origin_card.id[:8]}"
+            )
             if not _edge_exists(result, edge_id):
-                result.edges.append(EmittedEdge(
-                    candidate_id=edge_id,
-                    edge_type="originates_from",
-                    from_candidate_id=candidate.from_candidate_id,
-                    to_candidate_id=target_cid,
-                    confidence=1.0,
-                    rule_id=f"originates_from/origin_task_id@{WORKER_VERSION}",
-                ))
+                result.edges.append(
+                    EmittedEdge(
+                        candidate_id=edge_id,
+                        edge_type="originates_from",
+                        from_candidate_id=candidate.from_candidate_id,
+                        to_candidate_id=target_cid,
+                        confidence=1.0,
+                        rule_id=f"originates_from/origin_task_id@{WORKER_VERSION}",
+                    )
+                )
             resolved_count += 1
             continue
 
@@ -1476,16 +1541,20 @@ async def _resolve_missing_link_candidates(
                 unresolved.append(candidate)
                 continue
             target_cid = _append_card_edge_target_entity_node(result, test_card)
-            edge_id = f"{candidate.from_candidate_id}_covered_by_card_{test_card.id[:8]}"
+            edge_id = (
+                f"{candidate.from_candidate_id}_covered_by_card_{test_card.id[:8]}"
+            )
             if not _edge_exists(result, edge_id):
-                result.edges.append(EmittedEdge(
-                    candidate_id=edge_id,
-                    edge_type="covered_by",
-                    from_candidate_id=candidate.from_candidate_id,
-                    to_candidate_id=target_cid,
-                    confidence=1.0,
-                    rule_id=f"covered_by/linked_test_task_id@{WORKER_VERSION}",
-                ))
+                result.edges.append(
+                    EmittedEdge(
+                        candidate_id=edge_id,
+                        edge_type="covered_by",
+                        from_candidate_id=candidate.from_candidate_id,
+                        to_candidate_id=target_cid,
+                        confidence=1.0,
+                        rule_id=f"covered_by/linked_test_task_id@{WORKER_VERSION}",
+                    )
+                )
 
             spec = specs_by_id.get(test_card.spec_id or "")
             for scenario_id in test_card.test_scenario_ids or []:
@@ -1502,27 +1571,31 @@ async def _resolve_missing_link_candidates(
                     f"{scenario_cid}_belongs_to_spec_{spec.id[:8]}"
                 )
                 if not _edge_exists(result, scenario_belongs_edge_id):
-                    result.edges.append(EmittedEdge(
-                        candidate_id=scenario_belongs_edge_id,
-                        edge_type="belongs_to",
-                        from_candidate_id=scenario_cid,
-                        to_candidate_id=spec_cid,
-                        confidence=1.0,
-                        rule_id=f"belongs_to/bug_linked_test_scenario@{WORKER_VERSION}",
-                    ))
+                    result.edges.append(
+                        EmittedEdge(
+                            candidate_id=scenario_belongs_edge_id,
+                            edge_type="belongs_to",
+                            from_candidate_id=scenario_cid,
+                            to_candidate_id=spec_cid,
+                            confidence=1.0,
+                            rule_id=f"belongs_to/bug_linked_test_scenario@{WORKER_VERSION}",
+                        )
+                    )
                 scenario_edge_id = (
                     f"{candidate.from_candidate_id}_covered_by_ts_"
                     f"{spec.id[:8]}_{str(scenario_id)[:8]}"
                 )
                 if not _edge_exists(result, scenario_edge_id):
-                    result.edges.append(EmittedEdge(
-                        candidate_id=scenario_edge_id,
-                        edge_type="covered_by",
-                        from_candidate_id=candidate.from_candidate_id,
-                        to_candidate_id=scenario_cid,
-                        confidence=1.0,
-                        rule_id=f"covered_by/linked_test_scenario@{WORKER_VERSION}",
-                    ))
+                    result.edges.append(
+                        EmittedEdge(
+                            candidate_id=scenario_edge_id,
+                            edge_type="covered_by",
+                            from_candidate_id=candidate.from_candidate_id,
+                            to_candidate_id=scenario_cid,
+                            confidence=1.0,
+                            rule_id=f"covered_by/linked_test_scenario@{WORKER_VERSION}",
+                        )
+                    )
             resolved_count += 1
             continue
 
@@ -1532,7 +1605,9 @@ async def _resolve_missing_link_candidates(
     if resolved_count:
         logger.info(
             "consolidation.missing_links_resolved board=%s resolved=%d unresolved=%d",
-            board_id, resolved_count, len(unresolved),
+            board_id,
+            resolved_count,
+            len(unresolved),
             extra={
                 "event": "kg.consolidation.missing_links_resolved",
                 "board_id": board_id,
@@ -1602,13 +1677,17 @@ async def _run_post_commit_maintenance(
         if debt_result["committed_count"]:
             logger.info(
                 "canonical_debt.resolved board=%s artifact=%s:%s count=%d",
-                entry.board_id, entry.artifact_type, entry.artifact_id,
+                entry.board_id,
+                entry.artifact_type,
+                entry.artifact_id,
                 debt_result["committed_count"],
             )
     except Exception:
         logger.exception(
             "canonical_debt.resolve_failed board=%s artifact=%s:%s",
-            entry.board_id, entry.artifact_type, entry.artifact_id,
+            entry.board_id,
+            entry.artifact_type,
+            entry.artifact_id,
         )
         await _rollback_post_commit_maintenance_failure(
             db,
@@ -1628,7 +1707,9 @@ async def _run_post_commit_maintenance(
     except Exception:
         logger.exception(
             "kg.clp.maintenance_failed board=%s artifact=%s:%s",
-            entry.board_id, entry.artifact_type, entry.artifact_id,
+            entry.board_id,
+            entry.artifact_type,
+            entry.artifact_id,
         )
         await _rollback_post_commit_maintenance_failure(
             db,
@@ -1660,9 +1741,10 @@ async def _run_post_commit_maintenance(
             )
     except Exception:
         logger.exception(
-            "kg.canonical_debt_replay.post_commit_failed board=%s "
-            "artifact=%s:%s",
-            entry.board_id, entry.artifact_type, entry.artifact_id,
+            "kg.canonical_debt_replay.post_commit_failed board=%s artifact=%s:%s",
+            entry.board_id,
+            entry.artifact_type,
+            entry.artifact_id,
         )
         await _rollback_post_commit_maintenance_failure(
             db,
@@ -1714,9 +1796,7 @@ async def _process_stale_sweep_entry(
     if not await store.board_exists(db, board_id=entry.board_id):
         return await _reschedule("board_absent")
     try:
-        graph_available = get_kg_registry().graph_runtime_store.exists(
-            entry.board_id
-        )
+        graph_available = get_kg_registry().graph_runtime_store.exists(entry.board_id)
     except Exception:
         logger.exception(
             "kg.stale_sweep.graph_runtime_probe_failed entry=%s board=%s",
@@ -1785,8 +1865,7 @@ async def _process_stale_reconcile_entry(
     source_refs = _validated_stale_reconcile_source_refs(entry)
     if source_refs is None:
         logger.error(
-            "kg.stale_reconcile.invalid_payload entry=%s artifact=%s:%s "
-            "generation=%s",
+            "kg.stale_reconcile.invalid_payload entry=%s artifact=%s:%s generation=%s",
             entry.id,
             entry.artifact_type,
             entry.artifact_id,
@@ -1798,17 +1877,14 @@ async def _process_stale_reconcile_entry(
     # ownership and the exact tombstone generation/event while the board's
     # process-local writer mutex is held by the serialized caller.
     if not await _queue_claim_is_current_and_unfenced(db, entry):
-        raise _QueueClaimLostOrFenced(
-            f"queue_claim_lost_or_fenced entry_id={entry.id}"
-        )
+        raise _QueueClaimLostOrFenced(f"queue_claim_lost_or_fenced entry_id={entry.id}")
 
     from okto_pulse.core.kg.canonical_stale_reconciler import (
         reconcile_stale_canonical,
     )
 
     owner_token = (
-        f"consolidation-worker:{entry.id}:"
-        f"{_claim_token(entry) or uuid.uuid4().hex}"
+        f"consolidation-worker:{entry.id}:{_claim_token(entry) or uuid.uuid4().hex}"
     )
     delete_event_id = _delete_event_id(entry)
     mutation_ref = (
@@ -1930,7 +2006,9 @@ async def _process_queue_entry(
     )
     if not artifact:
         logger.warning(
-            "%s not found: %s", entry.artifact_type, entry.artifact_id,
+            "%s not found: %s",
+            entry.artifact_type,
+            entry.artifact_id,
         )
         # RKG-04 AC3 (ts_317b11ef): a missing source row is a persistent
         # failure and must stay visible — False routes the entry through
@@ -1938,6 +2016,48 @@ async def _process_queue_entry(
         # keeps it actionable. True would mask it as success and falsely
         # clear the connectivity class (stale legacy entries included).
         return False
+
+    artifact_status = getattr(artifact, "status", None)
+    artifact_status = getattr(artifact_status, "value", artifact_status)
+    if bool(getattr(artifact, "archived", False)):
+        artifact_status = "archived"
+    maturity_artifact_type = entry.artifact_type
+    if entry.artifact_type == "card":
+        card_type = getattr(artifact, "card_type", None)
+        card_type = getattr(card_type, "value", card_type)
+        maturity_artifact_type = _card_source_artifact_type(card_type)
+    classification = classify_source_for_kg(
+        artifact_type=maturity_artifact_type,
+        artifact_status=artifact_status,
+        content_hash="consolidation-admission",
+        has_minimal_evidence=(
+            _card_has_minimal_evidence(artifact)
+            if entry.artifact_type == "card"
+            else True
+        ),
+        lineage_complete=(
+            str(getattr(artifact, "lineage_state", "") or "").strip().lower()
+            == "complete"
+            if entry.artifact_type == "amendment_hotfix_revision"
+            else True
+        ),
+    )
+    if classification.disposition == DISPOSITION_SKIPPED_CANCELLED:
+        logger.info(
+            "consolidation.skipped_cancelled board=%s artifact=%s:%s status=%s",
+            entry.board_id,
+            entry.artifact_type,
+            entry.artifact_id,
+            artifact_status,
+            extra={
+                "event": "kg.consolidation.skipped_cancelled",
+                "board_id": entry.board_id,
+                "artifact_type": entry.artifact_type,
+                "artifact_id": entry.artifact_id,
+                "artifact_status": str(artifact_status or ""),
+            },
+        )
+        return True
 
     worker_result = _run_deterministic_worker(entry, artifact)
     worker_result = await _materialize_lineage_endpoint_nodes(
@@ -1957,8 +2077,11 @@ async def _process_queue_entry(
 
     logger.info(
         "consolidation.extracted board=%s artifact=%s:%s nodes=%d edges=%d missing=%d",
-        entry.board_id, entry.artifact_type, entry.artifact_id,
-        len(node_candidates), len(edge_candidates),
+        entry.board_id,
+        entry.artifact_type,
+        entry.artifact_id,
+        len(node_candidates),
+        len(edge_candidates),
         len(worker_result.missing_link_candidates),
     )
 
@@ -2003,16 +2126,14 @@ async def _process_queue_entry(
     # A governed delete may commit while extraction/proposal is paused. Check
     # at the final publication boundary, aborting the uncommitted session
     # before the commit/lifecycle wrapper is entered.
-    if _claim_token(entry) is not None and not await (
-        _queue_claim_is_current_and_unfenced(db, entry)
-    ):
+    if _claim_token(
+        entry
+    ) is not None and not await _queue_claim_is_current_and_unfenced(db, entry):
         await _abort_open_consolidation_after_fence(
             entry=entry,
             session_id=session_id,
         )
-        raise _QueueClaimLostOrFenced(
-            f"queue_claim_lost_or_fenced entry_id={entry.id}"
-        )
+        raise _QueueClaimLostOrFenced(f"queue_claim_lost_or_fenced entry_id={entry.id}")
 
     # 4. commit + safe lifecycle. The queue row is only acknowledged after
     # board graph survives close/reopen from disk.
@@ -2032,8 +2153,10 @@ async def _process_queue_entry(
 
     logger.info(
         "consolidated %s:%s → nodes_added=%d edges_added=%d",
-        entry.artifact_type, entry.artifact_id,
-        commit_resp.nodes_added, commit_resp.edges_added,
+        entry.artifact_type,
+        entry.artifact_id,
+        commit_resp.nodes_added,
+        commit_resp.edges_added,
     )
     # Canonical-debt/partition maintenance is intentionally run by
     # ``process_batch`` in a fresh transaction *after* the authoritative
@@ -2179,9 +2302,7 @@ class ConsolidationProcessor:
 
     def _now(self) -> datetime:
         return (
-            self._clock.now()
-            if self._clock is not None
-            else datetime.now(timezone.utc)
+            self._clock.now() if self._clock is not None else datetime.now(timezone.utc)
         )
 
     @property
@@ -2297,7 +2418,8 @@ class ConsolidationProcessor:
             if effective_batch != self.batch_size:
                 logger.info(
                     "consolidation.adaptive_batch depth=%d batch_size=%d",
-                    pending_depth, effective_batch,
+                    pending_depth,
+                    effective_batch,
                 )
 
             now = self._now()
@@ -2333,6 +2455,7 @@ class ConsolidationProcessor:
                 from okto_pulse.core.services.queue_health_service import (
                     record_claim,
                 )
+
                 for _ in entries:
                     record_claim(now=now)
 
@@ -2404,15 +2527,13 @@ class ConsolidationProcessor:
                                 if token is not None:
                                     if _work_kind(entry) == "stale_reconcile":
                                         try:
-                                            delivery_transfer = (
-                                                await _transfer_stale_reconcile_ownership(
-                                                    db,
-                                                    entry,
-                                                    reconcile_details=(
-                                                        stale_reconcile_telemetry
-                                                    ),
-                                                    occurred_at=self._now(),
-                                                )
+                                            delivery_transfer = await _transfer_stale_reconcile_ownership(
+                                                db,
+                                                entry,
+                                                reconcile_details=(
+                                                    stale_reconcile_telemetry
+                                                ),
+                                                occurred_at=self._now(),
                                             )
                                         except DeliveryTransferClaimConflict as exc:
                                             # CAS=0 is a neutral ownership loss.
@@ -2442,30 +2563,30 @@ class ConsolidationProcessor:
                                         "queue_ack_lost_after_graph_commit "
                                         f"entry_id={entry.id}"
                                     )
-                            elif _same_claim(entry, fresh) and await (
-                                store.queue_claim_is_current_and_unfenced(
-                                    db,
-                                    entry_id=entry.id,
-                                    claim_token=_claim_token(entry) or "",
-                                    board_id=entry.board_id,
-                                    artifact_type=entry.artifact_type,
-                                    artifact_id=entry.artifact_id,
-                                    work_kind=_work_kind(entry),
-                                    generation=_generation(entry),
-                                    delete_event_id=_delete_event_id(entry),
-                                )
+                            elif _same_claim(
+                                entry, fresh
+                            ) and await store.queue_claim_is_current_and_unfenced(
+                                db,
+                                entry_id=entry.id,
+                                claim_token=_claim_token(entry) or "",
+                                board_id=entry.board_id,
+                                artifact_type=entry.artifact_type,
+                                artifact_id=entry.artifact_id,
+                                work_kind=_work_kind(entry),
+                                generation=_generation(entry),
+                                delete_event_id=_delete_event_id(entry),
                             ):
                                 await self._mark_failed(
                                     db,
                                     fresh,
                                     error_text=(
-                                        fresh.last_error
-                                        or "processing returned False"
+                                        fresh.last_error or "processing returned False"
                                     ),
                                     max_attempts=max_attempts,
                                 )
 
                         if deferred_session_ids:
+
                             async def _commit_and_finalize() -> None:
                                 nonlocal relational_commit_confirmed
                                 await store.commit(db)
@@ -2486,6 +2607,7 @@ class ConsolidationProcessor:
                             await store.commit(db)
                 except BaseException:
                     if deferred_session_ids:
+
                         async def _settle_deferred_sessions() -> None:
                             for deferred_session_id in deferred_session_ids:
                                 if relational_commit_confirmed:
@@ -2569,7 +2691,9 @@ class ConsolidationProcessor:
             except Exception as exc:
                 logger.error(
                     "consolidation failed for %s:%s: %s",
-                    entry.artifact_type, entry.artifact_id, exc,
+                    entry.artifact_type,
+                    entry.artifact_id,
+                    exc,
                     exc_info=True,
                 )
                 try:
@@ -2599,8 +2723,8 @@ class ConsolidationProcessor:
                                 if isinstance(exc, GraphError)
                                 else f"{type(exc).__name__}: {str(exc)[:480]}"
                             )
-                            retry_after_s = (
-                                graph_memory_pressure_retry_after_seconds(exc)
+                            retry_after_s = graph_memory_pressure_retry_after_seconds(
+                                exc
                             )
                             if retry_after_s is not None:
                                 await self._defer_graph_memory_pressure(
@@ -2738,7 +2862,9 @@ class ConsolidationProcessor:
                 logger.info(
                     "consolidation.schema_layer_recovered artifact=%s:%s "
                     "board=%s columns_added=%s",
-                    entry.artifact_type, entry.artifact_id, entry.board_id,
+                    entry.artifact_type,
+                    entry.artifact_id,
+                    entry.board_id,
                     remediation.columns_added,
                 )
                 return
@@ -2768,19 +2894,24 @@ class ConsolidationProcessor:
                 )
                 if not board_exists:
                     logger.warning(
-                        "canonical_debt.skipped_missing_board board=%s "
-                        "artifact=%s:%s",
-                        entry_board_id, entry_artifact_type, entry_artifact_id,
+                        "canonical_debt.skipped_missing_board board=%s artifact=%s:%s",
+                        entry_board_id,
+                        entry_artifact_type,
+                        entry_artifact_id,
                     )
                     is_canonical_failure = False
             if is_canonical_failure:
                 debt_hash = hashlib.sha256(
-                    "|".join([
-                        entry_board_id,
-                        entry_artifact_type,
-                        entry_artifact_id,
-                        entry_triggered_at.isoformat() if entry_triggered_at else "",
-                    ]).encode("utf-8")
+                    "|".join(
+                        [
+                            entry_board_id,
+                            entry_artifact_type,
+                            entry_artifact_id,
+                            entry_triggered_at.isoformat()
+                            if entry_triggered_at
+                            else "",
+                        ]
+                    ).encode("utf-8")
                 ).hexdigest()
                 await upsert_canonical_debt(
                     db,
@@ -2802,7 +2933,9 @@ class ConsolidationProcessor:
         except Exception as debt_exc:
             logger.error(
                 "canonical_debt.persist_failed board=%s artifact=%s:%s err=%s",
-                entry_board_id, entry_artifact_type, entry_artifact_id,
+                entry_board_id,
+                entry_artifact_type,
+                entry_artifact_id,
                 debt_exc,
             )
             # A failed flush leaves SQLAlchemy sessions in PendingRollback.
@@ -2811,9 +2944,10 @@ class ConsolidationProcessor:
                 await get_consolidation_persistence_port().rollback(db)
             except Exception:
                 logger.exception(
-                    "canonical_debt.persist_rollback_failed board=%s "
-                    "artifact=%s:%s",
-                    entry_board_id, entry_artifact_type, entry_artifact_id,
+                    "canonical_debt.persist_rollback_failed board=%s artifact=%s:%s",
+                    entry_board_id,
+                    entry_artifact_type,
+                    entry_artifact_id,
                 )
                 return
             reloaded = await get_consolidation_persistence_port().get_queue_entry(
@@ -2868,9 +3002,11 @@ class ConsolidationProcessor:
             (entry,),
         )
         logger.info(
-            "consolidation.attempt_failed artifact=%s:%s attempts=%d "
-            "next_retry_in=%ds",
-            entry.artifact_type, entry.artifact_id, entry.attempts, backoff_s,
+            "consolidation.attempt_failed artifact=%s:%s attempts=%d next_retry_in=%ds",
+            entry.artifact_type,
+            entry.artifact_id,
+            entry.attempts,
+            backoff_s,
         )
 
     async def run_dlq_auto_drain(self) -> None:
@@ -2906,14 +3042,11 @@ class ConsolidationProcessor:
 
         try:
             async with self.relational_scope_factory() as db:
-                enabled_board_ids = (
-                    await get_consolidation_persistence_port().list_dlq_auto_drain_board_ids(
-                        db
-                    )
+                enabled_board_ids = await get_consolidation_persistence_port().list_dlq_auto_drain_board_ids(
+                    db
                 )
 
             for board_id in enabled_board_ids:
-
                 # Backoff: skip if we ran recently for this board
                 last_run = self._dlq_drain_last_run.get(board_id)
                 if last_run is not None:
@@ -2923,9 +3056,11 @@ class ConsolidationProcessor:
 
                 # Check if the board actually has DLQ rows
                 async with self.relational_scope_factory() as db:
-                    dlq_count = await get_consolidation_persistence_port().count_dead_letters(
-                        db,
-                        board_id=board_id,
+                    dlq_count = (
+                        await get_consolidation_persistence_port().count_dead_letters(
+                            db,
+                            board_id=board_id,
+                        )
                     )
 
                 if dlq_count == 0:
@@ -2947,7 +3082,10 @@ class ConsolidationProcessor:
                         logger.warning(
                             "kg.dlq.auto_drain.poison_pill_excluded "
                             "board_id=%s dlq_id=%s attempts=%d max=%d",
-                            board_id, row.id, row.attempts, max_attempts,
+                            board_id,
+                            row.id,
+                            row.attempts,
+                            max_attempts,
                             extra={
                                 "event": "kg.dlq.auto_drain.poison_pill_excluded",
                                 "board_id": board_id,
@@ -2972,7 +3110,10 @@ class ConsolidationProcessor:
 
                 logger.info(
                     "kg.dlq.auto_drain board_id=%s requeued=%d already_queued=%d skipped=%d",
-                    board_id, requeued_count, already_queued_count, len(skipped_poison),
+                    board_id,
+                    requeued_count,
+                    already_queued_count,
+                    len(skipped_poison),
                     extra={
                         "event": "kg.dlq.auto_drain",
                         "board_id": board_id,
@@ -2984,8 +3125,11 @@ class ConsolidationProcessor:
 
         except Exception as exc:
             logger.warning(
-                "kg.dlq.auto_drain.failed: %s", exc, exc_info=True,
+                "kg.dlq.auto_drain.failed: %s",
+                exc,
+                exc_info=True,
             )
+
 
 __all__ = [
     "AGENT_ID",

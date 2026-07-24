@@ -31,6 +31,7 @@ from okto_pulse.core.application.processors.global_outbox import GlobalOutboxPro
 from global_graph_testing import (
     bootstrap_global_discovery,
     execute_global_read,
+    execute_global_write,
     reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
@@ -118,6 +119,18 @@ def _set_node_layer(board_id, node_type, node_id, layer):
         conn.execute(
             f"MATCH (n:{node_type} {{id: $id}}) SET n.graph_layer = $l",
             {"id": node_id, "l": layer},
+        )
+
+
+def _set_node_revoked(board_id, node_type, node_id, *, revoked: bool):
+    with open_board_connection(board_id) as (_db, conn):
+        conn.execute(
+            f"MATCH (n:{node_type} {{id: $id}}) "
+            "SET n.revocation_reason = $reason, n.superseded_by = $reason",
+            {
+                "id": node_id,
+                "reason": "source_cancelled" if revoked else None,
+            },
         )
 
 
@@ -283,10 +296,18 @@ async def _run_outbox_no_refs(db_factory, board_id) -> int:
 def _digests_for(board_id, node_id) -> list[dict]:
     res = execute_global_read(
         "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
-        "RETURN d.id, coalesce(d.graph_layer, 'legacy_unknown')",
+        "RETURN d.id, coalesce(d.graph_layer, 'legacy_unknown'), "
+        "coalesce(d.source_revoked, false)",
         {"b": board_id, "n": node_id},
     )
-    return [{"id": str(row[0]), "graph_layer": str(row[1])} for row in res.rows]
+    return [
+        {
+            "id": str(row[0]),
+            "graph_layer": str(row[1]),
+            "source_revoked": bool(row[2]),
+        }
+        for row in res.rows
+    ]
 
 
 def _digest_layer(board_id, node_id) -> str | None:
@@ -382,6 +403,70 @@ async def test_reconcile_backfills_missing_digest_from_authoritative_board(
 
 
 @pytest.mark.asyncio
+async def test_revoked_source_is_hidden_globally_and_restore_preserves_relations(
+    db_factory,
+):
+    """Global lifecycle is reversible even when the digest has derived edges."""
+
+    board_id = await _new_board(db_factory)
+    node_id = f"dec_{uuid.uuid4().hex[:10]}"
+    peer_id = f"dec_{uuid.uuid4().hex[:10]}"
+    _seed_node(board_id, "Decision", node_id, layer="canonical")
+    _seed_node(board_id, "Decision", peer_id, layer="canonical")
+    assert (
+        await _run_outbox(
+            db_factory,
+            board_id,
+            [("Decision", node_id), ("Decision", peer_id)],
+        )
+        == 1
+    )
+    assert _digest_layer(board_id, node_id) == "canonical"
+    digest_id = _digests_for(board_id, node_id)[0]["id"]
+    peer_digest_id = _digests_for(board_id, peer_id)[0]["id"]
+    execute_global_write(
+        "MATCH (d:DecisionDigest {id: $digest_id}), "
+        "(peer:DecisionDigest {id: $peer_digest_id}) "
+        "CREATE (d)-[:DECISION_DERIVES_FROM]->(peer)",
+        {"digest_id": digest_id, "peer_digest_id": peer_digest_id},
+        operation="test_global_lifecycle_derived_edge",
+    )
+
+    _set_node_revoked(board_id, "Decision", node_id, revoked=True)
+    assert await _run_outbox_no_refs(db_factory, board_id) == 1
+    hidden = _digests_for(board_id, node_id)
+    assert len(hidden) == 1
+    assert hidden[0]["source_revoked"] is True
+    visible = execute_global_read(
+        "MATCH (b:Board)-[:CONTAINS_DECISION]->(d:DecisionDigest) "
+        "WHERE b.board_id = $bid AND d.original_node_id = $oid "
+        "AND (d.source_revoked IS NULL OR d.source_revoked = false) "
+        "RETURN d.id",
+        {"bid": board_id, "oid": node_id},
+    )
+    assert visible.rows == ()
+    related = execute_global_read(
+        "MATCH (d:DecisionDigest {id: $digest_id})"
+        "-[r:DECISION_DERIVES_FROM]->"
+        "(peer:DecisionDigest {id: $peer_digest_id}) RETURN count(r)",
+        {"digest_id": digest_id, "peer_digest_id": peer_digest_id},
+    )
+    assert related.rows[0][0] == 1
+
+    _set_node_revoked(board_id, "Decision", node_id, revoked=False)
+    assert await _run_outbox_no_refs(db_factory, board_id) == 1
+    assert _digest_layer(board_id, node_id) == "canonical"
+    assert _digests_for(board_id, node_id)[0]["source_revoked"] is False
+    related = execute_global_read(
+        "MATCH (d:DecisionDigest {id: $digest_id})"
+        "-[r:DECISION_DERIVES_FROM]->"
+        "(peer:DecisionDigest {id: $peer_digest_id}) RETURN count(r)",
+        {"digest_id": digest_id, "peer_digest_id": peer_digest_id},
+    )
+    assert related.rows[0][0] == 1
+
+
+@pytest.mark.asyncio
 async def test_source_without_embedding_is_not_required_for_set_parity(db_factory):
     board_id = await _new_board(db_factory)
     node_id = f"dec_{uuid.uuid4().hex[:10]}"
@@ -406,6 +491,8 @@ def test_source_inventory_paginates_at_row_cap_without_false_prune(monkeypatch):
             calls.append((statement, params["after_id"]))
             assert max_rows == page_size
             assert "n.embedding IS NOT NULL" in statement
+            assert "n.revocation_reason IS NULL" in statement
+            assert "n.superseded_by IS NULL" in statement
             assert "SKIP" not in statement
             if params["after_id"] == "":
                 return {
@@ -465,6 +552,8 @@ def test_source_inventory_rejects_same_label_physical_duplicate(monkeypatch):
     class _Executor:
         def execute_read_only(self, _board_id, statement, params, max_rows):
             assert "n.embedding IS NOT NULL" in statement
+            assert "n.revocation_reason IS NULL" in statement
+            assert "n.superseded_by IS NULL" in statement
             assert params == {"after_id": ""}
             assert max_rows == module.BOARD_SOURCE_INVENTORY_PAGE_SIZE
             return {"rows": [["duplicate-decision", 2]]}

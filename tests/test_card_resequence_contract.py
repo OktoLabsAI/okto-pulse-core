@@ -29,7 +29,9 @@ async def test_anchor_and_placement_selectors(db_factory) -> None:
             ids["board"],
             [
                 ColumnResequenceOp(
-                    ids["c0"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c0"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     before_id=ids["s1"],
                 )
             ],
@@ -38,7 +40,9 @@ async def test_anchor_and_placement_selectors(db_factory) -> None:
             ids["board"],
             [
                 ColumnResequenceOp(
-                    ids["c1"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c1"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     after_id=ids["s0"],
                 )
             ],
@@ -47,7 +51,9 @@ async def test_anchor_and_placement_selectors(db_factory) -> None:
             ids["board"],
             [
                 ColumnResequenceOp(
-                    ids["c2"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c2"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     placement="start",
                 )
             ],
@@ -80,11 +86,15 @@ async def test_same_insertion_point_preserves_batch_order(db_factory) -> None:
                     ids["c1"], CardStatus.NOT_STARTED, CardStatus.STARTED, 0
                 ),
                 ColumnResequenceOp(
-                    ids["c2"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c2"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     after_id=ids["s0"],
                 ),
                 ColumnResequenceOp(
-                    ids["c3"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c3"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     after_id=ids["s0"],
                 ),
             ],
@@ -116,7 +126,9 @@ async def test_mixed_start_and_index_zero_preserve_batch_order(db_factory) -> No
             ids["board"],
             [
                 ColumnResequenceOp(
-                    ids["c0"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c0"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     placement="start",
                 ),
                 ColumnResequenceOp(
@@ -205,7 +217,9 @@ async def test_invalid_anchor_variants_reject_whole_batch(db_factory) -> None:
         (
             [
                 ColumnResequenceOp(
-                    ids["c0"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c0"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     before_id=ids["sa"],  # archived anchor
                 )
             ],
@@ -214,7 +228,9 @@ async def test_invalid_anchor_variants_reject_whole_batch(db_factory) -> None:
         (
             [
                 ColumnResequenceOp(
-                    ids["c0"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c0"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     after_id=ids["c1"],  # anchor from another column
                 )
             ],
@@ -223,7 +239,9 @@ async def test_invalid_anchor_variants_reject_whole_batch(db_factory) -> None:
         (
             [
                 ColumnResequenceOp(
-                    ids["c0"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c0"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     before_id="rsq-missing-anchor",
                 )
             ],
@@ -232,7 +250,9 @@ async def test_invalid_anchor_variants_reject_whole_batch(db_factory) -> None:
         (
             [
                 ColumnResequenceOp(
-                    ids["c0"], CardStatus.NOT_STARTED, CardStatus.NOT_STARTED,
+                    ids["c0"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.NOT_STARTED,
                     before_id=ids["c0"],  # anchor is the card itself
                 )
             ],
@@ -241,11 +261,15 @@ async def test_invalid_anchor_variants_reject_whole_batch(db_factory) -> None:
         (
             [
                 ColumnResequenceOp(
-                    ids["s0"], CardStatus.STARTED, CardStatus.STARTED,
+                    ids["s0"],
+                    CardStatus.STARTED,
+                    CardStatus.STARTED,
                     placement="end",
                 ),
                 ColumnResequenceOp(
-                    ids["c0"], CardStatus.NOT_STARTED, CardStatus.STARTED,
+                    ids["c0"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
                     before_id=ids["s0"],  # anchor moved in the same batch
                 ),
             ],
@@ -254,7 +278,10 @@ async def test_invalid_anchor_variants_reject_whole_batch(db_factory) -> None:
         (
             [
                 ColumnResequenceOp(
-                    ids["c0"], CardStatus.NOT_STARTED, CardStatus.STARTED, 1,
+                    ids["c0"],
+                    CardStatus.NOT_STARTED,
+                    CardStatus.STARTED,
+                    1,
                     before_id=ids["s0"],  # two selectors at once
                 )
             ],
@@ -306,7 +333,9 @@ async def test_tree_ops_follow_dfs_preorder_with_roots_siblings_and_chain(
     # Round-4 REJECT repro (val_3a016df4) plus siblings: roots A=c0, B=c1;
     # bugs A1→A, A3→A (siblings; A3 at lane position 0 would come FIRST in
     # BFS/lane order), chain A2→A1 (bug of bug — product-legal), B1→B.
-    a1, a2, a3, b1 = (f"rsq-bug-{k}-{ids['board'][-8:]}" for k in ("a1", "a2", "a3", "b1"))
+    a1, a2, a3, b1 = (
+        f"rsq-bug-{k}-{ids['board'][-8:]}" for k in ("a1", "a2", "a3", "b1")
+    )
     async with db_factory() as db:
         db.add_all(
             [
@@ -337,7 +366,15 @@ async def test_tree_ops_follow_dfs_preorder_with_roots_siblings_and_chain(
     # lane-first), A1, A2(chain), then B, B1 — NEVER the breadth-first
     # A, B, A1, B1, A2.
     assert sequence == [
-        ids["ca"], ids["c0"], a3, a1, a2, ids["c1"], b1, ids["c2"], ids["c3"]
+        ids["ca"],
+        ids["c0"],
+        a3,
+        a1,
+        a2,
+        ids["c1"],
+        b1,
+        ids["c2"],
+        ids["c3"],
     ]
 
 
@@ -424,3 +461,102 @@ async def test_archive_tree_and_restore_tree_e2e(db_factory) -> None:
     assert snap[ids["c0"]] == ("not_started", 0, False)
     assert snap[ids["ca"]] == ("not_started", 4, False)  # still the tail
     assert snap[ids["sa"]] == ("started", 2, False)
+
+
+async def test_archive_restore_tree_cascades_to_sprint(db_factory) -> None:
+    """spec -> sprint -> card: archive_tree / restore_tree cascade to the Sprint
+    (a first-class descendant of Spec) — counts include it and the reversal
+    restores the pre-archive status."""
+    import uuid
+
+    from okto_pulse.core.services.main import ArchiveService
+    from sqlalchemy_test_models import (
+        Board,
+        Card,
+        CardStatus,
+        Spec,
+        SpecStatus,
+        Sprint,
+        SprintStatus,
+    )
+
+    token = uuid.uuid4().hex[:8]
+    board_id = f"arch-sprint-board-{token}"
+    spec_id = f"arch-sprint-spec-{token}"
+    sprint_id = f"arch-sprint-sprint-{token}"
+    card_id = f"arch-sprint-card-{token}"
+
+    async with db_factory() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name="Archive Sprint Board",
+                owner_id="arch-user",
+                settings={},
+            )
+        )
+        await db.flush()
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Spec with a sprint",
+                status=SpecStatus.IN_PROGRESS,
+                created_by="arch-user",
+                skip_decisions_coverage=True,
+                evaluations=[],
+            )
+        )
+        await db.flush()
+        db.add(
+            Sprint(
+                id=sprint_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Sprint under spec",
+                status=SprintStatus.ACTIVE,
+                created_by="arch-user",
+            )
+        )
+        db.add(
+            Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                sprint_id=sprint_id,
+                title="Card under sprint",
+                status=CardStatus.NOT_STARTED,
+                position=0,
+                created_by="arch-user",
+            )
+        )
+        await db.commit()
+
+    # Archive from the spec: the sprint (and card) cascade with it.
+    async with db_factory() as db:
+        counts = await ArchiveService(db).archive_tree("spec", spec_id)
+        await db.commit()
+    assert counts["specs"] == 1
+    assert counts["sprints"] == 1
+    assert counts["cards"] == 1
+
+    async with db_factory() as db:
+        sprint = await db.get(Sprint, sprint_id)
+        assert sprint.archived is True
+        assert sprint.pre_archive_status == SprintStatus.ACTIVE.value
+        assert (await db.get(Spec, spec_id)).archived is True
+        assert (await db.get(Card, card_id)).archived is True
+
+    # Restore from the spec: the sprint reverses cleanly (flag + status + marker).
+    async with db_factory() as db:
+        counts = await ArchiveService(db).restore_tree("spec", spec_id)
+        await db.commit()
+    assert counts["sprints"] == 1
+
+    async with db_factory() as db:
+        sprint = await db.get(Sprint, sprint_id)
+        assert sprint.archived is False
+        assert sprint.pre_archive_status is None
+        assert sprint.status == SprintStatus.ACTIVE
+        assert (await db.get(Spec, spec_id)).archived is False
+        assert (await db.get(Card, card_id)).archived is False

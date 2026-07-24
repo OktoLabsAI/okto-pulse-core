@@ -60,6 +60,15 @@ class DomainEvent(BaseModel):
         )
 
 
+class ArtifactArchiveChanged(DomainEvent):
+    """Reversible archive/restore signal for KG-backed SDLC artifacts."""
+
+    event_type: ClassVar[str] = "artifact.archive_changed"
+    artifact_type: Literal["story", "ideation", "refinement", "spec", "card", "sprint"]
+    artifact_id: str
+    archived: bool
+
+
 # --- Card lifecycle ---
 
 
@@ -190,6 +199,13 @@ class RefinementSemanticChanged(DomainEvent):
     changed_fields: list[str] = Field(default_factory=list)
 
 
+class RefinementMoved(DomainEvent):
+    event_type: ClassVar[str] = "refinement.moved"
+    refinement_id: str
+    from_status: str
+    to_status: str
+
+
 class CardLinkedToSpec(DomainEvent):
     """Fired when a card is linked to a spec via link_card_to_spec.
 
@@ -237,6 +253,15 @@ class SprintClosed(DomainEvent):
 
 
 # --- Derivation events ---
+
+
+class IdeationMoved(DomainEvent):
+    """Fired whenever an ideation changes lifecycle status."""
+
+    event_type: ClassVar[str] = "ideation.moved"
+    ideation_id: str
+    from_status: str
+    to_status: str
 
 
 class IdeationDerivedToSpec(DomainEvent):
@@ -400,6 +425,7 @@ class KGDeliveryRedriveTick(DomainEvent):
 # Ordered list of all event_type strings known to the MVP. The dispatcher
 # uses this to resolve DomainEventRow → subclass during reconstruction.
 EVENT_TYPES: list[str] = [
+    ArtifactArchiveChanged.event_type,
     CardCreated.event_type,
     CardMoved.event_type,
     CardConclusionAdded.event_type,
@@ -415,9 +441,11 @@ EVENT_TYPES: list[str] = [
     StructuredSpecEntityUpdated.event_type,
     StructuredSpecEntityRevoked.event_type,
     RefinementSemanticChanged.event_type,
+    RefinementMoved.event_type,
     SprintCreated.event_type,
     SprintMoved.event_type,
     SprintClosed.event_type,
+    IdeationMoved.event_type,
     IdeationDerivedToSpec.event_type,
     RefinementDerivedToSpec.event_type,
     StoryCreated.event_type,
@@ -435,6 +463,7 @@ EVENT_TYPES: list[str] = [
 
 
 _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
+    ArtifactArchiveChanged.event_type: ArtifactArchiveChanged,
     CardCreated.event_type: CardCreated,
     CardMoved.event_type: CardMoved,
     CardConclusionAdded.event_type: CardConclusionAdded,
@@ -450,9 +479,11 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     StructuredSpecEntityUpdated.event_type: StructuredSpecEntityUpdated,
     StructuredSpecEntityRevoked.event_type: StructuredSpecEntityRevoked,
     RefinementSemanticChanged.event_type: RefinementSemanticChanged,
+    RefinementMoved.event_type: RefinementMoved,
     SprintCreated.event_type: SprintCreated,
     SprintMoved.event_type: SprintMoved,
     SprintClosed.event_type: SprintClosed,
+    IdeationMoved.event_type: IdeationMoved,
     IdeationDerivedToSpec.event_type: IdeationDerivedToSpec,
     RefinementDerivedToSpec.event_type: RefinementDerivedToSpec,
     StoryCreated.event_type: StoryCreated,

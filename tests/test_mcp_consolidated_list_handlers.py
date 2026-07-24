@@ -78,9 +78,11 @@ CONSOLIDATED_LIST_TOOLS = (
     "okto_pulse_list_snapshots",
 )
 
+
 def _get_tool_fn(name: str):
     """Unwrap FastMCP FunctionTool to its underlying async function."""
     import okto_pulse.core.mcp.server as _srv
+
     tool = _srv.mcp._tool_manager._tools.get(name)
     if tool is None:
         raise KeyError(f"Tool not registered: {name}")
@@ -90,8 +92,6 @@ def _get_tool_fn(name: str):
 async def _call_tool(name: str, **kwargs) -> str:
     """Call a registered MCP tool by name, bypassing FunctionTool wrapper."""
     return await _get_tool_fn(name)(**kwargs)
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +113,7 @@ def _parse(result: str) -> dict:
 def db_factory():
     """Return the session factory wired up in conftest._db_init."""
     from okto_pulse.core.infra.database import get_session_factory
+
     return get_session_factory()
 
 
@@ -145,50 +146,63 @@ async def seeded_board(db_factory):
         import copy
         from okto_pulse.core.services.main import AgentService
         from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
-        db.add(Board(id=BOARD_ID, name="Consolidated List Test Board", owner_id="owner-1"))
+
+        db.add(
+            Board(id=BOARD_ID, name="Consolidated List Test Board", owner_id="owner-1")
+        )
         await db.flush()
-        db.add(Agent(
-            id=AGENT_ID,
-            name="test-agent",
-            board_id=BOARD_ID,
-            api_key=API_KEY,
-            api_key_hash=AgentService.hash_api_key(API_KEY),
-            permission_flags=copy.deepcopy(PERMISSION_REGISTRY),
-            is_active=True,
-            created_by="system",
-        ))
+        db.add(
+            Agent(
+                id=AGENT_ID,
+                name="test-agent",
+                board_id=BOARD_ID,
+                api_key=API_KEY,
+                api_key_hash=AgentService.hash_api_key(API_KEY),
+                permission_flags=copy.deepcopy(PERMISSION_REGISTRY),
+                is_active=True,
+                created_by="system",
+            )
+        )
         await db.flush()
-        db.add(AgentBoard(
-            agent_id=AGENT_ID,
-            board_id=BOARD_ID,
-            granted_by="system",
-        ))
-        db.add(Ideation(
-            id=ideation_id,
-            board_id=BOARD_ID,
-            title="Test ideation",
-            description="desc",
-            status=IdeationStatus.DRAFT,
-            created_by=AGENT_ID,
-        ))
+        db.add(
+            AgentBoard(
+                agent_id=AGENT_ID,
+                board_id=BOARD_ID,
+                granted_by="system",
+            )
+        )
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=BOARD_ID,
+                title="Test ideation",
+                description="desc",
+                status=IdeationStatus.DRAFT,
+                created_by=AGENT_ID,
+            )
+        )
         await db.flush()
-        db.add(Refinement(
-            id=refinement_id,
-            ideation_id=ideation_id,
-            board_id=BOARD_ID,
-            title="Test refinement",
-            description="desc",
-            status=RefinementStatus.DRAFT,
-            created_by=AGENT_ID,
-        ))
-        db.add(Spec(
-            id=spec_id,
-            board_id=BOARD_ID,
-            title="Test spec",
-            description="desc",
-            status=SpecStatus.DRAFT,
-            created_by=AGENT_ID,
-        ))
+        db.add(
+            Refinement(
+                id=refinement_id,
+                ideation_id=ideation_id,
+                board_id=BOARD_ID,
+                title="Test refinement",
+                description="desc",
+                status=RefinementStatus.DRAFT,
+                created_by=AGENT_ID,
+            )
+        )
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=BOARD_ID,
+                title="Test spec",
+                description="desc",
+                status=SpecStatus.DRAFT,
+                created_by=AGENT_ID,
+            )
+        )
         await db.commit()
 
     return {
@@ -225,6 +239,7 @@ def _set_api_key(monkeypatch):
 
 def test_validate_filters_empty_ok():
     from okto_pulse.core.mcp.filters import validate_filters
+
     ok, err = validate_filters("spec", {}, scope="by_board")
     assert ok is True
     assert err is None
@@ -232,6 +247,7 @@ def test_validate_filters_empty_ok():
 
 def test_validate_filters_none_ok():
     from okto_pulse.core.mcp.filters import validate_filters
+
     ok, err = validate_filters("spec", None, scope="by_board")  # type: ignore[arg-type]
     assert ok is True
     assert err is None
@@ -239,6 +255,7 @@ def test_validate_filters_none_ok():
 
 def test_validate_filters_valid_key_ok():
     from okto_pulse.core.mcp.filters import validate_filters
+
     ok, err = validate_filters("spec", {"status": "draft"}, scope="by_board")
     assert ok is True
     assert err is None
@@ -246,6 +263,7 @@ def test_validate_filters_valid_key_ok():
 
 def test_validate_filters_valid_derivation_pending_key_ok():
     from okto_pulse.core.mcp.filters import validate_filters
+
     ok, err = validate_filters(
         "ideation",
         {"derivation_pending": True},
@@ -265,6 +283,7 @@ def test_validate_filters_valid_derivation_pending_key_ok():
 
 def test_validate_filters_invalid_key_rejected():
     from okto_pulse.core.mcp.filters import validate_filters
+
     ok, err = validate_filters("spec", {"invalid_key": "x"}, scope="by_board")
     assert ok is False
     assert err is not None
@@ -273,12 +292,14 @@ def test_validate_filters_invalid_key_rejected():
 
 def test_validate_filters_unknown_scope_rejects_all():
     from okto_pulse.core.mcp.filters import validate_filters
+
     ok, err = validate_filters("spec", {"status": "draft"}, scope="unknown_scope")
     assert ok is False
 
 
 def test_supported_entity_types():
     from okto_pulse.core.mcp.filters import supported_entity_types
+
     types_by_board = supported_entity_types("by_board")
     assert "spec" in types_by_board
     assert "ideation" in types_by_board
@@ -295,7 +316,10 @@ def test_supported_entity_types():
 
 def test_structured_error_basic():
     from okto_pulse.core.mcp.helpers import _structured_error
-    result = _structured_error("unsupported_entity", ["spec", "ideation"], None, "bad entity")
+
+    result = _structured_error(
+        "unsupported_entity", ["spec", "ideation"], None, "bad entity"
+    )
     data = json.loads(result)
     assert data["error_code"] == "unsupported_entity"
     assert data["supported"] == ["spec", "ideation"]
@@ -305,7 +329,10 @@ def test_structured_error_basic():
 
 def test_structured_error_with_suggested_tool():
     from okto_pulse.core.mcp.helpers import _structured_error
-    result = _structured_error("invalid_filter", [], "okto_pulse_list_by_board", "bad filter")
+
+    result = _structured_error(
+        "invalid_filter", [], "okto_pulse_list_by_board", "bad filter"
+    )
     data = json.loads(result)
     assert data["suggested_tool"] == "okto_pulse_list_by_board"
     assert data["error_code"] == "invalid_filter"
@@ -318,20 +345,24 @@ def test_structured_error_with_suggested_tool():
 
 @pytest.mark.asyncio
 async def test_list_by_board_unsupported_entity():
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="invalid_type",
     )
     data = _parse(result)
     assert data.get("error_code") == "unsupported_entity"
-    assert "invalid_type" in data.get("error", "") or "invalid_type" in data.get("detail", "")
+    assert "invalid_type" in data.get("error", "") or "invalid_type" in data.get(
+        "detail", ""
+    )
     assert "supported" in data
     assert "spec" in data["supported"]
 
 
 @pytest.mark.asyncio
 async def test_list_qa_unsupported_entity():
-    result = await _call_tool("okto_pulse_list_qa",
+    result = await _call_tool(
+        "okto_pulse_list_qa",
         board_id=BOARD_ID,
         entity_type="sprint",
         entity_id="some-id",
@@ -342,7 +373,8 @@ async def test_list_qa_unsupported_entity():
 
 @pytest.mark.asyncio
 async def test_list_knowledge_unsupported_entity():
-    result = await _call_tool("okto_pulse_list_knowledge",
+    result = await _call_tool(
+        "okto_pulse_list_knowledge",
         board_id=BOARD_ID,
         entity_type="topic",
         entity_id="some-id",
@@ -353,7 +385,8 @@ async def test_list_knowledge_unsupported_entity():
 
 @pytest.mark.asyncio
 async def test_list_snapshots_unsupported_entity():
-    result = await _call_tool("okto_pulse_list_snapshots",
+    result = await _call_tool(
+        "okto_pulse_list_snapshots",
         board_id=BOARD_ID,
         entity_type="spec",
         entity_id="some-id",
@@ -369,7 +402,8 @@ async def test_list_snapshots_unsupported_entity():
 
 @pytest.mark.asyncio
 async def test_list_by_board_invalid_filter_key():
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="spec",
         filters={"invalid_key": "x"},
@@ -383,7 +417,8 @@ async def test_list_by_board_invalid_filter_key():
 
 @pytest.mark.asyncio
 async def test_list_knowledge_invalid_filter_key():
-    result = await _call_tool("okto_pulse_list_knowledge",
+    result = await _call_tool(
+        "okto_pulse_list_knowledge",
         board_id=BOARD_ID,
         entity_type="spec",
         entity_id="some-id",
@@ -406,7 +441,8 @@ async def test_list_by_board_accepts_filters_as_json_string():
     """Regression for bug eb782ae4: filters passed as JSON string must be
     auto-decoded by the handler. MCP transports often serialise complex
     parameters as strings."""
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="spec",
         filters='{"status": "draft"}',
@@ -418,27 +454,33 @@ async def test_list_by_board_accepts_filters_as_json_string():
     assert "Input should be a valid dictionary" not in str(data)
     # If it returns a structured error, it should NOT be about filter shape.
     if data.get("error_code"):
-        assert data["error_code"] != "invalid_filter" or "Invalid JSON" not in data.get("detail", "")
+        assert data["error_code"] != "invalid_filter" or "Invalid JSON" not in data.get(
+            "detail", ""
+        )
 
 
 @pytest.mark.asyncio
 async def test_list_by_board_rejects_malformed_filters_json():
     """Regression for bug eb782ae4: an invalid JSON string must produce a
     structured_error with error_code='invalid_filter', not crash Pydantic."""
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="spec",
-        filters='{not valid json',
+        filters="{not valid json",
     )
     data = _parse(result)
     assert data.get("error_code") == "invalid_filter"
-    assert "Invalid JSON" in data.get("detail", "") or "Invalid JSON" in data.get("error", "")
+    assert "Invalid JSON" in data.get("detail", "") or "Invalid JSON" in data.get(
+        "error", ""
+    )
 
 
 @pytest.mark.asyncio
 async def test_list_qa_accepts_filters_as_json_string():
     """Regression for bug eb782ae4: list_qa must also accept filters as JSON string."""
-    result = await _call_tool("okto_pulse_list_qa",
+    result = await _call_tool(
+        "okto_pulse_list_qa",
         board_id=BOARD_ID,
         entity_type="spec",
         entity_id="some-id",
@@ -448,10 +490,117 @@ async def test_list_qa_accepts_filters_as_json_string():
     assert "Input should be a valid dictionary" not in str(data)
 
 
+# ---------------------------------------------------------------------------
+# 4c. Bug regression (E2E remediation item 1) — filters.status is APPLIED
+#     (answered ⇔ answered_at IS NOT NULL; unanswered/open ⇔ answered_at IS NULL)
+#     and fail-closed on unknown VALUES, not just unknown keys.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_qa_status_filter_narrows_by_answer_state(seeded_board, db_factory):
+    """filters.status must actually filter Q&A by answer state.
+
+    Previously the use case applied only ``asked_by`` and silently ignored
+    ``status``, so answered/unanswered/open returned identical rows.
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy_test_models import SpecQAItem
+
+    spec_id = seeded_board["spec_id"]
+    answered_id = f"qa-answered-{uuid.uuid4()}"
+    choice_id = f"qa-choice-{uuid.uuid4()}"
+    open_id = f"qa-open-{uuid.uuid4()}"
+    async with db_factory() as db:
+        db.add_all(
+            [
+                SpecQAItem(
+                    id=answered_id,
+                    spec_id=spec_id,
+                    question="Answered question",
+                    answer="An answer",
+                    asked_by=AGENT_ID,
+                    answered_by=AGENT_ID,
+                    answered_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                ),
+                # Choice answer: `answer` stays NULL but `answered_at` IS stamped —
+                # the predicate must still classify it as ANSWERED (the reason
+                # answered_at, not answer, is the canonical open/closed signal).
+                SpecQAItem(
+                    id=choice_id,
+                    spec_id=spec_id,
+                    question="Choice question",
+                    question_type="choice",
+                    answer=None,
+                    asked_by=AGENT_ID,
+                    answered_by=AGENT_ID,
+                    answered_at=datetime(2026, 1, 3, tzinfo=timezone.utc),
+                ),
+                SpecQAItem(
+                    id=open_id,
+                    spec_id=spec_id,
+                    question="Open question",
+                    asked_by=AGENT_ID,
+                ),
+            ]
+        )
+        await db.commit()
+
+    async def _ids(**filters) -> set[str]:
+        result = await _call_tool(
+            "okto_pulse_list_qa",
+            board_id=BOARD_ID,
+            entity_type="spec",
+            entity_id=spec_id,
+            **filters,
+        )
+        return {q["id"] for q in _parse(result)["qa_items"]}
+
+    # Unfiltered returns every state.
+    all_ids = await _ids()
+    assert {answered_id, choice_id, open_id} <= all_ids
+
+    answered_ids = await _ids(filters={"status": "answered"})
+    assert {answered_id, choice_id} <= answered_ids  # choice answer has NULL answer
+    assert open_id not in answered_ids
+
+    unanswered_ids = await _ids(filters={"status": "unanswered"})
+    assert open_id in unanswered_ids
+    assert answered_id not in unanswered_ids
+    assert choice_id not in unanswered_ids
+
+    # "open" is a synonym of "unanswered".
+    open_alias_ids = await _ids(filters={"status": "open"})
+    assert open_id in open_alias_ids
+    assert answered_id not in open_alias_ids
+
+    # The two states must diverge (the bug returned identical sets).
+    assert answered_ids != unanswered_ids
+
+
+@pytest.mark.asyncio
+async def test_list_qa_invalid_status_value_returns_structured_error():
+    """filters.status is fail-closed on VALUE, not just key: an unknown status
+    returns a structured ``invalid_filter`` envelope instead of being ignored."""
+    result = await _call_tool(
+        "okto_pulse_list_qa",
+        board_id=BOARD_ID,
+        entity_type="spec",
+        entity_id="some-id",
+        filters={"status": "definitely-not-a-status"},
+    )
+    data = _parse(result)
+    assert data.get("error_code") == "invalid_filter"
+    assert "answered" in data.get("supported", [])
+    assert "unanswered" in data.get("supported", [])
+
+
 @pytest.mark.asyncio
 async def test_list_knowledge_accepts_filters_as_json_string():
     """Regression for bug eb782ae4: list_knowledge must also accept filters as JSON string."""
-    result = await _call_tool("okto_pulse_list_knowledge",
+    result = await _call_tool(
+        "okto_pulse_list_knowledge",
         board_id=BOARD_ID,
         entity_type="spec",
         entity_id="some-id",
@@ -465,7 +614,8 @@ async def test_list_knowledge_accepts_filters_as_json_string():
 async def test_list_by_board_accepts_empty_string_filters():
     """Regression for bug eb782ae4: an empty/whitespace filters string must be
     treated as no filter, not as a JSON parse error."""
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="spec",
         filters="   ",
@@ -610,7 +760,9 @@ async def test_list_by_board_refinement_with_ideation_id(seeded_board):
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, db_factory):
+async def test_list_by_board_filters_ideation_derivation_pending(
+    seeded_board, db_factory
+):
     label = f"mcp-ideation-derivation-{uuid.uuid4().hex[:8]}"
     pending_id = str(uuid.uuid4())
     active_id = str(uuid.uuid4())
@@ -675,40 +827,46 @@ async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, d
             created_by=AGENT_ID,
         )
         db.add_all([pending, active, cancelled_child, small, small_active, draft])
-        db.add(Refinement(
-            id=str(uuid.uuid4()),
-            board_id=BOARD_ID,
-            ideation_id=active_id,
-            title="MCP active refinement child",
-            status=RefinementStatus.DRAFT,
-            created_by=AGENT_ID,
-        ))
-        db.add(Refinement(
-            id=str(uuid.uuid4()),
-            board_id=BOARD_ID,
-            ideation_id=cancelled_child_id,
-            title="MCP cancelled refinement child",
-            status=RefinementStatus.CANCELLED,
-            created_by=AGENT_ID,
-        ))
-        db.add(Spec(
-            id=str(uuid.uuid4()),
-            board_id=BOARD_ID,
-            ideation_id=small_active_id,
-            refinement_id=None,
-            title="MCP active direct spec child",
-            status=SpecStatus.DRAFT,
-            functional_requirements=[],
-            technical_requirements=[],
-            acceptance_criteria=[],
-            test_scenarios=[],
-            business_rules=[],
-            api_contracts=[],
-            integration_requirements=[],
-            observability_requirements=[],
-            decisions=[],
-            created_by=AGENT_ID,
-        ))
+        db.add(
+            Refinement(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                ideation_id=active_id,
+                title="MCP active refinement child",
+                status=RefinementStatus.DRAFT,
+                created_by=AGENT_ID,
+            )
+        )
+        db.add(
+            Refinement(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                ideation_id=cancelled_child_id,
+                title="MCP cancelled refinement child",
+                status=RefinementStatus.CANCELLED,
+                created_by=AGENT_ID,
+            )
+        )
+        db.add(
+            Spec(
+                id=str(uuid.uuid4()),
+                board_id=BOARD_ID,
+                ideation_id=small_active_id,
+                refinement_id=None,
+                title="MCP active direct spec child",
+                status=SpecStatus.DRAFT,
+                functional_requirements=[],
+                technical_requirements=[],
+                acceptance_criteria=[],
+                test_scenarios=[],
+                business_rules=[],
+                api_contracts=[],
+                integration_requirements=[],
+                observability_requirements=[],
+                decisions=[],
+                created_by=AGENT_ID,
+            )
+        )
         await db.commit()
 
     result = await _call_tool(
@@ -732,7 +890,9 @@ async def test_list_by_board_filters_ideation_derivation_pending(seeded_board, d
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_filters_refinement_derivation_pending(seeded_board, db_factory):
+async def test_list_by_board_filters_refinement_derivation_pending(
+    seeded_board, db_factory
+):
     label = f"mcp-refinement-derivation-{uuid.uuid4().hex[:8]}"
     ideation_id = str(uuid.uuid4())
     pending_id = str(uuid.uuid4())
@@ -741,77 +901,89 @@ async def test_list_by_board_filters_refinement_derivation_pending(seeded_board,
     draft_id = str(uuid.uuid4())
 
     async with db_factory() as db:
-        db.add(Ideation(
-            id=ideation_id,
-            board_id=BOARD_ID,
-            title="MCP derivation parent",
-            status=IdeationStatus.DONE,
-            complexity=IdeationComplexity.MEDIUM,
-            created_by=AGENT_ID,
-        ))
-        db.add_all([
-            Refinement(
-                id=pending_id,
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=BOARD_ID,
+                title="MCP derivation parent",
+                status=IdeationStatus.DONE,
+                complexity=IdeationComplexity.MEDIUM,
+                created_by=AGENT_ID,
+            )
+        )
+        db.add_all(
+            [
+                Refinement(
+                    id=pending_id,
+                    board_id=BOARD_ID,
+                    ideation_id=ideation_id,
+                    title="MCP pending refinement",
+                    status=RefinementStatus.DONE,
+                    labels=[label],
+                    created_by=AGENT_ID,
+                ),
+                Refinement(
+                    id=active_id,
+                    board_id=BOARD_ID,
+                    ideation_id=ideation_id,
+                    title="MCP active-spec refinement",
+                    status=RefinementStatus.DONE,
+                    labels=[label],
+                    created_by=AGENT_ID,
+                ),
+                Refinement(
+                    id=cancelled_child_id,
+                    board_id=BOARD_ID,
+                    ideation_id=ideation_id,
+                    title="MCP cancelled-spec refinement",
+                    status=RefinementStatus.DONE,
+                    labels=[label],
+                    created_by=AGENT_ID,
+                ),
+                Refinement(
+                    id=draft_id,
+                    board_id=BOARD_ID,
+                    ideation_id=ideation_id,
+                    title="MCP draft refinement",
+                    status=RefinementStatus.DRAFT,
+                    labels=[label],
+                    created_by=AGENT_ID,
+                ),
+            ]
+        )
+        db.add(
+            Spec(
+                id=str(uuid.uuid4()),
                 board_id=BOARD_ID,
                 ideation_id=ideation_id,
-                title="MCP pending refinement",
-                status=RefinementStatus.DONE,
-                labels=[label],
+                refinement_id=active_id,
+                title="MCP active child spec",
+                status=SpecStatus.DRAFT,
                 created_by=AGENT_ID,
-            ),
-            Refinement(
-                id=active_id,
+            )
+        )
+        db.add(
+            Spec(
+                id=str(uuid.uuid4()),
                 board_id=BOARD_ID,
                 ideation_id=ideation_id,
-                title="MCP active-spec refinement",
-                status=RefinementStatus.DONE,
-                labels=[label],
+                refinement_id=cancelled_child_id,
+                title="MCP cancelled child spec",
+                status=SpecStatus.CANCELLED,
                 created_by=AGENT_ID,
-            ),
-            Refinement(
-                id=cancelled_child_id,
-                board_id=BOARD_ID,
-                ideation_id=ideation_id,
-                title="MCP cancelled-spec refinement",
-                status=RefinementStatus.DONE,
-                labels=[label],
-                created_by=AGENT_ID,
-            ),
-            Refinement(
-                id=draft_id,
-                board_id=BOARD_ID,
-                ideation_id=ideation_id,
-                title="MCP draft refinement",
-                status=RefinementStatus.DRAFT,
-                labels=[label],
-                created_by=AGENT_ID,
-            ),
-        ])
-        db.add(Spec(
-            id=str(uuid.uuid4()),
-            board_id=BOARD_ID,
-            ideation_id=ideation_id,
-            refinement_id=active_id,
-            title="MCP active child spec",
-            status=SpecStatus.DRAFT,
-            created_by=AGENT_ID,
-        ))
-        db.add(Spec(
-            id=str(uuid.uuid4()),
-            board_id=BOARD_ID,
-            ideation_id=ideation_id,
-            refinement_id=cancelled_child_id,
-            title="MCP cancelled child spec",
-            status=SpecStatus.CANCELLED,
-            created_by=AGENT_ID,
-        ))
+            )
+        )
         await db.commit()
 
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="refinement",
-        filters={"ideation_id": ideation_id, "labels": label, "derivation_pending": "true"},
+        filters={
+            "ideation_id": ideation_id,
+            "labels": label,
+            "derivation_pending": "true",
+        },
     )
     data = _parse(result)
 
@@ -866,7 +1038,8 @@ def test_deprecated_list_logging_helpers_are_absent():
 
 @pytest.mark.asyncio
 async def test_list_by_board_valid_status_filter(seeded_board):
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="spec",
         filters={"status": "draft"},
@@ -879,7 +1052,8 @@ async def test_list_by_board_valid_status_filter(seeded_board):
 
 @pytest.mark.asyncio
 async def test_list_by_board_sprint_requires_spec_id():
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="sprint",
     )
@@ -895,36 +1069,42 @@ async def test_list_by_board_sprint_includes_lane_metadata(seeded_board, db_fact
     hotfix_sprint_id = f"mcp-hotfix-sprint-{uuid.uuid4().hex[:8]}"
 
     async with db_factory() as db:
-        db.add(Sprint(
-            id=origin_sprint_id,
-            board_id=BOARD_ID,
-            spec_id=spec_id,
-            title="MCP origin sprint",
-            status=SprintStatus.CLOSED,
-            lane_type=SprintLaneType.NORMAL,
-            created_by=AGENT_ID,
-        ))
-        db.add(Card(
-            id=origin_bug_id,
-            board_id=BOARD_ID,
-            spec_id=spec_id,
-            title="MCP hotfix origin bug",
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.BUG,
-            created_by=AGENT_ID,
-        ))
+        db.add(
+            Sprint(
+                id=origin_sprint_id,
+                board_id=BOARD_ID,
+                spec_id=spec_id,
+                title="MCP origin sprint",
+                status=SprintStatus.CLOSED,
+                lane_type=SprintLaneType.NORMAL,
+                created_by=AGENT_ID,
+            )
+        )
+        db.add(
+            Card(
+                id=origin_bug_id,
+                board_id=BOARD_ID,
+                spec_id=spec_id,
+                title="MCP hotfix origin bug",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.BUG,
+                created_by=AGENT_ID,
+            )
+        )
         await db.flush()
-        db.add(Sprint(
-            id=hotfix_sprint_id,
-            board_id=BOARD_ID,
-            spec_id=spec_id,
-            title="MCP visible hotfix lane",
-            status=SprintStatus.DRAFT,
-            lane_type=SprintLaneType.HOTFIX,
-            origin_sprint_id=origin_sprint_id,
-            origin_bug_id=origin_bug_id,
-            created_by=AGENT_ID,
-        ))
+        db.add(
+            Sprint(
+                id=hotfix_sprint_id,
+                board_id=BOARD_ID,
+                spec_id=spec_id,
+                title="MCP visible hotfix lane",
+                status=SprintStatus.DRAFT,
+                lane_type=SprintLaneType.HOTFIX,
+                origin_sprint_id=origin_sprint_id,
+                origin_bug_id=origin_bug_id,
+                created_by=AGENT_ID,
+            )
+        )
         await db.commit()
 
     result = await _call_tool(
@@ -953,7 +1133,8 @@ async def test_list_by_board_sprint_includes_lane_metadata(seeded_board, db_fact
 
 @pytest.mark.asyncio
 async def test_list_by_board_returns_entity_type(seeded_board):
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="ideation",
     )
@@ -963,7 +1144,8 @@ async def test_list_by_board_returns_entity_type(seeded_board):
 
 @pytest.mark.asyncio
 async def test_list_snapshots_ideation(seeded_board):
-    result = await _call_tool("okto_pulse_list_snapshots",
+    result = await _call_tool(
+        "okto_pulse_list_snapshots",
         board_id=BOARD_ID,
         entity_type="ideation",
         entity_id=seeded_board["ideation_id"],
@@ -976,7 +1158,8 @@ async def test_list_snapshots_ideation(seeded_board):
 
 @pytest.mark.asyncio
 async def test_list_snapshots_refinement(seeded_board):
-    result = await _call_tool("okto_pulse_list_snapshots",
+    result = await _call_tool(
+        "okto_pulse_list_snapshots",
         board_id=BOARD_ID,
         entity_type="refinement",
         entity_id=seeded_board["refinement_id"],
@@ -1028,7 +1211,8 @@ async def test_list_by_board_invalid_filter_error_teaches_derivation_pending():
     """ITEM 18: the invalid_filter structured error must list the allowed keys
     for the entity_type (including derivation_pending for ideations) so an
     agent can self-correct from the error payload alone."""
-    result = await _call_tool("okto_pulse_list_by_board",
+    result = await _call_tool(
+        "okto_pulse_list_by_board",
         board_id=BOARD_ID,
         entity_type="ideation",
         filters={"pending_derivation": True},  # plausible agent key inversion
@@ -1065,7 +1249,11 @@ def test_agent_instructions_do_not_reference_legacy_list_tools():
     """The agent-facing instructions must only expose consolidated list tools."""
     ai_path = (
         Path(__file__).resolve().parent.parent
-        / "src" / "okto_pulse" / "core" / "mcp" / "agent_instructions.md"
+        / "src"
+        / "okto_pulse"
+        / "core"
+        / "mcp"
+        / "agent_instructions.md"
     )
     assert ai_path.exists(), f"agent_instructions.md not found at {ai_path}"
     text = ai_path.read_text(encoding="utf-8")

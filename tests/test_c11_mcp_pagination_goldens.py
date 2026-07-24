@@ -389,6 +389,7 @@ def _card_golden(ids: dict[str, str], key: str, status: str, position: int) -> d
         "test_scenario_ids": ["ts-c11"],
         "due_date": datetime(2026, 8, index + 1, 9, 30).isoformat(),
         "labels": ["golden"],
+        "archived": key == "card_archived",
     }
 
 
@@ -408,13 +409,13 @@ async def test_list_cards_by_status_empty_mode_exact_golden_and_archived_total(
         ("card_progress", "in_progress", 0),
         ("card_ns0", "not_started", 0),
         ("card_ns1", "not_started", 1),
-        ("card_archived", "started", 0),
     )
     assert payload == {
-        "total_all": 6,
-        "filtered_count": 6,
+        "total_all": 5,
+        "filtered_count": 5,
         "offset": 0,
         "limit": 50,
+        "include_archived": False,
         "cards": [
             _card_golden(c11_graph, key, status, position)
             for key, status, position in ordered
@@ -428,11 +429,10 @@ async def test_list_cards_by_status_empty_mode_exact_golden_and_archived_total(
     [
         (
             "open",
-            ["card_progress", "card_ns0", "card_ns1", "card_archived"],
+            ["card_progress", "card_ns0", "card_ns1"],
         ),
         ("not_started", ["card_ns0", "card_ns1"]),
-        # Archived rows participate in status filtering exactly as before.
-        ("started", ["card_archived"]),
+        ("started", []),
     ],
 )
 async def test_list_cards_by_status_modes_preserve_semantics_and_total_all(
@@ -447,11 +447,51 @@ async def test_list_cards_by_status_modes_preserve_semantics_and_total_all(
         status=status,
     )
 
-    assert payload["total_all"] == 6
+    assert payload["total_all"] == 5
     assert payload["filtered_count"] == len(expected_keys)
     assert [item["id"] for item in payload["cards"]] == [
         c11_graph[key] for key in expected_keys
     ]
+
+
+@pytest.mark.asyncio
+async def test_list_cards_by_status_include_archived_is_explicit_and_projected(
+    c11_graph,
+    mcp_call,
+):
+    payload = await mcp_call(
+        "okto_pulse_list_cards_by_status",
+        board_id=c11_graph["board"],
+        status="started",
+        include_archived=True,
+    )
+
+    assert payload["include_archived"] is True
+    assert payload["total_all"] == 6
+    assert payload["filtered_count"] == 1
+    assert payload["cards"] == [_card_golden(c11_graph, "card_archived", "started", 0)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "filter_args",
+    [
+        {"status": "not-a-status"},
+        {"priority": "not-a-priority"},
+    ],
+)
+async def test_list_cards_by_status_rejects_invalid_enum_filters(
+    c11_graph,
+    mcp_call,
+    filter_args,
+):
+    payload = await mcp_call(
+        "okto_pulse_list_cards_by_status",
+        board_id=c11_graph["board"],
+        **filter_args,
+    )
+
+    assert payload["error_code"] == "invalid_filter"
 
 
 @pytest.mark.asyncio
@@ -473,13 +513,48 @@ async def test_list_cards_by_status_window_default_cap_offset_and_order(
 
     assert page["offset"] == 1
     assert page["limit"] == 2
-    assert page["filtered_count"] == 6
+    assert page["filtered_count"] == 5
     assert [item["id"] for item in page["cards"]] == [
         c11_graph["card_done"],
         c11_graph["card_progress"],
     ]
     assert capped["limit"] == 200
-    assert capped["filtered_count"] == 6
+    assert capped["filtered_count"] == 5
+
+
+# Invalid pagination windows that must all fail-closed to the same structured
+# ``page_request_invalid_window`` envelope: non-positive limits, negative offsets
+# and non-int types (a string TypeErrors the clamp; a float >200 would otherwise
+# be silently coerced to 200 and accepted). A valid int > 200 is NOT here — it is
+# clamped, covered by the *_window_default_cap goldens above.
+_INVALID_WINDOWS = [
+    {"limit": 0},
+    {"limit": -1},
+    {"limit": "50"},
+    {"limit": 250.5},
+    {"offset": -1},
+    {"offset": "0"},
+    {"offset": 1 << 63},  # > int64: would overflow SQLite's OFFSET binding
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("window", _INVALID_WINDOWS)
+async def test_list_cards_by_status_invalid_window_returns_structured_error(
+    c11_graph,
+    mcp_call,
+    window,
+):
+    """Invalid pagination windows must return a structured
+    ``page_request_invalid_window`` envelope, validated BEFORE the clamp so a
+    string never TypeErrors ``min(limit, 200)`` and a float >200 is never coerced
+    to 200 and accepted. The >200 int clamp is unaffected (goldens above)."""
+    payload = await mcp_call(
+        "okto_pulse_list_cards_by_status",
+        board_id=c11_graph["board"],
+        **window,
+    )
+    assert payload.get("error_code") == "page_request_invalid_window"
 
 
 @pytest.mark.asyncio
@@ -502,13 +577,15 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
         assignee_id="somebody-else",
     )
 
-    assert payload["total_all"] == 6
-    assert payload["filtered_count"] == 4
+    assert payload["total_all"] == 5
+    assert payload["filtered_count"] == 3
     assert miss == {
-        "total_all": 6,
+        "total_all": 5,
         "filtered_count": 0,
         "offset": 0,
         "limit": 50,
+        "cards": [],
+        "include_archived": False,
     }
 
 
@@ -607,9 +684,9 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
                 "labels": ["mcp"],
                 "status": "draft",
                 "assignee_id": "story-owner",
-                "screen_mockups": [{"id": "sm-c11"}],
+                "screen_mockups_count": 1,
                 "archived": False,
-                "ideation_links": [],
+                "ideation_links_count": 0,
                 "created_at": "<timestamp>",
                 "updated_at": "<timestamp>",
             },
@@ -715,6 +792,70 @@ async def test_list_by_board_window_default_cap_offset_and_topic_order(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("window", _INVALID_WINDOWS)
+async def test_list_by_board_invalid_window_returns_structured_error(
+    c11_graph,
+    mcp_call,
+    window,
+):
+    """Same fail-closed window envelope for list_by_board; the >200 int clamp
+    (covered above) is preserved and only the lower bounds / bad types trip here."""
+    payload = await mcp_call(
+        "okto_pulse_list_by_board",
+        board_id=c11_graph["board"],
+        entity_type="spec",
+        filters={"status": "draft"},
+        **window,
+    )
+    assert payload.get("error_code") == "page_request_invalid_window"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("window", _INVALID_WINDOWS)
+async def test_get_activity_log_invalid_window_returns_structured_error(
+    c11_graph, mcp_call, window
+):
+    """The window guard now also covers the activity log (before the clamp and
+    the cursor path, which stays untouched)."""
+    payload = await mcp_call(
+        "okto_pulse_get_activity_log", board_id=c11_graph["board"], **window
+    )
+    assert payload.get("error_code") == "page_request_invalid_window"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("window", _INVALID_WINDOWS)
+async def test_list_test_scenarios_invalid_window_returns_structured_error(
+    c11_graph, mcp_call, window
+):
+    """list_test_scenarios slices in memory — a bad window must fail-closed to the
+    envelope, never a wrong Python slice."""
+    payload = await mcp_call(
+        "okto_pulse_list_test_scenarios",
+        board_id=c11_graph["board"],
+        spec_id=c11_graph["spec"],
+        **window,
+    )
+    assert payload.get("error_code") == "page_request_invalid_window"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("window", _INVALID_WINDOWS)
+async def test_list_screen_mockups_invalid_window_returns_structured_error(
+    c11_graph, mcp_call, window
+):
+    """list_screen_mockups slices in memory — same fail-closed window guard."""
+    payload = await mcp_call(
+        "okto_pulse_list_screen_mockups",
+        board_id=c11_graph["board"],
+        entity_id=c11_graph["spec"],
+        entity_type="spec",
+        **window,
+    )
+    assert payload.get("error_code") == "page_request_invalid_window"
+
+
+@pytest.mark.asyncio
 async def test_list_by_board_include_archived_expands_filtered_and_overall_totals(
     c11_graph,
     mcp_call,
@@ -739,6 +880,73 @@ async def test_list_by_board_include_archived_expands_filtered_and_overall_total
 
 
 @pytest.mark.asyncio
+async def test_list_by_board_labels_are_exact_json_members(
+    c11_graph,
+    mcp_call,
+    db_factory,
+):
+    rows = {
+        "a%b": "percent",
+        "aXb": "percent-decoy",
+        "a_b": "underscore",
+        "acb": "underscore-decoy",
+    }
+    async with db_factory() as db:
+        db.add_all(
+            [
+                Ideation(
+                    id=_id(name, uuid.uuid4().hex[:8]),
+                    board_id=c11_graph["board"],
+                    title=name,
+                    status=IdeationStatus.DRAFT,
+                    labels=[label],
+                    created_by=ACTOR_ID,
+                    created_at=STAMP,
+                    updated_at=STAMP,
+                )
+                for label, name in rows.items()
+            ]
+        )
+        await db.commit()
+
+    for label, expected_name in (("a%b", "percent"), ("a_b", "underscore")):
+        payload = await mcp_call(
+            "okto_pulse_list_by_board",
+            board_id=c11_graph["board"],
+            entity_type="ideation",
+            filters={"labels": [label]},
+        )
+        assert payload["total"] == 1
+        assert [item["title"] for item in payload["items"]] == [expected_name]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("entity_type", "filters"),
+    [
+        ("spec", {"status": "not-a-status"}),
+        ("ideation", {"derivation_pending": "not-a-boolean"}),
+        ("story", {"linked": "not-a-boolean"}),
+        ("topic", {"include_archived": "not-a-boolean"}),
+    ],
+)
+async def test_list_by_board_rejects_invalid_filter_values(
+    c11_graph,
+    mcp_call,
+    entity_type,
+    filters,
+):
+    payload = await mcp_call(
+        "okto_pulse_list_by_board",
+        board_id=c11_graph["board"],
+        entity_type=entity_type,
+        filters=filters,
+    )
+
+    assert payload["error_code"] == "invalid_filter"
+
+
+@pytest.mark.asyncio
 async def test_ideation_derivation_false_includes_done_with_null_complexity(
     c11_graph,
     mcp_call,
@@ -756,9 +964,7 @@ async def test_ideation_derivation_false_includes_done_with_null_complexity(
         filters={"derivation_pending": True},
     )
 
-    assert c11_graph["ideation_done"] in {
-        item["id"] for item in not_pending["items"]
-    }
+    assert c11_graph["ideation_done"] in {item["id"] for item in not_pending["items"]}
     assert pending["total"] == 0
     assert pending["items"] == []
 
@@ -850,7 +1056,7 @@ async def test_both_mcp_tools_execute_through_entity_page_service_without_full_f
                 limit=2,
             )
 
-    assert cards["filtered_count"] == 4
+    assert cards["filtered_count"] == 3
     assert len(requests) == 7
     assert requests[0].surface == "mcp_card_status_list"
     assert requests[0].offset == 1

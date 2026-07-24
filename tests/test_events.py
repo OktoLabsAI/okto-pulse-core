@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -28,11 +29,17 @@ from okto_pulse.core.events.handlers.cancellation_decay import (
     REVOCATION_REASON,
     CancellationDecayHandler,
     CancellationRestoreHandler,
+    SourceArchiveLifecycleHandler,
+    _apply_decay,
+    _apply_source_decay,
+    _revert_decay,
+    _revert_source_decay,
 )
 from okto_pulse.core.events.handlers.consolidation_enqueuer import (
     ConsolidationEnqueuer,
 )
 from okto_pulse.core.events.types import (
+    ArtifactArchiveChanged,
     CardCancelled,
     CardConclusionAdded,
     CardCreated,
@@ -40,6 +47,7 @@ from okto_pulse.core.events.types import (
     CardMoved,
     CardRestored,
     CardUnlinkedFromSpec,
+    IdeationMoved,
     RefinementSemanticChanged,
     SpecSemanticChanged,
     SpecVersionBumped,
@@ -55,6 +63,7 @@ from sqlalchemy_test_models import (
     ConsolidationQueue,
     DomainEventHandlerExecution,
     DomainEventRow,
+    GlobalUpdateOutbox,
     Ideation,
     Refinement,
 )
@@ -114,13 +123,16 @@ async def event_board(db_factory):
 async def clean_tables(db_factory, event_board):
     """Wipe events / executions / queue rows before each test."""
     async with db_factory() as session:
-        await session.execute(
-            DomainEventHandlerExecution.__table__.delete()
-        )
+        await session.execute(DomainEventHandlerExecution.__table__.delete())
         await session.execute(DomainEventRow.__table__.delete())
         await session.execute(
             ConsolidationQueue.__table__.delete().where(
                 ConsolidationQueue.board_id == BOARD_ID
+            )
+        )
+        await session.execute(
+            GlobalUpdateOutbox.__table__.delete().where(
+                GlobalUpdateOutbox.board_id == BOARD_ID
             )
         )
         await session.commit()
@@ -150,7 +162,9 @@ async def test_publish_rolled_back_does_not_persist(db_factory, clean_tables):
 
     async with db_factory() as session:
         events = (await session.execute(select(DomainEventRow))).scalars().all()
-        execs = (await session.execute(select(DomainEventHandlerExecution))).scalars().all()
+        execs = (
+            (await session.execute(select(DomainEventHandlerExecution))).scalars().all()
+        )
         assert events == []
         assert execs == []
 
@@ -177,7 +191,9 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
         assert events[0].event_type == "card.created"
         assert events[0].board_id == BOARD_ID
 
-        execs = (await session.execute(select(DomainEventHandlerExecution))).scalars().all()
+        execs = (
+            (await session.execute(select(DomainEventHandlerExecution))).scalars().all()
+        )
         assert len(execs) == 1
         assert execs[0].handler_name == "ConsolidationEnqueuer"
         assert execs[0].status == "pending"
@@ -186,7 +202,7 @@ async def test_publish_committed_inserts_event_and_execution(db_factory, clean_t
 # --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_thirty_one_events():
+def test_registry_has_thirty_four_events():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
@@ -196,7 +212,8 @@ def test_registry_has_thirty_one_events():
     updated,revoked}) + 1 (bug regression reuse decision audit)
     + 4 Story lifecycle events for working-graph ingestion + 1 durable
     delivery-redrive continuation + 1 dedicated fail-closed full-rebuild tick
-    intent = 31.
+    intent + ideation/refinement lifecycle move events + one generic
+    archive/restore event = 34.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -205,7 +222,7 @@ def test_registry_has_thirty_one_events():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 31
+    assert len(EVENT_TYPES) == 34
     operational_kg_events = {
         "kg.hit_flushed",
         "card.priority_changed",
@@ -233,7 +250,73 @@ def test_high_priority_events_unchanged_by_spec_eaf78891():
     from okto_pulse.core.events.handlers.consolidation_enqueuer import (
         _HIGH_PRIORITY_EVENTS,
     )
+
     assert _HIGH_PRIORITY_EVENTS == {"card.cancelled", "spec.version_bumped"}
+
+
+def test_ideation_moved_reenqueues_ideation_projection():
+    event = IdeationMoved(
+        board_id=BOARD_ID,
+        actor_id=USER_ID,
+        ideation_id="ideation-cancelled",
+        from_status="review",
+        to_status="cancelled",
+    )
+
+    assert ConsolidationEnqueuer()._map_targets(event) == [
+        ("ideation", "ideation-cancelled")
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "archived"),
+    [("cancelled", False), ("draft", True)],
+)
+async def test_consolidation_admission_skips_terminal_source_even_for_old_queue(
+    monkeypatch,
+    status,
+    archived,
+):
+    """A stale create queue cannot rematerialize a later-cancelled source."""
+    from types import SimpleNamespace
+
+    from okto_pulse.core.application.processors import consolidation
+
+    artifact = SimpleNamespace(
+        id="terminal-ideation",
+        board_id=BOARD_ID,
+        status=status,
+        archived=archived,
+    )
+
+    class _Persistence:
+        async def load_artifact(self, context, *, artifact_type, artifact_id):
+            del context, artifact_type, artifact_id
+            return artifact
+
+    def _must_not_extract(*args, **kwargs):
+        raise AssertionError("terminal source reached deterministic extraction")
+
+    monkeypatch.setattr(
+        consolidation,
+        "get_consolidation_persistence_port",
+        lambda: _Persistence(),
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "_run_deterministic_worker",
+        _must_not_extract,
+    )
+    entry = SimpleNamespace(
+        id="old-create-queue",
+        board_id=BOARD_ID,
+        artifact_type="ideation",
+        artifact_id=artifact.id,
+        work_kind="consolidate",
+    )
+
+    assert await consolidation._process_queue_entry(object(), entry) is True
 
 
 # --- AC2: dispatcher drains event → ConsolidationQueue row appears ---
@@ -257,7 +340,9 @@ async def test_dispatcher_drain_creates_consolidation_queue_row(
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -266,17 +351,25 @@ async def test_dispatcher_drain_creates_consolidation_queue_row(
     finally:
         pass
     async with db_factory() as session:
-        execs = (await session.execute(select(DomainEventHandlerExecution))).scalars().all()
+        execs = (
+            (await session.execute(select(DomainEventHandlerExecution))).scalars().all()
+        )
         assert len(execs) == 1
         assert execs[0].status == "done"
         assert execs[0].processed_at is not None
 
-        queue_rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
-                ConsolidationQueue.artifact_id == "card-drain",
+        queue_rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_id == "card-drain",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(queue_rows) == 1
         assert queue_rows[0].artifact_type == "card"
         assert queue_rows[0].source == "event:card.created"
@@ -291,14 +384,16 @@ async def test_dedup_same_entity_only_one_queue_row(db_factory, clean_tables):
     card_id = "card-dedup"
     async with db_factory() as session:
         # Pre-seed a pending ConsolidationQueue row for this entity.
-        session.add(ConsolidationQueue(
-            board_id=BOARD_ID,
-            artifact_type="card",
-            artifact_id=card_id,
-            priority="normal",
-            source="seed",
-            status="pending",
-        ))
+        session.add(
+            ConsolidationQueue(
+                board_id=BOARD_ID,
+                artifact_type="card",
+                artifact_id=card_id,
+                priority="normal",
+                source="seed",
+                status="pending",
+            )
+        )
         await session.commit()
 
     async with db_factory() as session:
@@ -314,7 +409,9 @@ async def test_dedup_same_entity_only_one_queue_row(db_factory, clean_tables):
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -322,12 +419,18 @@ async def test_dedup_same_entity_only_one_queue_row(db_factory, clean_tables):
     finally:
         pass
     async with db_factory() as session:
-        queue_rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
-                ConsolidationQueue.artifact_id == card_id,
+        queue_rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_id == card_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         # Seed + dedup-no-op → still only 1 row
         assert len(queue_rows) == 1
 
@@ -352,7 +455,9 @@ async def test_dedup_allows_distinct_entities(db_factory, clean_tables):
             )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -360,12 +465,18 @@ async def test_dedup_allows_distinct_entities(db_factory, clean_tables):
     finally:
         pass
     async with db_factory() as session:
-        queue_rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
-                ConsolidationQueue.artifact_type == "card",
+        queue_rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_type == "card",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         ids = sorted(r.artifact_id for r in queue_rows)
         assert ids == ["card-a", "card-b"]
 
@@ -387,7 +498,9 @@ async def test_card_cancelled_gets_priority_high(db_factory, clean_tables):
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -395,12 +508,18 @@ async def test_card_cancelled_gets_priority_high(db_factory, clean_tables):
     finally:
         pass
     async with db_factory() as session:
-        queue_rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
-                ConsolidationQueue.artifact_id == "card-cancel",
+        queue_rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_id == "card-cancel",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(queue_rows) == 1
         assert queue_rows[0].priority == "high"
         assert queue_rows[0].source == "event:card.cancelled"
@@ -425,7 +544,9 @@ async def test_spec_version_bumped_gets_priority_high(db_factory, clean_tables):
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -433,12 +554,18 @@ async def test_spec_version_bumped_gets_priority_high(db_factory, clean_tables):
     finally:
         pass
     async with db_factory() as session:
-        queue_rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
-                ConsolidationQueue.artifact_id == "spec-bumped",
+        queue_rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_id == "spec-bumped",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(queue_rows) == 1
         assert queue_rows[0].priority == "high"
 
@@ -466,15 +593,19 @@ async def test_startup_recovery_resets_processing_to_pending(db_factory, clean_t
         )
         session.add(event)
         await session.flush()
-        session.add(DomainEventHandlerExecution(
-            event_id="evt-recover",
-            handler_name="ConsolidationEnqueuer",
-            status="processing",
-            attempts=1,
-        ))
+        session.add(
+            DomainEventHandlerExecution(
+                event_id="evt-recover",
+                handler_name="ConsolidationEnqueuer",
+                status="processing",
+                attempts=1,
+            )
+        )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -483,11 +614,13 @@ async def test_startup_recovery_resets_processing_to_pending(db_factory, clean_t
     finally:
         pass
     async with db_factory() as session:
-        exec_row = (await session.execute(
-            select(DomainEventHandlerExecution).where(
-                DomainEventHandlerExecution.event_id == "evt-recover"
+        exec_row = (
+            await session.execute(
+                select(DomainEventHandlerExecution).where(
+                    DomainEventHandlerExecution.event_id == "evt-recover"
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
         assert exec_row.status == "done"
 
 
@@ -530,15 +663,19 @@ async def test_retry_then_dlq_after_max_attempts(db_factory, clean_tables):
             )
             session.add(event)
             await session.flush()
-            session.add(DomainEventHandlerExecution(
-                event_id="evt-dlq",
-                handler_name="_FailingEventHandler",
-                status="pending",
-                attempts=0,
-            ))
+            session.add(
+                DomainEventHandlerExecution(
+                    event_id="evt-dlq",
+                    handler_name="_FailingEventHandler",
+                    status="pending",
+                    attempts=0,
+                )
+            )
             await session.commit()
 
-        dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+        dispatcher = build_test_event_processor(
+            db_factory, claim_repository=_TestClaimRepository()
+        )
         try:
             await dispatcher.recover_orphans()
             await dispatcher.process_batch()
@@ -554,12 +691,15 @@ async def test_retry_then_dlq_after_max_attempts(db_factory, clean_tables):
                         .values(next_attempt_at=None)
                     )
                     await s.commit()
-                    row = (await s.execute(
-                        select(DomainEventHandlerExecution).where(
-                            DomainEventHandlerExecution.event_id == "evt-dlq",
-                            DomainEventHandlerExecution.handler_name == "_FailingEventHandler",
+                    row = (
+                        await s.execute(
+                            select(DomainEventHandlerExecution).where(
+                                DomainEventHandlerExecution.event_id == "evt-dlq",
+                                DomainEventHandlerExecution.handler_name
+                                == "_FailingEventHandler",
+                            )
                         )
-                    )).scalar_one()
+                    ).scalar_one()
                     if row.status == "dlq":
                         break
                 await dispatcher.process_batch()
@@ -567,12 +707,15 @@ async def test_retry_then_dlq_after_max_attempts(db_factory, clean_tables):
         finally:
             pass
         async with db_factory() as session:
-            exec_row = (await session.execute(
-                select(DomainEventHandlerExecution).where(
-                    DomainEventHandlerExecution.event_id == "evt-dlq",
-                    DomainEventHandlerExecution.handler_name == "_FailingEventHandler",
+            exec_row = (
+                await session.execute(
+                    select(DomainEventHandlerExecution).where(
+                        DomainEventHandlerExecution.event_id == "evt-dlq",
+                        DomainEventHandlerExecution.handler_name
+                        == "_FailingEventHandler",
+                    )
                 )
-            )).scalar_one()
+            ).scalar_one()
             assert exec_row.status == "dlq"
             assert exec_row.attempts >= MAX_ATTEMPTS
             assert exec_row.last_error is not None
@@ -615,7 +758,9 @@ async def test_publish_latency_under_15ms(db_factory, clean_tables):
 
 
 def test_event_processor_does_not_own_asyncio_task(db_factory, clean_tables):
-    processor = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    processor = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
 
     assert not hasattr(processor, "_task")
     assert not hasattr(processor, "start")
@@ -666,7 +811,9 @@ async def test_spec_semantic_changed_enqueues_spec_normal(db_factory, clean_tabl
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -674,12 +821,18 @@ async def test_spec_semantic_changed_enqueues_spec_normal(db_factory, clean_tabl
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
-                ConsolidationQueue.artifact_id == spec_id,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_id == spec_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].artifact_type == "spec"
         assert rows[0].priority == "normal"
@@ -687,7 +840,9 @@ async def test_spec_semantic_changed_enqueues_spec_normal(db_factory, clean_tabl
 
 
 @pytest.mark.asyncio
-async def test_refinement_semantic_changed_enqueues_refinement(db_factory, clean_tables):
+async def test_refinement_semantic_changed_enqueues_refinement(
+    db_factory, clean_tables
+):
     """RefinementSemanticChanged → queue row, artifact_type=refinement."""
     refinement_id = "ref-semantic"
     async with db_factory() as session:
@@ -702,7 +857,9 @@ async def test_refinement_semantic_changed_enqueues_refinement(db_factory, clean
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -710,12 +867,18 @@ async def test_refinement_semantic_changed_enqueues_refinement(db_factory, clean
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
-                ConsolidationQueue.artifact_id == refinement_id,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_id == refinement_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].artifact_type == "refinement"
         assert rows[0].priority == "normal"
@@ -744,7 +907,9 @@ async def test_card_linked_to_spec_enqueues_spec_not_card(db_factory, clean_tabl
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -752,11 +917,17 @@ async def test_card_linked_to_spec_enqueues_spec_not_card(db_factory, clean_tabl
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         # Exactly one row: the SPEC, not the card.
         spec_rows = [r for r in rows if r.artifact_type == "spec"]
         card_rows = [r for r in rows if r.artifact_type == "card"]
@@ -784,7 +955,9 @@ async def test_card_unlinked_from_spec_enqueues_spec(db_factory, clean_tables):
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -792,11 +965,17 @@ async def test_card_unlinked_from_spec_enqueues_spec(db_factory, clean_tables):
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         spec_rows = [r for r in rows if r.artifact_type == "spec"]
         card_rows = [r for r in rows if r.artifact_type == "card"]
         assert len(spec_rows) == 1
@@ -827,7 +1006,9 @@ async def test_semantic_burst_dedup_to_single_queue_row(db_factory, clean_tables
             )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -835,12 +1016,18 @@ async def test_semantic_burst_dedup_to_single_queue_row(db_factory, clean_tables
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
-                ConsolidationQueue.artifact_id == spec_id,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                        ConsolidationQueue.artifact_id == spec_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         # Burst absorbed by dedup → exactly 1 row.
         assert len(rows) == 1
 
@@ -871,7 +1058,9 @@ async def test_story_linked_to_ideation_enqueues_story_and_ideation(
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -879,11 +1068,17 @@ async def test_story_linked_to_ideation_enqueues_story_and_ideation(
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         targets = {(row.artifact_type, row.artifact_id) for row in rows}
         assert targets == {
             ("story", story_id),
@@ -892,31 +1087,39 @@ async def test_story_linked_to_ideation_enqueues_story_and_ideation(
 
 
 @pytest.mark.asyncio
-async def test_refinement_artifact_materializes_lineage_in_worker(db_factory, clean_tables):
+async def test_refinement_artifact_materializes_lineage_in_worker(
+    db_factory, clean_tables
+):
     """artifact_type='refinement' completes the queue cycle without crash.
 
     Refinement is no longer a no-op: it should produce a deterministic
     lineage Entity and clear successfully when the row exists.
     """
-    from okto_pulse.core.application.processors.consolidation import _process_queue_entry
+    from okto_pulse.core.application.processors.consolidation import (
+        _process_queue_entry,
+    )
 
     configure_real_graph_test_kg_registry()
     ideation_id = "idea-ref-lineage"
     refinement_id = "ref-lineage"
     async with db_factory() as session:
-        session.add(Ideation(
-            id=ideation_id,
-            board_id=BOARD_ID,
-            title="Lineage idea",
-            created_by=USER_ID,
-        ))
-        session.add(Refinement(
-            id=refinement_id,
-            board_id=BOARD_ID,
-            ideation_id=ideation_id,
-            title="Lineage refinement",
-            created_by=USER_ID,
-        ))
+        session.add(
+            Ideation(
+                id=ideation_id,
+                board_id=BOARD_ID,
+                title="Lineage idea",
+                created_by=USER_ID,
+            )
+        )
+        session.add(
+            Refinement(
+                id=refinement_id,
+                board_id=BOARD_ID,
+                ideation_id=ideation_id,
+                title="Lineage refinement",
+                created_by=USER_ID,
+            )
+        )
         session.add(
             ConsolidationQueue(
                 board_id=BOARD_ID,
@@ -930,11 +1133,13 @@ async def test_refinement_artifact_materializes_lineage_in_worker(db_factory, cl
         )
         await session.commit()
 
-        entry = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.artifact_id == refinement_id
+        entry = (
+            await session.execute(
+                select(ConsolidationQueue).where(
+                    ConsolidationQueue.artifact_id == refinement_id
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
 
         ok = await _process_queue_entry(session, entry)
         assert ok is True
@@ -974,7 +1179,9 @@ async def test_card_moved_dual_target_enqueues_card_and_spec(db_factory, clean_t
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -982,11 +1189,17 @@ async def test_card_moved_dual_target_enqueues_card_and_spec(db_factory, clean_t
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         card_rows = [r for r in rows if r.artifact_type == "card"]
         spec_rows = [r for r in rows if r.artifact_type == "spec"]
         assert len(card_rows) == 1
@@ -1000,7 +1213,9 @@ async def test_card_moved_dual_target_enqueues_card_and_spec(db_factory, clean_t
 
 
 @pytest.mark.asyncio
-async def test_card_conclusion_added_dual_target_enqueues_card_and_spec(db_factory, clean_tables):
+async def test_card_conclusion_added_dual_target_enqueues_card_and_spec(
+    db_factory, clean_tables
+):
     """TS2: card.conclusion_added with spec_id enqueues BOTH card and parent spec.
 
     Mirrors test_card_moved_dual_target. CardConclusionAdded is the only
@@ -1023,7 +1238,9 @@ async def test_card_conclusion_added_dual_target_enqueues_card_and_spec(db_facto
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1031,11 +1248,17 @@ async def test_card_conclusion_added_dual_target_enqueues_card_and_spec(db_facto
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         card_rows = [r for r in rows if r.artifact_type == "card"]
         spec_rows = [r for r in rows if r.artifact_type == "spec"]
         assert len(card_rows) == 1
@@ -1073,7 +1296,9 @@ async def test_card_moved_burst_dedup_to_single_pair(db_factory, clean_tables):
             )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1081,13 +1306,23 @@ async def test_card_moved_burst_dedup_to_single_pair(db_factory, clean_tables):
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                    )
+                )
             )
-        )).scalars().all()
-        card_rows = [r for r in rows if r.artifact_type == "card" and r.artifact_id == card_id]
-        spec_rows = [r for r in rows if r.artifact_type == "spec" and r.artifact_id == spec_id]
+            .scalars()
+            .all()
+        )
+        card_rows = [
+            r for r in rows if r.artifact_type == "card" and r.artifact_id == card_id
+        ]
+        spec_rows = [
+            r for r in rows if r.artifact_type == "spec" and r.artifact_id == spec_id
+        ]
         assert len(card_rows) == 1
         assert len(spec_rows) == 1
 
@@ -1101,7 +1336,10 @@ async def test_card_moved_orphan_skips_spec_enqueue(db_factory, clean_tables, ca
     spot dangling cards. Card-side enqueue still happens.
     """
     import logging
-    caplog.set_level(logging.DEBUG, logger="okto_pulse.core.events.consolidation_enqueuer")
+
+    caplog.set_level(
+        logging.DEBUG, logger="okto_pulse.core.events.consolidation_enqueuer"
+    )
 
     card_id = "card-orphan"
     async with db_factory() as session:
@@ -1119,7 +1357,9 @@ async def test_card_moved_orphan_skips_spec_enqueue(db_factory, clean_tables, ca
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1127,11 +1367,17 @@ async def test_card_moved_orphan_skips_spec_enqueue(db_factory, clean_tables, ca
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         card_rows = [r for r in rows if r.artifact_type == "card"]
         spec_rows = [r for r in rows if r.artifact_type == "spec"]
         assert len(card_rows) == 1
@@ -1156,7 +1402,10 @@ async def test_card_moved_emits_reenqueue_fired_log(db_factory, clean_tables, ca
     observability tools can parse it.
     """
     import logging
-    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.consolidation_enqueuer")
+
+    caplog.set_level(
+        logging.INFO, logger="okto_pulse.core.events.consolidation_enqueuer"
+    )
 
     card_id = "card-log"
     spec_id = "spec-log"
@@ -1175,17 +1424,16 @@ async def test_card_moved_emits_reenqueue_fired_log(db_factory, clean_tables, ca
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
         await asyncio.sleep(0.5)
     finally:
         pass
-    fired_records = [
-        rec for rec in caplog.records
-        if "reenqueue.fired" in rec.message
-    ]
+    fired_records = [rec for rec in caplog.records if "reenqueue.fired" in rec.message]
     assert fired_records, "expected at least one reenqueue.fired log"
     rec = fired_records[0]
     assert "card.moved" in rec.message
@@ -1194,7 +1442,9 @@ async def test_card_moved_emits_reenqueue_fired_log(db_factory, clean_tables, ca
 
 
 @pytest.mark.asyncio
-async def test_card_conclusion_orphan_skips_spec_enqueue(db_factory, clean_tables, caplog):
+async def test_card_conclusion_orphan_skips_spec_enqueue(
+    db_factory, clean_tables, caplog
+):
     """TS15: card.conclusion_added without spec_id is graceful (mirrors TS4).
 
     Symmetric edge case: an orphan card receiving a conclusion still gets
@@ -1202,7 +1452,10 @@ async def test_card_conclusion_orphan_skips_spec_enqueue(db_factory, clean_table
     log, and no exception propagates.
     """
     import logging
-    caplog.set_level(logging.DEBUG, logger="okto_pulse.core.events.consolidation_enqueuer")
+
+    caplog.set_level(
+        logging.DEBUG, logger="okto_pulse.core.events.consolidation_enqueuer"
+    )
 
     card_id = "card-conclusion-orphan"
     async with db_factory() as session:
@@ -1219,7 +1472,9 @@ async def test_card_conclusion_orphan_skips_spec_enqueue(db_factory, clean_table
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1227,11 +1482,17 @@ async def test_card_conclusion_orphan_skips_spec_enqueue(db_factory, clean_table
     finally:
         pass
     async with db_factory() as session:
-        rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == BOARD_ID,
+        rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == BOARD_ID,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         spec_rows = [r for r in rows if r.artifact_type == "spec"]
         card_rows = [r for r in rows if r.artifact_type == "card"]
         assert spec_rows == []
@@ -1256,6 +1517,7 @@ def test_high_priority_events_unchanged_by_spec_4007e4a3():
     from okto_pulse.core.events.handlers.consolidation_enqueuer import (
         _HIGH_PRIORITY_EVENTS,
     )
+
     assert _HIGH_PRIORITY_EVENTS == {"card.cancelled", "spec.version_bumped"}
     assert "card.moved" not in _HIGH_PRIORITY_EVENTS
     assert "card.conclusion_added" not in _HIGH_PRIORITY_EVENTS
@@ -1285,7 +1547,18 @@ def test_human_curated_column_declared_in_schema():
     # Schema bumped to 0.3.2 (Ideação #5) to mark this column on bootstrap;
     # subsequent additive bumps (e.g. 0.3.3 for last_recomputed_at — Ideação
     # #4) preserve the column, so we assert the floor with set membership.
-    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7", "0.3.8", "0.3.9", "0.3.10"}
+    assert SCHEMA_VERSION in {
+        "0.3.2",
+        "0.3.3",
+        "0.3.4",
+        "0.3.5",
+        "0.3.6",
+        "0.3.7",
+        "0.3.8",
+        "0.3.9",
+        "0.3.10",
+        "0.3.11",
+    }
 
 
 def test_human_curated_migration_helper_exists_and_is_called():
@@ -1305,8 +1578,11 @@ def test_human_curated_migration_helper_exists_and_is_called():
     assert list(sig.parameters) == ["conn", "node_type"]
 
     # Guarantee the helper is invoked from apply_schema for every node type.
-    apply_src = inspect.getsource(schema_mod._apply_schema_to_open_conn) \
-        if hasattr(schema_mod, "_apply_schema_to_open_conn") else inspect.getsource(schema_mod)
+    apply_src = (
+        inspect.getsource(schema_mod._apply_schema_to_open_conn)
+        if hasattr(schema_mod, "_apply_schema_to_open_conn")
+        else inspect.getsource(schema_mod)
+    )
     assert "_ensure_human_curated_columns" in apply_src
 
 
@@ -1448,6 +1724,9 @@ def _seed_kuzu_node(
     card_id: str,
     relevance_score: float,
     revocation_reason: str | None = None,
+    pre_cancellation_relevance_score: float | None = None,
+    *,
+    source_artifact_ref: str | None = None,
 ) -> None:
     """Insert one Kùzu node derived from a card (source_artifact_ref='card:{id}').
 
@@ -1468,15 +1747,17 @@ def _seed_kuzu_node(
             "justification: '', source_artifact_ref: $ref, source_session_id: '', "
             "created_at: timestamp($now), created_by_agent: 'test', "
             "source_confidence: 0.8, relevance_score: $score, "
+            "pre_cancellation_relevance_score: $pre_cancel_score, "
             "query_hits: 0, last_queried_at: NULL, "
             "superseded_by: NULL, superseded_at: NULL, "
             "revocation_reason: $reason, embedding: $emb})",
             {
                 "id": node_id,
                 "title": f"{node_type} for {card_id}",
-                "ref": f"card:{card_id}",
+                "ref": source_artifact_ref or f"card:{card_id}",
                 "now": datetime.now(timezone.utc).isoformat(),
                 "score": relevance_score,
+                "pre_cancel_score": pre_cancellation_relevance_score,
                 "reason": revocation_reason,
                 "emb": [0.0] * 384,
             },
@@ -1487,9 +1768,7 @@ def _seed_kuzu_node(
         _gc.collect()
 
 
-def _fetch_node_fields(
-    board_id: str, node_type: str, node_id: str
-) -> dict:
+def _fetch_node_fields(board_id: str, node_type: str, node_id: str) -> dict:
     """Read a node's mutable fields — returns empty dict if node missing."""
     import gc as _gc
 
@@ -1497,7 +1776,8 @@ def _fetch_node_fields(
     try:
         result = bc.conn.execute(
             f"MATCH (n:{node_type}) WHERE n.id = $id "
-            "RETURN n.relevance_score, n.revocation_reason, n.superseded_at",
+            "RETURN n.relevance_score, n.revocation_reason, n.superseded_at, "
+            "n.pre_cancellation_relevance_score, n.superseded_by",
             {"id": node_id},
         )
         if not result.has_next():
@@ -1508,6 +1788,8 @@ def _fetch_node_fields(
                 "relevance_score": row[0],
                 "revocation_reason": row[1],
                 "superseded_at": row[2],
+                "pre_cancellation_relevance_score": row[3],
+                "superseded_by": row[4],
             }
     finally:
         bc.close()
@@ -1554,7 +1836,9 @@ async def test_decay_applied(db_factory, clean_tables, decay_board, caplog):
     """Decay drops relevance_score by 0.5 and marks source_cancelled."""
     import logging
 
-    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay")
+    caplog.set_level(
+        logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay"
+    )
     card_id = "card-decay-1"
     _seed_kuzu_node(decay_board, "Entity", "node-e1", card_id, 0.8)
     _seed_kuzu_node(decay_board, "Decision", "node-d1", card_id, 0.8)
@@ -1571,24 +1855,48 @@ async def test_decay_applied(db_factory, clean_tables, decay_board, caplog):
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
         await asyncio.sleep(1.0)
     finally:
         pass
+    async with db_factory() as session:
+        lifecycle_outbox = (
+            (
+                await session.execute(
+                    select(GlobalUpdateOutbox).where(
+                        GlobalUpdateOutbox.board_id == decay_board
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert any(
+        row.payload.get("reason") == "source_lifecycle.card.cancelled"
+        for row in lifecycle_outbox
+    )
     entity = _fetch_node_fields(decay_board, "Entity", "node-e1")
     decision = _fetch_node_fields(decay_board, "Decision", "node-d1")
     assert abs(entity["relevance_score"] - 0.3) < 1e-6
     assert abs(decision["relevance_score"] - 0.3) < 1e-6
     assert entity["revocation_reason"] == REVOCATION_REASON
     assert decision["revocation_reason"] == REVOCATION_REASON
+    assert entity["superseded_by"] == REVOCATION_REASON
+    assert decision["superseded_by"] == REVOCATION_REASON
     assert entity["superseded_at"] is not None
     assert decision["superseded_at"] is not None
 
     # At least one log line carries the structured event marker.
-    events = [r for r in caplog.records if getattr(r, "event", "") == "kg.cancellation_decay.applied"]
+    events = [
+        r
+        for r in caplog.records
+        if getattr(r, "event", "") == "kg.cancellation_decay.applied"
+    ]
     assert events, "expected kg.cancellation_decay.applied log"
     # The last `applied` record covers both nodes.
     assert any(r.nodes_affected == 2 for r in events)
@@ -1612,7 +1920,9 @@ async def test_decay_clamp_floor(db_factory, clean_tables, decay_board):
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1622,6 +1932,402 @@ async def test_decay_clamp_floor(db_factory, clean_tables, decay_board):
     node = _fetch_node_fields(decay_board, "Entity", "node-floor")
     assert node["relevance_score"] == 0.0
     assert node["revocation_reason"] == REVOCATION_REASON
+    assert node["pre_cancellation_relevance_score"] == 0.3
+
+
+@pytest.mark.asyncio
+async def test_decay_restore_round_trip_preserves_score_below_penalty(
+    decay_board,
+):
+    """A clamped score is restored bit-for-bit from its persisted snapshot."""
+    card_id = "card-decay-round-trip"
+    original_score = 0.4716
+    _seed_kuzu_node(
+        decay_board,
+        "Entity",
+        "node-round-trip",
+        card_id,
+        original_score,
+    )
+
+    assert await _apply_decay(decay_board, card_id) == 1
+    cancelled = _fetch_node_fields(decay_board, "Entity", "node-round-trip")
+    assert cancelled["relevance_score"] == 0.0
+    assert cancelled["pre_cancellation_relevance_score"] == original_score
+
+    assert await _revert_decay(decay_board, card_id) == 1
+    restored = _fetch_node_fields(decay_board, "Entity", "node-round-trip")
+    assert restored["relevance_score"] == original_score
+    assert restored["pre_cancellation_relevance_score"] is None
+    assert restored["revocation_reason"] is None
+    assert restored["superseded_by"] is None
+    assert restored["superseded_at"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_ref", "projected_refs"),
+    [
+        (
+            "spec:spec-owner-family",
+            (
+                "spec:spec-owner-family",
+                "spec:spec-owner-family:fr:fr-1",
+                "spec:spec-owner-family:decision:decision-1",
+            ),
+        ),
+        (
+            "card:card-owner-family",
+            (
+                "card:card-owner-family",
+                "task:card-owner-family:task-1",
+                "test:card-owner-family:test-1",
+                "bug:card-owner-family:bug-1",
+                "card_relationship_target:card-owner-family:spec-1",
+            ),
+        ),
+    ],
+)
+async def test_source_lifecycle_covers_owner_family_children_and_aliases(
+    decay_board,
+    source_ref,
+    projected_refs,
+):
+    """Cancel/archive decay and restore converge every projection of one owner."""
+
+    owner_type = source_ref.split(":", 1)[0]
+    for index, projected_ref in enumerate(projected_refs):
+        node_type = "Decision" if "decision" in projected_ref else "Entity"
+        _seed_kuzu_node(
+            decay_board,
+            node_type,
+            f"node-owner-family-{owner_type}-{index}",
+            "owner-family",
+            0.9,
+            source_artifact_ref=projected_ref,
+        )
+
+    assert await _apply_source_decay(decay_board, source_ref) == len(projected_refs)
+    for index, projected_ref in enumerate(projected_refs):
+        node_type = "Decision" if "decision" in projected_ref else "Entity"
+        node = _fetch_node_fields(
+            decay_board,
+            node_type,
+            f"node-owner-family-{owner_type}-{index}",
+        )
+        assert abs(node["relevance_score"] - 0.4) < 1e-6
+        assert node["revocation_reason"] == REVOCATION_REASON
+
+    assert await _revert_source_decay(decay_board, source_ref) == len(projected_refs)
+    for index, projected_ref in enumerate(projected_refs):
+        node_type = "Decision" if "decision" in projected_ref else "Entity"
+        node = _fetch_node_fields(
+            decay_board,
+            node_type,
+            f"node-owner-family-{owner_type}-{index}",
+        )
+        assert abs(node["relevance_score"] - 0.9) < 1e-6
+        assert node["revocation_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_archive_restore_keeps_cancelled_source_revoked(
+    decay_board,
+    monkeypatch,
+):
+    """Cancel -> archive -> restore must not reactivate a cancelled source."""
+
+    from types import SimpleNamespace
+
+    from okto_pulse.core.events.handlers import cancellation_decay
+
+    card_id = "card-cancel-archive-restore"
+    _seed_kuzu_node(
+        decay_board,
+        "Entity",
+        "node-cancel-archive-restore",
+        card_id,
+        0.9,
+    )
+    assert await _apply_decay(decay_board, card_id) == 1
+
+    async def _cancelled_record(*args, **kwargs):
+        del args, kwargs
+        return SimpleNamespace(status="cancelled", archived=False)
+
+    monkeypatch.setattr(
+        cancellation_decay,
+        "_load_source_record",
+        _cancelled_record,
+    )
+    monkeypatch.setattr(
+        cancellation_decay,
+        "enqueue_digest_layer_reconciliation",
+        AsyncMock(),
+    )
+    handler = SourceArchiveLifecycleHandler()
+    await handler.handle(
+        ArtifactArchiveChanged(
+            board_id=decay_board,
+            actor_id=USER_ID,
+            artifact_type="card",
+            artifact_id=card_id,
+            archived=True,
+        ),
+        object(),
+    )
+    await handler.handle(
+        ArtifactArchiveChanged(
+            board_id=decay_board,
+            actor_id=USER_ID,
+            artifact_type="card",
+            artifact_id=card_id,
+            archived=False,
+        ),
+        object(),
+    )
+
+    node = _fetch_node_fields(
+        decay_board,
+        "Entity",
+        "node-cancel-archive-restore",
+    )
+    assert abs(node["relevance_score"] - 0.4) < 1e-6
+    assert node["revocation_reason"] == REVOCATION_REASON
+    assert node["superseded_by"] == REVOCATION_REASON
+
+
+@pytest.mark.asyncio
+async def test_cancellation_restore_keeps_archived_source_revoked(
+    decay_board,
+    monkeypatch,
+):
+    """Archive -> cancel -> restore-status must not reactivate an archive."""
+
+    from types import SimpleNamespace
+
+    from okto_pulse.core.events.handlers import cancellation_decay
+
+    card_id = "card-archive-cancel-restore"
+    _seed_kuzu_node(
+        decay_board,
+        "Entity",
+        "node-archive-cancel-restore",
+        card_id,
+        0.9,
+    )
+    assert await _apply_decay(decay_board, card_id) == 1
+
+    async def _archived_record(*args, **kwargs):
+        del args, kwargs
+        return SimpleNamespace(status="in_progress", archived=True)
+
+    monkeypatch.setattr(
+        cancellation_decay,
+        "_load_source_record",
+        _archived_record,
+    )
+    monkeypatch.setattr(
+        cancellation_decay,
+        "enqueue_digest_layer_reconciliation",
+        AsyncMock(),
+    )
+    await CancellationRestoreHandler().handle(
+        CardRestored(
+            board_id=decay_board,
+            actor_id=USER_ID,
+            card_id=card_id,
+            from_status="cancelled",
+            to_status="in_progress",
+        ),
+        object(),
+    )
+
+    node = _fetch_node_fields(
+        decay_board,
+        "Entity",
+        "node-archive-cancel-restore",
+    )
+    assert abs(node["relevance_score"] - 0.4) < 1e-6
+    assert node["revocation_reason"] == REVOCATION_REASON
+    assert node["superseded_by"] == REVOCATION_REASON
+
+
+@pytest.mark.asyncio
+async def test_late_cancel_retry_converges_to_current_restored_state(
+    decay_board,
+    monkeypatch,
+):
+    """A delayed cancel execution cannot re-revoke a source already restored."""
+
+    from types import SimpleNamespace
+
+    from okto_pulse.core.events.handlers import cancellation_decay
+
+    card_id = "card-late-cancel-after-restore"
+    _seed_kuzu_node(
+        decay_board,
+        "Entity",
+        "node-late-cancel-after-restore",
+        card_id,
+        0.9,
+    )
+    assert await _apply_decay(decay_board, card_id) == 1
+
+    async def _active_record(*args, **kwargs):
+        del args, kwargs
+        return SimpleNamespace(status="in_progress", archived=False)
+
+    monkeypatch.setattr(cancellation_decay, "_load_source_record", _active_record)
+    monkeypatch.setattr(
+        cancellation_decay,
+        "enqueue_digest_layer_reconciliation",
+        AsyncMock(),
+    )
+    await CancellationDecayHandler().handle(
+        CardCancelled(
+            board_id=decay_board,
+            actor_id=USER_ID,
+            card_id=card_id,
+            previous_status="in_progress",
+        ),
+        object(),
+    )
+
+    node = _fetch_node_fields(
+        decay_board,
+        "Entity",
+        "node-late-cancel-after-restore",
+    )
+    assert abs(node["relevance_score"] - 0.9) < 1e-6
+    assert node["revocation_reason"] is None
+    assert node["superseded_by"] is None
+
+
+@pytest.mark.asyncio
+async def test_late_restore_retry_converges_to_current_recancelled_state(
+    decay_board,
+    monkeypatch,
+):
+    """A delayed restore execution cannot reactivate a re-cancelled source."""
+
+    from types import SimpleNamespace
+
+    from okto_pulse.core.events.handlers import cancellation_decay
+
+    card_id = "card-late-restore-after-recancel"
+    _seed_kuzu_node(
+        decay_board,
+        "Entity",
+        "node-late-restore-after-recancel",
+        card_id,
+        0.9,
+    )
+    assert await _apply_decay(decay_board, card_id) == 1
+
+    async def _cancelled_record(*args, **kwargs):
+        del args, kwargs
+        return SimpleNamespace(status="cancelled", archived=False)
+
+    monkeypatch.setattr(
+        cancellation_decay,
+        "_load_source_record",
+        _cancelled_record,
+    )
+    monkeypatch.setattr(
+        cancellation_decay,
+        "enqueue_digest_layer_reconciliation",
+        AsyncMock(),
+    )
+    await CancellationRestoreHandler().handle(
+        CardRestored(
+            board_id=decay_board,
+            actor_id=USER_ID,
+            card_id=card_id,
+            from_status="cancelled",
+            to_status="in_progress",
+        ),
+        object(),
+    )
+
+    node = _fetch_node_fields(
+        decay_board,
+        "Entity",
+        "node-late-restore-after-recancel",
+    )
+    assert abs(node["relevance_score"] - 0.4) < 1e-6
+    assert node["revocation_reason"] == REVOCATION_REASON
+    assert node["superseded_by"] == REVOCATION_REASON
+
+
+@pytest.mark.asyncio
+async def test_late_restore_after_hard_delete_stays_revoked(
+    decay_board,
+    monkeypatch,
+):
+    """A missing SQL source is deletion authority, never restore permission."""
+
+    from okto_pulse.core.events.handlers import cancellation_decay
+
+    card_id = "card-late-restore-after-delete"
+    _seed_kuzu_node(
+        decay_board,
+        "Entity",
+        "node-late-restore-after-delete",
+        card_id,
+        0.9,
+    )
+    assert await _apply_decay(decay_board, card_id) == 1
+
+    async def _missing_record(*args, **kwargs):
+        del args, kwargs
+        return None
+
+    monkeypatch.setattr(cancellation_decay, "_load_source_record", _missing_record)
+    monkeypatch.setattr(
+        cancellation_decay,
+        "enqueue_digest_layer_reconciliation",
+        AsyncMock(),
+    )
+    await CancellationRestoreHandler().handle(
+        CardRestored(
+            board_id=decay_board,
+            actor_id=USER_ID,
+            card_id=card_id,
+            from_status="cancelled",
+            to_status="in_progress",
+        ),
+        object(),
+    )
+
+    node = _fetch_node_fields(
+        decay_board,
+        "Entity",
+        "node-late-restore-after-delete",
+    )
+    assert abs(node["relevance_score"] - 0.4) < 1e-6
+    assert node["revocation_reason"] == REVOCATION_REASON
+    assert node["superseded_by"] == REVOCATION_REASON
+
+
+@pytest.mark.asyncio
+async def test_decay_does_not_overwrite_another_revocation_reason(decay_board):
+    """Cancellation must not replace supersedence/deletion ownership markers."""
+    card_id = "card-decay-other-reason"
+    _seed_kuzu_node(
+        decay_board,
+        "Entity",
+        "node-other-reason",
+        card_id,
+        0.7,
+        revocation_reason="source_deleted",
+    )
+
+    assert await _apply_decay(decay_board, card_id) == 0
+    node = _fetch_node_fields(decay_board, "Entity", "node-other-reason")
+    assert node["relevance_score"] == 0.7
+    assert node["revocation_reason"] == "source_deleted"
+    assert node["pre_cancellation_relevance_score"] is None
 
 
 @pytest.mark.asyncio
@@ -1642,13 +2348,16 @@ async def test_decay_idempotent(db_factory, clean_tables, decay_board):
                 session=session,
             )
             await session.commit()
-        dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+        dispatcher = build_test_event_processor(
+            db_factory, claim_repository=_TestClaimRepository()
+        )
         try:
             await dispatcher.recover_orphans()
             await dispatcher.process_batch()
             await asyncio.sleep(0.8)
         finally:
             pass
+
     await _publish_and_drain()
     first = _fetch_node_fields(decay_board, "Entity", "node-idem")
     assert abs(first["relevance_score"] - 0.4) < 1e-6  # 0.9 - 0.5
@@ -1667,15 +2376,40 @@ async def test_decay_idempotent(db_factory, clean_tables, decay_board):
 
 
 @pytest.mark.asyncio
-async def test_decay_reverted(db_factory, clean_tables, decay_board, caplog):
-    """CardRestored adds the penalty back and clears the markers."""
+async def test_decay_reverted(
+    db_factory,
+    clean_tables,
+    decay_board,
+    caplog,
+    monkeypatch,
+):
+    """CardRestored restores an active authoritative source and clears markers."""
     import logging
+    from types import SimpleNamespace
 
-    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay")
+    from okto_pulse.core.events.handlers import cancellation_decay
+
+    async def _active_record(*args, **kwargs):
+        del args, kwargs
+        return SimpleNamespace(status="in_progress", archived=False)
+
+    monkeypatch.setattr(
+        cancellation_decay,
+        "_load_source_record",
+        _active_record,
+    )
+
+    caplog.set_level(
+        logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay"
+    )
     card_id = "card-decay-revert"
     # Start in a decayed state to exercise only the restore leg.
     _seed_kuzu_node(
-        decay_board, "Entity", "node-revert", card_id, 0.3,
+        decay_board,
+        "Entity",
+        "node-revert",
+        card_id,
+        0.3,
         revocation_reason=REVOCATION_REASON,
     )
 
@@ -1692,7 +2426,9 @@ async def test_decay_reverted(db_factory, clean_tables, decay_board, caplog):
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1703,20 +2439,51 @@ async def test_decay_reverted(db_factory, clean_tables, decay_board, caplog):
     assert abs(node["relevance_score"] - 0.8) < 1e-6  # 0.3 + 0.5
     assert node["revocation_reason"] is None
     assert node["superseded_at"] is None
-    events = [r for r in caplog.records if getattr(r, "event", "") == "kg.cancellation_decay.reverted"]
+    events = [
+        r
+        for r in caplog.records
+        if getattr(r, "event", "") == "kg.cancellation_decay.reverted"
+    ]
     assert any(r.nodes_affected == 1 for r in events)
 
 
 @pytest.mark.asyncio
-async def test_restore_selective_by_reason(db_factory, clean_tables, decay_board):
+async def test_restore_selective_by_reason(
+    db_factory,
+    clean_tables,
+    decay_board,
+    monkeypatch,
+):
     """Restore leaves nodes marked with other reasons untouched."""
+    from types import SimpleNamespace
+
+    from okto_pulse.core.events.handlers import cancellation_decay
+
+    async def _active_record(*args, **kwargs):
+        del args, kwargs
+        return SimpleNamespace(status="in_progress", archived=False)
+
+    monkeypatch.setattr(
+        cancellation_decay,
+        "_load_source_record",
+        _active_record,
+    )
+
     card_id = "card-selective"
     _seed_kuzu_node(
-        decay_board, "Entity", "node-match", card_id, 0.3,
+        decay_board,
+        "Entity",
+        "node-match",
+        card_id,
+        0.3,
         revocation_reason=REVOCATION_REASON,
     )
     _seed_kuzu_node(
-        decay_board, "Entity", "node-other", card_id, 0.3,
+        decay_board,
+        "Entity",
+        "node-other",
+        card_id,
+        0.3,
         revocation_reason="auto_superseded",
     )
 
@@ -1733,7 +2500,9 @@ async def test_restore_selective_by_reason(db_factory, clean_tables, decay_board
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1754,7 +2523,9 @@ async def test_decay_zero_nodes(db_factory, clean_tables, decay_board, caplog):
     """Cancelling a card with no derived nodes completes cleanly."""
     import logging
 
-    caplog.set_level(logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay")
+    caplog.set_level(
+        logging.INFO, logger="okto_pulse.core.events.handlers.cancellation_decay"
+    )
     card_id = "card-no-nodes"
 
     async with db_factory() as session:
@@ -1769,7 +2540,9 @@ async def test_decay_zero_nodes(db_factory, clean_tables, decay_board, caplog):
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1777,21 +2550,35 @@ async def test_decay_zero_nodes(db_factory, clean_tables, decay_board, caplog):
     finally:
         pass
     async with db_factory() as session:
-        exec_rows = (await session.execute(
-            select(DomainEventHandlerExecution).where(
-                DomainEventHandlerExecution.handler_name == "CancellationDecayHandler",
+        exec_rows = (
+            (
+                await session.execute(
+                    select(DomainEventHandlerExecution).where(
+                        DomainEventHandlerExecution.handler_name
+                        == "CancellationDecayHandler",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(exec_rows) == 1
         assert exec_rows[0].status == "done"
 
-    events = [r for r in caplog.records if getattr(r, "event", "") == "kg.cancellation_decay.applied"]
+    events = [
+        r
+        for r in caplog.records
+        if getattr(r, "event", "") == "kg.cancellation_decay.applied"
+    ]
     assert any(r.nodes_affected == 0 for r in events)
 
 
 @pytest.mark.asyncio
-async def test_handler_isolation_on_failure(db_factory, clean_tables, decay_board, monkeypatch):
+async def test_handler_isolation_on_failure(
+    db_factory, clean_tables, decay_board, monkeypatch
+):
     """Enqueuer still runs to completion when the decay handler raises."""
+
     async def _boom(self, event, session):  # noqa: ARG001
         raise RuntimeError("decay boom")
 
@@ -1810,7 +2597,9 @@ async def test_handler_isolation_on_failure(db_factory, clean_tables, decay_boar
         )
         await session.commit()
 
-    dispatcher = build_test_event_processor(db_factory, claim_repository=_TestClaimRepository())
+    dispatcher = build_test_event_processor(
+        db_factory, claim_repository=_TestClaimRepository()
+    )
     try:
         await dispatcher.recover_orphans()
         await dispatcher.process_batch()
@@ -1818,21 +2607,34 @@ async def test_handler_isolation_on_failure(db_factory, clean_tables, decay_boar
     finally:
         pass
     async with db_factory() as session:
-        queue_rows = (await session.execute(
-            select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == decay_board,
-                ConsolidationQueue.artifact_id == card_id,
+        queue_rows = (
+            (
+                await session.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == decay_board,
+                        ConsolidationQueue.artifact_id == card_id,
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         # Enqueuer committed its own transaction despite decay's failure.
         assert len(queue_rows) == 1
         assert queue_rows[0].priority == "high"
 
-        exec_rows = (await session.execute(
-            select(DomainEventHandlerExecution).where(
-                DomainEventHandlerExecution.handler_name == "CancellationDecayHandler",
+        exec_rows = (
+            (
+                await session.execute(
+                    select(DomainEventHandlerExecution).where(
+                        DomainEventHandlerExecution.handler_name
+                        == "CancellationDecayHandler",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(exec_rows) == 1
         # Either still retrying ('pending' with backoff) or already DLQ.
         assert exec_rows[0].status in ("pending", "dlq")

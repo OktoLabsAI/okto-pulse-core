@@ -77,6 +77,11 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+from okto_pulse.core.kg.source_maturity import (
+    CANCELLATION_REVOCATION_REASON,
+    CANCELLATION_SCORE_PENALTY,
+)
+
 logger = logging.getLogger("okto_pulse.kg.scoring")
 
 # ---------------------------------------------------------------------------
@@ -148,9 +153,7 @@ def attestation_boost(attestation_count: int | None) -> float:
     count = 1 if attestation_count is None else max(1, int(attestation_count))
     if count <= 1:
         return 1.0
-    return min(
-        1.0 + ATTESTATION_BOOST_RATE * math.log(count), ATTESTATION_BOOST_CAP
-    )
+    return min(1.0 + ATTESTATION_BOOST_RATE * math.log(count), ATTESTATION_BOOST_CAP)
 
 
 def _apply_decay_reorder(
@@ -196,9 +199,7 @@ def _apply_decay_reorder(
         # above an identical uncorroborated one even before the next tick.
         # Rows without the key (legacy callers) get the neutral 1.0.
         boost = attestation_boost(row.get("attestation_count"))
-        decayed_relevance = (
-            original - stale_hit_term + decayed_hit_term
-        ) * boost
+        decayed_relevance = (original - stale_hit_term + decayed_hit_term) * boost
         enriched.append(
             {
                 **row,
@@ -284,6 +285,7 @@ def _resolve_severity_boost(severity: Any) -> float:
         return 0.0
     return SEVERITY_BOOST_BY_LEVEL.get(raw.strip().lower(), 0.0)
 
+
 # Histogram buckets matching the spec (8 upper bounds).
 HISTOGRAM_BUCKETS: tuple[float, ...] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.5)
 
@@ -356,7 +358,11 @@ def _compute_relevance(
         logger.warning(
             "kg.scoring.clamp_applied raw=%.4f source=%.2f degree=%d "
             "decayed_hits=%.2f penalty=%.2f boost=%.2f",
-            raw, source_conf, degree, decayed_hits, contradict_penalty,
+            raw,
+            source_conf,
+            degree,
+            decayed_hits,
+            contradict_penalty,
             priority_boost,
             extra={
                 "event": "kg.scoring.clamp_applied",
@@ -398,7 +404,9 @@ def _decay_hits(
 
     if isinstance(last_queried_at, str):
         try:
-            last_queried_at = datetime.fromisoformat(last_queried_at.replace("Z", "+00:00"))
+            last_queried_at = datetime.fromisoformat(
+                last_queried_at.replace("Z", "+00:00")
+            )
         except ValueError:
             return 0.0
 
@@ -477,13 +485,16 @@ def _fetch_node_inputs(
             f"n.query_hits, n.last_queried_at, n.relevance_score, "
             f"CASE WHEN COUNT(c) = 0 THEN 0.0 "
             f"ELSE SUM(COALESCE(c.confidence, $default_conf)) END, "
-            f"n.priority_boost, n.attestation_count",
+            f"n.priority_boost, n.attestation_count, "
+            f"n.revocation_reason, n.pre_cancellation_relevance_score",
             {"nid": node_id, "default_conf": DEFAULT_CONTRADICT_CONFIDENCE},
         )
     except Exception as exc:
         logger.warning(
             "kg.scoring.fetch_failed node_type=%s node_id=%s err=%s",
-            node_type, node_id, exc,
+            node_type,
+            node_id,
+            exc,
         )
         return None
 
@@ -505,6 +516,10 @@ def _fetch_node_inputs(
     # never fail nor shift.
     raw_attestation = row[8] if len(row) > 8 else None
     attestation_count = int(raw_attestation) if raw_attestation is not None else 1
+    revocation_reason = str(row[9]) if len(row) > 9 and row[9] is not None else None
+    pre_cancellation_score = (
+        float(row[10]) if len(row) > 10 and row[10] is not None else None
+    )
 
     # Spec 20f67c2a (Ideação #5, BR2): cap contradict_penalty at
     # CONTRADICT_PENALTY_CAP so an unbounded sum of incoming :contradicts
@@ -517,7 +532,10 @@ def _fetch_node_inputs(
         logger.warning(
             "kg.scoring.contradict_penalty_capped node_type=%s node_id=%s "
             "raw_sum=%.4f applied_cap=%.2f edge_count_estimate=%d",
-            node_type, node_id, raw_penalty, CONTRADICT_PENALTY_CAP,
+            node_type,
+            node_id,
+            raw_penalty,
+            CONTRADICT_PENALTY_CAP,
             edge_count,
             extra={
                 "event": "kg.scoring.contradict_penalty_capped",
@@ -540,7 +558,19 @@ def _fetch_node_inputs(
         "score_before": score_before,
         "priority_boost": priority_boost,
         "attestation_count": attestation_count,
+        "revocation_reason": revocation_reason,
+        "pre_cancellation_relevance_score": pre_cancellation_score,
     }
+
+
+def _effective_score_for_revocation(
+    base_score: float, revocation_reason: str | None
+) -> float:
+    """Keep the reversible cancellation penalty stable across score writers."""
+
+    if revocation_reason == CANCELLATION_REVOCATION_REASON:
+        return max(CLAMP_MIN, base_score - CANCELLATION_SCORE_PENALTY)
+    return base_score
 
 
 def _persist_score(
@@ -550,6 +580,7 @@ def _persist_score(
     score: float,
     *,
     now_iso: str | None = None,
+    pre_cancellation_score: float | None = None,
 ) -> None:
     """UPDATE the node's relevance_score and last_recomputed_at in graph backend.
 
@@ -562,15 +593,31 @@ def _persist_score(
     if now_iso is None:
         now_iso = datetime.now(timezone.utc).isoformat()
     try:
-        conn.execute(
-            f"MATCH (n:{node_type} {{id: $nid}}) "
-            f"SET n.relevance_score = $score, n.last_recomputed_at = $now",
-            {"nid": node_id, "score": score, "now": now_iso},
-        )
+        if pre_cancellation_score is None:
+            conn.execute(
+                f"MATCH (n:{node_type} {{id: $nid}}) "
+                f"SET n.relevance_score = $score, n.last_recomputed_at = $now",
+                {"nid": node_id, "score": score, "now": now_iso},
+            )
+        else:
+            conn.execute(
+                f"MATCH (n:{node_type} {{id: $nid}}) "
+                f"SET n.relevance_score = $score, "
+                f"n.pre_cancellation_relevance_score = $base_score, "
+                f"n.last_recomputed_at = $now",
+                {
+                    "nid": node_id,
+                    "score": score,
+                    "base_score": pre_cancellation_score,
+                    "now": now_iso,
+                },
+            )
     except Exception as exc:
         logger.error(
             "kg.scoring.persist_failed node_type=%s node_id=%s err=%s",
-            node_type, node_id, exc,
+            node_type,
+            node_id,
+            exc,
         )
 
 
@@ -594,7 +641,7 @@ def _recompute_relevance(
         return None
 
     decayed = _decay_hits(inputs["query_hits"], inputs["last_queried_at"], now=now)
-    new_score = _compute_relevance(
+    base_score = _compute_relevance(
         inputs["source_confidence"],
         inputs["degree"],
         decayed,
@@ -602,17 +649,39 @@ def _recompute_relevance(
         priority_boost=inputs["priority_boost"],
         attestation_count=inputs["attestation_count"],
     )
+    new_score = _effective_score_for_revocation(
+        base_score,
+        inputs["revocation_reason"],
+    )
+    cancelled_base_changed = inputs[
+        "revocation_reason"
+    ] == CANCELLATION_REVOCATION_REASON and (
+        inputs["pre_cancellation_relevance_score"] is None
+        or abs(base_score - inputs["pre_cancellation_relevance_score"]) > 1e-6
+    )
 
-    if abs(new_score - inputs["score_before"]) > 1e-6:
+    if abs(new_score - inputs["score_before"]) > 1e-6 or cancelled_base_changed:
         _persist_score(
-            conn, node_type, node_id, new_score,
+            conn,
+            node_type,
+            node_id,
+            new_score,
             now_iso=(now or datetime.now(timezone.utc)).isoformat(),
+            pre_cancellation_score=(
+                base_score
+                if inputs["revocation_reason"] == CANCELLATION_REVOCATION_REASON
+                else None
+            ),
         )
         logger.info(
             "kg.scoring.recompute board=%s node=%s type=%s "
             "before=%.4f after=%.4f trigger=%s",
-            board_id, node_id, node_type,
-            inputs["score_before"], new_score, trigger,
+            board_id,
+            node_id,
+            node_type,
+            inputs["score_before"],
+            new_score,
+            trigger,
             extra={
                 "event": "kg.scoring.recompute",
                 "board_id": board_id,
@@ -658,8 +727,12 @@ def _recompute_relevance_batch(
         recomputed = 0
         for node_type, node_id in endpoints:
             result = _recompute_relevance(
-                conn, board_id, node_type, node_id,
-                trigger=trigger, now=now,
+                conn,
+                board_id,
+                node_type,
+                node_id,
+                trigger=trigger,
+                now=now,
             )
             if result is not None:
                 recomputed += 1
@@ -670,7 +743,7 @@ def _recompute_relevance_batch(
     # All rows in a single batch share the same now_iso so kg_health can
     # report a coherent "last decay tick" timestamp (BR8 / spec 28583299).
     now_iso = (now or datetime.now(timezone.utc)).isoformat()
-    score_rows_by_type: dict[str, list[dict[str, Any]]] = {}
+    score_rows_by_type: dict[tuple[str, bool], list[dict[str, Any]]] = {}
     observed_scores: list[tuple[str, float]] = []  # (node_type, score) for histogram
 
     for node_type, node_id in endpoints:
@@ -678,9 +751,11 @@ def _recompute_relevance_batch(
         if inputs is None:
             continue
         decayed = _decay_hits(
-            inputs["query_hits"], inputs["last_queried_at"], now=now,
+            inputs["query_hits"],
+            inputs["last_queried_at"],
+            now=now,
         )
-        new_score = _compute_relevance(
+        base_score = _compute_relevance(
             inputs["source_confidence"],
             inputs["degree"],
             decayed,
@@ -688,25 +763,42 @@ def _recompute_relevance_batch(
             priority_boost=inputs["priority_boost"],
             attestation_count=inputs["attestation_count"],
         )
-        score_rows_by_type.setdefault(node_type, []).append(
-            {"id": node_id, "score": new_score, "now": now_iso}
+        cancelled = inputs["revocation_reason"] == CANCELLATION_REVOCATION_REASON
+        new_score = _effective_score_for_revocation(
+            base_score,
+            inputs["revocation_reason"],
+        )
+        score_rows_by_type.setdefault((node_type, cancelled), []).append(
+            {
+                "id": node_id,
+                "score": new_score,
+                "base_score": base_score,
+                "now": now_iso,
+            }
         )
         observed_scores.append((node_type, new_score))
 
     recomputed = 0
-    for node_type, rows in score_rows_by_type.items():
+    for (node_type, cancelled), rows in score_rows_by_type.items():
         try:
+            set_clause = (
+                "SET n.relevance_score = r.score, "
+                "n.pre_cancellation_relevance_score = r.base_score, "
+                "n.last_recomputed_at = r.now"
+                if cancelled
+                else ("SET n.relevance_score = r.score, n.last_recomputed_at = r.now")
+            )
             conn.execute(
-                f"UNWIND $rows AS r "
-                f"MATCH (n:{node_type} {{id: r.id}}) "
-                f"SET n.relevance_score = r.score, n.last_recomputed_at = r.now",
+                f"UNWIND $rows AS r MATCH (n:{node_type} {{id: r.id}}) {set_clause}",
                 {"rows": rows},
             )
             recomputed += len(rows)
         except Exception as exc:
             logger.error(
                 "kg.scoring.batch_persist_failed node_type=%s count=%d err=%s",
-                node_type, len(rows), exc,
+                node_type,
+                len(rows),
+                exc,
             )
 
     for node_type, score in observed_scores:
@@ -715,7 +807,10 @@ def _recompute_relevance_batch(
     duration_ms = (datetime.now(timezone.utc) - started).total_seconds() * 1000
     logger.info(
         "kg.recompute.batch board=%s endpoints=%d recomputed=%d duration_ms=%.1f",
-        board_id, len(endpoints), recomputed, duration_ms,
+        board_id,
+        len(endpoints),
+        recomputed,
+        duration_ms,
         extra={
             "event": "kg.recompute.batch",
             "board_id": board_id,

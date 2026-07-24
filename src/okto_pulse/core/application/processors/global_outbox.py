@@ -377,9 +377,9 @@ class GlobalOutboxProcessor:
 
         def _acquire_writer_lease() -> Any:
             lease = GlobalDiscoveryWriterLease.acquire(
-                    operation="global_outbox_apply",
-                    ttl_seconds=self._writer_lease_ttl_seconds,
-                )
+                operation="global_outbox_apply",
+                ttl_seconds=self._writer_lease_ttl_seconds,
+            )
             # Publish from the native thread before returning. If the awaiting
             # coroutine is cancelled, ``_run_graph_io`` drains this callable
             # and then re-raises cancellation; the caller can still release
@@ -559,8 +559,7 @@ class GlobalOutboxProcessor:
                             outcome=DeliveryAttemptOutcome.DELIVERY_DEBT,
                             occurred_at=self._now(),
                             error=(
-                                event.last_error
-                                or "governed_delivery_attempt_terminal"
+                                event.last_error or "governed_delivery_attempt_terminal"
                             ),
                         )
                     )
@@ -734,6 +733,18 @@ class GlobalOutboxProcessor:
                     "outbox.read_board_failed: could not enumerate source graph "
                     "digest identities"
                 )
+            revoked_source_ids = await self._run_graph_io(
+                lambda: self._read_board_revoked_digestable_node_ids(board_id)
+            )
+            if revoked_source_ids is None:
+                raise RuntimeError(
+                    "outbox.read_board_failed: could not enumerate revoked "
+                    "source graph digest identities"
+                )
+            # Defensive compatibility with test/legacy executors that do not
+            # project lifecycle predicates. A physical source cannot be both
+            # active and revoked; active publication wins only for overlap.
+            revoked_source_ids.difference_update(source_types_by_id)
             await self._run_graph_io(
                 lambda: gconn.upsert_board_summary(
                     board_id=board_id,
@@ -750,10 +761,18 @@ class GlobalOutboxProcessor:
                 )
             )
             await self._run_graph_io(
+                lambda: self._set_board_digest_source_visibility(
+                    gconn,
+                    board_id,
+                    active_source_ids=set(source_types_by_id),
+                    revoked_source_ids=revoked_source_ids,
+                )
+            )
+            await self._run_graph_io(
                 lambda: self._prune_stale_board_digests(
                     gconn,
                     board_id,
-                    set(source_types_by_id),
+                    set(source_types_by_id) | revoked_source_ids,
                 )
             )
 
@@ -941,7 +960,10 @@ class GlobalOutboxProcessor:
                     result = cypher.execute_read_only(
                         board_id,
                         f"MATCH (n:{ntype}) "
-                        "WHERE n.embedding IS NOT NULL AND n.id > $after_id "
+                        "WHERE n.embedding IS NOT NULL "
+                        "  AND n.revocation_reason IS NULL "
+                        "  AND n.superseded_by IS NULL "
+                        "  AND n.id > $after_id "
                         "RETURN n.id, count(n) ORDER BY n.id "
                         f"LIMIT {BOARD_SOURCE_INVENTORY_PAGE_SIZE}",
                         {"after_id": after_id},
@@ -1010,6 +1032,95 @@ class GlobalOutboxProcessor:
         }
 
     @staticmethod
+    def _read_board_revoked_digestable_node_ids(
+        board_id: str,
+    ) -> set[str] | None:
+        """Return embedded source identities retained under lifecycle revocation.
+
+        Revoked rows remain in the board graph so cancellation/archive can be
+        reversed. They must therefore remain distinct from hard-deleted rows:
+        Global Discovery hides their digest reversibly instead of pruning it
+        (and losing MENTIONS/DERIVES relationships).
+        """
+
+        types_by_id: dict[str, set[str]] = {}
+        try:
+            cypher = get_kg_registry().cypher_executor
+            for ntype in DIGESTED_NODE_TYPES:
+                after_id = ""
+                while True:
+                    result = cypher.execute_read_only(
+                        board_id,
+                        f"MATCH (n:{ntype}) "
+                        "WHERE n.embedding IS NOT NULL "
+                        "  AND (n.revocation_reason IS NOT NULL "
+                        "       OR n.superseded_by IS NOT NULL) "
+                        "  AND n.id > $after_id "
+                        "RETURN n.id, count(n) ORDER BY n.id "
+                        f"LIMIT {BOARD_SOURCE_INVENTORY_PAGE_SIZE}",
+                        {"after_id": after_id},
+                        max_rows=BOARD_SOURCE_INVENTORY_PAGE_SIZE,
+                    )
+                    rows = list(result.get("rows", []))
+                    page_ids: list[str] = []
+                    for row in rows:
+                        node_id = str(row[0] or "") if row else ""
+                        physical_count = int(row[1] or 0) if len(row) > 1 else 0
+                        if (
+                            not node_id
+                            or node_id <= after_id
+                            or (page_ids and node_id <= page_ids[-1])
+                        ):
+                            raise _SourceInventoryPaginationError(
+                                "outbox.revoked_source_inventory_pagination_stalled: "
+                                f"board={board_id} node_type={ntype} "
+                                f"after_id={after_id!r}"
+                            )
+                        if physical_count != 1:
+                            raise _SourceIdentityIntegrityError(
+                                "outbox.revoked_source_identity_duplicate: "
+                                f"board={board_id} identity={node_id} "
+                                f"node_type={ntype} physical_rows={physical_count}"
+                            )
+                        page_ids.append(node_id)
+                        types_by_id.setdefault(node_id, set()).add(ntype)
+                    if len(rows) < BOARD_SOURCE_INVENTORY_PAGE_SIZE:
+                        break
+                    if not page_ids:
+                        raise _SourceInventoryPaginationError(
+                            "outbox.revoked_source_inventory_pagination_stalled: "
+                            f"board={board_id} node_type={ntype} empty_page"
+                        )
+                    after_id = page_ids[-1]
+        except (_SourceInventoryPaginationError, _SourceIdentityIntegrityError):
+            raise
+        except Exception as exc:
+            logger.warning(
+                "outbox.revoked_source_inventory_read_failed board=%s err=%s",
+                board_id,
+                exc,
+                extra={
+                    "event": "outbox.revoked_source_inventory_read_failed",
+                    "board_id": board_id,
+                },
+            )
+            return None
+
+        ambiguous = {
+            node_id: sorted(node_types)
+            for node_id, node_types in types_by_id.items()
+            if len(node_types) != 1
+        }
+        if ambiguous:
+            sample_id = sorted(ambiguous)[0]
+            raise RuntimeError(
+                "outbox.revoked_source_identity_ambiguous: "
+                f"board={board_id} identity={sample_id} "
+                f"node_types={ambiguous[sample_id]}"
+            )
+        return set(types_by_id)
+
+    @staticmethod
     def _assert_source_inventory_unchanged(
         board_id: str,
         expected_types_by_id: dict[str, str],
@@ -1049,7 +1160,7 @@ class GlobalOutboxProcessor:
     def _prune_stale_board_digests(
         gconn,
         board_id: str,
-        current_node_ids: set[str],
+        retained_node_ids: set[str],
     ) -> int:
         """Delete DecisionDigest rows whose source node vanished from the board."""
 
@@ -1065,7 +1176,7 @@ class GlobalOutboxProcessor:
             original_node_id = row[1]
             if not original_node_id:
                 malformed_row_count += 1
-            elif str(original_node_id) not in current_node_ids:
+            elif str(original_node_id) not in retained_node_ids:
                 stale_original_node_ids.add(str(original_node_id))
                 stale_row_count += 1
 
@@ -1075,7 +1186,12 @@ class GlobalOutboxProcessor:
             # delete. Stale cache rows with clustering-derived relationships
             # must fail closed instead of losing MENTIONS/DERIVES semantics via
             # an unguarded DETACH DELETE.
-            pruned_row_count = gconn.delete_decision_digests_guarded(
+            lifecycle_delete = getattr(
+                gconn,
+                "delete_decision_digests_for_absent_sources",
+                gconn.delete_decision_digests_guarded,
+            )
+            pruned_row_count = lifecycle_delete(
                 board_id=board_id,
                 original_node_ids=tuple(sorted(stale_original_node_ids)),
                 include_malformed=bool(malformed_row_count),
@@ -1104,6 +1220,39 @@ class GlobalOutboxProcessor:
                 },
             )
         return pruned_row_count
+
+    @staticmethod
+    def _set_board_digest_source_visibility(
+        gconn,
+        board_id: str,
+        *,
+        active_source_ids: set[str],
+        revoked_source_ids: set[str],
+    ) -> int:
+        """Converge reversible Global visibility without dropping relations."""
+
+        changed = 0
+        for source_ids, revoked in (
+            (active_source_ids, False),
+            (revoked_source_ids, True),
+        ):
+            if not source_ids:
+                continue
+            result = gconn.execute(
+                "MATCH (d:DecisionDigest) "
+                "WHERE d.board_id = $bid "
+                "AND d.original_node_id IN $ids "
+                "SET d.source_revoked = $revoked "
+                "RETURN count(d)",
+                {
+                    "bid": board_id,
+                    "ids": sorted(source_ids),
+                    "revoked": revoked,
+                },
+            )
+            if result.rows:
+                changed += int(result.rows[0][0] or 0)
+        return changed
 
     def _flush_global_discovery_storage_after_batch(self) -> None:
         """Ask the edition runtime to flush/probe the global discovery store.
@@ -1138,6 +1287,8 @@ class GlobalOutboxProcessor:
                 # diagnostic + counter.
                 cypher = (
                     f"MATCH (n:{ntype}) WHERE n.id IN $ids "
+                    f"AND n.revocation_reason IS NULL "
+                    f"AND n.superseded_by IS NULL "
                     f"RETURN n.id, n.title, n.embedding, "
                     f"{layer_label_projection('n')}"
                 )
@@ -1695,14 +1846,15 @@ class GlobalOutboxProcessor:
         return corrected
 
     @staticmethod
-    def _read_global_digest_rows(gconn, board_id: str) -> list[dict[str, str]]:
+    def _read_global_digest_rows(gconn, board_id: str) -> list[dict[str, Any]]:
         res = gconn.execute(
             "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
             "RETURN d.id, d.original_node_id, d.node_type, "
-            "coalesce(d.graph_layer, 'legacy_unknown')",
+            "coalesce(d.graph_layer, 'legacy_unknown'), "
+            "coalesce(d.source_revoked, false)",
             {"bid": board_id},
         )
-        rows: list[dict[str, str]] = []
+        rows: list[dict[str, Any]] = []
         for row in res.rows:
             rows.append(
                 {
@@ -1710,6 +1862,7 @@ class GlobalOutboxProcessor:
                     "original_node_id": str(row[1] or ""),
                     "node_type": str(row[2] or ""),
                     "current_layer": str(row[3] or "legacy_unknown"),
+                    "source_revoked": bool(row[4]) if len(row) > 4 else False,
                 }
             )
         return rows
@@ -1777,7 +1930,7 @@ class GlobalOutboxProcessor:
         expected_by_identity: dict[str, tuple[str, str]],
     ) -> None:
         rows = self._read_global_digest_rows(gconn, board_id)
-        rows_by_identity: dict[str, list[dict[str, str]]] = {}
+        rows_by_identity: dict[str, list[dict[str, Any]]] = {}
         missing_identity_rows = 0
         for row in rows:
             oid = row["original_node_id"]
@@ -1793,7 +1946,12 @@ class GlobalOutboxProcessor:
             if len(identity_rows) != 1:
                 violations.append(f"{oid}:physical_rows={len(identity_rows)}")
 
-        unexpected = sorted(set(rows_by_identity) - set(expected_by_identity))
+        unexpected = sorted(
+            oid
+            for oid, identity_rows in rows_by_identity.items()
+            if oid not in expected_by_identity
+            and not all(bool(row["source_revoked"]) for row in identity_rows)
+        )
         for oid in unexpected[:5]:
             violations.append(f"{oid}:unexpected_global_identity")
 
@@ -1807,6 +1965,8 @@ class GlobalOutboxProcessor:
                 continue
             row = identity_rows[0]
             stable_digest_id = f"dd_{board_id[:8]}_{oid}"
+            if row["source_revoked"]:
+                violations.append(f"{oid}:unexpected_source_revoked")
             if row["digest_id"] != stable_digest_id:
                 violations.append(f"{oid}:unstable_digest_id")
             if row["node_type"] != expected_type:

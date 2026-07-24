@@ -7,6 +7,7 @@ No Kuzu dependency.
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.graph_lifecycle import (
@@ -17,6 +18,7 @@ from okto_pulse.core.kg.interfaces.graph_lifecycle import (
 )
 from okto_pulse.core.kg.interfaces.graph_runtime_store import (
     GraphPurgeResult,
+    GraphRuntimeObservationState,
     GraphRuntimeState,
     GraphStorageFootprint,
 )
@@ -61,7 +63,11 @@ class InMemoryGraphStore:
         nodes[node_id] = node
 
     def create_edge(
-        self, board_id: str, edge_type: str, from_id: str, to_id: str,
+        self,
+        board_id: str,
+        edge_type: str,
+        from_id: str,
+        to_id: str,
         attrs: dict[str, Any] | None = None,
         *,
         from_type: str | None = None,
@@ -154,8 +160,7 @@ class InMemoryGraphStore:
     def delete_nodes_by_session(self, board_id: str, session_id: str) -> int:
         nodes = self._board_nodes(board_id)
         to_delete = [
-            nid for nid, n in nodes.items()
-            if n.get("source_session_id") == session_id
+            nid for nid, n in nodes.items() if n.get("source_session_id") == session_id
         ]
         for nid in to_delete:
             del nodes[nid]
@@ -185,12 +190,18 @@ class InMemoryGraphStore:
                     score = n.get("relevance_score", 0.5)
                     if score < filters.min_relevance:
                         continue
-                    results.append([
-                        n["id"], n.get("title"), n.get("content"),
-                        n.get("created_at"), n.get("source_confidence"),
-                        score, n.get("superseded_by"),
-                    ])
-        return results[:filters.max_rows]
+                    results.append(
+                        [
+                            n["id"],
+                            n.get("title"),
+                            n.get("content"),
+                            n.get("created_at"),
+                            n.get("source_confidence"),
+                            score,
+                            n.get("superseded_by"),
+                        ]
+                    )
+        return results[: filters.max_rows]
 
     def find_by_topic_semantic(
         self,
@@ -215,16 +226,18 @@ class InMemoryGraphStore:
                 continue
             if float(node.get("relevance_score") or 0.0) < filters.min_relevance:
                 continue
-            results.append([
-                node.get("id"),
-                node.get("title"),
-                node.get("content"),
-                node.get("created_at"),
-                node.get("source_confidence"),
-                node.get("relevance_score"),
-                node.get("superseded_by"),
-            ])
-        return results[:filters.max_rows]
+            results.append(
+                [
+                    node.get("id"),
+                    node.get("title"),
+                    node.get("content"),
+                    node.get("created_at"),
+                    node.get("source_confidence"),
+                    node.get("relevance_score"),
+                    node.get("superseded_by"),
+                ]
+            )
+        return results[: filters.max_rows]
 
     def find_by_artifact(
         self, board_id: str, artifact_id: str, filters: QueryFilters
@@ -233,10 +246,19 @@ class InMemoryGraphStore:
         results = []
         for n in nodes.values():
             if n.get("source_artifact_ref") == artifact_id:
-                results.append([
-                    n["id"], n.get("title"), None, None, None, None, None, None,
-                ])
-        return results[:filters.max_rows]
+                results.append(
+                    [
+                        n["id"],
+                        n.get("title"),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ]
+                )
+        return results[: filters.max_rows]
 
     def find_by_artifact_filtered(
         self,
@@ -252,17 +274,25 @@ class InMemoryGraphStore:
         return self.find_by_artifact(board_id, artifact_id, filters)
 
     def traverse_supersedence(
-        self, board_id: str, decision_id: str, max_depth: int = 10,
+        self,
+        board_id: str,
+        decision_id: str,
+        max_depth: int = 10,
         node_type: str = "Decision",
     ) -> list[list]:
         nodes = self._board_nodes(board_id)
         node = nodes.get(decision_id)
         if node is None:
             return []
-        return [[
-            node["id"], node.get("title"), node.get("created_at"),
-            node.get("superseded_by"), None,
-        ]]
+        return [
+            [
+                node["id"],
+                node.get("title"),
+                node.get("created_at"),
+                node.get("superseded_by"),
+                None,
+            ]
+        ]
 
     def find_contradictions(
         self, board_id: str, node_id: str | None, limit: int
@@ -277,16 +307,24 @@ class InMemoryGraphStore:
                 continue
             na = nodes.get(e["_from"], {})
             nb = nodes.get(e["_to"], {})
-            results.append([
-                e["_from"], na.get("title"),
-                e["_to"], nb.get("title"),
-                e.get("confidence", 0.5),
-            ])
+            results.append(
+                [
+                    e["_from"],
+                    na.get("title"),
+                    e["_to"],
+                    nb.get("title"),
+                    e.get("confidence", 0.5),
+                ]
+            )
         return results[:limit]
 
     def vector_search(
-        self, board_id: str, node_type: str, query_vec: list[float],
-        top_k: int, min_similarity: float,
+        self,
+        board_id: str,
+        node_type: str,
+        query_vec: list[float],
+        top_k: int,
+        min_similarity: float,
         *,
         include_superseded: bool = False,
         graph_layer: str = "all",
@@ -307,13 +345,15 @@ class InMemoryGraphStore:
                 continue
             sim = _cosine_similarity(query_vec, emb)
             if sim >= min_similarity:
-                results.append({
-                    "node_id": n["id"],
-                    "node_type": node_type,
-                    "title": n.get("title", ""),
-                    "source_artifact_ref": n.get("source_artifact_ref"),
-                    "similarity": sim,
-                })
+                results.append(
+                    {
+                        "node_id": n["id"],
+                        "node_type": node_type,
+                        "title": n.get("title", ""),
+                        "source_artifact_ref": n.get("source_artifact_ref"),
+                        "similarity": sim,
+                    }
+                )
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results[:top_k]
 
@@ -324,11 +364,16 @@ class InMemoryGraphStore:
         node = nodes.get(constraint_id)
         if node is None:
             return [], [], []
-        main = [[
-            node["id"], node.get("title"), node.get("content"),
-            node.get("justification"), node.get("source_artifact_ref"),
-            node.get("source_confidence"),
-        ]]
+        main = [
+            [
+                node["id"],
+                node.get("title"),
+                node.get("content"),
+                node.get("justification"),
+                node.get("source_artifact_ref"),
+                node.get("source_confidence"),
+            ]
+        ]
         return main, [], []
 
     def get_alternatives(
@@ -340,11 +385,16 @@ class InMemoryGraphStore:
         for e in edges:
             if e.get("_type") == "relates_to" and e["_from"] == decision_id:
                 alt = nodes.get(e["_to"], {})
-                results.append([
-                    alt.get("id"), alt.get("title"), alt.get("content"),
-                    alt.get("justification"), alt.get("source_confidence"),
-                    alt.get("source_artifact_ref"),
-                ])
+                results.append(
+                    [
+                        alt.get("id"),
+                        alt.get("title"),
+                        alt.get("content"),
+                        alt.get("justification"),
+                        alt.get("source_confidence"),
+                        alt.get("source_artifact_ref"),
+                    ]
+                )
         return results[:limit]
 
     def get_learnings_for_area(
@@ -363,9 +413,13 @@ class InMemoryGraphStore:
             "stable_node_types": [{"name": nt, "stable": True} for nt in NODE_TYPES],
             "stable_rel_types": stable_rel_type_entries(),
             "vector_indexes": [
-                {"node_type": nt, "attribute": "embedding",
-                 "dimension": 384, "similarity_metric": "cosine",
-                 "index_name": vector_index_name(nt)}
+                {
+                    "node_type": nt,
+                    "attribute": "embedding",
+                    "dimension": 384,
+                    "similarity_metric": "cosine",
+                    "index_name": vector_index_name(nt),
+                }
                 for nt in VECTOR_INDEX_TYPES
             ],
         }
@@ -590,16 +644,25 @@ class InMemoryGraphRuntimeStore:
 
     def graph_state(self, board_id: str) -> GraphRuntimeState:
         bootstrapped = board_id in self.store._bootstrapped
-        return GraphRuntimeState(
+        return GraphRuntimeState.from_observation(
             board_id=board_id,
             storage_ref=StorageRef(f"board:{board_id}", "memory_graph"),
-            exists=bootstrapped,
-            status="healthy" if bootstrapped else "absent",
+            state=(
+                GraphRuntimeObservationState.PRESENT_READABLE_CANDIDATE
+                if bootstrapped
+                else GraphRuntimeObservationState.CONFIRMED_ABSENT
+            ),
+            generation=None,
+            reason_code=(
+                "memory_board_graph_present"
+                if bootstrapped
+                else "memory_board_graph_confirmed_absent"
+            ),
+            observed_at=datetime.now(timezone.utc),
             backend="logical_memory",
             schema_version=SCHEMA_VERSION if bootstrapped else None,
             locked=False,
             quarantined=False,
-            unavailable_reason=None if bootstrapped else "graph_absent",
             details={"source": "in_memory_runtime"},
         )
 
@@ -620,6 +683,9 @@ class InMemoryGraphRuntimeStore:
             backend="logical_memory",
             error_code=None,
         )
+
+    def erase_board_graph(self, board_id: str, *, reason: str) -> GraphPurgeResult:
+        return self.purge_board_graph(board_id, reason=reason)
 
     def footprint(self, board_id: str) -> GraphStorageFootprint:
         exists = self.exists(board_id)
@@ -682,7 +748,9 @@ class InMemoryGraphSchemaManager:
             valid=current == SCHEMA_VERSION,
             current_version=current,
             expected_version=SCHEMA_VERSION,
-            issues=() if current == SCHEMA_VERSION else ("no schema version recorded for board",),
+            issues=()
+            if current == SCHEMA_VERSION
+            else ("no schema version recorded for board",),
         )
 
 

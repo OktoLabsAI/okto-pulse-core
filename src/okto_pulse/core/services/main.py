@@ -7,7 +7,7 @@ import logging
 import secrets
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections.abc import Mapping
@@ -172,7 +172,9 @@ from okto_pulse.core.services.governance_observability import (
 from okto_pulse.core.domain.knowledge_fingerprint import (
     knowledge_content_sha256,
 )
-from okto_pulse.core.services.reference_resolution import compile_ideation_parent_context
+from okto_pulse.core.services.reference_resolution import (
+    compile_ideation_parent_context,
+)
 from okto_pulse.core.services.resource_gate import ResourceGateService
 from okto_pulse.core.services.legacy_knowledge_write_guard import (
     require_legacy_card_knowledge_write_allowed,
@@ -186,7 +188,9 @@ from okto_pulse.core.services.sprint_scope import (
     completion_blockers,
 )
 from okto_pulse.core.services.spec_entity_canonicalization import canonicalize_fr_ac
-from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
+from okto_pulse.core.services.spec_resource_propagation import (
+    SpecResourcePropagationService,
+)
 from okto_pulse.core.services.test_scenario_lifecycle import (
     GATED_STATUSES,
     StatusNotMutableError,
@@ -246,9 +250,7 @@ def _require_trusted_test_evidence_v2_write(
         evidence=evidence,
     )
     if not verification.verified:
-        raise ValueError(
-            "evidence_unverified: " + ", ".join(verification.reason_codes)
-        )
+        raise ValueError("evidence_unverified: " + ", ".join(verification.reason_codes))
 
 
 def scenario_has_authenticated_required_evidence(
@@ -299,6 +301,7 @@ def scenario_has_authenticated_required_evidence(
         return False
     return verification.verified
 
+
 # Preserve the service API's aggregate names without coupling annotations to
 # Community persistence models.
 AmendmentHotfixRevision = ApplicationRecord
@@ -318,6 +321,7 @@ Spec = ApplicationRecord
 Sprint = ApplicationRecord
 SprintHistory = ApplicationRecord
 SprintQAItem = ApplicationRecord
+
 
 def _apf(
     field: str,
@@ -521,6 +525,7 @@ class GovernedArtifactDeletionReceipt:
     generation: int
     reconcile_intent_id: str
     delivery_key: str
+    attachment_deletions: tuple["AttachmentDeletionReceipt", ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -624,7 +629,9 @@ async def _application_commit(context: Any) -> None:
     await get_application_persistence_port().commit(context)
 
 
-def _scope_actor_id(user_id: str | None, query_scope: QueryScope | None = None) -> str | None:
+def _scope_actor_id(
+    user_id: str | None, query_scope: QueryScope | None = None
+) -> str | None:
     return query_scope.actor_id if query_scope is not None else user_id
 
 
@@ -655,7 +662,11 @@ def _board_scope_clauses(
     require_ownership: bool = True,
 ) -> list[ApplicationFilter] | None:
     if query_scope is not None:
-        if query_scope.target_board_id and board_id and query_scope.target_board_id != board_id:
+        if (
+            query_scope.target_board_id
+            and board_id
+            and query_scope.target_board_id != board_id
+        ):
             return None
         if board_id is not None and (
             query_scope.allowed_board_ids is not None or query_scope.allow_all_boards
@@ -704,6 +715,7 @@ def _board_scope_select(
     if clauses is None:
         return None
     return ApplicationQuery(entity="board", filters=tuple(clauses), limit=1)
+
 
 CARD_RESOURCE_READ_ONLY_MESSAGE = (
     "Card resources are read-only governed snapshots. Copy Knowledge Base, "
@@ -818,6 +830,7 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
         map_legacy_permissions,
         resolve_permissions,
     )
+
     agents = await _application_list(
         db,
         "agent",
@@ -925,9 +938,7 @@ async def _attach_active_refinement_counts(
         r.attach("active_refinement_count", counts.get(r.id, 0))
 
 
-async def _attach_active_spec_counts(
-    db: Any, rows: list[ApplicationRecord]
-) -> None:
+async def _attach_active_spec_counts(db: Any, rows: list[ApplicationRecord]) -> None:
     """Attach active child-spec counts for refinement summary projection."""
     if not rows:
         return
@@ -1027,7 +1038,7 @@ async def _authorize_qa_answer_or_raise(
                     actor_id=user_id,
                     actor_name=actor_name,
                     details=details,
-                )
+                ),
             )
             emit_governance_metric(details, raise_on_violation=False)
             await _application_flush(db)
@@ -1056,7 +1067,7 @@ async def _record_critical_context_decision(
             actor_id=decision.actor_id,
             actor_name=resolved_name,
             details=decision.audit_details(),
-        )
+        ),
     )
     emit_governance_metric(decision.metric_labels(), raise_on_violation=False)
     emit_governance_metric(
@@ -1241,8 +1252,7 @@ def _evaluate_cognitive_closeout_or_raise(
     else:
         detail = "by active cognitive consolidation items"
     raise ValueError(
-        f"{reason}: {target_label} done transition blocked {detail} "
-        f"({blocking_count})"
+        f"{reason}: {target_label} done transition blocked {detail} ({blocking_count})"
     )
 
 
@@ -1312,7 +1322,9 @@ async def _evaluate_cognitive_readiness_or_raise(
 
     try:
         refs = resolve_cognitive_source_refs(
-            entity_type=entity_type, entity=entity, entity_id=entity_id,
+            entity_type=entity_type,
+            entity=entity,
+            entity_id=entity_id,
         ).source_refs
     except CognitiveCloseoutGateError as exc:
         # An entity type that is genuinely NOT eligible for cognitive closeout is
@@ -1361,9 +1373,7 @@ async def _evaluate_cognitive_readiness_or_raise(
             )
 
 
-async def _resolve_closeout_graph_state(
-    board_id: str, db: Any
-) -> str | None:
+async def _resolve_closeout_graph_state(board_id: str, db: Any) -> str | None:
     """Resolve the board's current ``graph_state`` for the cognitive closeout
     gate (F16). Runs in the ASYNC caller where an ``Any`` is in scope
     and threads the result into the SYNC ``gate.evaluate(...)`` so the gate stays
@@ -1398,7 +1408,12 @@ class SpecLockedError(Exception):
     which atomically clears current_validation_id but preserves validations history.
     """
 
-    def __init__(self, spec_id: str, current_validation_id: str | None = None, message: str | None = None):
+    def __init__(
+        self,
+        spec_id: str,
+        current_validation_id: str | None = None,
+        message: str | None = None,
+    ):
         self.spec_id = spec_id
         self.current_validation_id = current_validation_id
         self.message = message or (
@@ -1485,14 +1500,16 @@ def _legacy_filter_mockups(
     """Filter and copy mockups, adding origin_id for traceability."""
     if not mockups:
         return []
-    source = mockups if mockup_ids is None else [m for m in mockups if m.get("id") in mockup_ids]
+    source = (
+        mockups
+        if mockup_ids is None
+        else [m for m in mockups if m.get("id") in mockup_ids]
+    )
     copied = []
     for m in source:
         new_m = dict(m)
         new_m["origin_id"] = (
-            m.get("origin_id")
-            or m.get("source_mockup_id")
-            or m.get("id")
+            m.get("origin_id") or m.get("source_mockup_id") or m.get("id")
         )
         new_m["source_mockup_id"] = m.get("id")
         origin_token = f"{m.get('id')}{id(new_m)}"
@@ -1503,6 +1520,7 @@ def _legacy_filter_mockups(
 
 def _compile_qa_context(qa_items: list) -> str | None:
     """Compile answered Q&A items into a context section."""
+
     def _selected_labels(qa) -> list[str]:
         selected = getattr(qa, "selected", None)
         choices = getattr(qa, "choices", None)
@@ -1518,7 +1536,9 @@ def _compile_qa_context(qa_items: list) -> str | None:
         return [labels_by_id.get(item, item) for item in selected_ids]
 
     def _answer_text(qa) -> str | None:
-        answer = getattr(qa, "answer", None) or (qa.get("answer") if isinstance(qa, dict) else None)
+        answer = getattr(qa, "answer", None) or (
+            qa.get("answer") if isinstance(qa, dict) else None
+        )
         if answer:
             return str(answer)
         labels = _selected_labels(qa)
@@ -1591,6 +1611,7 @@ async def _legacy_propagate_artifacts(
         # BEFORE assigning so a non-compliant mockup can't be laundered onto a blocking
         # board via propagation. Covers create_refinement propagation + copy_mockups_to_card.
         from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+
         target_entity.screen_mockups = existing  # keep baseline for the gate's delta
         await gate_entity_screen_mockups(
             db,
@@ -1606,10 +1627,16 @@ async def _legacy_propagate_artifacts(
 
     # Propagate knowledge bases (DB rows) — accepts ORM objects or dicts
     if target_kb_entity and source_knowledge_bases:
-        kbs = source_knowledge_bases if kb_ids is None else [
-            kb for kb in source_knowledge_bases
-            if (kb.get("id") if isinstance(kb, dict) else getattr(kb, "id", None)) in kb_ids
-        ]
+        kbs = (
+            source_knowledge_bases
+            if kb_ids is None
+            else [
+                kb
+                for kb in source_knowledge_bases
+                if (kb.get("id") if isinstance(kb, dict) else getattr(kb, "id", None))
+                in kb_ids
+            ]
+        )
         target_id_field = {
             "spec_knowledge_base": "spec_id",
             "refinement_knowledge_base": "refinement_id",
@@ -1617,14 +1644,20 @@ async def _legacy_propagate_artifacts(
         }.get(target_kb_entity)
         if target_id_field:
             for kb in kbs:
-                _get = (lambda k: kb.get(k)) if isinstance(kb, dict) else (lambda k: getattr(kb, k, None))
+                _get = (
+                    (lambda k: kb.get(k))
+                    if isinstance(kb, dict)
+                    else (lambda k: getattr(kb, k, None))
+                )
                 target_kb_id = str(uuid.uuid4())
                 kb_payload = {
                     "id": target_kb_id,
                     target_id_field: target_entity.id,
                     "title": _get("title"),
                     # R6-IMP1: idempotent prefix — never stack across multi-hop chains.
-                    "description": _legacy_propagated_kb_description(_get("description")),
+                    "description": _legacy_propagated_kb_description(
+                        _get("description")
+                    ),
                     "content": _get("content"),
                     "mime_type": _get("mime_type") or "text/markdown",
                     "created_by": user_id,
@@ -1671,7 +1704,11 @@ async def _legacy_propagate_artifacts(
 
         if target_qa_entity and target_fk_field:
             for qa in source_qa_items:
-                _get = (lambda k: qa.get(k)) if isinstance(qa, dict) else (lambda k: getattr(qa, k, None))
+                _get = (
+                    (lambda k: qa.get(k))
+                    if isinstance(qa, dict)
+                    else (lambda k: getattr(qa, k, None))
+                )
                 # Only copy ANSWERED Q&A items. Choice questions (choice/
                 # single_choice/multi_choice) store the answer in `selected`
                 # and leave `answer` as None — the original `if not answer`
@@ -1818,9 +1855,7 @@ async def qa_card_id(db: Any, qa_id: str) -> str | None:
     return qa.card_id if qa else None
 
 
-async def compute_card_activity(
-    db: Any, card_id: str, *, limit: int = 50
-) -> list[Any]:
+async def compute_card_activity(db: Any, card_id: str, *, limit: int = 50) -> list[Any]:
     """Activity log for a single card, newest first (transport-free reader).
 
     Extracted verbatim from the legacy ``GET /cards/{id}/activity`` endpoint so the
@@ -1910,11 +1945,13 @@ async def compute_card_seen_status(db: Any, card_id: str) -> dict:
     for seen in seen_results:
         if seen.item_id not in items:
             items[seen.item_id] = []
-        items[seen.item_id].append({
-            "agent_id": seen.agent_id,
-            "agent_name": agent_names.get(seen.agent_id),
-            "seen_at": seen.seen_at.isoformat(),
-        })
+        items[seen.item_id].append(
+            {
+                "agent_id": seen.agent_id,
+                "agent_name": agent_names.get(seen.agent_id),
+                "seen_at": seen.seen_at.isoformat(),
+            }
+        )
 
     return {"items": items}
 
@@ -2101,7 +2138,10 @@ class BoardService:
         # error (AC11). Snapshot metadata is persisted on
         # Board.default_config_snapshot, OUTSIDE Board.settings (FR4).
         _config_service = DefaultBoardConfigurationService(self.db)
-        effective_settings, snapshot_meta = await _config_service.build_snapshot_for_create(
+        (
+            effective_settings,
+            snapshot_meta,
+        ) = await _config_service.build_snapshot_for_create(
             settings_override=getattr(data, "settings", None), applied_by=user_id
         )
         board = _new_application_record(
@@ -2166,9 +2206,11 @@ class BoardService:
             await get_kg_registry().graph_schema_manager.ensure_bootstrapped(board.id)
         except Exception as exc:
             import logging
+
             logging.getLogger("okto_pulse.core.services.main").warning(
                 "board_create.bootstrap_failed board=%s err=%s — lazy path will retry",
-                board.id, exc,
+                board.id,
+                exc,
             )
         return board
 
@@ -2205,7 +2247,11 @@ class BoardService:
         return rows[0] if rows else None
 
     async def list_boards(
-        self, user_id: str, offset: int = 0, limit: int = 20, realm_id: str | None = None,
+        self,
+        user_id: str,
+        offset: int = 0,
+        limit: int = 20,
+        realm_id: str | None = None,
         view: str = "my",
         query_scope: QueryScope | None = None,
     ) -> tuple[list[ApplicationRecord], int]:
@@ -2287,16 +2333,25 @@ class BoardService:
             if key == "settings":
                 board.mark_dirty("settings")
 
-        settings_changed = "settings" in update_data and update_data.get("settings") is not None
+        settings_changed = (
+            "settings" in update_data and update_data.get("settings") is not None
+        )
         if settings_changed:
             next_settings = dict(board.settings or {})
-            previous_auto = bool(previous_settings.get("auto_derive_spec_resources_enabled", False))
-            next_auto = bool(next_settings.get("auto_derive_spec_resources_enabled", False))
-            previous_types = list(previous_settings.get("auto_derive_spec_resource_types") or [])
-            next_types = list(next_settings.get("auto_derive_spec_resource_types") or [])
+            previous_auto = bool(
+                previous_settings.get("auto_derive_spec_resources_enabled", False)
+            )
+            next_auto = bool(
+                next_settings.get("auto_derive_spec_resources_enabled", False)
+            )
+            previous_types = list(
+                previous_settings.get("auto_derive_spec_resource_types") or []
+            )
+            next_types = list(
+                next_settings.get("auto_derive_spec_resource_types") or []
+            )
             resource_automation_changed = (
-                previous_auto != next_auto
-                or previous_types != next_types
+                previous_auto != next_auto or previous_types != next_types
             )
             if next_auto and resource_automation_changed:
                 await _application_flush(self.db)
@@ -2308,11 +2363,13 @@ class BoardService:
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         if settings_changed:
-            for setting_key, old_value, new_value in (
-                BoardGovernanceService.changed_governance_settings(
-                    previous_settings,
-                    board.settings,
-                )
+            for (
+                setting_key,
+                old_value,
+                new_value,
+            ) in BoardGovernanceService.changed_governance_settings(
+                previous_settings,
+                board.settings,
             ):
                 details = build_board_governance_setting_changed_details(
                     board_id=board_id,
@@ -2430,16 +2487,9 @@ def _structured_item_ids(values: object) -> set[str]:
     if not isinstance(values, list):
         return set()
     return {
-        str(
-            item.get("id")
-            if isinstance(item, Mapping)
-            else getattr(item, "id", "")
-        )
+        str(item.get("id") if isinstance(item, Mapping) else getattr(item, "id", ""))
         for item in values
-        if (
-            (isinstance(item, Mapping) and item.get("id"))
-            or getattr(item, "id", None)
-        )
+        if ((isinstance(item, Mapping) and item.get("id")) or getattr(item, "id", None))
     }
 
 
@@ -2512,8 +2562,7 @@ def _validate_card_knowledge_relevance_links(
         ),
     }
     requested = [
-        (link.entity_type.value, link.entity_id)
-        for link in envelope.relevance_links
+        (link.entity_type.value, link.entity_id) for link in envelope.relevance_links
     ]
     missing = [
         {"entity_type": link.entity_type.value, "entity_id": link.entity_id}
@@ -2659,12 +2708,12 @@ class CardService:
     ):
         self.db = db
         self._knowledge_propagation_port = knowledge_propagation_port
-        self._cognitive_closeout_gate_factory: Callable[
-            [], Any
-        ] = _build_default_cognitive_closeout_gate
-        self._cognitive_readiness_service_factory: Callable[
-            [], Any
-        ] = _build_default_cognitive_readiness_service
+        self._cognitive_closeout_gate_factory: Callable[[], Any] = (
+            _build_default_cognitive_closeout_gate
+        )
+        self._cognitive_readiness_service_factory: Callable[[], Any] = (
+            _build_default_cognitive_readiness_service
+        )
 
     @staticmethod
     def _max_scenarios_per_card(board: ApplicationRecord | None) -> int:
@@ -2813,10 +2862,7 @@ class CardService:
                 ):
                     raise KnowledgePropagationServiceError(
                         "knowledge_propagation_parent_changed",
-                        (
-                            "the bug origin changed after propagation "
-                            "preflight"
-                        ),
+                        ("the bug origin changed after propagation preflight"),
                         details={
                             "origin_task_id": origin_task_id,
                             "expected_spec_id": expected_spec_id,
@@ -2828,7 +2874,9 @@ class CardService:
 
             # Validate required bug fields
             if not data.severity:
-                raise ValueError("severity is required for bug cards (critical, major, minor)")
+                raise ValueError(
+                    "severity is required for bug cards (critical, major, minor)"
+                )
             if not data.expected_behavior:
                 raise ValueError("expected_behavior is required for bug cards")
             if not data.observed_behavior:
@@ -2866,13 +2914,26 @@ class CardService:
             raise ValueError(f"Spec '{data.spec_id}' not found")
 
         if card_type_val == "bug":
-            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.DONE}
+            allowed_statuses = {
+                SpecStatus.APPROVED,
+                SpecStatus.IN_PROGRESS,
+                SpecStatus.DONE,
+            }
             status_msg = "'approved', 'in_progress', or 'done'"
         elif card_type_val == "test":
-            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS, SpecStatus.DONE}
+            allowed_statuses = {
+                SpecStatus.APPROVED,
+                SpecStatus.VALIDATED,
+                SpecStatus.IN_PROGRESS,
+                SpecStatus.DONE,
+            }
             status_msg = "'approved', 'validated', 'in_progress', or 'done'"
         else:
-            allowed_statuses = {SpecStatus.APPROVED, SpecStatus.IN_PROGRESS, SpecStatus.DONE}
+            allowed_statuses = {
+                SpecStatus.APPROVED,
+                SpecStatus.IN_PROGRESS,
+                SpecStatus.DONE,
+            }
             status_msg = "'approved', 'in_progress', or 'done'"
 
         if spec.status not in allowed_statuses:
@@ -2953,9 +3014,17 @@ class CardService:
         )
 
         traceability_targets = [
-            *(('scenario', target_id) for target_id in (data.test_scenario_ids or [])),
-            *(('fr', target_id) for target_id in (getattr(data, 'functional_requirement_ids', None) or [])),
-            *(('rule', target_id) for target_id in (getattr(data, 'business_rule_ids', None) or [])),
+            *(("scenario", target_id) for target_id in (data.test_scenario_ids or [])),
+            *(
+                ("fr", target_id)
+                for target_id in (
+                    getattr(data, "functional_requirement_ids", None) or []
+                )
+            ),
+            *(
+                ("rule", target_id)
+                for target_id in (getattr(data, "business_rule_ids", None) or [])
+            ),
         ]
         traceability = link_card_traceability(
             spec=spec,
@@ -3032,7 +3101,9 @@ class CardService:
 
         inherited_scenario_ids: list[str] = []
 
-        def inherit_linked_task_ids(field_name: str, *, collect_scenarios: bool = False) -> None:
+        def inherit_linked_task_ids(
+            field_name: str, *, collect_scenarios: bool = False
+        ) -> None:
             items = getattr(spec, field_name, None) or []
             changed = False
             for item in items:
@@ -3204,9 +3275,7 @@ class CardService:
         old_priority = _enum_value(card.priority)
         old_severity = _enum_value(getattr(card, "severity", None))
         old_spec_id = card.spec_id
-        old_update_data = {
-            field: getattr(card, field, None) for field in update_data
-        }
+        old_update_data = {field: getattr(card, field, None) for field in update_data}
 
         if "test_scenario_ids" in update_data:
             next_type = update_data.get("card_type", card.card_type)
@@ -3217,7 +3286,9 @@ class CardService:
                 if spec is None and spec_id:
                     spec = await _application_get(self.db, "spec", spec_id)
                 if not spec:
-                    raise ValueError("Test cards require a linked spec before updating test_scenario_ids")
+                    raise ValueError(
+                        "Test cards require a linked spec before updating test_scenario_ids"
+                    )
                 scenario_ids = list(update_data.get("test_scenario_ids") or [])
                 if not scenario_ids:
                     raise ValueError(
@@ -3230,26 +3301,37 @@ class CardService:
                 )
 
         # Serialize screen_mockups if present
-        if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
+        if (
+            "screen_mockups" in update_data
+            and update_data["screen_mockups"] is not None
+        ):
             update_data["screen_mockups"] = [
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
             # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
-            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            from okto_pulse.core.services.design_system import (
+                gate_entity_screen_mockups,
+            )
+
             await gate_entity_screen_mockups(
                 self.db, card, update_data["screen_mockups"], entity_type="card"
             )
 
-        card_json_fields = {"labels", "test_scenario_ids", "conclusions", "screen_mockups", "knowledge_bases"}
+        card_json_fields = {
+            "labels",
+            "test_scenario_ids",
+            "conclusions",
+            "screen_mockups",
+            "knowledge_bases",
+        }
         activity_changes = activity_log_changes(
             old_update_data,
             update_data,
             list(update_data.keys()),
         )
         activity_update_data = {
-            field: activity_log_value(value)
-            for field, value in update_data.items()
+            field: activity_log_value(value) for field, value in update_data.items()
         }
         knowledge_v2_relinked = False
         if "spec_id" in update_data and next_spec_id != old_spec_id:
@@ -3261,9 +3343,7 @@ class CardService:
                 previous_parent=(
                     None if old_spec_id is None else ("spec", old_spec_id)
                 ),
-                next_parent=(
-                    None if next_spec_id is None else ("spec", next_spec_id)
-                ),
+                next_parent=(None if next_spec_id is None else ("spec", next_spec_id)),
                 actor_id=user_id,
                 port=self._knowledge_propagation_port,
             )
@@ -3398,11 +3478,17 @@ class CardService:
             "card_dependency",
             filters=(_apf("card_id", "eq", card_id),),
         )
-        return await _application_list(
-            self.db,
-            "card",
-            filters=(_apf("id", "in", [item.depends_on_id for item in dependencies]),),
-        ) if dependencies else []
+        return (
+            await _application_list(
+                self.db,
+                "card",
+                filters=(
+                    _apf("id", "in", [item.depends_on_id for item in dependencies]),
+                ),
+            )
+            if dependencies
+            else []
+        )
 
     async def get_dependents(self, card_id: str) -> list[ApplicationRecord]:
         """Get cards that depend on this card."""
@@ -3411,11 +3497,15 @@ class CardService:
             "card_dependency",
             filters=(_apf("depends_on_id", "eq", card_id),),
         )
-        return await _application_list(
-            self.db,
-            "card",
-            filters=(_apf("id", "in", [item.card_id for item in dependencies]),),
-        ) if dependencies else []
+        return (
+            await _application_list(
+                self.db,
+                "card",
+                filters=(_apf("id", "in", [item.card_id for item in dependencies]),),
+            )
+            if dependencies
+            else []
+        )
 
     async def check_dependencies_met(self, card_id: str) -> tuple[bool, list[str]]:
         """Check if all dependencies are met (done or cancelled).
@@ -3423,7 +3513,8 @@ class CardService:
         """
         deps = await self.get_dependencies(card_id)
         blocking = [
-            d.title for d in deps
+            d.title
+            for d in deps
             if d.status not in (CardStatus.DONE, CardStatus.CANCELLED)
         ]
         return len(blocking) == 0, blocking
@@ -3475,15 +3566,27 @@ class CardService:
 
         # Spec overrides
         spec_required = getattr(spec, "require_task_validation", None) if spec else None
-        spec_min_conf = getattr(spec, "validation_min_confidence", None) if spec else None
-        spec_min_comp = getattr(spec, "validation_min_completeness", None) if spec else None
+        spec_min_conf = (
+            getattr(spec, "validation_min_confidence", None) if spec else None
+        )
+        spec_min_comp = (
+            getattr(spec, "validation_min_completeness", None) if spec else None
+        )
         spec_max_drift = getattr(spec, "validation_max_drift", None) if spec else None
 
         # Sprint overrides
-        spr_required = getattr(sprint, "require_task_validation", None) if sprint else None
-        spr_min_conf = getattr(sprint, "validation_min_confidence", None) if sprint else None
-        spr_min_comp = getattr(sprint, "validation_min_completeness", None) if sprint else None
-        spr_max_drift = getattr(sprint, "validation_max_drift", None) if sprint else None
+        spr_required = (
+            getattr(sprint, "require_task_validation", None) if sprint else None
+        )
+        spr_min_conf = (
+            getattr(sprint, "validation_min_confidence", None) if sprint else None
+        )
+        spr_min_comp = (
+            getattr(sprint, "validation_min_completeness", None) if sprint else None
+        )
+        spr_max_drift = (
+            getattr(sprint, "validation_max_drift", None) if sprint else None
+        )
 
         # Resolve with null-coalescing: sprint ?? spec ?? board
         def _coalesce(*vals, default):
@@ -3501,9 +3604,15 @@ class CardService:
 
         return {
             "required": bool(required),
-            "min_confidence": _coalesce(spr_min_conf, spec_min_conf, board_min_conf, default=70),
-            "min_completeness": _coalesce(spr_min_comp, spec_min_comp, board_min_comp, default=80),
-            "max_drift": _coalesce(spr_max_drift, spec_max_drift, board_max_drift, default=50),
+            "min_confidence": _coalesce(
+                spr_min_conf, spec_min_conf, board_min_conf, default=70
+            ),
+            "min_completeness": _coalesce(
+                spr_min_comp, spec_min_comp, board_min_comp, default=80
+            ),
+            "max_drift": _coalesce(
+                spr_max_drift, spec_max_drift, board_max_drift, default=50
+            ),
             "resolved_from": resolved_from,
         }
 
@@ -3538,15 +3647,26 @@ class CardService:
             from okto_pulse.core.services.gate_contracts import (
                 task_validation_unsupported_for_test_card_error,
             )
+
             raise task_validation_unsupported_for_test_card_error(
-                card_id=card.id, board_id=card.board_id, spec_id=card.spec_id,
+                card_id=card.id,
+                board_id=card.board_id,
+                spec_id=card.spec_id,
             )
 
         # Resolve thresholds from hierarchy
         board = await _application_get(self.db, "board", card.board_id)
         board_settings = board.settings or {} if board else {}
-        spec = await _application_get(self.db, "spec", card.spec_id) if card.spec_id else None
-        sprint = await _application_get(self.db, "sprint", card.sprint_id) if card.sprint_id else None
+        spec = (
+            await _application_get(self.db, "spec", card.spec_id)
+            if card.spec_id
+            else None
+        )
+        sprint = (
+            await _application_get(self.db, "sprint", card.sprint_id)
+            if card.sprint_id
+            else None
+        )
         config = self._resolve_validation_config(card, spec, sprint, board_settings)
 
         # Reviewer independence is board policy, shared with sprint evaluation.
@@ -3596,9 +3716,13 @@ class CardService:
         # Threshold check
         violations = []
         if confidence < config["min_confidence"]:
-            violations.append(f"confidence {confidence} < min {config['min_confidence']}")
+            violations.append(
+                f"confidence {confidence} < min {config['min_confidence']}"
+            )
         if completeness < config["min_completeness"]:
-            violations.append(f"completeness {completeness} < min {config['min_completeness']}")
+            violations.append(
+                f"completeness {completeness} < min {config['min_completeness']}"
+            )
         if drift > config["max_drift"]:
             violations.append(f"drift {drift} > max {config['max_drift']}")
 
@@ -3684,17 +3808,21 @@ class CardService:
             for entry in conclusions_list
         )
         if outcome == "success" and not has_executor_report:
-            conclusions_list.append({
-                "text": _general,
-                "author_id": reviewer_id,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "completeness": completeness,
-                "completeness_justification": data["completeness_justification"].strip(),
-                "drift": drift,
-                "drift_justification": data["drift_justification"].strip(),
-                "source": "task_validation",
-                "validation_id": validation_id,
-            })
+            conclusions_list.append(
+                {
+                    "text": _general,
+                    "author_id": reviewer_id,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "completeness": completeness,
+                    "completeness_justification": data[
+                        "completeness_justification"
+                    ].strip(),
+                    "drift": drift,
+                    "drift_justification": data["drift_justification"].strip(),
+                    "source": "task_validation",
+                    "validation_id": validation_id,
+                }
+            )
             card.conclusions = conclusions_list
             card.mark_dirty("conclusions")
 
@@ -3800,17 +3928,21 @@ class CardService:
         validations.reverse()
         return validations
 
-    async def get_task_validation(self, card_id: str, validation_id: str) -> dict | None:
+    async def get_task_validation(
+        self, card_id: str, validation_id: str
+    ) -> dict | None:
         """Get a single validation by ID."""
         card = await self.get_card(card_id)
         if not card:
             raise ValueError("Card not found")
-        for v in (card.validations or []):
+        for v in card.validations or []:
             if v.get("id") == validation_id:
                 return v
         return None
 
-    async def delete_task_validation(self, card_id: str, validation_id: str, user_id: str) -> bool:
+    async def delete_task_validation(
+        self, card_id: str, validation_id: str, user_id: str
+    ) -> bool:
         """Delete a validation entry. Requires card.validation.delete permission."""
         card = await self.get_card(card_id)
         if not card:
@@ -3973,7 +4105,7 @@ class CardService:
             spec = await _application_get(self.db, "spec", spec_id)
             if not spec:
                 continue
-            for sc in (spec.test_scenarios or []):
+            for sc in spec.test_scenarios or []:
                 if not isinstance(sc, dict) or str(sc.get("id")) != scenario_id:
                     continue
                 if str(sc.get("status") or "").lower() not in ("passed", "automated"):
@@ -4091,7 +4223,9 @@ class CardService:
 
     # ---- Coverage gate functions (used by SpecService.move_spec) ----
 
-    async def check_ac_scenario_coverage(self, spec: "Spec", board: "Board | None") -> None:
+    async def check_ac_scenario_coverage(
+        self, spec: "Spec", board: "Board | None"
+    ) -> None:
         """Check that every acceptance criterion is covered by at least one test scenario.
 
         Mirrors the AC→Scenario gate enforced at move_spec→done, but runs at
@@ -4100,7 +4234,11 @@ class CardService:
         spec) and then move→done would fail because uncovered ACs cannot be
         addressed without first unlocking and resubmitting validation.
         """
-        skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
+        skip_global = (
+            (board.settings or {}).get("skip_test_coverage_global", False)
+            if board
+            else False
+        )
         if spec.skip_test_coverage or skip_global:
             return
         criteria = list(spec.acceptance_criteria or [])
@@ -4130,7 +4268,11 @@ class CardService:
 
     async def check_test_coverage(self, spec: "Spec", board: "Board | None") -> None:
         """Check that every test scenario has at least one linked card of type TEST."""
-        skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
+        skip_global = (
+            (board.settings or {}).get("skip_test_coverage_global", False)
+            if board
+            else False
+        )
         if spec.skip_test_coverage or skip_global:
             return
         scenarios = list(spec.test_scenarios or [])
@@ -4139,7 +4281,7 @@ class CardService:
         # Collect all card IDs from linked_task_ids across scenarios
         all_card_ids: set[str] = set()
         for s in scenarios:
-            for cid in (s.get("linked_task_ids") or []):
+            for cid in s.get("linked_task_ids") or []:
                 all_card_ids.add(cid)
         # Batch query to get card_type for all linked cards
         test_card_ids: set[str] = set()
@@ -4173,7 +4315,11 @@ class CardService:
 
     async def check_rules_coverage(self, spec: "Spec", board: "Board | None") -> None:
         """Check that every FR has a BR and every BR has a linked task."""
-        skip_global = (board.settings or {}).get("skip_rules_coverage_global", False) if board else False
+        skip_global = (
+            (board.settings or {}).get("skip_rules_coverage_global", False)
+            if board
+            else False
+        )
         if getattr(spec, "skip_rules_coverage", False) or skip_global:
             return
         frs = list(spec.functional_requirements or [])
@@ -4212,15 +4358,17 @@ class CardService:
             )
         # Check BR → Task coverage
         unlinked_rules = [
-            br for br in brs
-            if isinstance(br, dict) and not br.get("linked_task_ids")
+            br for br in brs if isinstance(br, dict) and not br.get("linked_task_ids")
         ]
         if unlinked_rules:
             titles = ", ".join(
-                f'"{br.get("title", br.get("id", "?"))}"'
-                for br in unlinked_rules[:3]
+                f'"{br.get("title", br.get("id", "?"))}"' for br in unlinked_rules[:3]
             )
-            suffix = f" and {len(unlinked_rules) - 3} more" if len(unlinked_rules) > 3 else ""
+            suffix = (
+                f" and {len(unlinked_rules) - 3} more"
+                if len(unlinked_rules) > 3
+                else ""
+            )
             raise ValueError(
                 f"Cannot validate spec: {len(unlinked_rules)} business rule(s) "
                 f"in spec '{spec.title}' have no linked task cards "
@@ -4233,7 +4381,11 @@ class CardService:
 
     async def check_trs_coverage(self, spec: "Spec", board: "Board | None") -> None:
         """Check that every structured TR has a linked task."""
-        skip_global = (board.settings or {}).get("skip_trs_coverage_global", False) if board else False
+        skip_global = (
+            (board.settings or {}).get("skip_trs_coverage_global", False)
+            if board
+            else False
+        )
         if getattr(spec, "skip_trs_coverage", False) or skip_global:
             return
         trs = list(spec.technical_requirements or [])
@@ -4243,10 +4395,11 @@ class CardService:
         unlinked_trs = [tr for tr in structured_trs if not tr.get("linked_task_ids")]
         if unlinked_trs:
             previews = ", ".join(
-                f'"{tr.get("text", tr.get("id", "?"))[:40]}"'
-                for tr in unlinked_trs[:3]
+                f'"{tr.get("text", tr.get("id", "?"))[:40]}"' for tr in unlinked_trs[:3]
             )
-            suffix = f" and {len(unlinked_trs) - 3} more" if len(unlinked_trs) > 3 else ""
+            suffix = (
+                f" and {len(unlinked_trs) - 3} more" if len(unlinked_trs) > 3 else ""
+            )
             raise ValueError(
                 f"Cannot validate spec: {len(unlinked_trs)} technical requirement(s) "
                 f"in spec '{spec.title}' have no linked task cards "
@@ -4257,9 +4410,15 @@ class CardService:
                 f"Alternatively, enable 'skip TRs coverage' on the spec or board."
             )
 
-    async def check_contract_coverage(self, spec: "Spec", board: "Board | None") -> None:
+    async def check_contract_coverage(
+        self, spec: "Spec", board: "Board | None"
+    ) -> None:
         """Check that every API contract has a linked task."""
-        skip_global = (board.settings or {}).get("skip_contract_coverage_global", False) if board else False
+        skip_global = (
+            (board.settings or {}).get("skip_contract_coverage_global", False)
+            if board
+            else False
+        )
         if getattr(spec, "skip_contract_coverage", False) or skip_global:
             return
         contracts = [
@@ -4273,8 +4432,7 @@ class CardService:
         unlinked = [c for c in contracts if not c.get("linked_task_ids")]
         if unlinked:
             previews = ", ".join(
-                f'"{c.get("method", "?")} {c.get("path", "?")}"'
-                for c in unlinked[:3]
+                f'"{c.get("method", "?")} {c.get("path", "?")}"' for c in unlinked[:3]
             )
             suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
             raise ValueError(
@@ -4289,11 +4447,16 @@ class CardService:
 
     async def check_ir_coverage(self, spec: "Spec", board: "Board | None") -> None:
         """Check that every active integration requirement has a linked task."""
-        skip_global = (board.settings or {}).get("skip_ir_coverage_global", False) if board else False
+        skip_global = (
+            (board.settings or {}).get("skip_ir_coverage_global", False)
+            if board
+            else False
+        )
         if getattr(spec, "skip_ir_coverage", False) or skip_global:
             return
         requirements = [
-            ir for ir in (getattr(spec, "integration_requirements", None) or [])
+            ir
+            for ir in (getattr(spec, "integration_requirements", None) or [])
             if isinstance(ir, dict) and ir.get("status", "active") == "active"
         ]
         if not requirements:
@@ -4301,8 +4464,7 @@ class CardService:
         unlinked = [ir for ir in requirements if not ir.get("linked_task_ids")]
         if unlinked:
             titles = ", ".join(
-                f'"{ir.get("title", ir.get("id", "?"))}"'
-                for ir in unlinked[:3]
+                f'"{ir.get("title", ir.get("id", "?"))}"' for ir in unlinked[:3]
             )
             suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
             raise ValueError(
@@ -4317,11 +4479,16 @@ class CardService:
 
     async def check_or_coverage(self, spec: "Spec", board: "Board | None") -> None:
         """Check that every active observability requirement has a linked task."""
-        skip_global = (board.settings or {}).get("skip_or_coverage_global", False) if board else False
+        skip_global = (
+            (board.settings or {}).get("skip_or_coverage_global", False)
+            if board
+            else False
+        )
         if getattr(spec, "skip_or_coverage", False) or skip_global:
             return
         requirements = [
-            req for req in (getattr(spec, "observability_requirements", None) or [])
+            req
+            for req in (getattr(spec, "observability_requirements", None) or [])
             if isinstance(req, dict) and req.get("status", "active") == "active"
         ]
         if not requirements:
@@ -4329,8 +4496,7 @@ class CardService:
         unlinked = [req for req in requirements if not req.get("linked_task_ids")]
         if unlinked:
             titles = ", ".join(
-                f'"{req.get("title", req.get("id", "?"))}"'
-                for req in unlinked[:3]
+                f'"{req.get("title", req.get("id", "?"))}"' for req in unlinked[:3]
             )
             suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
             raise ValueError(
@@ -4373,9 +4539,13 @@ class CardService:
         )
         for field_name in requirement_fields:
             for item in getattr(spec, field_name, None) or []:
-                if not isinstance(item, dict) or not cls._requirement_link_item_is_active(item):
+                if not isinstance(
+                    item, dict
+                ) or not cls._requirement_link_item_is_active(item):
                     continue
-                linked_ids = {str(value) for value in (item.get("linked_task_ids") or [])}
+                linked_ids = {
+                    str(value) for value in (item.get("linked_task_ids") or [])
+                }
                 if card_id in linked_ids:
                     return True
         return False
@@ -4450,9 +4620,7 @@ class CardService:
                 orphaned.append(card)
 
         if orphaned:
-            previews = ", ".join(
-                f'"{card.title or card.id}"' for card in orphaned[:3]
-            )
+            previews = ", ".join(f'"{card.title or card.id}"' for card in orphaned[:3])
             suffix = f" and {len(orphaned) - 3} more" if len(orphaned) > 3 else ""
             raise ValueError(
                 f"Cannot validate spec: {len(orphaned)} normal task card(s) "
@@ -4466,8 +4634,10 @@ class CardService:
         """Require at least one active Decision before spec validation/progress."""
         decisions = list(spec.decisions or [])
         active = [
-            d for d in decisions
-            if isinstance(d, dict) and str(d.get("status", "active")).lower() == "active"
+            d
+            for d in decisions
+            if isinstance(d, dict)
+            and str(d.get("status", "active")).lower() == "active"
         ]
         if active:
             return
@@ -4477,26 +4647,35 @@ class CardService:
             f"okto_pulse_add_decision before validating the spec."
         )
 
-    async def check_decisions_coverage(self, spec: "Spec", board: "Board | None") -> None:
+    async def check_decisions_coverage(
+        self, spec: "Spec", board: "Board | None"
+    ) -> None:
         """Check that every active Decision has a linked task unless skipped.
 
         New and legacy specs default to enforcing this gate. Only `active`
         decisions are checked — `superseded` and `revoked` are historical and
         do not need linkage.
         """
-        skip_global = (board.settings or {}).get("skip_decisions_coverage_global", False) if board else False
+        skip_global = (
+            (board.settings or {}).get("skip_decisions_coverage_global", False)
+            if board
+            else False
+        )
         skip_spec = getattr(spec, "skip_decisions_coverage", False)
         if skip_spec or skip_global:
             return
         decisions = list(spec.decisions or [])
-        active = [d for d in decisions if isinstance(d, dict) and d.get("status", "active") == "active"]
+        active = [
+            d
+            for d in decisions
+            if isinstance(d, dict) and d.get("status", "active") == "active"
+        ]
         if not active:
             return
         unlinked = [d for d in active if not d.get("linked_task_ids")]
         if unlinked:
             titles = ", ".join(
-                f'"{d.get("title", d.get("id", "?"))}"'
-                for d in unlinked[:3]
+                f'"{d.get("title", d.get("id", "?"))}"' for d in unlinked[:3]
             )
             suffix = f" and {len(unlinked) - 3} more" if len(unlinked) > 3 else ""
             raise ValueError(
@@ -4662,7 +4841,9 @@ class CardService:
                         spec_status=spec_for_sprint.status,
                         sprint_count=sprint_count,
                         sprint_id=card.sprint_id,
-                        sprint_exists=sprint_obj is not None if card.sprint_id else True,
+                        sprint_exists=sprint_obj is not None
+                        if card.sprint_id
+                        else True,
                         sprint_status=sprint_obj.status if sprint_obj else None,
                         sprint_title=sprint_obj.title if sprint_obj else None,
                         sprint_is_hotfix=(
@@ -4706,10 +4887,10 @@ class CardService:
                             remediation=sprint_block.remediation,
                             facts=error_facts,
                             workflow_remediation=(
-                                BugWorkflowRemediationMessageBuilder()
-                                .build_from_sprint_lane_block(
+                                BugWorkflowRemediationMessageBuilder().build_from_sprint_lane_block(
                                     code=sprint_block.code,
-                                    remediation=sprint_block.remediation or "assign_sprint",
+                                    remediation=sprint_block.remediation
+                                    or "assign_sprint",
                                     facts=error_facts,
                                     message=workflow_message,
                                 )
@@ -4732,7 +4913,9 @@ class CardService:
             and starts_execution
         ):
             spec_for_requirement_gate = (
-                await _application_get(self.db, "spec", card.spec_id) if card.spec_id else None
+                await _application_get(self.db, "spec", card.spec_id)
+                if card.spec_id
+                else None
             )
             await self.check_card_requirement_link_gate(
                 card, spec_for_requirement_gate, board
@@ -4741,11 +4924,20 @@ class CardService:
         # --- Task Validation Gate: block in_progress→done when gate active ---
         if (
             data.status == CardStatus.DONE
-            and old_status in (CardStatus.IN_PROGRESS, CardStatus.STARTED, CardStatus.NOT_STARTED)
+            and old_status
+            in (CardStatus.IN_PROGRESS, CardStatus.STARTED, CardStatus.NOT_STARTED)
             and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
         ):
-            spec_for_gate = await _application_get(self.db, "spec", card.spec_id) if card.spec_id else None
-            sprint_for_gate = await _application_get(self.db, "sprint", card.sprint_id) if card.sprint_id else None
+            spec_for_gate = (
+                await _application_get(self.db, "spec", card.spec_id)
+                if card.spec_id
+                else None
+            )
+            sprint_for_gate = (
+                await _application_get(self.db, "sprint", card.sprint_id)
+                if card.sprint_id
+                else None
+            )
             gate_config = self._resolve_validation_config(
                 card, spec_for_gate, sprint_for_gate, board_settings
             )
@@ -4763,11 +4955,15 @@ class CardService:
 
         # Block Done on test cards if linked scenarios not updated
         if data.status == CardStatus.DONE and card.spec_id and card.test_scenario_ids:
-            spec_for_test_scenarios = await _application_get(self.db, "spec", card.spec_id)
+            spec_for_test_scenarios = await _application_get(
+                self.db, "spec", card.spec_id
+            )
             if spec_for_test_scenarios and not skip_global:
-                all_scenarios = {s["id"]: s for s in (spec_for_test_scenarios.test_scenarios or [])}
+                all_scenarios = {
+                    s["id"]: s for s in (spec_for_test_scenarios.test_scenarios or [])
+                }
                 stale = []
-                for sid in (card.test_scenario_ids or []):
+                for sid in card.test_scenario_ids or []:
                     sc = all_scenarios.get(sid)
                     if sc and (
                         sc.get("status") in ("draft", "ready")
@@ -4780,11 +4976,13 @@ class CardService:
                             ),
                         )
                     ):
-                        stale.append({
-                            "id": sid,
-                            "title": sc.get("title", sid),
-                            "status": sc.get("status"),
-                        })
+                        stale.append(
+                            {
+                                "id": sid,
+                                "title": sc.get("title", sid),
+                                "status": sc.get("status"),
+                            }
+                        )
                 pending_scenarios = tuple(
                     PendingScenario(
                         scenario_id=scenario["id"],
@@ -4810,6 +5008,7 @@ class CardService:
                     from okto_pulse.core.services.gate_contracts import (
                         incomplete_test_card_completion_error,
                     )
+
                     raise incomplete_test_card_completion_error(
                         card_id=card.id,
                         current_status=old_status.value if old_status else None,
@@ -4828,12 +5027,8 @@ class CardService:
         #     ("minor"=default, sempre exige; "major"=pula minor; "critical"=só critical)
         # Severity ordering (lower → higher): minor < major < critical
         _board_settings = (board.settings or {}) if board else {}
-        _bug_gate_enabled = _board_settings.get(
-            "require_test_task_for_bug", True
-        )
-        _bug_gate_min_sev = _board_settings.get(
-            "bug_test_gate_min_severity", "minor"
-        )
+        _bug_gate_enabled = _board_settings.get("require_test_task_for_bug", True)
+        _bug_gate_min_sev = _board_settings.get("bug_test_gate_min_severity", "minor")
         _card_severity = getattr(card, "severity", None) or "minor"
         bug_transition_facts = CardTransitionFacts(
             card_id=card.id,
@@ -4886,10 +5081,7 @@ class CardService:
                 )
             )
             if regression_block is not None:
-                workflow_remediation = (
-                    BugWorkflowRemediationMessageBuilder()
-                    .build_missing_regression_test_task()
-                )
+                workflow_remediation = BugWorkflowRemediationMessageBuilder().build_missing_regression_test_task()
                 raise CardOperationError(
                     regression_block.code,
                     "Bug card requires at least 1 new test task linked before moving to in_progress. "
@@ -4917,12 +5109,20 @@ class CardService:
             # coverage stays validator-only/fail-closed — no production path confirms
             # coverage before card c9cf9781 (ADJ-B/ADJ-C).
             bug_created = card.created_at
-            spec_for_bug = await _application_get(self.db, "spec", card.spec_id) if card.spec_id else None
-            all_scenarios = {
-                str(s["id"]): s
-                for s in (spec_for_bug.test_scenarios or [])
-                if isinstance(s, dict) and s.get("id") is not None
-            } if spec_for_bug else {}
+            spec_for_bug = (
+                await _application_get(self.db, "spec", card.spec_id)
+                if card.spec_id
+                else None
+            )
+            all_scenarios = (
+                {
+                    str(s["id"]): s
+                    for s in (spec_for_bug.test_scenarios or [])
+                    if isinstance(s, dict) and s.get("id") is not None
+                }
+                if spec_for_bug
+                else {}
+            )
             validated_test_tasks: list[ApplicationRecord] = []
             candidate_scenario_ids: list[str] = []
 
@@ -4978,7 +5178,9 @@ class CardService:
                     )
 
                 validated_test_tasks.append(test_task)
-                candidate_scenario_ids.extend(str(sid) for sid in (test_task.test_scenario_ids or []))
+                candidate_scenario_ids.extend(
+                    str(sid) for sid in (test_task.test_scenario_ids or [])
+                )
 
             missing_scenario_ids = {
                 sid for sid in candidate_scenario_ids if sid not in all_scenarios
@@ -5011,7 +5213,9 @@ class CardService:
                     scenario_id = str(sid)
                     sc = all_scenarios.get(scenario_id)
                     if not sc:
-                        other_spec_id = candidate_spec_ids_by_scenario_id.get(scenario_id)
+                        other_spec_id = candidate_spec_ids_by_scenario_id.get(
+                            scenario_id
+                        )
                         if other_spec_id:
                             # TR1: cross-spec evidence is admissible ONLY via Path
                             # B. Always defer to the shared predicate
@@ -5039,8 +5243,9 @@ class CardService:
                             session=self.db,
                         )
                         workflow_remediation = (
-                            BugWorkflowRemediationMessageBuilder()
-                            .build_semantic_gap(reason_code="scenario_not_found")
+                            BugWorkflowRemediationMessageBuilder().build_semantic_gap(
+                                reason_code="scenario_not_found"
+                            )
                         )
                         raise CardOperationError(
                             "scenario_not_found",
@@ -5049,8 +5254,7 @@ class CardService:
                             f"The scenario may have been deleted. Link the test task to an existing scenario, "
                             "or create an amendment/refinement/spec revision/hotfix spec if new canonical "
                             "coverage is truly required. reason=scenario_not_found; "
-                            "next_action=escalate_semantic_gap."
-                            ,
+                            "next_action=escalate_semantic_gap.",
                             remediation="escalate_semantic_gap",
                             facts={
                                 "card_id": card.id,
@@ -5060,7 +5264,11 @@ class CardService:
                             workflow_remediation=workflow_remediation,
                         )
 
-            origin_task = await _application_get(self.db, "card", card.origin_task_id) if card.origin_task_id else None
+            origin_task = (
+                await _application_get(self.db, "card", card.origin_task_id)
+                if card.origin_task_id
+                else None
+            )
             if not origin_task:
                 observe_bug_regression_resolution(
                     board_id=card.board_id,
@@ -5081,8 +5289,9 @@ class CardService:
                     session=self.db,
                 )
                 workflow_remediation = (
-                    BugWorkflowRemediationMessageBuilder()
-                    .build_semantic_gap(reason_code="origin_task_missing")
+                    BugWorkflowRemediationMessageBuilder().build_semantic_gap(
+                        reason_code="origin_task_missing"
+                    )
                 )
                 raise CardOperationError(
                     "origin_task_missing",
@@ -5119,7 +5328,10 @@ class CardService:
                 primary_reason = eligibility.rejected_scenarios[0].reason.value
             elif eligibility.eligible_scenarios:
                 primary_reason = eligibility.eligible_scenarios[0].reason.value
-            elif eligibility.coverage_state is BugRegressionCoverageState.COVERAGE_PENDING:
+            elif (
+                eligibility.coverage_state
+                is BugRegressionCoverageState.COVERAGE_PENDING
+            ):
                 primary_reason = "coverage_pending"
             else:
                 primary_reason = "no_eligible_scenarios"
@@ -5135,7 +5347,11 @@ class CardService:
                 decision=(
                     "eligible"
                     if gate_result.allowed
-                    else ("semantic_gap" if eligibility.semantic_gap_required else "rejected")
+                    else (
+                        "semantic_gap"
+                        if eligibility.semantic_gap_required
+                        else "rejected"
+                    )
                 ),
                 reason_code=primary_reason,
                 coverage_state=eligibility.coverage_state.value,
@@ -5145,17 +5361,24 @@ class CardService:
                 session=self.db,
             )
             if not gate_result.allowed:
-                rejected = ", ".join(
-                    f"{item.scenario_id}:{item.reason.value}"
-                    + (f"({item.detail})" if item.detail else "")
-                    for item in eligibility.rejected_scenarios
-                ) or "none"
-                eligible_ids = ", ".join(
-                    item.scenario_id for item in eligibility.eligible_scenarios
-                ) or "none"
+                rejected = (
+                    ", ".join(
+                        f"{item.scenario_id}:{item.reason.value}"
+                        + (f"({item.detail})" if item.detail else "")
+                        for item in eligibility.rejected_scenarios
+                    )
+                    or "none"
+                )
+                eligible_ids = (
+                    ", ".join(
+                        item.scenario_id for item in eligibility.eligible_scenarios
+                    )
+                    or "none"
+                )
                 workflow_remediation = (
-                    BugWorkflowRemediationMessageBuilder()
-                    .build_from_eligibility(eligibility)
+                    BugWorkflowRemediationMessageBuilder().build_from_eligibility(
+                        eligibility
+                    )
                 )
                 raise CardOperationError(
                     gate_result.decision.value,
@@ -5168,8 +5391,7 @@ class CardService:
                     f"next_action={eligibility.next_action.value}. "
                     "Reuse only scenarios linked to the bug origin task or explicit affected tasks. "
                     "If expected behavior changed or no eligible scenario exists, create an "
-                    "amendment/refinement/spec revision/hotfix spec instead of editing the current spec."
-                    ,
+                    "amendment/refinement/spec revision/hotfix spec instead of editing the current spec.",
                     remediation=workflow_remediation.next_action.value,
                     facts={
                         "card_id": card.id,
@@ -5226,7 +5448,8 @@ class CardService:
             report_target = "Done"
         elif (
             data.status == CardStatus.VALIDATION
-            and old_status in (
+            and old_status
+            in (
                 CardStatus.NOT_STARTED,
                 CardStatus.STARTED,
                 CardStatus.IN_PROGRESS,
@@ -5257,7 +5480,10 @@ class CardService:
                 )
             if not (0 <= data.completeness <= 100):
                 raise ValueError("completeness must be between 0 and 100.")
-            if not data.completeness_justification or not data.completeness_justification.strip():
+            if (
+                not data.completeness_justification
+                or not data.completeness_justification.strip()
+            ):
                 raise ValueError(
                     f"completeness_justification is required when moving a card to {report_target}. "
                     "Explain why the completeness score is what it is."
@@ -5283,16 +5509,18 @@ class CardService:
                 else "move_to_done"
             )
             conclusions = list(card.conclusions or [])
-            conclusions.append({
-                "text": data.conclusion.strip(),
-                "author_id": user_id,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "completeness": data.completeness,
-                "completeness_justification": data.completeness_justification.strip(),
-                "drift": data.drift,
-                "drift_justification": data.drift_justification.strip(),
-                "source": report_source,
-            })
+            conclusions.append(
+                {
+                    "text": data.conclusion.strip(),
+                    "author_id": user_id,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "completeness": data.completeness,
+                    "completeness_justification": data.completeness_justification.strip(),
+                    "drift": data.drift,
+                    "drift_justification": data.drift_justification.strip(),
+                    "source": report_source,
+                }
+            )
             card.conclusions = conclusions
             card.mark_dirty("conclusions")
 
@@ -5315,9 +5543,7 @@ class CardService:
         if new_level > old_level and data.status != CardStatus.CANCELLED:
             deps_met, blocking = await self.check_dependencies_met(card_id)
             if not deps_met:
-                raise ValueError(
-                    f"Dependências não concluídas: {', '.join(blocking)}"
-                )
+                raise ValueError(f"Dependências não concluídas: {', '.join(blocking)}")
 
         if data.status == CardStatus.DONE:
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
@@ -5371,12 +5597,18 @@ class CardService:
                     for ev in spec_for_rollback.evaluations:
                         ev["stale"] = True
                     spec_for_rollback.mark_dirty("evaluations")
-                rollback_name = actor_name or await resolve_actor_name(self.db, user_id, card.board_id)
+                rollback_name = actor_name or await resolve_actor_name(
+                    self.db, user_id, card.board_id
+                )
                 spec_service = SpecService(self.db)
                 await spec_service._record_history(
-                    spec_id=card.spec_id, action="status_changed",
-                    actor_id=user_id, actor_name=rollback_name,
-                    changes=[{"field": "status", "old": "validated", "new": "approved"}],
+                    spec_id=card.spec_id,
+                    action="status_changed",
+                    actor_id=user_id,
+                    actor_name=rollback_name,
+                    changes=[
+                        {"field": "status", "old": "validated", "new": "approved"}
+                    ],
                     summary=f"Auto-rollback: card '{card.title}' cancelled — spec reverted for revalidation",
                     version=spec_for_rollback.version,
                 )
@@ -5385,7 +5617,9 @@ class CardService:
         # Synchronize the transition before another service reads it in this UoW.
         await _application_flush(self.db)
 
-        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, card.board_id)
+        resolved_name = actor_name or await resolve_actor_name(
+            self.db, user_id, card.board_id
+        )
 
         # Emit CardMoved + optional CardCancelled / CardRestored so downstream
         # handlers (e.g. KG decay on cancel) can react.
@@ -5478,9 +5712,7 @@ class CardService:
         )
         if origin_references:
             same_board_sprint_ids = [
-                sprint.id
-                for sprint in origin_references
-                if sprint.board_id == board_id
+                sprint.id for sprint in origin_references if sprint.board_id == board_id
             ]
             raise CardOperationError(
                 "hotfix_origin_bug_delete_conflict",
@@ -5544,29 +5776,57 @@ class CardService:
             for bug in bugs:
                 linked = bug.linked_test_task_ids or []
                 if card_id in linked:
-                    bug.linked_test_task_ids = [
-                        tid for tid in linked if tid != card_id
-                    ]
+                    bug.linked_test_task_ids = [tid for tid in linked if tid != card_id]
                     bug.mark_dirty("linked_test_task_ids")
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        takedown_receipt = await _prepare_governed_artifact_deletion(
+        attachment_receipts: list[AttachmentDeletionReceipt] = []
+        attachment_service = AttachmentService(self.db)
+        attachments = await _application_list(
             self.db,
-            board_id=board_id,
-            artifact_type="card",
-            artifact_id=card_id,
+            "attachment",
+            filters=(_apf("card_id", "eq", card_id),),
         )
-        await _application_delete(self.db, card)
+        try:
+            for attachment in attachments:
+                deletion = await attachment_service.delete_attachment_object(attachment)
+                attachment_receipts.append(deletion)
 
-        await self._log_activity(
-            board_id=board_id,
-            card_id=card_id,
-            action="card_deleted",
-            actor_type="user",
-            actor_id=user_id,
-            actor_name=actor_name,
+            takedown_receipt = await _prepare_governed_artifact_deletion(
+                self.db,
+                board_id=board_id,
+                artifact_type="card",
+                artifact_id=card_id,
+            )
+            await _application_delete(self.db, card)
+
+            await self._log_activity(
+                board_id=board_id,
+                card_id=card_id,
+                action="card_deleted",
+                actor_type="user",
+                actor_id=user_id,
+                actor_name=actor_name,
+            )
+        except BaseException:
+            for receipt in reversed(attachment_receipts):
+                await attachment_service.restore_deleted_attachment(receipt)
+            raise
+        takedown_receipt = replace(
+            takedown_receipt,
+            attachment_deletions=tuple(attachment_receipts),
         )
         return takedown_receipt if return_receipt else True
+
+    @staticmethod
+    async def restore_deleted_card_attachments(
+        receipt: GovernedArtifactDeletionReceipt,
+    ) -> None:
+        """Compensate attachment objects when the card UoW does not commit."""
+
+        storage = get_storage_provider()
+        for attachment in reversed(receipt.attachment_deletions):
+            await storage.restore(attachment.path, attachment.content)
 
     async def _log_activity(self, **kwargs: Any) -> None:
         """Log an activity."""
@@ -5686,12 +5946,16 @@ class AgentService:
             "agent_board",
             filters=(_apf("board_id", "eq", board_id),),
         )
-        return await _application_list(
-            self.db,
-            "agent",
-            filters=(_apf("id", "in", [grant.agent_id for grant in grants]),),
-            order_by=(("created_at", False),),
-        ) if grants else []
+        return (
+            await _application_list(
+                self.db,
+                "agent",
+                filters=(_apf("id", "in", [grant.agent_id for grant in grants]),),
+                order_by=(("created_at", False),),
+            )
+            if grants
+            else []
+        )
 
     async def list_agents(self, board_id: str) -> list[ApplicationRecord]:
         """Backward-compat alias for list_agents_for_board."""
@@ -5763,12 +6027,16 @@ class AgentService:
             "agent_board",
             filters=(_apf("agent_id", "eq", agent_id),),
         )
-        return await _application_list(
-            self.db,
-            "board",
-            filters=(_apf("id", "in", [grant.board_id for grant in grants]),),
-            order_by=(("name", False),),
-        ) if grants else []
+        return (
+            await _application_list(
+                self.db,
+                "board",
+                filters=(_apf("id", "in", [grant.board_id for grant in grants]),),
+                order_by=(("name", False),),
+            )
+            if grants
+            else []
+        )
 
     async def update_agent(
         self, agent_id: str, data: AgentUpdate
@@ -5802,7 +6070,9 @@ class AgentService:
         if preset_id_in_payload and not flags_in_payload:
             new_preset_id = update_data.get("preset_id")
             if new_preset_id:
-                preset = await _application_get(self.db, "permission_preset", new_preset_id)
+                preset = await _application_get(
+                    self.db, "permission_preset", new_preset_id
+                )
                 if preset and preset.flags:
                     agent.permission_flags = copy.deepcopy(preset.flags)
                     agent.mark_dirty("permission_flags")
@@ -5840,6 +6110,15 @@ class AgentService:
         return True
 
 
+@dataclass(frozen=True, slots=True)
+class AttachmentDeletionReceipt:
+    """Physical bytes retained until the relational delete is committed."""
+
+    attachment_id: str
+    path: str
+    content: bytes
+
+
 class AttachmentService:
     """Service for attachment operations."""
 
@@ -5863,37 +6142,81 @@ class AttachmentService:
         # Delegate to the registered storage provider
         storage = get_storage_provider()
         file_path = await storage.save(card.board_id, filename, content)
-        unique_name = Path(file_path).name
-
-        attachment = _new_application_record(
-            "attachment",
-            card_id=card_id,
-            filename=unique_name,
-            original_filename=filename,
-            mime_type=mime_type,
-            size=len(content),
-            path=file_path,
-            uploaded_by=user_id,
-        )
-        await _application_add(self.db, attachment)
+        try:
+            unique_name = Path(file_path).name
+            attachment = _new_application_record(
+                "attachment",
+                card_id=card_id,
+                filename=unique_name,
+                original_filename=filename,
+                mime_type=mime_type,
+                size=len(content),
+                path=file_path,
+                uploaded_by=user_id,
+            )
+            await _application_add(self.db, attachment)
+        except BaseException:
+            # The object write precedes relational staging. If staging fails,
+            # remove the unowned object before propagating the original error.
+            await storage.delete(file_path)
+            raise
         return attachment
+
+    async def discard_uploaded_attachment(self, attachment: object) -> None:
+        """Compensate a file save when the owning relational UoW rolls back."""
+
+        path = str(getattr(attachment, "path"))
+        await get_storage_provider().delete(path)
 
     async def get_attachment(self, attachment_id: str) -> ApplicationRecord | None:
         """Get an attachment by ID."""
         return await _application_get(self.db, "attachment", attachment_id)
 
-    async def delete_attachment(self, attachment_id: str) -> bool:
-        """Delete an attachment."""
+    async def delete_attachment(
+        self,
+        attachment_id: str,
+    ) -> AttachmentDeletionReceipt | bool:
+        """Stage attachment deletion while retaining an exact restore receipt."""
         attachment = await self.get_attachment(attachment_id)
         if not attachment:
             return False
 
-        # Delete file via storage provider
-        storage = get_storage_provider()
-        await storage.delete(attachment.path)
+        receipt = await self.delete_attachment_object(attachment)
+        try:
+            await _application_delete(self.db, attachment)
+        except BaseException:
+            await get_storage_provider().restore(receipt.path, receipt.content)
+            raise
+        return receipt
 
-        await _application_delete(self.db, attachment)
-        return True
+    @staticmethod
+    async def delete_attachment_object(
+        attachment: object,
+    ) -> AttachmentDeletionReceipt:
+        """Delete only physical bytes; the parent cascade owns the row delete."""
+
+        attachment_id = str(getattr(attachment, "id"))
+        path = str(getattr(attachment, "path"))
+        storage = get_storage_provider()
+        content = await storage.load(path)
+        deleted = await storage.delete(path)
+        if not deleted:
+            raise RuntimeError(
+                f"attachment object disappeared during delete: {attachment_id}"
+            )
+        return AttachmentDeletionReceipt(
+            attachment_id=attachment_id,
+            path=path,
+            content=content,
+        )
+
+    async def restore_deleted_attachment(
+        self,
+        receipt: AttachmentDeletionReceipt,
+    ) -> None:
+        """Compensate physical deletion after a relational commit failure."""
+
+        await get_storage_provider().restore(receipt.path, receipt.content)
 
 
 class QAService:
@@ -5938,7 +6261,9 @@ class QAService:
             return None
 
         card = await _application_get(self.db, "card", qa.card_id)
-        board = await _application_get(self.db, "board", card.board_id) if card else None
+        board = (
+            await _application_get(self.db, "board", card.board_id) if card else None
+        )
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -5996,8 +6321,12 @@ class CommentService:
         return comment
 
     async def respond_to_choice(
-        self, comment_id: str, responder_id: str, responder_name: str,
-        selected: list[str], free_text: str | None = None,
+        self,
+        comment_id: str,
+        responder_id: str,
+        responder_name: str,
+        selected: list[str],
+        free_text: str | None = None,
     ) -> ApplicationRecord | None:
         """Add a response to a choice board comment."""
         comment = await _application_get(self.db, "comment", comment_id)
@@ -6017,12 +6346,14 @@ class CommentService:
         responses = list(comment.responses or [])
         # Replace existing response from same responder
         responses = [r for r in responses if r.get("responder_id") != responder_id]
-        responses.append({
-            "responder_id": responder_id,
-            "responder_name": responder_name,
-            "selected": selected,
-            "free_text": free_text,
-        })
+        responses.append(
+            {
+                "responder_id": responder_id,
+                "responder_name": responder_name,
+                "selected": selected,
+                "free_text": free_text,
+            }
+        )
         comment.responses = responses
         await _application_flush(self.db)
         return comment
@@ -6085,6 +6416,7 @@ async def _validate_spec_linked_refs(
     Raises ValueError with all offenders enumerated so the caller can fix
     them in one round-trip instead of one-by-one.
     """
+
     def _final(field: str, default: Any):
         if field in update_data:
             return update_data[field] if update_data[field] is not None else default
@@ -6092,7 +6424,9 @@ async def _validate_spec_linked_refs(
 
     def _child_text(item: Any) -> str:
         if isinstance(item, dict):
-            return str(item.get("text") or item.get("title") or item.get("description") or "")
+            return str(
+                item.get("text") or item.get("title") or item.get("description") or ""
+            )
         return str(item)
 
     def _child_id(item: Any) -> str | None:
@@ -6143,8 +6477,12 @@ async def _validate_spec_linked_refs(
     valid_ac_texts = {text for text in final_acs if text}
     valid_fr_ids = {child_id for item in final_frs_raw if (child_id := _child_id(item))}
     valid_ac_ids = {child_id for item in final_acs_raw if (child_id := _child_id(item))}
-    valid_tr_texts = {_child_text(item) for item in final_trs_structured if _child_text(item)}
-    valid_tr_ids = {child_id for item in final_trs_structured if (child_id := _child_id(item))}
+    valid_tr_texts = {
+        _child_text(item) for item in final_trs_structured if _child_text(item)
+    }
+    valid_tr_ids = {
+        child_id for item in final_trs_structured if (child_id := _child_id(item))
+    }
     valid_br_ids = {br.get("id") for br in final_brs if br.get("id")}
     valid_contract_ids = {ct.get("id") for ct in final_contracts if ct.get("id")}
     valid_ir_ids = {ir.get("id") for ir in final_irs if ir.get("id")}
@@ -6152,6 +6490,7 @@ async def _validate_spec_linked_refs(
     errors: list[str] = []
 
     _DIM_TARGET = {"requirements": "FR", "criteria": "AC"}
+
     def _check_index_text_or_id(
         refs: list[str],
         valid_indices: set,
@@ -6164,7 +6503,11 @@ async def _validate_spec_linked_refs(
         target = target_label or _DIM_TARGET.get(dim, dim.upper()[:2])
         for ref in refs or []:
             ref_str = str(ref)
-            if ref_str in valid_indices or ref_str in valid_texts or ref_str in valid_ids:
+            if (
+                ref_str in valid_indices
+                or ref_str in valid_texts
+                or ref_str in valid_ids
+            ):
                 continue
             max_idx = max(0, len(valid_indices) - 1)
             errors.append(
@@ -6342,7 +6685,7 @@ async def _validate_spec_linked_refs(
         more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
         raise ValueError(
             f"Cannot update spec: {len(errors)} orphan link reference(s) found. {joined}{more}. "
-            f"Use 0-based string indices (\"0\", \"1\", ...) for FR/AC; "
+            f'Use 0-based string indices ("0", "1", ...) for FR/AC; '
             f"TR id/text is accepted for API contracts, IR/OR, and decisions; the BR.id for linked_rules, "
             f"the api_contract.id / integration_requirement.id for cross-resource links, "
             f"and an existing Card.id for linked_task_ids."
@@ -6360,12 +6703,12 @@ class SpecService:
     ):
         self.db = db
         self._knowledge_propagation_port = knowledge_propagation_port
-        self._cognitive_closeout_gate_factory: Callable[
-            [], Any
-        ] = _build_default_cognitive_closeout_gate
-        self._cognitive_readiness_service_factory: Callable[
-            [], Any
-        ] = _build_default_cognitive_readiness_service
+        self._cognitive_closeout_gate_factory: Callable[[], Any] = (
+            _build_default_cognitive_closeout_gate
+        )
+        self._cognitive_readiness_service_factory: Callable[[], Any] = (
+            _build_default_cognitive_readiness_service
+        )
 
     # ---- Status progression order ----
     _STATUS_ORDER = {
@@ -6423,9 +6766,9 @@ class SpecService:
             old_val = old_data.get(field)
             new_val = new_data.get(field)
             # Normalize enum values
-            if hasattr(old_val, 'value'):
+            if hasattr(old_val, "value"):
                 old_val = old_val.value
-            if hasattr(new_val, 'value'):
+            if hasattr(new_val, "value"):
                 new_val = new_val.value
             if old_val != new_val:
                 changes.append({"field": field, "old": old_val, "new": new_val})
@@ -6485,13 +6828,29 @@ class SpecService:
             acceptance_criteria=canonicalize_fr_ac(
                 "acceptance_criterion", data.acceptance_criteria
             ),
-            test_scenarios=[s.model_dump() for s in data.test_scenarios] if data.test_scenarios else None,
+            test_scenarios=[s.model_dump() for s in data.test_scenarios]
+            if data.test_scenarios
+            else None,
             screen_mockups=None,  # assigned after the Design System gate (below)
-            business_rules=[r.model_dump() for r in data.business_rules] if data.business_rules else None,
-            api_contracts=[c.model_dump() for c in data.api_contracts] if data.api_contracts else None,
-            integration_requirements=[ir.model_dump() for ir in data.integration_requirements] if data.integration_requirements else None,
-            observability_requirements=[req.model_dump() for req in data.observability_requirements] if data.observability_requirements else None,
-            decisions=[d.model_dump() for d in data.decisions] if data.decisions else None,
+            business_rules=[r.model_dump() for r in data.business_rules]
+            if data.business_rules
+            else None,
+            api_contracts=[c.model_dump() for c in data.api_contracts]
+            if data.api_contracts
+            else None,
+            integration_requirements=[
+                ir.model_dump() for ir in data.integration_requirements
+            ]
+            if data.integration_requirements
+            else None,
+            observability_requirements=[
+                req.model_dump() for req in data.observability_requirements
+            ]
+            if data.observability_requirements
+            else None,
+            decisions=[d.model_dump() for d in data.decisions]
+            if data.decisions
+            else None,
             status=data.status,
             assignee_id=data.assignee_id,
             created_by=user_id,
@@ -6504,10 +6863,15 @@ class SpecService:
         # baseline is the entity's (empty) mockups, so every submitted screen is
         # evaluated; assign only if the gate does not raise.
         _submitted_mockups = (
-            [s.model_dump() for s in data.screen_mockups] if data.screen_mockups else None
+            [s.model_dump() for s in data.screen_mockups]
+            if data.screen_mockups
+            else None
         )
         if _submitted_mockups:
-            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            from okto_pulse.core.services.design_system import (
+                gate_entity_screen_mockups,
+            )
+
             await gate_entity_screen_mockups(
                 self.db, spec, _submitted_mockups, entity_type="spec"
             )
@@ -6555,16 +6919,75 @@ class SpecService:
             details={"title": data.title, "spec_id": spec.id},
         )
         await self._record_history(
-            spec_id=spec.id, action="created", actor_id=user_id, actor_name=actor_name,
-            summary=f"Spec created: {data.title}", version=1,
+            spec_id=spec.id,
+            action="created",
+            actor_id=user_id,
+            actor_name=actor_name,
+            summary=f"Spec created: {data.title}",
+            version=1,
             changes=[
                 {"field": "title", "old": None, "new": data.title},
                 {"field": "status", "old": None, "new": data.status.value},
-                *([{"field": "functional_requirements", "old": None, "new": data.functional_requirements}] if data.functional_requirements else []),
-                *([{"field": "technical_requirements", "old": None, "new": data.technical_requirements}] if data.technical_requirements else []),
-                *([{"field": "acceptance_criteria", "old": None, "new": data.acceptance_criteria}] if data.acceptance_criteria else []),
-                *([{"field": "integration_requirements", "old": None, "new": [ir.model_dump() for ir in data.integration_requirements]}] if data.integration_requirements else []),
-                *([{"field": "observability_requirements", "old": None, "new": [req.model_dump() for req in data.observability_requirements]}] if data.observability_requirements else []),
+                *(
+                    [
+                        {
+                            "field": "functional_requirements",
+                            "old": None,
+                            "new": data.functional_requirements,
+                        }
+                    ]
+                    if data.functional_requirements
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "field": "technical_requirements",
+                            "old": None,
+                            "new": data.technical_requirements,
+                        }
+                    ]
+                    if data.technical_requirements
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "field": "acceptance_criteria",
+                            "old": None,
+                            "new": data.acceptance_criteria,
+                        }
+                    ]
+                    if data.acceptance_criteria
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "field": "integration_requirements",
+                            "old": None,
+                            "new": [
+                                ir.model_dump() for ir in data.integration_requirements
+                            ],
+                        }
+                    ]
+                    if data.integration_requirements
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "field": "observability_requirements",
+                            "old": None,
+                            "new": [
+                                req.model_dump()
+                                for req in data.observability_requirements
+                            ],
+                        }
+                    ]
+                    if data.observability_requirements
+                    else []
+                ),
             ],
         )
         return spec
@@ -6739,7 +7162,7 @@ class SpecService:
                     "updated_fields": changed_fields,
                     "evidence_invalidated": evidence_invalidated,
                 },
-            )
+            ),
         )
         await _application_commit(self.db)
         logging.getLogger("okto_pulse.spec.test_scenario").info(
@@ -6817,7 +7240,7 @@ class SpecService:
                     "scenario_id": scenario_id,
                     "cards_unlinked": cards_unlinked,
                 },
-            )
+            ),
         )
         await _application_commit(self.db)
 
@@ -6975,7 +7398,7 @@ class SpecService:
                     "evidence_gate_skipped": skip,
                     "evidence_verification_status": evidence_verification_status,
                 },
-            )
+            ),
         )
         await _application_commit(self.db)
 
@@ -7088,9 +7511,7 @@ class SpecService:
         )
 
         old_by_id = {
-            s.get("id"): s
-            for s in (spec.test_scenarios or [])
-            if isinstance(s, dict)
+            s.get("id"): s for s in (spec.test_scenarios or []) if isinstance(s, dict)
         }
         offenders: list[str] = []
         for s in new_scenarios:
@@ -7104,8 +7525,8 @@ class SpecService:
             is_new = old is None
             status_changed = (old or {}).get("status") != status
             evidence = s.get("evidence") or s.get("latest_evidence")
-            old_evidence = (
-                (old or {}).get("evidence") or (old or {}).get("latest_evidence")
+            old_evidence = (old or {}).get("evidence") or (old or {}).get(
+                "latest_evidence"
             )
             evidence_changed = bool(old and old_evidence != evidence)
             semantic_changed = False
@@ -7194,7 +7615,9 @@ class SpecService:
                 },
             )
 
-    async def update_spec(self, spec_id: str, user_id: str, data: SpecUpdate) -> Spec | None:
+    async def update_spec(
+        self, spec_id: str, user_id: str, data: SpecUpdate
+    ) -> Spec | None:
         """Update a spec. Bumps version on content changes. Records field-level diffs.
 
         Enforces the Spec Validation Gate content lock: if the spec has an active
@@ -7214,7 +7637,9 @@ class SpecService:
             return None
 
         if getattr(spec, "archived", False):
-            raise ValueError("This spec is archived. Restore it first before making changes.")
+            raise ValueError(
+                "This spec is archived. Restore it first before making changes."
+            )
 
         update_data = data.model_dump(exclude_unset=True)
         next_ideation_id = (
@@ -7227,9 +7652,7 @@ class SpecService:
             if "refinement_id" in update_data
             else spec.refinement_id
         )
-        parent_link_changed = bool(
-            {"ideation_id", "refinement_id"} & set(update_data)
-        )
+        parent_link_changed = bool({"ideation_id", "refinement_id"} & set(update_data))
         if "ideation_id" in update_data and next_ideation_id is not None:
             await _validate_spec_parent_on_board(
                 self.db,
@@ -7248,9 +7671,7 @@ class SpecService:
         if next_refinement is not None and (
             getattr(next_refinement, "ideation_id", None) != next_ideation_id
         ):
-            raise ValueError(
-                "Refinement does not belong to the selected Ideation"
-            )
+            raise ValueError("Refinement does not belong to the selected Ideation")
         previous_knowledge_parent = _governed_spec_knowledge_parent(
             ideation_id=spec.ideation_id,
             refinement_id=spec.refinement_id,
@@ -7260,17 +7681,24 @@ class SpecService:
             refinement_id=next_refinement_id,
         )
         content_fields = {
-            "functional_requirements", "technical_requirements",
-            "acceptance_criteria", "context", "description",
+            "functional_requirements",
+            "technical_requirements",
+            "acceptance_criteria",
+            "context",
+            "description",
         }
         # Spec eaf78891 (Ideação #2): semantic_fields are KG-relevant fields
         # that DO NOT bump version (they are not in content_fields), but DO
         # need to trigger re-consolidation. We emit SpecSemanticChanged for
         # them so ConsolidationEnqueuer re-extracts the spec into the KG.
         semantic_fields = {
-            "decisions", "business_rules", "api_contracts",
-            "integration_requirements", "observability_requirements",
-            "test_scenarios", "screen_mockups",
+            "decisions",
+            "business_rules",
+            "api_contracts",
+            "integration_requirements",
+            "observability_requirements",
+            "test_scenarios",
+            "screen_mockups",
         }
         bumps_version = bool(content_fields & update_data.keys())
         bumps_semantic = bool(semantic_fields & update_data.keys())
@@ -7288,7 +7716,10 @@ class SpecService:
             "observability_requirements",
             "decisions",
         ):
-            if json_list_field in update_data and update_data[json_list_field] is not None:
+            if (
+                json_list_field in update_data
+                and update_data[json_list_field] is not None
+            ):
                 update_data[json_list_field] = [
                     s.model_dump() if hasattr(s, "model_dump") else s
                     for s in update_data[json_list_field]
@@ -7319,10 +7750,14 @@ class SpecService:
         # through update_spec keep resolving via the permanent read-tolerant
         # resolvers (resolve_linked_fr_indices / resolve_linked_criteria_*).
         # No batch sweep; no one-shot migration tool.
-        if "functional_requirements" in update_data and update_data["functional_requirements"]:
+        if (
+            "functional_requirements" in update_data
+            and update_data["functional_requirements"]
+        ):
             from okto_pulse.core.services.spec_structured_entities import (  # noqa: PLC0415
                 migrate_legacy_fr_refs,
             )
+
             old_frs = list(spec.functional_requirements or [])
             new_frs = list(update_data["functional_requirements"] or [])
             _fr_dep_collections = {
@@ -7339,7 +7774,9 @@ class SpecService:
                     "decisions",
                 )
             }
-            _fr_migration_updates = migrate_legacy_fr_refs(old_frs, new_frs, _fr_dep_collections)
+            _fr_migration_updates = migrate_legacy_fr_refs(
+                old_frs, new_frs, _fr_dep_collections
+            )
             # Apply migration results unconditionally: the collections dict was
             # already built from update_data (if present) or spec, so _updated
             # already reflects the caller's new data with refs rewritten.
@@ -7350,14 +7787,18 @@ class SpecService:
             from okto_pulse.core.services.spec_structured_entities import (  # noqa: PLC0415
                 migrate_legacy_ac_refs,
             )
+
             old_acs = list(spec.acceptance_criteria or [])
             new_acs = list(update_data["acceptance_criteria"] or [])
             _current_scenarios = list(
                 update_data["test_scenarios"]
-                if "test_scenarios" in update_data and update_data["test_scenarios"] is not None
+                if "test_scenarios" in update_data
+                and update_data["test_scenarios"] is not None
                 else getattr(spec, "test_scenarios", None) or []
             )
-            _migrated_scenarios = migrate_legacy_ac_refs(old_acs, new_acs, _current_scenarios)
+            _migrated_scenarios = migrate_legacy_ac_refs(
+                old_acs, new_acs, _current_scenarios
+            )
             if _migrated_scenarios is not None:
                 update_data["test_scenarios"] = _migrated_scenarios
 
@@ -7410,7 +7851,10 @@ class SpecService:
         # untouched mockups are skipped; screens already gated by the MCP tool in this
         # transaction are skipped. Blocking raises pre-persist; advisory audits.
         if update_data.get("screen_mockups") is not None:
-            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            from okto_pulse.core.services.design_system import (
+                gate_entity_screen_mockups,
+            )
+
             await gate_entity_screen_mockups(
                 self.db, spec, update_data["screen_mockups"], entity_type="spec"
             )
@@ -7499,13 +7943,21 @@ class SpecService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"spec_id": spec_id, "version": spec.version, "fields": list(update_data.keys())},
+            details={
+                "spec_id": spec_id,
+                "version": spec.version,
+                "fields": list(update_data.keys()),
+            },
         )
         if changes:
             changed_fields = ", ".join(c["field"] for c in changes)
             await self._record_history(
-                spec_id=spec_id, action="updated", actor_id=user_id, actor_name=actor_name,
-                changes=changes, version=spec.version,
+                spec_id=spec_id,
+                action="updated",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=changes,
+                version=spec.version,
                 summary=f"Updated: {changed_fields}",
             )
         if "screen_mockups" in update_data:
@@ -7538,34 +7990,52 @@ class SpecService:
             "decisions": "decision",
         }
         if target_field not in allowed_fields:
-            raise ValueError("Traceability-only links are limited to FR, TR, and Decision targets")
+            raise ValueError(
+                "Traceability-only links are limited to FR, TR, and Decision targets"
+            )
 
         spec = await self.get_spec(spec_id)
         if not spec:
             return None, False, []
         if not spec_is_content_locked(spec):
-            raise ValueError("Traceability-only path is only available for content-locked specs")
+            raise ValueError(
+                "Traceability-only path is only available for content-locked specs"
+            )
         if getattr(spec, "archived", False):
-            raise ValueError("This spec is archived. Restore it first before linking tasks.")
+            raise ValueError(
+                "This spec is archived. Restore it first before linking tasks."
+            )
 
         card = await _application_get(self.db, "card", card_id)
         if card is None:
             raise ValueError("Card not found")
-        card_status = getattr(getattr(card, "status", None), "value", getattr(card, "status", None))
+        card_status = getattr(
+            getattr(card, "status", None), "value", getattr(card, "status", None)
+        )
         if getattr(card, "spec_id", None) != spec.id:
             raise ValueError("Traceability-only links require a card on the same spec")
         if getattr(card, "archived", False) or card_status == "cancelled":
-            raise ValueError("Traceability-only links require a non-archived, non-cancelled card")
+            raise ValueError(
+                "Traceability-only links require a non-archived, non-cancelled card"
+            )
 
         collection = list(getattr(spec, target_field, None) or [])
         target = next(
-            (item for item in collection if isinstance(item, dict) and item.get("id") == target_id),
+            (
+                item
+                for item in collection
+                if isinstance(item, dict) and item.get("id") == target_id
+            ),
             None,
         )
         if target is None:
-            raise ValueError(f"{allowed_fields[target_field]} '{target_id}' not found in spec")
+            raise ValueError(
+                f"{allowed_fields[target_field]} '{target_id}' not found in spec"
+            )
         if target_field == "decisions" and target.get("status", "active") != "active":
-            raise ValueError("Traceability-only decision links require an active decision")
+            raise ValueError(
+                "Traceability-only decision links require an active decision"
+            )
 
         task_ids = list(target.get("linked_task_ids") or [])
         old_task_ids = list(task_ids)
@@ -7657,7 +8127,9 @@ class SpecService:
             return None
 
         if getattr(spec, "archived", False):
-            raise ValueError("This spec is archived. Restore it first before changing status.")
+            raise ValueError(
+                "This spec is archived. Restore it first before changing status."
+            )
 
         # Enforce state machine transitions
         allowed = self._SPEC_TRANSITIONS.get(spec.status, [])
@@ -7687,9 +8159,7 @@ class SpecService:
             ineligible_sprint_ids: list[str] = []
             for hotfix in hotfix_sprints:
                 origin_sprint = (
-                    await _application_get(
-                        self.db, "sprint", hotfix.origin_sprint_id
-                    )
+                    await _application_get(self.db, "sprint", hotfix.origin_sprint_id)
                     if hotfix.origin_sprint_id
                     else None
                 )
@@ -7749,17 +8219,18 @@ class SpecService:
             # draft/review/approved are intentionally unaffected (they preserve the
             # unlock flow).
             board_settings = (board.settings or {}) if board else {}
-            if (
-                spec.status == SpecStatus.APPROVED
-                and board_settings.get("require_spec_validation", True)
+            if spec.status == SpecStatus.APPROVED and board_settings.get(
+                "require_spec_validation", True
             ):
                 # R4-IMP1: same block, normalized operational contract (GateContractError
                 # subclasses ValueError — no state-machine change, no auto-promotion).
                 from okto_pulse.core.services.gate_contracts import (
                     spec_validation_gate_error,
                 )
+
                 raise spec_validation_gate_error(
-                    spec_id=spec.id, current_status=spec.status.value,
+                    spec_id=spec.id,
+                    current_status=spec.status.value,
                 )
 
             resource_gate = ResourceGateService(self.db)
@@ -7771,7 +8242,10 @@ class SpecService:
             )
 
         # Re-execute coverage gates + qualitative validation when moving to in_progress
-        if data.status == SpecStatus.IN_PROGRESS and spec.status == SpecStatus.VALIDATED:
+        if (
+            data.status == SpecStatus.IN_PROGRESS
+            and spec.status == SpecStatus.VALIDATED
+        ):
             card_service = CardService(self.db)
             await card_service.check_test_coverage(spec, board)
             await card_service.check_rules_coverage(spec, board)
@@ -7784,15 +8258,24 @@ class SpecService:
             await card_service.check_decisions_coverage(spec, board)
 
             # Qualitative validation gate
-            auto_validate = (board.settings or {}).get("auto_validate", False) if board else False
+            auto_validate = (
+                (board.settings or {}).get("auto_validate", False) if board else False
+            )
             skip_qualitative = getattr(spec, "skip_qualitative_validation", False)
             if not auto_validate and not skip_qualitative:
-                evaluations = [e for e in (spec.evaluations or []) if not e.get("stale")]
-                approvals = [e for e in evaluations if e.get("recommendation") == "approve"]
-                rejections = [e for e in evaluations if e.get("recommendation") == "reject"]
+                evaluations = [
+                    e for e in (spec.evaluations or []) if not e.get("stale")
+                ]
+                approvals = [
+                    e for e in evaluations if e.get("recommendation") == "approve"
+                ]
+                rejections = [
+                    e for e in evaluations if e.get("recommendation") == "reject"
+                ]
                 if rejections:
                     reject_names = ", ".join(
-                        e.get("evaluator_name", e.get("evaluator_id", "?")) for e in rejections
+                        e.get("evaluator_name", e.get("evaluator_id", "?"))
+                        for e in rejections
                     )
                     raise ValueError(
                         f"Cannot move spec to 'in_progress': {len(rejections)} evaluation(s) "
@@ -7807,9 +8290,13 @@ class SpecService:
                     )
                 threshold = (
                     getattr(spec, "validation_threshold", None)
-                    or (board.settings or {}).get("validation_threshold_global", 70) if board else 70
+                    or (board.settings or {}).get("validation_threshold_global", 70)
+                    if board
+                    else 70
                 )
-                avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(approvals)
+                avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(
+                    approvals
+                )
                 if avg_score < threshold:
                     raise ValueError(
                         f"Cannot move spec to 'in_progress': average approval score "
@@ -7818,8 +8305,16 @@ class SpecService:
                     )
 
         # Enforce test coverage when moving to Done
-        skip_global = (board.settings or {}).get("skip_test_coverage_global", False) if board else False
-        if data.status == SpecStatus.DONE and not spec.skip_test_coverage and not skip_global:
+        skip_global = (
+            (board.settings or {}).get("skip_test_coverage_global", False)
+            if board
+            else False
+        )
+        if (
+            data.status == SpecStatus.DONE
+            and not spec.skip_test_coverage
+            and not skip_global
+        ):
             criteria = spec.acceptance_criteria or []
             scenarios = spec.test_scenarios or []
             if criteria:
@@ -7854,7 +8349,8 @@ class SpecService:
             )
             if spec_sprints:
                 pending = [
-                    s for s in spec_sprints
+                    s
+                    for s in spec_sprints
                     if s.status not in (SprintStatus.CLOSED, SprintStatus.CANCELLED)
                 ]
                 has_closed = any(s.status == SprintStatus.CLOSED for s in spec_sprints)
@@ -7892,7 +8388,11 @@ class SpecService:
                 task_list = "; ".join(
                     f"'{t.title}' ({t.status.value})" for t in pending_tasks[:5]
                 )
-                extra = f" (and {len(pending_tasks) - 5} more)" if len(pending_tasks) > 5 else ""
+                extra = (
+                    f" (and {len(pending_tasks) - 5} more)"
+                    if len(pending_tasks) > 5
+                    else ""
+                )
                 raise ValueError(
                     f"Cannot move spec to 'done': {len(pending_tasks)} linked task(s) are not yet done or cancelled. "
                     f"Pending: {task_list}{extra}. "
@@ -7984,7 +8484,9 @@ class SpecService:
                 session=self.db,
             )
 
-        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, spec.board_id)
+        resolved_name = actor_name or await resolve_actor_name(
+            self.db, user_id, spec.board_id
+        )
         await self._log_activity(
             board_id=spec.board_id,
             action="spec_moved",
@@ -7998,14 +8500,25 @@ class SpecService:
             },
         )
         await self._record_history(
-            spec_id=spec_id, action="status_changed", actor_id=user_id, actor_name=resolved_name,
-            changes=[{"field": "status", "old": old_status.value, "new": data.status.value}],
+            spec_id=spec_id,
+            action="status_changed",
+            actor_id=user_id,
+            actor_name=resolved_name,
+            changes=[
+                {"field": "status", "old": old_status.value, "new": data.status.value}
+            ],
             summary=f"Status: {old_status.value} → {data.status.value}",
             version=spec.version,
         )
         return spec
 
-    async def delete_spec(self, spec_id: str, user_id: str) -> bool:
+    async def delete_spec(
+        self,
+        spec_id: str,
+        user_id: str,
+        *,
+        return_receipt: bool = False,
+    ) -> bool | GovernedArtifactDeletionReceipt:
         """Delete a spec. Unlinks cards but doesn't delete them."""
         spec = await self.get_spec(spec_id)
         if not spec:
@@ -8034,7 +8547,22 @@ class SpecService:
 
         board_id = spec.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        await _prepare_governed_artifact_deletion(
+        # SQL cascade physically removes every sprint owned by this spec.
+        # Mint each child takedown before deleting the parent so canonical
+        # ``sprint:{id}`` nodes cannot survive until a later catch-up sweep.
+        linked_sprints = await _application_list(
+            self.db,
+            "sprint",
+            filters=(_apf("spec_id", "eq", spec_id),),
+        )
+        for linked_sprint in linked_sprints:
+            await _prepare_governed_artifact_deletion(
+                self.db,
+                board_id=board_id,
+                artifact_type="sprint",
+                artifact_id=linked_sprint.id,
+            )
+        takedown_receipt = await _prepare_governed_artifact_deletion(
             self.db,
             board_id=board_id,
             artifact_type="spec",
@@ -8050,7 +8578,7 @@ class SpecService:
             actor_name=actor_name,
             details={"spec_id": spec_id},
         )
-        return True
+        return takedown_receipt if return_receipt else True
 
     async def link_card(
         self, spec_id: str, card_id: str, user_id: str | None = None
@@ -8065,8 +8593,15 @@ class SpecService:
         spec = await _application_get(self.db, "spec", spec_id)
         if not spec:
             return False
-        if spec.status not in (SpecStatus.APPROVED, SpecStatus.VALIDATED, SpecStatus.IN_PROGRESS, SpecStatus.DONE):
-            raise ValueError(f"Cards can only be linked to a spec in 'approved', 'validated', 'in_progress', or 'done' status (current: '{spec.status.value}')")
+        if spec.status not in (
+            SpecStatus.APPROVED,
+            SpecStatus.VALIDATED,
+            SpecStatus.IN_PROGRESS,
+            SpecStatus.DONE,
+        ):
+            raise ValueError(
+                f"Cards can only be linked to a spec in 'approved', 'validated', 'in_progress', or 'done' status (current: '{spec.status.value}')"
+            )
         card = await _application_get(self.db, "card", card_id)
         if not card or card.board_id != spec.board_id:
             return False
@@ -8077,9 +8612,7 @@ class SpecService:
             board_id=spec.board_id,
             target_type="card",
             target_id=card.id,
-            previous_parent=(
-                None if old_spec_id is None else ("spec", old_spec_id)
-            ),
+            previous_parent=(None if old_spec_id is None else ("spec", old_spec_id)),
             next_parent=("spec", spec_id),
             actor_id=actor_id,
             port=self._knowledge_propagation_port,
@@ -8112,9 +8645,7 @@ class SpecService:
         )
         return True
 
-    async def unlink_card(
-        self, card_id: str, user_id: str | None = None
-    ) -> bool:
+    async def unlink_card(self, card_id: str, user_id: str | None = None) -> bool:
         """Unlink a card from its spec.
 
         Spec eaf78891 (Ideação #2): emits CardUnlinkedFromSpec so the
@@ -8162,7 +8693,9 @@ class SpecService:
         """
         settings = (board.settings if board else None) or {}
         return {
-            "require_spec_validation": bool(settings.get("require_spec_validation", True)),
+            "require_spec_validation": bool(
+                settings.get("require_spec_validation", True)
+            ),
             "min_spec_completeness": int(settings.get("min_spec_completeness", 80)),
             "min_spec_assertiveness": int(settings.get("min_spec_assertiveness", 80)),
             "max_spec_ambiguity": int(settings.get("max_spec_ambiguity", 30)),
@@ -8216,7 +8749,9 @@ class SpecService:
             entity_id=spec.id,
             critical_action=CriticalAction.SPEC_SUBMIT_VALIDATION,
             surface="service",
-            actor_type="agent" if reviewer_name and "agent" in reviewer_name.lower() else "user",
+            actor_type="agent"
+            if reviewer_name and "agent" in reviewer_name.lower()
+            else "user",
             actor_name=reviewer_name,
         )
 
@@ -8269,11 +8804,17 @@ class SpecService:
         # Threshold check (ambiguity is max_drift-style — lower is better)
         violations: list[str] = []
         if completeness < config["min_spec_completeness"]:
-            violations.append(f"completeness {completeness} < min {config['min_spec_completeness']}")
+            violations.append(
+                f"completeness {completeness} < min {config['min_spec_completeness']}"
+            )
         if assertiveness < config["min_spec_assertiveness"]:
-            violations.append(f"assertiveness {assertiveness} < min {config['min_spec_assertiveness']}")
+            violations.append(
+                f"assertiveness {assertiveness} < min {config['min_spec_assertiveness']}"
+            )
         if ambiguity > config["max_spec_ambiguity"]:
-            violations.append(f"ambiguity {ambiguity} > max {config['max_spec_ambiguity']}")
+            violations.append(
+                f"ambiguity {ambiguity} > max {config['max_spec_ambiguity']}"
+            )
 
         # Compute outcome: failed if any violation OR reject; success only if
         # all thresholds ok AND approve.
@@ -8347,7 +8888,9 @@ class SpecService:
         await self._log_activity(
             board_id=spec.board_id,
             action="spec_validation_submitted",
-            actor_type="agent" if reviewer_name and "agent" in reviewer_name.lower() else "user",
+            actor_type="agent"
+            if reviewer_name and "agent" in reviewer_name.lower()
+            else "user",
             actor_id=reviewer_id,
             actor_name=reviewer_name,
             details={
@@ -8402,7 +8945,9 @@ class SpecService:
         ("test_coverage_quality", "test_coverage_justification"),
     )
     SPEC_EVALUATION_RECOMMENDATIONS: tuple[str, ...] = (
-        "approve", "request_changes", "reject",
+        "approve",
+        "request_changes",
+        "reject",
     )
 
     async def submit_spec_evaluation(
@@ -8570,7 +9115,9 @@ class SpecQAService:
             return None
 
         spec = await _application_get(self.db, "spec", qa.spec_id)
-        board = await _application_get(self.db, "board", spec.board_id) if spec else None
+        board = (
+            await _application_get(self.db, "board", spec.board_id) if spec else None
+        )
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -8589,7 +9136,10 @@ class SpecQAService:
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
+            if (
+                qa.question_type in ("choice", "single_choice")
+                and len(data.selected) > 1
+            ):
                 data.selected = data.selected[:1]
             qa.selected = data.selected
             saved_something = True
@@ -8819,7 +9369,9 @@ class ShareService:
     ) -> ApplicationRecord | None:
         """Share a board with another user. Only owner/admin can share."""
         # Check board exists and caller is owner or admin
-        if not await self._can_manage_shares(board_id, owner_id, query_scope=query_scope):
+        if not await self._can_manage_shares(
+            board_id, owner_id, query_scope=query_scope
+        ):
             return None
 
         scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
@@ -8859,7 +9411,9 @@ class ShareService:
         if not share:
             return None
 
-        if not await self._can_manage_shares(share.board_id, caller_id, query_scope=query_scope):
+        if not await self._can_manage_shares(
+            share.board_id, caller_id, query_scope=query_scope
+        ):
             return None
 
         share.permission = data.permission
@@ -8963,7 +9517,9 @@ class ShareService:
 class TopicOperationError(ValueError):
     """Domain error with a stable code for Topic operations."""
 
-    def __init__(self, message: str, *, code: str, details: dict[str, Any] | None = None):
+    def __init__(
+        self, message: str, *, code: str, details: dict[str, Any] | None = None
+    ):
         super().__init__(message)
         self.code = code
         self.details = details or {}
@@ -9077,12 +9633,12 @@ class StoryService:
         for row in rows:
             key = "archived_count" if bool(row.values[0]) else "active_count"
             counts[key] += row.count
-        counts["total_associated_count"] = counts["active_count"] + counts["archived_count"]
+        counts["total_associated_count"] = (
+            counts["active_count"] + counts["archived_count"]
+        )
         return counts
 
-    async def _attach_topic_counts(
-        self, topic: ApplicationRecord
-    ) -> ApplicationRecord:
+    async def _attach_topic_counts(self, topic: ApplicationRecord) -> ApplicationRecord:
         counts = await self._topic_story_counts(topic.id, board_id=topic.board_id)
         topic.attach("story_count", counts["active_count"])
         topic.attach("active_count", counts["active_count"])
@@ -9134,12 +9690,18 @@ class StoryService:
         )
         renamed: list[str] = []
         for archived_topic in archived_topics:
-            archived_topic.name = self._archived_topic_name(archived_topic.name, archived_topic.id)
+            archived_topic.name = self._archived_topic_name(
+                archived_topic.name, archived_topic.id
+            )
             renamed.append(archived_topic.id)
         return renamed
 
     async def create_topic(
-        self, board_id: str, user_id: str, data: TopicCreate, skip_ownership_check: bool = False
+        self,
+        board_id: str,
+        user_id: str,
+        data: TopicCreate,
+        skip_ownership_check: bool = False,
     ) -> ApplicationRecord | None:
         if not await self._ensure_board(board_id, user_id, skip_ownership_check):
             return None
@@ -9196,11 +9758,15 @@ class StoryService:
             topic_id, archived = row.values
             if not topic_id:
                 continue
-            bucket = counts.setdefault(topic_id, {"active_count": 0, "archived_count": 0})
+            bucket = counts.setdefault(
+                topic_id, {"active_count": 0, "archived_count": 0}
+            )
             key = "archived_count" if bool(archived) else "active_count"
             bucket[key] += row.count
         for topic in topics:
-            topic_counts = counts.get(topic.id, {"active_count": 0, "archived_count": 0})
+            topic_counts = counts.get(
+                topic.id, {"active_count": 0, "archived_count": 0}
+            )
             total_count = topic_counts["active_count"] + topic_counts["archived_count"]
             topic.attach("story_count", topic_counts["active_count"])
             topic.attach("active_count", topic_counts["active_count"])
@@ -9221,12 +9787,20 @@ class StoryService:
         if "name" in update_data and update_data["name"] is not None:
             name = update_data.pop("name").strip()
             if not target_archived:
-                await self._ensure_active_topic_name_available(topic.board_id, name, exclude_topic_id=topic.id)
-                await self._free_archived_exact_name(topic.board_id, name, exclude_topic_id=topic.id)
+                await self._ensure_active_topic_name_available(
+                    topic.board_id, name, exclude_topic_id=topic.id
+                )
+                await self._free_archived_exact_name(
+                    topic.board_id, name, exclude_topic_id=topic.id
+                )
             topic.name = name
         elif original_archived and not target_archived:
-            await self._ensure_active_topic_name_available(topic.board_id, topic.name, exclude_topic_id=topic.id)
-            await self._free_archived_exact_name(topic.board_id, topic.name, exclude_topic_id=topic.id)
+            await self._ensure_active_topic_name_available(
+                topic.board_id, topic.name, exclude_topic_id=topic.id
+            )
+            await self._free_archived_exact_name(
+                topic.board_id, topic.name, exclude_topic_id=topic.id
+            )
         for key, value in update_data.items():
             setattr(topic, key, value)
         counts = await self._topic_story_counts(topic.id, board_id=topic.board_id)
@@ -9280,7 +9854,9 @@ class StoryService:
         await _application_flush(self.db)
         return topic
 
-    async def merge_topics(self, source_topic_id: str, target_topic_id: str, user_id: str) -> dict[str, Any] | None:
+    async def merge_topics(
+        self, source_topic_id: str, target_topic_id: str, user_id: str
+    ) -> dict[str, Any] | None:
         if source_topic_id == target_topic_id:
             raise InvalidTopicMergeError("Source and target Topics must be different")
         source_topic = await _application_get(self.db, "topic", source_topic_id)
@@ -9288,7 +9864,9 @@ class StoryService:
         if not source_topic or not target_topic:
             return None
         if source_topic.board_id != target_topic.board_id:
-            raise InvalidTopicMergeError("Source and target Topics must belong to the same board")
+            raise InvalidTopicMergeError(
+                "Source and target Topics must belong to the same board"
+            )
         if target_topic.archived:
             raise InvalidTopicMergeError("Target Topic must be active")
 
@@ -9346,7 +9924,11 @@ class StoryService:
         }
 
     async def create_story(
-        self, board_id: str, user_id: str, data: StoryCreate, skip_ownership_check: bool = False
+        self,
+        board_id: str,
+        user_id: str,
+        data: StoryCreate,
+        skip_ownership_check: bool = False,
     ) -> ApplicationRecord | None:
         if not await self._ensure_board(board_id, user_id, skip_ownership_check):
             return None
@@ -9375,7 +9957,10 @@ class StoryService:
             for item in (data.screen_mockups or [])
         ] or None
         if _submitted_mockups:
-            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            from okto_pulse.core.services.design_system import (
+                gate_entity_screen_mockups,
+            )
+
             await gate_entity_screen_mockups(
                 self.db, story, _submitted_mockups, entity_type="story"
             )
@@ -9388,7 +9973,11 @@ class StoryService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"story_id": story.id, "topic_id": story.topic_id, "title": story.title},
+            details={
+                "story_id": story.id,
+                "topic_id": story.topic_id,
+                "title": story.title,
+            },
         )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import StoryCreated
@@ -9456,7 +10045,11 @@ class StoryService:
         )
         if linked is None:
             return stories
-        return [story for story in stories if (len(story.ideation_links or []) > 0) is linked]
+        return [
+            story
+            for story in stories
+            if (len(story.ideation_links or []) > 0) is linked
+        ]
 
     async def update_story(
         self, story_id: str, user_id: str, data: StoryUpdate
@@ -9471,13 +10064,19 @@ class StoryService:
             topic = await self._topic_for_board(update_data["topic_id"], story.board_id)
             if not topic or topic.archived:
                 raise ValueError("Topic not found in this board")
-        if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
+        if (
+            "screen_mockups" in update_data
+            and update_data["screen_mockups"] is not None
+        ):
             update_data["screen_mockups"] = [
                 item.model_dump() if hasattr(item, "model_dump") else item
                 for item in update_data["screen_mockups"]
             ]
             # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
-            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            from okto_pulse.core.services.design_system import (
+                gate_entity_screen_mockups,
+            )
+
             await gate_entity_screen_mockups(
                 self.db, story, update_data["screen_mockups"], entity_type="story"
             )
@@ -9517,11 +10116,15 @@ class StoryService:
         if not story:
             return None
         if story.archived:
-            raise ValueError("This story is archived. Restore it before changing status.")
+            raise ValueError(
+                "This story is archived. Restore it before changing status."
+            )
         old_status = story.status
         allowed = self._STORY_TRANSITIONS.get(old_status, [])
         if data.status not in allowed and data.status != old_status:
-            allowed_str = ", ".join(status.value for status in allowed) if allowed else "none"
+            allowed_str = (
+                ", ".join(status.value for status in allowed) if allowed else "none"
+            )
             raise ValueError(
                 f"Cannot move story from '{old_status.value}' to '{data.status.value}'. "
                 f"Allowed transitions: {allowed_str}."
@@ -9534,7 +10137,11 @@ class StoryService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"story_id": story.id, "from_status": old_status.value, "to_status": data.status.value},
+            details={
+                "story_id": story.id,
+                "from_status": old_status.value,
+                "to_status": data.status.value,
+            },
         )
         if old_status != data.status:
             from okto_pulse.core.events import publish as event_publish
@@ -9559,6 +10166,7 @@ class StoryService:
         story = await self.get_story(story_id)
         if not story:
             return None
+        archive_changed = bool(story.archived) != bool(archived)
         story.archived = archived
         story.pre_archive_status = story.status.value if archived else None
         actor_name = await resolve_actor_name(self.db, user_id, story.board_id)
@@ -9570,18 +10178,39 @@ class StoryService:
             actor_name=actor_name,
             details={"story_id": story.id},
         )
+        if archive_changed:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import ArtifactArchiveChanged
+
+            await event_publish(
+                ArtifactArchiveChanged(
+                    board_id=story.board_id,
+                    actor_id=user_id,
+                    artifact_type="story",
+                    artifact_id=story.id,
+                    archived=archived,
+                ),
+                session=self.db,
+            )
         await _application_flush(self.db)
         return await self.get_story(story_id)
 
     async def link_story_to_ideation(
-        self, story_id: str, ideation_id: str, user_id: str, *, mark_converted: bool = True
+        self,
+        story_id: str,
+        ideation_id: str,
+        user_id: str,
+        *,
+        mark_converted: bool = True,
     ) -> ApplicationRecord | None:
         story = await self.get_story(story_id)
         ideation = await _application_get(self.db, "ideation", ideation_id)
         if not story or not ideation or story.board_id != ideation.board_id:
             return None
         if ideation.status not in self._EDITABLE_IDEATION_STATUSES:
-            allowed = ", ".join(status.value for status in self._EDITABLE_IDEATION_STATUSES)
+            allowed = ", ".join(
+                status.value for status in self._EDITABLE_IDEATION_STATUSES
+            )
             raise ValueError(
                 f"Story can only be linked to editable Ideations. "
                 f"Current ideation status is '{ideation.status.value}'. Allowed statuses: {allowed}."
@@ -9596,7 +10225,9 @@ class StoryService:
         if link:
             if link.ideation_id == ideation_id:
                 raise ValueError("Story is already linked to this Ideation.")
-            raise ValueError("Story is already linked to another Ideation. A Story can only link to one Ideation.")
+            raise ValueError(
+                "Story is already linked to another Ideation. A Story can only link to one Ideation."
+            )
         link = _new_application_record(
             "story_ideation_link",
             board_id=story.board_id,
@@ -9687,10 +10318,15 @@ class StoryService:
                 user_id,
                 IdeationCreate(
                     title=data.title or stories[0].title,
-                    description=data.description or "Ideation created from selected Stories.",
-                    problem_statement=data.problem_statement or "Selected Stories:\n" + "\n".join(story_lines),
+                    description=data.description
+                    or "Ideation created from selected Stories.",
+                    problem_statement=data.problem_statement
+                    or "Selected Stories:\n" + "\n".join(story_lines),
                     proposed_approach=data.proposed_approach,
-                    labels=sorted({label for story in stories for label in (story.labels or [])}) or None,
+                    labels=sorted(
+                        {label for story in stories for label in (story.labels or [])}
+                    )
+                    or None,
                 ),
                 skip_ownership_check=skip_ownership_check,
                 query_scope=query_scope,
@@ -9715,9 +10351,13 @@ class StoryService:
             # entries (delta vs the pre-propagation set) BEFORE flush so a non-compliant
             # legacy mockup can't be laundered onto a blocking board.
             from okto_pulse.core.services.design_system import MockupDesignSystemGate
+
             await MockupDesignSystemGate(self.db).gate_delta(
-                ideation.board_id, _old_ideation_mockups, list(ideation.screen_mockups or []),
-                entity_type="ideation", entity_id=ideation.id,
+                ideation.board_id,
+                _old_ideation_mockups,
+                list(ideation.screen_mockups or []),
+                entity_type="ideation",
+                entity_id=ideation.id,
             )
         await _application_flush(self.db)
         await _application_refresh(self.db, ideation)
@@ -9804,7 +10444,9 @@ class IdeationService:
         )
         await _application_add(self.db, entry)
 
-    async def list_history(self, ideation_id: str, limit: int = 50) -> list[IdeationHistory]:
+    async def list_history(
+        self, ideation_id: str, limit: int = 50
+    ) -> list[IdeationHistory]:
         """List history entries for an ideation, newest first."""
         return await _application_list(
             self.db,
@@ -9821,9 +10463,9 @@ class IdeationService:
         for field in fields:
             old_val = old_data.get(field)
             new_val = new_data.get(field)
-            if hasattr(old_val, 'value'):
+            if hasattr(old_val, "value"):
                 old_val = old_val.value
-            if hasattr(new_val, 'value'):
+            if hasattr(new_val, "value"):
                 new_val = new_val.value
             if old_val != new_val:
                 changes.append({"field": field, "old": old_val, "new": new_val})
@@ -9875,13 +10517,37 @@ class IdeationService:
             details={"title": data.title, "ideation_id": ideation.id},
         )
         await self._record_history(
-            ideation_id=ideation.id, action="created", actor_id=user_id, actor_name=actor_name,
-            summary=f"Ideation created: {data.title}", version=1,
+            ideation_id=ideation.id,
+            action="created",
+            actor_id=user_id,
+            actor_name=actor_name,
+            summary=f"Ideation created: {data.title}",
+            version=1,
             changes=[
                 {"field": "title", "old": None, "new": data.title},
                 {"field": "status", "old": None, "new": IdeationStatus.DRAFT.value},
-                *([{"field": "problem_statement", "old": None, "new": data.problem_statement}] if data.problem_statement else []),
-                *([{"field": "proposed_approach", "old": None, "new": data.proposed_approach}] if data.proposed_approach else []),
+                *(
+                    [
+                        {
+                            "field": "problem_statement",
+                            "old": None,
+                            "new": data.problem_statement,
+                        }
+                    ]
+                    if data.problem_statement
+                    else []
+                ),
+                *(
+                    [
+                        {
+                            "field": "proposed_approach",
+                            "old": None,
+                            "new": data.proposed_approach,
+                        }
+                    ]
+                    if data.proposed_approach
+                    else []
+                ),
             ],
         )
         return ideation
@@ -9925,7 +10591,12 @@ class IdeationService:
             await _attach_active_spec_counts(self.db, list(ideation.refinements or []))
         return ideation
 
-    async def list_ideations(self, board_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Ideation]:
+    async def list_ideations(
+        self,
+        board_id: str,
+        status_filter: str | None = None,
+        include_archived: bool = False,
+    ) -> list[Ideation]:
         """List ideations for a board, optionally filtered by status."""
         filters = [_apf("board_id", "eq", board_id)]
         if status_filter:
@@ -9944,7 +10615,9 @@ class IdeationService:
         await _attach_active_direct_spec_counts(self.db, rows)
         return rows
 
-    async def update_ideation(self, ideation_id: str, user_id: str, data: IdeationUpdate) -> Ideation | None:
+    async def update_ideation(
+        self, ideation_id: str, user_id: str, data: IdeationUpdate
+    ) -> Ideation | None:
         """Update an ideation. Bumps version on content changes. Records field-level diffs.
 
         Only allowed in Draft status — all other statuses are read-only.
@@ -9954,7 +10627,9 @@ class IdeationService:
             return None
 
         if getattr(ideation, "archived", False):
-            raise ValueError("This ideation is archived. Restore it first before making changes.")
+            raise ValueError(
+                "This ideation is archived. Restore it first before making changes."
+            )
 
         if ideation.status != IdeationStatus.DRAFT:
             raise ValueError(
@@ -9964,7 +10639,9 @@ class IdeationService:
 
         update_data = data.model_dump(exclude_unset=True)
         content_fields = {
-            "description", "problem_statement", "proposed_approach",
+            "description",
+            "problem_statement",
+            "proposed_approach",
             "scope_assessment",
         }
         bumps_version = bool(content_fields & update_data.keys())
@@ -9972,13 +10649,19 @@ class IdeationService:
         old_data = {k: getattr(ideation, k) for k in update_data.keys()}
 
         # Serialize screen_mockups if present
-        if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
+        if (
+            "screen_mockups" in update_data
+            and update_data["screen_mockups"] is not None
+        ):
             update_data["screen_mockups"] = [
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
             # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
-            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            from okto_pulse.core.services.design_system import (
+                gate_entity_screen_mockups,
+            )
+
             await gate_entity_screen_mockups(
                 self.db, ideation, update_data["screen_mockups"], entity_type="ideation"
             )
@@ -10004,13 +10687,21 @@ class IdeationService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"ideation_id": ideation_id, "version": ideation.version, "fields": list(update_data.keys())},
+            details={
+                "ideation_id": ideation_id,
+                "version": ideation.version,
+                "fields": list(update_data.keys()),
+            },
         )
         if changes:
             changed_fields = ", ".join(c["field"] for c in changes)
             await self._record_history(
-                ideation_id=ideation_id, action="updated", actor_id=user_id, actor_name=actor_name,
-                changes=changes, version=ideation.version,
+                ideation_id=ideation_id,
+                action="updated",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=changes,
+                version=ideation.version,
                 summary=f"Updated: {changed_fields}",
             )
         return ideation
@@ -10076,7 +10767,9 @@ class IdeationService:
         new_value = bool(skip)
         ideation.skip_ambiguity_gate = new_value
 
-        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, ideation.board_id)
+        resolved_name = actor_name or await resolve_actor_name(
+            self.db, user_id, ideation.board_id
+        )
         await self._log_activity(
             board_id=ideation.board_id,
             action="ideation.ambiguity_gate_skip_updated",
@@ -10156,7 +10849,11 @@ class IdeationService:
             )
 
     async def move_ideation(
-        self, ideation_id: str, user_id: str, data: IdeationMove, actor_name: str | None = None
+        self,
+        ideation_id: str,
+        user_id: str,
+        data: IdeationMove,
+        actor_name: str | None = None,
     ) -> Ideation | None:
         """Move an ideation to a different status.
 
@@ -10172,7 +10869,9 @@ class IdeationService:
             return None
 
         if getattr(ideation, "archived", False):
-            raise ValueError("This ideation is archived. Restore it first before changing status.")
+            raise ValueError(
+                "This ideation is archived. Restore it first before changing status."
+            )
 
         old_status = ideation.status
         allowed = self._IDEATION_TRANSITIONS.get(old_status, [])
@@ -10183,7 +10882,9 @@ class IdeationService:
                 f"Allowed transitions: {allowed_str}."
             )
 
-        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, ideation.board_id)
+        resolved_name = actor_name or await resolve_actor_name(
+            self.db, user_id, ideation.board_id
+        )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -10228,6 +10929,24 @@ class IdeationService:
 
         ideation.status = data.status
 
+        # Persist the transition and publish its durable outbox event in the
+        # same unit of work.  ConsolidationEnqueuer consumes this event so
+        # cancelled/restored ideations cannot leave a stale KG projection.
+        await _application_flush(self.db)
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import IdeationMoved
+
+        await event_publish(
+            IdeationMoved(
+                board_id=ideation.board_id,
+                actor_id=user_id,
+                ideation_id=ideation.id,
+                from_status=old_status.value,
+                to_status=data.status.value,
+            ),
+            session=self.db,
+        )
+
         await self._log_activity(
             board_id=ideation.board_id,
             action="ideation_moved",
@@ -10248,8 +10967,13 @@ class IdeationService:
             summary += f" (new iteration v{ideation.version})"
 
         await self._record_history(
-            ideation_id=ideation_id, action="status_changed", actor_id=user_id, actor_name=resolved_name,
-            changes=[{"field": "status", "old": old_status.value, "new": data.status.value}],
+            ideation_id=ideation_id,
+            action="status_changed",
+            actor_id=user_id,
+            actor_name=resolved_name,
+            changes=[
+                {"field": "status", "old": old_status.value, "new": data.status.value}
+            ],
             summary=summary,
             version=ideation.version,
         )
@@ -10258,16 +10982,18 @@ class IdeationService:
     async def _create_snapshot(self, ideation: "Ideation", user_id: str) -> Any:
         """Create an immutable snapshot of the ideation's current state."""
         qa_snapshot = []
-        for qa in (ideation.qa_items or []):
-            qa_snapshot.append({
-                "question": qa.question,
-                "question_type": qa.question_type,
-                "choices": qa.choices,
-                "answer": qa.answer,
-                "selected": qa.selected,
-                "asked_by": qa.asked_by,
-                "answered_by": qa.answered_by,
-            })
+        for qa in ideation.qa_items or []:
+            qa_snapshot.append(
+                {
+                    "question": qa.question,
+                    "question_type": qa.question_type,
+                    "choices": qa.choices,
+                    "answer": qa.answer,
+                    "selected": qa.selected,
+                    "asked_by": qa.asked_by,
+                    "answered_by": qa.answered_by,
+                }
+            )
 
         snapshot = _new_application_record(
             "ideation_snapshot",
@@ -10351,7 +11077,9 @@ class IdeationService:
         )
         return True
 
-    async def evaluate_complexity(self, ideation_id: str, user_id: str) -> Ideation | None:
+    async def evaluate_complexity(
+        self, ideation_id: str, user_id: str
+    ) -> Ideation | None:
         """Evaluate and set complexity based on scope_assessment.
 
         Only allowed in Evaluating status.
@@ -10388,8 +11116,17 @@ class IdeationService:
 
         actor_name = await resolve_actor_name(self.db, user_id, ideation.board_id)
         await self._record_history(
-            ideation_id=ideation_id, action="complexity_evaluated", actor_id=user_id, actor_name=actor_name,
-            changes=[{"field": "complexity", "old": old_complexity.value if old_complexity else None, "new": new_complexity.value}],
+            ideation_id=ideation_id,
+            action="complexity_evaluated",
+            actor_id=user_id,
+            actor_name=actor_name,
+            changes=[
+                {
+                    "field": "complexity",
+                    "old": old_complexity.value if old_complexity else None,
+                    "new": new_complexity.value,
+                }
+            ],
             summary=f"Complexity evaluated: {new_complexity.value}",
             version=ideation.version,
         )
@@ -10404,8 +11141,12 @@ class IdeationService:
         return ideation
 
     async def derive_spec(
-        self, ideation_id: str, user_id: str, skip_ownership_check: bool = False,
-        mockup_ids: list[str] | None = None, kb_ids: list[str] | None = None,
+        self,
+        ideation_id: str,
+        user_id: str,
+        skip_ownership_check: bool = False,
+        mockup_ids: list[str] | None = None,
+        kb_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
         query_scope: QueryScope | None = None,
@@ -10540,7 +11281,10 @@ class IdeationService:
 
             actor_name = await resolve_actor_name(self.db, user_id, ideation.board_id)
             await self._record_history(
-                ideation_id=ideation_id, action="spec_draft_created", actor_id=user_id, actor_name=actor_name,
+                ideation_id=ideation_id,
+                action="spec_draft_created",
+                actor_id=user_id,
+                actor_name=actor_name,
                 changes=[{"field": "spec", "old": None, "new": spec.id}],
                 summary=f"Spec draft created: {spec.title} (requirements to be defined)",
                 version=ideation.version,
@@ -10565,7 +11309,9 @@ class IdeationQAService:
         """Load a Q&A item so callers can authorize its canonical parent."""
         return await _application_get(self.db, "ideation_qa_item", qa_id)
 
-    async def create_question(self, ideation_id: str, user_id: str, data: IdeationQACreate) -> IdeationQAItem | None:
+    async def create_question(
+        self, ideation_id: str, user_id: str, data: IdeationQACreate
+    ) -> IdeationQAItem | None:
         """Create a question on an ideation (text or choice)."""
         ideation = await _application_get(self.db, "ideation", ideation_id)
         if not ideation:
@@ -10605,7 +11351,11 @@ class IdeationQAService:
             return None
 
         ideation = await _application_get(self.db, "ideation", qa.ideation_id)
-        board = await _application_get(self.db, "board", ideation.board_id) if ideation else None
+        board = (
+            await _application_get(self.db, "board", ideation.board_id)
+            if ideation
+            else None
+        )
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -10624,7 +11374,10 @@ class IdeationQAService:
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
+            if (
+                qa.question_type in ("choice", "single_choice")
+                and len(data.selected) > 1
+            ):
                 data.selected = data.selected[:1]
             qa.selected = data.selected
             saved_something = True
@@ -10675,12 +11428,12 @@ class RefinementService:
         # Cognitive closeout must run BEFORE snapshot/status mutation.
         # Keep the historical attribute name so existing tests and callers
         # that inject a fake guard continue to work.
-        self._cognitive_done_guard_factory: Callable[
-            [], Any
-        ] = _build_default_refinement_cognitive_done_guard
-        self._cognitive_readiness_service_factory: Callable[
-            [], Any
-        ] = _build_default_cognitive_readiness_service
+        self._cognitive_done_guard_factory: Callable[[], Any] = (
+            _build_default_refinement_cognitive_done_guard
+        )
+        self._cognitive_readiness_service_factory: Callable[[], Any] = (
+            _build_default_cognitive_readiness_service
+        )
 
     _STATUS_ORDER = {
         RefinementStatus.DRAFT: 0,
@@ -10715,7 +11468,9 @@ class RefinementService:
         )
         await _application_add(self.db, entry)
 
-    async def list_history(self, refinement_id: str, limit: int = 50) -> list[RefinementHistory]:
+    async def list_history(
+        self, refinement_id: str, limit: int = 50
+    ) -> list[RefinementHistory]:
         """List history entries for a refinement, newest first."""
         return await _application_list(
             self.db,
@@ -10732,9 +11487,9 @@ class RefinementService:
         for field in fields:
             old_val = old_data.get(field)
             new_val = new_data.get(field)
-            if hasattr(old_val, 'value'):
+            if hasattr(old_val, "value"):
                 old_val = old_val.value
-            if hasattr(new_val, 'value'):
+            if hasattr(new_val, "value"):
                 new_val = new_val.value
             if old_val != new_val:
                 changes.append({"field": field, "old": old_val, "new": new_val})
@@ -10773,9 +11528,7 @@ class RefinementService:
                 user_id=user_id,
                 query_scope=query_scope,
                 require_ownership=(
-                    query_scope.require_ownership
-                    if query_scope is not None
-                    else True
+                    query_scope.require_ownership if query_scope is not None else True
                 ),
             )
             if board_query is None:
@@ -10837,7 +11590,10 @@ class RefinementService:
             for item in (data.screen_mockups or [])
         ] or None
         if _submitted_mockups:
-            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            from okto_pulse.core.services.design_system import (
+                gate_entity_screen_mockups,
+            )
+
             await gate_entity_screen_mockups(
                 self.db, refinement, _submitted_mockups, entity_type="refinement"
             )
@@ -10891,18 +11647,42 @@ class RefinementService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"title": data.title, "refinement_id": refinement.id, "ideation_id": ideation_id},
+            details={
+                "title": data.title,
+                "refinement_id": refinement.id,
+                "ideation_id": ideation_id,
+            },
         )
         await self._record_history(
-            refinement_id=refinement.id, action="created", actor_id=user_id, actor_name=actor_name,
-            summary=f"Refinement created: {data.title}", version=1,
+            refinement_id=refinement.id,
+            action="created",
+            actor_id=user_id,
+            actor_name=actor_name,
+            summary=f"Refinement created: {data.title}",
+            version=1,
             changes=[
                 {"field": "title", "old": None, "new": data.title},
                 {"field": "status", "old": None, "new": RefinementStatus.DRAFT.value},
-                *([{"field": "in_scope", "old": None, "new": data.in_scope}] if data.in_scope else []),
-                *([{"field": "out_of_scope", "old": None, "new": data.out_of_scope}] if data.out_of_scope else []),
-                *([{"field": "analysis", "old": None, "new": data.analysis}] if data.analysis else []),
-                *([{"field": "decisions", "old": None, "new": data.decisions}] if data.decisions else []),
+                *(
+                    [{"field": "in_scope", "old": None, "new": data.in_scope}]
+                    if data.in_scope
+                    else []
+                ),
+                *(
+                    [{"field": "out_of_scope", "old": None, "new": data.out_of_scope}]
+                    if data.out_of_scope
+                    else []
+                ),
+                *(
+                    [{"field": "analysis", "old": None, "new": data.analysis}]
+                    if data.analysis
+                    else []
+                ),
+                *(
+                    [{"field": "decisions", "old": None, "new": data.decisions}]
+                    if data.decisions
+                    else []
+                ),
             ],
         )
         return refinement
@@ -10927,7 +11707,12 @@ class RefinementService:
             await _attach_active_spec_counts(self.db, [refinement])
         return refinement
 
-    async def list_refinements(self, ideation_id: str, status_filter: str | None = None, include_archived: bool = False) -> list[Refinement]:
+    async def list_refinements(
+        self,
+        ideation_id: str,
+        status_filter: str | None = None,
+        include_archived: bool = False,
+    ) -> list[Refinement]:
         """List refinements for an ideation, optionally filtered by status."""
         filters = [_apf("ideation_id", "eq", ideation_id)]
         if status_filter:
@@ -10950,7 +11735,9 @@ class RefinementService:
         await _attach_active_spec_counts(self.db, rows)
         return rows
 
-    async def update_refinement(self, refinement_id: str, user_id: str, data: RefinementUpdate) -> Refinement | None:
+    async def update_refinement(
+        self, refinement_id: str, user_id: str, data: RefinementUpdate
+    ) -> Refinement | None:
         """Update a refinement. Bumps version on content changes. Records field-level diffs.
 
         Only allowed in Draft status — all other statuses are read-only.
@@ -10960,7 +11747,9 @@ class RefinementService:
             return None
 
         if getattr(refinement, "archived", False):
-            raise ValueError("This refinement is archived. Restore it first before making changes.")
+            raise ValueError(
+                "This refinement is archived. Restore it first before making changes."
+            )
 
         if refinement.status != RefinementStatus.DRAFT:
             raise ValueError(
@@ -10979,15 +11768,24 @@ class RefinementService:
         old_data = {k: getattr(refinement, k) for k in update_data.keys()}
 
         # Serialize screen_mockups if present
-        if "screen_mockups" in update_data and update_data["screen_mockups"] is not None:
+        if (
+            "screen_mockups" in update_data
+            and update_data["screen_mockups"] is not None
+        ):
             update_data["screen_mockups"] = [
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
             # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
-            from okto_pulse.core.services.design_system import gate_entity_screen_mockups
+            from okto_pulse.core.services.design_system import (
+                gate_entity_screen_mockups,
+            )
+
             await gate_entity_screen_mockups(
-                self.db, refinement, update_data["screen_mockups"], entity_type="refinement"
+                self.db,
+                refinement,
+                update_data["screen_mockups"],
+                entity_type="refinement",
             )
 
         refinement_json_fields = {
@@ -11027,13 +11825,21 @@ class RefinementService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"refinement_id": refinement_id, "version": refinement.version, "fields": list(update_data.keys())},
+            details={
+                "refinement_id": refinement_id,
+                "version": refinement.version,
+                "fields": list(update_data.keys()),
+            },
         )
         if changes:
             changed_fields = ", ".join(c["field"] for c in changes)
             await self._record_history(
-                refinement_id=refinement_id, action="updated", actor_id=user_id, actor_name=actor_name,
-                changes=changes, version=refinement.version,
+                refinement_id=refinement_id,
+                action="updated",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=changes,
+                version=refinement.version,
                 summary=f"Updated: {changed_fields}",
             )
         return refinement
@@ -11043,12 +11849,16 @@ class RefinementService:
     # Review → Draft, Approved, Cancelled
     # Approved → Review, Done, Cancelled
     # Done → Draft (new version)
-    _REFINEMENT_TRANSITIONS: dict[RefinementStatus, list[RefinementStatus]] = transition_map(
-        "refinement"
+    _REFINEMENT_TRANSITIONS: dict[RefinementStatus, list[RefinementStatus]] = (
+        transition_map("refinement")
     )
 
     async def move_refinement(
-        self, refinement_id: str, user_id: str, data: RefinementMove, actor_name: str | None = None
+        self,
+        refinement_id: str,
+        user_id: str,
+        data: RefinementMove,
+        actor_name: str | None = None,
     ) -> Refinement | None:
         """Move a refinement to a different status.
 
@@ -11063,7 +11873,9 @@ class RefinementService:
             return None
 
         if getattr(refinement, "archived", False):
-            raise ValueError("This refinement is archived. Restore it first before changing status.")
+            raise ValueError(
+                "This refinement is archived. Restore it first before changing status."
+            )
 
         old_status = refinement.status
         allowed = self._REFINEMENT_TRANSITIONS.get(old_status, [])
@@ -11089,7 +11901,9 @@ class RefinementService:
                     "moving to review.",
                 )
 
-        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, refinement.board_id)
+        resolved_name = actor_name or await resolve_actor_name(
+            self.db, user_id, refinement.board_id
+        )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -11144,7 +11958,10 @@ class RefinementService:
             await self._create_snapshot(refinement, user_id)
 
         # Version bump on back-to-draft from done
-        if data.status == RefinementStatus.DRAFT and old_status == RefinementStatus.DONE:
+        if (
+            data.status == RefinementStatus.DRAFT
+            and old_status == RefinementStatus.DONE
+        ):
             refinement.version += 1
 
         # Cancellation justification (ITEM 17): cancel requires a reason
@@ -11160,7 +11977,10 @@ class RefinementService:
 
         refinement.status = data.status
         from okto_pulse.core.events import publish as event_publish
-        from okto_pulse.core.events.types import RefinementSemanticChanged
+        from okto_pulse.core.events.types import (
+            RefinementMoved,
+            RefinementSemanticChanged,
+        )
 
         await event_publish(
             RefinementSemanticChanged(
@@ -11168,6 +11988,16 @@ class RefinementService:
                 actor_id=user_id,
                 refinement_id=refinement.id,
                 changed_fields=["status"],
+            ),
+            session=self.db,
+        )
+        await event_publish(
+            RefinementMoved(
+                board_id=refinement.board_id,
+                actor_id=user_id,
+                refinement_id=refinement.id,
+                from_status=old_status.value,
+                to_status=data.status.value,
             ),
             session=self.db,
         )
@@ -11188,30 +12018,42 @@ class RefinementService:
         summary = f"Status: {old_status.value} \u2192 {data.status.value}"
         if data.status == RefinementStatus.DONE:
             summary += f" (snapshot v{refinement.version} created)"
-        elif data.status == RefinementStatus.DRAFT and old_status == RefinementStatus.DONE:
+        elif (
+            data.status == RefinementStatus.DRAFT
+            and old_status == RefinementStatus.DONE
+        ):
             summary += f" (new iteration v{refinement.version})"
 
         await self._record_history(
-            refinement_id=refinement_id, action="status_changed", actor_id=user_id, actor_name=resolved_name,
-            changes=[{"field": "status", "old": old_status.value, "new": data.status.value}],
+            refinement_id=refinement_id,
+            action="status_changed",
+            actor_id=user_id,
+            actor_name=resolved_name,
+            changes=[
+                {"field": "status", "old": old_status.value, "new": data.status.value}
+            ],
             summary=summary,
             version=refinement.version,
         )
         return refinement
 
-    async def _create_snapshot(self, refinement: "Refinement", user_id: str) -> "RefinementSnapshot":
+    async def _create_snapshot(
+        self, refinement: "Refinement", user_id: str
+    ) -> "RefinementSnapshot":
         """Create an immutable snapshot of the refinement's current state."""
         qa_snapshot = []
-        for qa in (refinement.qa_items or []):
-            qa_snapshot.append({
-                "question": qa.question,
-                "question_type": qa.question_type,
-                "choices": qa.choices,
-                "answer": qa.answer,
-                "selected": qa.selected,
-                "asked_by": qa.asked_by,
-                "answered_by": qa.answered_by,
-            })
+        for qa in refinement.qa_items or []:
+            qa_snapshot.append(
+                {
+                    "question": qa.question,
+                    "question_type": qa.question_type,
+                    "choices": qa.choices,
+                    "answer": qa.answer,
+                    "selected": qa.selected,
+                    "asked_by": qa.asked_by,
+                    "answered_by": qa.answered_by,
+                }
+            )
 
         snapshot = _new_application_record(
             "refinement_snapshot",
@@ -11288,8 +12130,12 @@ class RefinementService:
         return True
 
     async def derive_spec(
-        self, refinement_id: str, user_id: str, skip_ownership_check: bool = False,
-        mockup_ids: list[str] | None = None, kb_ids: list[str] | None = None,
+        self,
+        refinement_id: str,
+        user_id: str,
+        skip_ownership_check: bool = False,
+        mockup_ids: list[str] | None = None,
+        kb_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
         query_scope: QueryScope | None = None,
@@ -11334,28 +12180,38 @@ class RefinementService:
         if refinement.decisions:
             decisions_text = "\n".join(f"- {d}" for d in refinement.decisions)
             context_parts.append(f"## Decisions\n{decisions_text}")
-        parent_context = compile_ideation_parent_context(getattr(refinement, "ideation", None))
+        parent_context = compile_ideation_parent_context(
+            getattr(refinement, "ideation", None)
+        )
         if parent_context and not (
-            refinement.description and "## Parent Ideation Context" in refinement.description
+            refinement.description
+            and "## Parent Ideation Context" in refinement.description
         ):
             context_parts.append(parent_context)
-        context = "\n\n".join(context_parts) if context_parts else refinement.description
+        context = (
+            "\n\n".join(context_parts) if context_parts else refinement.description
+        )
 
         # Snapshot artifact data BEFORE create_spec — flush() in create_spec
         # expires all session objects, making eagerly-loaded collections inaccessible.
         snapshot_qa = list(refinement.qa_items or [])
         snapshot_mockups = list(refinement.screen_mockups or [])
         snapshot_kbs = [
-            {"title": kb.title, "description": kb.description, "content": kb.content,
-             "mime_type": getattr(kb, "mime_type", "text/markdown"), "id": kb.id,
-             "source_type": getattr(kb, "source_type", None),
-             "source_id": getattr(kb, "source_id", None),
-             "source_title": getattr(kb, "source_title", None),
-             "source_version": getattr(kb, "source_version", None),
-             "source_kb_id": getattr(kb, "source_kb_id", None),
-             "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
-             "immediate_parent_kb_id": getattr(kb, "immediate_parent_kb_id", None),
-             "governance_metadata": getattr(kb, "governance_metadata", None)}
+            {
+                "title": kb.title,
+                "description": kb.description,
+                "content": kb.content,
+                "mime_type": getattr(kb, "mime_type", "text/markdown"),
+                "id": kb.id,
+                "source_type": getattr(kb, "source_type", None),
+                "source_id": getattr(kb, "source_id", None),
+                "source_title": getattr(kb, "source_title", None),
+                "source_version": getattr(kb, "source_version", None),
+                "source_kb_id": getattr(kb, "source_kb_id", None),
+                "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
+                "immediate_parent_kb_id": getattr(kb, "immediate_parent_kb_id", None),
+                "governance_metadata": getattr(kb, "governance_metadata", None),
+            }
             for kb in (refinement.knowledge_bases or [])
         ]
 
@@ -11451,7 +12307,10 @@ class RefinementService:
 
             actor_name = await resolve_actor_name(self.db, user_id, refinement.board_id)
             await self._record_history(
-                refinement_id=refinement_id, action="spec_draft_created", actor_id=user_id, actor_name=actor_name,
+                refinement_id=refinement_id,
+                action="spec_draft_created",
+                actor_id=user_id,
+                actor_name=actor_name,
                 changes=[{"field": "spec", "old": None, "new": spec.id}],
                 summary=f"Spec draft created: {spec.title} (requirements to be defined)",
                 version=refinement.version,
@@ -11476,7 +12335,9 @@ class RefinementQAService:
         """Load a Q&A item so callers can authorize its canonical parent."""
         return await _application_get(self.db, "refinement_qa_item", qa_id)
 
-    async def create_question(self, refinement_id: str, user_id: str, data: RefinementQACreate) -> RefinementQAItem | None:
+    async def create_question(
+        self, refinement_id: str, user_id: str, data: RefinementQACreate
+    ) -> RefinementQAItem | None:
         """Create a question on a refinement (text or choice)."""
         refinement = await _application_get(self.db, "refinement", refinement_id)
         if not refinement:
@@ -11511,7 +12372,11 @@ class RefinementQAService:
             return None
 
         refinement = await _application_get(self.db, "refinement", qa.refinement_id)
-        board = await _application_get(self.db, "board", refinement.board_id) if refinement else None
+        board = (
+            await _application_get(self.db, "board", refinement.board_id)
+            if refinement
+            else None
+        )
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -11530,7 +12395,10 @@ class RefinementQAService:
             for sel in data.selected:
                 if sel not in valid_ids:
                     return None
-            if qa.question_type in ("choice", "single_choice") and len(data.selected) > 1:
+            if (
+                qa.question_type in ("choice", "single_choice")
+                and len(data.selected) > 1
+            ):
                 data.selected = data.selected[:1]
             qa.selected = data.selected
             saved_something = True
@@ -11570,7 +12438,9 @@ class RefinementKnowledgeService:
     def __init__(self, db: Any):
         self.db = db
 
-    async def create_knowledge(self, refinement_id: str, user_id: str, data: RefinementKnowledgeCreate) -> RefinementKnowledgeBase | None:
+    async def create_knowledge(
+        self, refinement_id: str, user_id: str, data: RefinementKnowledgeCreate
+    ) -> RefinementKnowledgeBase | None:
         """Create a knowledge base item on a refinement."""
         governance_metadata = normalize_knowledge_governance_metadata(
             data.governance_metadata
@@ -11595,7 +12465,9 @@ class RefinementKnowledgeService:
 
     async def get_knowledge(self, knowledge_id: str) -> RefinementKnowledgeBase | None:
         """Get a knowledge base item by ID."""
-        return await _application_get(self.db, "refinement_knowledge_base", knowledge_id)
+        return await _application_get(
+            self.db, "refinement_knowledge_base", knowledge_id
+        )
 
     async def list_knowledge(self, refinement_id: str) -> list[RefinementKnowledgeBase]:
         """List all knowledge base items for a refinement."""
@@ -11805,11 +12677,15 @@ class GuidelineService:
             filters=(_apf("board_id", "eq", board_id),),
         )
         linked_ids = [link.guideline_id for link in links]
-        linked_guidelines = await _application_list(
-            self.db,
-            "guideline",
-            filters=(_apf("id", "in", linked_ids),),
-        ) if linked_ids else []
+        linked_guidelines = (
+            await _application_list(
+                self.db,
+                "guideline",
+                filters=(_apf("id", "in", linked_ids),),
+            )
+            if linked_ids
+            else []
+        )
         guidelines_by_id = {item.id: item for item in linked_guidelines}
 
         # Inline (board-scoped) guidelines
@@ -11828,40 +12704,52 @@ class GuidelineService:
             guideline = guidelines_by_id.get(link.guideline_id)
             if guideline is None:
                 continue
-            items.append({
-                "id": guideline.id,
-                "guideline": {
+            items.append(
+                {
                     "id": guideline.id,
-                    "title": guideline.title,
-                    "content": guideline.content,
-                    "tags": guideline.tags,
+                    "guideline": {
+                        "id": guideline.id,
+                        "title": guideline.title,
+                        "content": guideline.content,
+                        "tags": guideline.tags,
+                        "scope": guideline.scope,
+                        "board_id": guideline.board_id,
+                        "owner_id": guideline.owner_id,
+                        "created_at": guideline.created_at.isoformat()
+                        if guideline.created_at
+                        else None,
+                        "version": guideline.version or 1,
+                        "updated_at": guideline.updated_at.isoformat()
+                        if guideline.updated_at
+                        else None,
+                    },
+                    "priority": link.priority,
                     "scope": guideline.scope,
-                    "board_id": guideline.board_id,
-                    "owner_id": guideline.owner_id,
-                    "created_at": guideline.created_at.isoformat() if guideline.created_at else None,
-                    "version": guideline.version or 1,
-                    "updated_at": guideline.updated_at.isoformat() if guideline.updated_at else None,
-                },
-                "priority": link.priority,
-                "scope": guideline.scope,
-            })
+                }
+            )
         for guideline in inline_rows:
-            items.append({
-                "id": guideline.id,
-                "guideline": {
+            items.append(
+                {
                     "id": guideline.id,
-                    "title": guideline.title,
-                    "content": guideline.content,
-                    "tags": guideline.tags,
-                    "scope": guideline.scope,
-                    "board_id": guideline.board_id,
-                    "owner_id": guideline.owner_id,
-                    "created_at": guideline.created_at.isoformat() if guideline.created_at else None,
-                    "updated_at": guideline.updated_at.isoformat() if guideline.updated_at else None,
-                },
-                "priority": 0,
-                "scope": "inline",
-            })
+                    "guideline": {
+                        "id": guideline.id,
+                        "title": guideline.title,
+                        "content": guideline.content,
+                        "tags": guideline.tags,
+                        "scope": guideline.scope,
+                        "board_id": guideline.board_id,
+                        "owner_id": guideline.owner_id,
+                        "created_at": guideline.created_at.isoformat()
+                        if guideline.created_at
+                        else None,
+                        "updated_at": guideline.updated_at.isoformat()
+                        if guideline.updated_at
+                        else None,
+                    },
+                    "priority": 0,
+                    "scope": "inline",
+                }
+            )
 
         items.sort(key=lambda x: x["priority"])
         if not items:
@@ -12076,13 +12964,18 @@ class ArchiveService:
     def __init__(self, db: Any):
         self.db = db
 
-    async def _resolve_tree(
-        self, entity_type: str, entity_id: str
-    ) -> dict[str, list]:
+    async def _resolve_tree(self, entity_type: str, entity_id: str) -> dict[str, list]:
         """Resolve the full descendant tree from a given entity.
-        Returns {ideations: [...], refinements: [...], specs: [...], cards: [...]}.
+        Returns {ideations: [...], refinements: [...], specs: [...], sprints: [...],
+        cards: [...]}.
         """
-        tree: dict[str, list] = {"ideations": [], "refinements": [], "specs": [], "cards": []}
+        tree: dict[str, list] = {
+            "ideations": [],
+            "refinements": [],
+            "specs": [],
+            "sprints": [],
+            "cards": [],
+        }
 
         if entity_type == "ideation":
             ideation = await _application_get(self.db, "ideation", entity_id)
@@ -12130,7 +13023,9 @@ class ArchiveService:
             tree["specs"].append(spec)
 
         else:
-            raise ValueError(f"Invalid entity_type: {entity_type}. Must be ideation, refinement, or spec.")
+            raise ValueError(
+                f"Invalid entity_type: {entity_type}. Must be ideation, refinement, or spec."
+            )
 
         # Cards from all specs in tree
         spec_ids = [s.id for s in tree["specs"]]
@@ -12155,31 +13050,75 @@ class ArchiveService:
                 )
                 tree["cards"].extend(bugs)
 
+        # Sprints are first-class descendants of Spec (each sprint belongs to one
+        # spec). The sprint's cards are already captured above via spec_id, so only
+        # the sprint rows themselves are added here.
+        if spec_ids:
+            sprints = await _application_list(
+                self.db,
+                "sprint",
+                filters=(_apf("spec_id", "in", spec_ids),),
+            )
+            tree["sprints"].extend(sprints)
+
         return tree
 
     async def archive_tree(self, entity_type: str, entity_id: str) -> dict[str, int]:
         """Archive an entity and all its descendants."""
         tree = await self._resolve_tree(entity_type, entity_id)
 
-        counts = {"ideations": 0, "refinements": 0, "specs": 0, "cards": 0}
+        counts = {
+            "ideations": 0,
+            "refinements": 0,
+            "specs": 0,
+            "sprints": 0,
+            "cards": 0,
+        }
+        changed_artifacts: list[tuple[str, Any]] = []
 
         for ideation in tree["ideations"]:
             if not ideation.archived:
-                ideation.pre_archive_status = ideation.status.value if hasattr(ideation.status, "value") else str(ideation.status)
+                ideation.pre_archive_status = (
+                    ideation.status.value
+                    if hasattr(ideation.status, "value")
+                    else str(ideation.status)
+                )
                 ideation.archived = True
                 counts["ideations"] += 1
+                changed_artifacts.append(("ideation", ideation))
 
         for refinement in tree["refinements"]:
             if not refinement.archived:
-                refinement.pre_archive_status = refinement.status.value if hasattr(refinement.status, "value") else str(refinement.status)
+                refinement.pre_archive_status = (
+                    refinement.status.value
+                    if hasattr(refinement.status, "value")
+                    else str(refinement.status)
+                )
                 refinement.archived = True
                 counts["refinements"] += 1
+                changed_artifacts.append(("refinement", refinement))
 
         for spec in tree["specs"]:
             if not spec.archived:
-                spec.pre_archive_status = spec.status.value if hasattr(spec.status, "value") else str(spec.status)
+                spec.pre_archive_status = (
+                    spec.status.value
+                    if hasattr(spec.status, "value")
+                    else str(spec.status)
+                )
                 spec.archived = True
                 counts["specs"] += 1
+                changed_artifacts.append(("spec", spec))
+
+        for sprint in tree["sprints"]:
+            if not sprint.archived:
+                sprint.pre_archive_status = (
+                    sprint.status.value
+                    if hasattr(sprint.status, "value")
+                    else str(sprint.status)
+                )
+                sprint.archived = True
+                counts["sprints"] += 1
+                changed_artifacts.append(("sprint", sprint))
 
         # Cards are archived as resequence OPS (matriz v13, item 5): each op
         # flips archived and relocates the card to the archived range n..m
@@ -12193,7 +13132,11 @@ class ArchiveService:
         tree_cards = _tree_cards_structural_preorder(tree["cards"])
         for card in tree_cards:
             if not card.archived:
-                card.pre_archive_status = card.status.value if hasattr(card.status, "value") else str(card.status)
+                card.pre_archive_status = (
+                    card.status.value
+                    if hasattr(card.status, "value")
+                    else str(card.status)
+                )
                 counts["cards"] += 1
                 card_ops.setdefault(card.board_id, []).append(
                     ColumnResequenceOp(
@@ -12205,6 +13148,7 @@ class ArchiveService:
                     )
                 )
                 card_records.setdefault(card.board_id, {})[card.id] = card
+                changed_artifacts.append(("card", card))
 
         await _application_flush(self.db)
         card_service = CardService(self.db)
@@ -12213,6 +13157,19 @@ class ArchiveService:
                 affected_board_id,
                 ops,
                 records=card_records[affected_board_id],
+            )
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import ArtifactArchiveChanged
+
+        for artifact_type, artifact in changed_artifacts:
+            await event_publish(
+                ArtifactArchiveChanged(
+                    board_id=artifact.board_id,
+                    artifact_type=artifact_type,
+                    artifact_id=artifact.id,
+                    archived=True,
+                ),
+                session=self.db,
             )
         return counts
 
@@ -12223,11 +13180,19 @@ class ArchiveService:
             IdeationStatus,
             RefinementStatus,
             SpecStatus,
+            SprintStatus,
         )
 
         tree = await self._resolve_tree(entity_type, entity_id)
 
-        counts = {"ideations": 0, "refinements": 0, "specs": 0, "cards": 0}
+        counts = {
+            "ideations": 0,
+            "refinements": 0,
+            "specs": 0,
+            "sprints": 0,
+            "cards": 0,
+        }
+        changed_artifacts: list[tuple[str, Any]] = []
 
         for ideation in tree["ideations"]:
             if ideation.archived:
@@ -12239,17 +13204,21 @@ class ArchiveService:
                 ideation.archived = False
                 ideation.pre_archive_status = None
                 counts["ideations"] += 1
+                changed_artifacts.append(("ideation", ideation))
 
         for refinement in tree["refinements"]:
             if refinement.archived:
                 if refinement.pre_archive_status:
                     try:
-                        refinement.status = RefinementStatus(refinement.pre_archive_status)
+                        refinement.status = RefinementStatus(
+                            refinement.pre_archive_status
+                        )
                     except (ValueError, KeyError):
                         pass
                 refinement.archived = False
                 refinement.pre_archive_status = None
                 counts["refinements"] += 1
+                changed_artifacts.append(("refinement", refinement))
 
         for spec in tree["specs"]:
             if spec.archived:
@@ -12261,6 +13230,19 @@ class ArchiveService:
                 spec.archived = False
                 spec.pre_archive_status = None
                 counts["specs"] += 1
+                changed_artifacts.append(("spec", spec))
+
+        for sprint in tree["sprints"]:
+            if sprint.archived:
+                if sprint.pre_archive_status:
+                    try:
+                        sprint.status = SprintStatus(sprint.pre_archive_status)
+                    except (ValueError, KeyError):
+                        pass
+                sprint.archived = False
+                sprint.pre_archive_status = None
+                counts["sprints"] += 1
+                changed_artifacts.append(("sprint", sprint))
 
         # Cards are restored as resequence OPS with placement="end" (matriz
         # v13, item 5): the landing at the END of the active range is EXPLICIT
@@ -12294,6 +13276,7 @@ class ArchiveService:
                     )
                 )
                 card_records.setdefault(card.board_id, {})[card.id] = card
+                changed_artifacts.append(("card", card))
 
         await _application_flush(self.db)
         card_service = CardService(self.db)
@@ -12302,6 +13285,19 @@ class ArchiveService:
                 affected_board_id,
                 ops,
                 records=card_records[affected_board_id],
+            )
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import ArtifactArchiveChanged
+
+        for artifact_type, artifact in changed_artifacts:
+            await event_publish(
+                ArtifactArchiveChanged(
+                    board_id=artifact.board_id,
+                    artifact_type=artifact_type,
+                    artifact_id=artifact.id,
+                    archived=False,
+                ),
+                session=self.db,
             )
         return counts
 
@@ -12349,15 +13345,26 @@ class SprintService:
     _SPRINT_TRANSITIONS = transition_map("sprint")
 
     async def _record_history(
-        self, sprint_id: str, action: str, actor_id: str, actor_name: str,
-        actor_type: str = "user", changes: list[dict] | None = None,
-        summary: str | None = None, version: int | None = None,
+        self,
+        sprint_id: str,
+        action: str,
+        actor_id: str,
+        actor_name: str,
+        actor_type: str = "user",
+        changes: list[dict] | None = None,
+        summary: str | None = None,
+        version: int | None = None,
     ) -> None:
         entry = _new_application_record(
             "sprint_history",
-            sprint_id=sprint_id, action=action, actor_type=actor_type,
-            actor_id=actor_id, actor_name=actor_name,
-            changes=changes, summary=summary, version=version,
+            sprint_id=sprint_id,
+            action=action,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            actor_name=actor_name,
+            changes=changes,
+            summary=summary,
+            version=version,
         )
         await _application_add(self.db, entry)
 
@@ -12474,7 +13481,9 @@ class SprintService:
                 )
 
         spec_done = spec.status == SpecStatus.DONE
-        origin_sprint_closed = bool(origin_sprint and origin_sprint.status == SprintStatus.CLOSED)
+        origin_sprint_closed = bool(
+            origin_sprint and origin_sprint.status == SprintStatus.CLOSED
+        )
         if not spec_done and not origin_sprint_closed:
             raise SprintOperationError(
                 "hotfix_lane_not_eligible",
@@ -12583,8 +13592,7 @@ class SprintService:
                 != str(card.spec_id)
                 or card.id not in set(fact.regression_test_task_ids)
                 or confirmation is None
-                or confirmation.amendment_revision_id
-                != fact.amendment_revision_id
+                or confirmation.amendment_revision_id != fact.amendment_revision_id
                 or confirmation.regression_test_task_id != card.id
                 or confirmation.regression_scenario_id not in card_scenarios
                 or confirmation.regression_scenario_id
@@ -12597,7 +13605,10 @@ class SprintService:
         return False
 
     async def create_sprint(
-        self, board_id: str, user_id: str, data: SprintCreate,
+        self,
+        board_id: str,
+        user_id: str,
+        data: SprintCreate,
         skip_ownership_check: bool = False,
         *,
         query_scope: QueryScope | None = None,
@@ -12612,9 +13623,7 @@ class SprintService:
                 user_id=user_id,
                 query_scope=query_scope,
                 require_ownership=(
-                    query_scope.require_ownership
-                    if query_scope is not None
-                    else True
+                    query_scope.require_ownership if query_scope is not None else True
                 ),
             )
             if board_query is None:
@@ -12638,8 +13647,10 @@ class SprintService:
 
         sprint = _new_application_record(
             "sprint",
-            board_id=board_id, spec_id=data.spec_id,
-            title=data.title, description=data.description,
+            board_id=board_id,
+            spec_id=data.spec_id,
+            title=data.title,
+            description=data.description,
             objective=data.objective,
             expected_outcome=data.expected_outcome,
             spec_version=spec.version,
@@ -12648,8 +13659,10 @@ class SprintService:
             origin_bug_id=data.origin_bug_id,
             test_scenario_ids=data.test_scenario_ids,
             business_rule_ids=data.business_rule_ids,
-            start_date=data.start_date, end_date=data.end_date,
-            labels=data.labels, created_by=user_id,
+            start_date=data.start_date,
+            end_date=data.end_date,
+            labels=data.labels,
+            created_by=user_id,
         )
         await _application_add(self.db, sprint)
         self._attach_derived_fields(sprint)
@@ -12669,8 +13682,11 @@ class SprintService:
 
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
         await self._log_activity(
-            board_id=board_id, action="sprint_created",
-            actor_type="user", actor_id=user_id, actor_name=actor_name,
+            board_id=board_id,
+            action="sprint_created",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
             details={
                 "title": data.title,
                 "sprint_id": sprint.id,
@@ -12682,11 +13698,16 @@ class SprintService:
             },
         )
         await self._record_history(
-            sprint_id=sprint.id, action="created", actor_id=user_id, actor_name=actor_name,
-            changes=[{
-                "field": "lane",
-                **self._lane_activity_details(sprint),
-            }],
+            sprint_id=sprint.id,
+            action="created",
+            actor_id=user_id,
+            actor_name=actor_name,
+            changes=[
+                {
+                    "field": "lane",
+                    **self._lane_activity_details(sprint),
+                }
+            ],
             summary=(
                 f"Hotfix lane created: {data.title}"
                 if sprint.lane_type == SprintLaneType.HOTFIX
@@ -12707,7 +13728,9 @@ class SprintService:
         return self._attach_derived_fields(sprint) if sprint else None
 
     async def list_sprints(
-        self, spec_id: str, include_archived: bool = False,
+        self,
+        spec_id: str,
+        include_archived: bool = False,
     ) -> list[Sprint]:
         """List sprints for a spec."""
         filters = [_apf("spec_id", "eq", spec_id)]
@@ -12725,7 +13748,9 @@ class SprintService:
         return rows
 
     async def list_board_sprints(
-        self, board_id: str, status_filter: str | None = None,
+        self,
+        board_id: str,
+        status_filter: str | None = None,
         spec_id: str | None = None,
         include_archived: bool = False,
     ) -> list[Sprint]:
@@ -12750,7 +13775,10 @@ class SprintService:
         return rows
 
     async def update_sprint(
-        self, sprint_id: str, user_id: str, data: SprintUpdate,
+        self,
+        sprint_id: str,
+        user_id: str,
+        data: SprintUpdate,
     ) -> Sprint | None:
         """Update a sprint. Bumps version on content changes."""
         sprint = await self.get_sprint(sprint_id)
@@ -12780,7 +13808,9 @@ class SprintService:
             update_data.setdefault("origin_bug_id", None)
         lane_fields = {"lane_type", "origin_sprint_id", "origin_bug_id"}
         if lane_fields & update_data.keys() and sprint.status != SprintStatus.DRAFT:
-            raise ValueError("Sprint lane metadata can only be updated while the sprint is draft")
+            raise ValueError(
+                "Sprint lane metadata can only be updated while the sprint is draft"
+            )
 
         # Always validate the complete resulting lineage, not only when a lane
         # field is present.  Otherwise a legacy-invalid row could be mutated by
@@ -12811,15 +13841,25 @@ class SprintService:
         old_data = {k: getattr(sprint, k) for k in update_data.keys()}
 
         # Validate scoped IDs if changed
-        if "test_scenario_ids" in update_data and update_data["test_scenario_ids"] is not None:
+        if (
+            "test_scenario_ids" in update_data
+            and update_data["test_scenario_ids"] is not None
+        ):
             spec = spec or await _application_get(self.db, "spec", sprint.spec_id)
             if spec:
                 spec_ts_ids = {s.get("id") for s in (spec.test_scenarios or [])}
                 invalid = set(update_data["test_scenario_ids"]) - spec_ts_ids
                 if invalid:
                     raise ValueError(f"Test scenario IDs not found in spec: {invalid}")
-        if "business_rule_ids" in update_data and update_data["business_rule_ids"] is not None:
-            spec = spec if "test_scenario_ids" in update_data else await _application_get(self.db, "spec", sprint.spec_id)
+        if (
+            "business_rule_ids" in update_data
+            and update_data["business_rule_ids"] is not None
+        ):
+            spec = (
+                spec
+                if "test_scenario_ids" in update_data
+                else await _application_get(self.db, "spec", sprint.spec_id)
+            )
             if spec:
                 spec_br_ids = {r.get("id") for r in (spec.business_rules or [])}
                 invalid = set(update_data["business_rule_ids"]) - spec_br_ids
@@ -12857,22 +13897,38 @@ class SprintService:
 
         actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
         await self._log_activity(
-            board_id=sprint.board_id, action="sprint_updated",
-            actor_type="user", actor_id=user_id, actor_name=actor_name,
-            details={"sprint_id": sprint_id, "version": sprint.version, "fields": list(update_data.keys())},
+            board_id=sprint.board_id,
+            action="sprint_updated",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
+            details={
+                "sprint_id": sprint_id,
+                "version": sprint.version,
+                "fields": list(update_data.keys()),
+            },
         )
-        changes = SpecService._compute_diff(old_data, update_data, list(update_data.keys()))
+        changes = SpecService._compute_diff(
+            old_data, update_data, list(update_data.keys())
+        )
         if changes:
             await self._record_history(
-                sprint_id=sprint_id, action="updated", actor_id=user_id, actor_name=actor_name,
-                changes=changes, version=sprint.version,
+                sprint_id=sprint_id,
+                action="updated",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=changes,
+                version=sprint.version,
                 summary=f"Updated: {', '.join(c['field'] for c in changes)}",
             )
         await _application_commit(self.db)
         return sprint
 
     async def move_sprint(
-        self, sprint_id: str, user_id: str, data: SprintMove,
+        self,
+        sprint_id: str,
+        user_id: str,
+        data: SprintMove,
         actor_name: str | None = None,
     ) -> Sprint | None:
         """Move a sprint to a different status with gates."""
@@ -12957,7 +14013,9 @@ class SprintService:
                         "dependent_sprint_count": len(blocked_ids),
                     },
                 )
-        board = await _application_get(self.db, "board", sprint.board_id) if spec else None
+        board = (
+            await _application_get(self.db, "board", sprint.board_id) if spec else None
+        )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -12988,9 +14046,7 @@ class SprintService:
                 )
             if sprint.lane_type == SprintLaneType.HOTFIX:
                 bug_ids = {
-                    card.id
-                    for card in assigned_cards
-                    if card.card_type == CardType.BUG
+                    card.id for card in assigned_cards if card.card_type == CardType.BUG
                 }
                 test_ids = {
                     card.id
@@ -13006,9 +14062,11 @@ class SprintService:
                     ),
                     None,
                 )
-                linked_regression_ids = set(
-                    getattr(origin_bug, "linked_test_task_ids", None) or []
-                ) if origin_bug else set()
+                linked_regression_ids = (
+                    set(getattr(origin_bug, "linked_test_task_ids", None) or [])
+                    if origin_bug
+                    else set()
+                )
                 if (
                     not sprint.origin_bug_id
                     or sprint.origin_bug_id not in bug_ids
@@ -13032,7 +14090,9 @@ class SprintService:
         # Gate: active → review requires scoped test coverage check
         if data.status == SprintStatus.REVIEW:
             skip_tc = sprint.skip_test_coverage or (
-                (board.settings or {}).get("skip_test_coverage_global", False) if board else False
+                (board.settings or {}).get("skip_test_coverage_global", False)
+                if board
+                else False
             )
             if not skip_tc and spec:
                 scope = SprintScopeResolver.resolve(
@@ -13043,7 +14103,9 @@ class SprintService:
                 scoped = list(scope.items.get("test_scenarios", ()))
                 not_covered = [s for s in scoped if s.get("status") != "passed"]
                 if not_covered:
-                    names = "; ".join(s.get("title", s.get("id", "?"))[:60] for s in not_covered[:5])
+                    names = "; ".join(
+                        s.get("title", s.get("id", "?"))[:60] for s in not_covered[:5]
+                    )
                     raise ValueError(
                         f"Cannot submit sprint for review: {len(not_covered)} scoped test scenario(s) "
                         f"not passed. Pending: {names}"
@@ -13074,9 +14136,7 @@ class SprintService:
                     f"{card.title} ({card.status.value})" for card in open_cards[:5]
                 )
                 suffix = (
-                    f" and {len(open_cards) - 5} more"
-                    if len(open_cards) > 5
-                    else ""
+                    f" and {len(open_cards) - 5} more" if len(open_cards) > 5 else ""
                 )
                 raise SprintOperationError(
                     "sprint_has_incomplete_cards",
@@ -13117,12 +14177,20 @@ class SprintService:
                 scope,
                 skip_test_coverage=bool(
                     sprint.skip_test_coverage
-                    or ((board.settings or {}).get("skip_test_coverage_global", False) if board else False)
+                    or (
+                        (board.settings or {}).get("skip_test_coverage_global", False)
+                        if board
+                        else False
+                    )
                 ),
                 skip_test_evidence=skip_evidence,
                 skip_rules_coverage=bool(
                     sprint.skip_rules_coverage
-                    or ((board.settings or {}).get("skip_rules_coverage_global", False) if board else False)
+                    or (
+                        (board.settings or {}).get("skip_rules_coverage_global", False)
+                        if board
+                        else False
+                    )
                 ),
                 evidence_validator=lambda scenario: (
                     scenario_has_authenticated_required_evidence(
@@ -13149,10 +14217,12 @@ class SprintService:
                 # Skip ON — log forensics record so reactivation analytics
                 # can flag boards that bypass the gate at sprint close.
                 import logging as _logging
+
                 _ev_logger = _logging.getLogger("okto_pulse.spec.test_scenario")
                 _ev_logger.info(
                     "sprint.evidence_gate_skipped sprint=%s board=%s",
-                    sprint_id, sprint.board_id,
+                    sprint_id,
+                    sprint.board_id,
                     extra={
                         "event": "sprint.evidence_gate_skipped",
                         "sprint_id": sprint_id,
@@ -13165,9 +14235,15 @@ class SprintService:
         if data.status == SprintStatus.CLOSED:
             skip_qual = sprint.skip_qualitative_validation
             if not skip_qual:
-                evaluations = [e for e in (sprint.evaluations or []) if not e.get("stale")]
-                approvals = [e for e in evaluations if e.get("recommendation") == "approve"]
-                rejections = [e for e in evaluations if e.get("recommendation") == "reject"]
+                evaluations = [
+                    e for e in (sprint.evaluations or []) if not e.get("stale")
+                ]
+                approvals = [
+                    e for e in evaluations if e.get("recommendation") == "approve"
+                ]
+                rejections = [
+                    e for e in evaluations if e.get("recommendation") == "reject"
+                ]
                 if rejections:
                     names = ", ".join(e.get("evaluator_name", "?") for e in rejections)
                     raise SprintOperationError(
@@ -13187,9 +14263,13 @@ class SprintService:
                     )
                 threshold = (
                     sprint.validation_threshold
-                    or (board.settings or {}).get("validation_threshold_global", 70) if board else 70
+                    or (board.settings or {}).get("validation_threshold_global", 70)
+                    if board
+                    else 70
                 )
-                avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(approvals)
+                avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(
+                    approvals
+                )
                 if avg_score < threshold:
                     raise SprintOperationError(
                         "sprint_evaluation_below_threshold",
@@ -13249,13 +14329,20 @@ class SprintService:
                     session=self.db,
                 )
 
-        resolved_name = actor_name or await resolve_actor_name(self.db, user_id, sprint.board_id)
+        resolved_name = actor_name or await resolve_actor_name(
+            self.db, user_id, sprint.board_id
+        )
         await self._log_activity(
-            board_id=sprint.board_id, action="sprint_moved",
-            actor_type="user", actor_id=user_id, actor_name=resolved_name,
+            board_id=sprint.board_id,
+            action="sprint_moved",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=resolved_name,
             details={
-                "sprint_id": sprint_id, "spec_id": sprint.spec_id,
-                "from_status": old_status.value, "to_status": data.status.value,
+                "sprint_id": sprint_id,
+                "spec_id": sprint.spec_id,
+                "from_status": old_status.value,
+                "to_status": data.status.value,
                 "version": sprint.version,
                 "cancellation_reason": sprint.cancellation_reason,
                 "cancelled_by": sprint.cancelled_by,
@@ -13266,26 +14353,36 @@ class SprintService:
             },
         )
         await self._record_history(
-            sprint_id=sprint_id, action="status_changed",
-            actor_id=user_id, actor_name=resolved_name,
-            changes=[{
-                "field": "status",
-                "old": old_status.value,
-                "new": data.status.value,
-                "cancellation_reason": sprint.cancellation_reason,
-                "cancelled_by": sprint.cancelled_by,
-                "cancelled_at": (
-                    sprint.cancelled_at.isoformat() if sprint.cancelled_at else None
-                ),
-                **self._lane_activity_details(sprint),
-            }],
+            sprint_id=sprint_id,
+            action="status_changed",
+            actor_id=user_id,
+            actor_name=resolved_name,
+            changes=[
+                {
+                    "field": "status",
+                    "old": old_status.value,
+                    "new": data.status.value,
+                    "cancellation_reason": sprint.cancellation_reason,
+                    "cancelled_by": sprint.cancelled_by,
+                    "cancelled_at": (
+                        sprint.cancelled_at.isoformat() if sprint.cancelled_at else None
+                    ),
+                    **self._lane_activity_details(sprint),
+                }
+            ],
             summary=f"Status: {old_status.value} → {data.status.value}",
             version=sprint.version,
         )
         await _application_commit(self.db)
         return sprint
 
-    async def delete_sprint(self, sprint_id: str, user_id: str) -> bool:
+    async def delete_sprint(
+        self,
+        sprint_id: str,
+        user_id: str,
+        *,
+        return_receipt: bool = False,
+    ) -> bool | GovernedArtifactDeletionReceipt:
         """Delete a sprint. Unlinks cards but doesn't delete them."""
         sprint = await self.get_sprint(sprint_id)
         if not sprint:
@@ -13303,9 +14400,7 @@ class SprintService:
         )
         blocked_ids: list[str] = []
         for dependent in origin_dependents:
-            dependent_spec = await _application_get(
-                self.db, "spec", dependent.spec_id
-            )
+            dependent_spec = await _application_get(self.db, "spec", dependent.spec_id)
             if (
                 not dependent_spec
                 or dependent_spec.board_id != dependent.board_id
@@ -13339,17 +14434,29 @@ class SprintService:
         await _application_flush(self.db)
         board_id = sprint.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        takedown_receipt = await _prepare_governed_artifact_deletion(
+            self.db,
+            board_id=board_id,
+            artifact_type="sprint",
+            artifact_id=sprint_id,
+        )
         await _application_delete(self.db, sprint)
         await self._log_activity(
-            board_id=board_id, action="sprint_deleted",
-            actor_type="user", actor_id=user_id, actor_name=actor_name,
+            board_id=board_id,
+            action="sprint_deleted",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=actor_name,
             details={"sprint_id": sprint_id},
         )
         await _application_commit(self.db)
-        return True
+        return takedown_receipt if return_receipt else True
 
     async def assign_tasks(
-        self, sprint_id: str, card_ids: list[str], user_id: str,
+        self,
+        sprint_id: str,
+        card_ids: list[str],
+        user_id: str,
     ) -> int:
         """Assign cards to a sprint.
 
@@ -13421,8 +14528,11 @@ class SprintService:
             sprint.version += 1
             actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
             await self._log_activity(
-                board_id=sprint.board_id, action="sprint_tasks_assigned",
-                actor_type="user", actor_id=user_id, actor_name=actor_name,
+                board_id=sprint.board_id,
+                action="sprint_tasks_assigned",
+                actor_type="user",
+                actor_id=user_id,
+                actor_name=actor_name,
                 details={
                     "sprint_id": sprint_id,
                     "card_ids": [card.id for card in cards_to_assign],
@@ -13432,20 +14542,28 @@ class SprintService:
                     "accepted_card_types": (
                         [CardType.BUG.value, CardType.TEST.value]
                         if sprint.lane_type == SprintLaneType.HOTFIX
-                        else [CardType.NORMAL.value, CardType.TEST.value, CardType.BUG.value]
+                        else [
+                            CardType.NORMAL.value,
+                            CardType.TEST.value,
+                            CardType.BUG.value,
+                        ]
                     ),
                 },
             )
             await self._record_history(
-                sprint_id=sprint_id, action="tasks_assigned",
-                actor_id=user_id, actor_name=actor_name,
-                changes=[{
-                    "field": "cards",
-                    "added": [card.id for card in cards_to_assign],
-                    "count": assigned,
-                    "cross_spec_path_b_test_ids": cross_spec_path_b_test_ids,
-                    **self._lane_activity_details(sprint),
-                }],
+                sprint_id=sprint_id,
+                action="tasks_assigned",
+                actor_id=user_id,
+                actor_name=actor_name,
+                changes=[
+                    {
+                        "field": "cards",
+                        "added": [card.id for card in cards_to_assign],
+                        "count": assigned,
+                        "cross_spec_path_b_test_ids": cross_spec_path_b_test_ids,
+                        **self._lane_activity_details(sprint),
+                    }
+                ],
                 summary=(
                     f"Assigned {assigned} card(s) to hotfix lane"
                     if sprint.lane_type == SprintLaneType.HOTFIX
@@ -13457,7 +14575,10 @@ class SprintService:
         return assigned
 
     async def unassign_tasks(
-        self, sprint_id: str, card_ids: list[str], user_id: str,
+        self,
+        sprint_id: str,
+        card_ids: list[str],
+        user_id: str,
     ) -> int:
         """Atomically unassign cards and invalidate version-keyed scope caches."""
 
@@ -13511,7 +14632,10 @@ class SprintService:
         return len(cards)
 
     async def submit_evaluation(
-        self, sprint_id: str, user_id: str, evaluation: dict,
+        self,
+        sprint_id: str,
+        user_id: str,
+        evaluation: dict,
     ) -> Sprint | None:
         """Submit a qualitative evaluation for a sprint."""
         sprint = await _application_get(self.db, "sprint", sprint_id)
@@ -13557,6 +14681,7 @@ class SprintService:
             actor_name=evaluator_name,
         )
         import uuid as _uuid
+
         eval_entry = {
             **evaluation,
             "id": f"eval_{_uuid.uuid4().hex[:8]}",
@@ -13574,8 +14699,11 @@ class SprintService:
         sprint.version += 1
 
         await self._log_activity(
-            board_id=sprint.board_id, action="sprint_evaluation_submitted",
-            actor_type="user", actor_id=user_id, actor_name=eval_entry["evaluator_name"],
+            board_id=sprint.board_id,
+            action="sprint_evaluation_submitted",
+            actor_type="user",
+            actor_id=user_id,
+            actor_name=eval_entry["evaluator_name"],
             details={
                 "sprint_id": sprint_id,
                 "evaluation_id": eval_entry["id"],
@@ -13585,15 +14713,19 @@ class SprintService:
             },
         )
         await self._record_history(
-            sprint_id=sprint_id, action="evaluation_submitted",
-            actor_id=user_id, actor_name=eval_entry["evaluator_name"],
-            changes=[{
-                "field": "evaluations",
-                "evaluation_id": eval_entry["id"],
-                "recommendation": evaluation.get("recommendation"),
-                "overall_score": evaluation.get("overall_score"),
-                **self._lane_activity_details(sprint),
-            }],
+            sprint_id=sprint_id,
+            action="evaluation_submitted",
+            actor_id=user_id,
+            actor_name=eval_entry["evaluator_name"],
+            changes=[
+                {
+                    "field": "evaluations",
+                    "evaluation_id": eval_entry["id"],
+                    "recommendation": evaluation.get("recommendation"),
+                    "overall_score": evaluation.get("overall_score"),
+                    **self._lane_activity_details(sprint),
+                }
+            ],
             summary=f"Evaluation submitted: {evaluation.get('recommendation')} (score: {evaluation.get('overall_score')})",
             version=sprint.version,
         )
@@ -13601,7 +14733,10 @@ class SprintService:
         return sprint
 
     async def delete_evaluation(
-        self, sprint_id: str, evaluator_id: str, evaluation_id: str,
+        self,
+        sprint_id: str,
+        evaluator_id: str,
+        evaluation_id: str,
     ) -> str:
         """Delete a caller-owned evaluation from the ``Sprint.evaluations`` JSON column.
 
@@ -13630,7 +14765,9 @@ class SprintService:
         sprint.mark_dirty("evaluations")
         return "deleted"
 
-    async def list_history(self, sprint_id: str, limit: int = 50) -> list[SprintHistory]:
+    async def list_history(
+        self, sprint_id: str, limit: int = 50
+    ) -> list[SprintHistory]:
         return await _application_list(
             self.db,
             "sprint_history",
@@ -13640,7 +14777,9 @@ class SprintService:
         )
 
     async def suggest_sprints(
-        self, spec_id: str, threshold: int = 8,
+        self,
+        spec_id: str,
+        threshold: int = 8,
     ) -> list[dict]:
         """Suggest sprint breakdown for a spec based on FRs, test scenarios, and dependencies.
 
@@ -13681,10 +14820,10 @@ class SprintService:
 
         for card in cards:
             linked_frs: set[str] = set()
-            for ts_id in (card.test_scenario_ids or []):
+            for ts_id in card.test_scenario_ids or []:
                 sc = scenarios.get(ts_id)
                 if sc:
-                    for crit in (sc.get("linked_criteria") or []):
+                    for crit in sc.get("linked_criteria") or []:
                         linked_frs.add(crit)
             if linked_frs:
                 primary_fr = sorted(linked_frs)[0]
@@ -13757,24 +14896,26 @@ class SprintService:
             ts_ids: set[str] = set()
             br_ids: set[str] = set()
             for c in sprint_cards:
-                for ts_id in (c.test_scenario_ids or []):
+                for ts_id in c.test_scenario_ids or []:
                     ts_ids.add(ts_id)
                     sc = scenarios.get(ts_id)
                     if sc:
-                        for linked in (sc.get("linked_criteria") or []):
+                        for linked in sc.get("linked_criteria") or []:
                             # Find BRs that reference this FR
-                            for r in (spec.business_rules or []):
+                            for r in spec.business_rules or []:
                                 if linked in (r.get("linked_requirements") or []):
                                     br_ids.add(r.get("id"))
 
-            suggestions.append({
-                "title": f"Sprint {i + 1}",
-                "description": f"Auto-suggested sprint ({len(sprint_cards)} tasks)",
-                "card_ids": [c.id for c in sprint_cards],
-                "card_titles": [c.title for c in sprint_cards],
-                "test_scenario_ids": sorted(ts_ids) if ts_ids else None,
-                "business_rule_ids": sorted(br_ids) if br_ids else None,
-            })
+            suggestions.append(
+                {
+                    "title": f"Sprint {i + 1}",
+                    "description": f"Auto-suggested sprint ({len(sprint_cards)} tasks)",
+                    "card_ids": [c.id for c in sprint_cards],
+                    "card_titles": [c.title for c in sprint_cards],
+                    "test_scenario_ids": sorted(ts_ids) if ts_ids else None,
+                    "business_rule_ids": sorted(br_ids) if br_ids else None,
+                }
+            )
 
         return suggestions
 
@@ -13790,8 +14931,12 @@ class SprintQAService:
         return await _application_get(self.db, "sprint_qa_item", qa_id)
 
     async def create_question(
-        self, sprint_id: str, user_id: str, question: str,
-        question_type: str = "text", choices: list | None = None,
+        self,
+        sprint_id: str,
+        user_id: str,
+        question: str,
+        question_type: str = "text",
+        choices: list | None = None,
         allow_free_text: bool = False,
     ) -> SprintQAItem | None:
         sprint = await _application_get(self.db, "sprint", sprint_id)
@@ -13799,16 +14944,21 @@ class SprintQAService:
             return None
         qa = _new_application_record(
             "sprint_qa_item",
-            sprint_id=sprint_id, question=question,
+            sprint_id=sprint_id,
+            question=question,
             question_type=question_type or "text",
-            choices=choices, allow_free_text=allow_free_text,
+            choices=choices,
+            allow_free_text=allow_free_text,
             asked_by=user_id,
         )
         await _application_add(self.db, qa)
         return qa
 
     async def answer_question(
-        self, qa_id: str, user_id: str, answer: str | None = None,
+        self,
+        qa_id: str,
+        user_id: str,
+        answer: str | None = None,
         selected: list[str] | None = None,
         *,
         actor_type: str = "user",
@@ -13819,7 +14969,11 @@ class SprintQAService:
             return None
 
         sprint = await _application_get(self.db, "sprint", qa.sprint_id)
-        board = await _application_get(self.db, "board", sprint.board_id) if sprint else None
+        board = (
+            await _application_get(self.db, "board", sprint.board_id)
+            if sprint
+            else None
+        )
         await _authorize_qa_answer_or_raise(
             self.db,
             board=board,
@@ -13905,68 +15059,87 @@ async def mcp_list_my_mentions(
     ideation_titles = {item.id: item.title for item in ideations}
     refinement_titles = {item.id: item.title for item in refinements}
 
-    comments = await _application_list(
-        db,
-        "comment",
-        filters=(
-            _apf("card_id", "in", list(card_titles)),
-            _apf("content", "ilike", mention_pattern),
-        ),
-        order_by=(("created_at", True),),
-    ) if card_titles else []
+    comments = (
+        await _application_list(
+            db,
+            "comment",
+            filters=(
+                _apf("card_id", "in", list(card_titles)),
+                _apf("content", "ilike", mention_pattern),
+            ),
+            order_by=(("created_at", True),),
+        )
+        if card_titles
+        else []
+    )
     comment_results = [(item, card_titles[item.card_id]) for item in comments]
 
-    qa_items = await _application_list(
-        db,
-        "qa_item",
-        filters=(_apf("card_id", "in", list(card_titles)),),
-        any_filters=(
-            _apf("question", "ilike", mention_pattern),
-            _apf("answer", "ilike", mention_pattern),
-        ),
-        order_by=(("created_at", True),),
-    ) if card_titles else []
+    qa_items = (
+        await _application_list(
+            db,
+            "qa_item",
+            filters=(_apf("card_id", "in", list(card_titles)),),
+            any_filters=(
+                _apf("question", "ilike", mention_pattern),
+                _apf("answer", "ilike", mention_pattern),
+            ),
+            order_by=(("created_at", True),),
+        )
+        if card_titles
+        else []
+    )
     qa_results = [(item, card_titles[item.card_id]) for item in qa_items]
 
-    spec_qa_items = await _application_list(
-        db,
-        "spec_qa_item",
-        filters=(_apf("spec_id", "in", list(spec_titles)),),
-        any_filters=(
-            _apf("question", "ilike", mention_pattern),
-            _apf("answer", "ilike", mention_pattern),
-        ),
-        order_by=(("created_at", True),),
-    ) if spec_titles else []
+    spec_qa_items = (
+        await _application_list(
+            db,
+            "spec_qa_item",
+            filters=(_apf("spec_id", "in", list(spec_titles)),),
+            any_filters=(
+                _apf("question", "ilike", mention_pattern),
+                _apf("answer", "ilike", mention_pattern),
+            ),
+            order_by=(("created_at", True),),
+        )
+        if spec_titles
+        else []
+    )
     spec_qa_results = [(item, spec_titles[item.spec_id]) for item in spec_qa_items]
 
-    ideation_qa_items = await _application_list(
-        db,
-        "ideation_qa_item",
-        filters=(_apf("ideation_id", "in", list(ideation_titles)),),
-        any_filters=(
-            _apf("question", "ilike", mention_pattern),
-            _apf("answer", "ilike", mention_pattern),
-        ),
-        order_by=(("created_at", True),),
-    ) if ideation_titles else []
+    ideation_qa_items = (
+        await _application_list(
+            db,
+            "ideation_qa_item",
+            filters=(_apf("ideation_id", "in", list(ideation_titles)),),
+            any_filters=(
+                _apf("question", "ilike", mention_pattern),
+                _apf("answer", "ilike", mention_pattern),
+            ),
+            order_by=(("created_at", True),),
+        )
+        if ideation_titles
+        else []
+    )
     ideation_qa_results = [
         (item, ideation_titles[item.ideation_id]) for item in ideation_qa_items
     ]
 
-    refinement_qa_items = await _application_list(
-        db,
-        "refinement_qa_item",
-        filters=(_apf("refinement_id", "in", list(refinement_titles)),),
-        any_filters=(
-            _apf("question", "ilike", mention_pattern),
-            _apf("answer", "ilike", mention_pattern),
-        ),
-        order_by=(("created_at", True),),
-    ) if refinement_titles else []
+    refinement_qa_items = (
+        await _application_list(
+            db,
+            "refinement_qa_item",
+            filters=(_apf("refinement_id", "in", list(refinement_titles)),),
+            any_filters=(
+                _apf("question", "ilike", mention_pattern),
+                _apf("answer", "ilike", mention_pattern),
+            ),
+            order_by=(("created_at", True),),
+        )
+        if refinement_titles
+        else []
+    )
     refinement_qa_results = [
-        (item, refinement_titles[item.refinement_id])
-        for item in refinement_qa_items
+        (item, refinement_titles[item.refinement_id]) for item in refinement_qa_items
     ]
 
     mentions: list[dict[str, Any]] = []
@@ -14065,15 +15238,19 @@ async def mcp_mark_mentions_seen(
     agent_name: str | None,
     item_ids: list[str],
 ) -> tuple[int, int]:
-    existing_rows = await _application_list(
-        db,
-        "agent_seen_item",
-        filters=(
-            _apf("board_id", "eq", board_id),
-            _apf("agent_id", "eq", agent_id),
-            _apf("item_id", "in", item_ids),
-        ),
-    ) if item_ids else []
+    existing_rows = (
+        await _application_list(
+            db,
+            "agent_seen_item",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("agent_id", "eq", agent_id),
+                _apf("item_id", "in", item_ids),
+            ),
+        )
+        if item_ids
+        else []
+    )
     existing_ids = {item.item_id for item in existing_rows}
     marked = 0
     for item_id in item_ids:
@@ -14180,15 +15357,19 @@ async def mcp_get_unseen_summary(
         include_seen=True,
     )
     mention_ids = {item["item_id"] for item in mentions}
-    seen_rows = await _application_list(
-        db,
-        "agent_seen_item",
-        filters=(
-            _apf("board_id", "eq", board_id),
-            _apf("agent_id", "eq", agent_id),
-            _apf("item_id", "in", list(mention_ids)),
-        ),
-    ) if mention_ids else []
+    seen_rows = (
+        await _application_list(
+            db,
+            "agent_seen_item",
+            filters=(
+                _apf("board_id", "eq", board_id),
+                _apf("agent_id", "eq", agent_id),
+                _apf("item_id", "in", list(mention_ids)),
+            ),
+        )
+        if mention_ids
+        else []
+    )
     seen_ids = {item.item_id for item in seen_rows}
 
     recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)

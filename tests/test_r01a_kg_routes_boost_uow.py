@@ -40,7 +40,11 @@ from fastapi.testclient import TestClient
 from okto_pulse.community.api import kg_routes as kg_routes_api
 from okto_pulse.community.api.kg_routes import router as kg_router
 from okto_pulse.community.api.deps import get_unit_of_work
-from okto_pulse.community.api.auth_deps import get_current_user, get_realm_id, require_user
+from okto_pulse.community.api.auth_deps import (
+    get_current_user,
+    get_realm_id,
+    require_user,
+)
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
@@ -90,7 +94,9 @@ def _kg_teardown():
     """Release per-board Kùzu handles + the pool between tests so Windows file
     locks (single-writer embedded store) do not bleed across cases."""
     yield
-    from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
+    from okto_pulse.community.adapters.graph_connection_pool import (
+        reset_connection_pool_for_tests,
+    )
     from kg_schema_testing import close_all_connections
 
     close_all_connections()
@@ -123,7 +129,14 @@ def _bootstrap_empty_graph(board_id: str) -> None:
     close_all_connections(board_id)
 
 
-def _seed_kg_node(board_id: str, node_id: str, *, relevance_score: float = 0.5) -> None:
+def _seed_kg_node(
+    board_id: str,
+    node_id: str,
+    *,
+    relevance_score: float = 0.5,
+    revocation_reason: str | None = None,
+    pre_cancellation_score: float | None = None,
+) -> None:
     """Bootstrap the board graph and CREATE one ``Entity`` node carrying a known
     ``relevance_score``, then close the seeding connection so the endpoint opens a
     fresh scope (single-writer embedded store)."""
@@ -142,6 +155,8 @@ def _seed_kg_node(board_id: str, node_id: str, *, relevance_score: float = 0.5) 
             "created_at: timestamp('2026-04-19T12:00:00'), "
             "created_by_agent: 'agent-boost', "
             "source_confidence: 0.5, relevance_score: $rel, "
+            "pre_cancellation_relevance_score: $pre_cancel, "
+            "revocation_reason: $revocation, superseded_by: $superseded_by, "
             "query_hits: 0, last_queried_at: NULL, "
             "priority_boost: 0.0, "
             "embedding: $emb})",
@@ -150,6 +165,9 @@ def _seed_kg_node(board_id: str, node_id: str, *, relevance_score: float = 0.5) 
                 "t": "t",
                 "c": "c",
                 "rel": relevance_score,
+                "pre_cancel": pre_cancellation_score,
+                "revocation": revocation_reason,
+                "superseded_by": revocation_reason,
                 "emb": [0.1] * 384,
             },
         )
@@ -163,12 +181,16 @@ async def _audit_rows(board_id: str):
 
     async with get_session_factory()() as db:
         return (
-            await db.execute(
-                select(ConsolidationAudit).where(
-                    ConsolidationAudit.board_id == board_id
+            (
+                await db.execute(
+                    select(ConsolidationAudit).where(
+                        ConsolidationAudit.board_id == board_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
 
 # --- boost 200 --------------------------------------------------------------
@@ -204,6 +226,42 @@ async def test_boost_200_persists_audit_row(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_boost_on_cancelled_node_preserves_penalty_and_restore_base(
+    client,
+) -> None:
+    board_id = await _seed_board("cancelled-boost")
+    node_id = f"e-cancelled-boost-{uuid.uuid4().hex[:8]}"
+    _seed_kg_node(
+        board_id,
+        node_id,
+        relevance_score=0.3,
+        revocation_reason="source_cancelled",
+        pre_cancellation_score=0.8,
+    )
+
+    response = client.post(f"{PREFIX}/kg/boards/{board_id}/nodes/{node_id}/boost")
+    assert response.status_code == 200, response.text
+    assert response.json()["score_before"] == pytest.approx(0.3)
+    assert response.json()["score_after"] == pytest.approx(0.6)
+
+    from kg_schema_testing import close_all_connections, open_board_connection
+
+    close_all_connections(board_id)
+    with open_board_connection(board_id) as (_db, conn):
+        row = conn.execute(
+            "MATCH (n:Entity {id: $id}) "
+            "RETURN n.relevance_score, "
+            "n.pre_cancellation_relevance_score, "
+            "n.revocation_reason, n.superseded_by",
+            {"id": node_id},
+        ).get_next()
+    assert float(row[0]) == pytest.approx(0.6)
+    assert float(row[1]) == pytest.approx(1.1)
+    assert row[2] == "source_cancelled"
+    assert row[3] == "source_cancelled"
+
+
+@pytest.mark.asyncio
 async def test_boost_stacks_until_clamp(client) -> None:
     """Idempotency is NOT enforced: each call stacks +0.3 until the 1.5 clamp."""
     board_id = await _seed_board()
@@ -213,9 +271,7 @@ async def test_boost_stacks_until_clamp(client) -> None:
     last_after = 0.5
     # 0.5 -> 0.8 -> 1.1 -> 1.4 -> 1.5 (clamped) -> 1.5 (stays clamped)
     for _ in range(6):
-        resp = client.post(
-            f"{PREFIX}/kg/boards/{board_id}/nodes/{node_id}/boost"
-        )
+        resp = client.post(f"{PREFIX}/kg/boards/{board_id}/nodes/{node_id}/boost")
         assert resp.status_code == 200, resp.text
         last_after = resp.json()["score_after"]
     assert last_after == pytest.approx(1.5)
@@ -253,6 +309,7 @@ async def test_boost_use_case_runs_over_unit_of_work() -> None:
         BoostNodeUseCase,
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     board_id = await _seed_board()
     node_id = f"e-uow-{uuid.uuid4().hex[:8]}"
     _seed_kg_node(board_id, node_id, relevance_score=0.4)
@@ -271,7 +328,8 @@ async def test_boost_use_case_runs_over_unit_of_work() -> None:
     # carries the NOT-NULL artifact_type/started_at columns, so the commit succeeds).
     rows = await _audit_rows(board_id)
     boost_rows = [
-        r for r in rows
+        r
+        for r in rows
         if r.artifact_id == node_id and r.session_id.startswith("boost-")
     ]
     assert len(boost_rows) == 1
@@ -290,6 +348,7 @@ async def test_boost_use_case_raises_not_found_for_missing_node() -> None:
         BoostNodeUseCase,
     )
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
+
     board_id = await _seed_board()
     _bootstrap_empty_graph(board_id)
 
@@ -422,7 +481,9 @@ async def test_boost_persist_error_maps_to_legacy_500(client, monkeypatch) -> No
     from okto_pulse.core.kg.governance import BoostPersistError
 
     async with get_session_factory()() as db:
-        db.add(Board(id="board-x", name="boom", owner_id=ACTOR, realm_id=LOCAL_REALM_ID))
+        db.add(
+            Board(id="board-x", name="boom", owner_id=ACTOR, realm_id=LOCAL_REALM_ID)
+        )
         await db.commit()
 
     class _BoomUseCase:
@@ -431,9 +492,7 @@ async def test_boost_persist_error_maps_to_legacy_500(client, monkeypatch) -> No
 
     monkeypatch.setattr(kg_routes_api, "BoostNodeUseCase", _BoomUseCase)
 
-    resp = client.post(
-        f"{PREFIX}/kg/boards/board-x/nodes/whatever/boost"
-    )
+    resp = client.post(f"{PREFIX}/kg/boards/board-x/nodes/whatever/boost")
     assert resp.status_code == 500, resp.text
     body = resp.json()
     assert body["type"] == "/errors/kuzu_error"

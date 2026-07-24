@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from sqlalchemy import delete, func, select, update
@@ -23,6 +24,7 @@ from sqlalchemy_test_models import (
 )
 from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
 from okto_pulse.core.ports.kg_governance import (
+    BoardErasureJobFact,
     BoostAuditRecord,
     GovernanceUndoFact,
     HistoricalArtifactFact,
@@ -34,6 +36,9 @@ from okto_pulse.core.ports.kg_governance import (
 
 class TestSqlAlchemyKGGovernanceStore:
     __test__ = False
+
+    def __init__(self) -> None:
+        self._board_erasure_jobs: dict[str, BoardErasureJobFact] = {}
 
     async def get_board(
         self, context: Any, *, board_id: str
@@ -121,13 +126,17 @@ class TestSqlAlchemyKGGovernanceStore:
         self, context: Any, *, board_id: str
     ) -> tuple[HistoricalQueueFact, ...]:
         rows = (
-            await context.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.status.in_(("pending", "claimed", "paused")),
+            (
+                await context.execute(
+                    select(ConsolidationQueue).where(
+                        ConsolidationQueue.board_id == board_id,
+                        ConsolidationQueue.status.in_(("pending", "claimed", "paused")),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return tuple(
             HistoricalQueueFact(
                 str(row.id),
@@ -201,33 +210,47 @@ class TestSqlAlchemyKGGovernanceStore:
         self, context: Any, *, board_id: str, session_id: str
     ) -> GovernanceUndoFact | None:
         audit = (
-            await context.execute(
-                select(ConsolidationAudit).where(
-                    ConsolidationAudit.session_id == session_id,
-                    ConsolidationAudit.board_id == board_id,
+            (
+                await context.execute(
+                    select(ConsolidationAudit).where(
+                        ConsolidationAudit.session_id == session_id,
+                        ConsolidationAudit.board_id == board_id,
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if audit is None:
             return None
         refs = (
-            await context.execute(
-                select(KuzuNodeRef).where(KuzuNodeRef.session_id == session_id)
+            (
+                await context.execute(
+                    select(KuzuNodeRef).where(KuzuNodeRef.session_id == session_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         node_ids = tuple(str(row.kuzu_node_id) for row in refs)
         blockers: tuple[str, ...] = ()
         if node_ids:
             rows = (
-                await context.execute(
-                    select(KuzuNodeRef.session_id).where(
-                        KuzuNodeRef.kuzu_node_id.in_(node_ids),
-                        KuzuNodeRef.session_id != session_id,
+                (
+                    await context.execute(
+                        select(KuzuNodeRef.session_id).where(
+                            KuzuNodeRef.kuzu_node_id.in_(node_ids),
+                            KuzuNodeRef.session_id != session_id,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             blockers = tuple(sorted({str(value) for value in rows}))
-        return GovernanceUndoFact(session_id, str(audit.undo_status), node_ids, blockers)
+        return GovernanceUndoFact(
+            session_id, str(audit.undo_status), node_ids, blockers
+        )
 
     async def mark_session_undone(
         self, context: Any, *, session_id: str, undone_at
@@ -260,6 +283,82 @@ class TestSqlAlchemyKGGovernanceStore:
             settings.pop(HISTORICAL_PROGRESS_SETTINGS_KEY, None)
             board.settings = settings
             flag_modified(board, "settings")
+
+    async def stage_board_erasure_job(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        actor_id: str,
+    ) -> BoardErasureJobFact:
+        del context
+        if board_id in self._board_erasure_jobs:
+            raise RuntimeError(f"board_erasure_job_conflict:{board_id}")
+        job = BoardErasureJobFact(
+            board_id=board_id,
+            actor_id=actor_id,
+            attempts=0,
+            last_error=None,
+            next_attempt_at=datetime.now(timezone.utc),
+        )
+        self._board_erasure_jobs[board_id] = job
+        return job
+
+    async def get_board_erasure_job(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+    ) -> BoardErasureJobFact | None:
+        del context
+        return self._board_erasure_jobs.get(board_id)
+
+    async def list_due_board_erasure_jobs(
+        self,
+        context: Any,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> tuple[BoardErasureJobFact, ...]:
+        del context
+        due = sorted(
+            (
+                job
+                for job in self._board_erasure_jobs.values()
+                if job.next_attempt_at <= now
+            ),
+            key=lambda job: (job.next_attempt_at, job.board_id),
+        )
+        return tuple(due[:limit])
+
+    async def record_board_erasure_failure(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        error: str,
+        next_attempt_at: datetime,
+    ) -> None:
+        del context
+        job = self._board_erasure_jobs.get(board_id)
+        if job is None:
+            return
+        self._board_erasure_jobs[board_id] = BoardErasureJobFact(
+            board_id=job.board_id,
+            actor_id=job.actor_id,
+            attempts=job.attempts + 1,
+            last_error=error,
+            next_attempt_at=next_attempt_at,
+        )
+
+    async def complete_board_erasure_job(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+    ) -> bool:
+        del context
+        return self._board_erasure_jobs.pop(board_id, None) is not None
 
     def add_boost_audit(self, context: Any, audit: BoostAuditRecord) -> None:
         context.add(

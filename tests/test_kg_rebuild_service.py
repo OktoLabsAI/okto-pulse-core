@@ -521,6 +521,96 @@ def test_run_acquires_lock_with_admin_lane_true(tmp_path: Path):
     assert captured.operation == "kg02_rebuild:rebuild"
 
 
+def test_run_forwards_cancellation_probe_and_lease_renewal(tmp_path: Path):
+    observed = {}
+
+    def cancel_requested() -> bool:
+        return False
+
+    def step(req: RebuildStepInput) -> RebuildStepResult:
+        observed["cancel_requested"] = req.cancel_requested
+        observed["lease_renewed"] = req.lease_renew()
+        return RebuildStepResult(ok=True)
+
+    service, manifest_store, confirmation_store, lock = _build_service(
+        tmp_path,
+        step_adapter=step,
+    )
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="cooperative controls",
+        cancel_requested=cancel_requested,
+    )
+
+    assert result.outcome == RebuildOutcome.COMPLETED.value
+    assert observed["cancel_requested"] is cancel_requested
+    assert observed["lease_renewed"] is True
+    assert lock.inspect(board_id="b1") is None
+
+
+def test_run_renews_lease_while_blocking_step_executes(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from dataclasses import replace
+    from threading import Event, Lock
+
+    heartbeat_observed = Event()
+    count_lock = Lock()
+    renew_count = 0
+
+    def step(_req: RebuildStepInput) -> RebuildStepResult:
+        assert heartbeat_observed.wait(1.0)
+        return RebuildStepResult(ok=True)
+
+    service, manifest_store, confirmation_store, lock = _build_service(
+        tmp_path,
+        step_adapter=step,
+    )
+    original_renew = lock.renew
+
+    def renew_spy(**kwargs) -> bool:  # noqa: ANN003
+        nonlocal renew_count
+        renewed = original_renew(**kwargs)
+        with count_lock:
+            renew_count += 1
+            heartbeat_observed.set()
+        return renewed
+
+    monkeypatch.setattr(lock, "renew", renew_spy)
+    service = replace(service, lease_heartbeat_interval_seconds=0.01)
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="heartbeat during blocking step",
+    )
+
+    assert result.outcome == RebuildOutcome.COMPLETED.value
+    assert renew_count >= 1
+    assert lock.inspect(board_id="b1") is None
+
+
 # --- OR or_37cebd03 counter labels ------------------------------------------
 
 
@@ -920,6 +1010,72 @@ def test_completed_run_persists_report_and_promotes_generation(tmp_path: Path):
     assert event["triggered_by"] == "user-1"
 
 
+def test_terminal_rebuild_effects_remain_under_board_writer_fence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    def _step(req):
+        return RebuildStepResult(
+            ok=True,
+            current_kg_generation_id=req.candidate_kg_generation_id,
+            structural_hash="c" * 64,
+            source_hash="d" * 64,
+            counts={"nodes": 1},
+        )
+
+    (
+        service,
+        manifest_store,
+        confirmation_store,
+        lock,
+        _generation_repo,
+        _report_store,
+        _events,
+    ) = _build_service_with_kg024(tmp_path, step_adapter=_step)
+    observed: list[str] = []
+
+    def _assert_fenced(label: str) -> None:
+        assert lock.inspect(board_id="b1") is not None
+        observed.append(label)
+
+    service = replace(
+        service,
+        event_emitter=lambda _payload: _assert_fenced("event"),
+    )
+    original_emit = KGRebuildService._emit_audit_and_counter
+
+    def _guarded_emit(self, **kwargs):
+        _assert_fenced("audit")
+        return original_emit(self, **kwargs)
+
+    monkeypatch.setattr(
+        KGRebuildService,
+        "_emit_audit_and_counter",
+        _guarded_emit,
+    )
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="fence terminal effects",
+    )
+
+    assert result.event_emitted is True
+    assert observed == ["event", "audit"]
+    assert lock.inspect(board_id="b1") is None
+
+
 def test_completed_run_with_remaining_orphans_blocks_clean_success(tmp_path: Path):
     """KG-ZO-02.3: clean rebuild success requires zero non-allowlisted orphans."""
 
@@ -1074,7 +1230,6 @@ def test_completed_run_after_backfill_publishes_zero_orphan_validation(
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
             graph_scope=kconn,
-
             session_id="seed_zero_orphan_e2e",
             board_id=board_id,
         )

@@ -33,6 +33,7 @@ from okto_pulse.core.domain.enums import (
 from okto_pulse.core.ports.application_persistence import (
     PAGE_LIMIT_MAX,
     PAGE_LIMIT_MIN,
+    PAGE_OFFSET_MAX,
     ApplicationFilter,
     ApplicationGroupCount,
     ApplicationGroupCountQuery,
@@ -390,7 +391,7 @@ SURFACES: dict[str, SurfaceSpec] = {
     "mcp_card_status_list": SurfaceSpec(
         entity="card",
         order_by=_MCP_CARD_ORDER,
-        scope_fields=frozenset({"board_id"}),
+        scope_fields=frozenset({"board_id", "archived"}),
         anchor_fields=frozenset({"board_id"}),
         required_scope_fields=frozenset({"board_id"}),
         filter_fields=frozenset({"status", "spec_id", "priority", "assignee_id"}),
@@ -406,6 +407,7 @@ SURFACES: dict[str, SurfaceSpec] = {
             "test_scenario_ids",
             "due_date",
             "labels",
+            "archived",
         ),
     ),
     "mcp_spec_list": SurfaceSpec(
@@ -493,7 +495,24 @@ SURFACES: dict[str, SurfaceSpec] = {
         scope_fields=frozenset({"board_id", "archived"}),
         anchor_fields=frozenset({"board_id"}),
         filter_fields=frozenset({"status", "topic_id", "linked", "converted"}),
-        includes=frozenset({"ideation_links"}),
+        select_fields=(
+            "id",
+            "board_id",
+            "topic_id",
+            "title",
+            "description",
+            "actor",
+            "goal",
+            "benefit",
+            "labels",
+            "status",
+            "assignee_id",
+            "created_at",
+            "updated_at",
+            "archived",
+            "screen_mockups_count",
+            "ideation_links_count",
+        ),
     ),
     "mcp_topic_list": SurfaceSpec(
         entity="topic",
@@ -615,7 +634,9 @@ KIND_OPERATORS: dict[str, frozenset[str]] = {
     "id": frozenset({"eq", "in", "is_none", "not_none"}),
     "bool": frozenset({"eq", "is_true", "is_false"}),
     "enum": frozenset({"eq", "in"}),
-    "text": frozenset({"eq", "in", "ilike", "contains", "is_none", "not_none"}),
+    "text": frozenset(
+        {"eq", "in", "ilike", "contains", "json_member", "is_none", "not_none"}
+    ),
 }
 
 #: Enum VALUE catalogs per (entity, field) — eq/in values outside the
@@ -674,7 +695,7 @@ def _validate_predicate(entity: str, item: ApplicationFilter, error: str) -> Non
                 f"{error}: '{item.field}' in contains values outside the "
                 f"'{entity}' catalogue"
             )
-    elif item.operator in ("ilike", "contains"):
+    elif item.operator in ("ilike", "contains", "json_member"):
         if not isinstance(value, str) or not value:
             raise ValueError(
                 f"{error}: '{item.field}' {item.operator} requires a "
@@ -792,6 +813,12 @@ async def list_entities_page(context: Any, request: PageRequest) -> PageResult:
         raise ValueError("page_request_invalid_window: offset must be an int")
     if request.offset < 0:
         raise ValueError("page_request_invalid_window: offset must be >= 0")
+    if request.offset > PAGE_OFFSET_MAX:
+        # A larger offset overflows SQLite's signed 64-bit OFFSET binding — fail
+        # closed at the boundary instead of leaking a raw OverflowError.
+        raise ValueError(
+            f"page_request_invalid_window: offset must be <= {PAGE_OFFSET_MAX}"
+        )
     if (
         not isinstance(request.limit, int)
         or isinstance(request.limit, bool)

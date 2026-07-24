@@ -62,9 +62,7 @@ def _sweep_entry(**overrides) -> ConsolidationQueueRecord:
         _sweep_entry(payload={"cursor": "", "budget": 0, "attempt": 0}),
         _sweep_entry(payload={"cursor": "", "budget": 2, "attempt": True}),
         _sweep_entry(payload={"cursor": "bad", "budget": 2, "attempt": 0}),
-        _sweep_entry(
-            payload={"cursor": "", "budget": 2, "attempt": 0, "extra": 1}
-        ),
+        _sweep_entry(payload={"cursor": "", "budget": 2, "attempt": 0, "extra": 1}),
     ],
 )
 def test_stale_sweep_payload_is_strict_and_never_broadens_scope(entry) -> None:
@@ -72,11 +70,18 @@ def test_stale_sweep_payload_is_strict_and_never_broadens_scope(entry) -> None:
 
 
 def test_stale_sweep_payload_accepts_canonical_cursor() -> None:
-    cursor = reconciler.encode_stale_sweep_cursor(
-        StaleSweepCandidate("card", "card-1")
-    )
+    cursor = reconciler.encode_stale_sweep_cursor(StaleSweepCandidate("card", "card-1"))
     entry = _sweep_entry(payload={"cursor": cursor, "budget": 3, "attempt": 0})
     assert consolidation._validated_stale_sweep_payload(entry) == (cursor, 3, 0)
+
+
+def test_sprint_sources_are_governed_stale_sweep_candidates() -> None:
+    candidate = StaleSweepCandidate("sprint", "sprint-1")
+    cursor = reconciler.encode_stale_sweep_cursor(candidate)
+    assert reconciler.decode_stale_sweep_cursor(cursor) == (
+        "sprint",
+        "sprint-1",
+    )
 
 
 def test_stale_sweep_batch_cursor_contract_rejects_skips_and_regressions() -> None:
@@ -227,9 +232,7 @@ async def test_stale_sweep_page_is_globally_ordered_deduped_and_bounded(
         lambda _board_id: ({("spec", "live"): object()}, True, None),
     )
 
-    first = await reconciler.enumerate_stale_sweep_page(
-        "board-1", cursor="", budget=2
-    )
+    first = await reconciler.enumerate_stale_sweep_page("board-1", cursor="", budget=2)
     assert [(c.artifact_type, c.artifact_id) for c in first.candidates] == [
         ("card", "a"),
         ("card", "b"),
@@ -255,9 +258,7 @@ async def test_stale_sweep_page_is_globally_ordered_deduped_and_bounded(
 async def test_stale_sweep_live_only_page_advances_bounded_inventory_cursor(
     monkeypatch,
 ) -> None:
-    scope = _GraphScope(
-        {"Decision": ["card:a", "card:b", "spec:c"]}
-    )
+    scope = _GraphScope({"Decision": ["card:a", "card:b", "spec:c"]})
     registry = SimpleNamespace(
         graph_runtime_store=_GraphRuntime(),
         graph_transaction=_GraphTransaction(scope),
@@ -273,9 +274,7 @@ async def test_stale_sweep_live_only_page_advances_bounded_inventory_cursor(
         ),
     )
 
-    first = await reconciler.enumerate_stale_sweep_page(
-        "board-1", cursor="", budget=2
-    )
+    first = await reconciler.enumerate_stale_sweep_page("board-1", cursor="", budget=2)
     assert first.candidates == ()
     assert first.has_more is True
     assert reconciler.decode_stale_sweep_cursor(first.next_cursor) == ("card", "b")
@@ -294,9 +293,7 @@ async def test_stale_sweep_live_only_page_advances_bounded_inventory_cursor(
 async def test_stale_sweep_seven_identities_resume_in_four_bounded_pages(
     monkeypatch,
 ) -> None:
-    scope = _GraphScope(
-        {"Decision": [f"card:card-{index}" for index in range(7)]}
-    )
+    scope = _GraphScope({"Decision": [f"card:card-{index}" for index in range(7)]})
     registry = SimpleNamespace(
         graph_runtime_store=_GraphRuntime(),
         graph_transaction=_GraphTransaction(scope),
@@ -348,9 +345,7 @@ async def test_stale_sweep_page_fails_closed_on_any_graph_type_error(
         lambda _board_id: ({}, True, None),
     )
 
-    page = await reconciler.enumerate_stale_sweep_page(
-        "board-1", cursor="", budget=2
-    )
+    page = await reconciler.enumerate_stale_sweep_page("board-1", cursor="", budget=2)
     assert page.complete is False
     assert page.candidates == ()
     assert page.next_cursor == ""
@@ -377,9 +372,7 @@ async def test_stale_sweep_page_fails_closed_when_graph_open_fails(
         lambda _board_id: ({}, True, None),
     )
 
-    page = await reconciler.enumerate_stale_sweep_page(
-        "board-1", cursor="", budget=2
-    )
+    page = await reconciler.enumerate_stale_sweep_page("board-1", cursor="", budget=2)
     assert page.complete is False
     assert page.next_cursor == ""
     assert page.incomplete_cause == "graph_scan_incomplete"
@@ -393,9 +386,7 @@ async def test_stale_sweep_page_fails_closed_when_source_snapshot_raises(
         raise RuntimeError("source reader unavailable")
 
     monkeypatch.setattr(reconciler, "_build_source_classification_map", _raise)
-    page = await reconciler.enumerate_stale_sweep_page(
-        "board-1", cursor="", budget=2
-    )
+    page = await reconciler.enumerate_stale_sweep_page("board-1", cursor="", budget=2)
     assert page.complete is False
     assert page.next_cursor == ""
     assert page.incomplete_cause == "source_snapshot_unavailable"
@@ -444,7 +435,9 @@ async def test_degraded_graph_preserves_cursor_and_reschedules(
             )
 
     port = _Port()
-    monkeypatch.setattr(consolidation, "get_consolidation_persistence_port", lambda: _Store())
+    monkeypatch.setattr(
+        consolidation, "get_consolidation_persistence_port", lambda: _Store()
+    )
     monkeypatch.setattr(consolidation, "get_stale_sweep_port", lambda: port)
     monkeypatch.setattr(
         consolidation,

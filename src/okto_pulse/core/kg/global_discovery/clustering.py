@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from contextlib import nullcontext
 import re
 import threading
 import unicodedata
@@ -94,8 +95,8 @@ def string_fuzzy_ratio(a: str, b: str) -> float:
     b_norm = normalize_name(b)
     if a_norm == b_norm:
         return 1.0
-    a_tri = {a_norm[i:i+3] for i in range(len(a_norm) - 2)}
-    b_tri = {b_norm[i:i+3] for i in range(len(b_norm) - 2)}
+    a_tri = {a_norm[i : i + 3] for i in range(len(a_norm) - 2)}
+    b_tri = {b_norm[i : i + 3] for i in range(len(b_norm) - 2)}
     if not a_tri or not b_tri:
         return 0.0
     return len(a_tri & b_tri) / max(len(a_tri), len(b_tri))
@@ -120,7 +121,14 @@ def entity_combined_score(
     return 0.6 * semantic + 0.3 * string_fuzzy + 0.1 * alias_match
 
 
-def board_delete_cascade(board_id: str) -> dict:
+def board_delete_cascade(
+    board_id: str,
+    *,
+    strict: bool = False,
+    purge_board_graph: bool = True,
+    purge_relational_runtime: bool = True,
+    global_writer_guarded: bool = False,
+) -> dict:
     """Remove a board and cascade-cleanup orphans from the global discovery.
 
     Also wipes the per-board graph backend graph (every node + edge) so that re-
@@ -142,7 +150,8 @@ def board_delete_cascade(board_id: str) -> dict:
     from okto_pulse.core.kg.schema_contract import NODE_TYPES
     from okto_pulse.core.kg.write_barrier import require_write_token
 
-    require_write_token(board_id)
+    if purge_board_graph:
+        require_write_token(board_id)
 
     counts = {
         "board_removed": False,
@@ -152,62 +161,79 @@ def board_delete_cascade(board_id: str) -> dict:
         "board_nodes_removed": 0,
     }
 
-    # 0. Wipe per-board SQLite audit + outbox + queue rows. Without this the
-    # next consolidation re-uses the stale `content_hash` from a prior commit
-    # and `propose_reconciliation` short-circuits every candidate to NOOP —
-    # the queue worker reports "done" but graph backend stays empty.
-    try:
-        from okto_pulse.core.ports.board_relational_cleanup import (
-            get_board_relational_cleanup_port,
-        )
-
-        sqlite_counts = _run_async_blocking(
-            get_board_relational_cleanup_port().wipe_runtime_rows(
-                board_id=board_id
+    # 0. Wipe per-board SQLite audit + outbox + queue rows. Strict callers can
+    # stage the same cleanup in their own UoW and disable this independent
+    # transaction.
+    if purge_relational_runtime:
+        try:
+            from okto_pulse.core.ports.board_relational_cleanup import (
+                get_board_relational_cleanup_port,
             )
-        )
-        for k, v in sqlite_counts.items():
-            counts[f"sqlite_{k}_removed"] = v
-    except Exception as exc:
-        logger.warning(
-            "board_delete.sqlite_wipe_failed board=%s err=%s",
-            board_id, exc,
-        )
+
+            sqlite_counts = _run_async_blocking(
+                get_board_relational_cleanup_port().wipe_runtime_rows(board_id=board_id)
+            )
+            for k, v in sqlite_counts.items():
+                counts[f"sqlite_{k}_removed"] = v
+        except Exception as exc:
+            logger.warning(
+                "board_delete.sqlite_wipe_failed board=%s err=%s",
+                board_id,
+                exc,
+            )
+            if strict:
+                raise
 
     # 1. Wipe per-board graph backend graph (skip BoardMeta singleton).
-    try:
-        if get_kg_registry().graph_runtime_store.exists(board_id):
-            for node_type in NODE_TYPES:
-                if node_type == "BoardMeta":
-                    continue
-                try:
-                    result = _execute_board_write_sync(
-                        board_id,
-                        f"MATCH (n:{node_type}) DETACH DELETE n RETURN count(n)",
-                    )
-                    counts["board_nodes_removed"] += _first_count(result)
-                except Exception as exc:
-                    logger.warning(
-                        "board_delete.per_board_wipe_failed "
-                        "board=%s type=%s err=%s",
-                        board_id, node_type, exc,
-                    )
-    except Exception as exc:
-        logger.warning(
-            "board_delete.per_board_open_failed board=%s err=%s",
-            board_id, exc,
-        )
+    if purge_board_graph:
+        try:
+            if get_kg_registry().graph_runtime_store.exists(board_id):
+                for node_type in NODE_TYPES:
+                    if node_type == "BoardMeta":
+                        continue
+                    try:
+                        result = _execute_board_write_sync(
+                            board_id,
+                            f"MATCH (n:{node_type}) DETACH DELETE n RETURN count(n)",
+                        )
+                        counts["board_nodes_removed"] += _first_count(result)
+                    except Exception as exc:
+                        logger.warning(
+                            "board_delete.per_board_wipe_failed "
+                            "board=%s type=%s err=%s",
+                            board_id,
+                            node_type,
+                            exc,
+                        )
+                        if strict:
+                            raise
+        except Exception as exc:
+            logger.warning(
+                "board_delete.per_board_open_failed board=%s err=%s",
+                board_id,
+                exc,
+            )
+            if strict:
+                raise
 
     from okto_pulse.core.kg.global_discovery_writer import (
+        assert_global_discovery_writer_fence,
         global_discovery_writer_scope,
     )
 
     global_runtime = get_kg_registry().require_global_discovery_runtime()
-    with global_discovery_writer_scope(
-        operation="board_delete_cascade.global",
-        owner_id=f"board-delete:{board_id}",
-        admin_lane=True,
-    ):
+    writer_scope = (
+        nullcontext()
+        if global_writer_guarded
+        else global_discovery_writer_scope(
+            operation="board_delete_cascade.global",
+            owner_id=f"board-delete:{board_id}",
+            admin_lane=True,
+        )
+    )
+    with writer_scope:
+        if global_writer_guarded:
+            assert_global_discovery_writer_fence()
         # Delete DecisionDigests for this board
         result = global_runtime.execute(
             "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
@@ -224,6 +250,24 @@ def board_delete_cascade(board_id: str) -> dict:
         )
         counts["board_removed"] = True
 
+        if strict:
+            digest_probe = global_runtime.execute(
+                "MATCH (d:DecisionDigest) WHERE d.board_id = $bid RETURN count(d)",
+                {"bid": board_id},
+            )
+            board_probe = global_runtime.execute(
+                "MATCH (b:Board {board_id: $bid}) RETURN count(b)",
+                {"bid": board_id},
+            )
+            digests_remaining = _first_count(digest_probe)
+            boards_remaining = _first_count(board_probe)
+            if digests_remaining or boards_remaining:
+                raise RuntimeError(
+                    "board_delete_cascade_verification_failed "
+                    f"board={board_id} digests_remaining={digests_remaining} "
+                    f"boards_remaining={boards_remaining}"
+                )
+
         # GC orphan Topics (member_count = 0 or no edges)
         try:
             global_runtime.execute(
@@ -231,7 +275,8 @@ def board_delete_cascade(board_id: str) -> dict:
                 "DETACH DELETE t"
             )
         except Exception:
-            pass
+            if strict:
+                raise
 
         # GC orphan Entities (no edges)
         try:
@@ -241,11 +286,75 @@ def board_delete_cascade(board_id: str) -> dict:
                 "DETACH DELETE e"
             )
         except Exception:
-            pass
+            if strict:
+                raise
+
+        if strict:
+            flush = getattr(global_runtime, "flush_after_write_batch", None)
+            verification_scope = getattr(
+                global_runtime,
+                "post_write_verification_scope",
+                None,
+            )
+            close = getattr(global_runtime, "close", None)
+            if (
+                not callable(flush)
+                or not callable(verification_scope)
+                or not callable(close)
+            ):
+                raise RuntimeError("global_discovery_durable_flush_unavailable")
+            with verification_scope():
+                flush()
+                close()
+                assert_global_discovery_writer_fence()
+                durable_digests = _first_count(
+                    global_runtime.execute(
+                        "MATCH (d:DecisionDigest) WHERE d.board_id = $bid "
+                        "RETURN count(d)",
+                        {"bid": board_id},
+                    )
+                )
+                durable_boards = _first_count(
+                    global_runtime.execute(
+                        "MATCH (b:Board {board_id: $bid}) RETURN count(b)",
+                        {"bid": board_id},
+                    )
+                )
+                orphan_topics = _first_count(
+                    global_runtime.execute(
+                        "MATCH (t:Topic) "
+                        "WHERE NOT EXISTS { MATCH ()-[:HAS_TOPIC]->(t) } "
+                        "RETURN count(t)"
+                    )
+                )
+                orphan_entities = _first_count(
+                    global_runtime.execute(
+                        "MATCH (e:Entity) "
+                        "WHERE NOT EXISTS { MATCH ()-[:MENTIONS_ENTITY]->(e) } "
+                        "AND NOT EXISTS { "
+                        "MATCH ()-[:DECISION_MENTIONS_ENTITY]->(e) } "
+                        "RETURN count(e)"
+                    )
+                )
+                if (
+                    durable_digests
+                    or durable_boards
+                    or orphan_topics
+                    or orphan_entities
+                ):
+                    raise RuntimeError(
+                        "board_delete_durable_verification_failed "
+                        f"board={board_id} digests={durable_digests} "
+                        f"boards={durable_boards} orphan_topics={orphan_topics} "
+                        f"orphan_entities={orphan_entities}"
+                    )
+                counts["verified_absent"] = True
+                counts["durably_verified_absent"] = True
 
     logger.info(
         "global.cascade board=%s digests=%d",
-        board_id, counts["digests_removed"],
+        board_id,
+        counts["digests_removed"],
         extra={"event": "global.cascade", "board_id": board_id, **counts},
     )
     return counts
@@ -263,6 +372,7 @@ def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
         global_discovery_writer_scope,
     )
     from okto_pulse.core.kg.interfaces import get_kg_registry
+
     counts = {"topics_removed": 0, "entities_removed": 0, "dry_run": dry_run}
 
     global_runtime = get_kg_registry().require_global_discovery_runtime()
@@ -303,7 +413,9 @@ def gc_orphans(*, dry_run: bool = True, entity_age_days: int = 90) -> dict:
 
     logger.info(
         "global.gc dry_run=%s topics=%d entities=%d",
-        dry_run, counts["topics_removed"], counts["entities_removed"],
+        dry_run,
+        counts["topics_removed"],
+        counts["entities_removed"],
         extra={"event": "global.gc", **counts},
     )
     return counts

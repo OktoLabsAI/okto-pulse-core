@@ -74,14 +74,16 @@ async def _seed_board_with_spec(db_factory, board_id: str) -> None:
 
     async with db_factory() as db:
         db.add(Board(id=board_id, name=f"Test {board_id}", owner_id="test-owner"))
-        db.add(Spec(
-            id=str(uuid.uuid4()),
-            board_id=board_id,
-            title="Seed spec",
-            status=SpecStatus.DONE,
-            archived=False,
-            created_by="test-user",
-        ))
+        db.add(
+            Spec(
+                id=str(uuid.uuid4()),
+                board_id=board_id,
+                title="Seed spec",
+                status=SpecStatus.DONE,
+                archived=False,
+                created_by="test-user",
+            )
+        )
         await db.commit()
 
 
@@ -136,7 +138,9 @@ class TestHistoricalOptIn:
             assert prog["progress"] == 0
 
     @pytest.mark.asyncio
-    async def test_progress_total_stays_stable_when_processed_rows_are_deleted(self, db_factory, monkeypatch):
+    async def test_progress_total_stays_stable_when_processed_rows_are_deleted(
+        self, db_factory, monkeypatch
+    ):
         """DELETE-on-ack removes queue rows, so progress must use the run total."""
         import uuid
         import okto_pulse.core.kg.governance as governance
@@ -151,14 +155,16 @@ class TestHistoricalOptIn:
         async with db_factory() as db:
             db.add(Board(id=board_id, name="Stable Progress", owner_id="owner"))
             for idx in range(3):
-                db.add(Spec(
-                    id=str(uuid.uuid4()),
-                    board_id=board_id,
-                    title=f"Spec {idx}",
-                    status=SpecStatus.DONE,
-                    archived=False,
-                    created_by="test-user",
-                ))
+                db.add(
+                    Spec(
+                        id=str(uuid.uuid4()),
+                        board_id=board_id,
+                        title=f"Spec {idx}",
+                        status=SpecStatus.DONE,
+                        archived=False,
+                        created_by="test-user",
+                    )
+                )
             await db.commit()
 
         async with db_factory() as db:
@@ -167,12 +173,20 @@ class TestHistoricalOptIn:
             assert initial["total"] == 3
             assert initial["progress"] == 0
 
-            row = (await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.source == "historical_backfill",
-                ).limit(1)
-            )).scalars().one()
+            row = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue)
+                        .where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.source == "historical_backfill",
+                        )
+                        .limit(1)
+                    )
+                )
+                .scalars()
+                .one()
+            )
             await db.delete(row)
             await db.commit()
 
@@ -182,12 +196,18 @@ class TestHistoricalOptIn:
             assert prog["progress"] == 1
             assert prog["pending"] == 2
 
-            remaining = (await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.source == "historical_backfill",
+            remaining = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.source == "historical_backfill",
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             for row in remaining:
                 await db.delete(row)
             await db.commit()
@@ -214,24 +234,32 @@ class TestHistoricalOptIn:
         async with db_factory() as db:
             db.add(Board(id=board_id, name="Terminal Errors", owner_id="owner"))
             for idx in range(2):
-                db.add(Spec(
-                    id=str(uuid.uuid4()),
-                    board_id=board_id,
-                    title=f"Spec {idx}",
-                    status=SpecStatus.DONE,
-                    archived=False,
-                    created_by="test-user",
-                ))
+                db.add(
+                    Spec(
+                        id=str(uuid.uuid4()),
+                        board_id=board_id,
+                        title=f"Spec {idx}",
+                        status=SpecStatus.DONE,
+                        archived=False,
+                        created_by="test-user",
+                    )
+                )
             await db.commit()
 
         async with db_factory() as db:
             await start_historical_consolidation(db, board_id)
-            rows = (await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.source == "historical_backfill",
+            rows = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.source == "historical_backfill",
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(rows) == 2
             rows[0].status = "failed"
             await db.delete(rows[1])
@@ -245,7 +273,9 @@ class TestHistoricalOptIn:
             assert prog["status"] == "completed_with_errors"
 
     @pytest.mark.asyncio
-    async def test_progress_resets_stale_completed_state_when_graph_is_empty(self, db_factory, monkeypatch):
+    async def test_progress_resets_stale_completed_state_when_graph_is_empty(
+        self, db_factory, monkeypatch
+    ):
         """A wiped/recreated KG must not inherit an old completed backfill."""
         import okto_pulse.core.kg.governance as governance
 
@@ -256,17 +286,19 @@ class TestHistoricalOptIn:
 
         board_id = "board-hist-stale-completed"
         async with db_factory() as db:
-            db.add(Board(
-                id=board_id,
-                name="Stale Completed",
-                owner_id="owner",
-                settings={
-                    "kg_historical_consolidation": {
-                        "total": 42,
-                        "status": "completed",
-                    }
-                },
-            ))
+            db.add(
+                Board(
+                    id=board_id,
+                    name="Stale Completed",
+                    owner_id="owner",
+                    settings={
+                        "kg_historical_consolidation": {
+                            "total": 42,
+                            "status": "completed",
+                        }
+                    },
+                )
+            )
             await db.commit()
 
         async with db_factory() as db:
@@ -278,7 +310,9 @@ class TestHistoricalOptIn:
             assert prog["stale"] is True
 
     @pytest.mark.asyncio
-    async def test_start_purges_stale_metadata_when_graph_is_empty(self, db_factory, monkeypatch):
+    async def test_start_purges_stale_metadata_when_graph_is_empty(
+        self, db_factory, monkeypatch
+    ):
         """Historical rerun must not be blocked by audit/refs for a wiped graph."""
         import uuid
         from datetime import datetime, timezone
@@ -301,62 +335,88 @@ class TestHistoricalOptIn:
         async with db_factory() as db:
             db.add(Board(id=board_id, name="Purge stale", owner_id="owner"))
             await db.flush()
-            db.add(Spec(
-                id=spec_id,
-                board_id=board_id,
-                title="Seed spec",
-                status=SpecStatus.DONE,
-                archived=False,
-                created_by="test-user",
-            ))
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Seed spec",
+                    status=SpecStatus.DONE,
+                    archived=False,
+                    created_by="test-user",
+                )
+            )
             await db.flush()
             now = datetime.now(timezone.utc)
-            db.add(ConsolidationAudit(
-                session_id=session_id,
-                board_id=board_id,
-                artifact_id=spec_id,
-                artifact_type="spec",
-                agent_id="agent",
-                started_at=now,
-                committed_at=now,
-                nodes_added=1,
-                content_hash="stale",
-                undo_status="none",
-            ))
+            db.add(
+                ConsolidationAudit(
+                    session_id=session_id,
+                    board_id=board_id,
+                    artifact_id=spec_id,
+                    artifact_type="spec",
+                    agent_id="agent",
+                    started_at=now,
+                    committed_at=now,
+                    nodes_added=1,
+                    content_hash="stale",
+                    undo_status="none",
+                )
+            )
             await db.flush()
-            db.add(KuzuNodeRef(
-                session_id=session_id,
-                board_id=board_id,
-                kuzu_node_id="decision_stale",
-                kuzu_node_type="Decision",
-                operation="add",
-            ))
-            db.add(GlobalUpdateOutbox(
-                event_id=f"evt_{uuid.uuid4().hex[:16]}",
-                board_id=board_id,
-                session_id=session_id,
-                event_type="consolidation_committed",
-                payload={"session_id": session_id},
-            ))
+            db.add(
+                KuzuNodeRef(
+                    session_id=session_id,
+                    board_id=board_id,
+                    kuzu_node_id="decision_stale",
+                    kuzu_node_type="Decision",
+                    operation="add",
+                )
+            )
+            db.add(
+                GlobalUpdateOutbox(
+                    event_id=f"evt_{uuid.uuid4().hex[:16]}",
+                    board_id=board_id,
+                    session_id=session_id,
+                    event_type="consolidation_committed",
+                    payload={"session_id": session_id},
+                )
+            )
             await db.commit()
 
         async with db_factory() as db:
             result = await start_historical_consolidation(db, board_id)
             assert result["status"] == "queueing"
 
-            audit_count = (await db.execute(
-                select(ConsolidationAudit).where(
-                    ConsolidationAudit.board_id == board_id,
+            audit_count = (
+                (
+                    await db.execute(
+                        select(ConsolidationAudit).where(
+                            ConsolidationAudit.board_id == board_id,
+                        )
+                    )
                 )
-            )).scalars().all()
-            ref_count = (await db.execute(
-                select(KuzuNodeRef).where(KuzuNodeRef.board_id == board_id)
-            )).scalars().all()
-            outbox_count = (await db.execute(
-                select(GlobalUpdateOutbox).where(
-                    GlobalUpdateOutbox.board_id == board_id,
+                .scalars()
+                .all()
+            )
+            ref_count = (
+                (
+                    await db.execute(
+                        select(KuzuNodeRef).where(KuzuNodeRef.board_id == board_id)
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
+            outbox_count = (
+                (
+                    await db.execute(
+                        select(GlobalUpdateOutbox).where(
+                            GlobalUpdateOutbox.board_id == board_id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
             assert audit_count == []
             assert ref_count == []
@@ -406,6 +466,174 @@ class TestRightToErasure:
             assert result["board_id"] == "board-erasure-test"
             assert "global_cascade" in result or "global_cascade_error" in result
 
+    @pytest.mark.asyncio
+    async def test_strict_erasure_propagates_global_cascade_failure(
+        self,
+        monkeypatch,
+    ):
+        from okto_pulse.core.kg.global_discovery import clustering
+
+        def _fail_cascade(*_args, **_kwargs):
+            raise RuntimeError("cascade failed")
+
+        monkeypatch.setattr(clustering, "board_delete_cascade", _fail_cascade)
+        with pytest.raises(RuntimeError, match="cascade failed"):
+            await right_to_erasure(
+                object(),
+                "board-strict-erasure",
+                strict=True,
+                commit=False,
+            )
+
+    @pytest.mark.asyncio
+    async def test_board_erasure_scope_contention_is_fail_closed(
+        self,
+        monkeypatch,
+    ):
+        from types import SimpleNamespace
+
+        from okto_pulse.core.kg import governance
+        from okto_pulse.core.kg import single_writer_lock
+
+        class _ContendedLock:
+            def acquire(self, **_kwargs):
+                return SimpleNamespace(
+                    acquired=False,
+                    owner_token=None,
+                    current_owner="worker-1",
+                )
+
+        monkeypatch.setattr(
+            single_writer_lock,
+            "KGSingleWriterLock",
+            _ContendedLock,
+        )
+        with pytest.raises(
+            governance.BoardErasureLockContention,
+            match="current_owner=worker-1",
+        ):
+            async with governance.board_erasure_scope(
+                "board-contended",
+                actor_id="owner",
+            ):
+                pytest.fail("a contended erasure scope must never yield")
+
+    @pytest.mark.asyncio
+    async def test_board_erasure_scope_releases_lease_on_cancellation(
+        self,
+        monkeypatch,
+    ):
+        import asyncio
+        from types import SimpleNamespace
+
+        from okto_pulse.core.kg import governance
+        from okto_pulse.core.kg import global_discovery_writer
+        from okto_pulse.core.kg import single_writer_lock
+
+        released: list[tuple[str, str]] = []
+
+        class _Lock:
+            def acquire(self, **_kwargs):
+                return SimpleNamespace(
+                    acquired=True,
+                    owner_token="lease-token",
+                    current_owner=None,
+                )
+
+            def renew(self, **_kwargs):
+                return True
+
+            def is_owner(self, _board_id, _owner_token):
+                return True
+
+            def release(self, *, board_id, owner_token):
+                released.append((board_id, owner_token))
+                return True
+
+        monkeypatch.setattr(single_writer_lock, "KGSingleWriterLock", _Lock)
+        monkeypatch.setattr(global_discovery_writer, "KGSingleWriterLock", _Lock)
+        with pytest.raises(asyncio.CancelledError):
+            async with governance.board_erasure_scope(
+                "board-cancelled",
+                actor_id="owner",
+            ):
+                raise asyncio.CancelledError
+
+        assert released == [
+            ("_global", "lease-token"),
+            ("board-cancelled", "lease-token"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_strict_erasure_waits_for_destructive_thread_on_cancellation(
+        self,
+        monkeypatch,
+    ):
+        import asyncio
+        import threading
+
+        from okto_pulse.core.kg.global_discovery import clustering
+
+        started = threading.Event()
+        finish = threading.Event()
+
+        def _slow_cascade(*_args, **_kwargs):
+            started.set()
+            assert finish.wait(timeout=5)
+            return {"verified_absent": True}
+
+        monkeypatch.setattr(clustering, "board_delete_cascade", _slow_cascade)
+        erasure = asyncio.create_task(
+            right_to_erasure(
+                object(),
+                "board-cancelled-thread",
+                strict=True,
+                commit=False,
+            )
+        )
+        assert await asyncio.to_thread(started.wait, 2)
+        erasure.cancel()
+        await asyncio.sleep(0)
+        assert not erasure.done()
+
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await erasure
+
+    def test_board_erasure_serializes_same_token_renewals(self):
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Lock
+
+        from okto_pulse.core.kg.governance import BoardErasureLease
+
+        state_lock = Lock()
+        active = 0
+        max_active = 0
+
+        class _WriterLock:
+            def renew(self, **_kwargs):
+                nonlocal active, max_active
+                with state_lock:
+                    active += 1
+                    max_active = max(max_active, active)
+                time.sleep(0.02)
+                with state_lock:
+                    active -= 1
+                return True
+
+        lease = BoardErasureLease(
+            board_id="board-renew",
+            writer_lock=_WriterLock(),
+            owner_token="token",
+            ttl_seconds=300,
+        )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _index: lease.renew(), range(2)))
+
+        assert results == [True, True]
+        assert max_active == 1
+
 
 class TestHistoricalDedupFilter:
     """Regression tests for the governance dedup fix.
@@ -423,7 +651,9 @@ class TestHistoricalDedupFilter:
     """
 
     @pytest.mark.asyncio
-    async def test_terminal_event_rows_do_not_block_historical_requeue(self, db_factory):
+    async def test_terminal_event_rows_do_not_block_historical_requeue(
+        self, db_factory
+    ):
         """Primary regression: a terminal row from event:spec.moved must NOT
         poison the dedup set so the historical pass can re-enqueue the spec."""
         import uuid
@@ -436,21 +666,21 @@ class TestHistoricalDedupFilter:
         # pointing at the SAME artifact. UNIQUE(board_id, artifact_type,
         # artifact_id) makes this the only possible row for that artifact.
         async with db_factory() as db:
-            result = await db.execute(
-                select(Spec).where(Spec.board_id == board_id)
-            )
+            result = await db.execute(select(Spec).where(Spec.board_id == board_id))
             spec = result.scalars().first()
             assert spec is not None
 
-            db.add(ConsolidationQueue(
-                id=str(uuid.uuid4()),
-                board_id=board_id,
-                artifact_type="spec",
-                artifact_id=spec.id,
-                priority="high",
-                source="event:spec.moved",
-                status="done",
-            ))
+            db.add(
+                ConsolidationQueue(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id=spec.id,
+                    priority="high",
+                    source="event:spec.moved",
+                    status="done",
+                )
+            )
             await db.commit()
 
         # Run the historical backfill — the terminal event row should be
@@ -461,12 +691,18 @@ class TestHistoricalDedupFilter:
             assert result["total_artifacts"] >= 1
 
         async with db_factory() as db:
-            rows = (await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_id == spec.id,
+            rows = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.artifact_id == spec.id,
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             # UNIQUE constraint means only one row exists. It must be the
             # newly-inserted historical_backfill row, not the poisoned one.
             assert len(rows) == 1
@@ -485,21 +721,25 @@ class TestHistoricalDedupFilter:
         await _seed_board_with_spec(db_factory, board_id)
 
         async with db_factory() as db:
-            spec = (await db.execute(
-                select(Spec).where(Spec.board_id == board_id)
-            )).scalars().first()
+            spec = (
+                (await db.execute(select(Spec).where(Spec.board_id == board_id)))
+                .scalars()
+                .first()
+            )
             assert spec is not None
 
-            db.add(ConsolidationQueue(
-                id=str(uuid.uuid4()),
-                board_id=board_id,
-                artifact_type="spec",
-                artifact_id=spec.id,
-                priority="high",
-                source="retry_from_ui",
-                status="failed",
-                last_error="simulated prior failure",
-            ))
+            db.add(
+                ConsolidationQueue(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id=spec.id,
+                    priority="high",
+                    source="retry_from_ui",
+                    status="failed",
+                    last_error="simulated prior failure",
+                )
+            )
             await db.commit()
 
         async with db_factory() as db:
@@ -507,12 +747,18 @@ class TestHistoricalDedupFilter:
             assert result["status"] == "queueing"
 
         async with db_factory() as db:
-            rows = (await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_id == spec.id,
+            rows = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.artifact_id == spec.id,
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(rows) == 1
             row = rows[0]
             assert row.status == "pending"
@@ -532,20 +778,24 @@ class TestHistoricalDedupFilter:
         await _seed_board_with_spec(db_factory, board_id)
 
         async with db_factory() as db:
-            spec = (await db.execute(
-                select(Spec).where(Spec.board_id == board_id)
-            )).scalars().first()
+            spec = (
+                (await db.execute(select(Spec).where(Spec.board_id == board_id)))
+                .scalars()
+                .first()
+            )
             assert spec is not None
 
-            db.add(ConsolidationQueue(
-                id=str(uuid.uuid4()),
-                board_id=board_id,
-                artifact_type="spec",
-                artifact_id=spec.id,
-                priority="high",
-                source="event:spec.moved",
-                status="pending",
-            ))
+            db.add(
+                ConsolidationQueue(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id=spec.id,
+                    priority="high",
+                    source="event:spec.moved",
+                    status="pending",
+                )
+            )
             await db.commit()
 
         async with db_factory() as db:
@@ -553,12 +803,18 @@ class TestHistoricalDedupFilter:
             assert result["status"] == "queueing"
 
         async with db_factory() as db:
-            rows = (await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_id == spec.id,
+            rows = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.artifact_id == spec.id,
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             # Exactly one row survives (UNIQUE constraint). It must be the
             # pre-existing pending event row, NOT a new historical row.
             assert len(rows) == 1
@@ -579,20 +835,24 @@ class TestHistoricalDedupFilter:
         await _seed_board_with_spec(db_factory, board_id)
 
         async with db_factory() as db:
-            spec = (await db.execute(
-                select(Spec).where(Spec.board_id == board_id)
-            )).scalars().first()
+            spec = (
+                (await db.execute(select(Spec).where(Spec.board_id == board_id)))
+                .scalars()
+                .first()
+            )
             assert spec is not None
 
-            db.add(ConsolidationQueue(
-                id=str(uuid.uuid4()),
-                board_id=board_id,
-                artifact_type="spec",
-                artifact_id=spec.id,
-                priority="low",
-                source="historical_backfill",
-                status="paused",
-            ))
+            db.add(
+                ConsolidationQueue(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id=spec.id,
+                    priority="low",
+                    source="historical_backfill",
+                    status="paused",
+                )
+            )
             await db.commit()
 
         # Paused status is not in {pending, claimed}, so the "already in
@@ -603,12 +863,18 @@ class TestHistoricalDedupFilter:
             assert result["status"] == "queueing"
 
         async with db_factory() as db:
-            rows = (await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_id == spec.id,
+            rows = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.artifact_id == spec.id,
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             # Exactly one row must survive — the pre-existing paused row.
             # The dedup set must include paused statuses so the historical
             # pass skips this artifact instead of trying to duplicate it.
@@ -633,11 +899,16 @@ class TestHistoricalDedupFilter:
             for i in range(3):
                 sid = str(uuid.uuid4())
                 spec_ids.append(sid)
-                db.add(Spec(
-                    id=sid, board_id=board_id,
-                    title=f"Spec {i}", status=SpecStatus.DONE,
-                    archived=False, created_by="test",
-                ))
+                db.add(
+                    Spec(
+                        id=sid,
+                        board_id=board_id,
+                        title=f"Spec {i}",
+                        status=SpecStatus.DONE,
+                        archived=False,
+                        created_by="test",
+                    )
+                )
             await db.commit()
 
         # Pollute the queue with terminal rows from different sources
@@ -648,15 +919,17 @@ class TestHistoricalDedupFilter:
         ]
         async with db_factory() as db:
             for artifact_id, source, status in terminal_rows:
-                db.add(ConsolidationQueue(
-                    id=str(uuid.uuid4()),
-                    board_id=board_id,
-                    artifact_type="spec",
-                    artifact_id=artifact_id,
-                    priority="low",
-                    source=source,
-                    status=status,
-                ))
+                db.add(
+                    ConsolidationQueue(
+                        id=str(uuid.uuid4()),
+                        board_id=board_id,
+                        artifact_type="spec",
+                        artifact_id=artifact_id,
+                        priority="low",
+                        source=source,
+                        status=status,
+                    )
+                )
             await db.commit()
 
         async with db_factory() as db:
@@ -668,12 +941,18 @@ class TestHistoricalDedupFilter:
             assert result["total_artifacts"] >= 3
 
         async with db_factory() as db:
-            rows = (await db.execute(
-                select(ConsolidationQueue).where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.artifact_type == "spec",
+            rows = (
+                (
+                    await db.execute(
+                        select(ConsolidationQueue).where(
+                            ConsolidationQueue.board_id == board_id,
+                            ConsolidationQueue.artifact_type == "spec",
+                        )
+                    )
                 )
-            )).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(rows) == 3
             for row in rows:
                 assert row.status == "pending"

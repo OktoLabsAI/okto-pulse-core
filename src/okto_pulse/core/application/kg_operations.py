@@ -63,8 +63,7 @@ async def _takedown_e2e_health(
         else None
     )
     delivered = (
-        final_delivery is not None
-        and final_delivery.state is TakedownState.DELIVERED
+        final_delivery is not None and final_delivery.state is TakedownState.DELIVERED
     )
     final_delivery_state = (
         final_delivery.state.value if final_delivery is not None else None
@@ -97,9 +96,7 @@ async def _takedown_e2e_health(
             raise RuntimeError("takedown_parity_probe_result_invalid")
         stale_items = probe.get("items")
         raw_board_stale_count = probe.get("count")
-        raw_digest_stale_count = probe.get(
-            "global_discovery_stale_digest_count"
-        )
+        raw_digest_stale_count = probe.get("global_discovery_stale_digest_count")
         if (
             not isinstance(stale_items, list)
             or any(not isinstance(item, Mapping) for item in stale_items)
@@ -118,17 +115,13 @@ async def _takedown_e2e_health(
         )
         source_ref = f"{snapshot.artifact_type}:{snapshot.artifact_id}"
         matching_stale_count = sum(
-            1
-            for item in stale_items
-            if item.get("source_artifact_ref") == source_ref
+            1 for item in stale_items if item.get("source_artifact_ref") == source_ref
         )
         board_parity_clean = board_stale_count == 0
         if global_discovery_evaluation == GD_EVALUATED:
             global_discovery_parity_clean = digest_stale_count == 0
             parity_evaluable = True
-            parity_clean = (
-                board_parity_clean and global_discovery_parity_clean
-            )
+            parity_clean = board_parity_clean and global_discovery_parity_clean
     except Exception as exc:
         probe_error_class = type(exc).__name__
         logger.warning(
@@ -159,9 +152,7 @@ async def _takedown_e2e_health(
         if not board_parity_clean:
             failure_reasons.append("stale_canonical_parity_detected")
         if not global_discovery_parity_clean:
-            failure_reasons.append(
-                "global_discovery_parity_mismatch_detected"
-            )
+            failure_reasons.append("global_discovery_parity_mismatch_detected")
 
     return {
         "predicate": "delivered_state_and_evaluable_parity_probe",
@@ -271,17 +262,13 @@ class CoreKnowledgeGraphOperations:
 
         return await cognitive_enforcement_active(self.__relational_context, board_id)
 
-    async def record_cognitive_skip(
-        self, readiness_service: object, **request: object
-    ):  # noqa: ANN201
+    async def record_cognitive_skip(self, readiness_service: object, **request: object):  # noqa: ANN201
         return await readiness_service.record_cognitive_skip(
             self.__relational_context,
             **request,
         )
 
-    async def clear_cognitive_skip(
-        self, readiness_service: object, **request: object
-    ):  # noqa: ANN201
+    async def clear_cognitive_skip(self, readiness_service: object, **request: object):  # noqa: ANN201
         return await readiness_service.clear_cognitive_skip(
             self.__relational_context,
             **request,
@@ -351,9 +338,7 @@ class CoreKnowledgeGraphOperations:
             db=self.__relational_context,
         )
 
-    async def propose_reconciliation(
-        self, request: object, *, agent_id: str
-    ):  # noqa: ANN201
+    async def propose_reconciliation(self, request: object, *, agent_id: str):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import propose_reconciliation
 
         return await propose_reconciliation(
@@ -418,9 +403,7 @@ class CoreKnowledgeGraphOperations:
             scheduler_control=scheduler_control,
         )
 
-    async def list_consolidation_audit(
-        self, board_id: str, *, limit: int
-    ):  # noqa: ANN201
+    async def list_consolidation_audit(self, board_id: str, *, limit: int):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import list_consolidation_audit
 
         return await list_consolidation_audit(
@@ -430,7 +413,9 @@ class CoreKnowledgeGraphOperations:
         )
 
     async def start_historical_consolidation(self, board_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import start_historical_consolidation
+        from okto_pulse.core.services.application_kg import (
+            start_historical_consolidation,
+        )
 
         return await start_historical_consolidation(self.__relational_context, board_id)
 
@@ -444,10 +429,75 @@ class CoreKnowledgeGraphOperations:
 
         return await get_historical_progress(self.__relational_context, board_id)
 
-    async def right_to_erasure(self, board_id: str):  # noqa: ANN201
+    def board_erasure_scope(self, board_id: str, *, actor_id: str):  # noqa: ANN201
+        from okto_pulse.core.kg.governance import board_erasure_scope
+
+        return board_erasure_scope(board_id, actor_id=actor_id)
+
+    async def get_board_erasure_job(self, board_id: str):  # noqa: ANN201
+        from okto_pulse.core.kg.governance import get_board_erasure_job
+
+        return await get_board_erasure_job(
+            self.__relational_context,
+            board_id,
+        )
+
+    async def stage_board_relational_erasure(
+        self,
+        board_id: str,
+        *,
+        actor_id: str,
+    ) -> None:
+        from okto_pulse.core.kg.governance import (
+            stage_board_relational_erasure,
+        )
+
+        await stage_board_relational_erasure(
+            self.__relational_context,
+            board_id,
+            actor_id=actor_id,
+        )
+
+    async def record_board_erasure_failure(
+        self,
+        board_id: str,
+        error: Exception,
+    ) -> None:
+        from okto_pulse.core.kg.governance import record_board_erasure_failure
+
+        await record_board_erasure_failure(
+            self.__relational_context,
+            board_id,
+            error,
+        )
+
+    async def complete_board_erasure_job(self, board_id: str) -> bool:
+        from okto_pulse.core.kg.governance import complete_board_erasure_job
+
+        return await complete_board_erasure_job(
+            self.__relational_context,
+            board_id,
+        )
+
+    async def right_to_erasure(
+        self,
+        board_id: str,
+        *,
+        strict: bool = False,
+        commit: bool = True,
+        global_writer_guarded: bool = False,
+        purge_relational: bool = True,
+    ):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import right_to_erasure
 
-        return await right_to_erasure(self.__relational_context, board_id)
+        return await right_to_erasure(
+            self.__relational_context,
+            board_id,
+            strict=strict,
+            commit=commit,
+            global_writer_guarded=global_writer_guarded,
+            purge_relational=purge_relational,
+        )
 
     async def list_pending_entries(self, board_id: str):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import list_pending_entries
@@ -475,9 +525,7 @@ class CoreKnowledgeGraphOperations:
             recursive=recursive,
         )
 
-    async def boost_node(
-        self, board_id: str, node_id: str, *, actor_id: str
-    ):  # noqa: ANN201
+    async def boost_node(self, board_id: str, node_id: str, *, actor_id: str):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import boost_node
 
         return await boost_node(
@@ -505,9 +553,7 @@ class CoreKnowledgeGraphOperations:
             limit=limit,
         )
 
-    async def diagnose_connectivity_guard_dlq(
-        self, board_id: str
-    ) -> dict[str, object]:
+    async def diagnose_connectivity_guard_dlq(self, board_id: str) -> dict[str, object]:
         from okto_pulse.core.services.connectivity_dlq_reprocess_service import (
             diagnose_connectivity_guard_dlq,
         )
@@ -543,9 +589,7 @@ class CoreKnowledgeGraphOperations:
             artifact_refs=artifact_refs,
         )
 
-    async def list_cognitive_dlq_rows(
-        self, board_id: str, *, limit: int, offset: int
-    ):  # noqa: ANN201
+    async def list_cognitive_dlq_rows(self, board_id: str, *, limit: int, offset: int):  # noqa: ANN201
         from okto_pulse.core.services.dead_letter_inspector_service import (
             list_cognitive_dlq_rows,
         )
@@ -750,9 +794,7 @@ class CoreKnowledgeGraphOperations:
         self,
         *,
         boards: list[tuple[str, str, str]],
-        captured_cognitive_pending_exclusions: Mapping[
-            str, Mapping[str, str]
-        ],
+        captured_cognitive_pending_exclusions: Mapping[str, Mapping[str, str]],
     ) -> tuple[object, ...]:
         """Capture UoW-bound overlays before graph-only seed materialization."""
 

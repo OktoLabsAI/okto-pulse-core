@@ -51,6 +51,19 @@ def _kb(*, metadata: object | None) -> SimpleNamespace:
         content="Body",
         mime_type="text/markdown",
         governance_metadata=metadata,
+        source_type="spec",
+        source_id="source-1",
+        source_version=0,
+        source_kb_id="source-kb-1",
+        root_source_kb_id="root-kb-1",
+        immediate_parent_kb_id="parent-kb-1",
+        content_hash="persisted-content-sha256",
+        knowledge_assignment={
+            "assignment_id": "assignment-1",
+            "mode": "reference",
+            "state": "active",
+            "stale": False,
+        },
         created_at=datetime(2026, 7, 22, tzinfo=timezone.utc),
         created_by="author",
         updated_at=None,
@@ -217,6 +230,11 @@ async def test_consolidated_list_projects_governance_for_each_entity_type(
     assert item["created_at"] == "2026-07-22T00:00:00+00:00"
     assert item["governance"]["metadata_status"] == "complete"
     assert item["governance"]["metadata"] == _valid_metadata()
+    assert item["source_version"] == 0
+    assert item["root_source_kb_id"] == "root-kb-1"
+    assert item["immediate_parent_kb_id"] == "parent-kb-1"
+    assert item["content_hash"] == "persisted-content-sha256"
+    assert item["knowledge_assignment"]["assignment_id"] == "assignment-1"
     assert "content" not in item
 
 
@@ -306,6 +324,9 @@ async def test_spec_consolidated_list_keeps_v2_summary_bounded() -> None:
             "origin_class": "v2",
         },
         "created_at": "2026-07-23T00:00:00+00:00",
+        "content_hash": (
+            "4ec45d27a1a409364cfd36ff061413f812a42a4fb6c7cff9d81df2a879e81ecd"
+        ),
         "governance": {
             "authority": "advisory",
             "metadata_status": "legacy_incomplete",

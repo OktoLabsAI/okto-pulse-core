@@ -48,9 +48,17 @@ from okto_pulse.core.services.resource_gate import ResourceGateService
 
 async def _no_na_marks(db_factory, board_id) -> bool:
     async with db_factory() as db:
-        rows = (await db.execute(
-            select(ResourceNotApplicable).where(ResourceNotApplicable.board_id == board_id)
-        )).scalars().all()
+        rows = (
+            (
+                await db.execute(
+                    select(ResourceNotApplicable).where(
+                        ResourceNotApplicable.board_id == board_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
     return len(rows) == 0
 
 
@@ -63,13 +71,15 @@ async def _seed_done_derive_parent(db_factory, board_id, source: str) -> str:
 
     ideation_id = sid("idea")
     async with db_factory() as db:
-        db.add(Ideation(
-            id=ideation_id,
-            board_id=board_id,
-            title="Done derive parent",
-            status=IdeationStatus.DONE,
-            created_by=USER_ID,
-        ))
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="Done derive parent",
+                status=IdeationStatus.DONE,
+                created_by=USER_ID,
+            )
+        )
         await db.commit()
     return ideation_id
 
@@ -98,9 +108,11 @@ async def test_derive_spec_rejects_cross_board_parent_before_write(db_factory, s
     assert result == {"error": f"{source.title()} not found"}
     source_column = Spec.ideation_id if source == "ideation" else Spec.refinement_id
     async with db_factory() as db:
-        specs = (await db.execute(
-            select(Spec).where(source_column == source_id)
-        )).scalars().all()
+        specs = (
+            (await db.execute(select(Spec).where(source_column == source_id)))
+            .scalars()
+            .all()
+        )
     assert specs == []
 
 
@@ -120,9 +132,11 @@ async def test_derive_spec_missing_parent_is_governed_and_writes_nothing(
 
     assert result == {"error": f"{source.title()} not found"}
     async with db_factory() as db:
-        specs = (await db.execute(
-            select(Spec).where(Spec.board_id == board_id)
-        )).scalars().all()
+        specs = (
+            (await db.execute(select(Spec).where(Spec.board_id == board_id)))
+            .scalars()
+            .all()
+        )
     assert specs == []
 
 
@@ -158,7 +172,9 @@ async def test_ts_d4ddaf4e_create_spec_materializes_effective_before_cards(db_fa
     ref = await seed_refinement(db_factory, board_id, kb=True, mockup=True)
 
     result = await call_tool(
-        "okto_pulse_create_spec", board_id=board_id, title="manual spec",
+        "okto_pulse_create_spec",
+        board_id=board_id,
+        title="manual spec",
         refinement_id=ref["refinement_id"],
     )
     assert result.get("success") is True, result
@@ -166,9 +182,17 @@ async def test_ts_d4ddaf4e_create_spec_materializes_effective_before_cards(db_fa
 
     # The KB is MATERIALIZED on the spec (a real row) before any card derivation.
     async with db_factory() as db:
-        kbs = (await db.execute(
-            select(SpecKnowledgeBase).where(SpecKnowledgeBase.spec_id == result["spec"]["id"])
-        )).scalars().all()
+        kbs = (
+            (
+                await db.execute(
+                    select(SpecKnowledgeBase).where(
+                        SpecKnowledgeBase.spec_id == result["spec"]["id"]
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
     assert any(getattr(kb, "source_kb_id", None) == ref["kb_id"] for kb in kbs)
 
 
@@ -183,11 +207,16 @@ async def test_ts_6e228232_gate_summary_and_copy_share_effective_list(db_factory
 
     # Gate summary sees the inherited KB as provided, keyed by the effective kb id.
     async with db_factory() as db:
-        summary = await ResourceGateService(db).get_summary(board_id, "spec", legacy["spec_id"])
-    kb_state = next(r for r in summary["resources"] if r["resource_type"] == "knowledge_base")
+        summary = await ResourceGateService(db).get_summary(
+            board_id, "spec", legacy["spec_id"]
+        )
+    kb_state = next(
+        r for r in summary["resources"] if r["resource_type"] == "knowledge_base"
+    )
     assert kb_state["state"] == "provided", summary["resources"]
     gate_ids = {
-        a.get("id") for a in summary["resource_lineage"]["attachments"]
+        a.get("id")
+        for a in summary["resource_lineage"]["attachments"]
         if a.get("resource_type") == "knowledge_base"
     }
     assert ref["kb_id"] in gate_ids, gate_ids
@@ -195,7 +224,9 @@ async def test_ts_6e228232_gate_summary_and_copy_share_effective_list(db_factory
     # The copy tool consumes the SAME effective resource (no generic error).
     copy = await call_tool(
         "okto_pulse_copy_knowledge_to_card",
-        board_id=board_id, spec_id=legacy["spec_id"], card_id=legacy["card_id"],
+        board_id=board_id,
+        spec_id=legacy["spec_id"],
+        card_id=legacy["card_id"],
     )
     assert copy.get("success") is True and copy["fallback"] is True
     assert "error" not in copy
@@ -216,7 +247,9 @@ async def test_ts_3524d4ce_card_receives_all_inherited_with_gate_identity(db_fac
     copy tools, each with an identity ResourceGateService._resource_identity_values
     accepts (proven by the gate coverage flipping to satisfied)."""
     board_id = await new_board(db_factory)
-    ref = await seed_refinement(db_factory, board_id, kb=True, mockup=True, architecture=True)
+    ref = await seed_refinement(
+        db_factory, board_id, kb=True, mockup=True, architecture=True
+    )
     legacy = await seed_legacy_spec_with_card(db_factory, board_id, ref)
 
     for tool in (
@@ -224,8 +257,12 @@ async def test_ts_3524d4ce_card_receives_all_inherited_with_gate_identity(db_fac
         "okto_pulse_copy_mockups_to_card",
         "okto_pulse_copy_architecture_to_card",
     ):
-        res = await call_tool(tool, board_id=board_id, spec_id=legacy["spec_id"],
-                              card_id=legacy["card_id"])
+        res = await call_tool(
+            tool,
+            board_id=board_id,
+            spec_id=legacy["spec_id"],
+            card_id=legacy["card_id"],
+        )
         assert "error" not in res, (tool, res)
 
     async with db_factory() as db:
@@ -233,12 +270,19 @@ async def test_ts_3524d4ce_card_receives_all_inherited_with_gate_identity(db_fac
         card_kbs = list(card.knowledge_bases or [])
         card_mockups = list(card.screen_mockups or [])
         coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
-            board_id, legacy["spec_id"],
+            board_id,
+            legacy["spec_id"],
         )
 
     # Identity the gate reads is present for KB + mockup.
-    assert any(ref["kb_id"] in ResourceGateService._resource_identity_values(kb) for kb in card_kbs)
-    assert any(ref["mockup_id"] in ResourceGateService._resource_identity_values(m) for m in card_mockups)
+    assert any(
+        ref["kb_id"] in ResourceGateService._resource_identity_values(kb)
+        for kb in card_kbs
+    )
+    assert any(
+        ref["mockup_id"] in ResourceGateService._resource_identity_values(m)
+        for m in card_mockups
+    )
     # End-to-end: every inherited spec obligation is covered by the card.
     assert coverage["allowed"] is True, coverage["uncovered_resources"]
 
@@ -253,7 +297,9 @@ async def test_ts_7cc0dcf9_no_auto_na_and_no_provenance_loss(db_factory):
 
     copy = await call_tool(
         "okto_pulse_copy_knowledge_to_card",
-        board_id=board_id, spec_id=legacy["spec_id"], card_id=legacy["card_id"],
+        board_id=board_id,
+        spec_id=legacy["spec_id"],
+        card_id=legacy["card_id"],
     )
     assert copy["fallback"] is True and copy["copied"] >= 1
 
@@ -264,7 +310,9 @@ async def test_ts_7cc0dcf9_no_auto_na_and_no_provenance_loss(db_factory):
         card = await db.get(Card, legacy["card_id"])
         kbs = list(card.knowledge_bases or [])
     copied = [kb for kb in kbs if kb.get("source_kb_id") == ref["kb_id"]]
-    assert copied and str(copied[0].get("source") or "").startswith("copied_from_refinement:")
+    assert copied and str(copied[0].get("source") or "").startswith(
+        "copied_from_refinement:"
+    )
 
 
 # ===========================================================================
@@ -279,18 +327,30 @@ async def test_ts_e59fe6ad_derive_spec_from_refinement_still_propagates(db_facto
     from okto_pulse.core.services.main import RefinementService
 
     board_id = await new_board(db_factory)
-    ref = await seed_refinement(db_factory, board_id, status="done", kb=True, mockup=True)
+    ref = await seed_refinement(
+        db_factory, board_id, status="done", kb=True, mockup=True
+    )
 
     async with db_factory() as db:
         spec = await RefinementService(db).derive_spec(
-            ref["refinement_id"], USER_ID, skip_ownership_check=True,
+            ref["refinement_id"],
+            USER_ID,
+            skip_ownership_check=True,
         )
         await db.commit()
         assert spec is not None
         spec_id = spec.id
-        kbs = (await db.execute(
-            select(SpecKnowledgeBase).where(SpecKnowledgeBase.spec_id == spec_id)
-        )).scalars().all()
+        kbs = (
+            (
+                await db.execute(
+                    select(SpecKnowledgeBase).where(
+                        SpecKnowledgeBase.spec_id == spec_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         derived = await db.get(Spec, spec_id)
         mockups = list(derived.screen_mockups or [])
 
@@ -436,6 +496,8 @@ async def test_governance_metadata_survives_ideation_refinement_spec_card_chain(
     assert card_kb["source_kb_id"] == spec_kb["id"]
     assert card_kb["root_source_kb_id"] == ideation_kb_id
     assert card_kb["immediate_parent_kb_id"] == spec_kb["id"]
+    assert len(card_kb["content_hash"]) == 64
+    assert card_kb["mime_type"] == "text/markdown"
 
     # Card creation/copy does not inflate or reinterpret the Spec's lineage.
     after_counts = task_context["spec"]["resource_gate_summary"]["lineage_counts"]
@@ -515,17 +577,29 @@ async def test_derive_spec_returns_canonical_resource_propagation_summary(db_fac
     async with db_factory() as db:
         spec = await db.get(Spec, result["spec"]["id"])
         mockups = list(spec.screen_mockups or [])
-        kbs = (await db.execute(
-            select(SpecKnowledgeBase).where(
-                SpecKnowledgeBase.spec_id == result["spec"]["id"]
+        kbs = (
+            (
+                await db.execute(
+                    select(SpecKnowledgeBase).where(
+                        SpecKnowledgeBase.spec_id == result["spec"]["id"]
+                    )
+                )
             )
-        )).scalars().all()
-        designs = (await db.execute(
-            select(ArchitectureDesign).where(
-                ArchitectureDesign.parent_type == "spec",
-                ArchitectureDesign.spec_id == result["spec"]["id"],
+            .scalars()
+            .all()
+        )
+        designs = (
+            (
+                await db.execute(
+                    select(ArchitectureDesign).where(
+                        ArchitectureDesign.parent_type == "spec",
+                        ArchitectureDesign.spec_id == result["spec"]["id"],
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert len(mockups) == 1
     assert mockups[0]["origin_id"] == ref["mockup_id"]
@@ -579,9 +653,15 @@ async def test_derive_spec_rejects_mixed_foreign_selection_before_target_write(
     assert result["retryable"] is False
 
     async with db_factory() as db:
-        specs = (await db.execute(
-            select(Spec).where(Spec.refinement_id == ref["refinement_id"])
-        )).scalars().all()
+        specs = (
+            (
+                await db.execute(
+                    select(Spec).where(Spec.refinement_id == ref["refinement_id"])
+                )
+            )
+            .scalars()
+            .all()
+        )
     assert specs == []
 
 
@@ -597,7 +677,9 @@ async def test_ts_2e4169c2_legacy_spec_falls_back_or_actionable_error(db_factory
     legacy = await seed_legacy_spec_with_card(db_factory, board_id, ref)
     copy = await call_tool(
         "okto_pulse_copy_knowledge_to_card",
-        board_id=board_id, spec_id=legacy["spec_id"], card_id=legacy["card_id"],
+        board_id=board_id,
+        spec_id=legacy["spec_id"],
+        card_id=legacy["card_id"],
     )
     assert copy.get("success") is True and copy["fallback"] is True
     assert "error" not in copy
@@ -607,7 +689,9 @@ async def test_ts_2e4169c2_legacy_spec_falls_back_or_actionable_error(db_factory
     bare = await seed_legacy_spec_with_card(db_factory, board_id, bare_ref)
     empty = await call_tool(
         "okto_pulse_copy_knowledge_to_card",
-        board_id=board_id, spec_id=bare["spec_id"], card_id=bare["card_id"],
+        board_id=board_id,
+        spec_id=bare["spec_id"],
+        card_id=bare["card_id"],
     )
     assert empty.get("success") is True and empty.get("copied") == 0
     assert empty.get("reason") == "no_resource_required" and "error" not in empty
@@ -615,12 +699,23 @@ async def test_ts_2e4169c2_legacy_spec_falls_back_or_actionable_error(db_factory
     # (c) the structured actionable error shape (provided-but-unresolvable).
     from okto_pulse.core.mcp.server import _effective_empty_copy_response
     import json
-    err = json.loads(_effective_empty_copy_response(
-        "knowledge_base",
-        {"not_applicable": False, "has_obligation": True,
-         "coverage_obligation_id": "knowledge_base:kb-x",
-         "accepted_identity_fields": ["source_kb_id", "id", "source", "source_ref"]},
-    ))
+
+    err = json.loads(
+        _effective_empty_copy_response(
+            "knowledge_base",
+            {
+                "not_applicable": False,
+                "has_obligation": True,
+                "coverage_obligation_id": "knowledge_base:kb-x",
+                "accepted_identity_fields": [
+                    "source_kb_id",
+                    "id",
+                    "source",
+                    "source_ref",
+                ],
+            },
+        )
+    )
     assert err["error"] == "resource_propagation_failed"
     assert err["resource_type"] == "knowledge_base"
     assert err["coverage_obligation_id"] == "knowledge_base:kb-x"
@@ -641,7 +736,9 @@ async def test_ts_a69e5f5a_e2e_create_spec_card_copy_gate_clean(db_factory):
 
     # 1. Create the spec manually from the refinement (effective propagation).
     created = await call_tool(
-        "okto_pulse_create_spec", board_id=board_id, title="E2E manual spec",
+        "okto_pulse_create_spec",
+        board_id=board_id,
+        title="E2E manual spec",
         refinement_id=ref["refinement_id"],
     )
     assert created.get("success") is True, created
@@ -653,7 +750,9 @@ async def test_ts_a69e5f5a_e2e_create_spec_card_copy_gate_clean(db_factory):
     # 3. ... carries the spec's (now direct) KB via the copy tool ...
     copy = await call_tool(
         "okto_pulse_copy_knowledge_to_card",
-        board_id=board_id, spec_id=spec_id, card_id=card_id,
+        board_id=board_id,
+        spec_id=spec_id,
+        card_id=card_id,
     )
     assert copy.get("success") is True and copy["copied"] >= 1
 
@@ -661,7 +760,8 @@ async def test_ts_a69e5f5a_e2e_create_spec_card_copy_gate_clean(db_factory):
     #    disable / skip / auto-N/A.
     async with db_factory() as db:
         coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
-            board_id, spec_id,
+            board_id,
+            spec_id,
         )
     assert coverage["allowed"] is True, coverage["uncovered_resources"]
     assert await _no_na_marks(db_factory, board_id)

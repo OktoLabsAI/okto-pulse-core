@@ -169,26 +169,42 @@ class TestBootstrapSchema:
 
     def test_vector_index_types(self):
         assert set(VECTOR_INDEX_TYPES) == {
-            "Decision", "Criterion", "Constraint", "Requirement", "Entity",
-            "APIContract", "TestScenario", "Bug", "Learning",
+            "Decision",
+            "Criterion",
+            "Constraint",
+            "Requirement",
+            "Entity",
+            "APIContract",
+            "TestScenario",
+            "Bug",
+            "Learning",
         }
 
     def test_schema_version(self):
         # Monotonic additive bumps preserve the floor (0.3.7 = implements
         # APIContract->Constraint endpoint pair) — assert known-version membership.
-        assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7", "0.3.8", "0.3.9", "0.3.10"}
+        assert SCHEMA_VERSION in {
+            "0.3.2",
+            "0.3.3",
+            "0.3.4",
+            "0.3.5",
+            "0.3.6",
+            "0.3.7",
+            "0.3.8",
+            "0.3.9",
+            "0.3.10",
+            "0.3.11",
+        }
 
     def test_implements_accepts_requirement_and_constraint_pairs(self):
         from kg_schema_testing import MULTI_REL_TYPES
 
         rel_pairs = [
-            (rel_name, from_type, to_type)
-            for rel_name, from_type, to_type in REL_TYPES
+            (rel_name, from_type, to_type) for rel_name, from_type, to_type in REL_TYPES
         ]
         for rel_name, pairs in MULTI_REL_TYPES:
             rel_pairs.extend(
-                (rel_name, from_type, to_type)
-                for from_type, to_type in pairs
+                (rel_name, from_type, to_type) for from_type, to_type in pairs
             )
         assert ("implements", "APIContract", "Requirement") in rel_pairs
         assert ("implements", "APIContract", "Constraint") in rel_pairs
@@ -253,7 +269,9 @@ class TestBootstrapSchema:
                 "global_update_outbox",
             ]:
                 r = await conn.execute(
-                    text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'")
+                    text(
+                        f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'"
+                    )
                 )
                 assert r.scalar() == table, f"Missing table: {table}"
 
@@ -410,7 +428,9 @@ class TestCognitiveEdgeValidation:
 
 class TestHappyPathDedup:
     @pytest.mark.asyncio
-    async def test_full_commit_happy_path(self, board_id, agent_id, db_factory, board_handle):
+    async def test_full_commit_happy_path(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         begin, commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -426,7 +446,9 @@ class TestHappyPathDedup:
         assert commit.connectivity["passed"] is True
 
     @pytest.mark.asyncio
-    async def test_sha256_dedup_nothing_changed(self, board_id, agent_id, db_factory, board_handle):
+    async def test_sha256_dedup_nothing_changed(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         content = "dedup target content"
         b1, _commit = await _commit_connected_learning_session(
             board_id=board_id,
@@ -452,7 +474,9 @@ class TestHappyPathDedup:
         assert b2.previous_session_id == b1.session_id
 
     @pytest.mark.asyncio
-    async def test_propose_returns_add_for_new(self, board_id, agent_id, db_factory, board_handle):
+    async def test_propose_returns_add_for_new(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -589,9 +613,7 @@ class TestReconciliationRules:
             nothing_changed=True,
             existing_matches_by_candidate={},
         )
-        assert all(
-            h.operation == ReconciliationOperation.NOOP for h in hints.values()
-        )
+        assert all(h.operation == ReconciliationOperation.NOOP for h in hints.values())
 
 
 # ============================================================================
@@ -601,7 +623,9 @@ class TestReconciliationRules:
 
 class TestErrorCases:
     @pytest.mark.asyncio
-    async def test_expired_session_returns_not_found(self, board_id, agent_id, db_factory):
+    async def test_expired_session_returns_not_found(
+        self, board_id, agent_id, db_factory
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -633,7 +657,9 @@ class TestErrorCases:
         assert exc_info.value.code == "session_not_found"
 
     @pytest.mark.asyncio
-    async def test_duplicate_candidate_id_rejected(self, board_id, agent_id, db_factory):
+    async def test_duplicate_candidate_id_rejected(
+        self, board_id, agent_id, db_factory
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -671,7 +697,9 @@ class TestErrorCases:
         assert exc_info.value.code == "duplicate_candidate_id"
 
     @pytest.mark.asyncio
-    async def test_edge_references_unknown_candidate(self, board_id, agent_id, db_factory):
+    async def test_edge_references_unknown_candidate(
+        self, board_id, agent_id, db_factory
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -730,7 +758,9 @@ class TestErrorCases:
 
 class TestOwnershipHNSWIdempotency:
     @pytest.mark.asyncio
-    async def test_wrong_agent_cannot_add_candidate(self, board_id, agent_id, db_factory):
+    async def test_wrong_agent_cannot_add_candidate(
+        self, board_id, agent_id, db_factory
+    ):
         async with db_factory() as db:
             b = await begin_consolidation(
                 BeginConsolidationRequest(
@@ -757,7 +787,9 @@ class TestOwnershipHNSWIdempotency:
         assert exc_info.value.code == "session_ownership_mismatch"
 
     @pytest.mark.asyncio
-    async def test_hnsw_returns_similar(self, board_id, agent_id, db_factory, board_handle):
+    async def test_hnsw_returns_similar(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -829,7 +861,9 @@ class TestOwnershipHNSWIdempotency:
 
 class TestAuditRowSchema:
     @pytest.mark.asyncio
-    async def test_audit_row_has_all_fields(self, board_id, agent_id, db_factory, board_handle):
+    async def test_audit_row_has_all_fields(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         b, commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -855,26 +889,28 @@ class TestAuditRowSchema:
             )
             row = r.fetchone()
             assert row is not None
-            assert row[0] == b.session_id       # session_id
-            assert row[1] == board_id            # board_id
-            assert row[2] == "spec-audit"        # artifact_id
-            assert row[3] == "spec"              # artifact_type
-            assert row[4] == SYSTEM_KG_WRITER    # agent_id
-            assert row[5] is not None            # started_at
-            assert row[6] is not None            # committed_at
-            assert row[7] >= 1                   # nodes_added
-            assert row[8] >= 0                   # nodes_updated
-            assert row[9] == 0                   # nodes_superseded
+            assert row[0] == b.session_id  # session_id
+            assert row[1] == board_id  # board_id
+            assert row[2] == "spec-audit"  # artifact_id
+            assert row[3] == "spec"  # artifact_type
+            assert row[4] == SYSTEM_KG_WRITER  # agent_id
+            assert row[5] is not None  # started_at
+            assert row[6] is not None  # committed_at
+            assert row[7] >= 1  # nodes_added
+            assert row[8] >= 0  # nodes_updated
+            assert row[9] == 0  # nodes_superseded
             # The commit may also attach a deterministic belongs_to
             # provenance backbone when a source root already exists.
-            assert row[10] >= 1                  # edges_added
+            assert row[10] >= 1  # edges_added
             assert row[10] == commit.edges_added
             assert row[11] == "Audit test summary"  # summary_text
-            assert len(row[12]) == 64            # content_hash (sha256 hex)
-            assert row[13] == "none"             # undo_status
+            assert len(row[12]) == 64  # content_hash (sha256 hex)
+            assert row[13] == "none"  # undo_status
 
     @pytest.mark.asyncio
-    async def test_kuzu_node_refs_linked_to_audit(self, board_id, agent_id, db_factory, board_handle):
+    async def test_kuzu_node_refs_linked_to_audit(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         b, _commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -895,7 +931,9 @@ class TestAuditRowSchema:
             assert r.scalar() >= 3
 
     @pytest.mark.asyncio
-    async def test_outbox_event_created(self, board_id, agent_id, db_factory, board_handle):
+    async def test_outbox_event_created(
+        self, board_id, agent_id, db_factory, board_handle
+    ):
         b, _commit = await _commit_connected_learning_session(
             board_id=board_id,
             db_factory=db_factory,
@@ -941,8 +979,12 @@ class TestCleanupWorker:
                 ttl_seconds=60,
             )
         # Expire 2
-        (await mgr.get("sweep_0")).expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
-        (await mgr.get("sweep_1")).expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        (await mgr.get("sweep_0")).expires_at = datetime.now(timezone.utc) - timedelta(
+            seconds=1
+        )
+        (await mgr.get("sweep_1")).expires_at = datetime.now(timezone.utc) - timedelta(
+            seconds=1
+        )
         worker = SessionCleanupProcessor()
         expired = await worker.sweep_once()
         assert expired == 2
