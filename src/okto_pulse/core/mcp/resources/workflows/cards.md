@@ -10,15 +10,19 @@ Architecture Design is the first-class place for system structure. See the full 
 
 ## 2.8 Cards (Tasks)
 
-### Card-Level Artifact Attachment (MANDATORY)
+### Card-Level Artifact Review (MANDATORY; KB attachment advisory)
 
-> **A card must be self-contained.** Any agent or human picking up a card must be able to execute it from the card alone, without re-querying the parent spec.
+> **A card must be self-contained for the artifacts its implementation
+> requires.** Architecture and Mockup coverage is blocking. Knowledge Base
+> context is advisory: copy only KBs that materially help execute or validate
+> the card; never attach filler merely to satisfy this review.
 
 **Attachment path:**
 
 | Source of the artifact | Tool | When to use |
 |---|---|---|
-| KE / mockup / Architecture Design already exists on the parent spec | `okto_pulse_copy_knowledge_to_card` / `okto_pulse_copy_mockups_to_card` / `okto_pulse_copy_architecture_to_card` | Default path. Pass `knowledge_ids` / `screen_ids` / `design_ids` to scope a subset; omit to copy all. |
+| Mockup / Architecture Design already exists on the parent spec | `okto_pulse_copy_mockups_to_card` / `okto_pulse_copy_architecture_to_card` | Blocking path when applicable. Pass `screen_ids` / `design_ids` to scope a subset; omit to copy all. |
+| Relevant KB already exists on the parent spec | `okto_pulse_copy_knowledge_to_card` | Advisory path. Pass `knowledge_ids` to select only context that materially helps the card; omission never blocks completion. |
 
 Card resources are read-only governed snapshots. Do not create, edit, annotate,
 import, or delete Knowledge Base, Mockup, or Architecture resources directly on a
@@ -80,11 +84,16 @@ before entering either execution state (`started`/`in_progress`); then follow
 the exact transition edge advertised for the concrete card.
 
 1. Run `okto_pulse_get_task_context(board_id, card_id, profile="full", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)` and inspect what is already attached.
-2. For each KE / mockup / Architecture Design the task needs, decide:
+2. For each Mockup / Architecture Design the task needs, decide:
    - **Already on the card** → no action.
    - **On the parent spec, relevant to this task** → call the copy tool.
    - **Not yet captured anywhere** → add it to the source ideation/refinement/spec first, then call the copy tool.
-3. Skip explicitly when the task genuinely needs no artifact — but post a one-line comment justifying the skip.
+3. Review effective KBs and copy only the entries that materially improve
+   implementation or validation context. Missing or uncovered KBs are advisory
+   and never block `entity_completion`, `spec_validation`, or `spec_done`.
+4. When a blocking Architecture/Mockup genuinely does not apply, record N/A
+   with a real justification. Do not create filler artifacts or mark a KB N/A
+   solely to make a gate look complete.
 
 ### Governance Rules (enforced by the system)
 
@@ -114,12 +123,14 @@ Full per-type rules (spec-status matrix, `max_scenarios_per_card` cap, scenario 
 6. **IMMEDIATELY link each test card to its scenario(s)** via `okto_pulse_link_task(target_type="scenario", board_id, spec_id, target_id=<scenario_id>, card_id)`.
 7. **Verify full linkage**: run `okto_pulse_list_test_scenarios` — every scenario must show at least one linked task.
 8. **THEN create implementation cards** (`card_type="normal"`) — always pass `spec_id`.
-9. **MANDATORY — Attach artifacts to every card**. Use
-   `okto_pulse_copy_mockups_to_card`, `okto_pulse_copy_architecture_to_card`,
-   and `okto_pulse_copy_qa_to_card`. For Knowledge, either supply the
+9. **MANDATORY — Resolve blocking artifacts and review advisory Knowledge for
+   every card.** Use `okto_pulse_copy_mockups_to_card`,
+   `okto_pulse_copy_architecture_to_card`, and `okto_pulse_copy_qa_to_card`
+   where applicable. For materially relevant Knowledge, either supply the
    `knowledge_propagation` v2 envelope during card creation or, on the v1 path,
-   use `okto_pulse_copy_knowledge_to_card`. Do not combine the v2 create
-   envelope with a legacy Knowledge copy for the same intent.
+   use `okto_pulse_copy_knowledge_to_card`. A KB omission is advisory and does
+   not block the card. Do not combine the v2 create envelope with a legacy
+   Knowledge copy for the same intent.
 10. **Write detailed card descriptions** including: what specifically needs to be built, which FRs/TRs/BRs this card addresses, which test scenarios this card should satisfy, which API contracts define the interfaces, and relevant technical constraints.
 
 **Test card naming convention:** Prefix test cards with `[TEST]` to distinguish them.

@@ -133,7 +133,13 @@ async def test_get_active_none_when_no_template():
 
     async with get_session_factory()() as db:
         active = await DefaultBoardConfigApiService(db).get_active()
-        assert active == {"scope": "global", "presence": "absent", "active": None}
+        assert active == {
+            "scope": "global",
+            "presence": "absent",
+            "baseline_available": False,
+            "comparable": False,
+            "active": None,
+        }
 
 
 async def test_diff_legacy_board_reports_no_snapshot():
@@ -164,12 +170,96 @@ async def test_empty_snapshot_is_distinct_from_absent_and_not_comparable():
         "state": "empty_snapshot",
         "board_id": board.id,
         "configuration_presence": "empty",
+        "baseline_available": False,
         "comparable": False,
     }
     assert diff["snapshot_state"] == "empty_snapshot"
     assert diff["configuration_presence"] == "empty"
     assert diff["comparable"] is False
     assert diff["fields"] == []
+
+
+async def test_ts_a0d901b3_snapshot_presence_and_empty_template_exact_oracles(
+    monkeypatch,
+):
+    from okto_pulse.core.ports.default_board_configuration import (
+        DefaultBoardTemplateRecord,
+    )
+    from okto_pulse.core.services import default_board_configuration as module
+
+    empty_template = DefaultBoardTemplateRecord(
+        id="template-empty",
+        version=1,
+        status="active",
+        is_active=True,
+        scope="global",
+        settings_payload={},
+        guideline_default_refs=[],
+        design_system_default_ref=None,
+        created_by=USER_ID,
+    )
+
+    class _Store:
+        async def resolve_active(self, context, *, scope):
+            return empty_template
+
+        async def get_template(self, context, *, template_id):
+            return empty_template if template_id == empty_template.id else None
+
+    monkeypatch.setattr(
+        module,
+        "get_default_board_configuration_store",
+        lambda: _Store(),
+    )
+    svc = DefaultBoardConfigurationService(object())
+    absent = await svc.describe_board_config(SimpleNamespace(id="absent"))
+    null = await svc.describe_board_config(
+        SimpleNamespace(id="null", default_config_snapshot=None)
+    )
+    empty = await svc.describe_board_config(
+        SimpleNamespace(id="empty", default_config_snapshot={})
+    )
+    configured_board = SimpleNamespace(
+        id="configured",
+        default_config_snapshot={
+            "template_id": empty_template.id,
+            "template_version": 1,
+            "scope": "global",
+            "override_summary": {},
+        },
+        settings=BoardSettings().model_dump(mode="json"),
+    )
+    configured = await svc.diff_board_config(configured_board)
+
+    assert {
+        "absent": (
+            absent["configuration_presence"],
+            absent["baseline_available"],
+            absent["comparable"],
+        ),
+        "null": (
+            null["configuration_presence"],
+            null["baseline_available"],
+            null["comparable"],
+        ),
+        "empty": (
+            empty["configuration_presence"],
+            empty["baseline_available"],
+            empty["comparable"],
+        ),
+        "configured": (
+            configured["configuration_presence"],
+            configured["baseline_available"],
+            configured["comparable"],
+        ),
+    } == {
+        "absent": ("absent", False, False),
+        "null": ("null", False, False),
+        "empty": ("empty", False, False),
+        "configured": ("configured", True, True),
+    }
+    assert configured["template_settings_presence"] == "empty"
+    assert configured["fields"] == []
 
 
 async def test_mcp_twin_active_versions_and_diff():

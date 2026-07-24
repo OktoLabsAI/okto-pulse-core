@@ -277,7 +277,11 @@ Returns:
 
 ## `okto_pulse_mark_resource_not_applicable`
 
-Mark a mandatory resource as not applicable through the MCP channel.
+Mark a tracked Resource Gate resource as not applicable through the MCP
+channel. Architecture and Mockup are blocking resource types; their N/A marks
+participate in completion gates. Knowledge Base is advisory: a KB N/A mark can
+record applicability intent, but it is never required to unblock completion,
+spec validation, or spec done.
 
 Args:
     board_id: Board ID

@@ -410,7 +410,12 @@ async def test_resource_gate_summary_delegates_to_resolver_projection(
         "mockup",
         "knowledge_base",
     }
-    assert summary["missing_resources"] == summary["resources"]
+    assert {
+        item["resource_type"] for item in summary["missing_resources"]
+    } == {"architecture", "mockup"}
+    assert [
+        item["resource_type"] for item in summary["advisory_missing_resources"]
+    ] == ["knowledge_base"]
     assert summary["resource_lineage"]["owner"]["entity_id"] == ideation_id
     assert summary["lineage_counts"] == summary["resource_lineage"]["counts"]
 
@@ -725,23 +730,24 @@ async def test_resource_gate_validates_spec_resources_are_covered_by_non_cancell
         assert uncovered["required_resources"] == uncovered["summary"]["resource_lineage"]["coverage_obligations"]
         assert {
             item["unique_resource_id"] for item in uncovered["required_resources"]
-        } >= {
+        } == {
             f"architecture:{architecture.id}",
             "mockup:mock-1",
-            f"knowledge_base:{kb.id}",
         }
         assert {item["resource_type"] for item in uncovered["uncovered_resources"]} == {
             "architecture",
             "mockup",
-            "knowledge_base",
         }
+        assert [
+            item["unique_resource_id"]
+            for item in uncovered["advisory_coverage_resources"]
+        ] == [f"knowledge_base:{kb.id}"]
         uncovered_by_type = {
             item["resource_type"]: item for item in uncovered["uncovered_resources"]
         }
         expected_uncovered = {
             "architecture": f"architecture:{architecture.id}",
             "mockup": "mockup:mock-1",
-            "knowledge_base": f"knowledge_base:{kb.id}",
         }
         for resource_type, unique_resource_id in expected_uncovered.items():
             item = uncovered_by_type[resource_type]
@@ -758,10 +764,10 @@ async def test_resource_gate_validates_spec_resources_are_covered_by_non_cancell
             item for item in get_resource_lineage_metric_samples()
             if item["metric_name"] == METRIC_COVERAGE_UNCOVERED_TOTAL
         ]
-        assert len(uncovered_metric_samples) == 3
+        assert len(uncovered_metric_samples) == 2
         assert {
             item["labels"]["resource_type"] for item in uncovered_metric_samples
-        } == {"architecture", "mockup", "knowledge_base"}
+        } == {"architecture", "mockup"}
 
         task.screen_mockups = [{"id": "card-mock-1", "origin_id": "mock-1"}]
         task.knowledge_bases = [{"id": "card-kb-1", "source_kb_id": kb.id}]
@@ -793,7 +799,7 @@ async def test_resource_gate_validates_spec_resources_are_covered_by_non_cancell
         cancelled_by_type = {
             item["resource_type"]: item for item in cancelled_only["uncovered_resources"]
         }
-        assert set(cancelled_by_type) == {"architecture", "mockup", "knowledge_base"}
+        assert set(cancelled_by_type) == {"architecture", "mockup"}
         for item in cancelled_by_type.values():
             assert item["reason"] == "covered_only_by_cancelled_task"
             assert item["remediation"] == (
@@ -907,11 +913,17 @@ async def test_resource_gate_copied_card_kb_source_covers_spec_kb_by_origin(db_f
 
     assert coverage["allowed"] is True
     assert coverage["uncovered_resources"] == []
-    required = coverage["required_resources"]
-    assert [item["unique_resource_id"] for item in required] == [
+    assert coverage["required_resources"] == []
+    advisory = coverage["advisory_coverage_resources"]
+    assert [item["unique_resource_id"] for item in advisory] == [
         "knowledge_base:spec-kb-origin"
     ]
-    assert required == coverage["summary"]["resource_lineage"]["coverage_obligations"]
+    assert (
+        advisory
+        == coverage["summary"]["resource_lineage"][
+            "advisory_coverage_resources"
+        ]
+    )
 
 
 @pytest.mark.asyncio

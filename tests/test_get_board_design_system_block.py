@@ -199,3 +199,44 @@ async def test_ts_4288636b_default_snapshot_normalizes_title_null_and_gate_from_
         assert block["mandate"] is False  # advisory is not blocking
     finally:
         await _cleanup([board_id] if board_id else [], [ds_id] if ds_id else [])
+
+
+async def test_ts_9c7f3ee0_dangling_effective_axes_are_not_collapsed(monkeypatch):
+    from types import SimpleNamespace
+
+    from okto_pulse.core.services import design_system as module
+
+    class _DanglingStore:
+        async def get_board_settings(self, context, *, board_id):
+            return {"design_system_gate_mode": "blocking"}
+
+        async def get_board_link(self, context, *, board_id):
+            return SimpleNamespace(
+                design_system_id="missing-design-system",
+                design_system_version=7,
+            )
+
+        async def get(self, context, *, design_system_id):
+            return None
+
+        async def get_board_snapshot(self, context, *, board_id):
+            return None
+
+    monkeypatch.setattr(module, "get_design_system_store", lambda: _DanglingStore())
+    effective = await DesignSystemService(object()).get_board_effective_design_system(
+        "board-dangling"
+    )
+
+    assert effective == {
+        "source": "board_link",
+        "design_system_id": "missing-design-system",
+        "version": 7,
+        "title": None,
+        "status": None,
+        "scope": None,
+        "exists": False,
+        "gate_mode": "blocking",
+        "configured": True,
+        "resolvable": False,
+        "mandate": True,
+    }

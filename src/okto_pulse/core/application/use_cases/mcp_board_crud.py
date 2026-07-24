@@ -551,10 +551,14 @@ class McpGetBoardDesignSystemUseCase:
         self, command: McpGetBoardDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
         await _require_design_system_board(uow, command.board_id, actor)
+        from okto_pulse.core.services.design_system import (
+            project_effective_design_system,
+        )
+
         effective = await uow.services.design_systems.get_board_effective_design_system(
             command.board_id
         )
-        return _DataResult(effective)
+        return _DataResult(project_effective_design_system(effective))
 
 
 # --- list_by_board (entity_type fetch dispatcher + pure-data post-filters) ---

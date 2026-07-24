@@ -15,6 +15,9 @@ from typing import Any
 
 
 from okto_pulse.core.application.scope import QueryScope
+from okto_pulse.core.domain.configuration_presence import (
+    project_configuration_presence,
+)
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services.amendment_revision_api import reject_bypass_fields
 from okto_pulse.core.services.default_board_configuration import (
@@ -44,16 +47,39 @@ class DefaultBoardConfigApiService:
     async def get_active(self, *, scope: str = "global") -> dict[str, Any]:
         template = await self._svc.resolve_active(scope)
         if template is None:
-            return {"scope": scope, "presence": "absent", "active": None}
-        serialized = self._serialize(template)
-        configured = bool(
-            serialized["settings_payload"]
-            or serialized["guideline_default_refs"]
-            or serialized["design_system_default_ref"]
+            projection = project_configuration_presence(
+                baseline_available=False,
+                comparable=False,
+            )
+            return {
+                "scope": scope,
+                "presence": projection.state,
+                "baseline_available": projection.baseline_available,
+                "comparable": projection.comparable,
+                "active": None,
+            }
+        raw_components = (
+            template.settings_payload,
+            template.guideline_default_refs,
+            template.design_system_default_ref,
         )
+        if all(component is None for component in raw_components):
+            raw_configuration: Any = None
+        elif not any(bool(component) for component in raw_components):
+            raw_configuration = {}
+        else:
+            raw_configuration = {
+                "settings_payload": template.settings_payload,
+                "guideline_default_refs": template.guideline_default_refs,
+                "design_system_default_ref": template.design_system_default_ref,
+            }
+        projection = project_configuration_presence(raw_configuration)
+        serialized = self._serialize(template)
         return {
             "scope": scope,
-            "presence": "configured" if configured else "empty",
+            "presence": projection.state,
+            "baseline_available": projection.baseline_available,
+            "comparable": projection.comparable,
             "active": serialized,
         }
 
@@ -187,16 +213,20 @@ class DefaultBoardConfigApiService:
 
     @staticmethod
     def _serialize(template) -> dict[str, Any]:
+        raw_settings = template.settings_payload
+        settings_projection = project_configuration_presence(raw_settings)
         return {
             "id": template.id,
             "version": template.version,
             "status": template.status,
             "is_active": template.is_active,
             "scope": template.scope,
-            "settings_payload": dict(template.settings_payload or {}),
-            "settings_presence": (
-                "configured" if template.settings_payload else "empty"
+            "settings_payload": (
+                None if raw_settings is None else dict(raw_settings)
             ),
+            "settings_presence": settings_projection.state,
+            "settings_baseline_available": settings_projection.baseline_available,
+            "settings_comparable": settings_projection.comparable,
             "guideline_default_refs": list(template.guideline_default_refs or []),
             "design_system_default_ref": template.design_system_default_ref,
             "created_by": template.created_by,

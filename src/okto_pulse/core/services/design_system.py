@@ -31,6 +31,7 @@ from okto_pulse.core.ports.design_system import (
 
 _VALID_STATUSES = ("active", "draft", "archived")
 _VALID_SCOPES = ("global", "inline")
+_VALID_GET_PROFILES = ("summary", "detail", "full", "legacy")
 
 # MockupDesignSystemGate reason codes (spec 3a006f65 / card 0192f58d, FR8).
 GATE_REQUIRED = "design_system_required"
@@ -110,6 +111,72 @@ def serialize_design_system(
     else:
         result["payload_available"] = ds.payload is not None
     return result
+
+
+def serialize_design_system_profile(
+    ds: DesignSystemRecord, *, profile: str = "full"
+) -> dict[str, Any]:
+    """Serialize one catalog item under the canonical projection profiles.
+
+    ``legacy`` retains the historical full-payload contract.  Catalog list
+    operations never call this helper with a payload-bearing profile.
+    """
+
+    normalized = (profile or "full").strip().lower()
+    if normalized not in _VALID_GET_PROFILES:
+        raise DesignSystemError(
+            "design_system_invalid_profile",
+            "profile must be one of: summary, detail, full, legacy.",
+            422,
+            {"profile": profile},
+        )
+    result = serialize_design_system(
+        ds,
+        include_payload=normalized in {"detail", "full", "legacy"},
+    )
+    result["profile"] = normalized
+    return result
+
+
+def project_effective_design_system(
+    effective: dict[str, Any] | None,
+    *,
+    gate_mode: str | None = None,
+) -> dict[str, Any]:
+    """Return the unique effective-Design-System DTO.
+
+    ``configured`` means a link/snapshot ref exists, ``resolvable`` means the
+    referenced catalog row exists, and ``mandate`` means blocking governance is
+    configured.  A dangling blocking link is therefore configured and mandated
+    but not resolvable; these axes must never be collapsed into truthiness.
+    """
+
+    canonical_gate_mode = (
+        gate_mode
+        or (effective or {}).get("gate_mode")
+        or "off"
+    )
+    configured = effective is not None
+    resolvable = bool(effective and effective.get("exists"))
+    mandate = configured and canonical_gate_mode == "blocking"
+    normalized_effective = None
+    if effective is not None:
+        normalized_effective = dict(effective)
+        normalized_effective.update(
+            {
+                "configured": configured,
+                "resolvable": resolvable,
+                "mandate": mandate,
+                "gate_mode": canonical_gate_mode,
+            }
+        )
+    return {
+        "effective": normalized_effective,
+        "configured": configured,
+        "resolvable": resolvable,
+        "mandate": mandate,
+        "gate_mode": canonical_gate_mode,
+    }
 
 
 def _encode_catalog_cursor(offset: int) -> str:
@@ -473,7 +540,7 @@ class DesignSystemService:
                 self.db,
                 design_system_id=link.design_system_id,
             )
-            return {
+            effective = {
                 "source": "board_link",
                 "design_system_id": link.design_system_id,
                 "version": link.design_system_version,
@@ -483,6 +550,7 @@ class DesignSystemService:
                 "exists": ds is not None,
                 "gate_mode": gate_mode,
             }
+            return project_effective_design_system(effective)["effective"]
         snapshot = await store.get_board_snapshot(self.db, board_id=board_id)
         if snapshot:
             design_system_id = snapshot.get("design_system_id")
@@ -491,7 +559,7 @@ class DesignSystemService:
                 if design_system_id
                 else None
             )
-            return {
+            effective = {
                 "source": "default_snapshot",
                 "design_system_id": design_system_id,
                 "version": snapshot.get("version"),
@@ -501,6 +569,7 @@ class DesignSystemService:
                 "exists": ds is not None,
                 "gate_mode": gate_mode,
             }
+            return project_effective_design_system(effective)["effective"]
         return None
 
 

@@ -483,6 +483,13 @@ class DesignSystemCommand:
     board_id: str = ""
     scope: str = "global"
     payload: dict[str, Any] | None = None
+    limit: int = 50
+    cursor: str | None = None
+    # The same command is consumed by list and detail use cases.  ``None``
+    # preserves rolling compatibility with Community adapters that predate
+    # explicit projection profiles: list resolves it to ``summary`` while get
+    # resolves it to ``full``.
+    profile: str | None = None
 
 
 def _design_system_board_not_found(board_id: str) -> Exception:
@@ -566,9 +573,36 @@ class ListDesignSystemsUseCase:
         self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.design_system import (
+            DesignSystemError,
             serialize_design_system,
         )
 
+        # An adapter that does not send ``profile`` predates the paginated
+        # envelope and advertises a list response model. Preserve that legacy
+        # contract during rolling upgrades. Modern adapters always pass
+        # ``summary`` and receive the bounded page below.
+        if command.profile is None:
+            if command.scope == "inline":
+                await _require_design_system_board(
+                    uow,
+                    command.board_id,
+                    actor,
+                    write=False,
+                )
+            items = await uow.services.design_systems.list_catalog(
+                scope=command.scope,
+                board_id=command.board_id or None,
+                owner_id=actor.actor_id if command.scope == "global" else None,
+            )
+            return DataResult([serialize_design_system(item) for item in items])
+
+        profile = command.profile
+        if profile != "summary":
+            raise DesignSystemError(
+                "design_system_invalid_profile",
+                "Catalog lists support only profile='summary'; use the detail endpoint for payloads.",
+                422,
+            )
         if command.scope == "inline":
             await _require_design_system_board(
                 uow,
@@ -576,12 +610,14 @@ class ListDesignSystemsUseCase:
                 actor,
                 write=False,
             )
-        items = await uow.services.design_systems.list_catalog(
+        page = await uow.services.design_systems.list_catalog_page(
             scope=command.scope,
             board_id=command.board_id or None,
             owner_id=actor.actor_id if command.scope == "global" else None,
+            limit=command.limit,
+            cursor=command.cursor,
         )
-        return DataResult([serialize_design_system(item) for item in items])
+        return DataResult(page)
 
 
 class GetDesignSystemUseCase:
@@ -589,7 +625,7 @@ class GetDesignSystemUseCase:
         self, command: DesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DataResult:
         from okto_pulse.core.services.design_system import (
-            serialize_design_system,
+            serialize_design_system_profile,
         )
 
         board_authorized = bool(command.board_id)
@@ -607,7 +643,9 @@ class GetDesignSystemUseCase:
             board_id=command.board_id or None,
             board_access_authorized=board_authorized,
         )
-        return DataResult(serialize_design_system(item))
+        return DataResult(
+            serialize_design_system_profile(item, profile=command.profile or "full")
+        )
 
 
 class UpdateDesignSystemUseCase:
@@ -714,10 +752,19 @@ class GetBoardDesignSystemUseCase:
             actor,
             write=False,
         )
+        from okto_pulse.core.services.design_system import (
+            project_effective_design_system,
+        )
+
         effective = await uow.services.design_systems.get_board_effective_design_system(
             command.board_id
         )
-        return DataResult({"board_id": command.board_id, "effective": effective})
+        return DataResult(
+            {
+                "board_id": command.board_id,
+                **project_effective_design_system(effective),
+            }
+        )
 
 
 # --- screen mockups ---------------------------------------------------------

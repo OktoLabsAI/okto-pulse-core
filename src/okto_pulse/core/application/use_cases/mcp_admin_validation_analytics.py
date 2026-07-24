@@ -272,11 +272,18 @@ class McpListDesignSystemsUseCase:
 
 
 class McpGetDesignSystemCommand:
-    __slots__ = ("board_id", "design_system_id")
+    __slots__ = ("board_id", "design_system_id", "profile")
 
-    def __init__(self, board_id: str, design_system_id: str) -> None:
+    def __init__(
+        self,
+        board_id: str,
+        design_system_id: str,
+        *,
+        profile: str = "full",
+    ) -> None:
         self.board_id = board_id
         self.design_system_id = design_system_id
+        self.profile = profile
 
 
 class McpGetDesignSystemUseCase:
@@ -284,7 +291,7 @@ class McpGetDesignSystemUseCase:
         self, command: McpGetDesignSystemCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> _DataResult:
         from okto_pulse.core.services.design_system import (
-            serialize_design_system,
+            serialize_design_system_profile,
         )
 
         await _require_mcp_design_system_board(
@@ -299,7 +306,9 @@ class McpGetDesignSystemUseCase:
             board_id=command.board_id,
             board_access_authorized=True,
         )
-        return _DataResult(serialize_design_system(item))
+        return _DataResult(
+            serialize_design_system_profile(item, profile=command.profile)
+        )
 
 
 class McpCreateDesignSystemCommand:

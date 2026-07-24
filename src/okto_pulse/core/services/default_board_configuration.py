@@ -31,6 +31,10 @@ import uuid
 from pydantic import ValidationError
 
 from okto_pulse.core.application.scope import QueryScope
+from okto_pulse.core.domain.configuration_presence import (
+    CONFIGURATION_ABSENT,
+    classify_configuration_presence,
+)
 from okto_pulse.core.models.schemas import BoardSettings
 from okto_pulse.core.ports.default_board_configuration import (
     DefaultBoardTemplateAudit,
@@ -233,12 +237,21 @@ class DefaultBoardConfigurationService:
           alongside the currently active one, so template changes stay
           forward-only (no live inheritance).
         """
-        snapshot = board.default_config_snapshot
+        snapshot = getattr(board, "default_config_snapshot", CONFIGURATION_ABSENT)
+        if snapshot is CONFIGURATION_ABSENT:
+            return {
+                "state": "absent_snapshot",
+                "board_id": board.id,
+                "configuration_presence": "absent",
+                "baseline_available": False,
+                "comparable": False,
+            }
         if snapshot is None:
             return {
                 "state": "legacy_no_snapshot",
                 "board_id": board.id,
-                "configuration_presence": "absent",
+                "configuration_presence": "null",
+                "baseline_available": False,
                 "comparable": False,
             }
         if not snapshot:
@@ -246,6 +259,7 @@ class DefaultBoardConfigurationService:
                 "state": "empty_snapshot",
                 "board_id": board.id,
                 "configuration_presence": "empty",
+                "baseline_available": False,
                 "comparable": False,
             }
         scope = snapshot.get("scope", _DEFAULT_SCOPE)
@@ -256,15 +270,17 @@ class DefaultBoardConfigurationService:
         )
         applied_version = snapshot.get("template_version")
         active_version = active.version if active is not None else None
+        baseline_available = applied_template is not None
         return {
             "state": "applied",
             "board_id": board.id,
             "configuration_presence": "configured",
-            "comparable": applied_template is not None,
+            "baseline_available": baseline_available,
+            "comparable": baseline_available,
             "template_settings_presence": (
-                "configured"
-                if applied_template is not None and applied_template.settings_payload
-                else "empty"
+                classify_configuration_presence(applied_template.settings_payload)
+                if applied_template is not None
+                else "absent"
             ),
             "scope": scope,
             "applied_template_id": snapshot.get("template_id"),
@@ -282,12 +298,27 @@ class DefaultBoardConfigurationService:
         so the applied version is recoverable by id) — NOT the currently active
         template. Reports ``snapshot_state`` plus applied-vs-active version metadata
         in separate fields. Never mutates the board / never backfills (TR4/TR5)."""
-        snapshot = board.default_config_snapshot
+        snapshot = getattr(board, "default_config_snapshot", CONFIGURATION_ABSENT)
+        if snapshot is CONFIGURATION_ABSENT:
+            return {
+                "board_id": board.id,
+                "snapshot_state": "absent_snapshot",
+                "configuration_presence": "absent",
+                "baseline_available": False,
+                "comparable": False,
+                "applied_template_id": None,
+                "applied_template_version": None,
+                "active_template_id": None,
+                "active_template_version": None,
+                "is_outdated": False,
+                "fields": [],
+            }
         if snapshot is None:
             return {
                 "board_id": board.id,
                 "snapshot_state": "legacy_no_snapshot",
-                "configuration_presence": "absent",
+                "configuration_presence": "null",
+                "baseline_available": False,
                 "comparable": False,
                 "applied_template_id": None,
                 "applied_template_version": None,
@@ -301,6 +332,7 @@ class DefaultBoardConfigurationService:
                 "board_id": board.id,
                 "snapshot_state": "empty_snapshot",
                 "configuration_presence": "empty",
+                "baseline_available": False,
                 "comparable": False,
                 "applied_template_id": None,
                 "applied_template_version": None,
@@ -319,6 +351,7 @@ class DefaultBoardConfigurationService:
         current_settings = dict(board.settings or {})
         applied_version = snapshot.get("template_version")
         active_version = active.version if active is not None else None
+        baseline_available = applied_template is not None
         fields = []
         override_summary = snapshot.get("override_summary")
         explicit_override_fields = (
@@ -345,9 +378,12 @@ class DefaultBoardConfigurationService:
             "board_id": board.id,
             "snapshot_state": "applied",
             "configuration_presence": "configured",
-            "comparable": applied_template is not None,
+            "baseline_available": baseline_available,
+            "comparable": baseline_available,
             "template_settings_presence": (
-                "configured" if template_settings else "empty"
+                classify_configuration_presence(applied_template.settings_payload)
+                if applied_template is not None
+                else "absent"
             ),
             "applied_template_id": snapshot.get("template_id"),
             "applied_template_version": applied_version,

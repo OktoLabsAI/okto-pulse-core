@@ -7,6 +7,7 @@ operational/KG services are strangled behind UoW-backed application calls.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +17,9 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     PermissionDeniedError,
     commit,
+)
+from okto_pulse.core.application.knowledge_workspace import (
+    KnowledgeWorkspaceProjector,
 )
 from okto_pulse.core.ports.application_services import KnowledgeGraphOperations
 from okto_pulse.core.ports.scheduler import SchedulerControl
@@ -132,6 +136,15 @@ class ResourceGateEntityCommand:
 
 
 @dataclass(frozen=True)
+class GetEffectiveResourcesCommand(ResourceGateEntityCommand):
+    """Bounded read options for the shared Knowledge Workspace."""
+
+    profile: str = "summary"
+    cursor: str | None = None
+    limit: int | None = None
+
+
+@dataclass(frozen=True)
 class MarkResourceNotApplicableCommand(ResourceGateEntityCommand):
     resource_type: str
     justification: str | None
@@ -192,7 +205,11 @@ class GetResourceGateSummaryUseCase:
 
 class GetEffectiveResourcesUseCase:
     async def execute(
-        self, command: ResourceGateEntityCommand, *, actor: ActorContext, uow: PulseUnitOfWork
+        self,
+        command: ResourceGateEntityCommand,
+        *,
+        actor: ActorContext,
+        uow: PulseUnitOfWork,
     ) -> DataResult:
 
         await _require_board_access(uow, command.board_id, actor)
@@ -202,9 +219,104 @@ class GetEffectiveResourcesUseCase:
             command.entity_type,
             command.entity_id,
         )
+        requested_profile = getattr(command, "profile", None)
+        # A historical ``ResourceGateEntityCommand`` has no projection fields
+        # and therefore retains the eager legacy envelope.  The new typed
+        # command defaults explicitly to summary.
+        profile = (
+            "legacy"
+            if requested_profile is None
+            else str(requested_profile or "summary").lower()
+        )
+        if profile == "legacy":
+            # Explicit rolling-compat escape hatch.  The Resource Gate service
+            # remains the owner of this historical shape; the bounded profiles
+            # never mix it into their budgeted envelopes.
+            return DataResult(
+                await uow.services.resource_gate.get_effective_resources(
+                    command.board_id,
+                    command.entity_type,
+                    command.entity_id,
+                )
+            )
+        projection: dict[str, Any]
+        resolve_lineage = getattr(
+            uow.services.resource_gate,
+            "_resolve_resource_lineage",
+            None,
+        )
+        if callable(resolve_lineage):
+            # Resolve through the one canonical ResourceLineage.v2 path without
+            # invoking the historical eager hydration loop.  Summary therefore
+            # performs zero body reads; detail/full hydrate only their page.
+            lineage = await resolve_lineage(
+                command.board_id,
+                command.entity_type,
+                command.entity_id,
+                include_coverage=False,
+                projection_profile="summary",
+            )
+            to_dict = getattr(lineage, "to_dict", None)
+            lineage_payload = to_dict() if callable(to_dict) else lineage
+            if not isinstance(lineage_payload, Mapping):
+                raise TypeError("resource_lineage_projection_invalid")
+            projection = {
+                "board_id": command.board_id,
+                "entity_type": command.entity_type,
+                "entity_id": command.entity_id,
+                "resources": {
+                    "architecture": [],
+                    "mockup": [],
+                    "knowledge_base": [],
+                },
+                "lineage_counts": dict(lineage_payload.get("counts") or {}),
+                "resource_lineage": dict(lineage_payload),
+            }
+        else:
+            # Compatibility for narrow test doubles/editions.  Production
+            # ResourceGateService owns the canonical hook above.
+            projection = dict(
+                await uow.services.resource_gate.get_effective_resources(
+                    command.board_id,
+                    command.entity_type,
+                    command.entity_id,
+                )
+            )
+        cursor = getattr(command, "cursor", None)
+        limit = getattr(command, "limit", None)
+        hydration_requests = KnowledgeWorkspaceProjector.hydration_requests(
+            projection,
+            profile=profile,
+            cursor=cursor,
+            limit=limit,
+        )
+        if hydration_requests:
+            # Bodies stay lazy.  Reuse the Resource Gate's existing hydrator
+            # for just the selected page; this is not a second lineage
+            # resolver or write-side path.
+            hydrate = getattr(
+                uow.services.resource_gate,
+                "_effective_resource_item",
+                None,
+            )
+            if callable(hydrate):
+                projection = deepcopy(projection)
+                resources = projection.setdefault("resources", {})
+                for request in hydration_requests:
+                    item = await hydrate(
+                        board_id=command.board_id,
+                        resource_type=request["resource_type"],
+                        ref=request["ref"],
+                        attachment_kind=request["attachment_kind"],
+                        inherited=request["inherited"],
+                    )
+                    resources.setdefault(request["resource_type"], []).append(item)
         return DataResult(
-            await uow.services.resource_gate.get_effective_resources(
-                command.board_id, command.entity_type, command.entity_id
+            KnowledgeWorkspaceProjector.project(
+                projection,
+                profile=profile,
+                cursor=cursor,
+                limit=limit,
             )
         )
 

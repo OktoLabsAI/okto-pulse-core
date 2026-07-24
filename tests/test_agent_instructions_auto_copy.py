@@ -39,7 +39,10 @@ def test_pre_flight_mentions_copy_architecture_to_card(text):
 
 def test_pre_flight_marks_attach_steps_as_mandatory(text):
     assert "Mandatory before moving the card to `in_progress`" in text
-    assert "MANDATORY — Attach artifacts to every card" in text
+    assert (
+        "MANDATORY — Resolve blocking artifacts and review advisory Knowledge"
+        in text
+    )
 
 
 def test_legacy_fallback_and_active_v2_semantics_are_documented(text):
@@ -75,9 +78,39 @@ def test_resource_gate_section_documents_mcp_tools_and_warning(text):
         "okto_pulse_clear_resource_not_applicable",
     ):
         assert name in text, f"agent_instructions must reference {name}"
-    assert "Architecture, Mockup, and Knowledge Base" in text
+    assert "Architecture and Mockup are blocking" in text
+    assert "Knowledge Base is advisory" in text
+    assert "missing or uncovered KB" in text
     assert "justification" in text
     assert "resource_gate_missing_resources" in text
+
+
+def test_resource_gate_resources_never_describe_kb_as_blocking():
+    preflight = (
+        _RESOURCES / "workflows" / "preflight.md"
+    ).read_text(encoding="utf-8")
+    cards = (
+        _RESOURCES / "workflows" / "cards.md"
+    ).read_text(encoding="utf-8")
+    errors = (
+        _RESOURCES / "reference" / "errors.md"
+    ).read_text(encoding="utf-8")
+    misc = (
+        _RESOURCES / "reference" / "tool-docs" / "misc.md"
+    ).read_text(encoding="utf-8")
+
+    assert "Architecture, Mockup, and Knowledge Base are mandatory" not in preflight
+    assert "Architecture, Mockup, or Knowledge Base is missing" not in errors
+    assert "MANDATORY — Attach artifacts to every card" not in cards
+    assert "Mark a mandatory resource as not applicable" not in misc
+    assert "**Architecture and Mockup are blocking**" in preflight
+    assert "**Knowledge Base is advisory**" in preflight
+    assert "KB attachment advisory" in cards
+    assert "A KB omission is advisory" in cards
+    assert "A Knowledge Base is advisory" in errors
+    assert "its absence never causes this error" in errors
+    assert "Knowledge Base is advisory" in misc
+    assert "never required to unblock completion" in misc
 
 
 def test_resource_gate_documents_entity_matrix_and_kb_scope(text):

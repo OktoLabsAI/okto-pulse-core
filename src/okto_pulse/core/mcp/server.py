@@ -2163,30 +2163,18 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
         # {design_system_id, title|None, version, source}. gate_mode is read ONLY from
         # BoardSettings (canonical) — never the snapshot mirror. Read-only: the gate itself
         # is untouched.
-        _ds_effective_raw = _r.ds_effective_raw
-        _ds_effective = (
-            {
-                "design_system_id": _ds_effective_raw.get("design_system_id"),
-                "title": _ds_effective_raw.get("title"),
-                "version": _ds_effective_raw.get("version"),
-                "source": _ds_effective_raw.get("source"),
-                "status": _ds_effective_raw.get("status"),
-                "scope": _ds_effective_raw.get("scope"),
-                "exists": bool(_ds_effective_raw.get("exists")),
-                "gate_mode": _ds_effective_raw.get("gate_mode"),
-            }
-            if _ds_effective_raw
-            else None
+        from okto_pulse.core.services.design_system import (
+            project_effective_design_system,
         )
+
+        _ds_effective_raw = _r.ds_effective_raw
         _ds_gate_mode = (board.settings or {}).get(
             "design_system_gate_mode", "off"
         ) or "off"
-        payload["design_system"] = {
-            "effective": _ds_effective,
-            "gate_mode": _ds_gate_mode,
-            "mandate": bool(_ds_effective and _ds_effective.get("exists"))
-            and _ds_gate_mode == "blocking",
-        }
+        payload["design_system"] = project_effective_design_system(
+            _ds_effective_raw,
+            gate_mode=_ds_gate_mode,
+        )
         if "ideations" in wanted:
             payload["ideations"] = [
                 {
@@ -16367,7 +16355,11 @@ async def okto_pulse_list_design_systems(
 
 
 @mcp.tool()
-async def okto_pulse_get_design_system(board_id: str, design_system_id: str) -> str:
+async def okto_pulse_get_design_system(
+    board_id: str,
+    design_system_id: str,
+    profile: str = "full",
+) -> str:
     """Get a Design System by id (admin read). REST twin: GET /design-systems/{id}.
     Perm: BOARD_READ."""
     ctx = await _get_agent_ctx(board_id)
@@ -16387,7 +16379,11 @@ async def okto_pulse_get_design_system(board_id: str, design_system_id: str) -> 
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await McpGetDesignSystemUseCase().execute(
-                McpGetDesignSystemCommand(board_id, design_system_id),
+                McpGetDesignSystemCommand(
+                    board_id,
+                    design_system_id,
+                    profile=profile,
+                ),
                 actor=actor,
                 uow=uow,
             )
@@ -16604,7 +16600,7 @@ async def okto_pulse_get_board_design_system(board_id: str) -> str:
             result = await McpGetBoardDesignSystemUseCase().execute(
                 McpGetBoardDesignSystemCommand(board_id), actor=actor, uow=uow
             )
-        return json.dumps({"board_id": board_id, "effective": result.data}, default=str)
+        return json.dumps({"board_id": board_id, **result.data}, default=str)
     except DesignSystemError as e:
         return json.dumps(e.to_dict())
 

@@ -34,7 +34,11 @@ This is an operational protocol rule: the MCP server does not prove that you rea
 
 ### Resource Gate pre-flight — mandatory before completion
 
-Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types.
+Architecture, Mockup, and Knowledge Base are all tracked by Resource Gate, but
+their authority differs: **Architecture and Mockup are blocking**;
+**Knowledge Base is advisory**. A missing or uncovered KB remains visible in
+the summary/workspace and never blocks entity completion, `spec_validation`, or
+`spec_done`.
 
 | Work item | Resource Gate `entity_type` |
 |---|---|
@@ -43,7 +47,9 @@ Architecture, Mockup, and Knowledge Base are mandatory Resource Gate types.
 | Spec | `spec` |
 | Card, task, test, bug | `card` |
 
-Before finalization call `okto_pulse_get_resource_gate_summary(board_id, entity_type, entity_id)` and resolve every `missing` resource by attaching the artifact or marking N/A with `justification`.
+Before finalization call `okto_pulse_get_resource_gate_summary(board_id, entity_type, entity_id)` and resolve every entry in `missing_resources` by attaching the blocking Architecture/Mockup artifact or marking it N/A with `justification`. Review `advisory_missing_resources` for useful KB context, but do not create filler or mark KB N/A solely to satisfy a gate.
+
+The blocking-resource playbook remains reversible and auditable: marking N/A with `justification` records intent, and `okto_pulse_clear_resource_not_applicable` restores the normal presence check when the resource becomes applicable.
 
 ### Design System pre-flight — before creating or editing mockups
 

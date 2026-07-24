@@ -451,8 +451,9 @@ async def test_governance_metadata_survives_ideation_refinement_spec_card_chain(
         )
 
     assert coverage["allowed"] is True, coverage["uncovered_resources"]
-    assert len(coverage["required_resources"]) == 1
-    obligation = coverage["required_resources"][0]
+    assert coverage["required_resources"] == []
+    assert len(coverage["advisory_coverage_resources"]) == 1
+    obligation = coverage["advisory_coverage_resources"][0]
     assert obligation["resource_type"] == "knowledge_base"
     assert obligation["id"] == spec_kb["id"]
     assert obligation["unique_resource_id"] == f"knowledge_base:{ideation_kb_id}"

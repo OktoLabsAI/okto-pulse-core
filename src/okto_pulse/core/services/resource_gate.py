@@ -27,6 +27,11 @@ from okto_pulse.core.services.resource_gate_contracts import (
     ResourceType,
     SourceChannel,
 )
+from okto_pulse.core.services.resource_gate_authority import (
+    ResourceGateAuthorityContext,
+    ResourceGateAuthorityPolicy,
+    resource_gate_authority_policy,
+)
 from okto_pulse.core.services.resource_lineage import (
     ResolvedResourceLineage,
     ResolvedResourceLineageService,
@@ -90,6 +95,7 @@ class ResourceGateService:
             entity_type=str(entity_type),
             entity_id=entity_id,
             lineage=lineage,
+            authority_context="entity_completion",
         )
 
     async def _summary_from_lineage(
@@ -99,13 +105,23 @@ class ResourceGateService:
         entity_type: str,
         entity_id: str,
         lineage: ResolvedResourceLineage,
+        authority_context: ResourceGateAuthorityContext,
     ) -> dict[str, Any]:
+        authority_policy = resource_gate_authority_policy(authority_context)
         resources = [
-            self._legacy_resource_state_from_lineage_state(item.to_dict())
+            self._project_resource_authority(
+                self._legacy_resource_state_from_lineage_state(item.to_dict()),
+                authority_policy,
+            )
             for item in lineage.resource_states
         ]
         missing_resources = [
-            item for item in resources if item["state"] == "missing"
+            item
+            for item in resources
+            if item["state"] == "missing" and item["authority"] == "blocking"
+        ]
+        advisory_resources = [
+            item for item in resources if item["authority"] == "advisory"
         ]
         architecture_resource = next(
             (
@@ -150,6 +166,10 @@ class ResourceGateService:
                     ),
                 }
             )
+        lineage_payload = self._project_lineage_authority(
+            lineage.to_dict(),
+            authority_policy,
+        )
         return {
             "board_id": board_id,
             "entity_type": entity_type,
@@ -157,6 +177,13 @@ class ResourceGateService:
             "resources": resources,
             "blocking": bool(missing_resources),
             "missing_resources": missing_resources,
+            "advisory_resources": advisory_resources,
+            "advisory_missing_resources": [
+                item
+                for item in advisory_resources
+                if item["state"] == "missing"
+            ],
+            "authority_policy": authority_policy.to_dict(),
             "warnings": warnings,
             "architecture_findings": architecture_findings,
             "architecture_findings_blocking": bool(
@@ -166,7 +193,7 @@ class ResourceGateService:
             "architecture_propagation_blocking": architecture_propagation[
                 "blocking"
             ],
-            "resource_lineage": lineage.to_dict(),
+            "resource_lineage": lineage_payload,
             "lineage_counts": lineage.counts,
         }
 
@@ -422,11 +449,17 @@ class ResourceGateService:
         """Apply the Core Level 1 completion policy to adapter evidence."""
 
         summary = await self.get_summary(board_id, entity_type, entity_id)
-        blocking_resources = [
-            resource
-            for resource in summary["resources"]
-            if resource["state"] == "missing"
-        ]
+        blocking_resources = list(
+            summary.get("missing_resources")
+            or [
+                resource
+                for resource in summary["resources"]
+                if resource["state"] == "missing"
+                and resource_gate_authority_policy(
+                    "entity_completion"
+                ).is_blocking(resource["resource_type"])
+            ]
+        )
         architecture_findings = summary.get("architecture_findings") or {}
         blocking_findings = list(
             architecture_findings.get("top_remediation") or []
@@ -652,9 +685,11 @@ class ResourceGateService:
         spec_id: str,
         *,
         enabled: bool = True,
+        authority_context: ResourceGateAuthorityContext = "spec_validation",
     ) -> dict[str, Any]:
         """Apply Level 2 coverage policy to lineage and task evidence."""
 
+        authority_policy = resource_gate_authority_policy(authority_context)
         lineage = await self._resolve_resource_lineage(
             board_id,
             "spec",
@@ -667,10 +702,26 @@ class ResourceGateService:
             entity_type="spec",
             entity_id=spec_id,
             lineage=lineage,
+            authority_context=authority_context,
         )
-        provided_refs = [
-            obligation.to_dict() for obligation in lineage.coverage_obligations
-        ]
+        provided_refs = list(
+            summary["resource_lineage"]["coverage_obligations"]
+        )
+        advisory_refs = list(
+            summary["resource_lineage"]["advisory_coverage_resources"]
+        )
+        if len(provided_refs) + len(advisory_refs) != len(
+            lineage.coverage_obligations
+        ):
+            raise ResourceGateViolation(
+                "resource_gate_authority_projection_incomplete",
+                "Resource Gate authority projection dropped lineage evidence.",
+                details={
+                    "board_id": board_id,
+                    "spec_id": spec_id,
+                    "authority_context": authority_context,
+                },
+            )
         if not enabled or not provided_refs:
             return {
                 "allowed": True,
@@ -678,7 +729,9 @@ class ResourceGateService:
                 "board_id": board_id,
                 "spec_id": spec_id,
                 "required_resources": provided_refs,
+                "advisory_coverage_resources": advisory_refs,
                 "uncovered_resources": [],
+                "authority_policy": authority_policy.to_dict(),
                 "architecture_findings": summary.get("architecture_findings"),
                 "summary": summary,
             }
@@ -729,7 +782,9 @@ class ResourceGateService:
             "board_id": board_id,
             "spec_id": spec_id,
             "required_resources": provided_refs,
+            "advisory_coverage_resources": advisory_refs,
             "uncovered_resources": uncovered,
+            "authority_policy": authority_policy.to_dict(),
             "architecture_findings": summary.get("architecture_findings"),
             "summary": summary,
         }
@@ -746,6 +801,7 @@ class ResourceGateService:
             board_id,
             spec_id,
             enabled=enabled,
+            authority_context=phase,
         )
         if result["allowed"]:
             findings = result.get("architecture_findings") or {}
@@ -777,7 +833,7 @@ class ResourceGateService:
                 "Cannot advance spec: mandatory spec resource(s) are not "
                 "covered by non-cancelled task cards: "
                 f"{labels}{extra}. Copy or attach every effective spec "
-                "Architecture, Mockup and Knowledge Base resource to at least "
+                "Architecture and Mockup resource to at least "
                 "one task, or disable the board setting "
                 "'require_spec_resource_task_coverage'."
             ),
@@ -935,6 +991,65 @@ class ResourceGateService:
             "reason": None if resource_state != "missing" else "missing",
             "remediation": cls._remediation(resource_type, resource_state),
         }
+
+    @classmethod
+    def _project_resource_authority(
+        cls,
+        state: dict[str, Any],
+        policy: ResourceGateAuthorityPolicy,
+    ) -> dict[str, Any]:
+        resource_type = str(state["resource_type"])
+        authority = policy.authority_for(resource_type)
+        missing = state.get("state") == "missing"
+        projected = {
+            **state,
+            "authority": authority,
+            "blocking": bool(missing and authority == "blocking"),
+        }
+        if missing and authority == "advisory":
+            projected["reason"] = "advisory_missing"
+            projected["remediation"] = (
+                "Attach a Knowledge Base only when it materially improves "
+                "implementation context; its absence does not block this gate."
+            )
+        return projected
+
+    @classmethod
+    def _project_lineage_authority(
+        cls,
+        lineage: dict[str, Any],
+        policy: ResourceGateAuthorityPolicy,
+    ) -> dict[str, Any]:
+        """Project blocking/advisory authority without mutating lineage history."""
+
+        projected = dict(lineage)
+        projected["resource_states"] = [
+            cls._project_resource_authority(dict(state), policy)
+            for state in lineage.get("resource_states") or []
+        ]
+        obligations = [
+            dict(item) for item in lineage.get("coverage_obligations") or []
+        ]
+        projected["coverage_obligations"] = [
+            {
+                **item,
+                "authority": "blocking",
+                "blocking": True,
+            }
+            for item in obligations
+            if policy.is_blocking(str(item["resource_type"]))
+        ]
+        projected["advisory_coverage_resources"] = [
+            {
+                **item,
+                "authority": "advisory",
+                "blocking": False,
+            }
+            for item in obligations
+            if not policy.is_blocking(str(item["resource_type"]))
+        ]
+        projected["authority_policy"] = policy.to_dict()
+        return projected
 
     @staticmethod
     def _remediation(

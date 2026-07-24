@@ -260,7 +260,7 @@ async def test_mcp_twins_catalog_link_and_effective():
             await db.commit()
 
 
-async def test_mcp_catalog_is_paged_summary_and_get_retains_full_payload():
+async def test_ts_9c7f3ee0_mcp_catalog_summary_and_profile_aware_get():
     from okto_pulse.core.infra.database import get_session_factory
 
     large_payload = {"tokens": "x" * 50_000}
@@ -313,8 +313,29 @@ async def test_mcp_catalog_is_paged_summary_and_get_retains_full_payload():
             "okto_pulse_get_design_system",
             board_id=board_id,
             design_system_id=created[0].id,
+            profile="full",
         )
         assert full["payload"] == large_payload
+        assert full["profile"] == "full"
+
+        detail = await _call(
+            "okto_pulse_get_design_system",
+            board_id=board_id,
+            design_system_id=created[0].id,
+            profile="detail",
+        )
+        assert detail["payload"] == large_payload
+        assert detail["profile"] == "detail"
+
+        summary = await _call(
+            "okto_pulse_get_design_system",
+            board_id=board_id,
+            design_system_id=created[0].id,
+            profile="summary",
+        )
+        assert summary["profile"] == "summary"
+        assert summary["payload_available"] is True
+        assert "payload" not in summary
     finally:
         async with get_session_factory()() as db:
             await db.execute(delete(DesignSystem).where(DesignSystem.id.in_(created_ids)))

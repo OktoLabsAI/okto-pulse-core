@@ -362,7 +362,8 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
         assert desc_b == {
             "state": "legacy_no_snapshot",
             "board_id": board_b.id,
-            "configuration_presence": "absent",
+            "configuration_presence": "null",
+            "baseline_available": False,
             "comparable": False,
         }
 

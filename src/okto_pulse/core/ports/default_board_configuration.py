@@ -16,7 +16,10 @@ class DefaultBoardTemplateRecord:
     status: str
     is_active: bool
     scope: str
-    settings_payload: dict[str, Any]
+    # ``None`` is retained for legacy/null projections.  Writers validate new
+    # versions to dictionaries, but readers must not collapse persisted null to
+    # an empty template.
+    settings_payload: dict[str, Any] | None
     guideline_default_refs: list[Any] | None
     design_system_default_ref: dict[str, Any] | None
     created_by: str
