@@ -285,6 +285,76 @@ async def test_mcp_twin_active_versions_and_diff():
     assert err["code"] == "board_not_found"
 
 
+async def test_mcp_version_history_uses_bounded_adjacent_pages():
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        board = await BoardService(db).create_board(
+            USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
+        )
+        svc = DefaultBoardConfigurationService(db)
+        for index in range(27):
+            await svc.create_version(
+                settings_payload=BoardSettings(
+                    max_scenarios_per_card=2 + (index % 7)
+                ),
+                actor=USER_ID,
+                activate=index == 26,
+            )
+        await db.commit()
+        board_id = board.id
+
+    default_page = await _call(
+        "okto_pulse_list_default_board_config_versions",
+        board_id=board_id,
+    )
+    first = await _call(
+        "okto_pulse_list_default_board_config_versions",
+        board_id=board_id,
+        offset=0,
+        limit=7,
+    )
+    second = await _call(
+        "okto_pulse_list_default_board_config_versions",
+        board_id=board_id,
+        offset=7,
+        limit=7,
+    )
+    last = await _call(
+        "okto_pulse_list_default_board_config_versions",
+        board_id=board_id,
+        offset=21,
+        limit=7,
+    )
+
+    assert default_page["total_count"] == 27
+    assert default_page["limit"] == 20
+    assert default_page["returned_count"] == 20
+    assert default_page["truncated"] is True
+    assert default_page["next_offset"] == 20
+
+    assert first["total_count"] == second["total_count"] == last["total_count"] == 27
+    assert first["returned_count"] == second["returned_count"] == 7
+    assert last["returned_count"] == 6
+    assert first["next_offset"] == 7
+    assert second["next_offset"] == 14
+    assert last["next_offset"] is None
+    assert last["has_more"] is False
+
+    first_ids = [item["id"] for item in first["versions"]]
+    second_ids = [item["id"] for item in second["versions"]]
+    assert not set(first_ids).intersection(second_ids)
+
+    clamped = await _call(
+        "okto_pulse_list_default_board_config_versions",
+        board_id=board_id,
+        limit=500,
+    )
+    assert clamped["limit"] == 200
+    assert clamped["returned_count"] == 27
+    assert clamped["truncated"] is False
+
+
 async def test_mcp_twin_create_and_activate_version():
     from okto_pulse.core.infra.database import get_session_factory
 

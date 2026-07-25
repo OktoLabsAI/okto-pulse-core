@@ -385,14 +385,18 @@ class DesignSystemService:
         *,
         board_id: str | None = None,
         board_access_authorized: bool = False,
+        allow_owned_global_without_link: bool = False,
     ) -> DesignSystemRecord:
         """Resolve a catalog row without exposing another owner's artifact.
 
-        Owner identity is always required.  When a board context is supplied,
-        inline artifacts must belong to that board and global artifacts must be
-        the board's explicit effective link.  Every scope/ownership mismatch is
-        deliberately reported exactly like an unknown id so callers cannot use
-        detail endpoints as an existence oracle.
+        Owner identity is always required. A read adapter may explicitly allow
+        an owner's global catalog artifact even when it must also supply a board
+        context (the MCP get surface requires one); otherwise list(global) could
+        reveal an owned item that get could never retrieve. Mutating callers do
+        not enable that exception. For another owner's global artifact, the
+        board must still carry the explicit effective link. Inline artifacts
+        must belong to the supplied board. Every remaining scope/ownership
+        mismatch is reported exactly like an unknown id.
         """
 
         ds = await self.get_design_system(design_system_id)
@@ -407,6 +411,8 @@ class DesignSystemService:
         if ds.scope == "inline":
             authorized_for_board = ds.board_id == board_id
         elif ds.scope == "global":
+            if allow_owned_global_without_link and ds.owner_id == owner_id:
+                return ds
             link = await get_design_system_store().get_board_link(
                 self.db,
                 board_id=board_id,

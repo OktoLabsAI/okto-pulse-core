@@ -95,7 +95,9 @@ Args:
     refinement_id: Refinement ID
 
 Returns:
-    JSON with success status
+    JSON with success status and a governed `takedown` receipt. Cascaded
+    spec/sprint receipts are exposed recursively under
+    `takedown.descendant_deletions`.
 
 ## `okto_pulse_delete_refinement_question`
 
@@ -175,6 +177,7 @@ Allowed transitions:
 - review → draft, approved, cancelled
 - approved → review, done, cancelled
 - done → draft (new version)
+- cancelled → draft (new version; cancellation record cleared)
 
 Args:
     board_id: Board ID

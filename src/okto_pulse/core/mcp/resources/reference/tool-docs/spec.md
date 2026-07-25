@@ -111,7 +111,9 @@ Args:
     spec_id: Spec ID
 
 Returns:
-    JSON with success status
+    JSON with success status and a governed `takedown` receipt. Receipts for
+    sprints deleted by the spec cascade are exposed under
+    `takedown.descendant_deletions`.
 
 ## `okto_pulse_delete_spec_evaluation`
 

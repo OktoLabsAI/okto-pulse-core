@@ -526,9 +526,10 @@ class GovernedArtifactDeletionReceipt:
     reconcile_intent_id: str
     delivery_key: str
     attachment_deletions: tuple["AttachmentDeletionReceipt", ...] = ()
+    descendant_deletions: tuple["GovernedArtifactDeletionReceipt", ...] = ()
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "board_id": self.board_id,
             "artifact_type": self.artifact_type,
             "artifact_id": self.artifact_id,
@@ -537,6 +538,11 @@ class GovernedArtifactDeletionReceipt:
             "reconcile_intent_id": self.reconcile_intent_id,
             "delivery_key": self.delivery_key,
         }
+        if self.descendant_deletions:
+            payload["descendant_deletions"] = [
+                receipt.to_dict() for receipt in self.descendant_deletions
+            ]
+        return payload
 
 
 async def _prepare_governed_artifact_deletion(
@@ -1392,6 +1398,54 @@ async def _resolve_closeout_graph_state(board_id: str, db: Any) -> str | None:
     except Exception:
         return None
     return str(state) if state is not None else None
+
+
+async def _evaluate_entity_cognitive_done_or_raise(
+    *,
+    db: Any,
+    gate_factory: Callable[[], Any],
+    readiness_service_factory: Callable[[], Any],
+    board: ApplicationRecord | None,
+    board_id: str,
+    entity_type: str,
+    entity_id: str,
+    entity: Any,
+    target_label: str,
+    resolve_graph_state: bool = True,
+) -> None:
+    """Run the canonical, read-only cognitive gates for a done transition.
+
+    Lifecycle mutation services and the allowed-transition preview both call
+    this helper so the preview cannot advertise a transition that the actual
+    mutation would reject. The helper performs reads only and must run before
+    snapshots, status changes, histories, activities, or outbox writes.
+    """
+
+    graph_state = (
+        await _resolve_closeout_graph_state(board_id, db)
+        if resolve_graph_state
+        else None
+    )
+    _evaluate_cognitive_closeout_or_raise(
+        gate_factory=gate_factory,
+        board=board,
+        board_id=board_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity=entity,
+        target_label=target_label,
+        graph_state=graph_state,
+    )
+    await _evaluate_cognitive_readiness_or_raise(
+        service_factory=readiness_service_factory,
+        db=db,
+        board_id=board_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity=entity,
+        target_label=target_label,
+        policy_blocking=_cognitive_readiness_blocking_active(board),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2715,6 +2769,28 @@ class CardService:
             _build_default_cognitive_readiness_service
         )
 
+    async def _validate_cognitive_done(
+        self,
+        card: ApplicationRecord,
+        board: ApplicationRecord | None = None,
+        *,
+        read_only_preview: bool = False,
+    ) -> None:
+        if board is None:
+            board = await _application_get(self.db, "board", card.board_id)
+        await _evaluate_entity_cognitive_done_or_raise(
+            db=self.db,
+            gate_factory=self._cognitive_closeout_gate_factory,
+            readiness_service_factory=self._cognitive_readiness_service_factory,
+            board=board,
+            board_id=card.board_id,
+            entity_type=_card_cognitive_entity_type(card),
+            entity_id=card.id,
+            entity=card,
+            target_label="card",
+            resolve_graph_state=not read_only_preview,
+        )
+
     @staticmethod
     def _max_scenarios_per_card(board: ApplicationRecord | None) -> int:
         board_settings = (getattr(board, "settings", None) or {}) if board else {}
@@ -3733,27 +3809,7 @@ class CardService:
             outcome = "success"
 
         if outcome == "success":
-            graph_state = await _resolve_closeout_graph_state(card.board_id, self.db)
-            _evaluate_cognitive_closeout_or_raise(
-                gate_factory=self._cognitive_closeout_gate_factory,
-                board=board,
-                board_id=card.board_id,
-                entity_type=_card_cognitive_entity_type(card),
-                entity_id=card.id,
-                entity=card,
-                target_label="card",
-                graph_state=graph_state,
-            )
-            await _evaluate_cognitive_readiness_or_raise(
-                service_factory=self._cognitive_readiness_service_factory,
-                db=self.db,
-                board_id=card.board_id,
-                entity_type=_card_cognitive_entity_type(card),
-                entity_id=card.id,
-                entity=card,
-                target_label="card",
-                policy_blocking=_cognitive_readiness_blocking_active(board),
-            )
+            await self._validate_cognitive_done(card, board)
 
         # Build validation entry.
         # Dual naming: we persist BOTH the legacy names (estimated_*, outcome, reviewer_id,
@@ -4894,6 +4950,9 @@ class CardService:
                                     facts=error_facts,
                                     message=workflow_message,
                                 )
+                                if getattr(card, "card_type", CardType.NORMAL)
+                                == CardType.BUG
+                                else None
                             ),
                         )
 
@@ -4925,7 +4984,12 @@ class CardService:
         if (
             data.status == CardStatus.DONE
             and old_status
-            in (CardStatus.IN_PROGRESS, CardStatus.STARTED, CardStatus.NOT_STARTED)
+            in (
+                CardStatus.IN_PROGRESS,
+                CardStatus.STARTED,
+                CardStatus.NOT_STARTED,
+                CardStatus.VALIDATION,
+            )
             and getattr(card, "card_type", CardType.NORMAL) != CardType.TEST
         ):
             spec_for_gate = (
@@ -5421,27 +5485,7 @@ class CardService:
         )
 
         if data.status == CardStatus.DONE:
-            graph_state = await _resolve_closeout_graph_state(card.board_id, self.db)
-            _evaluate_cognitive_closeout_or_raise(
-                gate_factory=self._cognitive_closeout_gate_factory,
-                board=board,
-                board_id=card.board_id,
-                entity_type=_card_cognitive_entity_type(card),
-                entity_id=card.id,
-                entity=card,
-                target_label="card",
-                graph_state=graph_state,
-            )
-            await _evaluate_cognitive_readiness_or_raise(
-                service_factory=self._cognitive_readiness_service_factory,
-                db=self.db,
-                board_id=card.board_id,
-                entity_type=_card_cognitive_entity_type(card),
-                entity_id=card.id,
-                entity=card,
-                target_label="card",
-                policy_blocking=_cognitive_readiness_blocking_active(board),
-            )
+            await self._validate_cognitive_done(card, board)
 
         report_target = None
         if data.status == CardStatus.DONE:
@@ -6708,6 +6752,28 @@ class SpecService:
         )
         self._cognitive_readiness_service_factory: Callable[[], Any] = (
             _build_default_cognitive_readiness_service
+        )
+
+    async def _validate_cognitive_done(
+        self,
+        spec: ApplicationRecord,
+        board: ApplicationRecord | None = None,
+        *,
+        read_only_preview: bool = False,
+    ) -> None:
+        if board is None:
+            board = await _application_get(self.db, "board", spec.board_id)
+        await _evaluate_entity_cognitive_done_or_raise(
+            db=self.db,
+            gate_factory=self._cognitive_closeout_gate_factory,
+            readiness_service_factory=self._cognitive_readiness_service_factory,
+            board=board,
+            board_id=spec.board_id,
+            entity_type="spec",
+            entity_id=spec.id,
+            entity=spec,
+            target_label="spec",
+            resolve_graph_state=not read_only_preview,
         )
 
     # ---- Status progression order ----
@@ -8399,27 +8465,7 @@ class SpecService:
                     f"Complete or cancel all linked tasks before finalizing the spec."
                 )
 
-            graph_state = await _resolve_closeout_graph_state(spec.board_id, self.db)
-            _evaluate_cognitive_closeout_or_raise(
-                gate_factory=self._cognitive_closeout_gate_factory,
-                board=board,
-                board_id=spec.board_id,
-                entity_type="spec",
-                entity_id=spec.id,
-                entity=spec,
-                target_label="spec",
-                graph_state=graph_state,
-            )
-            await _evaluate_cognitive_readiness_or_raise(
-                service_factory=self._cognitive_readiness_service_factory,
-                db=self.db,
-                board_id=spec.board_id,
-                entity_type="spec",
-                entity_id=spec.id,
-                entity=spec,
-                target_label="spec",
-                policy_blocking=_cognitive_readiness_blocking_active(board),
-            )
+            await self._validate_cognitive_done(spec, board)
 
             resource_gate = ResourceGateService(self.db)
             await resource_gate.validate_or_raise_spec_architecture_validation_resource(
@@ -8445,6 +8491,15 @@ class SpecService:
             )
 
         old_status = spec.status
+        old_version = spec.version
+
+        # Reopening a terminal Spec starts a fresh editable iteration, matching
+        # the lifecycle registry contract and the ideation/refinement behavior.
+        if (
+            data.status == SpecStatus.DRAFT
+            and old_status in (SpecStatus.DONE, SpecStatus.CANCELLED)
+        ):
+            spec.version += 1
 
         # Cancellation justification (ITEM 17): cancel requires a reason
         # (replacing any previous one); reopening clears it.
@@ -8471,7 +8526,20 @@ class SpecService:
 
         if old_status != data.status:
             from okto_pulse.core.events import publish as event_publish
-            from okto_pulse.core.events.types import SpecMoved
+            from okto_pulse.core.events.types import SpecMoved, SpecVersionBumped
+
+            if spec.version != old_version:
+                await event_publish(
+                    SpecVersionBumped(
+                        board_id=spec.board_id,
+                        actor_id=user_id,
+                        spec_id=spec.id,
+                        old_version=old_version,
+                        new_version=spec.version,
+                        changed_fields=["status"],
+                    ),
+                    session=self.db,
+                )
 
             await event_publish(
                 SpecMoved(
@@ -8555,18 +8623,24 @@ class SpecService:
             "sprint",
             filters=(_apf("spec_id", "eq", spec_id),),
         )
+        descendant_deletions: list[GovernedArtifactDeletionReceipt] = []
         for linked_sprint in linked_sprints:
+            descendant_deletions.append(
+                await _prepare_governed_artifact_deletion(
+                    self.db,
+                    board_id=board_id,
+                    artifact_type="sprint",
+                    artifact_id=linked_sprint.id,
+                )
+            )
+        takedown_receipt = replace(
             await _prepare_governed_artifact_deletion(
                 self.db,
                 board_id=board_id,
-                artifact_type="sprint",
-                artifact_id=linked_sprint.id,
-            )
-        takedown_receipt = await _prepare_governed_artifact_deletion(
-            self.db,
-            board_id=board_id,
-            artifact_type="spec",
-            artifact_id=spec_id,
+                artifact_type="spec",
+                artifact_id=spec_id,
+            ),
+            descendant_deletions=tuple(descendant_deletions),
         )
         await _application_delete(self.db, spec)
 
@@ -10228,6 +10302,12 @@ class StoryService:
             raise ValueError(
                 "Story is already linked to another Ideation. A Story can only link to one Ideation."
             )
+        if story.status != StoryStatus.READY:
+            raise ValueError(
+                "Only ready Stories can be converted to Ideation. "
+                f"Current Story status is '{story.status.value}'. "
+                "Move the Story to 'ready' before linking it."
+            )
         link = _new_application_record(
             "story_ideation_link",
             board_id=story.board_id,
@@ -10409,6 +10489,34 @@ class IdeationService:
 
     def __init__(self, db: Any):
         self.db = db
+        self._cognitive_closeout_gate_factory: Callable[[], Any] = (
+            _build_default_cognitive_closeout_gate
+        )
+        self._cognitive_readiness_service_factory: Callable[[], Any] = (
+            _build_default_cognitive_readiness_service
+        )
+
+    async def _validate_cognitive_done(
+        self,
+        ideation: ApplicationRecord,
+        board: ApplicationRecord | None = None,
+        *,
+        read_only_preview: bool = False,
+    ) -> None:
+        if board is None:
+            board = await _application_get(self.db, "board", ideation.board_id)
+        await _evaluate_entity_cognitive_done_or_raise(
+            db=self.db,
+            gate_factory=self._cognitive_closeout_gate_factory,
+            readiness_service_factory=self._cognitive_readiness_service_factory,
+            board=board,
+            board_id=ideation.board_id,
+            entity_type="ideation",
+            entity_id=ideation.id,
+            entity=ideation,
+            target_label="ideation",
+            resolve_graph_state=not read_only_preview,
+        )
 
     _STATUS_ORDER = {
         IdeationStatus.DRAFT: 0,
@@ -10904,6 +11012,8 @@ class IdeationService:
             # BEFORE ResourceGate so ambiguity errors take precedence (BR4).
             if old_status == IdeationStatus.EVALUATING:
                 await self._enforce_ambiguity_gate(ideation)
+            board = await _application_get(self.db, "board", ideation.board_id)
+            await self._validate_cognitive_done(ideation, board)
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
                 ideation.board_id,
                 "ideation",
@@ -10912,8 +11022,13 @@ class IdeationService:
             )
             await self._create_snapshot(ideation, user_id)
 
-        # Version bump on back-to-draft from done
+        # Reopening a terminal ideation starts a fresh editable iteration.
         if data.status == IdeationStatus.DRAFT and old_status == IdeationStatus.DONE:
+            ideation.version += 1
+        elif (
+            data.status == IdeationStatus.DRAFT
+            and old_status == IdeationStatus.CANCELLED
+        ):
             ideation.version += 1
 
         # Cancellation justification (ITEM 17): cancel requires a reason
@@ -10963,7 +11078,10 @@ class IdeationService:
         summary = f"Status: {old_status.value} → {data.status.value}"
         if data.status == IdeationStatus.DONE:
             summary += f" (snapshot v{ideation.version} created)"
-        elif data.status == IdeationStatus.DRAFT and old_status == IdeationStatus.DONE:
+        elif (
+            data.status == IdeationStatus.DRAFT
+            and old_status in (IdeationStatus.DONE, IdeationStatus.CANCELLED)
+        ):
             summary += f" (new iteration v{ideation.version})"
 
         await self._record_history(
@@ -11034,7 +11152,13 @@ class IdeationService:
         )
         return rows[0] if rows else None
 
-    async def delete_ideation(self, ideation_id: str, user_id: str) -> bool:
+    async def delete_ideation(
+        self,
+        ideation_id: str,
+        user_id: str,
+        *,
+        return_receipt: bool = False,
+    ) -> bool | GovernedArtifactDeletionReceipt:
         """Delete an ideation and every refinement/spec in its subtree."""
         ideation = await self.get_ideation(ideation_id)
         if not ideation:
@@ -11042,28 +11166,54 @@ class IdeationService:
 
         board_id = ideation.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        descendant_deletions: list[GovernedArtifactDeletionReceipt] = []
 
         specs = await _application_list(
             self.db,
             "spec",
             filters=(_apf("ideation_id", "eq", ideation_id),),
         )
-        for spec in specs:
-            await SpecService(self.db).delete_spec(spec.id, user_id)
-
         refinements = await _application_list(
             self.db,
             "refinement",
             filters=(_apf("ideation_id", "eq", ideation_id),),
         )
+        refinement_ids = {refinement.id for refinement in refinements}
         for refinement in refinements:
-            await RefinementService(self.db).delete_refinement(refinement.id, user_id)
+            receipt = await RefinementService(self.db).delete_refinement(
+                refinement.id,
+                user_id,
+                return_receipt=True,
+            )
+            if not isinstance(receipt, GovernedArtifactDeletionReceipt):
+                raise RuntimeError("governed_delete_descendant_receipt_missing")
+            descendant_deletions.append(receipt)
 
-        await _prepare_governed_artifact_deletion(
-            self.db,
-            board_id=board_id,
-            artifact_type="ideation",
-            artifact_id=ideation_id,
+        # A derived Spec carries both ideation_id and refinement_id. Its
+        # refinement deletion already minted the governed receipt and removed
+        # the row, so only delete Specs that are direct Ideation children here.
+        # This avoids relying on an adapter's autoflush/query visibility and
+        # preserves the actual parent/child receipt hierarchy.
+        for spec in specs:
+            if getattr(spec, "refinement_id", None) in refinement_ids:
+                continue
+            receipt = await SpecService(self.db).delete_spec(
+                spec.id,
+                user_id,
+                return_receipt=True,
+            )
+            if not isinstance(receipt, GovernedArtifactDeletionReceipt):
+                raise RuntimeError("governed_delete_descendant_receipt_missing")
+            descendant_deletions.append(receipt)
+
+        takedown_receipt = replace(
+            await _prepare_governed_artifact_deletion(
+                self.db,
+                board_id=board_id,
+                artifact_type="ideation",
+                artifact_id=ideation_id,
+            ),
+            descendant_deletions=tuple(descendant_deletions),
         )
         await _application_delete(self.db, ideation)
 
@@ -11075,7 +11225,7 @@ class IdeationService:
             actor_name=actor_name,
             details={"ideation_id": ideation_id},
         )
-        return True
+        return takedown_receipt if return_receipt else True
 
     async def evaluate_complexity(
         self, ideation_id: str, user_id: str
@@ -11433,6 +11583,28 @@ class RefinementService:
         )
         self._cognitive_readiness_service_factory: Callable[[], Any] = (
             _build_default_cognitive_readiness_service
+        )
+
+    async def _validate_cognitive_done(
+        self,
+        refinement: ApplicationRecord,
+        board: ApplicationRecord | None = None,
+        *,
+        read_only_preview: bool = False,
+    ) -> None:
+        if board is None:
+            board = await _application_get(self.db, "board", refinement.board_id)
+        await _evaluate_entity_cognitive_done_or_raise(
+            db=self.db,
+            gate_factory=self._cognitive_done_guard_factory,
+            readiness_service_factory=self._cognitive_readiness_service_factory,
+            board=board,
+            board_id=refinement.board_id,
+            entity_type="refinement",
+            entity_id=refinement.id,
+            entity=refinement,
+            target_label="refinement",
+            resolve_graph_state=not read_only_preview,
         )
 
     _STATUS_ORDER = {
@@ -11923,29 +12095,7 @@ class RefinementService:
         # status with no snapshot/history/activity changes.
         if data.status == RefinementStatus.DONE:
             board = await _application_get(self.db, "board", refinement.board_id)
-            graph_state = await _resolve_closeout_graph_state(
-                refinement.board_id, self.db
-            )
-            _evaluate_cognitive_closeout_or_raise(
-                gate_factory=self._cognitive_done_guard_factory,
-                board=board,
-                board_id=refinement.board_id,
-                entity_type="refinement",
-                entity_id=refinement.id,
-                entity=refinement,
-                target_label="refinement",
-                graph_state=graph_state,
-            )
-            await _evaluate_cognitive_readiness_or_raise(
-                service_factory=self._cognitive_readiness_service_factory,
-                db=self.db,
-                board_id=refinement.board_id,
-                entity_type="refinement",
-                entity_id=refinement.id,
-                entity=refinement,
-                target_label="refinement",
-                policy_blocking=_cognitive_readiness_blocking_active(board),
-            )
+            await self._validate_cognitive_done(refinement, board)
 
         # Snapshot on done
         if data.status == RefinementStatus.DONE:
@@ -11957,10 +12107,10 @@ class RefinementService:
             )
             await self._create_snapshot(refinement, user_id)
 
-        # Version bump on back-to-draft from done
+        # Reopening a terminal refinement starts a fresh editable iteration.
         if (
             data.status == RefinementStatus.DRAFT
-            and old_status == RefinementStatus.DONE
+            and old_status in (RefinementStatus.DONE, RefinementStatus.CANCELLED)
         ):
             refinement.version += 1
 
@@ -12094,7 +12244,13 @@ class RefinementService:
         )
         return rows[0] if rows else None
 
-    async def delete_refinement(self, refinement_id: str, user_id: str) -> bool:
+    async def delete_refinement(
+        self,
+        refinement_id: str,
+        user_id: str,
+        *,
+        return_receipt: bool = False,
+    ) -> bool | GovernedArtifactDeletionReceipt:
         """Delete a refinement and every spec derived from it."""
         refinement = await self.get_refinement(refinement_id)
         if not refinement:
@@ -12102,6 +12258,7 @@ class RefinementService:
 
         board_id = refinement.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        descendant_deletions: list[GovernedArtifactDeletionReceipt] = []
 
         specs = await _application_list(
             self.db,
@@ -12109,13 +12266,23 @@ class RefinementService:
             filters=(_apf("refinement_id", "eq", refinement_id),),
         )
         for spec in specs:
-            await SpecService(self.db).delete_spec(spec.id, user_id)
+            receipt = await SpecService(self.db).delete_spec(
+                spec.id,
+                user_id,
+                return_receipt=True,
+            )
+            if not isinstance(receipt, GovernedArtifactDeletionReceipt):
+                raise RuntimeError("governed_delete_descendant_receipt_missing")
+            descendant_deletions.append(receipt)
 
-        await _prepare_governed_artifact_deletion(
-            self.db,
-            board_id=board_id,
-            artifact_type="refinement",
-            artifact_id=refinement_id,
+        takedown_receipt = replace(
+            await _prepare_governed_artifact_deletion(
+                self.db,
+                board_id=board_id,
+                artifact_type="refinement",
+                artifact_id=refinement_id,
+            ),
+            descendant_deletions=tuple(descendant_deletions),
         )
         await _application_delete(self.db, refinement)
 
@@ -12127,7 +12294,7 @@ class RefinementService:
             actor_name=actor_name,
             details={"refinement_id": refinement_id},
         )
-        return True
+        return takedown_receipt if return_receipt else True
 
     async def derive_spec(
         self,
@@ -12594,7 +12761,7 @@ class GuidelineService:
             _apf("scope", "eq", "global"),
         ]
         if tag:
-            filters.append(_apf("tags", "contains", [tag]))
+            filters.append(_apf("tags", "json_member", tag))
         return await _application_list(
             self.db,
             "guideline",

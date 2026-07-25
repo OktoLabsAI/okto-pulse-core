@@ -274,10 +274,16 @@ class TestCardCreation:
 
 
 @pytest.mark.asyncio
-class TestCardStatusTransitions:  # noqa: F811
+class TestCardStatusTransitionMatrix:
     """AC-2: Card status transitions through the state machine."""
 
-    async def _create_card_for_transition(self, db_factory, status=CardStatus.NOT_STARTED):
+    async def _create_card_for_transition(
+        self,
+        db_factory,
+        status=CardStatus.NOT_STARTED,
+        *,
+        require_task_validation: bool = False,
+    ):
         """Helper: create a card in a given status for transition testing."""
         await _seed_board(db_factory)
         async with db_factory() as db:
@@ -286,6 +292,8 @@ class TestCardStatusTransitions:  # noqa: F811
                 __import__("sqlalchemy").select(Spec).where(Spec.board_id == BOARD_ID)
             )).scalars().all()
             actual_spec_id = specs[0].id
+            specs[0].status = SpecStatus.IN_PROGRESS
+            specs[0].require_task_validation = require_task_validation
 
             data = CardCreate(
                 title=f"Transition Card ({status.value})",
@@ -293,6 +301,7 @@ class TestCardStatusTransitions:  # noqa: F811
                 spec_id=actual_spec_id,
             )
             card = await svc.create_card(BOARD_ID, USER_ID, data)
+            await db.commit()
             return card, actual_spec_id
 
     async def test_transition_not_started_to_started(self, db_factory):
@@ -317,11 +326,11 @@ class TestCardStatusTransitions:  # noqa: F811
             moved = await svc.move_card(
                 card.id,
                 USER_ID,
-                CardMove(status=CardStatus.NOT_STARTED, position=7),
+                CardMove(status=CardStatus.NOT_STARTED, position=0),
             )
             assert moved is not None
             assert moved.status == CardStatus.NOT_STARTED
-            assert moved.position == 7
+            assert moved.position == 0
 
     async def test_transition_started_to_in_progress(self, db_factory):
         """started → in_progress is a valid forward transition."""
@@ -417,10 +426,11 @@ class TestCardStatusTransitions:  # noqa: F811
             assert persisted.conclusions[0]["text"] == "Executor claim for validator review"
 
     async def test_transition_validation_to_done_with_required_fields(self, db_factory):
-        """validation → done requires conclusion, completeness, drift."""
+        """validation → done remains available when task validation is disabled."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.VALIDATION)
         async with db_factory() as db:
             svc = CardService(db)
+            await _mark_all_resources_na(db, "card", card.id)
             moved = await svc.move_card(
                 card.id, USER_ID,
                 CardMove(
@@ -439,30 +449,50 @@ class TestCardStatusTransitions:  # noqa: F811
             assert moved.conclusions[0]["completeness"] == 100
             assert moved.conclusions[0]["drift"] == 0
 
-    async def test_transition_done_backward_to_not_started(self, db_factory):
-        """done → not_started is a valid backward transition (reset)."""
+    async def test_direct_validation_to_done_cannot_bypass_required_gate(
+        self,
+        db_factory,
+    ):
+        card, _ = await self._create_card_for_transition(
+            db_factory,
+            CardStatus.VALIDATION,
+            require_task_validation=True,
+        )
+        async with db_factory() as db:
+            with pytest.raises(ValueError, match="submit_task_validation"):
+                await CardService(db).move_card(
+                    card.id,
+                    USER_ID,
+                    CardMove(
+                        status=CardStatus.DONE,
+                        conclusion="Attempted direct completion",
+                        completeness=100,
+                        completeness_justification="Complete",
+                        drift=0,
+                        drift_justification="No deviation",
+                    ),
+                )
+
+    async def test_transition_done_backward_to_in_progress(self, db_factory):
+        """done → in_progress is the canonical backward transition."""
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.DONE)
         async with db_factory() as db:
             svc = CardService(db)
             moved = await svc.move_card(
                 card.id, USER_ID,
-                CardMove(status=CardStatus.NOT_STARTED),
+                CardMove(status=CardStatus.IN_PROGRESS),
             )
             assert moved is not None
-            assert moved.status == CardStatus.NOT_STARTED
+            assert moved.status == CardStatus.IN_PROGRESS
 
     async def test_invalid_transition_not_started_to_done_raises(self, db_factory):
         """not_started → done without required fields must raise ValueError."""
-        card, _ = await self._create_card_for_transition(db_factory, CardStatus.NOT_STARTED)
+        card, _ = await self._create_card_for_transition(
+            db_factory,
+            CardStatus.IN_PROGRESS,
+        )
         async with db_factory() as db:
             svc = CardService(db)
-            # Move to in_progress first (required before done)
-            await svc.move_card(
-                card.id, USER_ID,
-                CardMove(status=CardStatus.IN_PROGRESS),
-            )
-            # Now try to go directly to done without going through validation
-            # (validation gate may block, but definitely missing required fields)
             with pytest.raises(ValueError, match="conclusion"):
                 await svc.move_card(
                     card.id, USER_ID,
@@ -560,8 +590,9 @@ class TestCardStatusTransitions:  # noqa: F811
         card, _ = await self._create_card_for_transition(db_factory, CardStatus.VALIDATION)
         async with db_factory() as db:
             svc = CardService(db)
+            await _mark_all_resources_na(db, "card", card.id)
             # First completion
-            await svc.move_card(
+            moved = await svc.move_card(
                 card.id, USER_ID,
                 CardMove(
                     status=CardStatus.DONE,
@@ -572,13 +603,13 @@ class TestCardStatusTransitions:  # noqa: F811
                     drift_justification="No deviation",
                 ),
             )
-            # Reset to validation
+            # Reopen through the canonical reverse path.
             await svc.move_card(
                 card.id, USER_ID,
-                CardMove(status=CardStatus.VALIDATION),
+                CardMove(status=CardStatus.IN_PROGRESS),
             )
             # Second completion
-            await svc.move_card(
+            moved = await svc.move_card(
                 card.id, USER_ID,
                 CardMove(
                     status=CardStatus.DONE,
@@ -589,10 +620,10 @@ class TestCardStatusTransitions:  # noqa: F811
                     drift_justification="Minor deviation",
                 ),
             )
-            await db.refresh(card)
-            assert len(card.conclusions) == 2
-            assert card.conclusions[0]["text"] == "First completion"
-            assert card.conclusions[1]["text"] == "Second completion"
+            assert moved is not None
+            assert len(moved.conclusions) == 2
+            assert moved.conclusions[0]["text"] == "First completion"
+            assert moved.conclusions[1]["text"] == "Second completion"
 
 
 # ============================================================================

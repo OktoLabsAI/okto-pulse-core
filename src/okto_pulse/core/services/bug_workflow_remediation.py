@@ -301,7 +301,7 @@ class BugWorkflowRemediationMessageBuilder:
             semantic_gap_required=False,
             eligible_scenarios_count=int(facts.get("eligible_scenarios_count") or 0),
             hotfix_lane_status=hotfix_lane_status,
-            message=message or "Bug card cannot advance until its sprint lane is executable.",
+            message=message or "Card cannot advance until its sprint lane is executable.",
             detail=(
                 "This is Path C for post-closure bugs: assign the bug and its "
                 "regression test card to an active hotfix sprint lane. Do not "

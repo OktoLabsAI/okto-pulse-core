@@ -467,7 +467,7 @@ async def test_archive_then_restore_story(client) -> None:
 async def test_link_story_to_ideation_200_and_missing_404(client) -> None:
     bid = await _seed_board()
     tid = await _seed_topic(bid)
-    sid = await _seed_story(bid, tid)
+    sid = await _seed_story(bid, tid, status="ready")
     ideation_id = await _seed_ideation(bid)
 
     ok = client.post(f"{PREFIX}/stories/{sid}/ideations", json={"ideation_id": ideation_id})
@@ -482,10 +482,33 @@ async def test_link_story_to_ideation_200_and_missing_404(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_link_story_requires_ready_status_without_converting_draft(client) -> None:
+    bid = await _seed_board()
+    tid = await _seed_topic(bid)
+    sid = await _seed_story(bid, tid, status="draft")
+    ideation_id = await _seed_ideation(bid)
+
+    response = client.post(
+        f"{PREFIX}/stories/{sid}/ideations",
+        json={"ideation_id": ideation_id},
+    )
+
+    assert response.status_code == 400
+    assert "Only ready Stories can be converted" in response.json()["detail"]
+    async with get_session_factory()() as db:
+        from sqlalchemy_test_models import StoryStatus
+        from okto_pulse.core.services import StoryService
+
+        story = await StoryService(db).get_story(sid)
+        assert story.status == StoryStatus.DRAFT
+        assert story.ideation_links == []
+
+
+@pytest.mark.asyncio
 async def test_link_stories_to_ideation_bulk(client) -> None:
     bid = await _seed_board()
     tid = await _seed_topic(bid)
-    sid = await _seed_story(bid, tid)
+    sid = await _seed_story(bid, tid, status="ready")
     ideation_id = await _seed_ideation(bid)
 
     resp = client.post(f"{PREFIX}/ideations/{ideation_id}/stories", json={"story_ids": [sid]})
@@ -497,18 +520,40 @@ async def test_link_stories_to_ideation_bulk(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_bulk_link_preflights_ready_status_before_any_writer(client) -> None:
+    from okto_pulse.core.services import StoryService
+
+    board_id = await _seed_board()
+    topic_id = await _seed_topic(board_id)
+    ready_story = await _seed_story(board_id, topic_id, status="ready")
+    draft_story = await _seed_story(board_id, topic_id, status="draft")
+    ideation_id = await _seed_ideation(board_id)
+
+    writer = AsyncMock(side_effect=AssertionError("writer must not run"))
+    with patch.object(StoryService, "link_story_to_ideation", writer):
+        response = client.post(
+            f"{PREFIX}/ideations/{ideation_id}/stories",
+            json={"story_ids": [ready_story, draft_story]},
+        )
+
+    assert response.status_code == 400
+    assert "Only ready Stories can be converted" in response.json()["detail"]
+    writer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_bulk_link_preflights_all_stories_before_any_writer(client) -> None:
     from okto_pulse.core.services import StoryService
 
     owned_board = await _seed_board()
     owned_topic = await _seed_topic(owned_board)
-    owned_story = await _seed_story(owned_board, owned_topic)
+    owned_story = await _seed_story(owned_board, owned_topic, status="ready")
     ideation_id = await _seed_ideation(owned_board)
 
     foreign_board = await _seed_board(owner=OTHER)
     foreign_topic = await _seed_topic(foreign_board, user_id=OTHER)
     foreign_story = await _seed_story(
-        foreign_board, foreign_topic, user_id=OTHER
+        foreign_board, foreign_topic, status="ready", user_id=OTHER
     )
 
     writer = AsyncMock(side_effect=AssertionError("writer must not run"))
@@ -533,7 +578,7 @@ async def test_bulk_link_preflights_ideation_before_any_story_writer(client) -> 
 
     owned_board = await _seed_board()
     owned_topic = await _seed_topic(owned_board)
-    owned_story = await _seed_story(owned_board, owned_topic)
+    owned_story = await _seed_story(owned_board, owned_topic, status="ready")
     foreign_board = await _seed_board(owner=OTHER)
     foreign_ideation = await _seed_ideation(foreign_board, user_id=OTHER)
 

@@ -316,7 +316,9 @@ async def test_create_get_update_delete_roundtrip(_seed):
     deleted = await _call(
         "okto_pulse_delete_ideation", board_id=BOARD_ID, ideation_id=iid
     )
-    assert deleted == {"success": True}
+    assert deleted["success"] is True
+    assert deleted["takedown"]["artifact_type"] == "ideation"
+    assert deleted["takedown"]["artifact_id"] == iid
 
 
 @pytest.mark.asyncio
@@ -352,20 +354,47 @@ async def test_delete_ideation_cascades_refinements_and_specs(_seed):
         )
         db.add(spec)
         await db.flush()
+        direct_spec = Spec(
+            board_id=BOARD_ID,
+            ideation_id=ideation.id,
+            refinement_id=None,
+            title="Direct cascade spec",
+            status=SpecStatus.DRAFT,
+            created_by=USER_ID,
+        )
+        db.add(direct_spec)
+        await db.flush()
         ideation_id = ideation.id
         refinement_id = refinement.id
         spec_id = spec.id
+        direct_spec_id = direct_spec.id
         await db.commit()
 
     deleted = await _call(
         "okto_pulse_delete_ideation", board_id=BOARD_ID, ideation_id=ideation_id
     )
 
-    assert deleted == {"success": True}
+    assert deleted["success"] is True
+    assert deleted["takedown"]["artifact_type"] == "ideation"
+    descendants = deleted["takedown"]["descendant_deletions"]
+    assert {
+        (item["artifact_type"], item["artifact_id"]) for item in descendants
+    } == {
+        ("refinement", refinement_id),
+        ("spec", direct_spec_id),
+    }
+    refinement_receipt = next(
+        item for item in descendants if item["artifact_type"] == "refinement"
+    )
+    assert {
+        (item["artifact_type"], item["artifact_id"])
+        for item in refinement_receipt["descendant_deletions"]
+    } == {("spec", spec_id)}
     async with factory() as db:
         assert await db.get(Ideation, ideation_id) is None
         assert await db.get(Refinement, refinement_id) is None
         assert await db.get(Spec, spec_id) is None
+        assert await db.get(Spec, direct_spec_id) is None
 
 
 @pytest.mark.asyncio

@@ -230,6 +230,16 @@ async def test_mcp_twins_catalog_link_and_effective():
         assert ids["g"] in {d["id"] for d in listed["items"]}
         assert all("payload" not in item for item in listed["items"])
 
+        # MCP requires a board_id even for the actor's global catalog. An owned
+        # item returned by list must therefore be retrievable before it is
+        # linked as the board's effective Design System.
+        unlinked = await _call(
+            "okto_pulse_get_design_system",
+            board_id=ids["board"],
+            design_system_id=ids["g"],
+        )
+        assert unlinked.get("id") == ids["g"], unlinked
+
         linked = await _call(
             "okto_pulse_link_board_design_system",
             board_id=ids["board"],

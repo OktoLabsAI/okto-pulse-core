@@ -186,6 +186,21 @@ def test_mcp_adapter_actor_and_error():
     assert actor.actor_name == AGENT_NAME  # MCP agent name preserved for audit
     assert actor.board_id == "b1"
     assert MCPAdapterContract.error(ValueError("boom")) == json.dumps({"error": "boom"})
+    typed = json.loads(
+        MCPAdapterContract.error(
+            ResourceGateError(
+                "resource_gate_missing_resources",
+                "Attach the missing resource.",
+                details={"entity_type": "ideation"},
+            )
+        )
+    )
+    assert typed == {
+        "error": "resource_gate_missing_resources",
+        "code": "resource_gate_missing_resources",
+        "detail": "Attach the missing resource.",
+        "details": {"entity_type": "ideation"},
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -347,6 +362,35 @@ async def test_mcp_move_ideation_payload_and_envelopes(db_factory, _stub_auth):
         status="not-a-status",
     )
     assert "error" in bad_status and "Invalid status" in bad_status["error"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_move_ideation_preserves_resource_gate_code(db_factory, _stub_auth):
+    async with db_factory() as db:
+        board_id, (ideation_id,) = await _seed_board_with_ideations(db, 1)
+
+    gate_error = ResourceGateError(
+        "resource_gate_missing_resources",
+        "Attach the missing architecture resource.",
+        details={"entity_type": "ideation", "entity_id": ideation_id},
+    )
+    with patch(
+        "okto_pulse.core.application.use_cases.MoveIdeationUseCase.execute",
+        AsyncMock(side_effect=gate_error),
+    ):
+        result = await _call_tool(
+            "okto_pulse_move_ideation",
+            board_id=board_id,
+            ideation_id=ideation_id,
+            status="review",
+        )
+
+    assert result == {
+        "error": "resource_gate_missing_resources",
+        "code": "resource_gate_missing_resources",
+        "detail": "Attach the missing architecture resource.",
+        "details": {"entity_type": "ideation", "entity_id": ideation_id},
+    }
 
 
 # --------------------------------------------------------------------------- #

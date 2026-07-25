@@ -333,14 +333,31 @@ def coerce_mcp_tool_outcome(raw: Any, *, tool_name: str | None = None) -> McpToo
         or body.get("success") is False
         or body.get("blocked") is True
         or body.get("error_code") not in (None, "")
+        # Canonical REST-compatible domain envelopes (for example
+        # ``invalid_lane_type`` and ``knowledge_governance_invalid_metadata``)
+        # intentionally expose ``code`` without duplicating it under ``error``.
+        # Treat that shape as a failure unless the producer explicitly marked
+        # the response successful.  This keeps the legacy JSON body intact while
+        # ensuring MCP transports set ``isError=true``.
+        or (
+            body.get("code") not in (None, "")
+            and body.get("success") is not True
+        )
     )
     if not failure_signal:
         return McpToolOutcome.success(body, legacy_text=legacy_text)
 
-    code_parts = frozenset(code.split("_"))
-    retryable = bool(body.get("retryable")) or code in _RETRYABLE_CODES or bool(
-        code_parts & {"conflict", "locked", "timeout", "unavailable", "busy"}
-    )
+    if "retryable" in body:
+        # An explicit producer decision is authoritative.  In particular,
+        # Knowledge revision conflicts require a fresh read/reformulation and
+        # deliberately publish retryable=false; the generic ``conflict`` suffix
+        # must not silently rewrite that contract to true.
+        retryable = body.get("retryable") is True
+    else:
+        code_parts = frozenset(code.split("_"))
+        retryable = code in _RETRYABLE_CODES or bool(
+            code_parts & {"conflict", "locked", "timeout", "unavailable", "busy"}
+        )
     return McpToolOutcome.error(
         code=code,
         message=message or code,

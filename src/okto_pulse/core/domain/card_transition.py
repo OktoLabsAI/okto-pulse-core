@@ -175,17 +175,32 @@ def validation_gate_block(facts: CardTransitionFacts) -> CardTransitionBlock | N
     if (
         facts.new_status is CardStatus.DONE
         and facts.old_status
-        in (CardStatus.IN_PROGRESS, CardStatus.STARTED, CardStatus.NOT_STARTED)
+        in (
+            CardStatus.IN_PROGRESS,
+            CardStatus.STARTED,
+            CardStatus.NOT_STARTED,
+            CardStatus.VALIDATION,
+        )
         and facts.card_type is not CardType.TEST
         and facts.validation_required
     ):
+        detail = (
+            "Validation gate is active. A reviewer must submit a task validation "
+            "before the card can move from 'validation' to 'done'. Use "
+            "submit_task_validation; a successful review promotes the card to "
+            "'done'."
+            if facts.old_status is CardStatus.VALIDATION
+            else (
+                "Validation gate is active. Move card to 'validation' status first. "
+                "A reviewer must submit a task validation before the card can move "
+                "to 'done'. Use move_card(status='validation', conclusion=..., "
+                "completeness=..., completeness_justification=..., drift=..., "
+                "drift_justification=...) then submit_task_validation."
+            )
+        )
         return _blocked(
             "task_validation_required",
-            "Validation gate is active. Move card to 'validation' status first. "
-            "A reviewer must submit a task validation before the card can move to 'done'. "
-            "Use move_card(status='validation', conclusion=..., completeness=..., "
-            "completeness_justification=..., drift=..., drift_justification=...) "
-            "then submit_task_validation.",
+            detail,
             remediation="move_to_validation_then_submit_task_validation",
         ).block
     return None

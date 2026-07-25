@@ -108,7 +108,18 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
             "ideation",
             IdeationStatus,
             {
-                "draft": [_edge("review"), _edge("cancelled", **_CANCEL)],
+                "draft": [
+                    _edge(
+                        "review",
+                        gate="refinement_scope",
+                        preconditions=("in_scope_present",),
+                        reason_codes=(
+                            "refinement_scope_required",
+                            "transition_not_allowed",
+                        ),
+                    ),
+                    _edge("cancelled", **_CANCEL),
+                ],
                 "review": [
                     _edge("draft"),
                     _edge("approved"),
@@ -147,7 +158,19 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         effects=("status_changed", "version_bumped", "activity_logged"),
                     )
                 ],
-                "cancelled": [],
+                "cancelled": [
+                    _edge(
+                        "draft",
+                        gate="reopen",
+                        capabilities=("reopen",),
+                        effects=(
+                            "status_changed",
+                            "cancellation_cleared",
+                            "version_bumped",
+                            "activity_logged",
+                        ),
+                    )
+                ],
             },
         ),
         "refinement": _entity(
@@ -183,7 +206,19 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         effects=("status_changed", "version_bumped", "activity_logged"),
                     )
                 ],
-                "cancelled": [],
+                "cancelled": [
+                    _edge(
+                        "draft",
+                        gate="reopen",
+                        capabilities=("reopen",),
+                        effects=(
+                            "status_changed",
+                            "cancellation_cleared",
+                            "version_bumped",
+                            "activity_logged",
+                        ),
+                    )
+                ],
             },
         ),
         "spec": _entity(
@@ -230,6 +265,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "all_cards_terminal",
                             "all_sprints_terminal",
                             "resource_gate_ready",
+                            "cognitive_gate_ready",
                         ),
                         capabilities=("complete",),
                         reason_codes=(
@@ -237,6 +273,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                             "cards_incomplete",
                             "sprints_incomplete",
                             "resource_gate_blocked",
+                            "cognitive_gate_blocked",
                             "transition_not_allowed",
                         ),
                     ),
@@ -299,13 +336,39 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                 "in_progress": [
                     _edge("started", gate="reopen", capabilities=("reopen",)),
                     _edge("validation", gate="task_validation", capabilities=("validate",)),
-                    _edge("done", gate="completion", capabilities=("complete",)),
+                    _edge(
+                        "done",
+                        gate="completion",
+                        preconditions=("completion_ready", "cognitive_gate_ready"),
+                        capabilities=("complete",),
+                        reason_codes=(
+                            "task_validation_required",
+                            "test_scenarios_pending",
+                            "cognitive_gate_blocked",
+                            "transition_not_allowed",
+                        ),
+                    ),
                     _edge("on_hold", capabilities=("pause",)),
                     _edge("cancelled", **_CANCEL),
                 ],
                 "validation": [
                     _edge("in_progress", gate="rework", capabilities=("reopen",)),
-                    _edge("done", gate="completion", capabilities=("complete",)),
+                    _edge(
+                        "done",
+                        gate="task_validation",
+                        preconditions=(
+                            "task_validation_approved_or_disabled",
+                            "completion_ready",
+                            "cognitive_gate_ready",
+                        ),
+                        capabilities=("complete",),
+                        reason_codes=(
+                            "task_validation_required",
+                            "test_scenarios_pending",
+                            "cognitive_gate_blocked",
+                            "transition_not_allowed",
+                        ),
+                    ),
                     _edge("on_hold", capabilities=("pause",)),
                     _edge("cancelled", **_CANCEL),
                 ],
@@ -364,8 +427,11 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         capabilities=("complete",),
                         reason_codes=(
                             "sprint_has_incomplete_cards",
+                            "sprint_scope_gate_blocked",
                             "sprint_evidence_incomplete",
                             "sprint_evaluation_required",
+                            "sprint_evaluation_rejected",
+                            "sprint_evaluation_below_threshold",
                             "reviewer_separation_required",
                             "transition_not_allowed",
                         ),

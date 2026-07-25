@@ -37,6 +37,7 @@ PREFLIGHT_REL = "workflows/preflight.md"
 # body must NOT remain inline in agent_instructions.md (pointer, no duplication).
 VERBATIM_STEP = (
     'okto_pulse_get_task_context(board_id, card_id, profile="full", '
+    'context_scope="gate", '
     "include_knowledge=true, include_mockups=true, include_architecture=true, "
     "include_qa=true, include_comments=true)"
 )

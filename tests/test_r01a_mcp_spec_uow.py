@@ -421,6 +421,52 @@ async def test_add_api_contract_roundtrip(_seed):
 
 
 @pytest.mark.asyncio
+async def test_get_spec_exposes_structured_families_and_archive_state(_seed):
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        spec = await db.get(Spec, _seed)
+        spec.business_rules = [
+            {
+                "id": "br_get_spec",
+                "title": "Expose structured state",
+                "rule": "MUST preserve structured families",
+                "linked_task_ids": [],
+            }
+        ]
+        spec.test_scenarios = [
+            {
+                "id": "ts_get_spec",
+                "title": "Read projection",
+                "status": "pending",
+                "acceptance_criteria_ids": [],
+            }
+        ]
+        spec.archived = True
+        spec.pre_archive_status = "draft"
+        await db.commit()
+
+    payload = await _call(
+        "okto_pulse_get_spec",
+        board_id=BOARD_ID,
+        spec_id=_seed,
+    )
+
+    assert payload["business_rules"][0]["id"] == "br_get_spec"
+    assert payload["api_contracts"][0]["id"] == CONTRACT_ID
+    assert payload["decisions"][0]["id"] == DECISION_ID
+    assert payload["test_scenarios"][0]["id"] == "ts_get_spec"
+    assert payload["integration_requirements"][0]["id"] == (
+        INTEGRATION_REQUIREMENT_ID
+    )
+    assert payload["observability_requirements"][0]["id"] == (
+        OBSERVABILITY_REQUIREMENT_ID
+    )
+    assert payload["archived"] is True
+    assert payload["pre_archive_status"] == "draft"
+
+
+@pytest.mark.asyncio
 async def test_add_api_contract_invalid_method_is_canonical(_seed):
     out = await _call(
         "okto_pulse_add_api_contract",

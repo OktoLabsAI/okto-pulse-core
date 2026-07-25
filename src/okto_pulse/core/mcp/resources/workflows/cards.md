@@ -83,7 +83,7 @@ changing the request under that key is an idempotency conflict.
 before entering either execution state (`started`/`in_progress`); then follow
 the exact transition edge advertised for the concrete card.
 
-1. Run `okto_pulse_get_task_context(board_id, card_id, profile="full", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)` and inspect what is already attached.
+1. Run `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate", include_knowledge=true, include_mockups=true, include_architecture=true, include_qa=true, include_comments=true)` and inspect Resource Gate state, validation/reviewer blockers, and the content manifest. Fetch `profile="detail"` plus its drilldowns when you need the attached bodies.
 2. For each Mockup / Architecture Design the task needs, decide:
    - **Already on the card** → no action.
    - **On the parent spec, relevant to this task** → call the copy tool.
@@ -142,7 +142,7 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 |---|---|---|
 | One big test card for all scenarios | No granular traceability | Create one test card per scenario or per small group of closely related scenarios |
 | Test card without `okto_pulse_link_task(target_type="scenario", ...)` | Scenario shows "no tasks" — no way to know which card validates it | Always call `okto_pulse_link_task(target_type="scenario", ...)` after creating a test card |
-| Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with `profile="full"` and all include flags BEFORE any work |
+| Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with `profile="full", context_scope="gate"` and all include flags BEFORE any work; use bounded detail/drilldowns for bodies |
 | Card still `not_started` while writing code | Board is inaccurate | Query `okto_pulse_get_allowed_transitions`; move normal cards to `started` and then `in_progress` (or use a directly advertised test/bug edge) BEFORE first line of code |
 | Treating an absent v2 envelope as `selection_state="omitted"` | Absence deliberately preserves v1, while an in-envelope omission is authoritative v2 state | Choose the version explicitly: omit the envelope for v1, or send a coherent v2 tri-state envelope |
 | Refreshing by assignment ID | Assignment rows are temporal and may be superseded | Pass stable root Knowledge IDs to `okto_pulse_refresh_card_knowledge_assignments` |
@@ -217,7 +217,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 
 ### Implementor Workflow
 
-1. Retrieve context — `okto_pulse_get_task_context(board_id, card_id, profile="full")`. Check `validation_config.required`.
+1. Retrieve context — `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate")`. Check `validation_config.required`.
 2. **MANDATORY for restarts** — if the card has a failed validation, read `threshold_violations`, `confidence_justification`, `completeness_justification`, `drift_justification`, `general_justification` before changing the implementation.
 3. Start execution — query `okto_pulse_get_allowed_transitions`; from `not_started`, a normal card moves to `started` and then `in_progress`. Resume directly to `in_progress` only from an advertised current-state edge.
 4. Implement the task.
@@ -228,7 +228,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 ### Validator Workflow
 
 1. Find cards awaiting validation — `okto_pulse_list_cards_by_status(board_id, status="validation")`
-2. Get full context for each card — `okto_pulse_get_task_context(board_id, card_id, profile="full")`. Inspect `reviewer_separation` before acting; it is evaluated for the current agent against the card creator, assignee, and executor report author.
+2. Get full gate context for each card — `okto_pulse_get_task_context(board_id, card_id, profile="full", context_scope="gate")`. Inspect `reviewer_separation` before acting; it is evaluated for the current agent against the card creator, assignee, and executor report author.
 3. Analyze the work — review implementation against card description and spec requirements. When `reviewer_separation.mode="enforce"` and `allowed=false`, hand the validation to an independent principal instead of retrying.
 4. Submit validation — `okto_pulse_submit_task_validation(board_id, card_id, ...)` with:
    - `confidence` (0-100) + `confidence_justification`

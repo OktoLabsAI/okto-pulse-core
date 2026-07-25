@@ -11,9 +11,11 @@ import json
 import uuid
 from datetime import datetime
 from types import SimpleNamespace
+from typing import get_type_hints
 from unittest.mock import patch
 
 import pytest
+from pydantic import TypeAdapter
 
 from mcp_runtime_testing import register_mcp_test_runtime
 from okto_pulse.core.application.use_cases.entity_pagination import EntityPageService
@@ -536,6 +538,32 @@ _INVALID_WINDOWS = [
     {"offset": "0"},
     {"offset": 1 << 63},  # > int64: would overflow SQLite's OFFSET binding
 ]
+
+
+def test_page_window_boundary_keeps_integer_schema_and_defers_bad_scalars():
+    tools = (
+        "okto_pulse_get_activity_log",
+        "okto_pulse_list_cards_by_status",
+        "okto_pulse_list_test_scenarios",
+        "okto_pulse_list_screen_mockups",
+        "okto_pulse_list_guidelines",
+        "okto_pulse_list_default_board_config_versions",
+        "okto_pulse_list_by_board",
+    )
+
+    for tool_name in tools:
+        tool = getattr(mcp_server, tool_name)
+        hints = get_type_hints(tool.fn, include_extras=True)
+        for field in ("limit", "offset"):
+            # Client-facing compatibility: pagination remains an integer schema.
+            assert tool.parameters["properties"][field]["type"] == "integer"
+            # Runtime boundary: malformed scalars reach the canonical guard
+            # instead of becoming FastMCP's generic validation_failed response.
+            assert TypeAdapter(hints[field]).validate_python(250.5) == 250.5
+
+    raw = mcp_server._invalid_window_error(0, 250.5)
+    assert raw is not None
+    assert json.loads(raw)["error_code"] == "page_request_invalid_window"
 
 
 @pytest.mark.asyncio

@@ -5,14 +5,16 @@ from __future__ import annotations
 import inspect
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, get_type_hints
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from okto_pulse.core.application import knowledge_propagation_projection
 from okto_pulse.core.application import use_cases
 from okto_pulse.core.application.use_cases.base import EntityNotFoundError
 from okto_pulse.core.mcp import server
+from okto_pulse.core.mcp.outcome import coerce_mcp_tool_outcome
 from okto_pulse.core.models.knowledge_propagation import (
     KnowledgeAssignmentDropRequest,
     KnowledgeAssignmentRefreshRequest,
@@ -50,6 +52,44 @@ def test_create_and_refinement_derive_expose_optional_v2_envelope() -> None:
         assert envelope["properties"]["expected_revision"]["anyOf"][0]["const"] == 0
 
 
+@pytest.mark.parametrize(
+    "tool",
+    (
+        server.okto_pulse_create_card,
+        server.okto_pulse_derive_spec_from_refinement,
+    ),
+    ids=("create_card", "derive_spec"),
+)
+def test_creation_envelope_adapters_defer_only_nested_domain_validation(
+    tool: object,
+) -> None:
+    annotation = get_type_hints(tool.fn, include_extras=True)["knowledge_propagation"]
+    adapter = TypeAdapter(annotation)
+    invalid_domain_payload = {
+        "contract_version": 2,
+        "selection_state": "omitted",
+        "mode": "snapshot",
+        "knowledge_ids": [],
+        "idempotency_key": "invalid-create",
+    }
+
+    # The raw object reaches the handler so its typed canonical mapper owns the
+    # domain error instead of FastMCP serialising ValidationError.ctx.error.
+    assert adapter.validate_python(invalid_domain_payload) == invalid_domain_payload
+
+    # Omission still uses the function default, while an explicitly supplied
+    # null remains invalid exactly as in the published non-nullable contract.
+    with pytest.raises(ValidationError) as caught:
+        adapter.validate_python(None)
+    assert caught.value.errors(include_url=False, include_input=False) == [
+        {
+            "type": "dict_type",
+            "loc": (),
+            "msg": "Input should be an object",
+        }
+    ]
+
+
 def test_mcp_creation_race_code_is_always_projected_retryable() -> None:
     payload = json.loads(
         server._knowledge_propagation_error(
@@ -61,6 +101,180 @@ def test_mcp_creation_race_code_is_always_projected_retryable() -> None:
     )
 
     assert payload["retryable"] is True
+
+
+def test_mcp_revision_conflict_is_non_retryable_in_both_envelopes() -> None:
+    raw = server._knowledge_propagation_error(
+        KnowledgePropagationServiceError(
+            "knowledge_propagation_revision_conflict",
+            "read the latest assignment revision and reformulate",
+        )
+    )
+    legacy_payload = json.loads(raw)
+    transport_outcome = coerce_mcp_tool_outcome(
+        raw,
+        tool_name="okto_pulse_replace_card_knowledge_assignments",
+    )
+
+    assert legacy_payload["retryable"] is False
+    assert transport_outcome.is_error is True
+    assert transport_outcome.code == "knowledge_propagation_revision_conflict"
+    assert transport_outcome.retryable is False
+    assert transport_outcome.structured_content()["retryable"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_card_invalid_v2_envelope_is_canonical_and_pre_transaction(
+    monkeypatch: Any,
+) -> None:
+    async def _agent_ctx(board_id: str) -> Any:
+        return SimpleNamespace(
+            agent_id="agent-1",
+            agent_name="Agent",
+            board_id=board_id,
+            permissions=None,
+            realm_id=None,
+        )
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *args: None)
+
+    def _unexpected_factory() -> Any:
+        raise AssertionError("an invalid envelope must not open a creation UoW")
+
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        _unexpected_factory,
+    )
+
+    raw = await server.okto_pulse_create_card.fn(
+        board_id="board-1",
+        spec_id="spec-1",
+        title="Must not persist",
+        knowledge_propagation={
+            "contract_version": 2,
+            "selection_state": "omitted",
+            "mode": "snapshot",
+            "knowledge_ids": [],
+            "idempotency_key": "invalid-create-1",
+        },
+    )
+    payload = json.loads(raw)
+
+    assert payload == {
+        "error": "omitted_selection_must_be_empty",
+        "code": "omitted_selection_must_be_empty",
+        "detail": "omitted selection requires no ids and no propagation mode",
+        "details": {},
+        "retryable": False,
+    }
+    assert "KnowledgePropagationContractError" not in raw
+    assert "not JSON serializable" not in raw
+    assert json.dumps(payload)
+
+
+@pytest.mark.asyncio
+async def test_derive_spec_invalid_v2_envelope_is_canonical_and_pre_transaction(
+    monkeypatch: Any,
+) -> None:
+    async def _agent_ctx(board_id: str) -> Any:
+        return SimpleNamespace(
+            agent_id="agent-1",
+            agent_name="Agent",
+            board_id=board_id,
+            permissions=None,
+            realm_id=None,
+        )
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *args: None)
+
+    def _unexpected_factory() -> Any:
+        raise AssertionError("an invalid envelope must not open a derivation UoW")
+
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        _unexpected_factory,
+    )
+
+    raw = await server.okto_pulse_derive_spec_from_refinement.fn(
+        board_id="board-1",
+        refinement_id="refinement-1",
+        knowledge_propagation={
+            "contract_version": 2,
+            "selection_state": "omitted",
+            "mode": "snapshot",
+            "knowledge_ids": [],
+            "idempotency_key": "invalid-derive-1",
+        },
+    )
+    payload = json.loads(raw)
+
+    assert payload == {
+        "error": "omitted_selection_must_be_empty",
+        "code": "omitted_selection_must_be_empty",
+        "detail": "omitted selection requires no ids and no propagation mode",
+        "details": {},
+        "retryable": False,
+    }
+    assert "KnowledgePropagationContractError" not in raw
+    assert "not JSON serializable" not in raw
+
+
+@pytest.mark.asyncio
+async def test_create_card_pydantic_v2_error_has_only_json_safe_details(
+    monkeypatch: Any,
+) -> None:
+    async def _agent_ctx(board_id: str) -> Any:
+        return SimpleNamespace(
+            agent_id="agent-1",
+            agent_name="Agent",
+            board_id=board_id,
+            permissions=None,
+            realm_id=None,
+        )
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *args: None)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("an invalid envelope must not open a creation UoW")
+        ),
+    )
+
+    raw = await server.okto_pulse_create_card.fn(
+        board_id="board-1",
+        spec_id="spec-1",
+        title="Must not persist",
+        knowledge_propagation={
+            "contract_version": 2,
+            "selection_state": "explicit_ids",
+            "mode": "snapshot",
+            "knowledge_ids": ["kb-1"],
+            "idempotency_key": "invalid-create-2",
+            # justification intentionally omitted
+        },
+    )
+    payload = json.loads(raw)
+
+    assert payload["error"] == "knowledge_propagation_invalid_request"
+    assert payload["retryable"] is False
+    assert payload["details"]["issues"] == [
+        {
+            "path": "knowledge_propagation",
+            "code": "value_error",
+            "detail": (
+                "Value error, justification is required for non-omitted "
+                "knowledge propagation"
+            ),
+        }
+    ]
+    assert "errors.pydantic.dev" not in raw
+    assert json.dumps(payload)
 
 
 def test_four_card_assignment_tools_publish_exact_v2_request_contracts() -> None:

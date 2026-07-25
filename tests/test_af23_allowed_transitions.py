@@ -239,6 +239,14 @@ async def _seed_fixture() -> tuple[str, str, str, str]:
                 business_rules=[],
                 api_contracts=[],
                 technical_requirements=[],
+                decisions=[
+                    {
+                        "id": "decision-af23",
+                        "title": "Exercise transition preview",
+                        "status": "active",
+                    }
+                ],
+                skip_decisions_coverage=True,
             )
         )
         await db.commit()
@@ -268,6 +276,67 @@ async def test_use_case_resolves_entity_status_and_exposes_unlock_edges() -> Non
         "cancelled",
     ]
     assert any(item["gate"] == "unlock_content" for item in payload["allowed_transitions"])
+    in_progress = next(
+        item
+        for item in payload["allowed_transitions"]
+        if item["to_status"] == "in_progress"
+    )
+    assert "spec_evaluation_required" in in_progress["blocked_reason"]
+
+
+@pytest.mark.asyncio
+async def test_entity_scoped_read_model_previews_resource_gate_blocker() -> None:
+    board_id = _id("af23-gated-board")
+    ideation_id = _id("af23-gated-ideation")
+    async with get_session_factory()() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name="AF23 gated",
+                owner_id=USER,
+                realm_id=LOCAL_REALM_ID,
+                settings={"skip_cognitive_consolidation": True},
+            )
+        )
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="AF23 gated ideation",
+                status=IdeationStatus.EVALUATING,
+                created_by=USER,
+            )
+        )
+        await db.commit()
+
+    with patch.object(
+        IdeationService,
+        "_validate_cognitive_done",
+        AsyncMock(return_value=None),
+    ):
+        async with get_session_factory()() as db:
+            result = await ListAllowedTransitionsUseCase().execute(
+                ListAllowedTransitionsCommand(
+                    board_id,
+                    "ideation",
+                    entity_id=ideation_id,
+                ),
+                actor=ActorContext(
+                    USER,
+                    "rest",
+                    board_id=board_id,
+                    realm_id=LOCAL_REALM_ID,
+                ),
+                uow=_wrap_uow(db),
+            )
+
+    done = next(
+        transition
+        for transition in result.read_model.allowed_transitions
+        if transition.to_status == "done"
+    )
+    assert done.blocked_reason is not None
+    assert "resource_gate_missing_resources" in done.blocked_reason
 
 
 @pytest.mark.asyncio

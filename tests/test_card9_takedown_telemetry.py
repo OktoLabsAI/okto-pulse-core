@@ -133,11 +133,14 @@ def test_query_rejects_non_datetime_observation_time() -> None:
 
 def test_transition_contract_requires_attempt_for_delivery_states() -> None:
     intent = _transition(TakedownState.INTENT_CREATED)
+    keyed_intent = replace(intent, delivery_key=DELIVERY_KEY)
     graph = _transition(TakedownState.GRAPH_DEMOTED)
 
     assert intent.attempt is None
     assert intent.delivery_key is None
     assert intent.transition_key == f"takedown:{DELETE_EVENT_ID}:intent_created"
+    assert keyed_intent.delivery_key == DELIVERY_KEY
+    assert keyed_intent.transition_key == intent.transition_key
     assert graph.attempt is None
     assert graph.transition_key == f"takedown:{DELIVERY_KEY}:graph_demoted"
 
@@ -178,22 +181,7 @@ def test_transition_rejects_unknown_state_and_missing_delivery_key() -> None:
         )
 
 
-def test_transition_rejects_identity_fields_outside_their_state_domain() -> None:
-    with pytest.raises(
-        ValueError,
-        match="takedown_telemetry_delivery_key_forbidden",
-    ):
-        TakedownTransition(
-            delete_event_id=DELETE_EVENT_ID,
-            delivery_key=DELIVERY_KEY,
-            board_id="board-card9",
-            artifact_type="spec",
-            artifact_id="spec-card9",
-            generation=1,
-            state=TakedownState.INTENT_CREATED,
-            occurred_at=NOW,
-        )
-
+def test_transition_rejects_attempt_outside_delivery_states() -> None:
     for state in (TakedownState.INTENT_CREATED, TakedownState.GRAPH_DEMOTED):
         with pytest.raises(ValueError, match="takedown_telemetry_attempt_invalid"):
             TakedownTransition(

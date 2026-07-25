@@ -135,10 +135,12 @@ class TakedownTransition:
             self.delivery_key,
             field_name="delivery_key",
         )
-        if state is TakedownState.INTENT_CREATED:
-            if delivery_key is not None:
-                raise ValueError("takedown_telemetry_delivery_key_forbidden")
-        elif delivery_key is None:
+        # New governed-delete writers know the deterministic delivery identity
+        # before the asynchronous worker runs, so the intent transition may
+        # carry it.  ``None`` remains valid for historical intent rows written
+        # before that identity was persisted; every later state still requires
+        # the key.
+        if state is not TakedownState.INTENT_CREATED and delivery_key is None:
             raise ValueError("takedown_telemetry_delivery_key_required")
         if state not in _ATTEMPT_STATES and self.attempt is not None:
             raise ValueError("takedown_telemetry_attempt_invalid")

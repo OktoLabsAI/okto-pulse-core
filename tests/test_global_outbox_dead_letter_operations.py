@@ -7,6 +7,7 @@ import pytest
 from okto_pulse.core.application.global_outbox_dead_letter import (
     GlobalOutboxDeadLetterError,
     GlobalOutboxDeadLetterOperations,
+    classify_global_outbox_dead_letter,
     global_outbox_dead_letter_metric_snapshot,
     reset_global_outbox_dead_letter_metrics_for_tests,
 )
@@ -80,6 +81,33 @@ class MemoryGlobalOutboxStore:
 
     async def requeue_terminal_events(self, context, events) -> None:
         await self.save_events(context, events)
+
+
+@pytest.mark.parametrize(
+    ("last_error", "expected"),
+    [
+        (
+            "graph_memory_pressure:LadybugDB open is cooling down "
+            "after native allocation pressure",
+            "global_open_failure",
+        ),
+        (
+            "graph_memory_pressure:LadybugDB allocation failed while opening "
+            "global/discovery.lbug",
+            "global_open_failure",
+        ),
+        (
+            "LadybugDB open is cooling down after native allocation pressure",
+            "global_open_failure",
+        ),
+        ("validation_failed: invalid digest payload", "unclassified_failure"),
+    ],
+)
+def test_memory_pressure_dead_letters_are_global_open_failures(
+    last_error: str,
+    expected: str,
+) -> None:
+    assert classify_global_outbox_dead_letter(last_error) == expected
 
 
 @pytest.mark.asyncio

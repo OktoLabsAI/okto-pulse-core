@@ -13,12 +13,21 @@ from okto_pulse.core.application.use_cases.mcp_card_crud import (
     McpDeleteCardCommand,
     McpDeleteCardUseCase,
 )
+from okto_pulse.core.application.use_cases.mcp_ideation_crud import (
+    McpDeleteIdeationCommand,
+    McpDeleteIdeationUseCase,
+)
+from okto_pulse.core.application.use_cases.mcp_refinement_crud import (
+    McpDeleteRefinementCommand,
+    McpDeleteRefinementUseCase,
+)
 from okto_pulse.core.application.use_cases.spec_crud import (
     DeleteSpecCommand,
     DeleteSpecUseCase,
 )
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.services.main import GovernedArtifactDeletionReceipt
 
 
 class _UowContext:
@@ -327,3 +336,109 @@ async def test_delete_spec_mcp_envelope_exposes_takedown_receipt() -> None:
         payload = json.loads(await tool.fn(board_id="board-takedown", spec_id="spec-1"))
 
     assert payload == {"success": True, "takedown": receipt_payload}
+
+
+def test_governed_deletion_receipt_exposes_descendant_handles() -> None:
+    child = GovernedArtifactDeletionReceipt(
+        board_id="board-takedown",
+        artifact_type="sprint",
+        artifact_id="sprint-1",
+        delete_event_id="delete-sprint-1",
+        generation=1,
+        reconcile_intent_id="intent-sprint-1",
+        delivery_key="gd_parity:board-takedown:sprint:sprint-1:1",
+    )
+    parent = GovernedArtifactDeletionReceipt(
+        board_id="board-takedown",
+        artifact_type="spec",
+        artifact_id="spec-1",
+        delete_event_id="delete-spec-1",
+        generation=1,
+        reconcile_intent_id="intent-spec-1",
+        delivery_key="gd_parity:board-takedown:spec:spec-1:1",
+        descendant_deletions=(child,),
+    )
+
+    payload = parent.to_dict()
+
+    assert payload["descendant_deletions"] == [child.to_dict()]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "use_case", "service_name", "get_name", "delete_name"),
+    [
+        (
+            McpDeleteIdeationCommand("ideation-1", "board-takedown"),
+            McpDeleteIdeationUseCase(),
+            "ideations",
+            "get_ideation",
+            "delete_ideation",
+        ),
+        (
+            McpDeleteRefinementCommand("refinement-1", "board-takedown"),
+            McpDeleteRefinementUseCase(),
+            "refinements",
+            "get_refinement",
+            "delete_refinement",
+        ),
+    ],
+)
+async def test_parent_delete_use_cases_return_governed_takedown(
+    command: object,
+    use_case: object,
+    service_name: str,
+    get_name: str,
+    delete_name: str,
+) -> None:
+    artifact_id = command.ideation_id if service_name == "ideations" else command.refinement_id
+    receipt_payload = {
+        "board_id": "board-takedown",
+        "artifact_type": service_name.removesuffix("s"),
+        "artifact_id": artifact_id,
+        "delete_event_id": f"delete-{artifact_id}",
+        "generation": 1,
+        "reconcile_intent_id": f"intent-{artifact_id}",
+        "delivery_key": (
+            f"gd_parity:board-takedown:{service_name.removesuffix('s')}:{artifact_id}:1"
+        ),
+    }
+    receipt = SimpleNamespace(to_dict=lambda: dict(receipt_payload))
+    service = SimpleNamespace()
+    setattr(
+        service,
+        get_name,
+        AsyncMock(return_value=SimpleNamespace(board_id="board-takedown")),
+    )
+    delete = AsyncMock(return_value=receipt)
+    setattr(service, delete_name, delete)
+
+    class _Uow:
+        def __init__(self) -> None:
+            self.services = SimpleNamespace(**{service_name: service})
+            self.committed = False
+
+        async def commit(self) -> None:
+            self.committed = True
+
+    uow = _Uow()
+    result = await use_case.execute(
+        command,
+        actor=ActorContext(
+            "agent-1",
+            "mcp",
+            actor_name="Agent 1",
+            board_id="board-takedown",
+            realm_id=LOCAL_REALM_ID,
+        ),
+        uow=uow,
+    )
+
+    assert result.deleted is True
+    assert result.takedown == receipt_payload
+    delete.assert_awaited_once_with(
+        artifact_id,
+        "agent-1",
+        return_receipt=True,
+    )
+    assert uow.committed is True

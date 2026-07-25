@@ -15,17 +15,24 @@ Helper (pure unit tests over SimpleNamespace entities):
 Integration (service move flows over the test DB):
   - CardService.move_card, SpecService.move_spec, IdeationService.move_ideation,
     RefinementService.move_refinement, SprintService.move_sprint
-  - reopen clears (spec cancelled → draft; card cancelled → not_started)
+  - reopen clears (spec/ideation/refinement cancelled → draft;
+    card cancelled → not_started)
+  - MCP full entity reads expose the cancellation audit record
 """
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from mcp_runtime_testing import register_mcp_test_runtime
 
+from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.mcp.cancellation_projection import project_cancellation
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -72,6 +79,20 @@ def _entity(**kwargs):
 
 
 class TestApplyCancellationPolicy:
+    def test_full_read_projection_exposes_cancellation_audit_fields(self):
+        cancelled_at = datetime.now(timezone.utc)
+        assert project_cancellation(
+            _entity(
+                cancellation_reason="Obsolete",
+                cancelled_at=cancelled_at,
+                cancelled_by=USER_ID,
+            )
+        ) == {
+            "cancellation_reason": "Obsolete",
+            "cancelled_at": cancelled_at.isoformat(),
+            "cancelled_by": USER_ID,
+        }
+
     def test_cancel_without_reason_raises_structured_error(self):
         entity = _entity()
         with pytest.raises(CancellationReasonRequiredError) as exc:
@@ -260,6 +281,77 @@ async def _seed_card(db_factory, status=CardStatus.NOT_STARTED) -> str:
 
 
 @pytest.mark.asyncio
+async def test_mcp_full_entity_reads_expose_cancellation_audit_fields(db_factory):
+    ideation_id = await _seed_ideation(db_factory)
+    refinement_id = await _seed_refinement(db_factory)
+    spec_id = await _seed_spec(db_factory)
+    card_id = await _seed_card(db_factory)
+    cancelled_at = datetime.now(timezone.utc)
+
+    async with db_factory() as db:
+        entities = (
+            (await db.get(Ideation, ideation_id), IdeationStatus.CANCELLED),
+            (await db.get(Refinement, refinement_id), RefinementStatus.CANCELLED),
+            (await db.get(Spec, spec_id), SpecStatus.CANCELLED),
+            (await db.get(Card, card_id), CardStatus.CANCELLED),
+        )
+        for entity, status in entities:
+            entity.status = status
+            entity.cancellation_reason = "Regression projection"
+            entity.cancelled_at = cancelled_at
+            entity.cancelled_by = USER_ID
+        await db.commit()
+
+    register_mcp_test_runtime(db_factory)
+    actor = SimpleNamespace(
+        agent_id=USER_ID,
+        agent_name=USER_ID,
+        board_id=BOARD_ID,
+        permissions=["board:read"],
+    )
+
+    async def call(name, **kwargs):
+        tool = await mcp_server.mcp.get_tool(name)
+        return json.loads(await tool.fn(**kwargs))
+
+    with patch.object(
+        mcp_server,
+        "_get_agent_ctx",
+        AsyncMock(return_value=actor),
+    ), patch.object(mcp_server, "check_permission", return_value=None):
+        payloads = (
+            await call(
+                "okto_pulse_get_ideation",
+                board_id=BOARD_ID,
+                ideation_id=ideation_id,
+            ),
+            await call(
+                "okto_pulse_get_refinement",
+                board_id=BOARD_ID,
+                refinement_id=refinement_id,
+            ),
+            await call(
+                "okto_pulse_get_spec",
+                board_id=BOARD_ID,
+                spec_id=spec_id,
+            ),
+            await call(
+                "okto_pulse_get_card",
+                board_id=BOARD_ID,
+                card_id=card_id,
+            ),
+        )
+
+    for payload in payloads:
+        assert payload["cancellation_reason"] == "Regression projection"
+        assert payload["cancelled_by"] == USER_ID
+        projected_at = datetime.fromisoformat(payload["cancelled_at"])
+        if projected_at.tzinfo is None:
+            projected_at = projected_at.replace(tzinfo=timezone.utc)
+        assert projected_at == cancelled_at
+
+
+@pytest.mark.asyncio
 class TestMoveCardCancellation:
     async def test_cancel_requires_reason(self, db_factory):
         from okto_pulse.core.services.main import CardService
@@ -328,7 +420,9 @@ class TestMoveSpecCancellation:
 
 @pytest.mark.asyncio
 class TestMoveIdeationCancellation:
-    async def test_cancel_requires_reason_then_persists(self, db_factory):
+    async def test_cancel_requires_reason_then_persists_then_reopen_clears(
+        self, db_factory
+    ):
         from okto_pulse.core.services.main import IdeationService
         ideation_id = await _seed_ideation(db_factory)
         async with db_factory() as db:
@@ -347,11 +441,25 @@ class TestMoveIdeationCancellation:
             assert moved.cancellation_reason == "Idea rejected after triage"
             assert moved.cancelled_by == USER_ID
             assert moved.cancelled_at is not None
+            await db.commit()
+        async with db_factory() as db:
+            reopened = await IdeationService(db).move_ideation(
+                ideation_id,
+                USER_ID,
+                IdeationMove(status=IdeationStatus.DRAFT),
+            )
+            assert reopened.status == IdeationStatus.DRAFT
+            assert reopened.version == 2
+            assert reopened.cancellation_reason is None
+            assert reopened.cancelled_at is None
+            assert reopened.cancelled_by is None
 
 
 @pytest.mark.asyncio
 class TestMoveRefinementCancellation:
-    async def test_cancel_requires_reason_then_persists(self, db_factory):
+    async def test_cancel_requires_reason_then_persists_then_reopen_clears(
+        self, db_factory
+    ):
         from okto_pulse.core.services.main import RefinementService
         refinement_id = await _seed_refinement(db_factory)
         async with db_factory() as db:
@@ -371,6 +479,18 @@ class TestMoveRefinementCancellation:
             assert moved.cancellation_reason == "Refinement no longer needed"
             assert moved.cancelled_by == USER_ID
             assert moved.cancelled_at is not None
+            await db.commit()
+        async with db_factory() as db:
+            reopened = await RefinementService(db).move_refinement(
+                refinement_id,
+                USER_ID,
+                RefinementMove(status=RefinementStatus.DRAFT),
+            )
+            assert reopened.status == RefinementStatus.DRAFT
+            assert reopened.version == 2
+            assert reopened.cancellation_reason is None
+            assert reopened.cancelled_at is None
+            assert reopened.cancelled_by is None
 
 
 @pytest.mark.asyncio

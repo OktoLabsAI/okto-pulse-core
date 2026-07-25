@@ -811,7 +811,7 @@ class LinkStoriesToIdeationUseCase:
     async def execute(
         self, command: LinkStoriesToIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> LinkStoriesToIdeationResult:
-        from okto_pulse.core.domain.enums import IdeationStatus
+        from okto_pulse.core.domain.enums import IdeationStatus, StoryStatus
         from okto_pulse.core.services.story_permissions import story_state
 
         service = uow.services.stories
@@ -881,6 +881,12 @@ class LinkStoriesToIdeationUseCase:
                 raise ValueError(
                     "Story is already linked to another Ideation. "
                     "A Story can only link to one Ideation."
+                )
+            if story.status != StoryStatus.READY:
+                raise ValueError(
+                    "Only ready Stories can be converted to Ideation. "
+                    f"Current Story status is '{story.status.value}'. "
+                    "Move the Story to 'ready' before linking it."
                 )
             preflighted_story_ids.append(story_id)
 

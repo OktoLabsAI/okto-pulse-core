@@ -49,11 +49,11 @@ Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validatio
 
 ## Ideation transitions
 
-`draft` → `review` → `approved` → `evaluating` → `done`; `cancelled` from any status except `done`. Editing only in `draft`, evaluation only in `evaluating`, derivations only from `done`. Details: `okto-pulse://workflows/ideations`.
+`draft` → `review` → `approved` → `evaluating` → `done`; `cancelled` from any status except `done`; `cancelled` → `draft` reopens a new editable iteration and clears the cancellation record. Editing only in `draft`, evaluation only in `evaluating`, derivations only from `done`. Details: `okto-pulse://workflows/ideations`.
 
 ## Refinement transitions
 
-`draft` → `review` → `approved` → `done`; `done` is frozen (back to `draft` starts a new version). Details: `okto-pulse://workflows/refinements`.
+`draft` → `review` → `approved` → `done`; `done` or `cancelled` → `draft` starts a new editable version, and reopening a cancellation clears its audit record. Details: `okto-pulse://workflows/refinements`.
 
 ## Story transitions
 

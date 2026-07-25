@@ -94,6 +94,31 @@ async def _call_tool(name: str, **kwargs) -> str:
     return await _get_tool_fn(name)(**kwargs)
 
 
+@pytest.mark.parametrize(
+    "tool_name",
+    (
+        "okto_pulse_list_by_board",
+        "okto_pulse_list_qa",
+        "okto_pulse_list_knowledge",
+    ),
+)
+def test_native_filter_schema_preserves_unknown_keys_for_fail_closed_validation(
+    tool_name: str,
+) -> None:
+    """Transport validation must not discard typos before the handler sees them."""
+    import okto_pulse.core.mcp.server as _srv
+
+    tool = _srv.mcp._tool_manager._tools[tool_name]
+    schema = tool.parameters["properties"]["filters"]
+    object_variant = next(
+        variant
+        for variant in schema["anyOf"]
+        if variant.get("type") == "object"
+    )
+
+    assert object_variant["additionalProperties"] is True
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

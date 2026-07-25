@@ -963,8 +963,21 @@ async def test_spec_delete_mints_takedown_for_cascaded_sprint(
 
     with _registered_targeted_adapters():
         async with db_factory() as session:
-            assert await SpecService(session).delete_spec(spec_id, USER_ID)
+            receipt = await SpecService(session).delete_spec(
+                spec_id,
+                USER_ID,
+                return_receipt=True,
+            )
             await session.commit()
+
+    assert receipt
+    receipt_payload = receipt.to_dict()
+    assert receipt_payload["artifact_type"] == "spec"
+    assert receipt_payload["artifact_id"] == spec_id
+    assert [
+        (item["artifact_type"], item["artifact_id"])
+        for item in receipt_payload["descendant_deletions"]
+    ] == [("sprint", sprint_id)]
 
     async with db_factory() as session:
         intents = (

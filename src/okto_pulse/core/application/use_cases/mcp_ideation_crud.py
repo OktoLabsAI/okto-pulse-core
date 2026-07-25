@@ -162,10 +162,15 @@ class McpDeleteIdeationCommand:
 
 
 class McpDeleteIdeationResult:
-    __slots__ = ("deleted",)
+    __slots__ = ("deleted", "takedown")
 
-    def __init__(self, deleted: Any) -> None:
+    def __init__(
+        self,
+        deleted: bool,
+        takedown: dict[str, object] | None = None,
+    ) -> None:
         self.deleted = deleted
+        self.takedown = takedown
 
 
 class McpDeleteIdeationUseCase:
@@ -179,12 +184,21 @@ class McpDeleteIdeationUseCase:
         if not _in_board_scope(existing, command.board_id, actor):
             return McpDeleteIdeationResult(False)
 
-        deleted = await service.delete_ideation(
-            command.ideation_id, actor.actor_id
+        delete_result = await service.delete_ideation(
+            command.ideation_id,
+            actor.actor_id,
+            return_receipt=True,
         )
-        if deleted:
-            await commit(uow)
-        return McpDeleteIdeationResult(deleted)
+        if not delete_result:
+            return McpDeleteIdeationResult(False)
+        receipt_serializer = getattr(delete_result, "to_dict", None)
+        if not callable(receipt_serializer):
+            raise RuntimeError("governed_delete_receipt_missing")
+        takedown = receipt_serializer()
+        if not isinstance(takedown, dict):
+            raise RuntimeError("governed_delete_receipt_invalid")
+        await commit(uow)
+        return McpDeleteIdeationResult(True, takedown)
 
 
 # --- snapshot / history -----------------------------------------------------

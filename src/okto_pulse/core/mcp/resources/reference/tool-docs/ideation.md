@@ -85,7 +85,9 @@ Args:
     ideation_id: Ideation ID
 
 Returns:
-    JSON with success status
+    JSON with success status and a governed `takedown` receipt. Cascaded
+    refinement/spec/sprint receipts are exposed recursively under
+    `takedown.descendant_deletions`.
 
 ## `okto_pulse_delete_ideation_question`
 
@@ -202,6 +204,7 @@ Allowed transitions:
 - approved → review, evaluating, cancelled
 - evaluating → approved, done, cancelled
 - done → draft (new version)
+- cancelled → draft (new version; cancellation record cleared)
 
 Args:
     board_id: Board ID

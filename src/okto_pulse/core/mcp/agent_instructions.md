@@ -41,7 +41,7 @@ Cache the resource within the session; re-fetch when you switch domains — reso
 
 ## Pre-Flight Checklist (READ FIRST)
 
-**Before any board work, `resources/read okto-pulse://workflows/preflight`.** It carries the five mandatory sequences: **session pre-flight**, **entity-context pre-flight** (`get_*_context` with `profile="full"` before any move/validation), **card-execution pre-flight** (never skip steps 1 and 3), **Resource Gate pre-flight**, and **Design System pre-flight** (blocking gate on `okto_pulse_add_screen_mockup`/`okto_pulse_update_screen_mockup`). The full step-by-step lives in that resource; this pointer stays inline so the bootstrap survives even if the instructions blob is truncated.
+**Before any board work, `resources/read okto-pulse://workflows/preflight`.** It carries the five mandatory sequences: **session pre-flight**, **entity-context pre-flight** (`get_*_context` with `profile="full"` before any move/validation; cards use bounded `get_task_context(profile="full", context_scope="gate")`), **card-execution pre-flight** (never skip steps 1 and 3), **Resource Gate pre-flight**, and **Design System pre-flight** (blocking gate on `okto_pulse_add_screen_mockup`/`okto_pulse_update_screen_mockup`). The full step-by-step lives in that resource; this pointer stays inline so the bootstrap survives even if the instructions blob is truncated.
 
 ---
 
@@ -70,7 +70,7 @@ Tool schemas are delivered via the MCP `tools/list` protocol (lazy). Full catalo
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec,sprint}`, `submit_{task_validation,spec_validation,spec_evaluation,sprint_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
 
 ### Response projection profiles — summary-first reads
-High-volume reads can be returned under a projection profile — see `okto-pulse://reference/projection-profiles`. Use `summary` (the default/slim profile) for cheap exploration; `detail`/`full` to read an item's body; `legacy` for compatibility. **Summary-first is for exploration ONLY.** It never replaces the mandatory full `get_*_context` read required before any status-changing move (moving a card/spec/sprint, submitting a gate). Always read full context before you mutate. Profiles apply to `get_*_context`/`copy_*` reads — NOT to the `list_*` tools: `okto_pulse_list_by_board(entity_type="spec")` returns full descriptions (payloads of tens of KB) — filter by status/labels and read bodies via `okto_pulse_get_spec`; `entity_type="refinement"` requires `filters.ideation_id`.
+High-volume reads can be returned under a projection profile — see `okto-pulse://reference/projection-profiles`. Use `summary` (the default/slim profile) for cheap exploration; `detail` plus follow-ups for bounded body reads; `full` for complete single-item reads; and `legacy` for compatibility. **Summary-first is for exploration ONLY.** It never replaces the mandatory full gate read required before any status-changing move (moving a card/spec/sprint, submitting a gate). For cards use `okto_pulse_get_task_context(profile="full", context_scope="gate")`; other entity-context tools use `profile="full"`. Profiles apply to `get_*_context`/`copy_*` reads — NOT to the `list_*` tools: `okto_pulse_list_by_board(entity_type="spec")` returns full descriptions (payloads of tens of KB) — filter by status/labels and read bodies via `okto_pulse_get_spec`; `entity_type="refinement"` requires `filters.ideation_id`.
 
 ---
 

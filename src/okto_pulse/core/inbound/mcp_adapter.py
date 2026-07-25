@@ -45,4 +45,15 @@ class MCPAdapterContract:
     @staticmethod
     def error(exc: Exception) -> str:
         """Map a domain/use case error to the MCP JSON error envelope."""
+        code = getattr(exc, "code", None)
+        if isinstance(code, str) and code.strip():
+            details = getattr(exc, "details", None)
+            payload: dict[str, Any] = {
+                "error": code,
+                "code": code,
+                "detail": str(exc),
+            }
+            if isinstance(details, dict) and details:
+                payload["details"] = details
+            return json.dumps(payload)
         return json.dumps({"error": str(exc)})

@@ -86,11 +86,11 @@ Returns:
 
 ## `okto_pulse_get_task_context`
 
-Get the FULL execution context for a task card. Aggregates the card data with
-all relevant spec information: functional requirements, technical requirements,
-acceptance criteria, test scenarios, business rules, API contracts, integration
-requirements, observability requirements, knowledge base entries, screen
-mockups, Q&A, and comments.
+Get execution context for a task card. The default `context_scope="all"`
+aggregates card data with all relevant spec requirements and artifacts. The
+additive `profile="full", context_scope="gate"` mode returns the bounded
+pre-mutation gate/readiness slice plus a content-addressed manifest and
+drilldowns.
 
 **Always call this before starting work on a task** — it provides everything
 an agent needs to understand what to build, how to test it, and what rules apply.
@@ -106,14 +106,18 @@ Args:
     include_superseded: When "false" (default), superseded/revoked decisions are
         filtered out; set "true" for full decision history.
     profile: Response projection — one of: summary (default), detail, full,
-        legacy. Use `summary` for exploration and `full` before card work or
+        legacy. Use `summary` for exploration, `detail` plus follow-ups for
+        bounded body reads, and `full` + `context_scope="gate"` before
         status-changing moves. See okto-pulse://reference/projection-profiles.
+    context_scope: `all` (default, historical complete body) or `gate`
+        (`profile="full"` only; bounded mandatory pre-mutation view).
 
 Returns:
-    JSON with complete task context: card details + spec requirements + linked artifacts.
+    JSON with task context selected by profile/scope.
     `reviewer_separation` projects the current caller's task-validation policy
     decision (`mode`, `allowed`, `warning`, creator/assignee/executor
-    `conflicts`, and `source`); inspect it from `profile="full"` before validating.
+    `conflicts`, and `source`); inspect it from
+    `profile="full", context_scope="gate"` before validating.
     Test cards expose `test_card_operational_flow`; `gate_readiness` mirrors the
     active done-gate and cognitive-readiness verdict without mutating or skipping
     anything.

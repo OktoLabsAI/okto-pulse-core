@@ -642,6 +642,7 @@ class GetDesignSystemUseCase:
             actor.actor_id,
             board_id=command.board_id or None,
             board_access_authorized=board_authorized,
+            allow_owned_global_without_link=True,
         )
         return DataResult(
             serialize_design_system_profile(item, profile=command.profile or "full")

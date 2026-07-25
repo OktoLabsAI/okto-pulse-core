@@ -141,8 +141,11 @@ def classify_global_outbox_dead_letter(last_error: str | None) -> str:
             "graph_corruption",
             "graph_unavailable",
             "graph_lock_contention",
+            "graph_memory_pressure",
             "memoryerror",
             "bad allocation",
+            "allocation failed",
+            "cooling down",
             "failed to open global",
             "could not open global",
         )

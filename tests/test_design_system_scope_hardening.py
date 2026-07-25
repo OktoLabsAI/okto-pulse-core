@@ -236,18 +236,24 @@ async def test_mcp_design_system_id_operations_hide_cross_owner_board_and_missin
         assert updated["version"] == 2
         baseline = await _state(ids)
 
+        # The MCP get tool always carries a board context. Once that context
+        # has authenticated the actor, their own global catalog item remains
+        # readable even when it is not the board's effective link. Mutations
+        # below remain board/link scoped.
+        owned_global = await _mcp_call(
+            ids["owner_a"],
+            "okto_pulse_get_design_system",
+            board_id=ids["board_b"],
+            design_system_id=ids["global_a"],
+        )
+        assert owned_global["id"] == ids["global_a"]
+
         probes = [
             await _mcp_call(
                 ids["owner_a"],
                 "okto_pulse_get_design_system",
                 board_id=ids["board_a"],
                 design_system_id=ids["global_b"],
-            ),
-            await _mcp_call(
-                ids["owner_a"],
-                "okto_pulse_get_design_system",
-                board_id=ids["board_b"],
-                design_system_id=ids["global_a"],
             ),
             await _mcp_call(
                 ids["owner_a"],

@@ -91,6 +91,7 @@ async def _seed_guideline(
     *,
     scope: str = "global",
     board_id: str | None = None,
+    tags: list[str] | None = None,
 ) -> str:
     from sqlalchemy_test_models import Guideline
 
@@ -101,7 +102,7 @@ async def _seed_guideline(
                 id=guideline_id,
                 title="foreign guideline",
                 content="must stay scoped",
-                tags=["af23"],
+                tags=["af23"] if tags is None else tags,
                 scope=scope,
                 board_id=board_id,
                 owner_id=owner,
@@ -272,6 +273,21 @@ async def test_ts2_query_scope_actor_is_authoritative_when_present() -> None:
     assert other_hidden is None
 
 
+@pytest.mark.asyncio
+async def test_guideline_tag_filter_matches_exact_member_in_multi_tag_arrays() -> None:
+    from okto_pulse.core.services import GuidelineService
+
+    tag = f"af23-alpha-{uuid.uuid4().hex}"
+    single = await _seed_guideline(USER, tags=[tag])
+    multi = await _seed_guideline(USER, tags=["before", tag, "after"])
+    await _seed_guideline(USER, tags=[f"{tag}-suffix"])
+
+    async with get_session_factory()() as db:
+        guidelines = await GuidelineService(db).list_guidelines(USER, tag=tag)
+
+    assert {guideline.id for guideline in guidelines} == {single, multi}
+
+
 def _async_function_source(path: Path, function_name: str) -> str:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -305,6 +321,40 @@ async def _call_mcp_tool(tool_name: str, **kwargs) -> dict:
     register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)):
         return json.loads(await getattr(mcp_server, tool_name).fn(**kwargs))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("offset", "limit"),
+    (
+        (-1, 50),
+        (0, 0),
+        (0, 250.5),
+        ("0", 50),
+        (2**63, 50),
+    ),
+)
+async def test_mcp_list_guidelines_rejects_invalid_page_windows(
+    offset: int,
+    limit: int,
+) -> None:
+    payload = await _call_mcp_tool(
+        "okto_pulse_list_guidelines",
+        board_id="board-guideline-window",
+        offset=offset,
+        limit=limit,
+    )
+
+    assert payload["error_code"] == "page_request_invalid_window"
+
+
+def test_mcp_list_guidelines_schema_uses_integer_page_fields() -> None:
+    from okto_pulse.core.mcp import server as mcp_server
+
+    tool = mcp_server.mcp._tool_manager._tools["okto_pulse_list_guidelines"]
+
+    assert tool.parameters["properties"]["offset"]["type"] == "integer"
+    assert tool.parameters["properties"]["limit"]["type"] == "integer"
 
 
 def test_ts3_mcp_guideline_tools_use_scoped_use_cases_not_board_owner() -> None:

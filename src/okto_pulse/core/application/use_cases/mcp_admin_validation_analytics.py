@@ -305,6 +305,7 @@ class McpGetDesignSystemUseCase:
             actor.actor_id,
             board_id=command.board_id,
             board_access_authorized=True,
+            allow_owned_global_without_link=True,
         )
         return _DataResult(
             serialize_design_system_profile(item, profile=command.profile)

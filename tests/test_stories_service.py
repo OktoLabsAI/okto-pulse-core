@@ -455,6 +455,7 @@ async def test_topic_merge_moves_stories_preserves_links_and_archives_source(db_
                 topic_id=source.id,
                 title="Link preserving story",
                 description="As a reviewer, I want lineage links to survive a topic merge.",
+                status=StoryStatus.READY,
             ),
         )
         archived_story = await service.create_story(
@@ -698,6 +699,7 @@ async def test_story_links_require_editable_ideations_and_reject_duplicates(db_f
                 topic_id=topic.id,
                 title="Link Story through editable Ideation selector",
                 description="As a product lead, I want Story links to target editable ideations.",
+                status=StoryStatus.READY,
             ),
         )
         assert story is not None

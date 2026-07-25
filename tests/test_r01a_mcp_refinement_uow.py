@@ -428,7 +428,9 @@ async def test_get_update_move_delete_roundtrip(_seed):
     deleted = await _call(
         "okto_pulse_delete_refinement", board_id=BOARD_ID, refinement_id=_seed
     )
-    assert deleted == {"success": True}
+    assert deleted["success"] is True
+    assert deleted["takedown"]["artifact_type"] == "refinement"
+    assert deleted["takedown"]["artifact_id"] == _seed
 
 
 @pytest.mark.asyncio
@@ -455,7 +457,12 @@ async def test_delete_refinement_cascades_derived_specs(_seed):
         "okto_pulse_delete_refinement", board_id=BOARD_ID, refinement_id=_seed
     )
 
-    assert deleted == {"success": True}
+    assert deleted["success"] is True
+    assert deleted["takedown"]["artifact_type"] == "refinement"
+    descendants = deleted["takedown"]["descendant_deletions"]
+    assert len(descendants) == 1
+    assert descendants[0]["artifact_type"] == "spec"
+    assert descendants[0]["artifact_id"] == spec_id
     async with factory() as db:
         assert await db.get(Refinement, _seed) is None
         assert await db.get(Spec, spec_id) is None

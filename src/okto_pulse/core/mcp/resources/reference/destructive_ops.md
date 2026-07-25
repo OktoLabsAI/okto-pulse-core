@@ -64,3 +64,7 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
 3. **Never delete as a shortcut to fix a validation error.** If the system is rejecting a move because an entity exists, fix the entity, don't delete it.
 4. **`okto_pulse_remove_business_rule` / `okto_pulse_remove_api_contract` break coverage** — the spec that depended on them will now fail `okto_pulse_submit_spec_validation`. Use them only when you're replacing the BR/contract with another one in the same action.
 5. **`okto_pulse_delete_ideation` / `okto_pulse_delete_refinement` cascade.** You're deleting the entire sub-tree, not just the ideation. Confirm the blast radius.
+6. **Retain every takedown handle.** Governed entity deletes return a root
+   `takedown` receipt. Cascade responses additionally expose recursive
+   `descendant_deletions`; each receipt can be followed independently with
+   `okto_pulse_kg_takedown_status`.

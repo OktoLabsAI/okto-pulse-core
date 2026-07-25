@@ -188,6 +188,28 @@ def test_builder_formats_path_c_hotfix_lane_without_reopen_guidance():
     assert payload["facts"]["lane_type"] == "hotfix"
 
 
+def test_standard_sprint_message_is_card_type_neutral():
+    payload = (
+        BugWorkflowRemediationMessageBuilder()
+        .build_from_sprint_lane_block(
+            code="sprint_required",
+            remediation="assign_sprint",
+            facts={
+                "card_id": "normal-1",
+                "spec_id": "spec-1",
+                "next_action": "assign_sprint",
+            },
+        )
+        .to_dict()
+    )
+
+    assert payload["remediation_path"] == "standard_sprint"
+    assert "Bug card" not in payload["message"]
+    assert payload["message"] == (
+        "Card cannot advance until its sprint lane is executable."
+    )
+
+
 def test_missing_test_task_points_to_path_a_then_path_b_if_needed():
     message = BugWorkflowRemediationMessageBuilder().build_missing_regression_test_task()
     payload = message.to_dict()
