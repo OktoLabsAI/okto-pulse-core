@@ -21,6 +21,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageParentIntent,
+)
 from okto_pulse.core.kg.schemas import (
     EdgeCandidate,
     NodeCandidate,
@@ -66,6 +69,9 @@ class ConsolidationSession:
     raw_content: str = ""
     node_candidates: dict[str, NodeCandidate] = field(default_factory=dict)
     edge_candidates: dict[str, EdgeCandidate] = field(default_factory=dict)
+    spec_lineage_parent_intent: SpecLineageParentIntent = (
+        SpecLineageParentIntent.PRESERVE
+    )
     reconciliation_hints: dict[str, ReconciliationHint] = field(default_factory=dict)
     # Fields populated during commit — used by abort/compensating delete.
     committed_graph_node_refs: list[dict[str, Any]] = field(default_factory=list)

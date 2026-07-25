@@ -15,6 +15,10 @@ from contextvars import copy_context
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Protocol
 
+from okto_pulse.core.kg.board_rebuild_adapter import (
+    CARD_SOURCE_ARTIFACT_TYPES,
+    DETERMINISTIC_SOURCE_ARTIFACT_TYPES,
+)
 from okto_pulse.core.kg.connectivity_guard import (
     KGConnectivityRuleRegistry,
     SourceResolutionStatus,
@@ -34,6 +38,10 @@ ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL = "pending_backfill"
 ZERO_ORPHAN_VALIDATION_FAILED = "failed_orphan_validation"
 ZERO_ORPHAN_VALIDATION_UNAVAILABLE = "unavailable"
 ZERO_ORPHAN_VALIDATION_NOT_EVALUATED = "not_evaluated"
+SOURCE_REF_MISSING = "missing_source_artifact_ref"
+SOURCE_REF_RESOLVED = "resolved_source_artifact_ref"
+SOURCE_REF_UNRESOLVED = SourceResolutionStatus.UNRESOLVED_SOURCE_REF.value
+_RELATIONAL_SOURCE_LOOKUP_BATCH_SIZE = 400
 
 _WRITE_KEYWORDS = (
     " CREATE ",
@@ -144,6 +152,55 @@ class OrphanMetricSinkProtocol(Protocol):
 class OrphanAuditSinkProtocol(Protocol):
     def emit(self, record: OrphanAuditRecord) -> None:
         """Record one safe orphan-integrity audit record."""
+
+
+class OrphanSourceResolverProtocol(Protocol):
+    def resolve_many(
+        self,
+        *,
+        board_id: str,
+        source_artifact_refs: tuple[str, ...],
+    ) -> dict[str, str]:
+        """Resolve source refs against their owning board's relational data."""
+
+
+class RelationalOrphanSourceResolver:
+    """Board-scoped source resolver backed by the edition persistence ports."""
+
+    def resolve_many(
+        self,
+        *,
+        board_id: str,
+        source_artifact_refs: tuple[str, ...],
+    ) -> dict[str, str]:
+        refs = tuple(dict.fromkeys(source_artifact_refs))
+        statuses = {ref: SOURCE_REF_UNRESOLVED for ref in refs}
+        identities = tuple(
+            identity
+            for ref in refs
+            if (identity := _parse_relational_source_ref(ref)) is not None
+        )
+        if not identities:
+            return statuses
+        try:
+            resolved_refs = _run_async_blocking(
+                _resolve_relational_source_identities(
+                    board_id=board_id,
+                    identities=identities,
+                )
+            )
+        except Exception:
+            # Resolution failure must never hide a zero-degree node. Keep every
+            # affected ref unresolved and preserve the structural orphan signal.
+            logger.warning(
+                "kg.orphan.source_resolution_unavailable board=%s",
+                board_id,
+                exc_info=True,
+            )
+            return statuses
+        for ref in resolved_refs:
+            statuses[ref] = SOURCE_REF_RESOLVED
+        return statuses
 
 
 @dataclass
@@ -469,10 +526,12 @@ class OrphanNodeScanner:
         registry: KGConnectivityRuleRegistry | None = None,
         metric_sink: OrphanMetricSinkProtocol | None = None,
         audit_sink: OrphanAuditSinkProtocol | None = None,
+        source_resolver: OrphanSourceResolverProtocol | None = None,
     ) -> None:
         self._registry = registry or KGConnectivityRuleRegistry()
         self._metric_sink = metric_sink
         self._audit_sink = audit_sink or LoggingOrphanAuditSink()
+        self._source_resolver = source_resolver or RelationalOrphanSourceResolver()
 
     def rule_node_types(self) -> tuple[str, ...]:
         return self._registry.rule_node_types()
@@ -523,6 +582,7 @@ class OrphanNodeScanner:
         by_writer_path: dict[str, int] = {}
         unresolved_reasons: dict[str, int] = {}
         allowlisted_root_count = 0
+        orphan_rows: list[_NodeRow] = []
 
         for current_type in node_types:
             try:
@@ -552,21 +612,35 @@ class OrphanNodeScanner:
                 by_writer_path[row.writer_path] = (
                     by_writer_path.get(row.writer_path, 0) + 1
                 )
-                status = _source_resolution_status(row.source_artifact_ref)
-                unresolved_reasons[status] = unresolved_reasons.get(status, 0) + 1
-                if len(samples) < sample_limit:
-                    samples.append(
-                        OrphanNodeSample(
-                            node_id=row.node_id,
-                            node_type=row.node_type,
-                            writer_path=row.writer_path,
-                            source_artifact_ref=row.source_artifact_ref,
-                            source_resolution_status=status,
-                            generation_id=generation_id,
-                            reason=ZERO_DEGREE_REASON,
-                            correlation_id=correlation_id,
-                        )
+                orphan_rows.append(row)
+
+        source_statuses = self._source_resolver.resolve_many(
+            board_id=board_id,
+            source_artifact_refs=tuple(
+                row.source_artifact_ref
+                for row in orphan_rows
+                if row.source_artifact_ref
+            ),
+        )
+        for row in orphan_rows:
+            status = _source_resolution_status(
+                row.source_artifact_ref,
+                source_statuses=source_statuses,
+            )
+            unresolved_reasons[status] = unresolved_reasons.get(status, 0) + 1
+            if len(samples) < sample_limit:
+                samples.append(
+                    OrphanNodeSample(
+                        node_id=row.node_id,
+                        node_type=row.node_type,
+                        writer_path=row.writer_path,
+                        source_artifact_ref=row.source_artifact_ref,
+                        source_resolution_status=status,
+                        generation_id=generation_id,
+                        reason=ZERO_DEGREE_REASON,
+                        correlation_id=correlation_id,
                     )
+                )
 
         orphan_count = sum(by_type.values())
         report = OrphanScanReport(
@@ -684,15 +758,37 @@ class OrphanBackfillReconciler:
 
         if connection is None:
             connection = _BoardGraphPortConnection(board_id)
-        return self._run_with_connection(
-            connection,
-            board_id=board_id,
-            dry_run=dry_run,
-            sample_limit=sample_limit,
-            requested_node_ids=requested_node_ids,
-            generation_id=generation_id,
-            correlation_id=correlation_id,
-        )
+        run_args = {
+            "board_id": board_id,
+            "dry_run": dry_run,
+            "sample_limit": sample_limit,
+            "requested_node_ids": requested_node_ids,
+            "generation_id": generation_id,
+            "correlation_id": correlation_id,
+        }
+        if dry_run:
+            return self._run_with_connection(connection, **run_args)
+
+        # Backfill is one board-scoped mutation, even when it materializes
+        # several edges through short-lived graph transactions. Keep the
+        # writer token and safe-write barrier around the complete batch, then
+        # durably checkpoint before the successful result can escape. The
+        # ``finally`` is intentional: a later row can fail after an earlier
+        # edge committed, and that partial write still requires lifecycle
+        # completion before the error is propagated.
+        from okto_pulse.core.kg.guarded_write import guarded_board_write
+
+        with guarded_board_write(
+            board_id,
+            operation="kg_orphan_backfill",
+            owner_id="system:kg_orphan_backfill",
+            mutation_ref=correlation_id,
+        ) as lease:
+            try:
+                result = self._run_with_connection(connection, **run_args)
+            finally:
+                lease.ensure_durable(mutation_ref=correlation_id)
+        return result
 
     def _run_with_connection(
         self,
@@ -711,6 +807,7 @@ class OrphanBackfillReconciler:
             generation_id=generation_id,
             limit=sample_limit,
             requested_node_ids=requested_node_ids,
+            correlation_id=correlation_id,
         )
         counters = {
             "connected": 0,
@@ -754,6 +851,7 @@ class OrphanBackfillReconciler:
         generation_id: str | None,
         limit: int,
         requested_node_ids: tuple[str, ...],
+        correlation_id: str,
     ) -> tuple[_NodeRow, ...]:
         if requested_node_ids:
             rows: list[_NodeRow] = []
@@ -763,21 +861,44 @@ class OrphanBackfillReconciler:
                     rows.append(row)
             return tuple(rows[:limit])
 
-        report = self._scanner.scan(
-            board_id=board_id,
-            generation_id=generation_id,
-            limit=limit,
-            connection=graph_scope,
-        )
-        return tuple(
-            _NodeRow(
-                node_id=sample.node_id,
-                node_type=sample.node_type,
-                source_artifact_ref=sample.source_artifact_ref,
-                writer_path=sample.writer_path,
+        # A diagnostic scan bounds only its samples. Reusing those first N
+        # samples for mutation permanently starves later actionable orphans
+        # when unresolved rows sort first and remain zero-degree forever.
+        # Enumerate the complete zero-degree set (the scanner already pays
+        # this bounded-per-label cost), preview exact deterministic resolution,
+        # then spend the mutation budget on actionable rows first.
+        orphan_rows: list[_NodeRow] = []
+        for node_type in _selected_node_types(None):
+            node_rows = tuple(_iter_node_rows(graph_scope, node_type))
+            connected_node_ids = _connected_node_ids(graph_scope, node_type)
+            orphan_rows.extend(
+                row
+                for row in node_rows
+                if row.node_id not in connected_node_ids
+                and not self._is_allowlisted_root(row)
             )
-            for sample in report.samples
-        )
+        orphan_rows.sort(key=lambda row: (row.node_type, row.node_id))
+
+        actionable: list[_NodeRow] = []
+        deferred: list[_NodeRow] = []
+        for row in orphan_rows:
+            preview = self._evaluate_row(
+                graph_scope,
+                board_id=board_id,
+                row=row,
+                dry_run=True,
+                generation_id=generation_id,
+                correlation_id=f"{correlation_id}:selection",
+                assume_zero_degree=True,
+            )
+            if preview.edge_type is not None or preview.outcome == "noop":
+                actionable.append(row)
+            else:
+                deferred.append(row)
+
+        # Both dry-run and apply consume this same priority/order, so a preview
+        # is an exact bounded projection of the next mutation run.
+        return tuple((*actionable, *deferred)[:limit])
 
     def _is_allowlisted_root(self, row: _NodeRow) -> bool:
         return self._registry.is_technical_root_allowlisted(
@@ -795,8 +916,12 @@ class OrphanBackfillReconciler:
         dry_run: bool,
         generation_id: str | None,
         correlation_id: str,
+        assume_zero_degree: bool = False,
     ) -> OrphanBackfillSample:
-        if _node_degree(graph_scope, row.node_type, row.node_id) != 0:
+        if (
+            not assume_zero_degree
+            and _node_degree(graph_scope, row.node_type, row.node_id) != 0
+        ):
             return _backfill_sample(
                 row,
                 outcome="noop",
@@ -1328,10 +1453,187 @@ def _safe_writer_path(created_by_agent: Any, source_session_id: Any) -> str:
     return "unknown"
 
 
-def _source_resolution_status(source_artifact_ref: str | None) -> str:
+@dataclass(frozen=True, slots=True)
+class _RelationalSourceIdentity:
+    source_ref: str
+    artifact_type: str
+    artifact_id: str
+    expected_card_type: str | None = None
+
+
+_RELATIONAL_SOURCE_TYPES = frozenset(
+    DETERMINISTIC_SOURCE_ARTIFACT_TYPES - CARD_SOURCE_ARTIFACT_TYPES
+)
+_CARD_SOURCE_TYPES = frozenset(
+    {*CARD_SOURCE_ARTIFACT_TYPES, "card_relationship_target"}
+)
+_SOURCE_CHILD_MARKERS = frozenset(
+    {
+        "fr",
+        "tr",
+        "ac",
+        "business_rule",
+        "test_scenario",
+        "api_contract",
+        "integration_requirement",
+        "observability_requirement",
+        "decision",
+        "decision_legacy",
+        "learning",
+        "alternative",
+        "assumption",
+        "boost_audit",
+    }
+)
+
+
+def _parse_relational_source_ref(
+    source_artifact_ref: str,
+) -> _RelationalSourceIdentity | None:
+    """Parse only writer-owned structured refs; malformed/unknown stays unresolved."""
+
+    ref = str(source_artifact_ref or "")
+    if not ref or ref != ref.strip() or any(char.isspace() for char in ref):
+        return None
+    parts = ref.split(":")
+    if len(parts) < 2 or not all(parts):
+        return None
+    source_type = parts[0]
+    if source_type == "board":
+        if len(parts) != 2:
+            return None
+        return _RelationalSourceIdentity(ref, "board", parts[1])
+
+    expected_card_type: str | None = None
+    artifact_type = source_type
+    suffix_index = 2
+    if source_type == "card" and len(parts) >= 3 and parts[1] in {
+        "bug",
+        "test",
+        "task",
+    }:
+        expected_card_type = parts[1]
+        artifact_id = parts[2]
+        artifact_type = "card"
+        suffix_index = 3
+    elif source_type in _CARD_SOURCE_TYPES:
+        artifact_id = parts[1]
+        artifact_type = "card"
+        if source_type in {"bug", "test", "task"}:
+            expected_card_type = source_type
+    elif source_type in _RELATIONAL_SOURCE_TYPES:
+        artifact_id = parts[1]
+    else:
+        return None
+
+    suffix = parts[suffix_index:]
+    if suffix and (
+        len(suffix) != 2
+        or suffix[0] not in _SOURCE_CHILD_MARKERS
+    ):
+        return None
+    return _RelationalSourceIdentity(
+        ref,
+        artifact_type,
+        artifact_id,
+        expected_card_type,
+    )
+
+
+def _card_type_matches(row: object, expected: str | None) -> bool:
+    if expected is None:
+        return True
+    raw = getattr(row, "card_type", None)
+    actual = str(getattr(raw, "value", raw or "normal")).lower()
+    if expected == "task":
+        return actual not in {"bug", "test"}
+    return actual == expected
+
+
+async def _resolve_relational_source_identities(
+    *,
+    board_id: str,
+    identities: tuple[_RelationalSourceIdentity, ...],
+) -> frozenset[str]:
+    """Resolve refs in bounded type batches and enforce board ownership."""
+
+    from okto_pulse.core.ports.consolidation import (
+        get_consolidation_persistence_port,
+    )
+    from okto_pulse.core.ports.relational_runtime import get_db_session
+
+    persistence = get_consolidation_persistence_port()
+    resolved: set[str] = set()
+    async with get_db_session() as context:
+        board_refs = tuple(
+            identity
+            for identity in identities
+            if identity.artifact_type == "board"
+        )
+        if board_refs and await persistence.board_exists(
+            context,
+            board_id=board_id,
+        ):
+            resolved.update(
+                identity.source_ref
+                for identity in board_refs
+                if identity.artifact_id == board_id
+            )
+
+        artifact_types = sorted(
+            {
+                identity.artifact_type
+                for identity in identities
+                if identity.artifact_type != "board"
+            }
+        )
+        for artifact_type in artifact_types:
+            scoped = tuple(
+                identity
+                for identity in identities
+                if identity.artifact_type == artifact_type
+            )
+            identities_by_id: dict[str, list[_RelationalSourceIdentity]] = {}
+            for identity in scoped:
+                identities_by_id.setdefault(identity.artifact_id, []).append(identity)
+            artifact_ids = tuple(identities_by_id)
+            for start in range(
+                0,
+                len(artifact_ids),
+                _RELATIONAL_SOURCE_LOOKUP_BATCH_SIZE,
+            ):
+                batch_ids = artifact_ids[
+                    start : start + _RELATIONAL_SOURCE_LOOKUP_BATCH_SIZE
+                ]
+                rows = await persistence.list_artifacts(
+                    context,
+                    artifact_type=artifact_type,
+                    artifact_ids=batch_ids,
+                    board_id=board_id,
+                )
+                for row in rows:
+                    row_id = str(getattr(row, "id", ""))
+                    for identity in identities_by_id.get(row_id, ()):
+                        if _card_type_matches(
+                            row,
+                            identity.expected_card_type,
+                        ):
+                            resolved.add(identity.source_ref)
+    return frozenset(resolved)
+
+
+def _source_resolution_status(
+    source_artifact_ref: str | None,
+    *,
+    source_statuses: dict[str, str],
+) -> str:
     if not source_artifact_ref:
-        return "missing_source_artifact_ref"
-    return SourceResolutionStatus.UNRESOLVED_SOURCE_REF.value
+        return SOURCE_REF_MISSING
+    return (
+        SOURCE_REF_RESOLVED
+        if source_statuses.get(source_artifact_ref) == SOURCE_REF_RESOLVED
+        else SOURCE_REF_UNRESOLVED
+    )
 
 
 def _optional_str(value: Any) -> str | None:
@@ -1368,9 +1670,14 @@ __all__ = [
     "OrphanNodeScanner",
     "OrphanScanQueryError",
     "OrphanScanReport",
+    "OrphanSourceResolverProtocol",
+    "RelationalOrphanSourceResolver",
     "SAFE_ORPHAN_AUDIT_FIELDS",
     "SAFE_ORPHAN_METRIC_LABELS",
     "SAFE_ORPHAN_SAMPLE_FIELDS",
+    "SOURCE_REF_MISSING",
+    "SOURCE_REF_RESOLVED",
+    "SOURCE_REF_UNRESOLVED",
     "ZERO_DEGREE_REASON",
     "ZERO_ORPHAN_VALIDATION_FAILED",
     "ZERO_ORPHAN_VALIDATION_NOT_EVALUATED",

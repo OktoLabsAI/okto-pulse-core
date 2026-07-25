@@ -1,16 +1,14 @@
-"""MKG-B C3 — count-only re-attestation on nothing_changed (scenario S4).
+"""MKG-B C3 — nothing_changed re-attestation uses a guarded graph write.
 
-An IDENTICAL re-consolidation (content_hash short-circuit at begin/propose)
-bumps attestation_count on the origin session's nodes without reprocessing:
-zero content writes, zero re-embedding, processing counters zeroed, and the
-kg.attestation.count_only structured log (OR1). A full begin→propose→commit
-flow counts the re-assertion exactly ONCE (session flag dedup).
+An IDENTICAL begin short-circuit is read-only. Propose preserves FR5
+corroboration only after health/state preflights and under the real
+single-writer + durability lifecycle. The full NOOP flow counts the assertion
+once and keeps processing counters deterministic.
 """
 
 from __future__ import annotations
 
 import gc
-import logging
 import shutil
 import tempfile
 from pathlib import Path
@@ -48,6 +46,18 @@ def countonly_tempdir(monkeypatch):
     monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
     configure_real_graph_test_kg_registry()
 
+    async def _healthy(_board_id, _db, scheduler_control=None):
+        return {
+            "overall_state": "healthy",
+            "graph_state": "healthy",
+            "discovery_state": "healthy",
+            "total_nodes": 1,
+        }
+
+    import okto_pulse.core.services.kg_health_service as health_service
+
+    monkeypatch.setattr(health_service, "get_kg_health", _healthy)
+
     yield base
 
     try:
@@ -81,8 +91,8 @@ async def _begin_identical(board_id: str, artifact_ref: str, title: str, content
     )
 
 
-async def test_s4_identical_begin_counts_attestation_without_reprocessing(
-    countonly_tempdir, monkeypatch, caplog
+async def test_s4_identical_begin_does_not_attest_without_write_lifecycle(
+    countonly_tempdir, monkeypatch
 ):
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
     artifact_ref = f"spec:{spec_id}"
@@ -93,26 +103,19 @@ async def test_s4_identical_begin_counts_attestation_without_reprocessing(
     )
     assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 1
 
-    with caplog.at_level(logging.INFO, logger="okto_pulse.kg.primitives"):
-        begin2 = await _begin_identical(board_id, artifact_ref, title, content)
+    begin2 = await _begin_identical(board_id, artifact_ref, title, content)
     assert begin2.nothing_changed is True
     row = await _prov_row_async(board_id, artifact_ref)
-    assert row["attestation_count"] == 2
-    # Content untouched by the count-only path.
+    assert row["attestation_count"] == 1
     assert row["content"] == content
-    # OR1 — structured log of the count-only attestation.
-    assert any(
-        "kg.attestation.count_only" in rec.getMessage() for rec in caplog.records
-    )
 
-    # Repeated identical re-assertions keep accumulating (origin audit is
-    # still the last committed one — begin does not write audits).
+    # Repeated uncommitted re-assertions remain pure reads.
     begin3 = await _begin_identical(board_id, artifact_ref, title, content)
     assert begin3.nothing_changed is True
-    assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 3
+    assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 1
 
 
-async def test_s4_full_flow_counts_exactly_once_with_zero_counters(
+async def test_s4_full_noop_flow_attests_once_with_zero_counters(
     countonly_tempdir, monkeypatch
 ):
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
@@ -123,9 +126,8 @@ async def test_s4_full_flow_counts_exactly_once_with_zero_counters(
         session_factory, board_id, artifact_ref, title, content=content
     )
 
-    # Full begin→propose→commit with IDENTICAL content: begin counts the
-    # re-assertion, propose must NOT count it again (session flag), and the
-    # commit short-circuits to NOOP hints — processing counters zeroed.
+    # Full begin→propose→commit with IDENTICAL content: begin is read-only,
+    # propose performs one guarded count-only bump, and commit is a NOOP.
     commit2, _hash2 = await _drive_with_provenance(
         session_factory, board_id, artifact_ref, title, content=content
     )
@@ -137,7 +139,7 @@ async def test_s4_full_flow_counts_exactly_once_with_zero_counters(
     assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 2
 
 
-async def test_s4_changed_content_does_not_trigger_count_only(
+async def test_s4_changed_content_does_not_mutate_attestation_at_begin(
     countonly_tempdir, monkeypatch
 ):
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
@@ -151,5 +153,5 @@ async def test_s4_changed_content_does_not_trigger_count_only(
         board_id, artifact_ref, "[MKG-B] Conteudo muda", "v2 diferente"
     )
     assert begin2.nothing_changed is False
-    # No count-only bump — the changed-content path belongs to NC-8 (FR4).
+    # Changed-content begin remains read-only; NC-8 belongs to guarded commit.
     assert (await _prov_row_async(board_id, artifact_ref))["attestation_count"] == 1

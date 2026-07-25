@@ -142,6 +142,8 @@ def test_query_register_injects_uow_not_get_db() -> None:
     params = [a.arg for a in _fn(kg_query_tools, "register_kg_query_tools").args.kwonlyargs]
     assert "get_db" not in params
     assert "get_uow" in params
+    assert "get_board_agent" in params
+    assert "get_global_agent" in params
 
 
 def test_get_user_boards_has_no_relational_session() -> None:
@@ -184,6 +186,8 @@ def test_server_registration_injects_uow_not_get_db_for_mcp() -> None:
     assert query_kwargs == {
         "get_agent": "_get_authenticated_agent",
         "get_uow": "get_unit_of_work_factory_for_mcp",
+        "get_board_agent": "_get_agent_ctx",
+        "get_global_agent": "_get_global_agent_ctx",
     }
 
     power = registration("_register_kg_power_tools")
@@ -193,4 +197,8 @@ def test_server_registration_injects_uow_not_get_db_for_mcp() -> None:
         for keyword in power.keywords
         if keyword.arg and isinstance(keyword.value, ast.Name)
     }
-    assert power_kwargs == {"get_agent": "_get_authenticated_agent"}
+    assert power_kwargs == {
+        "get_agent": "_get_authenticated_agent",
+        "get_board_agent": "_get_agent_ctx",
+        "get_global_agent": "_get_global_agent_ctx",
+    }

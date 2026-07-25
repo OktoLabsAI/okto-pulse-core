@@ -149,6 +149,9 @@ def project_effective_design_system(
     referenced catalog row exists, and ``mandate`` means blocking governance is
     configured.  A dangling blocking link is therefore configured and mandated
     but not resolvable; these axes must never be collapsed into truthiness.
+    ``version`` remains the backward-compatible effective pin, while
+    ``pinned_version``, ``catalog_version`` and ``version_is_current`` make any
+    drift from the mutable catalog row explicit.
     """
 
     canonical_gate_mode = (
@@ -389,14 +392,16 @@ class DesignSystemService:
     ) -> DesignSystemRecord:
         """Resolve a catalog row without exposing another owner's artifact.
 
-        Owner identity is always required. A read adapter may explicitly allow
-        an owner's global catalog artifact even when it must also supply a board
-        context (the MCP get surface requires one); otherwise list(global) could
-        reveal an owned item that get could never retrieve. Mutating callers do
-        not enable that exception. For another owner's global artifact, the
-        board must still carry the explicit effective link. Inline artifacts
-        must belong to the supplied board. Every remaining scope/ownership
-        mismatch is reported exactly like an unknown id.
+        Owner identity is always required. A caller may explicitly allow an
+        owner's global catalog artifact even when the transport must also supply
+        a board context (the MCP catalog surfaces require one); otherwise
+        list(global) could reveal an owned item that detail operations could
+        never address. Mutating wrappers additionally enforce global ownership,
+        so a foreign effective link never grants catalog write authority. For
+        another owner's global read, the board must still carry the explicit
+        effective link. Inline artifacts must belong to the supplied board.
+        Every remaining scope/ownership mismatch is reported exactly like an
+        unknown id.
         """
 
         ds = await self.get_design_system(design_system_id)
@@ -434,6 +439,7 @@ class DesignSystemService:
         *,
         board_id: str | None = None,
         board_access_authorized: bool = False,
+        allow_owned_global_without_link: bool = False,
         title: str | None = None,
         payload: dict[str, Any] | None = None,
         status: str | None = None,
@@ -445,7 +451,14 @@ class DesignSystemService:
             owner_id,
             board_id=board_id,
             board_access_authorized=board_access_authorized,
+            allow_owned_global_without_link=allow_owned_global_without_link,
         )
+        # A board role can authorize collaborative writes to an inline artifact,
+        # but a global catalog row remains owned by its creator.  In particular,
+        # a legacy/shared board link must never turn into cross-owner catalog
+        # mutation authority.
+        if ds.scope == "global" and ds.owner_id != owner_id:
+            self._raise_not_found(design_system_id)
         bump = False
         if title is not None and title != ds.title:
             if not title.strip():
@@ -477,13 +490,17 @@ class DesignSystemService:
         *,
         board_id: str | None = None,
         board_access_authorized: bool = False,
+        allow_owned_global_without_link: bool = False,
     ) -> bool:
-        await self.require_authorized_design_system(
+        ds = await self.require_authorized_design_system(
             design_system_id,
             owner_id,
             board_id=board_id,
             board_access_authorized=board_access_authorized,
+            allow_owned_global_without_link=allow_owned_global_without_link,
         )
+        if ds.scope == "global" and ds.owner_id != owner_id:
+            self._raise_not_found(design_system_id)
         return await get_design_system_store().delete(
             self.db,
             design_system_id=design_system_id,
@@ -500,8 +517,9 @@ class DesignSystemService:
         board_access_authorized: bool = False,
     ) -> BoardDesignSystemRecord:
         """Set the board's single effective Design System (FR2). Upserts the singular
-        ``BoardDesignSystem`` row and captures the current design_system_version. An
-        inline Design System can only be linked to its OWN board."""
+        ``BoardDesignSystem`` row and captures the current design_system_version. Only
+        active artifacts are linkable, and an inline Design System can only be linked
+        to its OWN board."""
         ds = await self.require_design_system(design_system_id)
         if ds.scope == "global" and owner_id is not None and ds.owner_id != owner_id:
             self._raise_not_found(design_system_id)
@@ -518,6 +536,17 @@ class DesignSystemService:
                 "An inline Design System can only be linked to its own board.",
                 422,
                 {"design_system_id": design_system_id, "board_id": board_id},
+            )
+        if ds.status != "active":
+            raise DesignSystemError(
+                "design_system_not_active",
+                "Only an active Design System can be linked to a board.",
+                422,
+                {
+                    "design_system_id": design_system_id,
+                    "status": ds.status,
+                    "required_status": "active",
+                },
             )
         return await get_design_system_store().upsert_board_link(
             self.db,
@@ -546,10 +575,18 @@ class DesignSystemService:
                 self.db,
                 design_system_id=link.design_system_id,
             )
+            catalog_version = ds.version if ds else None
             effective = {
                 "source": "board_link",
                 "design_system_id": link.design_system_id,
                 "version": link.design_system_version,
+                "pinned_version": link.design_system_version,
+                "catalog_version": catalog_version,
+                "version_is_current": (
+                    catalog_version == link.design_system_version
+                    if catalog_version is not None
+                    else False
+                ),
                 "title": ds.title if ds else None,
                 "status": ds.status if ds else None,
                 "scope": ds.scope if ds else None,
@@ -565,10 +602,19 @@ class DesignSystemService:
                 if design_system_id
                 else None
             )
+            pinned_version = snapshot.get("version")
+            catalog_version = ds.version if ds else None
             effective = {
                 "source": "default_snapshot",
                 "design_system_id": design_system_id,
-                "version": snapshot.get("version"),
+                "version": pinned_version,
+                "pinned_version": pinned_version,
+                "catalog_version": catalog_version,
+                "version_is_current": (
+                    catalog_version == pinned_version
+                    if catalog_version is not None
+                    else False
+                ),
                 "title": ds.title if ds else None,
                 "status": ds.status if ds else None,
                 "scope": ds.scope if ds else None,

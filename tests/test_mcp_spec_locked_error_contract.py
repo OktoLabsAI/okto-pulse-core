@@ -15,6 +15,7 @@ from okto_pulse.core.application.use_cases.mcp_mockups_copy_lists import (
     McpUpdateScreenMockupUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_spec_crud import (
+    McpRemoveSpecEntityUseCase,
     McpAddTestScenarioUseCase,
     McpDeleteTestScenarioUseCase,
     McpUpdateSpecUseCase,
@@ -22,7 +23,10 @@ from okto_pulse.core.application.use_cases.mcp_spec_crud import (
 )
 from okto_pulse.core.mcp import server
 from okto_pulse.core.mcp.outcome import coerce_mcp_tool_outcome
-from okto_pulse.core.services.main import SpecLockedError
+from okto_pulse.core.services.main import (
+    SpecLineagePreflightError,
+    SpecLockedError,
+)
 
 
 class _UowContext:
@@ -269,3 +273,118 @@ async def test_safe_spec_update_normalizes_locked_error_unless_fallback_requests
             object(),
             propagate_spec_locked=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_update_spec_lineage_failure_uses_typed_mcp_envelope(
+    monkeypatch: Any,
+) -> None:
+    context = _UowContext()
+
+    async def _raise_lineage(*args: Any, **call_kwargs: Any) -> Any:
+        del args, call_kwargs
+        raise SpecLineagePreflightError(
+            "spec_ideation_not_done",
+            "A Spec can only be created from an ideation in status 'done'.",
+            facts={"ideation_id": "idea-draft", "ideation_status": "draft"},
+        )
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *args: None)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: _Factory(context),
+    )
+    monkeypatch.setattr(McpUpdateSpecUseCase, "execute", _raise_lineage)
+
+    raw = await server.okto_pulse_update_spec.fn(
+        board_id="board-1",
+        spec_id="spec-1",
+        title="Relink attempt",
+    )
+
+    assert json.loads(raw) == {
+        "error": "spec_ideation_not_done",
+        "code": "spec_ideation_not_done",
+        "message": (
+            "A Spec can only be created from an ideation in status 'done'."
+        ),
+        "facts": {
+            "ideation_id": "idea-draft",
+            "ideation_status": "draft",
+        },
+    }
+    assert context.exit_exception is SpecLineagePreflightError
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "kwargs"),
+    (
+        (
+            "okto_pulse_remove_business_rule",
+            {
+                "board_id": "board-1",
+                "spec_id": "spec-locked",
+                "rule_id": "br-1",
+            },
+        ),
+        (
+            "okto_pulse_remove_api_contract",
+            {
+                "board_id": "board-1",
+                "spec_id": "spec-locked",
+                "contract_id": "api-1",
+            },
+        ),
+        (
+            "okto_pulse_remove_decision",
+            {
+                "board_id": "board-1",
+                "spec_id": "spec-locked",
+                "decision_id": "decision-1",
+            },
+        ),
+        *(
+            (
+                "okto_pulse_remove_spec_entity",
+                {
+                    "board_id": "board-1",
+                    "spec_id": "spec-locked",
+                    "target_type": target_type,
+                    "entity_id": entity_id,
+                },
+            )
+            for target_type, entity_id in (
+                ("business_rule", "br-1"),
+                ("api_contract", "api-1"),
+                ("decision", "decision-1"),
+            )
+        ),
+    ),
+)
+async def test_locked_spec_remove_aliases_share_canonical_envelope(
+    monkeypatch: Any,
+    tool_name: str,
+    kwargs: dict[str, Any],
+) -> None:
+    context = _UowContext()
+
+    async def _raise_locked(*args: Any, **call_kwargs: Any) -> Any:
+        del args, call_kwargs
+        raise SpecLockedError("spec-locked", "validation-1")
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *args: None)
+    monkeypatch.setattr(
+        server,
+        "get_unit_of_work_factory_for_mcp",
+        lambda: _Factory(context),
+    )
+    monkeypatch.setattr(McpRemoveSpecEntityUseCase, "execute", _raise_locked)
+
+    raw = await getattr(server, tool_name).fn(**kwargs)
+
+    _assert_locked_error(raw, tool_name=tool_name)
+    assert context.exit_exception is SpecLockedError

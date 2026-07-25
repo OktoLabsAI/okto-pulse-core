@@ -12,12 +12,13 @@ Design constraints (R2-IMP1 spec 9aedfe78 / card affd0444):
 - TR1: reuse ``classify_source_for_kg`` + the BoardSourceReader port as the maturity
   source of truth.
 - TR2: internal audited primitive; NOT exposed as an MCP mutating tool. Preserves
-  ``original_node_id`` / ``source_artifact_ref`` (only ``graph_layer`` /
-  ``maturity_status`` mutate).
-- TR7: idempotent / convergent — only nodes currently at ``graph_layer=canonical``
-  are acted on, so a second run over the same stale state is a NOOP (already
-  demoted / debt already keyed). Fast-path (``source_refs``) and full sweep
-  (``source_refs=None``) converge to the same final state (AC8).
+  ``original_node_id`` / ``source_artifact_ref``. A missing governed source is
+  always converged to an inactive tombstone (revocation + zero relevance),
+  whether found by the targeted fast path or by a full sweep.
+- TR7: idempotent / convergent — canonical nodes and interrupted working
+  tombstones are acted on; complete tombstones are a NOOP. Fast-path
+  (``source_refs``) and full sweep (``source_refs=None``) converge to the same
+  final state (AC8).
 - TR8 / FR8 / AC9: cognitive/canonical-origin nodes (incl. bug-derived Learning)
   are excluded from demotion-to-working.
 
@@ -32,9 +33,11 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Callable
 
 from okto_pulse.core.application.rebuild_ports import BoardSourceSnapshotCause
+from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.canonical_learning_partition import (
     _bug_artifact_id,
     _is_bug_derived_ref,
@@ -50,6 +53,7 @@ from okto_pulse.core.kg.source_maturity import (
     SourceMaturityClassification,
     classify_source_for_kg,
 )
+from okto_pulse.core.ports.runtime_workers import BlockingExecutionPort
 from okto_pulse.core.ports.stale_sweep import (
     GOVERNED_SWEEP_ARTIFACT_TYPES,
     StaleSweepCandidate,
@@ -58,7 +62,9 @@ from okto_pulse.core.ports.stale_sweep import (
 logger = logging.getLogger("okto_pulse.kg.canonical_stale_reconciler")
 
 # Cognitive-origin node types: never demoted to working by R2 (carve-out).
-COGNITIVE_NODE_TYPES: frozenset[str] = frozenset({"Learning", "Alternative", "Assumption"})
+COGNITIVE_NODE_TYPES: frozenset[str] = frozenset(
+    {"Learning", "Alternative", "Assumption"}
+)
 
 # Explicit policy is intentionally separate from the schema vocabulary. A new
 # physical node type must choose a reconcile policy before the coverage gate
@@ -151,6 +157,32 @@ _SOURCE_OWNER_FAMILY = MappingProxyType(
 ACTION_DEMOTED = "demoted_to_working"
 ACTION_SKIPPED_COGNITIVE = "skipped_cognitive"
 ACTION_ROUTED_DEBT = "routed_to_canonical_debt"
+SOURCE_DELETED_REVOCATION_REASON = "source_deleted"
+ERASED_SEMANTIC_TEXT = ""
+
+
+def _semantic_payload_is_erased(
+    *,
+    title: Any,
+    content: Any,
+    context: Any,
+    justification: Any,
+    source_span_quote: Any,
+) -> bool:
+    """Whether a governed-deletion tombstone retains no semantic payload.
+
+    A tombstone keeps only lineage/audit identity.  In particular, merely
+    demoting a node to the working layer is not erasure: raw administrative
+    Cypher reads may explicitly include that layer.
+    """
+
+    return (
+        not str(title or "")
+        and not str(content or "")
+        and not str(context or "")
+        and not str(justification or "")
+        and not str(source_span_quote or "")
+    )
 
 
 @dataclass
@@ -165,6 +197,10 @@ class StaleReconcileResult:
     incomplete: bool = False
     incomplete_cause: BoardSourceSnapshotCause | str | None = None
     failed_types: list[str] = field(default_factory=list)
+    # Per-type receipt: ``scanned`` counts canonical candidates, while
+    # ``completed`` records that the type query finished successfully even
+    # when it returned zero candidates. Query failures are represented only
+    # by ``failed_types``/``incomplete``.
     scanned_by_type: dict[str, int] = field(
         default_factory=lambda: {node_type: 0 for node_type in ALL_NODE_TYPES}
     )
@@ -200,15 +236,9 @@ class StaleReconcileResult:
             "target_identity_count": self.target_identity_count,
             "target_found_count": self.target_found_count,
             "target_demoted_count": self.target_demoted_count,
-            "target_already_converged_count": (
-                self.target_already_converged_count
-            ),
-            "target_skipped_cognitive_count": (
-                self.target_skipped_cognitive_count
-            ),
-            "target_preserved_canonical_count": (
-                self.target_preserved_canonical_count
-            ),
+            "target_already_converged_count": (self.target_already_converged_count),
+            "target_skipped_cognitive_count": (self.target_skipped_cognitive_count),
+            "target_preserved_canonical_count": (self.target_preserved_canonical_count),
         }
 
 
@@ -303,11 +333,7 @@ def _source_ids_from_refs(
         if not isinstance(ref, str) or ref != ref.strip():
             raise ValueError(f"invalid_source_refs: malformed ref {ref!r}")
         parts = ref.split(":")
-        if (
-            len(parts) < 2
-            or parts[0] not in _SOURCE_REF_TYPES
-            or not parts[1]
-        ):
+        if len(parts) < 2 or parts[0] not in _SOURCE_REF_TYPES or not parts[1]:
             raise ValueError(f"invalid_source_refs: malformed ref {ref!r}")
         identity = _source_identity_from_ref(ref)
         if identity is None:
@@ -376,13 +402,13 @@ async def enumerate_stale_sweep_page(
     cursor: str,
     budget: int,
 ) -> StaleSweepPage:
-    """Return one stable page from the canonical/source anti-join.
+    """Return one stable page from the active/source anti-join.
 
-    Only canonical nodes whose governed owner is absent from a *complete*
-    relational snapshot become catch-up work. Existing but regressed sources
-    are intentionally not tombstoned. One cross-label keyset query materializes
-    at most ``budget + 1`` distinct owner identities, which bounds both graph
-    scanning and the resulting relational batch.
+    Canonical nodes and incomplete working tombstones whose governed owner is
+    absent from a *complete* relational snapshot become catch-up work. Existing
+    but regressed sources are intentionally not tombstoned. One cross-label
+    keyset query materializes at most ``budget + 1`` distinct owner identities,
+    which bounds both graph scanning and the resulting relational batch.
     """
 
     if (
@@ -461,7 +487,23 @@ async def enumerate_stale_sweep_page(
     # rather than on child source-ref strings such as ``test:{card_id}:...``.
     query = """
         MATCH (n)
-        WHERE n.graph_layer = $canonical
+        WHERE (
+            n.graph_layer = $canonical
+            OR (
+                n.graph_layer = $working
+                AND (
+                    coalesce(n.maturity_status, '') <> $working_stale
+                    OR coalesce(n.revocation_reason, '') <> $source_deleted
+                    OR n.relevance_score IS NULL
+                    OR n.relevance_score > $deleted_relevance
+                    OR coalesce(n.title, '') <> ''
+                    OR coalesce(n.content, '') <> ''
+                    OR coalesce(n.context, '') <> ''
+                    OR coalesce(n.justification, '') <> ''
+                    OR coalesce(n.source_span_quote, '') <> ''
+                )
+            )
+        )
           AND n.source_artifact_ref IS NOT NULL
         WITH string_split(n.source_artifact_ref, ':') AS parts
         WHERE size(parts) >= 2
@@ -487,6 +529,10 @@ async def enumerate_stale_sweep_page(
     """
     params = {
         "canonical": GRAPH_LAYER_CANONICAL,
+        "working": GRAPH_LAYER_WORKING,
+        "working_stale": MATURITY_WORKING_STALE,
+        "source_deleted": SOURCE_DELETED_REVOCATION_REASON,
+        "deleted_relevance": 0.0,
         "governed_types": sorted(GOVERNED_SWEEP_ARTIFACT_TYPES),
         "after_type": after_type,
         "after_id": after_id,
@@ -498,8 +544,7 @@ async def enumerate_stale_sweep_page(
         if len(rows) > scan_limit:
             raise RuntimeError("stale_sweep_scan_limit_exceeded")
         scanned_identities = tuple(
-            StaleSweepCandidate(str(row[0] or ""), str(row[1] or ""))
-            for row in rows
+            StaleSweepCandidate(str(row[0] or ""), str(row[1] or "")) for row in rows
         )
         if scanned_identities != tuple(sorted(set(scanned_identities))):
             raise RuntimeError("stale_sweep_scan_order_invalid")
@@ -569,50 +614,95 @@ async def _scan_and_demote(
     correlation_id: str,
     result: StaleReconcileResult,
 ) -> list[dict[str, Any]]:
-    """Sync pass: demote stale deterministic canonical nodes in place; collect
-    cognitive bug-derived material cases as debt-routing intents (handled async by
-    the caller). Returns the list of debt intents."""
+    """Demote stale deterministic nodes and repair incomplete tombstones.
+
+    Cognitive bug-derived material cases are collected as debt-routing intents
+    (handled async by the caller). Returns the list of debt intents.
+    """
     cognitive_debt_intents: list[dict[str, Any]] = []
     transaction = get_kg_registry().graph_transaction
     async with await transaction.begin(board_id) as scope:
         for ntype in ALL_NODE_TYPES:
             try:
-                if target_identities is None:
-                    res = scope.execute(
-                        f"MATCH (n:{ntype}) WHERE n.graph_layer = $c "
-                        f"RETURN n.id, n.source_artifact_ref, n.created_by_agent, "
-                        f"n.maturity_status",
-                        {"c": GRAPH_LAYER_CANONICAL},
-                    )
-                else:
-                    # A governed retry must be able to prove that a previous
-                    # graph auto-commit already moved its target to ``working``.
-                    # The full sweep remains canonical-only; the extra layer is
-                    # observed solely for the bounded event fast-path.
-                    res = scope.execute(
-                        f"MATCH (n:{ntype}) "
-                        "WHERE n.graph_layer = $c OR n.graph_layer = $w "
-                        f"RETURN n.id, n.source_artifact_ref, n.created_by_agent, "
-                        f"n.maturity_status, n.graph_layer",
-                        {
-                            "c": GRAPH_LAYER_CANONICAL,
-                            "w": GRAPH_LAYER_WORKING,
-                        },
-                    )
-                rows: list[tuple[str, str, str, str, str]] = []
+                # Both modes inspect working nodes so a crash after the layer
+                # demotion but before the tombstone fields were persisted can
+                # be repaired. Canonical-only scans would permanently lose
+                # sight of that incomplete state.
+                res = scope.execute(
+                    f"MATCH (n:{ntype}) "
+                    "WHERE n.graph_layer = $c OR n.graph_layer = $w "
+                    f"RETURN n.id, n.source_artifact_ref, n.created_by_agent, "
+                    f"n.maturity_status, n.graph_layer, "
+                    f"n.revocation_reason, n.relevance_score, "
+                    f"n.title, n.content, n.context, n.justification, "
+                    f"n.source_span_quote, n.embedding IS NULL, "
+                    f"n.source_content_hash",
+                    {
+                        "c": GRAPH_LAYER_CANONICAL,
+                        "w": GRAPH_LAYER_WORKING,
+                    },
+                )
+                rows: list[
+                    tuple[
+                        str,
+                        str,
+                        str,
+                        str,
+                        str,
+                        str | None,
+                        float | None,
+                        Any,
+                        Any,
+                        Any,
+                        Any,
+                        Any,
+                        Any,
+                        Any,
+                    ]
+                ] = []
                 for row in res.rows:
-                    rows.append((
-                        str(row[0]),
-                        str(row[1] or ""),
-                        str(row[2] or ""),
-                        str(row[3] or ""),
+                    rows.append(
                         (
-                            str(row[4] or "")
-                            if target_identities is not None
-                            else GRAPH_LAYER_CANONICAL
-                        ),
-                    ))
-                for node_id, ref, writer, _cur_maturity, graph_layer in rows:
+                            str(row[0]),
+                            str(row[1] or ""),
+                            str(row[2] or ""),
+                            str(row[3] or ""),
+                            str(row[4] or ""),
+                            (
+                                str(row[5])
+                                if len(row) > 5 and row[5] is not None
+                                else None
+                            ),
+                            (
+                                float(row[6])
+                                if len(row) > 6 and row[6] is not None
+                                else None
+                            ),
+                            row[7] if len(row) > 7 else None,
+                            row[8] if len(row) > 8 else None,
+                            row[9] if len(row) > 9 else None,
+                            row[10] if len(row) > 10 else None,
+                            row[11] if len(row) > 11 else None,
+                            row[12] if len(row) > 12 else None,
+                            row[13] if len(row) > 13 else None,
+                        )
+                    )
+                for (
+                    node_id,
+                    ref,
+                    writer,
+                    cur_maturity,
+                    graph_layer,
+                    revocation_reason,
+                    relevance_score,
+                    title,
+                    content,
+                    context,
+                    justification,
+                    source_span_quote,
+                    embedding_absent,
+                    source_content_hash,
+                ) in rows:
                     if graph_layer == GRAPH_LAYER_CANONICAL:
                         # Preserve the established meaning of ``scanned``: it
                         # counts canonical candidates, not the working rows
@@ -624,9 +714,58 @@ async def _scan_and_demote(
                         if source_identity not in target_identities:
                             continue  # outside the governed event scope
                         result.target_found_count += 1
-                        if graph_layer != GRAPH_LAYER_CANONICAL:
+                    tombstone_converged = (
+                        graph_layer == GRAPH_LAYER_WORKING
+                        and cur_maturity == MATURITY_WORKING_STALE
+                        and revocation_reason == SOURCE_DELETED_REVOCATION_REASON
+                        and relevance_score is not None
+                        and relevance_score <= 0.0
+                        and _semantic_payload_is_erased(
+                            title=title,
+                            content=content,
+                            context=context,
+                            justification=justification,
+                            source_span_quote=source_span_quote,
+                        )
+                    )
+                    if tombstone_converged:
+                        if (
+                            source_identity is not None
+                            and source_by_identity.get(source_identity) is None
+                        ):
+                            replace_tombstone = getattr(
+                                scope,
+                                "replace_with_source_deleted_tombstone",
+                                None,
+                            )
+                            if callable(replace_tombstone):
+                                if not replace_tombstone(
+                                    ntype,
+                                    node_id,
+                                    graph_layer=GRAPH_LAYER_WORKING,
+                                    maturity_status=MATURITY_WORKING_STALE,
+                                    revocation_reason=(
+                                        SOURCE_DELETED_REVOCATION_REASON
+                                    ),
+                                    relevance_score=0.0,
+                                ):
+                                    continue
+                            else:
+                                if embedding_absent is not True:
+                                    raise RuntimeError(
+                                        "source_deleted_embedding_erasure_unsupported"
+                                    )
+                                scope.execute(
+                                    f"MATCH (n:{ntype} {{id: $node_id}}) "
+                                    "SET n.source_content_hash = $erased_text",
+                                    {
+                                        "node_id": node_id,
+                                        "erased_text": ERASED_SEMANTIC_TEXT,
+                                    },
+                                )
+                        if target_identities is not None:
                             result.target_already_converged_count += 1
-                            continue
+                        continue
                     if _is_cognitive(ntype, writer):
                         intent = _classify_cognitive(
                             board_id,
@@ -650,10 +789,13 @@ async def _scan_and_demote(
                             result.skipped_cognitive.append(intent)
                             logger.info(
                                 "kg.stale.skipped_cognitive board=%s node=%s type=%s",
-                                board_id, node_id, ntype,
+                                board_id,
+                                node_id,
+                                ntype,
                                 extra={
                                     "event": "kg.stale.skipped_cognitive",
-                                    "board_id": board_id, "node_id": node_id,
+                                    "board_id": board_id,
+                                    "node_id": node_id,
                                     "node_type": ntype,
                                     "correlation_id": correlation_id,
                                 },
@@ -669,6 +811,17 @@ async def _scan_and_demote(
                     ):
                         continue  # fast-path scope
                     cls = source_by_identity.get(source_identity)
+                    if (
+                        graph_layer == GRAPH_LAYER_WORKING and cls is not None
+                    ):
+                        # Both scan modes include working rows solely to prove
+                        # convergence or repair an interrupted source-deletion
+                        # tombstone. An extant source already owns its working
+                        # projection, so rewriting it would make both the
+                        # targeted retry and the full sweep non-idempotent.
+                        if target_identities is not None:
+                            result.target_already_converged_count += 1
+                        continue
                     if cls is not None and cls.graph_layer == GRAPH_LAYER_CANONICAL:
                         if target_identities is not None:
                             result.target_preserved_canonical_count += 1
@@ -678,27 +831,82 @@ async def _scan_and_demote(
                     )
                     reason = cls.reason_code if cls else "source_absent"
                     src_status = cls.artifact_status if cls else ""
-                    scope.execute(
-                        f"MATCH (n:{ntype} {{id: $node_id}}) "
-                        "SET n.graph_layer = $graph_layer, "
-                        "n.maturity_status = $maturity_status",
-                        {
-                            "node_id": node_id,
-                            "graph_layer": GRAPH_LAYER_WORKING,
-                            "maturity_status": new_maturity,
-                        },
-                    )
+                    source_deleted = cls is None
+                    if source_deleted:
+                        replace_tombstone = getattr(
+                            scope,
+                            "replace_with_source_deleted_tombstone",
+                            None,
+                        )
+                        if callable(replace_tombstone):
+                            replaced = replace_tombstone(
+                                ntype,
+                                node_id,
+                                graph_layer=GRAPH_LAYER_WORKING,
+                                maturity_status=MATURITY_WORKING_STALE,
+                                revocation_reason=(
+                                    SOURCE_DELETED_REVOCATION_REASON
+                                ),
+                                relevance_score=0.0,
+                            )
+                            if not replaced:
+                                continue
+                        else:
+                            if embedding_absent is not True:
+                                raise RuntimeError(
+                                    "source_deleted_embedding_erasure_unsupported"
+                                )
+                            scope.execute(
+                                f"MATCH (n:{ntype} {{id: $node_id}}) "
+                                "SET n.graph_layer = $graph_layer, "
+                                "n.maturity_status = $maturity_status, "
+                                "n.revocation_reason = $revocation_reason, "
+                                "n.relevance_score = $relevance_score, "
+                                "n.title = $erased_text, "
+                                "n.content = $erased_text, "
+                                "n.context = $erased_text, "
+                                "n.justification = $erased_text, "
+                                "n.source_span_quote = $erased_text, "
+                                "n.source_content_hash = $erased_text",
+                                {
+                                    "node_id": node_id,
+                                    "graph_layer": GRAPH_LAYER_WORKING,
+                                    "maturity_status": MATURITY_WORKING_STALE,
+                                    "revocation_reason": (
+                                        SOURCE_DELETED_REVOCATION_REASON
+                                    ),
+                                    "relevance_score": 0.0,
+                                    "erased_text": ERASED_SEMANTIC_TEXT,
+                                },
+                            )
+                        new_maturity = MATURITY_WORKING_STALE
+                    else:
+                        scope.execute(
+                            f"MATCH (n:{ntype} {{id: $node_id}}) "
+                            "SET n.graph_layer = $graph_layer, "
+                            "n.maturity_status = $maturity_status",
+                            {
+                                "node_id": node_id,
+                                "graph_layer": GRAPH_LAYER_WORKING,
+                                "maturity_status": new_maturity,
+                            },
+                        )
                     record = {
                         "node_id": node_id,
                         "node_type": ntype,
                         "source_artifact_ref": ref,
                         "owning_source_type": source_identity[0],
                         "owning_source_id": source_identity[1],
-                        "prev_layer": GRAPH_LAYER_CANONICAL,
+                        "prev_layer": graph_layer,
                         "expected_layer": GRAPH_LAYER_WORKING,
                         "maturity_status": new_maturity,
                         "source_status": src_status,
                         "reason_code": reason,
+                        "revocation_reason": (
+                            SOURCE_DELETED_REVOCATION_REASON
+                            if source_deleted
+                            else revocation_reason
+                        ),
                         "correlation_id": correlation_id,
                         "action": ACTION_DEMOTED,
                     }
@@ -708,14 +916,20 @@ async def _scan_and_demote(
                     logger.info(
                         "kg.stale.demoted_to_working board=%s node=%s type=%s "
                         "reason=%s corr=%s",
-                        board_id, node_id, ntype, reason, correlation_id,
+                        board_id,
+                        node_id,
+                        ntype,
+                        reason,
+                        correlation_id,
                         extra={"event": "kg.stale.demoted_to_working", **record},
                     )
             except Exception as exc:  # per-type convergence guard
                 _record_failed_type(result, ntype)
                 logger.warning(
                     "kg.stale.scan_type_failed board=%s type=%s err=%s",
-                    board_id, ntype, exc,
+                    board_id,
+                    ntype,
+                    exc,
                 )
                 continue
             result.completed_types.append(ntype)
@@ -807,6 +1021,8 @@ async def reconcile_stale_canonical(
     board_id: str,
     source_refs: list[str] | None = None,
     correlation_id: str | None = None,
+    before_graph_write: Callable[[], None] | None = None,
+    blocking_execution: BlockingExecutionPort | None = None,
 ) -> StaleReconcileResult:
     """Reconcile stale canonical publication for a board.
 
@@ -815,6 +1031,12 @@ async def reconcile_stale_canonical(
     idempotent (TR7/AC8). Deterministic stale canonical nodes are demoted to
     working in place; cognitive nodes are preserved (carve-out) and a material
     bug-derived Learning irregularity is routed to R7 CanonicalDebt.
+
+    ``before_graph_write`` is invoked only after the source snapshot succeeds
+    and immediately before the first graph scan/mutation. The governed queue
+    worker uses it to acquire a durable board-writer fence lazily, so a
+    source-snapshot failure opens no writer while every possible auto-commit is
+    fenced.
     """
     import uuid as _uuid
 
@@ -826,7 +1048,11 @@ async def reconcile_stale_canonical(
     if target_identities is not None:
         result.target_identity_count = len(target_identities)
     source_by_identity, source_complete, incomplete_cause = (
-        _build_source_classification_map(board_id)
+        await run_blocking_graph_io(
+            lambda: _build_source_classification_map(board_id),
+            task_name="core.kg.stale_canonical_source_snapshot",
+            blocking_execution=blocking_execution,
+        )
     )
     if not source_complete:
         result.incomplete = True
@@ -845,8 +1071,21 @@ async def reconcile_stale_canonical(
         )
         return result
 
-    debt_intents = await _scan_and_demote(
-        board_id, source_by_identity, target_identities, corr, result
+    if before_graph_write is not None:
+        before_graph_write()
+
+    debt_intents = await run_blocking_graph_io(
+        lambda: run_async_blocking(
+            _scan_and_demote(
+                board_id,
+                source_by_identity,
+                target_identities,
+                corr,
+                result,
+            )
+        ),
+        task_name="core.kg.stale_canonical_graph_scan",
+        blocking_execution=blocking_execution,
     )
     for intent in debt_intents:
         try:
@@ -854,17 +1093,25 @@ async def reconcile_stale_canonical(
             result.routed_to_debt.append(intent)
             logger.info(
                 "kg.stale.routed_to_canonical_debt board=%s node=%s bug=%s corr=%s",
-                board_id, intent.get("node_id"), intent.get("bug_id"), corr,
-                extra={"event": "kg.stale.routed_to_canonical_debt",
-                       "board_id": board_id, "correlation_id": corr,
-                       "node_id": intent.get("node_id"),
-                       "bug_id": intent.get("bug_id")},
+                board_id,
+                intent.get("node_id"),
+                intent.get("bug_id"),
+                corr,
+                extra={
+                    "event": "kg.stale.routed_to_canonical_debt",
+                    "board_id": board_id,
+                    "correlation_id": corr,
+                    "node_id": intent.get("node_id"),
+                    "bug_id": intent.get("bug_id"),
+                },
             )
         except Exception as exc:  # pragma: no cover - debt routing best-effort
             _record_failed_type(result, str(intent.get("node_type") or "Learning"))
             logger.warning(
                 "kg.stale.debt_routing_failed board=%s node=%s err=%s",
-                board_id, intent.get("node_id"), exc,
+                board_id,
+                intent.get("node_id"),
+                exc,
             )
 
     # Delivery ownership deliberately does not live in this graph primitive.

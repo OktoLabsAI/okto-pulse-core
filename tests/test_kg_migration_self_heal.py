@@ -277,6 +277,29 @@ def test_ts7_re_run_idempotent(fresh_board):
     assert summary2["errors"] == []
 
 
+def test_ts7_migration_stamps_and_verifies_current_schema_version(fresh_board):
+    """An additive rel-pair migration must not leave stale BoardMeta health."""
+
+    with BoardConnection(fresh_board) as (_db, conn):
+        result = conn.execute(
+            "MATCH (m:BoardMeta {board_id: $bid}) SET m.schema_version = $v",
+            {"bid": fresh_board, "v": "0.3.11"},
+        )
+        result.close()
+
+    summary = migrate_schema_for_board(fresh_board)
+
+    assert summary["migrated"] is True
+    assert summary["errors"] == []
+    with BoardConnection(fresh_board) as (_db, conn):
+        result = conn.execute(
+            "MATCH (m:BoardMeta {board_id: $bid}) RETURN m.schema_version",
+            {"bid": fresh_board},
+        )
+        assert result.get_next()[0] == schema_mod.SCHEMA_VERSION
+        result.close()
+
+
 # ---------------------------------------------------------------------------
 # TS8 — Source files contain no destructive messages
 # ---------------------------------------------------------------------------

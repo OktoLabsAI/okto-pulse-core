@@ -78,6 +78,21 @@ def _purge_board_graph(board_id: str) -> None:
     reset_bootstrap_cache_for_tests()
 
 
+async def _register_relational_board(db_factory, board_id: str) -> None:
+    """Mirror the real board lifecycle while keeping the graph intentionally cold."""
+    from sqlalchemy_test_models import Board
+
+    async with db_factory() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name=f"Cold board {board_id}",
+                owner_id="bootstrap-autoheal-test",
+            )
+        )
+        await db.commit()
+
+
 @pytest.fixture
 def fresh_board():
     bid = _fresh_board_id()
@@ -258,6 +273,7 @@ async def test_worker_commits_on_cold_board(fresh_board, db_factory):
     # Confirm we truly start cold.
     path = board_kuzu_path(fresh_board)
     assert not path.exists()
+    await _register_relational_board(db_factory, fresh_board)
 
     agent_id = "system:layer1_worker"
     artifact_id = f"spec-{uuid.uuid4().hex[:8]}"
@@ -354,6 +370,7 @@ async def test_event_triggered_consolidation_on_cold_board(fresh_board, db_facto
     # Double-check we did not accidentally seed the graph.
     path = board_kuzu_path(fresh_board)
     assert not path.exists()
+    await _register_relational_board(db_factory, fresh_board)
 
     agent_id = "system:layer1_worker"
     artifact_id = f"spec-{uuid.uuid4().hex[:8]}"

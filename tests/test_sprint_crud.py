@@ -15,6 +15,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import uuid
 
 import pytest
 from sqlalchemy import select
@@ -42,6 +43,7 @@ from okto_pulse.core.models.schemas import (
     SprintUpdate,
 )
 from okto_pulse.core.services.main import SprintOperationError
+from okto_pulse.core.services.sprint_scope import SprintScopeResolver
 
 
 BOARD_ID = "sprint-crud-board-001"
@@ -1708,6 +1710,135 @@ class TestSprintCardAssignment:
 
             await db.refresh(cross_spec_bug)
             assert cross_spec_bug.sprint_id is None
+
+    async def test_reassign_invalidates_both_scopes_and_review_reads_fresh_cards(
+        self,
+        db_factory,
+    ):
+        """Reparenting cannot leave either lane's scope or review gate stale."""
+        from okto_pulse.core.services.main import SprintService
+
+        suffix = uuid.uuid4().hex[:8]
+        board_id = f"sprint-reparent-board-{suffix}"
+        spec_id = f"sprint-reparent-spec-{suffix}"
+        source_id = f"sprint-reparent-source-{suffix}"
+        target_id = f"sprint-reparent-target-{suffix}"
+        card_id = f"sprint-reparent-card-{suffix}"
+        scenario_id = f"sprint-reparent-ts-{suffix}"
+        async with db_factory() as db:
+            db.add(Board(id=board_id, name="Reparent", owner_id=AGENT_ID))
+            db.add(
+                Spec(
+                    id=spec_id,
+                    board_id=board_id,
+                    title="Reparent spec",
+                    status=SpecStatus.IN_PROGRESS,
+                    version=1,
+                    functional_requirements=[],
+                    acceptance_criteria=[],
+                    test_scenarios=[
+                        {
+                            "id": scenario_id,
+                            "title": "Pending only while test card is assigned",
+                            "status": "draft",
+                            "linked_task_ids": [],
+                        }
+                    ],
+                    business_rules=[],
+                    technical_requirements=[],
+                    api_contracts=[],
+                    decisions=[],
+                    created_by=AGENT_ID,
+                )
+            )
+            await db.flush()
+            source = Sprint(
+                id=source_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Source",
+                status=SprintStatus.ACTIVE,
+                version=1,
+                created_by=AGENT_ID,
+            )
+            target = Sprint(
+                id=target_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                title="Target",
+                status=SprintStatus.DRAFT,
+                version=1,
+                created_by=AGENT_ID,
+            )
+            card = Card(
+                id=card_id,
+                board_id=board_id,
+                spec_id=spec_id,
+                sprint_id=source_id,
+                title="Scoped test card",
+                status=CardStatus.NOT_STARTED,
+                card_type=CardType.TEST,
+                test_scenario_ids=[scenario_id],
+                archived=False,
+                created_by=AGENT_ID,
+            )
+            db.add_all([source, target, card])
+            await db.commit()
+
+        SprintScopeResolver.clear_cache()
+        async with db_factory() as db:
+            service = SprintService(db)
+            source = await db.get(Sprint, source_id)
+            target = await db.get(Sprint, target_id)
+            spec = await db.get(Spec, spec_id)
+            source_cards = await service.list_assigned_cards(source_id)
+            assert SprintScopeResolver.resolve(
+                sprint=source,
+                spec=spec,
+                cards=source_cards,
+            ).ids("test_scenarios") == (scenario_id,)
+            SprintScopeResolver.resolve(
+                sprint=target,
+                spec=spec,
+                cards=[],
+            )
+            assert {
+                str(key[0]) for key in SprintScopeResolver._cache
+            } == {source_id, target_id}
+
+            # A duplicate ID in one request is still one assignment/mutation.
+            assert await service.assign_tasks(
+                target_id,
+                [card_id, card_id],
+                AGENT_ID,
+            ) == 1
+            assert not {
+                key
+                for key in SprintScopeResolver._cache
+                if str(key[0]) in {source_id, target_id}
+            }
+
+            source = await db.get(Sprint, source_id)
+            target = await db.get(Sprint, target_id)
+            await db.refresh(source)
+            await db.refresh(target)
+            assert source.version == 2
+            assert target.version == 2
+            assert await service.list_assigned_cards(source_id) == []
+            assert [
+                item.id
+                for item in await service.list_assigned_cards(target_id)
+            ] == [card_id]
+
+            # The source relationship/cache previously contained the pending
+            # scenario. active -> review must query canonical assignments and
+            # therefore succeeds after the card moves away.
+            moved = await service.move_sprint(
+                source_id,
+                AGENT_ID,
+                SprintMove(status=SprintStatus.REVIEW),
+            )
+            assert moved.status == SprintStatus.REVIEW
 
 
 # ============================================================================

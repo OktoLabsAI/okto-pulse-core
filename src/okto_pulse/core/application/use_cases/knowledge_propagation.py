@@ -54,6 +54,16 @@ from okto_pulse.core.services.knowledge_propagation import (
 _CARD_WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
 
 
+def _activity_actor_type(actor: ActorContext) -> str:
+    """Map transport source to the persisted activity actor taxonomy."""
+
+    if actor.source == "mcp":
+        return "agent"
+    if actor.source == "rest":
+        return "user"
+    return actor.source
+
+
 def _semantic_creation_hash(
     *,
     operation: str,
@@ -484,21 +494,14 @@ class CreateCardKnowledgeV2UseCase:
                 skip_ownership_check=command.skip_ownership_check,
                 target_id=preflight.command.target.target_id,
                 knowledge_propagation_v2=True,
+                actor_type=_activity_actor_type(actor),
+                actor_name=actor.actor_name,
+                activity_details=command.activity_details,
             )
         except ApplicationRecordConflictError as error:
             _raise_creation_record_conflict(error, preflight.command.target)
         if card is None:
             raise EntityNotFoundError("board", command.board_id)
-        if command.activity_details is not None:
-            await uow.services.boards._log_activity(
-                board_id=command.board_id,
-                card_id=card.id,
-                action="card_created",
-                actor_type="agent",
-                actor_id=actor.actor_id,
-                actor_name=actor.actor_name,
-                details=command.activity_details,
-            )
         await uow.synchronize(
             conflict_error=KnowledgeCreationRaceError(
                 preflight.command.target,

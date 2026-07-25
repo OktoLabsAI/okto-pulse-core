@@ -298,7 +298,16 @@ async def test_move_card_done_blocks_task_test_and_bug_before_status_mutation(
     card_type: CardType,
     expected_entity_type: str,
 ) -> None:
-    _, _, card_id = await _seed_card(card_type, CardStatus.VALIDATION)
+    _, _, card_id = await _seed_card(
+        card_type,
+        CardStatus.VALIDATION,
+        board_settings={
+            # This test isolates cognitive closeout.  Satisfy the independent
+            # lifecycle prerequisites that otherwise (correctly) fail first.
+            "require_task_validation": False,
+            "skip_test_coverage_global": True,
+        },
+    )
     gate = _BlockingGate()
 
     db_factory = get_session_factory()
@@ -335,7 +344,12 @@ async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL,
         CardStatus.VALIDATION,
-        board_settings={"skip_cognitive_consolidation": True},
+        board_settings={
+            "skip_cognitive_consolidation": True,
+            # The board skip is scoped to cognitive closeout; disable the
+            # independent task-validation gate for this direct-move fixture.
+            "require_task_validation": False,
+        },
     )
     _seed_pending_item(isolated_closeout_kg_dir, board_id, f"task:{card_id}")
 
@@ -500,7 +514,11 @@ async def test_done_blocks_on_technical_dlq_before_status_mutation(
 ) -> None:
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL, CardStatus.VALIDATION,
-        board_settings={"cognitive_readiness_policy": "blocking"},
+        board_settings={
+            "cognitive_readiness_policy": "blocking",
+            # Isolate readiness from the independent task-validation gate.
+            "require_task_validation": False,
+        },
     )
     await _seed_dlq(board_id, card_id)
     _enable_global_blocking_flag(monkeypatch)

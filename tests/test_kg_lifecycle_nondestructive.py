@@ -483,6 +483,7 @@ def test_checkpoint_and_fallback_failure_blocks_queue_ack(nd_board, monkeypatch)
     from okto_pulse.core.application.processors.consolidation import (
         _apply_board_graph_lifecycle_after_commit,
     )
+    from okto_pulse.core.kg.guarded_write import guarded_board_write
 
     def _broken_close(*_a, **_k):
         raise RuntimeError("forced close failure (terminal)")
@@ -491,11 +492,17 @@ def test_checkpoint_and_fallback_failure_blocks_queue_ack(nd_board, monkeypatch)
     checkpoints: list[str] = []
     _spy_checkpoint(monkeypatch, checkpoints, fail=True)
     with pytest.raises(RuntimeError) as exc_info:
-        _apply_board_graph_lifecycle_after_commit(
-            board_id=nd_board,
-            owner_token="consolidation-worker:test-entry:deadbeef",
+        with guarded_board_write(
+            nd_board,
+            operation="consolidation_worker",
+            owner_id="consolidation-worker:test-entry",
             mutation_ref="spec:test:session",
-        )
+        ) as write_lease:
+            _apply_board_graph_lifecycle_after_commit(
+                board_id=nd_board,
+                mutation_ref="spec:test:session",
+                write_lease=write_lease,
+            )
     msg = str(exc_info.value)
     assert "board_graph_safe_lifecycle_failed" in msg
     assert "failed_step=checkpoint" in msg

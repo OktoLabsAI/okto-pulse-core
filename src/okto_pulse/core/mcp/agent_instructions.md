@@ -41,7 +41,7 @@ Cache the resource within the session; re-fetch when you switch domains — reso
 
 ## Pre-Flight Checklist (READ FIRST)
 
-**Before any board work, `resources/read okto-pulse://workflows/preflight`.** It carries the five mandatory sequences: **session pre-flight**, **entity-context pre-flight** (`get_*_context` with `profile="full"` before any move/validation; cards use bounded `get_task_context(profile="full", context_scope="gate")`), **card-execution pre-flight** (never skip steps 1 and 3), **Resource Gate pre-flight**, and **Design System pre-flight** (blocking gate on `okto_pulse_add_screen_mockup`/`okto_pulse_update_screen_mockup`). The full step-by-step lives in that resource; this pointer stays inline so the bootstrap survives even if the instructions blob is truncated.
+**Before any board work, `resources/read okto-pulse://workflows/preflight`.** It carries the five mandatory sequences: **session pre-flight**, **entity-context pre-flight** (`get_*_context` with `profile="full"` before any move/validation; cards use bounded `okto_pulse_get_task_context(profile="full", context_scope="gate")`), **card-execution pre-flight** (never skip steps 1 and 3), **Resource Gate pre-flight**, and **Design System pre-flight** (blocking gate on `okto_pulse_add_screen_mockup`/`okto_pulse_update_screen_mockup`). The full step-by-step lives in that resource; this pointer stays inline so the bootstrap survives even if the instructions blob is truncated.
 
 ---
 

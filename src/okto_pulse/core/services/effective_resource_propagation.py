@@ -176,6 +176,17 @@ async def resolve_effective_spec_parent_lineage(
                 f"ideation '{ideation_id}' not found for resource propagation",
                 details={"entity_type": "ideation", "entity_id": ideation_id},
             )
+        if ideation.board_id != board_id:
+            raise ResourceLineageResolutionError(
+                f"ideation '{ideation_id}' belongs to another board",
+                details={
+                    "entity_type": "ideation",
+                    "entity_id": ideation_id,
+                    "board_id": board_id,
+                    "parent_board_id": ideation.board_id,
+                    "reason": "parent_board_mismatch",
+                },
+            )
     if refinement_id:
         lineage = await _resolve_lineage(db, board_id, "refinement", refinement_id)
         refinement = await RefinementService(db).get_refinement(refinement_id)
@@ -184,17 +195,73 @@ async def resolve_effective_spec_parent_lineage(
                 f"refinement '{refinement_id}' not found for resource propagation",
                 details={"entity_type": "refinement", "entity_id": refinement_id},
             )
-        if ideation is not None and refinement.ideation_id != ideation.id:
+        if refinement.board_id != board_id:
             raise ResourceLineageResolutionError(
-                f"refinement '{refinement_id}' does not belong to ideation '{ideation_id}'",
+                f"refinement '{refinement_id}' belongs to another board",
                 details={
                     "entity_type": "refinement",
                     "entity_id": refinement_id,
-                    "ideation_id": ideation_id,
-                    "actual_ideation_id": refinement.ideation_id,
-                    "reason": "parent_lineage_mismatch",
+                    "board_id": board_id,
+                    "parent_board_id": refinement.board_id,
+                    "reason": "parent_board_mismatch",
                 },
             )
+
+        ancestor_ideation_id = getattr(refinement, "ideation_id", None)
+        if ideation is not None:
+            if ancestor_ideation_id != ideation.id:
+                raise ResourceLineageResolutionError(
+                    (
+                        f"refinement '{refinement_id}' does not belong to "
+                        f"ideation '{ideation_id}'"
+                    ),
+                    details={
+                        "entity_type": "refinement",
+                        "entity_id": refinement_id,
+                        "ideation_id": ideation_id,
+                        "actual_ideation_id": ancestor_ideation_id,
+                        "reason": "parent_lineage_mismatch",
+                    },
+                )
+        else:
+            # A refinement-only Spec still depends on the refinement's
+            # ideation. Resolve that implicit ancestor before the FK write so
+            # resource propagation and lifecycle governance see the same
+            # lineage as the authoritative derive flow.
+            if ancestor_ideation_id:
+                ideation = await IdeationService(db).get_ideation(
+                    ancestor_ideation_id
+                )
+            if ideation is None:
+                raise ResourceLineageResolutionError(
+                    (
+                        f"parent ideation '{ancestor_ideation_id}' for "
+                        f"refinement '{refinement_id}' was not found"
+                    ),
+                    code="spec_ideation_not_found",
+                    details={
+                        "entity_type": "ideation",
+                        "entity_id": ancestor_ideation_id,
+                        "refinement_id": refinement_id,
+                        "reason": "ancestor_ideation_not_found",
+                    },
+                )
+            if ideation.board_id != board_id:
+                raise ResourceLineageResolutionError(
+                    (
+                        f"parent ideation '{ideation.id}' for refinement "
+                        f"'{refinement_id}' belongs to another board"
+                    ),
+                    code="spec_ideation_board_mismatch",
+                    details={
+                        "entity_type": "ideation",
+                        "entity_id": ideation.id,
+                        "refinement_id": refinement_id,
+                        "board_id": board_id,
+                        "parent_board_id": ideation.board_id,
+                        "reason": "ancestor_ideation_board_mismatch",
+                    },
+                )
     return lineage
 
 

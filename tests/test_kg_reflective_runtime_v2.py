@@ -428,7 +428,14 @@ async def test_mcp_reflective_tool_enforces_acl_then_runs_real_loop(monkeypatch)
     async def get_agent():
         return SimpleNamespace(id="agent-1")
 
-    power_tools.register_kg_power_tools(mcp, get_agent=get_agent)
+    async def get_board_agent(_board_id: str):
+        return SimpleNamespace(agent_id="agent-1", permissions=None)
+
+    power_tools.register_kg_power_tools(
+        mcp,
+        get_agent=get_agent,
+        get_board_agent=get_board_agent,
+    )
     raw = await mcp.tools["okto_pulse_kg_query_reflective"](
         "board-1", "decision"
     )
@@ -470,7 +477,14 @@ async def test_mcp_reflective_tool_denies_board_before_retrieval(monkeypatch):
     async def get_agent():
         return SimpleNamespace(id="agent-1")
 
-    power_tools.register_kg_power_tools(mcp, get_agent=get_agent)
+    async def get_board_agent(_board_id: str):
+        return SimpleNamespace(agent_id="agent-1", permissions=None)
+
+    power_tools.register_kg_power_tools(
+        mcp,
+        get_agent=get_agent,
+        get_board_agent=get_board_agent,
+    )
     raw = await mcp.tools["okto_pulse_kg_query_reflective"](
         "board-1", "decision"
     )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from okto_pulse.core.domain.enums import IdeationStatus, RefinementStatus
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -24,6 +25,8 @@ from okto_pulse.core.services.knowledge_propagation import (
 )
 from okto_pulse.core.services.main import (
     CardService,
+    GovernedArtifactDeletionReceipt,
+    SpecLineagePreflightError,
     SpecService,
     _reset_v2_knowledge_for_relink,
 )
@@ -256,6 +259,7 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
                     board_id=BOARD_ID,
                     title="Parent",
                     created_by=ACTOR_ID,
+                    status=IdeationStatus.DONE,
                 ),
                 Refinement(
                     id="refinement-old",
@@ -263,6 +267,7 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
                     ideation_id="ideation-parent",
                     title="Old",
                     created_by=ACTOR_ID,
+                    status=RefinementStatus.DONE,
                 ),
                 Refinement(
                     id="refinement-new",
@@ -270,6 +275,7 @@ async def test_spec_update_validates_and_resets_governed_parent(db_factory) -> N
                     ideation_id="ideation-parent",
                     title="New",
                     created_by=ACTOR_ID,
+                    status=RefinementStatus.DONE,
                 ),
                 _spec(
                     "spec-relink",
@@ -314,6 +320,7 @@ async def test_spec_relink_validates_new_parent_before_v2_write(db_factory) -> N
                 board_id=BOARD_ID,
                 title="Parent",
                 created_by=ACTOR_ID,
+                status=IdeationStatus.DONE,
             )
         )
         db.add(
@@ -324,10 +331,7 @@ async def test_spec_relink_validates_new_parent_before_v2_write(db_factory) -> N
         )
         await db.flush()
 
-        with pytest.raises(
-            ValueError,
-            match="Refinement not found on this board",
-        ):
+        with pytest.raises(SpecLineagePreflightError) as raised:
             await SpecService(
                 db,
                 knowledge_propagation_port=port,
@@ -336,6 +340,7 @@ async def test_spec_relink_validates_new_parent_before_v2_write(db_factory) -> N
                 ACTOR_ID,
                 SpecUpdate(refinement_id="refinement-missing"),
             )
+        assert raised.value.code == "spec_refinement_not_found"
 
         unchanged = await SpecService(db).get_spec("spec-relink")
         assert unchanged is not None
@@ -373,8 +378,18 @@ async def test_spec_link_unlink_and_delete_reset_card_v2_scopes(
         assert port.staged[1].parent is not None
         assert port.staged[1].parent.parent_id == "spec-a"
 
-        async def _skip_takedown(*_args, **_kwargs) -> None:
-            return None
+        async def _skip_takedown(*_args, **kwargs):
+            artifact_type = kwargs["artifact_type"]
+            artifact_id = kwargs["artifact_id"]
+            return GovernedArtifactDeletionReceipt(
+                board_id=kwargs["board_id"],
+                artifact_type=artifact_type,
+                artifact_id=artifact_id,
+                delete_event_id=f"delete-{artifact_type}-{artifact_id}",
+                generation=1,
+                reconcile_intent_id=f"intent-{artifact_type}-{artifact_id}",
+                delivery_key=f"delivery-{artifact_type}-{artifact_id}",
+            )
 
         monkeypatch.setattr(
             "okto_pulse.core.services.main._prepare_governed_artifact_deletion",

@@ -23,6 +23,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+import pytest_asyncio
 
 from okto_pulse.core.kg import cognitive_closeout_production as ccp
 from okto_pulse.core.kg.cognitive_source_ref_resolver import (
@@ -165,10 +166,12 @@ def agent_id():
     return f"agent-rkg07-{uuid.uuid4().hex[:8]}"
 
 
-@pytest.fixture
-def board_handle(board_id):
-    # The graph is already bootstrapped by the board_id fixture; pass the id through
-    # so existing test signatures keep working.
+@pytest_asyncio.fixture
+async def board_handle(board_id, db_factory):
+    """Register the relational board paired with the already-bootstrapped graph."""
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name="rkg07", owner_id="rkg07-test"))
+        await db.commit()
     return board_id
 
 

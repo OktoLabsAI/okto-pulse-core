@@ -35,6 +35,7 @@ from functools import partial
 from typing import TypeVar
 
 from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 from okto_pulse.core.runtime_context import runtime_state
 from okto_pulse.core.kg.node_identity import (
@@ -54,6 +55,15 @@ from okto_pulse.core.kg.connectivity_guard import (
     KGNodeRef,
     MetricSinkProtocol,
 )
+from okto_pulse.core.kg.guarded_write import (
+    GuardedWriteError,
+    guarded_board_write,
+)
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageParentIntent,
+    SpecLineageReconciliationError,
+    is_spec_lineage_rule_id,
+)
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
     AbortConsolidationResponse,
@@ -69,6 +79,7 @@ from okto_pulse.core.kg.schemas import (
     GetSimilarNodesRequest,
     GetSimilarNodesResponse,
     KGEdgeType,
+    NodeCandidate,
     ProposeReconciliationRequest,
     ProposeReconciliationResponse,
     ReconciliationHint,
@@ -108,7 +119,11 @@ class _PendingConsolidationCommit:
 def _allowed_edge_pairs(edge_type: str) -> tuple[tuple[str, str], ...]:
     from okto_pulse.core.kg.schema_contract import MULTI_REL_TYPES, REL_TYPES
 
-    pairs = [(from_type, to_type) for rel, from_type, to_type in REL_TYPES if rel == edge_type]
+    pairs = [
+        (from_type, to_type)
+        for rel, from_type, to_type in REL_TYPES
+        if rel == edge_type
+    ]
     for rel, multi_pairs in MULTI_REL_TYPES:
         if rel == edge_type:
             pairs.extend(multi_pairs)
@@ -142,11 +157,11 @@ def _validate_local_edge_pair(
             "from_type": from_type,
             "to_type": to_type,
             "allowed_pairs": [
-                {"from_type": src, "to_type": dst}
-                for src, dst in allowed
+                {"from_type": src, "to_type": dst} for src, dst in allowed
             ],
         },
     )
+
 
 async def _run_graph_io(
     func,
@@ -233,8 +248,13 @@ async def run_cancellation_atomic(
 
 
 class KGPrimitiveError(Exception):
-    def __init__(self, code: str, message: str, session_id: str | None = None,
-                 details: dict | None = None):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        session_id: str | None = None,
+        details: dict | None = None,
+    ):
         super().__init__(message)
         self.code = code
         self.message = message
@@ -383,17 +403,118 @@ async def _require_open_session(
 # ---------------------------------------------------------------------------
 
 
+_SPEC_LINEAGE_WORKER_AGENT_ID = "system:historical_consolidation"
+
+
+def _validate_spec_lineage_parent_intent(
+    *,
+    intent: SpecLineageParentIntent,
+    artifact_type: str,
+    artifact_id: str,
+    agent_id: str,
+    node_candidates: dict[str, NodeCandidate],
+    edge_candidates: dict[str, EdgeCandidate] | None = None,
+    session_id: str | None = None,
+    force_reprocess: bool = True,
+) -> str | None:
+    """Validate the internal clear signal and return its Spec source candidate."""
+
+    if intent is SpecLineageParentIntent.PRESERVE:
+        return None
+    if (
+        artifact_type != "spec"
+        or agent_id != _SPEC_LINEAGE_WORKER_AGENT_ID
+        or not force_reprocess
+    ):
+        raise KGPrimitiveError(
+            "spec_lineage_clear_intent_forbidden",
+            "Spec-lineage clear is an internal forced deterministic-worker "
+            "operation.",
+            session_id=session_id,
+            details={
+                "artifact_type": artifact_type,
+                "agent_id": agent_id,
+                "force_reprocess": force_reprocess,
+            },
+        )
+
+    expected_ref = f"spec:{artifact_id}"
+    source_candidates = [
+        candidate_id
+        for candidate_id, candidate in node_candidates.items()
+        if _enum_value(candidate.node_type) == "Entity"
+        and str(candidate.source_artifact_ref or "") == expected_ref
+    ]
+    if len(source_candidates) != 1:
+        raise KGPrimitiveError(
+            "spec_lineage_clear_source_invalid",
+            "Spec-lineage clear requires exactly one canonical Spec Entity "
+            "candidate with the session artifact source ref.",
+            session_id=session_id,
+            details={
+                "expected_source_artifact_ref": expected_ref,
+                "matching_candidates": sorted(source_candidates),
+            },
+        )
+
+    conflicting_edges = sorted(
+        candidate_id
+        for candidate_id, candidate in (edge_candidates or {}).items()
+        if is_spec_lineage_rule_id(str(candidate.rule_id or ""))
+    )
+    if conflicting_edges:
+        raise KGPrimitiveError(
+            "spec_lineage_clear_conflicts_with_parent",
+            "A Spec-lineage clear intent cannot share a session with a "
+            "deterministic Spec-parent edge.",
+            session_id=session_id,
+            details={"conflicting_edge_candidates": conflicting_edges},
+        )
+    return source_candidates[0]
+
+
 async def begin_consolidation(
     req: BeginConsolidationRequest,
     *,
     agent_id: str,
     db=None,
     force_reprocess: bool = False,
+    spec_lineage_parent_intent: SpecLineageParentIntent = (
+        SpecLineageParentIntent.PRESERVE
+    ),
 ) -> BeginConsolidationResponse:
     """Open a new transactional session. SHA256-dedup against the last commit."""
     registry = get_kg_registry()
     store = registry.require_session_store()
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
+
+    deterministic_candidates: dict[str, NodeCandidate] = {}
+    for candidate in req.deterministic_candidates:
+        if candidate.candidate_id in deterministic_candidates:
+            raise KGPrimitiveError(
+                "duplicate_candidate_id",
+                f"Duplicate deterministic candidate: {candidate.candidate_id}",
+                session_id=session_id,
+            )
+        deterministic_candidates[candidate.candidate_id] = candidate
+
+    try:
+        lineage_intent = SpecLineageParentIntent(spec_lineage_parent_intent)
+    except ValueError as exc:
+        raise KGPrimitiveError(
+            "spec_lineage_parent_intent_invalid",
+            "Unknown Spec-lineage parent intent.",
+            session_id=session_id,
+        ) from exc
+    _validate_spec_lineage_parent_intent(
+        intent=lineage_intent,
+        artifact_type=req.artifact_type,
+        artifact_id=req.artifact_id,
+        agent_id=agent_id,
+        node_candidates=deterministic_candidates,
+        session_id=session_id,
+        force_reprocess=force_reprocess,
+    )
 
     content_hash = compute_content_hash(req.raw_content, req.artifact_id, req.board_id)
 
@@ -416,31 +537,18 @@ async def begin_consolidation(
         nothing_changed = False
         previous_session_id = None
 
-    # Spec 4007e4a3 (Ideação #3, FR6): structured counter for the
-    # nothing_changed short-circuit. Lets observability tooling track how
-    # often the begin_consolidation idempotency path saves downstream
-    # extraction + reconciliation work for unchanged artifacts.
+    # Only the unchanged branch can lead to FR5 re-attestation later in this
+    # session. Gate it before session creation; fresh/changed begin remains a
+    # staging-only operation and commit revalidates health with its real UoW.
     if nothing_changed:
-        logger.info(
-            "kg.consolidation.nothing_changed.short_circuit board=%s "
-            "artifact_type=%s artifact_id=%s previous_session=%s",
-            req.board_id, req.artifact_type, req.artifact_id, previous_session_id,
-            extra={
-                "event": "kg.consolidation.nothing_changed.short_circuit",
-                "board_id": req.board_id,
-                "artifact_type": req.artifact_type,
-                "artifact_id": req.artifact_id,
-                "previous_session_id": previous_session_id,
-            },
-        )
-        # Spec MKG-B-S1 (FR5, D2): identical re-assertion is corroboration —
-        # count-only bump on the origin session's nodes, no reprocessing.
-        await _register_count_only_attestation(
-            registry,
+        kg_health_state = await _resolve_commit_kg_health_state(req.board_id, db)
+        _validate_degraded_connectivity_before_open(
             board_id=req.board_id,
-            artifact_id=req.artifact_id,
-            previous_session_id=previous_session_id,
-            trigger="begin",
+            session_id=session_id,
+            node_candidates=deterministic_candidates,
+            edge_candidates={},
+            writer_path=_connectivity_writer_path(agent_id),
+            kg_health_state=kg_health_state,
         )
 
     session = await store.create(
@@ -451,19 +559,29 @@ async def begin_consolidation(
         agent_id=agent_id,
         raw_content=req.raw_content,
     )
-    if nothing_changed:
-        # Idempotency for the begin→propose flow (D2): the re-assertion was
-        # already counted above; propose must not count it again.
-        session.count_only_attested = True
+    session.node_candidates.update(deterministic_candidates)
+    session.spec_lineage_parent_intent = lineage_intent
 
-    for cand in req.deterministic_candidates:
-        if cand.candidate_id in session.node_candidates:
-            raise KGPrimitiveError(
-                "duplicate_candidate_id",
-                f"Duplicate deterministic candidate: {cand.candidate_id}",
-                session_id=session_id,
-            )
-        session.node_candidates[cand.candidate_id] = cand
+    # Spec 4007e4a3 (Ideação #3, FR6): structured counter for the
+    # nothing_changed short-circuit. Lets observability tooling track how
+    # often the begin_consolidation idempotency path saves downstream
+    # extraction + reconciliation work for unchanged artifacts.
+    if nothing_changed:
+        logger.info(
+            "kg.consolidation.nothing_changed.short_circuit board=%s "
+            "artifact_type=%s artifact_id=%s previous_session=%s",
+            req.board_id,
+            req.artifact_type,
+            req.artifact_id,
+            previous_session_id,
+            extra={
+                "event": "kg.consolidation.nothing_changed.short_circuit",
+                "board_id": req.board_id,
+                "artifact_type": req.artifact_type,
+                "artifact_id": req.artifact_id,
+                "previous_session_id": previous_session_id,
+            },
+        )
 
     return BeginConsolidationResponse(
         session_id=session_id,
@@ -513,11 +631,14 @@ async def add_node_candidate(
     # no trace in session.node_candidates (TR1/TR4).
     is_system_worker = agent_id.startswith("system:")
     graph_layer_value = (
-        cand.graph_layer.value if hasattr(cand.graph_layer, "value") else cand.graph_layer
+        cand.graph_layer.value
+        if hasattr(cand.graph_layer, "value")
+        else cand.graph_layer
     )
     try:
         check_cognitive_node_canonical(
-            graph_layer_value, is_system_worker=is_system_worker,
+            graph_layer_value,
+            is_system_worker=is_system_worker,
         )
     except CognitiveNodeLayerError as exc:
         raise KGPrimitiveError(
@@ -580,6 +701,7 @@ async def add_edge_candidate(
             DETERMINISTIC_EDGE_TYPES,
             LayerViolationError,
         )
+
         edge_type_str = (
             cand.edge_type.value if hasattr(cand.edge_type, "value") else cand.edge_type
         )
@@ -710,22 +832,26 @@ async def get_similar_nodes(
 
 
 def _find_existing_graph_matches(
-    board_id: str, node_candidates: dict, embedder,
+    board_id: str,
+    node_candidates: dict,
+    embedder,
 ) -> dict[str, list]:
     """Sync: find existing graph nodes matching session candidates.
 
     Runs in the thread pool via ``_run_graph_io``.
     """
+    from okto_pulse.core.kg.reconciliation import ExistingNodeSummary
     from okto_pulse.core.kg.search import find_similar_for_candidate
 
     existing_matches: dict[str, list] = {}
-    try:
-        for cand_id, cand in node_candidates.items():
-            node_type = (
-                cand.node_type.value
-                if hasattr(cand.node_type, "value")
-                else cand.node_type
-            )
+    graph_store = get_kg_registry().graph_store
+    exact_lookup = getattr(graph_store, "find_active_by_source_ref", None)
+    for cand_id, cand in node_candidates.items():
+        node_type = (
+            cand.node_type.value if hasattr(cand.node_type, "value") else cand.node_type
+        )
+        matches: list = []
+        try:
             query_vec = embedder.encode(f"{cand.title}\n{cand.content or ''}")
             matches = find_similar_for_candidate(
                 board_id=board_id,
@@ -734,12 +860,59 @@ def _find_existing_graph_matches(
                 top_k=5,
                 min_similarity=0.3,
             )
-            if matches:
-                existing_matches[cand_id] = matches
-    except Exception as exc:
-        logger.warning(
-            "kg.primitives.reconciliation_search_failed err=%s", exc,
-        )
+        except Exception as exc:
+            logger.warning(
+                "kg.primitives.reconciliation_search_failed candidate=%s err=%s",
+                cand_id,
+                exc,
+            )
+
+        # Vector top-k is not an identity index. Decisions need the exact
+        # active lineage independently so a low-similarity reversal cannot
+        # evade immutable history. Other node types retain the legacy
+        # similarity flow and reach the NC-8 source-ref merge at commit.
+        source_ref = str(cand.source_artifact_ref or "").strip()
+        if node_type == "Decision" and source_ref and callable(exact_lookup):
+            try:
+                exact = exact_lookup(board_id, node_type, source_ref)
+            except Exception as exc:
+                logger.warning(
+                    "kg.primitives.reconciliation_exact_lookup_failed "
+                    "candidate=%s ref=%s err=%s",
+                    cand_id,
+                    source_ref,
+                    exc,
+                )
+            else:
+                if exact:
+                    exact_summary = ExistingNodeSummary(
+                        graph_node_id=str(exact["node_id"]),
+                        node_type=str(exact.get("node_type") or node_type),
+                        stable_id=exact.get("source_artifact_ref") or source_ref,
+                        title=str(exact.get("title") or ""),
+                        content=exact.get("content"),
+                        context=exact.get("context"),
+                        justification=exact.get("justification"),
+                        similarity=next(
+                            (
+                                match.similarity
+                                for match in matches
+                                if match.graph_node_id == str(exact["node_id"])
+                            ),
+                            0.0,
+                        ),
+                    )
+                    matches = [
+                        exact_summary,
+                        *[
+                            match
+                            for match in matches
+                            if match.graph_node_id != exact_summary.graph_node_id
+                        ],
+                    ]
+
+        if matches:
+            existing_matches[cand_id] = matches
     return existing_matches
 
 
@@ -800,21 +973,14 @@ async def propose_reconciliation(
                 session_id=req.session_id,
             )
 
-        # Spec MKG-B-S1 (FR5, D2): only register the count-only attestation
-        # after the locked pending/state re-check.  Otherwise a concurrent
-        # commit could make the graph immutable while this proposal still
-        # publishes a relational side effect from the stale session.
         if nothing_changed and not session.count_only_attested:
             await _register_count_only_attestation(
                 registry,
-                board_id=session.board_id,
-                artifact_id=session.artifact_id,
-                previous_session_id=(
-                    _audit_session_id(latest) if latest else None
-                ),
-                trigger="propose",
+                session=session,
+                previous_session_id=(_audit_session_id(latest) if latest else None),
+                agent_id=agent_id,
+                db=db,
             )
-            session.count_only_attested = True
         session.reconciliation_hints = hints_by_cid
         session.touch(registry.require_session_store().default_ttl_seconds)
 
@@ -830,7 +996,10 @@ def _compensate_graph_writes(board_id: str, session_id: str, records: list) -> N
     """Sync: reverse graph writes for a failed commit.
 
     Mirrors ``TransactionOrchestrator.compensate()`` but runs synchronously
-    inside the thread pool. Best-effort — logs failures but does not raise.
+    inside the thread pool. Ordinary cleanup remains best-effort. Exclusive
+    Spec-lineage swaps are different: their before-image receipt is restored
+    first and a restore failure aborts generic cleanup so the replacement edge
+    is never deleted while no old parent is known to exist.
     """
     from okto_pulse.core.kg.schema_contract import (
         MULTI_REL_TYPES,
@@ -839,22 +1008,75 @@ def _compensate_graph_writes(board_id: str, session_id: str, records: list) -> N
 
     async def _run() -> None:
         async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
-            # Delete edges first (they reference nodes)
-            rel_pairs = list(REL_TYPES)
-            for rel_name, endpoint_pairs in MULTI_REL_TYPES:
-                rel_pairs.extend(
-                    (rel_name, from_type, to_type)
-                    for from_type, to_type in endpoint_pairs
-                )
-            for rel_name, from_type, to_type in rel_pairs:
+            lineage_receipts = [
+                receipt
+                for record in reversed(records)
+                if (receipt := getattr(record, "lineage_receipt", None)) is not None
+            ]
+            preserved_lineage_edges = []
+            for receipt in lineage_receipts:
                 try:
-                    scope.execute(
-                        f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
-                        f"WHERE r.created_by_session_id = $sid DELETE r",
-                        {"sid": session_id},
+                    scope.compensate_spec_lineage_parent(receipt)
+                except Exception as exc:
+                    logger.error(
+                        "kg.compensate_sync.spec_lineage_restore_failed "
+                        "session=%s board=%s source=%s target=%s err=%s",
+                        session_id,
+                        board_id,
+                        receipt.source_id,
+                        receipt.target_id,
+                        exc,
+                        extra={
+                            "event": (
+                                "kg.compensate_sync."
+                                "spec_lineage_restore_failed"
+                            ),
+                            "session_id": session_id,
+                            "board_id": board_id,
+                            "source_id": receipt.source_id,
+                            "target_id": receipt.target_id,
+                        },
                     )
-                except Exception:
-                    pass
+                    raise SpecLineageReconciliationError(
+                        "spec_lineage_compensation_restore_failed",
+                        "Restore-first Spec-lineage compensation failed; "
+                        "generic session cleanup was aborted so the replacement "
+                        "parent remains attached.",
+                        receipt=receipt,
+                    ) from exc
+                preserved_lineage_edges.extend(receipt.removed_edges)
+
+            # Delete edges first (they reference nodes)
+            if lineage_receipts:
+                try:
+                    scope.delete_edges_by_session_preserving_spec_lineage(
+                        session_id,
+                        tuple(preserved_lineage_edges),
+                    )
+                except Exception as exc:
+                    raise SpecLineageReconciliationError(
+                        "spec_lineage_session_cleanup_failed",
+                        "Spec-lineage before-images were restored, but generic "
+                        "session-edge cleanup failed.",
+                        receipt=lineage_receipts[-1],
+                    ) from exc
+            else:
+                rel_pairs = list(REL_TYPES)
+                for rel_name, endpoint_pairs in MULTI_REL_TYPES:
+                    rel_pairs.extend(
+                        (rel_name, from_type, to_type)
+                        for from_type, to_type in endpoint_pairs
+                    )
+                for rel_name, from_type, to_type in rel_pairs:
+                    try:
+                        scope.execute(
+                            f"MATCH (a:{from_type})-[r:{rel_name}]->"
+                            f"(b:{to_type}) "
+                            "WHERE r.created_by_session_id = $sid DELETE r",
+                            {"sid": session_id},
+                        )
+                    except Exception:
+                        pass
 
             # A fresh SUPERSEDE marks its predecessor before creating the
             # session-owned successor.  Deleting that successor without
@@ -915,6 +1137,11 @@ def _compensate_graph_writes(board_id: str, session_id: str, records: list) -> N
 
     try:
         run_async_blocking(_run())
+    except SpecLineageReconciliationError:
+        # Never downgrade this failure. A caller may retry the receipt, while
+        # swallowing it would let a later generic cleanup erase the only
+        # surviving parent edge.
+        raise
     except Exception as exc:
         # Spec 818748f2 — FR4 + BR4: downgrade to warning. The compensation
         # failure is recoverable (lock contention, schema drift) and the
@@ -926,7 +1153,10 @@ def _compensate_graph_writes(board_id: str, session_id: str, records: list) -> N
             "`okto-pulse kg migrate-schema --board %s` "
             "or call MCP tool `okto_pulse_kg_migrate_schema`. "
             "Do NOT delete graph storage manually (destructive).",
-            session_id, board_id, exc, board_id,
+            session_id,
+            board_id,
+            exc,
+            board_id,
             extra={
                 "event": "kg.compensate_sync.failed",
                 "session_id": session_id,
@@ -951,6 +1181,7 @@ def _validate_graph_connectivity_before_commit(
     node_candidates: dict,
     edge_candidates: dict,
     effective_hints: dict,
+    explicit_override_candidate_ids: frozenset[str],
     writer_path: str,
     kg_health_state: str,
 ) -> dict:
@@ -974,6 +1205,14 @@ def _validate_graph_connectivity_before_commit(
         node_candidates=node_candidates,
         edge_candidates=edge_candidates,
     )
+    _inherit_supersede_provenance_edges(
+        graph_scope=graph_scope,
+        board_id=board_id,
+        node_candidates=node_candidates,
+        edge_candidates=edge_candidates,
+        effective_hints=effective_hints,
+        explicit_override_candidate_ids=explicit_override_candidate_ids,
+    )
     guard_nodes: list[object] = []
     guard_edges: list[object] = list(edge_candidates.values())
     existing_refs: list[KGNodeRef] = []
@@ -988,6 +1227,7 @@ def _validate_graph_connectivity_before_commit(
             node_type=node_type,
             op=op,
             hint=effective_hints.get(cand_id),
+            has_explicit_override=cand_id in explicit_override_candidate_ids,
         )
         if op == ReconciliationOperation.NOOP and not existing_id:
             continue
@@ -1019,15 +1259,25 @@ def _validate_graph_connectivity_before_commit(
             op == ReconciliationOperation.SUPERSEDE
             and effective_hints.get(cand_id)
             and getattr(effective_hints[cand_id], "target_node_id", None)
+            and not (
+                _node_is_human_curated(
+                    graph_scope,
+                    node_type,
+                    effective_hints[cand_id].target_node_id,
+                )
+                and cand_id not in explicit_override_candidate_ids
+            )
         ):
             target_id = effective_hints[cand_id].target_node_id
             target_type = _lookup_node_type_by_id(graph_scope, target_id) or node_type
-            guard_edges.append({
-                "candidate_id": f"{cand_id}__supersedes_existing",
-                "edge_type": "supersedes",
-                "from_candidate_id": cand_id,
-                "to_candidate_id": f"kg:{target_id}",
-            })
+            guard_edges.append(
+                {
+                    "candidate_id": f"{cand_id}__supersedes_existing",
+                    "edge_type": "supersedes",
+                    "from_candidate_id": cand_id,
+                    "to_candidate_id": f"kg:{target_id}",
+                }
+            )
             existing_refs.append(
                 KGNodeRef(
                     ref_id=f"kg:{target_id}",
@@ -1164,6 +1414,26 @@ def _auto_attach_provenance_edges(
             continue
         root_node_id, root_node_type = root
         cand_node_type = _enum_value(getattr(cand, "node_type", ""))
+        candidate_existing_id = _lookup_existing_node(
+            graph_scope,
+            cand_node_type,
+            source_ref,
+        )
+        if candidate_existing_id == root_node_id and cand_node_type == root_node_type:
+            logger.warning(
+                "kg.connectivity.auto_provenance_self_loop_skipped "
+                "candidate=%s node=%s type=%s",
+                cand_id,
+                root_node_id,
+                root_node_type,
+                extra={
+                    "event": "kg.connectivity.auto_provenance_self_loop_skipped",
+                    "candidate_id": cand_id,
+                    "node_id": root_node_id,
+                    "node_type": root_node_type,
+                },
+            )
+            continue
         if (cand_node_type, root_node_type) not in _allowed_edge_pairs("belongs_to"):
             continue
         edge_id = f"{cand_id}__auto_belongs_to_source_root"
@@ -1178,9 +1448,123 @@ def _auto_attach_provenance_edges(
             layer="deterministic",
             rule_id="belongs_to/auto_source_root@commit_consolidation",
             created_by="system:commit_consolidation",
+            fallback_reason=(f"auto_attached_to_{root_node_type.lower()}_source_root"),
+        )
+
+
+def _inherit_supersede_provenance_edges(
+    *,
+    graph_scope,
+    board_id: str,
+    node_candidates: dict,
+    edge_candidates: dict,
+    effective_hints: dict,
+    explicit_override_candidate_ids: frozenset[str],
+) -> None:
+    """Carry a predecessor's proven ``belongs_to`` edge into its successor.
+
+    A SUPERSEDE creates a fresh node. Reusing the predecessor's edge only as
+    guard evidence would acknowledge an orphan successor, while an at-least-once
+    replay would then fail because the active successor has no provenance edge.
+    Add the bounded edge to the materializable batch instead. The inheritance is
+    fail-closed: source refs and node types must match, curated targets still
+    require an explicit override, and any conflicting deterministic successor
+    leaves the normal connectivity rejection in place.
+    """
+
+    for cand_id, cand in list(node_candidates.items()):
+        if _has_outgoing_edge(edge_candidates, cand_id, "belongs_to"):
+            continue
+
+        hint = effective_hints.get(cand_id)
+        if (
+            _resolve_op(hint, cand.source_confidence)
+            is not ReconciliationOperation.SUPERSEDE
+            or hint is None
+            or not getattr(hint, "target_node_id", None)
+        ):
+            continue
+
+        node_type = _enum_value(cand.node_type)
+        target_node_id = str(hint.target_node_id)
+        if _lookup_node_type_by_id(graph_scope, target_node_id) != node_type:
+            continue
+        if (
+            _node_is_human_curated(graph_scope, node_type, target_node_id)
+            and cand_id not in explicit_override_candidate_ids
+        ):
+            continue
+
+        source_ref = str(cand.source_artifact_ref or "").strip()
+        target_source_ref = str(
+            _lookup_node_source_ref_by_id(
+                graph_scope,
+                node_type,
+                target_node_id,
+            )
+            or ""
+        ).strip()
+        if not source_ref or target_source_ref != source_ref:
+            continue
+
+        successor_generation = (
+            _node_generation(graph_scope, node_type, target_node_id) + 1
+        )
+        successor_id = mint_node_id(
+            board_id,
+            node_type,
+            derive_natural_key(source_ref, node_type, cand.title),
+            successor_generation,
+        )
+        existing_successor = _lookup_existing_node_identity_by_id(
+            graph_scope,
+            node_type,
+            successor_id,
+        )
+        if existing_successor is not None:
+            successor_source_ref = str(
+                existing_successor.get("source_artifact_ref") or ""
+            ).strip()
+            linked_successor = _node_superseded_by(
+                graph_scope,
+                node_type,
+                target_node_id,
+            )
+            if (
+                successor_source_ref
+                and successor_source_ref != source_ref
+            ) or linked_successor not in (None, successor_id):
+                continue
+
+        match = _find_existing_connectivity_match(
+            graph_scope=graph_scope,
+            node_type=node_type,
+            node_id=target_node_id,
+            edge_type="belongs_to",
+            direction="outgoing",
+            target_node_types=("Entity", "Bug"),
+        )
+        if match is None:
+            continue
+        parent_id, parent_type, direction, _parent_layer = match
+        if (
+            direction != "outgoing"
+            or (node_type, parent_type) not in _allowed_edge_pairs("belongs_to")
+        ):
+            continue
+
+        edge_id = f"{cand_id}__inherit_supersede_belongs_to"
+        edge_candidates[edge_id] = EdgeCandidate(
+            candidate_id=edge_id,
+            edge_type=KGEdgeType.BELONGS_TO,
+            from_candidate_id=cand_id,
+            to_candidate_id=f"kg:{parent_id}",
+            confidence=1.0,
+            layer="deterministic",
+            rule_id="belongs_to/inherit_supersede@commit_consolidation",
+            created_by="system:commit_consolidation",
             fallback_reason=(
-                "auto_attached_to_"
-                f"{root_node_type.lower()}_source_root"
+                "preserve_predecessor_provenance_on_deterministic_supersede"
             ),
         )
 
@@ -1235,7 +1619,7 @@ def _validate_degraded_connectivity_before_open(
     kg_health_state: str,
 ) -> None:
     """Return a contextual error before opening a degraded graph."""
-    if not node_candidates or kg_health_state not in DEGRADED_KG_STATES:
+    if kg_health_state not in DEGRADED_KG_STATES:
         return
 
     registry = KGConnectivityRuleRegistry()
@@ -1289,6 +1673,7 @@ def _planned_existing_node_id(
     node_type: str,
     op: ReconciliationOperation,
     hint: ReconciliationHint | None,
+    has_explicit_override: bool,
 ) -> str | None:
     source_ref = cand.source_artifact_ref or ""
     if source_ref:
@@ -1300,12 +1685,19 @@ def _planned_existing_node_id(
         return None
 
     target_node_id = getattr(hint, "target_node_id", None) if hint else None
-    if op == ReconciliationOperation.UPDATE and target_node_id:
+    if (
+        op
+        in (
+            ReconciliationOperation.UPDATE,
+            ReconciliationOperation.SUPERSEDE,
+        )
+        and target_node_id
+    ):
         is_curated = _node_is_human_curated(graph_scope, node_type, target_node_id)
-        has_override = bool(hint.confidence and hint.confidence >= 1.0)
-        if is_curated and has_override:
+        if is_curated and has_explicit_override:
             return None
-        return target_node_id
+        if op == ReconciliationOperation.UPDATE or is_curated:
+            return target_node_id
 
     return None
 
@@ -1358,7 +1750,9 @@ def _existing_refs_for_edge_endpoints(
             if endpoint in node_candidates:
                 continue
             node_id, resolved_type = _resolve_endpoint(
-                endpoint, candidate_to_existing_id, graph_scope=graph_scope,
+                endpoint,
+                candidate_to_existing_id,
+                graph_scope=graph_scope,
             )
             if not node_id:
                 continue
@@ -1371,18 +1765,30 @@ def _existing_refs_for_edge_endpoints(
             # RKG-02: also carry the real source_artifact_ref so the guard's
             # type-aware canonical-bug probe can reconcile a Learning's
             # card:<uuid> with this existing Bug endpoint.
-            node_source_ref = _lookup_node_source_ref_by_id(graph_scope, node_type, node_id)
-            refs.append(
-                KGNodeRef(ref_id=endpoint, node_type=node_type, graph_layer=node_layer,
-                          source_artifact_ref=node_source_ref)
-            )
-            refs.append(
-                KGNodeRef(ref_id=node_id, node_type=node_type, graph_layer=node_layer,
-                          source_artifact_ref=node_source_ref)
+            node_source_ref = _lookup_node_source_ref_by_id(
+                graph_scope, node_type, node_id
             )
             refs.append(
                 KGNodeRef(
-                    ref_id=f"kg:{node_id}", node_type=node_type, graph_layer=node_layer,
+                    ref_id=endpoint,
+                    node_type=node_type,
+                    graph_layer=node_layer,
+                    source_artifact_ref=node_source_ref,
+                )
+            )
+            refs.append(
+                KGNodeRef(
+                    ref_id=node_id,
+                    node_type=node_type,
+                    graph_layer=node_layer,
+                    source_artifact_ref=node_source_ref,
+                )
+            )
+            refs.append(
+                KGNodeRef(
+                    ref_id=f"kg:{node_id}",
+                    node_type=node_type,
+                    graph_layer=node_layer,
                     source_artifact_ref=node_source_ref,
                 )
             )
@@ -1415,7 +1821,9 @@ def _existing_connectivity_edges_for_candidate(
                 name="bug_learning",
                 alternatives=(
                     KGConnectivityEdgeRequirement(
-                        "validates", "outgoing", ("Bug",),
+                        "validates",
+                        "outgoing",
+                        ("Bug",),
                         required_target_layer=GRAPH_LAYER_CANONICAL,
                     ),
                 ),
@@ -1460,7 +1868,9 @@ def _existing_connectivity_edges_for_candidate(
             endpoint_ref = f"kg:{other_id}"
             # RKG-02: carry the matched endpoint's real source_artifact_ref so the
             # guard's canonical-bug probe can reconcile card:<uuid> with the Bug.
-            other_source_ref = _lookup_node_source_ref_by_id(graph_scope, other_type, other_id)
+            other_source_ref = _lookup_node_source_ref_by_id(
+                graph_scope, other_type, other_id
+            )
             existing_refs.append(
                 KGNodeRef(
                     ref_id=endpoint_ref,
@@ -1470,8 +1880,12 @@ def _existing_connectivity_edges_for_candidate(
                 )
             )
             existing_refs.append(
-                KGNodeRef(ref_id=other_id, node_type=other_type, graph_layer=other_layer,
-                          source_artifact_ref=other_source_ref)
+                KGNodeRef(
+                    ref_id=other_id,
+                    node_type=other_type,
+                    graph_layer=other_layer,
+                    source_artifact_ref=other_source_ref,
+                )
             )
             if direction == "outgoing":
                 from_ref = candidate_id
@@ -1479,12 +1893,14 @@ def _existing_connectivity_edges_for_candidate(
             else:
                 from_ref = endpoint_ref
                 to_ref = candidate_id
-            synthesized.append({
-                "candidate_id": f"{candidate_id}__existing_{req.edge_type}",
-                "edge_type": req.edge_type,
-                "from_candidate_id": from_ref,
-                "to_candidate_id": to_ref,
-            })
+            synthesized.append(
+                {
+                    "candidate_id": f"{candidate_id}__existing_{req.edge_type}",
+                    "edge_type": req.edge_type,
+                    "from_candidate_id": from_ref,
+                    "to_candidate_id": to_ref,
+                }
+            )
             break
     return synthesized
 
@@ -1503,10 +1919,14 @@ def _candidate_has_known_bug_source(cand, bug_probe=None) -> bool:
     ):
         if getattr(cand, attr, None):
             return True
-    from okto_pulse.core.kg.cognitive_source_ref_resolver import resolve_cognitive_source_ref
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+        resolve_cognitive_source_ref,
+    )
 
     source_ref = getattr(cand, "source_artifact_ref", "") or ""
-    return resolve_cognitive_source_ref(source_ref, canonical_bug_probe=bug_probe).is_bug_derived
+    return resolve_cognitive_source_ref(
+        source_ref, canonical_bug_probe=bug_probe
+    ).is_bug_derived
 
 
 def _find_existing_connectivity_match(
@@ -1578,7 +1998,9 @@ def _lookup_node_layer_by_id(graph_scope, node_type: str, node_id: str) -> str |
     return None
 
 
-def _lookup_node_source_ref_by_id(graph_scope, node_type: str, node_id: str) -> str | None:
+def _lookup_node_source_ref_by_id(
+    graph_scope, node_type: str, node_id: str
+) -> str | None:
     """Return a node's source_artifact_ref (or None). RKG-02: the connectivity
     guard's type-aware canonical-bug probe needs the real Bug source_ref of an
     EXISTING endpoint to reconcile a Learning's card:<uuid> with the canonical
@@ -1624,7 +2046,11 @@ def _graph_canonical_bug_probe(graph_scope):
                 if bid:
                     keys.add(normalize_cognitive_artifact_id(f"card:{bid}"))
                 if bsref:
-                    keys.add(normalize_cognitive_artifact_id(strip_concept_suffix(str(bsref))))
+                    keys.add(
+                        normalize_cognitive_artifact_id(
+                            strip_concept_suffix(str(bsref))
+                        )
+                    )
         except Exception:
             pass
 
@@ -1658,9 +2084,9 @@ def _kg_node_types() -> tuple[str, ...]:
 
 
 # Estado efetivo de health por board para o write-path, com TTL curto.
-# `get_kg_health` é caro (dezenas de queries + probes de arquivo); sem cache,
-# um batch de N entries do mesmo board recomputa N healths idênticos — parte
-# do bloqueio de event loop observado em campo (py-spy 2026-06-10).
+# Somente estados que BLOQUEIAM escrita podem ser reutilizados: armazenar
+# ``healthy`` aqui criaria uma janela de autorização obsoleta capaz de
+# ocultar uma falha/quarentena recém-detectada pelo health reader.
 _COMMIT_HEALTH_CACHE = runtime_state("kg.primitives.commit_health_cache", dict)
 _COMMIT_HEALTH_CACHE_TTL_S = 5.0
 
@@ -1683,6 +2109,12 @@ def reset_commit_health_cache_for_tests(board_id: str | None = None) -> None:
 async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
     """Read the write-path KG health state without making tests DB-coupled.
 
+    ``db is None`` is the explicit compatibility lane for internal staging
+    and direct graph-harness calls that have no relational health reader. It
+    is not cached and never authorizes a later production commit: MCP/UoW
+    commit supplies its real relational context and re-runs this resolver
+    immediately before dispatching the graph callback.
+
     Catch-22 fix (2026-06-10): ``recovery_needed`` bloqueava TODA mutação —
     inclusive a re-materialização de um grafo vazio (única cura de
     ``empty_after_materialized_history``; 994 entries foram para a DLQ em
@@ -1692,10 +2124,12 @@ async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
 
     Regra efetiva para o WRITE-PATH:
     - ``quarantined`` → bloqueia sempre.
-    - ``recovery_needed`` com grafo LEGÍVEL (o health acabou de contar os
-      nodes — ``total_nodes`` presente, 0 ou N) → permite a mutação: a
-      conectividade real é validada contra o grafo aberto, e um commit
-      bem-sucedido limpa as falhas de write do ring buffer (self-heal).
+    - ``recovery_needed`` explicitamente atribuído ao ``graph_state``, com
+      ``overall_state`` compatível, ``discovery_state`` não mais severo e
+      grafo LEGÍVEL (o health acabou de contar os nodes — ``total_nodes``
+      presente, 0 ou N) → permite a mutação: a conectividade real é validada
+      contra o grafo aberto, e um commit bem-sucedido limpa as falhas de
+      write do ring buffer (self-heal).
     - ``recovery_needed`` SEM contagem (telemetria indisponível = grafo
       ilegível) → mantém o bloqueio/deferral (contrato Zero-Orphan); e
       corrupção real continua fail-closed na própria abertura
@@ -1708,8 +2142,16 @@ async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
 
     now = _time.monotonic()
     cached = _COMMIT_HEALTH_CACHE.get(board_id)
-    if cached is not None and now - cached[0] < _COMMIT_HEALTH_CACHE_TTL_S:
-        return cached[1]
+    if cached is not None:
+        cached_state = str(cached[1])
+        if (
+            cached_state in DEGRADED_KG_STATES
+            and now - cached[0] < _COMMIT_HEALTH_CACHE_TTL_S
+        ):
+            return cached_state
+        # A runtime reload may leave an entry produced by an older version
+        # that cached permissive states.  Never let it authorize this call.
+        _COMMIT_HEALTH_CACHE.pop(board_id, None)
 
     try:
         from okto_pulse.core.services.kg_health_service import get_kg_health
@@ -1725,17 +2167,89 @@ async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
                 "board_id": board_id,
             },
         )
-        return "healthy"
-    state = str(health.get("overall_state") or health.get("graph_state") or "healthy")
+        state = "recovery_needed"
+        _COMMIT_HEALTH_CACHE[board_id] = (now, state)
+        return state
+    state_severity = {
+        "healthy": 0,
+        "at_risk": 1,
+        "backpressure": 2,
+        "recovery_needed": 3,
+        "quarantined": 4,
+    }
+    state_fields = ("overall_state", "graph_state", "discovery_state")
+    resolved_states: dict[str, str] = {}
+    invalid_fields: list[str] = []
+    if isinstance(health, dict):
+        for field in state_fields:
+            raw_value = health.get(field)
+            if isinstance(raw_value, str) and raw_value in state_severity:
+                resolved_states[field] = raw_value
+            else:
+                invalid_fields.append(field)
+    else:
+        invalid_fields.extend(state_fields)
 
-    raw_total_nodes = health.get("total_nodes")
-    if state == "recovery_needed" and raw_total_nodes is not None:
+    if invalid_fields:
+        logger.warning(
+            "kg.connectivity.health_payload_invalid board=%s fields=%s",
+            board_id,
+            ",".join(invalid_fields),
+            extra={
+                "event": "kg.connectivity.health_payload_invalid",
+                "board_id": board_id,
+                "invalid_fields": tuple(invalid_fields),
+            },
+        )
+        # A known quarantine remains authoritative even when another field is
+        # malformed. Otherwise fail closed to recovery_needed.
+        state = (
+            "quarantined"
+            if "quarantined" in resolved_states.values()
+            else "recovery_needed"
+        )
+    else:
+        # The health contract is worst-case-wins. Never trust a contradictory
+        # ``overall_state`` that hides a more severe board/discovery state.
+        state = max(
+            resolved_states.values(),
+            key=state_severity.__getitem__,
+        )
+        if resolved_states["overall_state"] != state:
+            logger.warning(
+                "kg.connectivity.health_payload_inconsistent board=%s "
+                "overall=%s effective=%s",
+                board_id,
+                resolved_states["overall_state"],
+                state,
+                extra={
+                    "event": "kg.connectivity.health_payload_inconsistent",
+                    "board_id": board_id,
+                    "overall_state": resolved_states["overall_state"],
+                    "effective_state": state,
+                },
+            )
+
+    raw_total_nodes = health.get("total_nodes") if isinstance(health, dict) else None
+    if (
+        state == "recovery_needed"
+        and not invalid_fields
+        and resolved_states["overall_state"] == "recovery_needed"
+        and resolved_states["graph_state"] == "recovery_needed"
+        and (
+            state_severity[resolved_states["discovery_state"]]
+            <= state_severity["recovery_needed"]
+        )
+        and raw_total_nodes is not None
+    ):
         # total_nodes AUSENTE = payload sem telemetria de contagem (grafo
         # ilegível) → mantém o bloqueio (conservador, contrato Zero-Orphan).
-        try:
-            total_nodes = int(raw_total_nodes)
-        except (TypeError, ValueError):
-            total_nodes = -1
+        total_nodes = (
+            raw_total_nodes
+            if isinstance(raw_total_nodes, int)
+            and not isinstance(raw_total_nodes, bool)
+            else -1
+        )
         if total_nodes >= 0:
             logger.info(
                 "kg.connectivity.recovery_writable_graph board=%s "
@@ -1751,8 +2265,73 @@ async def _resolve_commit_kg_health_state(board_id: str, db) -> str:
             )
             state = RECOVERY_WRITABLE_STATE
 
-    _COMMIT_HEALTH_CACHE[board_id] = (now, state)
+    if state in DEGRADED_KG_STATES:
+        _COMMIT_HEALTH_CACHE[board_id] = (now, state)
+    else:
+        _COMMIT_HEALTH_CACHE.pop(board_id, None)
     return state
+
+
+def _preserve_decision_history_for_updates(
+    *,
+    graph_scope,
+    node_candidates: dict,
+    effective_hints: dict,
+) -> dict:
+    """Convert semantic Decision UPDATEs into lineage-preserving SUPERSEDEs."""
+
+    from okto_pulse.core.kg.reconciliation import decision_semantics_differ
+
+    guarded = dict(effective_hints)
+    for candidate_id, candidate in node_candidates.items():
+        node_type = _enum_value(candidate.node_type)
+        hint = guarded.get(candidate_id)
+        if (
+            node_type != "Decision"
+            or hint is None
+            or _resolve_op(hint, candidate.source_confidence)
+            != ReconciliationOperation.UPDATE
+            or not getattr(hint, "target_node_id", None)
+        ):
+            continue
+
+        target_node_id = hint.target_node_id
+        existing = _node_semantic_fields(
+            graph_scope,
+            node_type,
+            target_node_id,
+        )
+        if existing is not None and not decision_semantics_differ(
+            candidate,
+            existing,
+        ):
+            continue
+
+        guarded[candidate_id] = ReconciliationHint(
+            candidate_id=candidate_id,
+            operation=ReconciliationOperation.SUPERSEDE,
+            target_node_id=target_node_id,
+            confidence=hint.confidence,
+            reason=(
+                "Commit invariant converted a semantic Decision UPDATE into "
+                "SUPERSEDE so the prior generation and its edges remain "
+                "auditable"
+            ),
+        )
+        logger.warning(
+            "kg.consolidation.decision_update_converted candidate=%s "
+            "target=%s semantics_readable=%s",
+            candidate_id,
+            target_node_id,
+            existing is not None,
+            extra={
+                "event": "kg.consolidation.decision_update_converted",
+                "candidate_id": candidate_id,
+                "target_node_id": target_node_id,
+                "semantics_readable": existing is not None,
+            },
+        )
+    return guarded
 
 
 def _do_graph_commit(
@@ -1766,6 +2345,11 @@ def _do_graph_commit(
     kg_health_state: str,
     session_content_hash: str = "",
     session_artifact_id: str = "",
+    explicit_override_candidate_ids: frozenset[str] = frozenset(),
+    session_artifact_type: str = "",
+    spec_lineage_parent_intent: SpecLineageParentIntent = (
+        SpecLineageParentIntent.PRESERVE
+    ),
 ) -> tuple[dict, object, list, datetime, dict, list[dict]]:
     """Synchronous graph writes for ``commit_consolidation``.
 
@@ -1777,6 +2361,26 @@ def _do_graph_commit(
     Raises ``KGPrimitiveError`` on failure (after inline compensation).
     """
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
+    from okto_pulse.core.kg.reconciliation import decision_semantics_differ
+
+    try:
+        lineage_intent = SpecLineageParentIntent(spec_lineage_parent_intent)
+    except ValueError as exc:
+        raise KGPrimitiveError(
+            "spec_lineage_parent_intent_invalid",
+            "Unknown Spec-lineage parent intent.",
+            session_id=session_id,
+        ) from exc
+    clear_source_candidate_id = _validate_spec_lineage_parent_intent(
+        intent=lineage_intent,
+        artifact_type=session_artifact_type,
+        artifact_id=session_artifact_id,
+        agent_id=agent_id,
+        node_candidates=node_candidates,
+        edge_candidates=edge_candidates,
+        session_id=session_id,
+        force_reprocess=True,
+    )
 
     writer_path = _connectivity_writer_path(agent_id)
     _validate_degraded_connectivity_before_open(
@@ -1793,7 +2397,7 @@ def _do_graph_commit(
     )
     orch = TransactionOrchestrator(
         graph_scope=graph_scope,
-          # SQLite writes happen in async context
+        # SQLite writes happen in async context
         session_id=session_id,
         board_id=board_id,
     )
@@ -1826,6 +2430,11 @@ def _do_graph_commit(
         )
 
     try:
+        effective_hints = _preserve_decision_history_for_updates(
+            graph_scope=graph_scope,
+            node_candidates=node_candidates,
+            effective_hints=effective_hints,
+        )
         connectivity = _validate_graph_connectivity_before_commit(
             graph_scope=graph_scope,
             board_id=board_id,
@@ -1833,6 +2442,7 @@ def _do_graph_commit(
             node_candidates=node_candidates,
             edge_candidates=edge_candidates,
             effective_hints=effective_hints,
+            explicit_override_candidate_ids=explicit_override_candidate_ids,
             writer_path=writer_path,
             kg_health_state=kg_health_state,
         )
@@ -1852,46 +2462,54 @@ def _do_graph_commit(
                     candidate_to_node_type[cand_id] = node_type
                 continue
 
-            # Spec 4007e4a3 (Ideação #3, BR4 + BR5): UPDATE path must
-            # preserve nodes that a human curator has explicitly marked
-            # as human_curated. Without an explicit override (extension
-            # point — currently signalled by hint.confidence >= 1.0 from
-            # an agent-supplied override), the UPDATE is converted to
-            # NOOP-with-mapping so downstream edges still resolve. With
-            # an override, the agent reasserts ownership and the new
-            # node defaults to human_curated=False (BR5 reset).
-            if op == ReconciliationOperation.UPDATE and hint and getattr(hint, "target_node_id", None):
-                target_node_id = hint.target_node_id
-                node_type_check = _enum_value(cand.node_type)
-                is_curated = _node_is_human_curated(
-                    graph_scope, node_type_check, target_node_id
+            # Spec 4007e4a3 (Ideação #3, BR4 + BR5): automatic reconciliation
+            # must preserve nodes explicitly curated by a human. The only
+            # trustworthy override signal is membership in the request's
+            # agent_overrides map; hint confidence is evidence strength and
+            # must never double as authorization.
+            is_curated_target = False
+            has_explicit_override = cand_id in explicit_override_candidate_ids
+            if (
+                op
+                in (
+                    ReconciliationOperation.UPDATE,
+                    ReconciliationOperation.SUPERSEDE,
                 )
-                has_override = bool(hint.confidence and hint.confidence >= 1.0)
-                if is_curated and not has_override:
+                and hint
+                and getattr(hint, "target_node_id", None)
+            ):
+                target_node_id = hint.target_node_id
+                is_curated_target = _node_is_human_curated(
+                    graph_scope,
+                    node_type,
+                    target_node_id,
+                )
+                if is_curated_target and not has_explicit_override:
                     logger.info(
                         "kg.consolidation.manual_edit_preserved candidate=%s "
                         "target_node_id=%s session=%s",
-                        cand_id, target_node_id, session_id,
+                        cand_id,
+                        target_node_id,
+                        session_id,
                         extra={
                             "event": "kg.consolidation.manual_edit_preserved",
                             "candidate_id": cand_id,
                             "target_node_id": target_node_id,
                             "session_id": session_id,
+                            "requested_operation": op.value,
                         },
                     )
+                    orch.counters.nodes_noop += 1
                     candidate_to_graph_id[cand_id] = target_node_id
-                    candidate_to_node_type[cand_id] = node_type_check
+                    candidate_to_node_type[cand_id] = node_type
                     continue
-                if is_curated and has_override:
-                    # BR5 reset: agent reclaims authorship via override.
-                    # The downstream create_node already initialises
-                    # human_curated=False, so the reset is implicit. We
-                    # just emit the counter so observability tooling can
-                    # distinguish overrides from green-field UPDATEs.
+                if is_curated_target:
                     logger.info(
                         "kg.consolidation.reset_manual_flag candidate=%s "
                         "target_node_id=%s session=%s",
-                        cand_id, target_node_id, session_id,
+                        cand_id,
+                        target_node_id,
+                        session_id,
                         extra={
                             "event": "kg.consolidation.reset_manual_flag",
                             "candidate_id": cand_id,
@@ -1900,70 +2518,80 @@ def _do_graph_commit(
                         },
                     )
 
-                if not is_curated:
-                    # Spec eca49df9 (FR6/TR6): a non-curated UPDATE with a
-                    # target is an in-place semantic update — route it
-                    # through orch.update_node so nodes_updated has a real
-                    # production call site. The NC-8 dedup-reuse branch
-                    # below stays a MERGE; an UPDATE must not be miscounted
-                    # as MERGE or CREATE. (Curated+override keeps falling
-                    # through to reset-via-create.)
-                    update_attrs = {
-                        "title": cand.title,
-                        "content": cand.content or "",
-                        "context": cand.context or "",
-                        "justification": cand.justification or "",
-                        "graph_layer": getattr(cand, "graph_layer", "canonical"),
-                        "maturity_status": getattr(
-                            cand, "maturity_status", "canonical_eligible"
-                        ),
-                        "source_confidence": cand.source_confidence,
-                        "priority_boost": getattr(cand, "priority_boost", 0.0),
-                        "kind_of": getattr(cand, "kind_of", None),
-                        # An explicit UPDATE is a new assertion just like the
-                        # NC-8 reuse path below. Keep its provenance anchor in
-                        # sync with the audit row written by this session.
-                        **_session_provenance_attrs(
-                            cand,
-                            session_content_hash,
-                            session_artifact_id,
-                            seed_attestation=False,
-                        ),
-                    }
-                    orch.update_node(node_type_check, target_node_id, update_attrs)
-                    _bump_attestation(orch, node_type_check, target_node_id)
-                    candidate_to_graph_id[cand_id] = target_node_id
-                    candidate_to_node_type[cand_id] = node_type_check
-                    if node_type_check in _COGNITIVE_SOURCE_TYPES:
-                        # Explicit UPDATE used to bypass the durable ledger
-                        # entirely.  Snapshot the literal post-update node so
-                        # immutable replay validation can reject a divergent
-                        # reuse of the same generation instead of silently
-                        # accepting stale source data.
-                        generation = _node_generation(
-                            graph_scope, node_type_check, target_node_id
-                        )
-                        _queue_cognitive_source_record(
-                            node_id=target_node_id,
-                            node_type=node_type_check,
-                            generation=generation,
-                            attrs=_read_cognitive_source_node_attrs(
-                                graph_scope, node_type_check, target_node_id
-                            ),
-                        )
-                    logger.info(
-                        "kg.consolidation.updated candidate=%s target=%s "
-                        "type=%s session=%s",
-                        cand_id, target_node_id, node_type_check, session_id,
-                        extra={
-                            "event": "kg.consolidation.updated",
-                            "candidate_id": cand_id,
-                            "target_node_id": target_node_id,
-                            "node_type": node_type_check,
-                            "session_id": session_id,
-                        },
+            # Spec 4007e4a3 (Ideação #3, BR4 + BR5): UPDATE path must
+            # preserve nodes that a human curator has explicitly marked
+            # as human_curated. With an explicit override, update the target in
+            # place and reset authorship instead of minting a colliding node.
+            if (
+                op == ReconciliationOperation.UPDATE
+                and hint
+                and getattr(hint, "target_node_id", None)
+            ):
+                target_node_id = hint.target_node_id
+                node_type_check = _enum_value(cand.node_type)
+                # Spec eca49df9 (FR6/TR6): a target UPDATE is an in-place
+                # semantic update. The NC-8 reuse branch below stays a MERGE;
+                # an UPDATE must not be miscounted as MERGE or CREATE.
+                update_attrs = {
+                    "title": cand.title,
+                    "content": cand.content or "",
+                    "context": cand.context or "",
+                    "justification": cand.justification or "",
+                    "graph_layer": getattr(cand, "graph_layer", "canonical"),
+                    "maturity_status": getattr(
+                        cand, "maturity_status", "canonical_eligible"
+                    ),
+                    "source_confidence": cand.source_confidence,
+                    "priority_boost": getattr(cand, "priority_boost", 0.0),
+                    "kind_of": getattr(cand, "kind_of", None),
+                    "human_curated": False,
+                    # An explicit UPDATE is a new assertion just like the
+                    # NC-8 reuse path below. Keep its provenance anchor in
+                    # sync with the audit row written by this session.
+                    **_session_provenance_attrs(
+                        cand,
+                        session_content_hash,
+                        session_artifact_id,
+                        seed_attestation=False,
+                    ),
+                }
+                orch.update_node(node_type_check, target_node_id, update_attrs)
+                _bump_attestation(orch, node_type_check, target_node_id)
+                candidate_to_graph_id[cand_id] = target_node_id
+                candidate_to_node_type[cand_id] = node_type_check
+                if node_type_check in _COGNITIVE_SOURCE_TYPES:
+                    # Explicit UPDATE used to bypass the durable ledger
+                    # entirely.  Snapshot the literal post-update node so
+                    # immutable replay validation can reject a divergent
+                    # reuse of the same generation instead of silently
+                    # accepting stale source data.
+                    generation = _node_generation(
+                        graph_scope, node_type_check, target_node_id
                     )
-                    continue
+                    _queue_cognitive_source_record(
+                        node_id=target_node_id,
+                        node_type=node_type_check,
+                        generation=generation,
+                        attrs=_read_cognitive_source_node_attrs(
+                            graph_scope, node_type_check, target_node_id
+                        ),
+                    )
+                logger.info(
+                    "kg.consolidation.updated candidate=%s target=%s "
+                    "type=%s session=%s",
+                    cand_id,
+                    target_node_id,
+                    node_type_check,
+                    session_id,
+                    extra={
+                        "event": "kg.consolidation.updated",
+                        "candidate_id": cand_id,
+                        "target_node_id": target_node_id,
+                        "node_type": node_type_check,
+                        "session_id": session_id,
+                    },
+                )
+                continue
 
             # Spec eca49df9 (FR4): op==SUPERSEDE must go through
             # supersede_node (new node + superseded_by + :supersedes edge
@@ -1986,9 +2614,7 @@ def _do_graph_commit(
                 new_node_id = mint_node_id(
                     board_id,
                     node_type,
-                    derive_natural_key(
-                        cand.source_artifact_ref, node_type, cand.title
-                    ),
+                    derive_natural_key(cand.source_artifact_ref, node_type, cand.title),
                     successor_generation,
                 )
                 embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
@@ -2035,13 +2661,8 @@ def _do_graph_commit(
                     ).strip()
                     candidate_ref = str(cand.source_artifact_ref or "").strip()
                     if (
-                        (
-                            existing_ref
-                            and candidate_ref
-                            and existing_ref != candidate_ref
-                        )
-                        or (existing_ref and not candidate_ref)
-                    ):
+                        existing_ref and candidate_ref and existing_ref != candidate_ref
+                    ) or (existing_ref and not candidate_ref):
                         raise ValueError(
                             "deterministic_identity_conflict: explicit "
                             "SUPERSEDE successor is bound to a different "
@@ -2051,15 +2672,27 @@ def _do_graph_commit(
                             f"candidate_ref={candidate_ref!r}"
                         )
 
-                    existing_title = _node_title(
-                        graph_scope, node_type, new_node_id
+                    successor_semantics = _node_semantic_fields(
+                        graph_scope,
+                        node_type,
+                        new_node_id,
                     )
-                    if normalize_text(existing_title) != normalize_text(
-                        cand.title
-                    ):
+                    successor_conflicts = (
+                        decision_semantics_differ(
+                            cand,
+                            successor_semantics or {},
+                        )
+                        if node_type == "Decision"
+                        else normalize_text(
+                            _node_title(graph_scope, node_type, new_node_id)
+                        )
+                        != normalize_text(cand.title)
+                    )
+                    if successor_conflicts:
                         raise ValueError(
                             "deterministic_identity_conflict: explicit "
-                            "SUPERSEDE successor has a different title; "
+                            "SUPERSEDE successor has different assertion "
+                            "semantics; "
                             f"node_id={new_node_id} node_type={node_type}"
                         )
 
@@ -2094,9 +2727,7 @@ def _do_graph_commit(
                             superseded_id,
                             superseded_by=new_node_id,
                             superseded_at=_now_iso(),
-                            revocation_reason=(
-                                "superseded by consolidation session"
-                            ),
+                            revocation_reason=("superseded by consolidation session"),
                         )
                     orch.create_edge(
                         "supersedes",
@@ -2110,13 +2741,15 @@ def _do_graph_commit(
                     candidate_to_graph_id[cand_id] = new_node_id
                     candidate_to_node_type[cand_id] = node_type
                     orch.counters.nodes_merged += 1
-                    orch.counters.merge_audit_items.append({
-                        "candidate_id": cand_id,
-                        "node_type": node_type,
-                        "source_artifact_ref": candidate_ref,
-                        "reused_node_id": new_node_id,
-                        "operation": "MERGE_SUPERSEDE_BY_DETERMINISTIC_ID",
-                    })
+                    orch.counters.merge_audit_items.append(
+                        {
+                            "candidate_id": cand_id,
+                            "node_type": node_type,
+                            "source_artifact_ref": candidate_ref,
+                            "reused_node_id": new_node_id,
+                            "operation": "MERGE_SUPERSEDE_BY_DETERMINISTIC_ID",
+                        }
+                    )
                     # A graph-ahead crash can leave the deterministic
                     # successor materialized while its durable MKG-A source
                     # record is absent. Queue the same idempotent append as
@@ -2149,7 +2782,10 @@ def _do_graph_commit(
                     continue
 
                 orch.supersede_node(
-                    node_type, new_node_id, superseded_id, new_attrs,
+                    node_type,
+                    new_node_id,
+                    superseded_id,
+                    new_attrs,
                     revocation_reason="superseded by consolidation session",
                 )
                 candidate_to_graph_id[cand_id] = new_node_id
@@ -2163,7 +2799,11 @@ def _do_graph_commit(
                 logger.info(
                     "kg.consolidation.superseded candidate=%s new=%s old=%s "
                     "type=%s session=%s",
-                    cand_id, new_node_id, superseded_id, node_type, session_id,
+                    cand_id,
+                    new_node_id,
+                    superseded_id,
+                    node_type,
+                    session_id,
                     extra={
                         "event": "kg.consolidation.superseded",
                         "candidate_id": cand_id,
@@ -2183,27 +2823,38 @@ def _do_graph_commit(
             # event spawns a duplicate Entity for the same source.
             source_ref = cand.source_artifact_ref or ""
             if source_ref:
-                existing_id = _lookup_existing_node(
-                    graph_scope, node_type, source_ref
-                )
+                existing_id = _lookup_existing_node(graph_scope, node_type, source_ref)
                 if existing_id:
                     is_curated = _node_is_human_curated(
                         graph_scope, node_type, existing_id
                     )
+                    existing_semantics = _node_semantic_fields(
+                        graph_scope,
+                        node_type,
+                        existing_id,
+                    )
+                    decision_semantic_change = (
+                        node_type == "Decision"
+                        and decision_semantics_differ(
+                            cand,
+                            existing_semantics or {},
+                        )
+                    )
                     # Spec MKG-D-S1 (FR8/D7): an identity-bearing change
-                    # (normalized TITLE differs) on a non-curated reuse is
+                    # (normalized TITLE differs, or any semantic field for a
+                    # Decision) on a non-curated reuse is
                     # a supersede-with-trail — the previous state is
                     # preserved as a walkable chain entry instead of
-                    # evaporating under a destructive UPDATE. Same-title
-                    # content refinement stays the in-place UPDATE below.
-                    if not is_curated and normalize_text(
-                        cand.title
-                    ) != normalize_text(
-                        _node_title(graph_scope, node_type, existing_id)
+                    # evaporating under a destructive UPDATE.
+                    if not is_curated and (
+                        decision_semantic_change
+                        or normalize_text(cand.title)
+                        != normalize_text(
+                            _node_title(graph_scope, node_type, existing_id)
+                        )
                     ):
                         trail_generation = (
-                            _node_generation(graph_scope, node_type, existing_id)
-                            + 1
+                            _node_generation(graph_scope, node_type, existing_id) + 1
                         )
                         trail_node_id = mint_node_id(
                             board_id,
@@ -2222,23 +2873,17 @@ def _do_graph_commit(
                             "context": cand.context or "",
                             "justification": cand.justification or "",
                             "source_artifact_ref": cand.source_artifact_ref or "",
-                            "graph_layer": getattr(
-                                cand, "graph_layer", "canonical"
-                            ),
+                            "graph_layer": getattr(cand, "graph_layer", "canonical"),
                             "maturity_status": getattr(
                                 cand, "maturity_status", "canonical_eligible"
                             ),
                             "created_at": _now_iso(),
                             "created_by_agent": agent_id,
                             "source_confidence": cand.source_confidence,
-                            "relevance_score": getattr(
-                                cand, "relevance_score", 0.5
-                            ),
+                            "relevance_score": getattr(cand, "relevance_score", 0.5),
                             "query_hits": 0,
                             "last_queried_at": None,
-                            "priority_boost": getattr(
-                                cand, "priority_boost", 0.0
-                            ),
+                            "priority_boost": getattr(cand, "priority_boost", 0.0),
                             "human_curated": False,
                             "generation": trail_generation,
                             "kind_of": getattr(cand, "kind_of", None),
@@ -2255,7 +2900,7 @@ def _do_graph_commit(
                             existing_id,
                             trail_attrs,
                             revocation_reason=(
-                                "title change on NC-8 reuse (MKG-D trail)"
+                                "semantic change on NC-8 reuse (MKG-D trail)"
                             ),
                         )
                         candidate_to_graph_id[cand_id] = trail_node_id
@@ -2269,7 +2914,10 @@ def _do_graph_commit(
                         logger.info(
                             "kg.consolidation.reuse_superseded candidate=%s "
                             "old=%s new=%s type=%s session=%s",
-                            cand_id, existing_id, trail_node_id, node_type,
+                            cand_id,
+                            existing_id,
+                            trail_node_id,
+                            node_type,
                             session_id,
                             extra={
                                 "event": "kg.consolidation.reuse_superseded",
@@ -2345,13 +2993,15 @@ def _do_graph_commit(
                     # node belongs to a prior session and must not enter
                     # compensation rollback.
                     orch.counters.nodes_merged += 1
-                    orch.counters.merge_audit_items.append({
-                        "candidate_id": cand_id,
-                        "node_type": node_type,
-                        "source_artifact_ref": source_ref,
-                        "reused_node_id": existing_id,
-                        "operation": "MERGE",
-                    })
+                    orch.counters.merge_audit_items.append(
+                        {
+                            "candidate_id": cand_id,
+                            "node_type": node_type,
+                            "source_artifact_ref": source_ref,
+                            "reused_node_id": existing_id,
+                            "operation": "MERGE",
+                        }
+                    )
                     if node_type in _COGNITIVE_SOURCE_TYPES:
                         # Recovery for a graph-ahead NC-8 write: a prior
                         # auto-committed graph update may exist without the
@@ -2372,8 +3022,12 @@ def _do_graph_commit(
                     logger.info(
                         "kg.consolidation.dedup_reused candidate=%s "
                         "existing=%s type=%s ref=%s session=%s curated=%s",
-                        cand_id, existing_id, node_type, source_ref,
-                        session_id, is_curated,
+                        cand_id,
+                        existing_id,
+                        node_type,
+                        source_ref,
+                        session_id,
+                        is_curated,
                         extra={
                             "event": "kg.consolidation.dedup_reused",
                             "cand_id": cand_id,
@@ -2447,9 +3101,8 @@ def _do_graph_commit(
                 ).strip()
                 candidate_ref = str(cand.source_artifact_ref or "").strip()
                 if (
-                    (existing_ref and candidate_ref and existing_ref != candidate_ref)
-                    or (existing_ref and not candidate_ref)
-                ):
+                    existing_ref and candidate_ref and existing_ref != candidate_ref
+                ) or (existing_ref and not candidate_ref):
                     raise ValueError(
                         "deterministic_identity_conflict: deterministic node id "
                         "is already bound to a different source_artifact_ref; "
@@ -2458,9 +3111,23 @@ def _do_graph_commit(
                         f"candidate_ref={candidate_ref!r}"
                     )
 
-                is_curated = _node_is_human_curated(
-                    graph_scope, node_type, node_id
-                )
+                if node_type == "Decision":
+                    existing_semantics = _node_semantic_fields(
+                        graph_scope,
+                        node_type,
+                        node_id,
+                    )
+                    if existing_semantics is None or decision_semantics_differ(
+                        cand, existing_semantics
+                    ):
+                        raise ValueError(
+                            "deterministic_identity_conflict: refusing to "
+                            "overwrite Decision semantics at an existing "
+                            "generation; reconcile against the active lineage "
+                            "with SUPERSEDE"
+                        )
+
+                is_curated = _node_is_human_curated(graph_scope, node_type, node_id)
                 if not is_curated:
                     _apply_graph_node_update_partial(
                         orch, node_type, node_id, node_attrs
@@ -2479,13 +3146,15 @@ def _do_graph_commit(
                 candidate_to_graph_id[cand_id] = node_id
                 candidate_to_node_type[cand_id] = node_type
                 orch.counters.nodes_merged += 1
-                orch.counters.merge_audit_items.append({
-                    "candidate_id": cand_id,
-                    "node_type": node_type,
-                    "source_artifact_ref": candidate_ref,
-                    "reused_node_id": node_id,
-                    "operation": "MERGE_BY_DETERMINISTIC_ID",
-                })
+                orch.counters.merge_audit_items.append(
+                    {
+                        "candidate_id": cand_id,
+                        "node_type": node_type,
+                        "source_artifact_ref": candidate_ref,
+                        "reused_node_id": node_id,
+                        "operation": "MERGE_BY_DETERMINISTIC_ID",
+                    }
+                )
                 # Same graph-ahead recovery as explicit SUPERSEDE, for a
                 # generation-zero CREATE whose deterministic id already
                 # exists. The durable store deduplicates a surviving append.
@@ -2518,9 +3187,7 @@ def _do_graph_commit(
                 )
                 continue
 
-            _apply_graph_node_create(
-                orch, node_type, node_id, node_attrs
-            )
+            _apply_graph_node_create(orch, node_type, node_id, node_attrs)
             candidate_to_graph_id[cand_id] = node_id
             candidate_to_node_type[cand_id] = node_type
             _queue_cognitive_source_record(
@@ -2530,12 +3197,26 @@ def _do_graph_commit(
                 attrs=node_attrs,
             )
 
+        if clear_source_candidate_id is not None:
+            source_graph_id = candidate_to_graph_id.get(clear_source_candidate_id)
+            if source_graph_id is None:
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_clear_source_unresolved",
+                    "The canonical Spec Entity could not be resolved before "
+                    "the explicit parent clear.",
+                )
+            orch.clear_spec_lineage_parent(source_graph_id)
+
         for edge in edge_candidates.values():
             from_id, from_xref_type = _resolve_endpoint(
-                edge.from_candidate_id, candidate_to_graph_id, graph_scope=graph_scope,
+                edge.from_candidate_id,
+                candidate_to_graph_id,
+                graph_scope=graph_scope,
             )
             to_id, to_xref_type = _resolve_endpoint(
-                edge.to_candidate_id, candidate_to_graph_id, graph_scope=graph_scope,
+                edge.to_candidate_id,
+                candidate_to_graph_id,
+                graph_scope=graph_scope,
             )
             if from_id is None or to_id is None:
                 continue
@@ -2551,13 +3232,9 @@ def _do_graph_commit(
             from_cand = node_candidates.get(edge.from_candidate_id)
             to_cand = node_candidates.get(edge.to_candidate_id)
             from_hint = (
-                _enum_value(from_cand.node_type) if from_cand
-                else from_xref_type
+                _enum_value(from_cand.node_type) if from_cand else from_xref_type
             )
-            to_hint = (
-                _enum_value(to_cand.node_type) if to_cand
-                else to_xref_type
-            )
+            to_hint = _enum_value(to_cand.node_type) if to_cand else to_xref_type
             orch.create_edge(
                 edge_type=_enum_value(edge.edge_type),
                 from_id=from_id,
@@ -2586,19 +3263,21 @@ def _do_graph_commit(
                     endpoints_to_recompute.append(key)
             for edge in edge_candidates.values():
                 from_id_resolved, from_type_resolved = _resolve_endpoint(
-                    edge.from_candidate_id, candidate_to_graph_id, graph_scope=graph_scope,
+                    edge.from_candidate_id,
+                    candidate_to_graph_id,
+                    graph_scope=graph_scope,
                 )
                 if from_type_resolved is None:
                     from_type_resolved = candidate_to_node_type.get(
                         edge.from_candidate_id
                     )
                 to_id_resolved, to_type_resolved = _resolve_endpoint(
-                    edge.to_candidate_id, candidate_to_graph_id, graph_scope=graph_scope,
+                    edge.to_candidate_id,
+                    candidate_to_graph_id,
+                    graph_scope=graph_scope,
                 )
                 if to_type_resolved is None:
-                    to_type_resolved = candidate_to_node_type.get(
-                        edge.to_candidate_id
-                    )
+                    to_type_resolved = candidate_to_node_type.get(edge.to_candidate_id)
                 if from_id_resolved and from_type_resolved:
                     key = (from_type_resolved, from_id_resolved)
                     if key not in seen:
@@ -2611,13 +3290,16 @@ def _do_graph_commit(
                         endpoints_to_recompute.append(key)
             if endpoints_to_recompute:
                 _recompute_relevance_batch(
-                    graph_scope, board_id, endpoints_to_recompute,
+                    graph_scope,
+                    board_id,
+                    endpoints_to_recompute,
                     trigger="degree_delta",
                 )
         except Exception as exc:
             logger.warning(
                 "kg.scoring.commit_hook_failed session=%s err=%s",
-                session_id, exc,
+                session_id,
+                exc,
             )
 
         committed_at = datetime.now(timezone.utc)
@@ -2838,6 +3520,9 @@ async def commit_consolidation(
                 kg_health_state,
                 session.content_hash,
                 session.artifact_id,
+                frozenset(req.agent_overrides),
+                session.artifact_type,
+                session.spec_lineage_parent_intent,
                 executor=blocking_execution,
             )
         except KGPrimitiveError:
@@ -2965,6 +3650,20 @@ async def commit_consolidation(
             session.board_id,
             db,
         )
+        # A health-reader failure is normalized to ``recovery_needed``.
+        # Reject it here, before dispatching the graph callback, so neither
+        # a stale permissive cache entry nor the callback itself can open the
+        # graph. A pending deferred commit is relational-only on retry and has
+        # already passed this gate before its graph mutation.
+        if getattr(session, "pending_commit", None) is None:
+            _validate_degraded_connectivity_before_open(
+                board_id=session.board_id,
+                session_id=req.session_id,
+                node_candidates=dict(session.node_candidates),
+                edge_candidates=dict(session.edge_candidates),
+                writer_path=_connectivity_writer_path(agent_id),
+                kg_health_state=kg_health_state,
+            )
         try:
             return await _run_cancellation_atomic(
                 _complete_commit(kg_health_state),
@@ -3240,11 +3939,7 @@ def _node_is_human_curated(graph_scope, node_type: str, node_id: str) -> bool:
     """
     if not node_id:
         return False
-    cypher = (
-        f"MATCH (n:{node_type}) "
-        f"WHERE n.id = $id "
-        f"RETURN n.human_curated LIMIT 1"
-    )
+    cypher = f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.human_curated LIMIT 1"
     try:
         res = graph_scope.execute(cypher, {"id": node_id})
         if res.rows:
@@ -3410,42 +4105,81 @@ async def _validate_subtype_declarations(node_candidates: dict) -> None:
                 details={
                     "node_type": node_type,
                     "kind_of": kind_of,
-                    "declared_subtypes": sorted(
-                        declared_by_type.get(node_type, [])
-                    ),
+                    "declared_subtypes": sorted(declared_by_type.get(node_type, [])),
                 },
             )
 
 
 def _do_count_only_attestation(
-    board_id: str, refs: list[tuple[str, str]]
-) -> list[str]:
-    """Sync graph write for the count-only re-attestation (FR5/TR4).
+    board_id: str,
+    refs: tuple[tuple[str, str], ...],
+) -> tuple[tuple[tuple[str, str], ...], tuple[dict[str, str], ...]]:
+    """Apply each count-only bump and report every bounded failure.
 
-    One SET per referenced node — zero content writes, zero re-embedding,
-    no compensation records (same monotonic-evidence stance as the NC-8
-    bump, D6). Returns the node ids bumped.
+    The embedded graph adapter auto-commits statements, so one failed node
+    cannot make already-applied bumps disappear. Returning the successful
+    refs lets the owning session retry only the remainder after durability,
+    release, or per-node failures.
     """
 
-    async def _run() -> list[str]:
-        bumped: list[str] = []
-        registry = get_kg_registry()
-        async with await registry.graph_transaction.begin(board_id) as scope:
-            for node_type, node_id in refs:
-                try:
-                    scope.increment_attestation(
-                        node_type,
-                        node_id,
-                        attested_at=_now_iso(),
-                    )
-                    bumped.append(node_id)
-                except Exception as exc:
-                    logger.warning(
-                        "kg.attestation.count_only_node_failed board=%s "
-                        "node=%s type=%s err=%s",
-                        board_id, node_id, node_type, exc,
-                    )
-        return bumped
+    from okto_pulse.core.kg.write_barrier import require_write_token
+
+    require_write_token(board_id)
+
+    async def _run():
+        bumped: list[tuple[str, str]] = []
+        failures: list[dict[str, str]] = []
+        try:
+            scope = await get_kg_registry().graph_transaction.begin(board_id)
+        except Exception as exc:
+            return (), (
+                {
+                    "phase": "begin",
+                    "failure_type": type(exc).__name__,
+                },
+            )
+
+        for node_type, node_id in refs:
+            try:
+                actual_types = scope.find_node_types(node_id)
+                if node_type not in actual_types:
+                    raise LookupError("audited graph node is missing")
+                scope.increment_attestation(
+                    node_type,
+                    node_id,
+                    attested_at=_now_iso(),
+                )
+                bumped.append((node_type, node_id))
+            except Exception as exc:
+                failures.append(
+                    {
+                        "phase": "increment",
+                        "node_type": node_type,
+                        "node_id": node_id,
+                        "failure_type": type(exc).__name__,
+                    }
+                )
+
+        try:
+            await scope.commit()
+        except Exception as exc:
+            failures.append(
+                {
+                    "phase": "commit",
+                    "failure_type": type(exc).__name__,
+                }
+            )
+            try:
+                await scope.rollback()
+            except Exception as rollback_exc:
+                failures.append(
+                    {
+                        "phase": "rollback",
+                        "failure_type": type(rollback_exc).__name__,
+                    }
+                )
+
+        return tuple(bumped), tuple(failures)
 
     return run_async_blocking(_run())
 
@@ -3453,55 +4187,177 @@ def _do_count_only_attestation(
 async def _register_count_only_attestation(
     registry,
     *,
-    board_id: str,
-    artifact_id: str,
+    session: ConsolidationSession,
     previous_session_id: str | None,
-    trigger: str,
+    agent_id: str,
+    db,
 ) -> None:
-    """Spec MKG-B-S1 (FR5/TR4, D2 + OR1): an identical-content re-assertion
-    (nothing_changed short-circuit) still counts as corroboration — bump
-    attestation on the nodes of the last audited session of the same origin.
+    """Register one unchanged re-assertion under the full write boundary.
 
-    Best-effort by design: attestation is a monotonic evidence metric, so a
-    failure here logs a warning and NEVER breaks begin/propose. Also degrades
-    silently when the composed audit_repo predates the node-ref read (older
-    editions).
+    Progress is retained only after a graph bump was actually applied. If the
+    durability lifecycle or writer release fails, a retry reuses that progress
+    and never increments the same node twice. The public attested flag is set
+    only after all refs, durability, and lock release succeed.
     """
 
     if not previous_session_id:
-        return
+        raise KGPrimitiveError(
+            "count_only_attestation_source_missing",
+            "nothing_changed audit is missing its origin session",
+            session_id=session.session_id,
+        )
+
+    kg_health_state = await _resolve_commit_kg_health_state(session.board_id, db)
+    _validate_degraded_connectivity_before_open(
+        board_id=session.board_id,
+        session_id=session.session_id,
+        node_candidates=dict(session.node_candidates),
+        edge_candidates=dict(session.edge_candidates),
+        writer_path=_connectivity_writer_path(agent_id),
+        kg_health_state=kg_health_state,
+    )
+
+    getter = getattr(registry.audit_repo, "get_node_refs_by_session", None)
+    if getter is None:
+        raise KGPrimitiveError(
+            "count_only_attestation_source_unavailable",
+            "audit repository cannot resolve origin-session node references",
+            session_id=session.session_id,
+        )
     try:
-        getter = getattr(registry.audit_repo, "get_node_refs_by_session", None)
-        if getter is None:
-            return
-        refs = await getter(previous_session_id)
-        pairs = sorted(
-            {(r.graph_node_type, r.graph_node_id) for r in refs}
-        )
-        if not pairs:
-            return
-        bumped = await _run_graph_io(
-            _do_count_only_attestation, board_id, pairs
-        )
-        logger.info(
-            "kg.attestation.count_only board=%s artifact_id=%s "
-            "origin_session=%s trigger=%s nodes=%d",
-            board_id, artifact_id, previous_session_id, trigger, len(bumped),
-            extra={
-                "event": "kg.attestation.count_only",
-                "board_id": board_id,
-                "artifact_id": artifact_id,
-                "origin_session_id": previous_session_id,
-                "trigger": trigger,
-                "nodes_attested": bumped,
-            },
-        )
+        audit_refs = await getter(previous_session_id)
     except Exception as exc:
-        logger.warning(
-            "kg.attestation.count_only_failed board=%s artifact_id=%s "
-            "origin_session=%s trigger=%s err=%s",
-            board_id, artifact_id, previous_session_id, trigger, exc,
-        )
+        raise KGPrimitiveError(
+            "count_only_attestation_source_unavailable",
+            "origin-session node references could not be resolved",
+            session_id=session.session_id,
+            details={"failure_type": type(exc).__name__},
+        ) from exc
+
+    refs = tuple(
+        sorted({(ref.graph_node_type, ref.graph_node_id) for ref in audit_refs})
+    )
+    if not refs:
+        session.count_only_attested = True
+        return
+
+    progress_attr = "_count_only_attestation_progress"
+    progress = getattr(session, progress_attr, None)
+    if progress is not None:
+        if (
+            progress.get("previous_session_id") != previous_session_id
+            or tuple(progress.get("refs", ())) != refs
+        ):
+            raise KGPrimitiveError(
+                "count_only_attestation_state_invalid",
+                "session count-only retry state does not match the origin audit",
+                session_id=session.session_id,
+            )
+        completed = {tuple(ref) for ref in progress.get("completed", ())}
+    else:
+        completed = set()
+
+    remaining = tuple(ref for ref in refs if ref not in completed)
+    failures: tuple[dict[str, str], ...] = ()
+    mutation_ref = f"{session.session_id}:count_only_attestation"
+    cancelled_during_graph_write = False
+    try:
+        with guarded_board_write(
+            session.board_id,
+            operation="count_only_attestation",
+            owner_id=agent_id,
+            mutation_ref=mutation_ref,
+        ) as lease:
+            bumped: tuple[tuple[str, str], ...] = ()
+            if remaining:
+                graph_task = asyncio.create_task(
+                    _run_graph_io(
+                        _do_count_only_attestation,
+                        session.board_id,
+                        remaining,
+                    ),
+                    name="core.kg.count_only_attestation",
+                )
+                try:
+                    bumped, failures = await asyncio.shield(graph_task)
+                except asyncio.CancelledError:
+                    # The embedded adapter may have auto-committed a bump.
+                    # Drain and record its exact result before completing the
+                    # durability boundary, then propagate cancellation after
+                    # the session idempotency marker is safe.
+                    cancelled_during_graph_write = True
+                    while not graph_task.done():
+                        try:
+                            await asyncio.shield(graph_task)
+                        except asyncio.CancelledError:
+                            continue
+                    bumped, failures = graph_task.result()
+            if bumped:
+                completed.update(bumped)
+                setattr(
+                    session,
+                    progress_attr,
+                    {
+                        "previous_session_id": previous_session_id,
+                        "refs": refs,
+                        "completed": tuple(sorted(completed)),
+                    },
+                )
+
+            await run_blocking_graph_io(
+                lease.ensure_durable,
+                task_name="core.kg.count_only_attestation_durability",
+            )
+            if failures:
+                raise KGPrimitiveError(
+                    "count_only_attestation_failed",
+                    "one or more origin nodes could not be re-attested",
+                    session_id=session.session_id,
+                    details={"failures": list(failures)},
+                )
+            if completed != set(refs):
+                raise KGPrimitiveError(
+                    "count_only_attestation_failed",
+                    "count-only attestation completed an incomplete node set",
+                    session_id=session.session_id,
+                    details={
+                        "expected_nodes": len(refs),
+                        "completed_nodes": len(completed),
+                    },
+                )
+    except GuardedWriteError as exc:
+        raise KGPrimitiveError(
+            "count_only_attestation_failed",
+            "count-only attestation write boundary failed",
+            session_id=session.session_id,
+            details={
+                "failure_code": exc.code,
+                "retryable": exc.retryable,
+                **exc.details,
+            },
+        ) from exc
+
+    session.count_only_attested = True
+    if hasattr(session, progress_attr):
+        delattr(session, progress_attr)
+    logger.info(
+        "kg.attestation.count_only board=%s artifact_id=%s "
+        "origin_session=%s trigger=propose nodes=%d",
+        session.board_id,
+        session.artifact_id,
+        previous_session_id,
+        len(refs),
+        extra={
+            "event": "kg.attestation.count_only",
+            "board_id": session.board_id,
+            "artifact_id": session.artifact_id,
+            "origin_session_id": previous_session_id,
+            "trigger": "propose",
+            "nodes_attested": [node_id for _node_type, node_id in refs],
+        },
+    )
+    if cancelled_during_graph_write:
+        raise asyncio.CancelledError
 
 
 def _read_cognitive_source_node_attrs(
@@ -3517,13 +4373,12 @@ def _read_cognitive_source_node_attrs(
 
     from okto_pulse.core.kg.schema_contract import STABLE_NODE_PROPERTIES
 
-    property_names = tuple(
-        name for name in STABLE_NODE_PROPERTIES if name != "id"
-    ) + ("embedding",)
+    property_names = tuple(name for name in STABLE_NODE_PROPERTIES if name != "id") + (
+        "embedding",
+    )
     return_clause = ", ".join(f"n.{name}" for name in property_names)
     result = graph_scope.execute(
-        f"MATCH (n:{node_type}) WHERE n.id = $id "
-        f"RETURN {return_clause} LIMIT 1",
+        f"MATCH (n:{node_type}) WHERE n.id = $id RETURN {return_clause} LIMIT 1",
         {"id": node_id},
     )
     rows = getattr(result, "rows", ())
@@ -3553,8 +4408,7 @@ def _cognitive_source_json_value(value):
         return [_cognitive_source_json_value(item) for item in value]
     if isinstance(value, dict):
         return {
-            str(key): _cognitive_source_json_value(item)
-            for key, item in value.items()
+            str(key): _cognitive_source_json_value(item) for key, item in value.items()
         }
     tolist = getattr(value, "tolist", None)
     if callable(tolist):
@@ -3621,9 +4475,7 @@ async def _append_cognitive_source_records(
 
     try:
         resolved_store = store or require_cognitive_source_store()
-        source_records = tuple(
-            CognitiveSourceRecord(**kwargs) for kwargs in records
-        )
+        source_records = tuple(CognitiveSourceRecord(**kwargs) for kwargs in records)
         if context is None:
             await resolved_store.append_many(source_records)
         else:
@@ -3705,6 +4557,35 @@ async def _append_cognitive_source_records(
         ) from exc
 
 
+def _node_semantic_fields(
+    graph_scope,
+    node_type: str,
+    node_id: str,
+) -> dict[str, str | None] | None:
+    """Read assertion-bearing fields used by the Decision lineage policy."""
+
+    if not node_id:
+        return None
+    try:
+        result = graph_scope.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id "
+            "RETURN n.title, n.content, n.context, n.justification LIMIT 1",
+            {"id": node_id},
+        )
+        rows = getattr(result, "rows", ())
+        if rows:
+            row = rows[0]
+            return {
+                "title": row[0],
+                "content": row[1],
+                "context": row[2],
+                "justification": row[3],
+            }
+    except Exception:
+        pass
+    return None
+
+
 def _node_title(graph_scope, node_type: str, node_id: str) -> str:
     """Read a node's current title (spec MKG-D-S1 FR8 trail criterion).
 
@@ -3714,11 +4595,7 @@ def _node_title(graph_scope, node_type: str, node_id: str) -> str:
     """
     if not node_id:
         return ""
-    cypher = (
-        f"MATCH (n:{node_type}) "
-        f"WHERE n.id = $id "
-        f"RETURN n.title LIMIT 1"
-    )
+    cypher = f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.title LIMIT 1"
     try:
         res = graph_scope.execute(cypher, {"id": node_id})
         if res.rows:
@@ -3729,17 +4606,14 @@ def _node_title(graph_scope, node_type: str, node_id: str) -> str:
     return ""
 
 
-def _node_superseded_by(
-    graph_scope, node_type: str, node_id: str
-) -> str | None:
+def _node_superseded_by(graph_scope, node_type: str, node_id: str) -> str | None:
     """Return the deterministic successor linked from ``node_id``, if any."""
 
     if not node_id:
         return None
     try:
         result = graph_scope.execute(
-            f"MATCH (n:{node_type}) WHERE n.id = $id "
-            "RETURN n.superseded_by LIMIT 1",
+            f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.superseded_by LIMIT 1",
             {"id": node_id},
         )
         rows = getattr(result, "rows", ())
@@ -3760,11 +4634,7 @@ def _node_generation(graph_scope, node_type: str, node_id: str) -> int:
     """
     if not node_id:
         return 0
-    cypher = (
-        f"MATCH (n:{node_type}) "
-        f"WHERE n.id = $id "
-        f"RETURN n.generation LIMIT 1"
-    )
+    cypher = f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.generation LIMIT 1"
     try:
         res = graph_scope.execute(cypher, {"id": node_id})
         if res.rows:
@@ -3796,7 +4666,9 @@ def _is_cross_session_entity_ref(endpoint: str) -> bool:
     if not endpoint.endswith("_entity"):
         return False
     body = endpoint[: -len("_entity")]
-    return any(body.startswith(p) and len(body) > len(p) for p in _CROSS_SESSION_PREFIXES)
+    return any(
+        body.startswith(p) and len(body) > len(p) for p in _CROSS_SESSION_PREFIXES
+    )
 
 
 def _resolve_endpoint(
@@ -3833,7 +4705,7 @@ def _resolve_endpoint(
     # own naming convention here (`<artifact>_<id8>_entity`) to avoid
     # surprises; new patterns must be opt-in.
     if endpoint.endswith("_entity"):
-        body = endpoint[:-len("_entity")]
+        body = endpoint[: -len("_entity")]
         for prefix, ref_prefix in (
             ("story_", "story:"),
             ("ideation_", "ideation:"),
@@ -3843,7 +4715,7 @@ def _resolve_endpoint(
             ("card_", "card:"),
         ):
             if body.startswith(prefix):
-                short = body[len(prefix):]
+                short = body[len(prefix) :]
                 # Source_artifact_ref uses the full UUID. We probe with a
                 # prefix match because the worker only carries the first 8
                 # chars in the candidate id.
@@ -3862,27 +4734,38 @@ def _resolve_endpoint(
     return None, None
 
 
-_NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset({
-    "title", "content", "context", "justification",
-    "priority_boost", "source_confidence",
-    # Maturity METADATA (card 302044a7 / FR4 / dec_85ba8dc2): graph_layer +
-    # maturity_status are safe to PROMOTE on a merge by source_artifact_ref
-    # (e.g. working->canonical when the source spec reaches done). They are
-    # maturity metadata, NOT curated content — so they update even for
-    # human_curated nodes, while title/content/context/justification stay
-    # protected. Historical/HNSW-locked fields (embedding, created_at,
-    # query_hits, human_curated, …) remain excluded.
-    "graph_layer", "maturity_status",
-    # Spec MKG-B-S1 (FR3/D5): extraction provenance is CONTENT-DERIVED —
-    # when the NC-8 rewrite replaces the content, the anchor must describe
-    # the new assertion (drift clears after re-consolidation). Attestation
-    # counters stay EXCLUDED: they accumulate via _bump_attestation and can
-    # never be reset by an update payload.
-    "source_span_start", "source_span_end", "source_span_quote",
-    "extraction_model_id", "extraction_prompt_hash", "source_content_hash",
-    # Spec MKG-E-S1 (FR4): the declared subtype is content-derived too.
-    "kind_of",
-})
+_NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset(
+    {
+        "title",
+        "content",
+        "context",
+        "justification",
+        "priority_boost",
+        "source_confidence",
+        # Maturity METADATA (card 302044a7 / FR4 / dec_85ba8dc2): graph_layer +
+        # maturity_status are safe to PROMOTE on a merge by source_artifact_ref
+        # (e.g. working->canonical when the source spec reaches done). They are
+        # maturity metadata, NOT curated content — so they update even for
+        # human_curated nodes, while title/content/context/justification stay
+        # protected. Historical/HNSW-locked fields (embedding, created_at,
+        # query_hits, human_curated, …) remain excluded.
+        "graph_layer",
+        "maturity_status",
+        # Spec MKG-B-S1 (FR3/D5): extraction provenance is CONTENT-DERIVED —
+        # when the NC-8 rewrite replaces the content, the anchor must describe
+        # the new assertion (drift clears after re-consolidation). Attestation
+        # counters stay EXCLUDED: they accumulate via _bump_attestation and can
+        # never be reset by an update payload.
+        "source_span_start",
+        "source_span_end",
+        "source_span_quote",
+        "extraction_model_id",
+        "extraction_prompt_hash",
+        "source_content_hash",
+        # Spec MKG-E-S1 (FR4): the declared subtype is content-derived too.
+        "kind_of",
+    }
+)
 
 # Vector values are adapter-managed immutable attributes on the incremental
 # dedup path. Content metadata can be refreshed without requiring the Core to
@@ -3904,9 +4787,7 @@ def _apply_graph_node_update_partial(
     notably backend-managed vectors and historical timestamps/counters.
     """
     values = {
-        key: value
-        for key, value in attrs.items()
-        if key in _NODE_UPDATEABLE_ATTRS
+        key: value for key, value in attrs.items() if key in _NODE_UPDATEABLE_ATTRS
     }
     if not values:
         return
@@ -3917,9 +4798,7 @@ def _apply_graph_node_update_partial(
     # rollback of the current session despite belonging to the prior one.
 
 
-def _apply_graph_node_create(
-    orch, node_type: str, node_id: str, attrs: dict
-) -> None:
+def _apply_graph_node_create(orch, node_type: str, node_id: str, attrs: dict) -> None:
     """Create a node through the semantic transaction scope."""
     orch.create_node(node_type, node_id, attrs)
 
@@ -3991,7 +4870,9 @@ def _audit_session_id(audit_row) -> str | None:
     return audit_row.session_id if audit_row else None
 
 
-async def _commit_audit_records(registry, db, records, counters, req, session, agent_id, committed_at):
+async def _commit_audit_records(
+    registry, db, records, counters, req, session, agent_id, committed_at
+):
     """Write audit records via the composed AuditRepository.
 
     Args:

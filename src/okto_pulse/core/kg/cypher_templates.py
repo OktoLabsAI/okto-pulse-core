@@ -87,7 +87,7 @@ WHERE d.title CONTAINS $topic
   AND d.relevance_score >= $min_relevance
   AND {superseded_filter_clause('d')}
 RETURN d.id, d.title, d.content, d.created_at, d.source_confidence,
-       d.relevance_score, d.superseded_by
+       d.relevance_score, d.superseded_by, d.source_artifact_ref
 ORDER BY d.relevance_score DESC, d.created_at DESC
 LIMIT $max_rows
 """

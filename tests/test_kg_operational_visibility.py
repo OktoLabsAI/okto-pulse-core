@@ -128,8 +128,16 @@ def _register_pending_tool():
     async def _get_agent():
         return _Agent()
 
+    async def _get_board_agent(_board_id: str):
+        return await _get_agent()
+
     reg = _Reg()
-    register_kg_tools(reg, get_agent=_get_agent, get_uow=lambda: _NullDb())
+    register_kg_tools(
+        reg,
+        get_agent=_get_agent,
+        get_uow=lambda: _NullDb(),
+        get_board_agent=_get_board_agent,
+    )
     return reg.tools["okto_pulse_kg_list_cognitive_pending_items"]
 
 

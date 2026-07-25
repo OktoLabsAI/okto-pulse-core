@@ -18,7 +18,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -309,33 +309,30 @@ def test_lifecycle_error_records_wal_fail():
     from okto_pulse.core.application.processors.consolidation import (
         _apply_board_graph_lifecycle_after_commit,
     )
-    from okto_pulse.core.kg.safe_write_lifecycle import SafeWriteLifecycleStatus
+    from okto_pulse.core.kg.guarded_write import GuardedWriteError
 
     board_id = f"board-ac7-{uuid.uuid4().hex[:8]}"
     clear_board(board_id)
 
-    # Fake lifecycle response: status != APPLIED
-    _fake_response = SimpleNamespace(
-        status=SafeWriteLifecycleStatus.FAILED,
-        failed_step="checkpoint",
-        health_state_after="recovery_needed",
-        correlation_id=uuid.uuid4().hex,
-    )
-
-    class _FakeLifecycle:
-        def apply(self, **kwargs):
-            return _fake_response
-
-    with patch(
-        "okto_pulse.core.application.processors.consolidation.KGSafeWriteLifecycle",
-        return_value=_FakeLifecycle(),
-    ):
-        with pytest.raises(RuntimeError, match="board_graph_safe_lifecycle_failed"):
-            _apply_board_graph_lifecycle_after_commit(
-                board_id=board_id,
-                owner_token=f"consolidation-worker:test:{uuid.uuid4().hex}",
-                mutation_ref="card:test-id:sess-1",
+    class _FailingWriteLease:
+        def ensure_durable(self, **_kwargs):
+            raise GuardedWriteError(
+                "safe_lifecycle_failed",
+                "forced lifecycle failure",
+                retryable=True,
+                details={
+                    "failed_step": "checkpoint",
+                    "health_state_after": "recovery_needed",
+                    "correlation_id": uuid.uuid4().hex,
+                },
             )
+
+    with pytest.raises(RuntimeError, match="board_graph_safe_lifecycle_failed"):
+        _apply_board_graph_lifecycle_after_commit(
+            board_id=board_id,
+            mutation_ref="card:test-id:sess-1",
+            write_lease=_FailingWriteLease(),
+        )
 
     # AC7: the FailureEvent must have been recorded BEFORE the raise
     failures = get_failures(board_id)

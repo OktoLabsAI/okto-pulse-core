@@ -22,7 +22,6 @@ from okto_pulse.core.application.effective_knowledge_read import (
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
-    ConflictError,
     EntityNotFoundError,
     commit,
 )
@@ -379,12 +378,13 @@ class AddCardDependencyResult:
 
 
 class AddCardDependencyUseCase:
-    """Add ``card_id`` depends-on ``depends_on_id`` (write). ``CardService``
-    returns ``None`` on a duplicate, self-reference, or cycle — that becomes
-    ``ConflictError``. Missing or out-of-scope endpoints are indistinguishable
-    ``EntityNotFoundError`` results. Captures the generated id before the commit
-    (the Python-side default is set at construction) and returns it for the
-    adapter envelope."""
+    """Add ``card_id`` depends-on ``depends_on_id`` (write).
+
+    Duplicate requests are idempotent and return the existing dependency id.
+    Self-references and cycles propagate as distinct ``CardOperationError``
+    codes. Missing or out-of-scope endpoints are indistinguishable
+    ``EntityNotFoundError`` results.
+    """
 
     async def execute(
         self,
@@ -412,8 +412,6 @@ class AddCardDependencyUseCase:
             raise EntityNotFoundError("card", command.depends_on_id)
 
         dep = await service.add_dependency(command.card_id, command.depends_on_id)
-        if not dep:
-            raise ConflictError("card_dependency", command.card_id)
         dependency_id = dep.id
         await commit(uow)
         return AddCardDependencyResult(dependency_id)

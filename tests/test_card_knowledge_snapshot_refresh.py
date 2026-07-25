@@ -68,6 +68,8 @@ class _CardService:
     def __init__(self, card):
         self.card = card
         self.update_count = 0
+        self.activity_actor_type = None
+        self.activity_actor_name = None
 
     async def get_card(self, _card_id: str):
         return self.card
@@ -79,9 +81,13 @@ class _CardService:
         data,
         *,
         allow_card_resource_write: bool,
+        actor_type: str,
+        actor_name: str | None,
     ):
         assert allow_card_resource_write is True
         self.update_count += 1
+        self.activity_actor_type = actor_type
+        self.activity_actor_name = actor_name
         self.card.knowledge_bases = copy.deepcopy(data.knowledge_bases)
         return self.card
 
@@ -126,7 +132,12 @@ def _command() -> McpCopyKnowledgeToCardCommand:
 
 
 def _actor() -> ActorContext:
-    return ActorContext("actor-refresh", "mcp", board_id="board-1")
+    return ActorContext(
+        "actor-refresh",
+        "mcp",
+        actor_name="Refresh Agent",
+        board_id="board-1",
+    )
 
 
 @pytest.mark.asyncio
@@ -160,6 +171,8 @@ async def test_manual_copy_refreshes_changed_snapshot_then_true_noops_when_equiv
     assert refreshed.copied == 1
     assert refreshed.copied_ids == ["cardkb-stable"]
     assert uow.card_service.update_count == 1
+    assert uow.card_service.activity_actor_type == "agent"
+    assert uow.card_service.activity_actor_name == "Refresh Agent"
     assert uow.commit_count == 1
     snapshot = card.knowledge_bases[0]
     assert snapshot["content"] == "new content"

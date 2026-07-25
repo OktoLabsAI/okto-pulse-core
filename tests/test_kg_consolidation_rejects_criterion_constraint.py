@@ -20,6 +20,7 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.connectivity_guard import (
@@ -47,6 +48,25 @@ _REMEDIATION_OPTIONS = (
     "abort and recreate",
     "connectivity owner",
 )
+
+
+@pytest_asyncio.fixture
+async def board_handle(board_id, db_factory):
+    """Bootstrap both graph and relational board state for commit-path tests."""
+    from kg_schema_testing import bootstrap_board_graph
+    from sqlalchemy_test_models import Board
+
+    async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Ownership guard {board_id}",
+                    owner_id="ownership-guard-test",
+                )
+            )
+            await db.commit()
+    return bootstrap_board_graph(board_id)
 
 
 def _node(candidate_id: str, node_type: str, source_ref: str = ""):

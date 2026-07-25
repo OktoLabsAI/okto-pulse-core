@@ -9,8 +9,9 @@ completion report remain outside this preview contract.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 import uuid
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 
@@ -28,10 +29,22 @@ from okto_pulse.core.domain.enums import (
     SprintStatus,
 )
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
-from okto_pulse.core.models.schemas import SpecMove
+from okto_pulse.core.kg.cognitive_closeout_gate import (
+    ELIGIBLE_CLOSEOUT_ENTITY_TYPES,
+)
+from okto_pulse.core.models.schemas import (
+    IdeationMove,
+    RefinementCreate,
+    SpecMove,
+)
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services import main as main_service
-from okto_pulse.core.services.main import SpecService
+from okto_pulse.core.services.main import (
+    IdeationService,
+    RefinementService,
+    SpecService,
+)
+from okto_pulse.core.services.resource_gate import ResourceGateService
 from sqlalchemy_test_models import Board, Card, Ideation, Refinement, Spec, Sprint
 
 
@@ -421,7 +434,7 @@ async def test_refinement_done_preview_uses_canonical_cognitive_gate(
 
 
 @pytest.mark.asyncio
-async def test_ideation_done_preview_uses_canonical_cognitive_gate(
+async def test_ideation_done_preview_does_not_apply_unsupported_cognitive_gate(
     db_factory,
 ) -> None:
     board_id = _id("idea-cog-board")
@@ -438,6 +451,19 @@ async def test_ideation_done_preview_uses_canonical_cognitive_gate(
         ),
     )
 
+    cognitive_gate = AsyncMock(
+        side_effect=AssertionError("ideations are not cognitive-closeout entities")
+    )
+
+    def configure_services(services) -> None:
+        # A legacy adapter may still expose this attribute. The ideation
+        # transition must not call it because the cognitive contract excludes
+        # ideations.
+        services.ideations._validate_cognitive_done = cognitive_gate
+        services.resource_gate.validate_or_raise_entity_completion = AsyncMock(
+            return_value=None
+        )
+
     async with db_factory() as db:
         done = await _preview_transition(
             db,
@@ -445,50 +471,162 @@ async def test_ideation_done_preview_uses_canonical_cognitive_gate(
             entity_type="ideation",
             entity_id=ideation_id,
             to_status="done",
-            configure_services=lambda services: _install_cognitive_block(
-                services, "ideations"
-            ),
+            configure_services=configure_services,
         )
 
-    assert "cognitive_consolidation_pending" in (done.blocked_reason or "")
+    assert done.blocked_reason is None
+    cognitive_gate.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_cognitive_preview_never_runs_mutating_kg_health_probe(
+async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_refinement(
     db_factory,
     monkeypatch,
 ) -> None:
-    board_id = _id("idea-readonly-board")
-    ideation_id = _id("idea-readonly")
+    """Regression for the published ideation→cognitive-closeout routing bug."""
+
+    assert "ideation" not in ELIGIBLE_CLOSEOUT_ENTITY_TYPES
+    board_id = _id("idea-done-board")
+    ideation_id = _id("idea-done")
+    cognitive_closeout = Mock(
+        side_effect=AssertionError(
+            "ideation completion must not enter cognitive closeout"
+        )
+    )
+    monkeypatch.setattr(
+        main_service,
+        "_evaluate_cognitive_closeout_or_raise",
+        cognitive_closeout,
+    )
+
+    async with db_factory() as db:
+        db.add(_board(board_id))
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="Ideation completing without cognitive closeout",
+                description="Immutable parent context for refinement derivation.",
+                status=IdeationStatus.EVALUATING,
+                created_by=USER_ID,
+            )
+        )
+        await db.flush()
+
+        resource_gate = ResourceGateService(db)
+        for resource_type in ("architecture", "mockup", "knowledge_base"):
+            await resource_gate.mark_not_applicable(
+                board_id,
+                "ideation",
+                ideation_id,
+                resource_type,
+                USER_ID,
+                justification=f"{resource_type} is not applicable to this regression.",
+                source_channel="ui",
+            )
+
+        ideation_service = IdeationService(db)
+        moved = await ideation_service.move_ideation(
+            ideation_id,
+            USER_ID,
+            IdeationMove(status=IdeationStatus.DONE),
+        )
+        assert moved is not None
+        assert moved.status is IdeationStatus.DONE
+
+        snapshots = await ideation_service.list_snapshots(ideation_id)
+        assert len(snapshots) == 1
+        assert snapshots[0].version == moved.version
+        assert snapshots[0].title == moved.title
+
+        refinement = await RefinementService(db).create_refinement(
+            ideation_id,
+            USER_ID,
+            RefinementCreate(
+                ideation_id=ideation_id,
+                title="Derived after ideation completion",
+            ),
+            skip_ownership_check=True,
+        )
+        assert refinement is not None
+        refinement_id = refinement.id
+        assert refinement.ideation_id == ideation_id
+        assert refinement.status is RefinementStatus.DRAFT
+        await db.commit()
+
+    cognitive_closeout.assert_not_called()
+    async with db_factory() as db:
+        persisted = await IdeationService(db).get_ideation(ideation_id)
+        persisted_refinement = await RefinementService(db).get_refinement(
+            refinement_id
+        )
+        snapshots = await IdeationService(db).list_snapshots(ideation_id)
+
+    assert persisted is not None
+    assert persisted.status is IdeationStatus.DONE
+    assert persisted_refinement is not None
+    assert persisted_refinement.ideation_id == ideation_id
+    assert len(snapshots) == 1
+
+
+@pytest.mark.asyncio
+async def test_card_cognitive_preview_reads_same_graph_health_as_mutation(
+    db_factory,
+    monkeypatch,
+) -> None:
+    board_id = _id("card-health-board")
+    spec_id = _id("card-health-spec")
+    card_id = _id("card-health")
     await _persist(
         db_factory,
-        _board(board_id),
-        Ideation(
-            id=ideation_id,
+        _board(board_id, settings={"require_task_validation": False}),
+        Spec(
+            id=spec_id,
             board_id=board_id,
-            title="Read-only cognitive preview",
-            status=IdeationStatus.EVALUATING,
+            title="Card health spec",
+            status=SpecStatus.IN_PROGRESS,
+            test_scenarios=[],
+            created_by=USER_ID,
+        ),
+        Card(
+            id=card_id,
+            board_id=board_id,
+            spec_id=spec_id,
+            title="Card health parity",
+            status=CardStatus.IN_PROGRESS,
+            card_type=CardType.NORMAL,
+            position=0,
             created_by=USER_ID,
         ),
     )
-    probe = AsyncMock(
-        side_effect=AssertionError(
-            "allowed-transition preview must not bootstrap KG health"
-        )
-    )
+    probe = AsyncMock(return_value="healthy")
     monkeypatch.setattr(main_service, "_resolve_closeout_graph_state", probe)
+    observed: dict = {}
+
+    class AllowingGate:
+        def evaluate(self, **kwargs):
+            observed.update(kwargs)
+            return SimpleNamespace(allowed=True, blocking_count=0)
+
+    def configure_services(services) -> None:
+        services.cards._cognitive_closeout_gate_factory = AllowingGate
+        services.resource_gate.validate_or_raise_entity_completion = AsyncMock(
+            return_value=None
+        )
 
     async with db_factory() as db:
         done = await _preview_transition(
             db,
             board_id=board_id,
-            entity_type="ideation",
-            entity_id=ideation_id,
+            entity_type="card",
+            entity_id=card_id,
             to_status="done",
+            configure_services=configure_services,
         )
 
-    assert done.blocked_reason is not None
-    probe.assert_not_awaited()
+    assert done.blocked_reason is None
+    probe.assert_awaited_once_with(board_id, ANY)
+    assert observed["graph_state"] == "healthy"
 
 
 @pytest.mark.asyncio

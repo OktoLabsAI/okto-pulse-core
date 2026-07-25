@@ -191,6 +191,7 @@ class _Cards:
         self.creation_conflict = creation_conflict
         self.origin_spec_id = origin_spec_id
         self.created = 0
+        self.create_kwargs: dict[str, Any] | None = None
 
     async def get_card(self, card_id: str) -> Any:
         self.events.append("card_read")
@@ -218,6 +219,7 @@ class _Cards:
     ) -> Any:
         self.events.append("card_create")
         self.created += 1
+        self.create_kwargs = kwargs
         assert kwargs["knowledge_propagation_v2"] is True
         assert kwargs["target_id"] == self.knowledge.target_id
         if self.creation_conflict:
@@ -237,7 +239,11 @@ class _Specs:
 
 
 class _Boards:
+    def __init__(self) -> None:
+        self.activity_count = 0
+
     async def _log_activity(self, **kwargs: Any) -> None:
+        self.activity_count += 1
         del kwargs
 
 
@@ -259,13 +265,15 @@ class _Uow:
             creation_conflict=creation_conflict,
             origin_spec_id=origin_spec_id,
         )
+        boards = _Boards()
         self.services = SimpleNamespace(
             knowledge_propagation=knowledge,
             cards=cards,
             specs=_Specs(),
-            boards=_Boards(),
+            boards=boards,
         )
         self.cards = cards
+        self.boards = boards
         self.commits = 0
         self.synchronize_error: Exception | None = None
 
@@ -295,7 +303,15 @@ async def test_create_card_v2_preflights_before_target_and_stages_atomically() -
     uow = _Uow()
 
     result = await CreateCardKnowledgeV2UseCase().execute(
-        CreateCardKnowledgeV2Command("board-1", _card_data()),
+        CreateCardKnowledgeV2Command(
+            "board-1",
+            _card_data(),
+            activity_details={
+                "title": "Implement governed propagation",
+                "status": "not_started",
+                "priority": "none",
+            },
+        ),
         actor=_actor(),
         uow=uow,  # type: ignore[arg-type]
     )
@@ -304,6 +320,15 @@ async def test_create_card_v2_preflights_before_target_and_stages_atomically() -
     assert uow.events.index("card_create") < uow.events.index("synchronize")
     assert uow.events.index("synchronize") < uow.events.index("knowledge_mutate")
     assert uow.events[-1] == "commit"
+    assert uow.cards.create_kwargs is not None
+    assert uow.cards.create_kwargs["actor_type"] == "agent"
+    assert uow.cards.create_kwargs["actor_name"] == "Agent"
+    assert uow.cards.create_kwargs["activity_details"] == {
+        "title": "Implement governed propagation",
+        "status": "not_started",
+        "priority": "none",
+    }
+    assert uow.boards.activity_count == 0
     assert isinstance(uow.synchronize_error, KnowledgeCreationRaceError)
     projected = project_card_create_response(result)
     assert projected.card["id"] == uow.services.knowledge_propagation.target_id

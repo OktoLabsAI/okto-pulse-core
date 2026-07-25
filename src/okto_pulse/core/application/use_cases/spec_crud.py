@@ -20,6 +20,10 @@ from okto_pulse.core.application.effective_knowledge_read import (
     load_effective_spec_knowledge,
     project_effective_knowledge,
 )
+from okto_pulse.core.application.history_pagination import (
+    history_page_metadata,
+    validate_history_window,
+)
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -330,18 +334,49 @@ class DeleteSpecUseCase:
 
 
 class ListSpecHistoryCommand:
-    __slots__ = ("spec_id", "limit")
+    __slots__ = ("spec_id", "limit", "offset")
 
-    def __init__(self, spec_id: str, *, limit: int = 50) -> None:
+    def __init__(
+        self,
+        spec_id: str,
+        *,
+        limit: object = 50,
+        offset: object = 0,
+    ) -> None:
+        window = validate_history_window(limit, offset)
         self.spec_id = spec_id
-        self.limit = limit
+        self.limit = window.limit
+        self.offset = window.offset
 
 
 class ListSpecHistoryResult:
-    __slots__ = ("history",)
+    __slots__ = (
+        "history",
+        "total",
+        "has_more",
+        "next_offset",
+        "truncated",
+    )
 
-    def __init__(self, history: list[Any]) -> None:
+    def __init__(
+        self,
+        history: list[Any],
+        *,
+        total: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> None:
         self.history = history
+        exact_total = len(history) if total is None else total
+        metadata = history_page_metadata(
+            total=exact_total,
+            returned=len(history),
+            window=validate_history_window(limit, offset),
+        )
+        self.total = metadata.total
+        self.has_more = metadata.has_more
+        self.next_offset = metadata.next_offset
+        self.truncated = metadata.truncated
 
 
 class ListSpecHistoryUseCase:
@@ -355,8 +390,18 @@ class ListSpecHistoryUseCase:
         uow: PulseUnitOfWork,
     ) -> ListSpecHistoryResult:
         await _require_actor_board_spec(uow, command.spec_id, actor)
-        history = await uow.services.specs.list_history(command.spec_id, command.limit)
-        return ListSpecHistoryResult(history)
+        history = await uow.services.specs.list_history(
+            command.spec_id,
+            limit=command.limit,
+            offset=command.offset,
+        )
+        total = await uow.services.specs.count_history(command.spec_id)
+        return ListSpecHistoryResult(
+            history,
+            total=total,
+            limit=command.limit,
+            offset=command.offset,
+        )
 
 
 # ===========================================================================

@@ -20,8 +20,10 @@ from typing import Any
 
 from okto_pulse.core.kg.canonical_stale_reconciler import (
     COGNITIVE_NODE_TYPES,
+    SOURCE_DELETED_REVOCATION_REASON,
     SourceIdentity,
     _build_source_classification_map,
+    _semantic_payload_is_erased,
     _source_identity_from_ref,
 )
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
@@ -62,9 +64,11 @@ def _source_index(board_id: str) -> dict[SourceIdentity, Any]:
 
 
 def detect_board_graph_stale(board_id: str) -> list[dict[str, Any]]:
-    """READ-ONLY: canonical DETERMINISTIC board-graph nodes whose source is no
-    longer canonical-eligible. Never mutates. Cognitive nodes are excluded (kept
-    in the R7 canonical_partition_integrity category).
+    """READ-ONLY: deterministic board-graph nodes whose source/layer contract
+    has not converged. This includes canonical nodes whose source is no longer
+    canonical-eligible and working nodes whose source was deleted but which
+    lack the governed deletion tombstone. Never mutates. Cognitive nodes are
+    excluded (kept in the R7 canonical_partition_integrity category).
 
     Read failures propagate so callers can distinguish an evaluated empty result
     from an unavailable probe.  Returning ``[]`` after a per-label failure would
@@ -80,9 +84,13 @@ def detect_board_graph_stale(board_id: str) -> list[dict[str, Any]]:
     for ntype in _DETERMINISTIC_SCAN_TYPES:
         result = cypher.execute_read_only(
             board_id,
-            f"MATCH (n:{ntype}) WHERE n.graph_layer = $c "
-            f"RETURN n.id, n.source_artifact_ref, n.created_by_agent",
-            {"c": GRAPH_LAYER_CANONICAL},
+            f"MATCH (n:{ntype}) "
+            "WHERE n.graph_layer = $c OR n.graph_layer = $w "
+            f"RETURN n.id, n.source_artifact_ref, n.created_by_agent, "
+            "n.graph_layer, n.maturity_status, n.revocation_reason, "
+            "n.relevance_score, n.title, n.content, n.context, "
+            "n.justification, n.source_span_quote",
+            {"c": GRAPH_LAYER_CANONICAL, "w": GRAPH_LAYER_WORKING},
             max_rows=10000,
         )
         for row in result.get("rows", []):
@@ -102,14 +110,62 @@ def detect_board_graph_stale(board_id: str) -> list[dict[str, Any]]:
             if source_identity is None:
                 continue
             cls = source_by_identity.get(source_identity)
-            if cls is not None and cls.graph_layer == GRAPH_LAYER_CANONICAL:
-                continue  # source still canonical -> not stale
+            graph_layer = str(
+                row[3] if len(row) > 3 and row[3] is not None else GRAPH_LAYER_CANONICAL
+            )
+            maturity_status = str(
+                row[4] if len(row) > 4 and row[4] is not None else ""
+            )
+            revocation_reason = (
+                str(row[5]) if len(row) > 5 and row[5] is not None else None
+            )
+            relevance_score = (
+                float(row[6]) if len(row) > 6 and row[6] is not None else None
+            )
+            payload_erased = (
+                _semantic_payload_is_erased(
+                    title=row[7],
+                    content=row[8],
+                    context=row[9],
+                    justification=row[10],
+                    source_span_quote=row[11],
+                )
+                if len(row) > 11
+                else True
+            )
+            canonical_stale = (
+                graph_layer == GRAPH_LAYER_CANONICAL
+                and (cls is None or cls.graph_layer != GRAPH_LAYER_CANONICAL)
+            )
+            deleted_working_incomplete = (
+                graph_layer == GRAPH_LAYER_WORKING
+                and cls is None
+                and not (
+                    maturity_status == MATURITY_WORKING_STALE
+                    and revocation_reason == SOURCE_DELETED_REVOCATION_REASON
+                    and relevance_score is not None
+                    and relevance_score <= 0.0
+                    and payload_erased
+                )
+            )
+            if not canonical_stale and not deleted_working_incomplete:
+                continue
             out.append({
                 "node_id": node_id,
                 "node_type": ntype,
                 "source_artifact_ref": ref,
                 "owning_source_id": source_identity[1],
                 "board_graph_stale": True,
+                "current_graph_layer": graph_layer,
+                "current_maturity_status": maturity_status,
+                "revocation_reason": revocation_reason,
+                "relevance_score": relevance_score,
+                "semantic_payload_erased": payload_erased,
+                "reason_code": (
+                    "source_deleted_tombstone_missing"
+                    if deleted_working_incomplete
+                    else "canonical_source_not_eligible"
+                ),
                 "expected_graph_layer": (
                     cls.graph_layer if cls else GRAPH_LAYER_WORKING
                 ) or GRAPH_LAYER_WORKING,

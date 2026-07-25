@@ -68,3 +68,10 @@ Some MCP tools are **irreversible** at the storage layer. Calling them by mistak
    `takedown` receipt. Cascade responses additionally expose recursive
    `descendant_deletions`; each receipt can be followed independently with
    `okto_pulse_kg_takedown_status`.
+7. **Delivered graph tombstones contain identity, not deleted content.** A
+   governed hard delete converges deterministic graph nodes to
+   `revocation_reason=source_deleted`, zero relevance, and an erased semantic
+   payload. Even an administrative raw Cypher read with
+   `include_working=true` must not recover the former title/body/context,
+   source quote, or justification. The Community graph adapter also replaces
+   the indexed node without its embedding.

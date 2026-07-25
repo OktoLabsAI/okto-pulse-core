@@ -22,6 +22,7 @@ import re
 import uuid
 
 import pytest
+import pytest_asyncio
 
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
@@ -49,6 +50,25 @@ from test_kg_closeout_docs_deterministic_only import (  # noqa: E402
     _section,
 )
 from kg_registry_testing import configure_real_graph_test_kg_registry
+
+
+@pytest_asyncio.fixture
+async def board_handle(board_id, db_factory):
+    """Bootstrap both halves of the board lifecycle used by integration cases."""
+    from kg_schema_testing import bootstrap_board_graph
+    from sqlalchemy_test_models import Board
+
+    async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Closeout ownership {board_id}",
+                    owner_id="closeout-ownership-test",
+                )
+            )
+            await db.commit()
+    return bootstrap_board_graph(board_id)
 
 
 def _seed_entity_root(board_id: str, source_ref: str) -> str:

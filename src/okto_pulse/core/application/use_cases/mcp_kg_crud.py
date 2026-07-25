@@ -69,6 +69,14 @@ class ListCanonicalDebtUseCase:
     async def execute(
         self, command: ListCanonicalDebtCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> ListCanonicalDebtResult:
+        from okto_pulse.core.services.canonical_debt_service import (
+            validate_canonical_debt_filters,
+        )
+
+        validate_canonical_debt_filters(
+            artifact_type=command.artifact_type,
+            state=command.state,
+        )
         data = await uow.services.kg.list_canonical_debt(
             board_id=command.board_id,
             artifact_type=command.artifact_type,

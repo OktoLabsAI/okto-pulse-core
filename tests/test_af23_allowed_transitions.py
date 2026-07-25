@@ -151,6 +151,24 @@ def test_card_read_model_and_mutation_admission_share_every_typed_edge(
     )
 
 
+def test_refinement_scope_metadata_is_not_projected_on_ideation() -> None:
+    ideation_review = next(
+        item
+        for item in allowed_transitions_for_status("ideation", "draft")
+        if item.to_status == "review"
+    )
+    refinement_review = next(
+        item
+        for item in allowed_transitions_for_status("refinement", "draft")
+        if item.to_status == "review"
+    )
+
+    assert ideation_review.gate == "none"
+    assert "in_scope_present" not in ideation_review.preconditions
+    assert refinement_review.gate == "refinement_scope"
+    assert "in_scope_present" in refinement_review.preconditions
+
+
 def test_docs_only_forward_subset_reports_reverse_and_unlock_drift() -> None:
     docs_only_subset = {
         "ideation": {
@@ -309,26 +327,21 @@ async def test_entity_scoped_read_model_previews_resource_gate_blocker() -> None
         )
         await db.commit()
 
-    with patch.object(
-        IdeationService,
-        "_validate_cognitive_done",
-        AsyncMock(return_value=None),
-    ):
-        async with get_session_factory()() as db:
-            result = await ListAllowedTransitionsUseCase().execute(
-                ListAllowedTransitionsCommand(
-                    board_id,
-                    "ideation",
-                    entity_id=ideation_id,
-                ),
-                actor=ActorContext(
-                    USER,
-                    "rest",
-                    board_id=board_id,
-                    realm_id=LOCAL_REALM_ID,
-                ),
-                uow=_wrap_uow(db),
-            )
+    async with get_session_factory()() as db:
+        result = await ListAllowedTransitionsUseCase().execute(
+            ListAllowedTransitionsCommand(
+                board_id,
+                "ideation",
+                entity_id=ideation_id,
+            ),
+            actor=ActorContext(
+                USER,
+                "rest",
+                board_id=board_id,
+                realm_id=LOCAL_REALM_ID,
+            ),
+            uow=_wrap_uow(db),
+        )
 
     done = next(
         transition

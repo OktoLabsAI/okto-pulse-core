@@ -14,7 +14,7 @@ from okto_pulse.core.kg.cognitive_policy import (
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.3.11"
+SCHEMA_VERSION = "0.3.12"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -88,7 +88,17 @@ def _supersedes_endpoint_pairs() -> tuple[tuple[str, str], ...]:
 MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("implements", (("APIContract", "Constraint"),)),
     ("supersedes", _supersedes_endpoint_pairs()),
-    ("relates_to", _cognitive_relates_to_endpoint_pairs()),
+    (
+        "relates_to",
+        (
+            # priority_boost audit Decisions are context-anchored to the card
+            # root. Without these pairs the node CREATE succeeds but its edge
+            # is rejected, leaving a genuine zero-degree ``dec_boost_*``.
+            ("Decision", "Entity"),
+            ("Decision", "Bug"),
+            *_cognitive_relates_to_endpoint_pairs(),
+        ),
+    ),
     (
         "belongs_to",
         (

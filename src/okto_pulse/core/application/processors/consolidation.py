@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sys
 import uuid
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from okto_pulse.core.ports.consolidation import (
     ConsolidationQueueRecord,
@@ -73,6 +75,9 @@ from okto_pulse.core.kg.interfaces.graph_errors import (
     GraphError,
     graph_memory_pressure_retry_after_seconds,
 )
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageParentIntent,
+)
 from okto_pulse.core.application.processors.dead_letter import route_to_dead_letter
 from okto_pulse.core.kg.schema_layer_guard import (
     ensure_graph_layer_schema,
@@ -82,10 +87,11 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     STEP_CHECKPOINT,
     STEP_FLUSH,
     STEP_FSYNC,
-    HealthProbe,
-    KGSafeWriteLifecycle,
-    LockOwnerProbe,
-    SafeWriteLifecycleStatus,
+)
+from okto_pulse.core.kg.guarded_write import (
+    GuardedWriteError,
+    GuardedWriteLease,
+    guarded_board_write,
 )
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.source_maturity import (
@@ -96,7 +102,6 @@ from okto_pulse.core.kg.source_maturity import (
     MATURITY_CANONICAL_ELIGIBLE,
     classify_source_for_kg,
 )
-from okto_pulse.core.kg.write_barrier import under_safe_write
 from okto_pulse.core.ports.advisory_lock import advisory_lock
 from okto_pulse.core.application.processors.deterministic_kg import (
     DeterministicWorker,
@@ -124,6 +129,7 @@ _CLAIMABLE_WORK_KINDS = frozenset({"consolidate", "stale_reconcile", "stale_swee
 _GOVERNED_DELETION_ARTIFACT_TYPES = frozenset(
     {"card", "ideation", "refinement", "spec", "sprint"}
 )
+_GraphWriteEnter = Callable[[str], GuardedWriteLease]
 
 
 class _QueueClaimLostOrFenced(RuntimeError):
@@ -430,7 +436,14 @@ def _log_stale_sweep_receipt(receipt: StaleSweepRunReceipt) -> None:
     )
 
 
-def _stale_reconcile_is_complete(result: Any) -> bool:
+_STALE_RECONCILE_GRAPH_PARTIAL_PREFIX = "stale_reconcile_graph_partial:"
+
+
+def _stale_reconcile_is_complete(
+    result: Any,
+    *,
+    previous_error: str | None = None,
+) -> bool:
     """Require the explicit completeness contract before acknowledging work."""
 
     target_fields = (
@@ -472,11 +485,40 @@ def _stale_reconcile_is_complete(result: Any) -> bool:
         return False
     if target_values["target_preserved_canonical_count"] != 0:
         return False
+    if (
+        target_values["target_found_count"] == 0
+        and str(previous_error or "").startswith(
+            _STALE_RECONCILE_GRAPH_PARTIAL_PREFIX
+        )
+    ):
+        # A prior per-type failure may have auto-committed a partial mutation
+        # before the embedded adapter raised.  An empty retry cannot prove
+        # convergence: require a restored/found projection (or operator repair)
+        # instead of ACKing disappearance as an initially-empty source.
+        return False
     return target_values["target_found_count"] == (
         target_values["target_demoted_count"]
         + target_values["target_already_converged_count"]
         + target_values["target_skipped_cognitive_count"]
     )
+
+
+def _stale_reconcile_failure_error(
+    *,
+    existing_error: str | None,
+    reconcile_details: Mapping[str, object],
+) -> str:
+    """Persist whether a failed run may have auto-committed graph effects."""
+
+    if str(existing_error or "").startswith(
+        _STALE_RECONCILE_GRAPH_PARTIAL_PREFIX
+    ):
+        return str(existing_error)
+    failed_types = reconcile_details.get("failed_types") or ()
+    if isinstance(failed_types, (list, tuple)) and failed_types:
+        normalized = sorted({str(item) for item in failed_types if str(item)})
+        return _STALE_RECONCILE_GRAPH_PARTIAL_PREFIX + ",".join(normalized)
+    return str(existing_error or "processing returned False")
 
 
 def _stale_reconcile_telemetry_details(
@@ -619,36 +661,11 @@ WORKER_COMMIT_LIFECYCLE_STEPS: tuple[str, ...] = (
 )
 
 
-def _worker_owner_probe(_board_id: str, owner_token: str) -> bool:
-    """Validate process-local consolidation owner tokens.
-
-    The historical consolidation worker is already serialised by the
-    queue-claim contract for one board inside one server process. The
-    critical durability gap was that normal worker commits never entered
-    the safe-write guard/lifecycle before acknowledging the queue row.
-    This probe keeps KGSafeWriteLifecycle's owner-token contract explicit
-    for the worker-owned token generated per queue entry.
-    """
-
-    return owner_token.startswith("consolidation-worker:")
-
-
-def _worker_health_probe(
-    _board_id: str,
-    _graph_type: str,
-    status: SafeWriteLifecycleStatus,
-    _step: str | None,
-) -> str:
-    return (
-        "healthy" if status is SafeWriteLifecycleStatus.APPLIED else "recovery_needed"
-    )
-
-
 def _apply_board_graph_lifecycle_after_commit(
     *,
     board_id: str,
-    owner_token: str,
     mutation_ref: str,
+    write_lease: GuardedWriteLease,
     failure_timestamp: datetime | None = None,
 ):
     """Run checkpoint/flush/fsync/close-reopen before queue acknowledgement.
@@ -660,20 +677,12 @@ def _apply_board_graph_lifecycle_after_commit(
     masks the original lifecycle error.
     """
 
-    lifecycle = KGSafeWriteLifecycle(
-        step_adapter=get_kg_registry().graph_lifecycle.apply_step,
-        owner_probe=LockOwnerProbe(is_active_owner=_worker_owner_probe),
-        health_probe=HealthProbe(classify=_worker_health_probe),
-    )
-    response = lifecycle.apply(
-        board_id=board_id,
-        graph_type="board_graph",
-        operation=CONSOLIDATION_COMMIT_OPERATION,
-        owner_token=owner_token,
-        mutation_ref=mutation_ref,
-        required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
-    )
-    if response.status is not SafeWriteLifecycleStatus.APPLIED:
+    try:
+        write_lease.ensure_durable(
+            mutation_ref=mutation_ref,
+            required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
+        )
+    except GuardedWriteError as exc:
         # FR3: record WAL/lifecycle failure before raising so the correlator
         # receives a real FailureEvent.  Swallow any collector error (TR2).
         try:
@@ -691,11 +700,40 @@ def _apply_board_graph_lifecycle_after_commit(
         raise RuntimeError(
             "board_graph_safe_lifecycle_failed "
             f"board_id={board_id} mutation_ref={mutation_ref} "
-            f"failed_step={response.failed_step} "
-            f"health_state_after={response.health_state_after} "
-            f"correlation_id={response.correlation_id}"
+            f"failed_step={exc.details.get('failed_step')} "
+            f"health_state_after={exc.details.get('health_state_after')} "
+            f"correlation_id={exc.details.get('correlation_id')} "
+            f"code={exc.code}"
+        ) from exc
+    return write_lease
+
+
+async def _ensure_board_graph_durable(
+    *,
+    board_id: str,
+    mutation_ref: str,
+    write_lease: GuardedWriteLease,
+    blocking_execution: BlockingExecutionPort | None,
+    failure_timestamp: datetime | None = None,
+) -> None:
+    """Run the synchronous lifecycle cancellation-atomically under one fence."""
+
+    executor = blocking_execution or _DirectBlockingExecution()
+
+    async def _apply() -> None:
+        await executor.run(
+            lambda: _apply_board_graph_lifecycle_after_commit(
+                board_id=board_id,
+                mutation_ref=mutation_ref,
+                write_lease=write_lease,
+                failure_timestamp=failure_timestamp,
+            )
         )
-    return response
+
+    await run_cancellation_atomic(
+        _apply(),
+        task_name="core.kg.consolidation_worker_graph_durability",
+    )
 
 
 async def _commit_consolidation_with_board_graph_lifecycle(
@@ -707,6 +745,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     blocking_execution: BlockingExecutionPort | None = None,
     now: datetime | None = None,
     defer_session_finalization: bool = False,
+    enter_graph_write: _GraphWriteEnter | None = None,
 ):
     """Commit a queue item and prove the persisted graph before ACK.
 
@@ -717,9 +756,6 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     the same embedded graph backend lifecycle used by explicit rebuild recovery.
     """
 
-    owner_token = (
-        f"consolidation-worker:{entry.id}:{_claim_token(entry) or uuid.uuid4().hex}"
-    )
     mutation_ref = f"{entry.artifact_type}:{entry.artifact_id}:{session_id}"
     if _claim_token(
         entry
@@ -732,27 +768,46 @@ async def _commit_consolidation_with_board_graph_lifecycle(
             session_id=session_id,
         )
         raise _QueueClaimLostOrFenced(f"queue_claim_lost_or_fenced entry_id={entry.id}")
-    with under_safe_write(entry.board_id, owner_token, CONSOLIDATION_COMMIT_OPERATION):
-        commit_resp = await commit_consolidation(
-            CommitConsolidationRequest(
-                session_id=session_id,
-                summary_text=summary_text,
-            ),
-            agent_id=AGENT_ID,
-            db=db,
-            blocking_execution=blocking_execution,
-            defer_session_finalization=defer_session_finalization,
-        )
-        executor = blocking_execution or _DirectBlockingExecution()
-        await executor.run(
-            lambda: _apply_board_graph_lifecycle_after_commit(
+
+    async def _commit_with_lease(write_lease: GuardedWriteLease):
+        try:
+            commit_resp = await commit_consolidation(
+                CommitConsolidationRequest(
+                    session_id=session_id,
+                    summary_text=summary_text,
+                ),
+                agent_id=AGENT_ID,
+                db=db,
+                blocking_execution=blocking_execution,
+                defer_session_finalization=defer_session_finalization,
+            )
+        finally:
+            # The primitive may auto-commit and compensate before raising.
+            # Drain either path under this same live lease; the outer worker
+            # cannot infer possible graph effects from a missing response.
+            await _ensure_board_graph_durable(
                 board_id=entry.board_id,
-                owner_token=owner_token,
                 mutation_ref=mutation_ref,
+                write_lease=write_lease,
+                blocking_execution=blocking_execution,
                 failure_timestamp=now,
             )
-        )
-    return commit_resp
+        return commit_resp
+
+    if enter_graph_write is not None:
+        return await _commit_with_lease(enter_graph_write(mutation_ref))
+
+    with guarded_board_write(
+        entry.board_id,
+        operation=CONSOLIDATION_COMMIT_OPERATION,
+        owner_id=(
+            f"{AGENT_ID}:{entry.id}:"
+            f"{_claim_token(entry) or 'direct'}"
+        ),
+        mutation_ref=mutation_ref,
+        required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
+    ) as write_lease:
+        return await _commit_with_lease(write_lease)
 
 
 async def _process_queue_entry_serialized(
@@ -763,6 +818,7 @@ async def _process_queue_entry_serialized(
     clock: WorkerClockPort | None = None,
     stale_reconcile_telemetry: dict[str, object] | None = None,
     deferred_session_ids: list[str] | None = None,
+    enter_graph_write: _GraphWriteEnter | None = None,
 ) -> bool | StaleSweepRunReceipt:
     """Process one queue row under a process-local per-board mutex.
 
@@ -781,6 +837,7 @@ async def _process_queue_entry_serialized(
             clock=clock,
             stale_reconcile_telemetry=stale_reconcile_telemetry,
             deferred_session_ids=deferred_session_ids,
+            enter_graph_write=enter_graph_write,
         )
 
 
@@ -1859,6 +1916,7 @@ async def _process_stale_reconcile_entry(
     blocking_execution: BlockingExecutionPort | None = None,
     clock: WorkerClockPort | None = None,
     telemetry_details: dict[str, object] | None = None,
+    enter_graph_write: _GraphWriteEnter | None = None,
 ) -> bool:
     """Drain one governed-delete reconciliation intent without source loading."""
 
@@ -1883,41 +1941,112 @@ async def _process_stale_reconcile_entry(
         reconcile_stale_canonical,
     )
 
-    owner_token = (
-        f"consolidation-worker:{entry.id}:{_claim_token(entry) or uuid.uuid4().hex}"
-    )
     delete_event_id = _delete_event_id(entry)
     mutation_ref = (
         f"stale_reconcile:{entry.artifact_type}:{entry.artifact_id}:"
         f"g{_generation(entry)}:{delete_event_id}"
     )
-    with under_safe_write(
-        entry.board_id,
-        owner_token,
-        CONSOLIDATION_COMMIT_OPERATION,
+
+    async def _reconcile_with_enter(
+        enter_write: _GraphWriteEnter,
     ):
-        result = await reconcile_stale_canonical(
-            db,
-            board_id=entry.board_id,
-            source_refs=source_refs,
-            correlation_id=delete_event_id,
-        )
-        if not _stale_reconcile_source_snapshot_is_incomplete(result):
-            executor = blocking_execution or _DirectBlockingExecution()
-            await executor.run(
-                lambda: _apply_board_graph_lifecycle_after_commit(
-                    board_id=entry.board_id,
-                    owner_token=owner_token,
-                    mutation_ref=mutation_ref,
-                    failure_timestamp=clock.now() if clock is not None else None,
+        write_lease: GuardedWriteLease | None = None
+        callback_invoked = False
+
+        def _before_graph_write() -> None:
+            nonlocal callback_invoked, write_lease
+            if callback_invoked:
+                raise RuntimeError(
+                    "stale_reconcile_graph_write_callback_repeated"
                 )
+            callback_invoked = True
+            write_lease = enter_write(mutation_ref)
+
+        try:
+            result = await reconcile_stale_canonical(
+                db,
+                board_id=entry.board_id,
+                source_refs=source_refs,
+                correlation_id=delete_event_id,
+                before_graph_write=_before_graph_write,
+                blocking_execution=blocking_execution,
             )
+        except BaseException:
+            if write_lease is not None:
+                try:
+                    await _ensure_board_graph_durable(
+                        board_id=entry.board_id,
+                        mutation_ref=f"{mutation_ref}:exception",
+                        write_lease=write_lease,
+                        blocking_execution=blocking_execution,
+                        failure_timestamp=(
+                            clock.now() if clock is not None else None
+                        ),
+                    )
+                except BaseException as durability_exc:
+                    logger.error(
+                        "kg.stale_reconcile.exception_durability_ambiguous "
+                        "entry=%s board=%s durability_applied=%s "
+                        "write_may_be_applied=true lifecycle_error=%s",
+                        entry.id,
+                        entry.board_id,
+                        write_lease.durability_applied,
+                        type(durability_exc).__name__,
+                        exc_info=True,
+                        extra={
+                            "event": (
+                                "kg.stale_reconcile."
+                                "exception_durability_ambiguous"
+                            ),
+                            "board_id": entry.board_id,
+                            "entry_id": entry.id,
+                            "durability_applied": (
+                                write_lease.durability_applied
+                            ),
+                            "write_may_be_applied": True,
+                        },
+                    )
+            raise
+
+        if write_lease is not None:
+            await _ensure_board_graph_durable(
+                board_id=entry.board_id,
+                mutation_ref=mutation_ref,
+                write_lease=write_lease,
+                blocking_execution=blocking_execution,
+                failure_timestamp=clock.now() if clock is not None else None,
+            )
+        return result
+
+    if enter_graph_write is not None:
+        result = await _reconcile_with_enter(enter_graph_write)
+    else:
+        with ExitStack() as local_write_stack:
+
+            def _enter_local_write(local_mutation_ref: str):
+                return local_write_stack.enter_context(
+                    guarded_board_write(
+                        entry.board_id,
+                        operation=CONSOLIDATION_COMMIT_OPERATION,
+                        owner_id=(
+                            f"{AGENT_ID}:{entry.id}:"
+                            f"{_claim_token(entry) or 'direct'}"
+                        ),
+                        mutation_ref=local_mutation_ref,
+                        required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
+                    )
+                )
+
+            result = await _reconcile_with_enter(_enter_local_write)
 
     run_details = _stale_reconcile_telemetry_details(result, entry)
     if telemetry_details is not None:
         telemetry_details.update(run_details)
 
-    if not _stale_reconcile_is_complete(result):
+    if not _stale_reconcile_is_complete(
+        result,
+        previous_error=entry.last_error,
+    ):
         logger.error(
             "kg.stale_reconcile.incomplete entry=%s board=%s failed_types=%s",
             entry.id,
@@ -1963,6 +2092,7 @@ async def _process_queue_entry(
     clock: WorkerClockPort | None = None,
     stale_reconcile_telemetry: dict[str, object] | None = None,
     deferred_session_ids: list[str] | None = None,
+    enter_graph_write: _GraphWriteEnter | None = None,
 ) -> bool | StaleSweepRunReceipt:
     """Process one queue entry through the primitives pipeline.
     Returns True on success, False on failure."""
@@ -1980,6 +2110,7 @@ async def _process_queue_entry(
             blocking_execution=blocking_execution,
             clock=clock,
             telemetry_details=stale_reconcile_telemetry,
+            enter_graph_write=enter_graph_write,
         )
     if _work_kind(entry) != "consolidate":
         logger.warning(
@@ -2100,6 +2231,11 @@ async def _process_queue_entry(
         agent_id=AGENT_ID,
         db=None,
         force_reprocess=True,
+        spec_lineage_parent_intent=getattr(
+            worker_result,
+            "spec_lineage_parent_intent",
+            SpecLineageParentIntent.PRESERVE,
+        ),
     )
     session_id = begin_resp.session_id
     if deferred_session_ids is not None:
@@ -2149,6 +2285,7 @@ async def _process_queue_entry(
         blocking_execution=blocking_execution,
         now=clock.now() if clock is not None else None,
         defer_session_finalization=deferred_session_ids is not None,
+        enter_graph_write=enter_graph_write,
     )
 
     logger.info(
@@ -2468,6 +2605,31 @@ class ConsolidationProcessor:
                 acknowledged = False
                 delivery_transfer: tuple[DeliveryTransferReceipt, str] | None = None
                 stale_reconcile_telemetry: dict[str, object] = {}
+                graph_write_stack = ExitStack()
+                graph_write_lease: GuardedWriteLease | None = None
+
+                def _enter_graph_write(
+                    mutation_ref: str,
+                ) -> GuardedWriteLease:
+                    nonlocal graph_write_lease
+                    if graph_write_lease is not None:
+                        raise RuntimeError(
+                            "consolidation_graph_write_boundary_reentered"
+                        )
+                    graph_write_lease = graph_write_stack.enter_context(
+                        guarded_board_write(
+                            entry.board_id,
+                            operation=CONSOLIDATION_COMMIT_OPERATION,
+                            owner_id=(
+                                f"{AGENT_ID}:{entry.id}:"
+                                f"{_claim_token(entry) or 'unclaimed'}"
+                            ),
+                            mutation_ref=mutation_ref,
+                            required_steps=WORKER_COMMIT_LIFECYCLE_STEPS,
+                        )
+                    )
+                    return graph_write_lease
+
                 try:
                     async with self.relational_scope_factory() as db:
                         store = get_consolidation_persistence_port()
@@ -2478,6 +2640,7 @@ class ConsolidationProcessor:
                             clock=self._clock,
                             stale_reconcile_telemetry=stale_reconcile_telemetry,
                             deferred_session_ids=deferred_session_ids,
+                            enter_graph_write=_enter_graph_write,
                         )
                         if isinstance(outcome, StaleSweepRunReceipt):
                             if (
@@ -2523,6 +2686,10 @@ class ConsolidationProcessor:
                                 continue
 
                             if success:
+                                if graph_write_lease is not None:
+                                    graph_write_lease.ensure_owned(
+                                        failure_phase="before_queue_ack",
+                                    )
                                 token = _claim_token(entry)
                                 if token is not None:
                                     if _work_kind(entry) == "stale_reconcile":
@@ -2579,8 +2746,11 @@ class ConsolidationProcessor:
                                 await self._mark_failed(
                                     db,
                                     fresh,
-                                    error_text=(
-                                        fresh.last_error or "processing returned False"
+                                    error_text=_stale_reconcile_failure_error(
+                                        existing_error=fresh.last_error,
+                                        reconcile_details=(
+                                            stale_reconcile_telemetry
+                                        ),
                                     ),
                                     max_attempts=max_attempts,
                                 )
@@ -2589,12 +2759,24 @@ class ConsolidationProcessor:
 
                             async def _commit_and_finalize() -> None:
                                 nonlocal relational_commit_confirmed
+                                if graph_write_lease is not None:
+                                    graph_write_lease.ensure_owned(
+                                        failure_phase=(
+                                            "before_relational_ack"
+                                        ),
+                                    )
                                 await store.commit(db)
                                 relational_commit_confirmed = True
                                 for deferred_session_id in deferred_session_ids:
                                     await finalize_deferred_consolidation(
                                         deferred_session_id,
                                         agent_id=AGENT_ID,
+                                    )
+                                if graph_write_lease is not None:
+                                    graph_write_lease.ensure_owned(
+                                        failure_phase=(
+                                            "after_relational_ack"
+                                        ),
                                     )
 
                             await run_cancellation_atomic(
@@ -2604,11 +2786,27 @@ class ConsolidationProcessor:
                                 ),
                             )
                         else:
+                            if graph_write_lease is not None:
+                                graph_write_lease.ensure_owned(
+                                    failure_phase="before_relational_ack",
+                                )
                             await store.commit(db)
-                except BaseException:
+                            if graph_write_lease is not None:
+                                graph_write_lease.ensure_owned(
+                                    failure_phase="after_relational_ack",
+                                )
+                except BaseException as processing_exc:
                     if deferred_session_ids:
 
                         async def _settle_deferred_sessions() -> None:
+                            if graph_write_lease is not None:
+                                graph_write_lease.ensure_owned(
+                                    failure_phase=(
+                                        "before_deferred_compensation"
+                                        if not relational_commit_confirmed
+                                        else "before_deferred_finalization_retry"
+                                    ),
+                                )
                             for deferred_session_id in deferred_session_ids:
                                 if relational_commit_confirmed:
                                     # The relational ledger/ACK is already durable.
@@ -2627,6 +2825,14 @@ class ConsolidationProcessor:
                                         agent_id=AGENT_ID,
                                         blocking_execution=self._blocking_execution,
                                     )
+                            if graph_write_lease is not None:
+                                graph_write_lease.ensure_owned(
+                                    failure_phase=(
+                                        "after_deferred_compensation"
+                                        if not relational_commit_confirmed
+                                        else "after_deferred_finalization_retry"
+                                    ),
+                                )
 
                         try:
                             await run_cancellation_atomic(
@@ -2643,7 +2849,66 @@ class ConsolidationProcessor:
                                 relational_commit_confirmed,
                                 deferred_session_ids,
                             )
+                        finally:
+                            if (
+                                not relational_commit_confirmed
+                                and graph_write_lease is not None
+                            ):
+                                try:
+                                    await _ensure_board_graph_durable(
+                                        board_id=entry.board_id,
+                                        mutation_ref=(
+                                            "consolidation-worker-abort:"
+                                            f"{entry.id}:"
+                                            f"{','.join(deferred_session_ids)}"
+                                        ),
+                                        write_lease=graph_write_lease,
+                                        blocking_execution=(
+                                            self._blocking_execution
+                                        ),
+                                        failure_timestamp=self._now(),
+                                    )
+                                except BaseException as durability_exc:
+                                    logger.error(
+                                        "consolidation.compensation_"
+                                        "durability_ambiguous entry=%s "
+                                        "board=%s processing_error=%s "
+                                        "lifecycle_error=%s "
+                                        "prior_durability_applied=%s "
+                                        "compensation_durability_applied=false "
+                                        "write_may_be_applied=true",
+                                        entry.id,
+                                        entry.board_id,
+                                        type(processing_exc).__name__,
+                                        type(durability_exc).__name__,
+                                        graph_write_lease.durability_applied,
+                                        exc_info=True,
+                                        extra={
+                                            "event": (
+                                                "consolidation.compensation_"
+                                                "durability_ambiguous"
+                                            ),
+                                            "board_id": entry.board_id,
+                                            "entry_id": entry.id,
+                                            "processing_error_type": type(
+                                                processing_exc
+                                            ).__name__,
+                                            "lifecycle_error_type": type(
+                                                durability_exc
+                                            ).__name__,
+                                            "prior_durability_applied": (
+                                                graph_write_lease
+                                                .durability_applied
+                                            ),
+                                            "compensation_durability_applied": (
+                                                False
+                                            ),
+                                            "write_may_be_applied": True,
+                                        },
+                                    )
                     raise
+                finally:
+                    graph_write_stack.__exit__(*sys.exc_info())
 
                 if acknowledged and deferred_session_ids:
                     # Maintenance is best-effort and uses rollback internally.

@@ -296,6 +296,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
             include_knowledge="true",
             include_mockups="true",
             include_architecture="true",
+            profile="full",
         )
 
     assert report["summary"]["ideations"] == 1

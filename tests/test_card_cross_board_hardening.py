@@ -1142,7 +1142,11 @@ async def test_delete_attachment_same_board_still_calls_writer_and_commits():
     )
     cards = SimpleNamespace(get_card=AsyncMock(return_value=card))
     uow = SimpleNamespace(
-        services=SimpleNamespace(attachments=attachments, cards=cards),
+        services=SimpleNamespace(
+            attachments=attachments,
+            cards=cards,
+            boards=SimpleNamespace(_log_activity=AsyncMock()),
+        ),
         commit=AsyncMock(),
     )
     actor = ActorContext(USER_ID, "mcp", board_id="board-a")
@@ -1170,7 +1174,11 @@ async def test_upload_attachment_preloads_scoped_card_before_storage_writer():
     cards = SimpleNamespace(get_card=AsyncMock(return_value=card))
     attachments = SimpleNamespace(upload_attachment=AsyncMock(return_value=attachment))
     uow = SimpleNamespace(
-        services=SimpleNamespace(cards=cards, attachments=attachments),
+        services=SimpleNamespace(
+            cards=cards,
+            attachments=attachments,
+            boards=SimpleNamespace(_log_activity=AsyncMock()),
+        ),
         commit=AsyncMock(),
     )
     foreign_actor = ActorContext(USER_ID, "mcp", board_id="board-b")

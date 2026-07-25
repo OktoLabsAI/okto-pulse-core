@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -136,12 +137,20 @@ async def _begin_add_propose(board_id, agent_id, db_factory, spec_id, decision_r
 
 @pytest.mark.asyncio
 async def test_consolidation_via_use_cases_persists_canonical(
-    fu1_board, agent_id, db_factory
+    fu1_board, agent_id, db_factory, monkeypatch: pytest.MonkeyPatch
 ):
     """Golden write parity: begin->add->propose->commit through the UoW use cases
     PERSISTS the canonical node to the board graph (no commit(uow) needed)."""
     board_id = fu1_board
     configure_real_graph_test_kg_registry()
+
+    async def _healthy(*_args, **_kwargs) -> str:
+        return "healthy"
+
+    monkeypatch.setattr(
+        "okto_pulse.core.kg.primitives._resolve_commit_kg_health_state",
+        _healthy,
+    )
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     spec_ref = f"spec:{spec_id}"
     _root_id, existing_decision_id = _seed_spec_root_and_decision(board_id, spec_ref)
@@ -247,6 +256,9 @@ async def _registered_commit_tool(monkeypatch, execute):
     async def _get_agent():
         return SimpleNamespace(id="agent-mcp-commit")
 
+    async def _get_board_agent(_board_id: str):
+        return SimpleNamespace(agent_id="agent-mcp-commit", permissions=None)
+
     async def _require_session(
         _session_id: str,
         _agent_id: str,
@@ -275,10 +287,24 @@ async def _registered_commit_tool(monkeypatch, execute):
     monkeypatch.setattr(
         use_cases, "CommitConsolidationUseCase", _CommitUseCaseDouble
     )
+
+    class _WriteLease:
+        def ensure_durable(self, **_kwargs) -> None:
+            events.append("durability")
+
+        def ensure_owned(self, **_kwargs) -> None:
+            return None
+
+    @contextmanager
+    def _guarded_write(*_args, **_kwargs):
+        yield _WriteLease()
+
+    monkeypatch.setattr(kg_tools, "guarded_board_write", _guarded_write)
     kg_tools.register_kg_tools(
         registry,
         get_agent=_get_agent,
         get_uow=lambda: factory,
+        get_board_agent=_get_board_agent,
     )
     return registry.tools["okto_pulse_kg_commit_consolidation"], uow, events
 
@@ -298,7 +324,14 @@ async def test_mcp_commit_consolidation_commits_uow_once_after_execute(
     assert await tool(session_id="session-success") == '{"committed":true}'
     assert uow.commits == 1
     assert uow.rollbacks == 0
-    assert events == ["enter", "execute", "commit", "finalize", "exit"]
+    assert events == [
+        "enter",
+        "execute",
+        "durability",
+        "commit",
+        "finalize",
+        "exit",
+    ]
 
 
 @pytest.mark.asyncio
@@ -318,7 +351,7 @@ async def test_mcp_commit_consolidation_does_not_commit_and_rolls_back_on_failur
     assert uow.commits == 0
     assert uow.rollbacks == 1
     assert "abort" not in events
-    assert events == ["enter", "execute", "rollback", "exit"]
+    assert events == ["enter", "execute", "durability", "rollback", "exit"]
 
 
 @pytest.mark.asyncio
@@ -342,10 +375,12 @@ async def test_mcp_relational_commit_failure_compensates_graph_before_returning(
     assert events == [
         "enter",
         "execute",
+        "durability",
         "commit",
         "rollback",
         "exit",
         "abort",
+        "durability",
     ]
 
 
@@ -369,7 +404,7 @@ async def test_competing_mcp_commit_cannot_abort_owner_pending_snapshot(
     assert uow.commits == 0
     assert uow.rollbacks == 1
     assert "abort" not in events
-    assert events == ["enter", "execute", "rollback", "exit"]
+    assert events == ["enter", "execute", "durability", "rollback", "exit"]
 
 
 @pytest.mark.asyncio
@@ -407,6 +442,7 @@ async def test_mcp_cancel_during_execute_rolls_back_after_primitive_cleanup(
         "enter",
         "execute",
         "primitive_cleanup",
+        "durability",
         "rollback",
         "exit",
     ]
@@ -505,6 +541,8 @@ def test_server_injects_uow_not_get_db_for_mcp_into_kg_tools():
     keywords = {keyword.arg: keyword.value for keyword in calls[0].keywords}
     assert isinstance(keywords.get("get_uow"), ast.Name)
     assert keywords["get_uow"].id == "get_unit_of_work_factory_for_mcp"
+    assert isinstance(keywords.get("get_board_agent"), ast.Name)
+    assert keywords["get_board_agent"].id == "_get_agent_ctx"
     assert "get_db" not in keywords
 
 
@@ -521,5 +559,5 @@ def test_commit_tool_preserves_ownership_precheck_and_r7_hold():
         for c in ast.walk(node)
         if isinstance(c, ast.Call)
     }
-    assert "_require_open_session" in called
+    assert "_authorized_session" in called
     assert "_maybe_record_r7_cognitive_hold" in called

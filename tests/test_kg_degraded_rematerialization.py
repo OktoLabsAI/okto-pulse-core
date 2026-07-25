@@ -62,7 +62,11 @@ def _real_graph_registry_for_rematerialization():
 
 def _fake_health(state: str, total_nodes: int | None):
     async def _fake(_board_id, _db, scheduler_control=None):
-        payload = {"graph_state": state, "overall_state": state}
+        payload = {
+            "graph_state": state,
+            "discovery_state": "healthy",
+            "overall_state": state,
+        }
         if total_nodes is not None:
             payload["total_nodes"] = total_nodes
         return payload
@@ -190,6 +194,153 @@ async def test_recovery_needed_without_total_nodes_telemetry_blocks(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "malformed_payload",
+    [
+        None,
+        {},
+        {"overall_state": "unknown", "total_nodes": 0},
+        {
+            "overall_state": "recovery_needed",
+            "graph_state": "recovery_needed",
+            "total_nodes": 0,
+        },
+        {
+            "overall_state": "recovery_needed",
+            "graph_state": "unknown",
+            "discovery_state": "healthy",
+            "total_nodes": 0,
+        },
+        {
+            "overall_state": "recovery_needed",
+            "graph_state": "recovery_needed",
+            "discovery_state": 3,
+            "total_nodes": 0,
+        },
+    ],
+)
+async def test_malformed_health_payload_fails_closed(
+    board_id,
+    db_factory,
+    monkeypatch,
+    malformed_payload,
+):
+    async def _malformed(_board_id, _db, scheduler_control=None):
+        return malformed_payload
+
+    monkeypatch.setattr(health_service, "get_kg_health", _malformed)
+    reset_commit_health_cache_for_tests()
+    async with db_factory() as db:
+        state = await _resolve_commit_kg_health_state(board_id, db)
+    assert state == "recovery_needed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("health_payload", "expected_state"),
+    [
+        pytest.param(
+            {
+                "overall_state": "recovery_needed",
+                "graph_state": "quarantined",
+                "discovery_state": "healthy",
+                "total_nodes": 0,
+            },
+            "quarantined",
+            id="graph-quarantine-prevails",
+        ),
+        pytest.param(
+            {
+                "overall_state": "recovery_needed",
+                "graph_state": "recovery_needed",
+                "discovery_state": "quarantined",
+                "total_nodes": 0,
+            },
+            "quarantined",
+            id="discovery-quarantine-prevails",
+        ),
+        pytest.param(
+            {
+                "overall_state": "unknown",
+                "graph_state": "quarantined",
+                "total_nodes": 0,
+            },
+            "quarantined",
+            id="known-quarantine-prevails-over-malformed-fields",
+        ),
+        pytest.param(
+            {
+                "overall_state": "healthy",
+                "graph_state": "recovery_needed",
+                "discovery_state": "healthy",
+                "total_nodes": 0,
+            },
+            "recovery_needed",
+            id="less-severe-overall-cannot-authorize-recovery",
+        ),
+        pytest.param(
+            {
+                "overall_state": "healthy",
+                "graph_state": "healthy",
+                "discovery_state": "recovery_needed",
+                "total_nodes": 0,
+            },
+            "recovery_needed",
+            id="discovery-recovery-is-not-board-rematerialization",
+        ),
+        pytest.param(
+            {
+                "overall_state": "recovery_needed",
+                "graph_state": "recovery_needed",
+                "discovery_state": "healthy",
+                "total_nodes": 0,
+            },
+            RECOVERY_WRITABLE_STATE,
+            id="compatible-readable-board-recovery-is-writable",
+        ),
+    ],
+)
+async def test_health_payload_uses_known_worst_case(
+    board_id,
+    db_factory,
+    monkeypatch,
+    health_payload,
+    expected_state,
+):
+    async def _health(_board_id, _db, scheduler_control=None):
+        return health_payload
+
+    monkeypatch.setattr(health_service, "get_kg_health", _health)
+    reset_commit_health_cache_for_tests()
+    async with db_factory() as db:
+        state = await _resolve_commit_kg_health_state(board_id, db)
+    assert state == expected_state
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("malformed_total_nodes", [-1, True, 0.0, "0"])
+async def test_recovery_writable_requires_non_negative_integer_total_nodes(
+    board_id,
+    db_factory,
+    monkeypatch,
+    malformed_total_nodes,
+):
+    async def _health(_board_id, _db, scheduler_control=None):
+        return {
+            "overall_state": "recovery_needed",
+            "graph_state": "recovery_needed",
+            "discovery_state": "healthy",
+            "total_nodes": malformed_total_nodes,
+        }
+
+    monkeypatch.setattr(health_service, "get_kg_health", _health)
+    reset_commit_health_cache_for_tests()
+    async with db_factory() as db:
+        state = await _resolve_commit_kg_health_state(board_id, db)
+    assert state == "recovery_needed"
+
+
+@pytest.mark.asyncio
 async def test_resolver_returns_permissive_state_for_empty_graph(
     board_id, db_factory, monkeypatch,
 ):
@@ -211,29 +362,61 @@ async def test_resolver_returns_permissive_state_for_empty_graph(
 
 
 @pytest.mark.asyncio
-async def test_commit_health_state_is_cached_within_ttl(
+async def test_permissive_health_is_not_cached_and_reader_failure_fails_closed(
     board_id, db_factory, monkeypatch,
 ):
     calls = {"n": 0}
 
-    async def _counting(_board_id, _db, scheduler_control=None):
+    async def _healthy_then_unavailable(_board_id, _db, scheduler_control=None):
         calls["n"] += 1
-        return {"overall_state": "healthy", "total_nodes": 7}
+        if calls["n"] > 1:
+            raise RuntimeError("health reader unavailable")
+        return {
+            "overall_state": "healthy",
+            "graph_state": "healthy",
+            "discovery_state": "healthy",
+            "total_nodes": 7,
+        }
 
-    monkeypatch.setattr(health_service, "get_kg_health", _counting)
+    monkeypatch.setattr(
+        health_service,
+        "get_kg_health",
+        _healthy_then_unavailable,
+    )
     reset_commit_health_cache_for_tests()
 
     async with db_factory() as db:
         s1 = await _resolve_commit_kg_health_state(board_id, db)
         s2 = await _resolve_commit_kg_health_state(board_id, db)
         s3 = await _resolve_commit_kg_health_state(board_id, db)
-    assert (s1, s2, s3) == ("healthy", "healthy", "healthy")
-    assert calls["n"] == 1, "health deve ser computado 1x dentro do TTL"
+    assert (s1, s2, s3) == ("healthy", "recovery_needed", "recovery_needed")
+    assert calls["n"] == 2
 
-    reset_commit_health_cache_for_tests(board_id)
+
+@pytest.mark.asyncio
+async def test_degraded_commit_health_state_is_cached_within_ttl(
+    board_id, db_factory, monkeypatch,
+):
+    calls = {"n": 0}
+
+    async def _quarantined(_board_id, _db, scheduler_control=None):
+        calls["n"] += 1
+        return {
+            "overall_state": "quarantined",
+            "graph_state": "quarantined",
+            "discovery_state": "healthy",
+            "total_nodes": 7,
+        }
+
+    monkeypatch.setattr(health_service, "get_kg_health", _quarantined)
+    reset_commit_health_cache_for_tests()
+
     async with db_factory() as db:
-        await _resolve_commit_kg_health_state(board_id, db)
-    assert calls["n"] == 2, "reset deve invalidar o cache do board"
+        s1 = await _resolve_commit_kg_health_state(board_id, db)
+        s2 = await _resolve_commit_kg_health_state(board_id, db)
+        s3 = await _resolve_commit_kg_health_state(board_id, db)
+    assert (s1, s2, s3) == ("quarantined",) * 3
+    assert calls["n"] == 1
 
 
 # ---------------------------------------------------------------------------

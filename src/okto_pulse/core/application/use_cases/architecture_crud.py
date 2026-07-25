@@ -194,6 +194,14 @@ def _spec_architecture_locked(spec: Any) -> bool:
     return bool(current_id and current and current.get("outcome") == "success")
 
 
+class SpecArchitectureLockedError(ConflictError):
+    """Architecture mutation rejected by a spec's successful validation."""
+
+    def __init__(self, spec: Any) -> None:
+        super().__init__("spec_architecture_locked", str(spec.id))
+        self.current_validation_id = getattr(spec, "current_validation_id", None)
+
+
 # --- list -------------------------------------------------------------------
 
 
@@ -308,7 +316,7 @@ class CreateArchitectureUseCase:
             board_id=command.board_id,
         )
         if command.parent_type == "spec" and _spec_architecture_locked(parent):
-            raise ConflictError("spec_architecture_locked", command.parent_id)
+            raise SpecArchitectureLockedError(parent)
         repo = uow.services.architecture_designs
         design = await repo.create(
             command.parent_type, command.parent_id, command.data, actor.actor_id
@@ -362,7 +370,7 @@ async def _resolve_mutable_design(
         if spec is None:
             raise EntityNotFoundError("Spec", design.spec_id)
         if _spec_architecture_locked(spec):
-            raise ConflictError("spec_architecture_locked", design.spec_id)
+            raise SpecArchitectureLockedError(spec)
     return design
 
 
@@ -616,12 +624,20 @@ class McpValidateArchitecturePayloadUseCase:
         mode = "update" if command.design_id else "create"
 
         if command.design_id:
-            design = await _resolve_mutable_design(
-                uow,
-                actor,
-                command.design_id,
-                board_id=command.board_id,
-            )
+            if command.commit_requested:
+                design = await _resolve_mutable_design(
+                    uow,
+                    actor,
+                    command.design_id,
+                    board_id=command.board_id,
+                )
+            else:
+                design = await _resolve_accessible_design(
+                    uow,
+                    actor,
+                    command.design_id,
+                    board_id=command.board_id,
+                )
             loaded = await _resolve_accessible_design(
                 uow,
                 actor,
@@ -650,8 +666,12 @@ class McpValidateArchitecturePayloadUseCase:
                 command.parent_id,
                 board_id=command.board_id,
             )
-            if command.parent_type == "spec" and _spec_architecture_locked(parent):
-                raise ConflictError("spec_architecture_locked", command.parent_id)
+            if (
+                command.commit_requested
+                and command.parent_type == "spec"
+                and _spec_architecture_locked(parent)
+            ):
+                raise SpecArchitectureLockedError(parent)
             candidate = {
                 "title": command.title,
                 "global_description": command.global_description,

@@ -39,6 +39,33 @@ _NODE_FETCH_MAX_ROWS = 5000
 __all__ = ["DRIFT_REPORT_MAX_ITEMS", "provenance_drift_report"]
 
 _CARD_SOURCE_TYPES = frozenset({"task", "test", "bug"})
+_CHILD_SOURCE_MARKERS = (
+    "fr",
+    "tr",
+    "ac",
+    "business_rule",
+    "test_scenario",
+    "api_contract",
+    "integration_requirement",
+    "observability_requirement",
+    "decision",
+    "decision_legacy",
+    "learning",
+    "alternative",
+    "assumption",
+)
+
+
+def _base_source_ref(source_ref: str) -> str:
+    """Map a per-concept ref to the source artifact audited as one unit."""
+
+    ref = str(source_ref or "")
+    for marker in _CHILD_SOURCE_MARKERS:
+        token = f":{marker}:"
+        index = ref.find(token)
+        if index >= 0:
+            return ref[:index]
+    return ref
 
 
 def _fetch_provenance_nodes(
@@ -137,7 +164,8 @@ async def provenance_drift_report(
 
     for node in nodes:
         ref = node["source_artifact_ref"]
-        artifact_type, separator, artifact_id = ref.partition(":")
+        base_ref = _base_source_ref(ref)
+        artifact_type, separator, artifact_id = base_ref.partition(":")
         if not separator or not artifact_type or not artifact_id:
             skipped += 1
             continue
@@ -169,7 +197,7 @@ async def provenance_drift_report(
                 audit.content_hash if audit is not None else None
             ),
         }
-        row = rows_by_ref.get(ref)
+        row = rows_by_ref.get(ref) or rows_by_ref.get(base_ref)
         if row is None:
             entry["reason"] = "artifact_missing"
             drifted.append(entry)

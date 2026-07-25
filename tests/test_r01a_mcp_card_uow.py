@@ -8,10 +8,12 @@ behavior drift, per Codex's option-A-with-adapter-envelope decision:
   ``AddCardDependencyUseCase``) and no longer opens ``get_db_for_mcp`` nor builds
   ``CardService`` directly.
 - board-scope: a cross-board id returns the legacy ``{"error": "Card not found"}``.
-- atomic activity log: ``update_card``/``delete_card`` write the
-  ``card_updated``/``card_deleted`` ``ActivityLog`` row in the SAME transaction.
-- legacy MCP envelopes: ``remove_card_dependency`` returns ``{"success": bool}``
-  (no raise); ``add_card_dependency`` self-ref returns the legacy circular msg.
+- atomic activity log: ``create_card``/``update_card``/``delete_card`` each
+  write exactly one correctly attributed ``ActivityLog`` row in the SAME
+  transaction.
+- MCP envelopes: ``remove_card_dependency`` preserves the non-enumerating
+  ``{"success": bool}`` contract, while ``add_card_dependency`` emits typed
+  conflicts.
 - ``create_card`` keeps the bidirectional ``test_scenarios.linked_task_ids``
   backlink.
 """
@@ -172,6 +174,33 @@ async def test_cross_board_returns_card_not_found(_seed):
 # --- atomic activity log ----------------------------------------------------
 
 
+def _assert_mcp_actor(row: ActivityLog) -> None:
+    assert row.actor_type == "agent"
+    assert row.actor_id == USER_ID
+    assert row.actor_name == "mcp-card-test"
+
+
+@pytest.mark.asyncio
+async def test_create_card_writes_one_agent_activity_with_complete_details(_seed):
+    spec_id, _ = _seed
+    payload = await _create_card(spec_id, title="Created", priority="high")
+    card_id = payload["card"]["id"]
+
+    rows = await _activity_rows(card_id, "card_created")
+
+    assert len(rows) == 1
+    row = rows[0]
+    _assert_mcp_actor(row)
+    assert row.details["title"] == "Created"
+    assert row.details["status"] == "not_started"
+    assert row.details["priority"] == "high"
+    assert row.details["traceability"] == {
+        "requested": [],
+        "changed": [],
+        "idempotent": True,
+    }
+
+
 @pytest.mark.asyncio
 async def test_update_card_writes_atomic_card_updated_activity(_seed):
     spec_id, _ = _seed
@@ -181,14 +210,13 @@ async def test_update_card_writes_atomic_card_updated_activity(_seed):
     )
     assert payload.get("success") is True, payload
     rows = await _activity_rows(card_id, "card_updated")
-    assert len(rows) == 2, (
-        "the canonical and MCP audit producers must both write atomically"
-    )
-    for row in rows:
-        assert row.details["title"] == "Updated"
-        assert row.details["changes"] == [
-            {"field": "title", "old": "C", "new": "Updated"}
-        ]
+    assert len(rows) == 1
+    row = rows[0]
+    _assert_mcp_actor(row)
+    assert row.details["title"] == "Updated"
+    assert row.details["changes"] == [
+        {"field": "title", "old": "C", "new": "Updated"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -197,9 +225,11 @@ async def test_delete_card_writes_atomic_card_deleted_activity(_seed):
     card_id = (await _create_card(spec_id))["card"]["id"]
     payload = await _call("okto_pulse_delete_card", board_id=BOARD_A, card_id=card_id)
     assert payload.get("success") is True, payload
-    assert await _activity_rows(card_id, "card_deleted"), (
-        "delete_card must atomically write a card_deleted ActivityLog row"
-    )
+    rows = await _activity_rows(card_id, "card_deleted")
+    assert len(rows) == 1
+    row = rows[0]
+    _assert_mcp_actor(row)
+    assert row.details == {"title": "C"}
 
 
 # --- typed MCP transition envelope -----------------------------------------
@@ -222,11 +252,11 @@ async def test_invalid_card_edge_is_not_misreported_as_dependency_block(_seed):
     assert payload["remediation"] == "move_card_to_started_first"
 
 
-# --- legacy MCP envelopes ---------------------------------------------------
+# --- dependency MCP envelopes -----------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_remove_card_dependency_returns_bool_without_raising(_seed):
+async def test_remove_card_dependency_missing_edge_is_non_enumerating(_seed):
     spec_id, _ = _seed
     card_id = (await _create_card(spec_id))["card"]["id"]
     payload = await _call(
@@ -235,12 +265,11 @@ async def test_remove_card_dependency_returns_bool_without_raising(_seed):
         card_id=card_id,
         depends_on_id="does-not-exist",
     )
-    # Legacy MCP returns {"success": removed} — NOT a 404/raise like the REST UC.
     assert payload == {"success": False}, payload
 
 
 @pytest.mark.asyncio
-async def test_add_card_dependency_self_ref_returns_legacy_message(_seed):
+async def test_add_card_dependency_self_ref_returns_typed_conflict(_seed):
     spec_id, _ = _seed
     card_id = (await _create_card(spec_id))["card"]["id"]
     payload = await _call(
@@ -249,7 +278,12 @@ async def test_add_card_dependency_self_ref_returns_legacy_message(_seed):
         card_id=card_id,
         depends_on_id=card_id,
     )
-    assert "circular" in payload.get("error", "").lower(), payload
+    assert payload["error"] == "dependency_self_reference", payload
+    assert payload["code"] == "dependency_self_reference"
+    assert payload["facts"] == {
+        "card_id": card_id,
+        "depends_on_id": card_id,
+    }
 
 
 # --- create_card scenario backlink ------------------------------------------

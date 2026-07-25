@@ -292,7 +292,15 @@ async def test_add_dependency_409_self_reference(client) -> None:
     card_id = await _seed_card()
     resp = client.post(f"{PREFIX}/{card_id}/dependencies/{card_id}")
     assert resp.status_code == 409, resp.text
-    assert resp.json()["detail"] == "Dependência circular detectada ou auto-referência"
+    assert resp.json()["detail"] == {
+        "code": "dependency_self_reference",
+        "message": "A card cannot depend on itself.",
+        "remediation": "choose_a_different_dependency",
+        "facts": {
+            "card_id": card_id,
+            "depends_on_id": card_id,
+        },
+    }
 
 
 @pytest.mark.asyncio

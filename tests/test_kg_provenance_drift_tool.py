@@ -437,6 +437,84 @@ async def test_audit_lookup_is_scoped_by_type_when_ids_collide(monkeypatch):
     assert report["drifted"] == []
 
 
+@pytest.mark.parametrize(
+    "child_suffix",
+    [
+        "fr:fr_login",
+        "tr:tr_audit",
+        "ac:ac_login",
+        "business_rule:br_lockout",
+        "test_scenario:ts_login",
+        "api_contract:api_login",
+        "integration_requirement:ir_events",
+        "observability_requirement:or_latency",
+        "decision:dec_queue",
+        "learning:learn_retry",
+        "alternative:alt_polling",
+        "assumption:asm_volume",
+    ],
+)
+async def test_child_source_refs_use_parent_source_and_audit(
+    monkeypatch,
+    child_suffix,
+):
+    source_id = "parent-spec"
+    parent_ref = f"spec:{source_id}"
+    child_ref = f"{parent_ref}:{child_suffix}"
+
+    class _Reader:
+        def fetch(self, board_id):
+            return SimpleNamespace(
+                complete=True,
+                cause=None,
+                rows=[
+                    {
+                        "source_ref": parent_ref,
+                        "artifact_type": "spec",
+                        "id": source_id,
+                    }
+                ],
+            )
+
+    class _AuditRepo:
+        async def get_latest_for_artifact(
+            self,
+            board_id,
+            artifact_id,
+            *,
+            artifact_type,
+        ):
+            assert artifact_id == source_id
+            assert artifact_type == "spec"
+            return SimpleNamespace(
+                artifact_type="spec",
+                content_hash="parent-hash",
+            )
+
+    registry = SimpleNamespace(
+        require_board_source_reader=lambda: _Reader(),
+        audit_repo=_AuditRepo(),
+    )
+    monkeypatch.setattr(provenance_module, "get_kg_registry", lambda: registry)
+    monkeypatch.setattr(
+        provenance_module,
+        "_fetch_provenance_nodes",
+        lambda board_id, node_types: [
+            {
+                "node_id": f"node-{child_suffix}",
+                "node_type": "Decision",
+                "source_artifact_ref": child_ref,
+                "persisted_hash": "parent-hash",
+            }
+        ],
+    )
+
+    report = await provenance_drift_report("board-child-ref", "Decision")
+
+    assert report["checked_count"] == 1
+    assert report["drifted_count"] == 0
+
+
 async def test_s6_unknown_node_type_rejected(drift_tempdir, monkeypatch):
     await _bootstrap_test_board(monkeypatch)
     with pytest.raises(ValueError):

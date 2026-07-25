@@ -119,6 +119,10 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
         in_desc = "story" in tools[tool_name].description.lower()
         in_docs = tool_name in mockup_docs and "story" in mockup_docs.lower()
         assert in_desc or in_docs, f"{tool_name}: story discoverability lost"
+    list_mockups = tools["okto_pulse_list_screen_mockups"]
+    assert "include_content" in list_mockups.parameters["properties"]
+    assert "include_content" in mockup_docs
+    assert "html_content_sha256" in mockup_docs
 
     # traceability summary keeps its full SDLC-chain identity inline.
     traceability_desc = tools["okto_pulse_get_traceability_report"].description

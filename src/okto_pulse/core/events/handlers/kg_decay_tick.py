@@ -31,6 +31,7 @@ from okto_pulse.core.events.types import (
     KGFullRebuildTick,
 )
 from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.guarded_write import GuardedWriteError
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.kg.scoring import _recompute_relevance_batch
@@ -579,6 +580,11 @@ def _count_stale_nodes_pre_tick(conn, cutoff_iso: str) -> int:
             if res.rows:
                 row = res.rows[0]
                 total += int(row[0] or 0)
+        except GuardedWriteError:
+            # Ownership/lifecycle failures are not ordinary per-board graph
+            # failures.  Swallowing one here would let the dispatcher ACK the
+            # event even though the guarded write could not be made durable.
+            raise
         except Exception as exc:
             logger.debug(
                 "kg.tick.stale_count_failed node_type=%s err=%s",
@@ -642,7 +648,18 @@ def _process_board_sync(
                         break
         return (total, stale_pre_count)
 
-    return run_async_blocking(_run())
+    from okto_pulse.core.kg.guarded_write import guarded_board_write
+
+    with guarded_board_write(
+        board_id,
+        operation="kg.relevance_decay_tick",
+        owner_id="system:kg_decay_tick_handler",
+        mutation_ref=f"cutoff:{cutoff_iso}",
+    ) as lease:
+        try:
+            return run_async_blocking(_run())
+        finally:
+            lease.ensure_durable()
 
 
 async def _persist_tick_run(
@@ -756,6 +773,11 @@ async def _run_daily_tick(
             boards_processed += 1
             total_recomputed += recomputed
             nodes_with_stale_score_pre_tick += stale_pre
+        except GuardedWriteError:
+            # Ownership/lifecycle failures are not ordinary per-board graph
+            # failures. Swallowing one here would let the dispatcher ACK the
+            # event even though the guarded write could not be made durable.
+            raise
         except Exception as exc:
             # FR1/TR2: any exception (RuntimeError from graph transaction open,
             # asyncio wrapper, etc.) is caught here so the fleet continues.
@@ -927,11 +949,16 @@ class KGDailyTickHandler:
                 },
             )
             raise
-        except (DeliveryMaintenanceFailed, StaleSweepMaintenanceFailed):
+        except (
+            DeliveryMaintenanceFailed,
+            GuardedWriteError,
+            StaleSweepMaintenanceFailed,
+        ):
             # Cards 7/8: never attempt an error upsert in the tainted
-            # transaction and never let the dispatcher ACK/commit partial
-            # maintenance or scheduling effects. Its normal exception path
-            # owns the rollback and retry.
+            # transaction.  A guarded-write failure likewise means graph
+            # durability/ownership was not proven.  Never let the dispatcher
+            # ACK/commit either class of partial effect; its normal exception
+            # path owns the rollback and retry.
             logger.exception(
                 "kg.tick.delivery_maintenance_rollback tick_id=%s board_id=%s",
                 event.tick_id,

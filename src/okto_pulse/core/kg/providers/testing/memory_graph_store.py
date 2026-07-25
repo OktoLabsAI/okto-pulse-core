@@ -24,7 +24,13 @@ from okto_pulse.core.kg.interfaces.graph_runtime_store import (
 )
 from okto_pulse.core.kg.interfaces.graph_schema_manager import SchemaValidationResult
 from okto_pulse.core.kg.interfaces.graph_store import GraphCapabilities, QueryFilters
-from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    GraphStatementResult,
+    SpecLineageEdgeSnapshot,
+    SpecLineageReconciliationError,
+    SpecLineageReconciliationReceipt,
+    is_spec_lineage_rule_id,
+)
 from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
 from okto_pulse.core.kg.schema_contract import (
     NODE_TYPES,
@@ -34,6 +40,15 @@ from okto_pulse.core.kg.schema_contract import (
     stable_rel_type_entries,
     vector_index_name,
 )
+
+
+_SOURCE_DELETED_REVOCATION_REASON = "source_deleted"
+
+
+def _is_source_deleted_tombstone(node: dict[str, Any]) -> bool:
+    """Whether a node was permanently withdrawn with its governed source."""
+
+    return str(node.get("revocation_reason") or "") == _SOURCE_DELETED_REVOCATION_REASON
 
 
 class InMemoryGraphStore:
@@ -199,6 +214,7 @@ class InMemoryGraphStore:
                             n.get("source_confidence"),
                             score,
                             n.get("superseded_by"),
+                            n.get("source_artifact_ref"),
                         ]
                     )
         return results[: filters.max_rows]
@@ -235,6 +251,7 @@ class InMemoryGraphStore:
                     node.get("source_confidence"),
                     node.get("relevance_score"),
                     node.get("superseded_by"),
+                    node.get("source_artifact_ref"),
                 ]
             )
         return results[: filters.max_rows]
@@ -336,6 +353,8 @@ class InMemoryGraphStore:
         for n in nodes.values():
             if n.get("_type") != node_type:
                 continue
+            if _is_source_deleted_tombstone(n):
+                continue
             if n.get("superseded_by") and not include_superseded:
                 continue
             if graph_layer != "all" and n.get("graph_layer") != graph_layer:
@@ -351,11 +370,48 @@ class InMemoryGraphStore:
                         "node_type": node_type,
                         "title": n.get("title", ""),
                         "source_artifact_ref": n.get("source_artifact_ref"),
+                        "content": n.get("content"),
+                        "context": n.get("context"),
+                        "justification": n.get("justification"),
                         "similarity": sim,
                     }
                 )
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results[:top_k]
+
+    def find_active_by_source_ref(
+        self,
+        board_id: str,
+        node_type: str,
+        source_artifact_ref: str,
+    ) -> dict[str, Any] | None:
+        matches = [
+            node
+            for node in self._board_nodes(board_id).values()
+            if node.get("_type") == node_type
+            and node.get("source_artifact_ref") == source_artifact_ref
+            and not node.get("superseded_by")
+            and not _is_source_deleted_tombstone(node)
+        ]
+        if not matches:
+            return None
+        node = max(
+            matches,
+            key=lambda item: (
+                int(item.get("generation") or 0),
+                str(item.get("id") or ""),
+            ),
+        )
+        return {
+            "node_id": node.get("id"),
+            "node_type": node_type,
+            "title": node.get("title") or "",
+            "source_artifact_ref": node.get("source_artifact_ref"),
+            "content": node.get("content"),
+            "context": node.get("context"),
+            "justification": node.get("justification"),
+            "generation": int(node.get("generation") or 0),
+        }
 
     def get_constraint_detail(
         self, board_id: str, constraint_id: str
@@ -519,6 +575,50 @@ class _InMemoryGraphTransactionScope:
         if node is not None and node.get("_type") == node_type:
             node.update(attrs)
 
+    def replace_with_source_deleted_tombstone(
+        self,
+        node_type: str,
+        node_id: str,
+        *,
+        graph_layer: str,
+        maturity_status: str,
+        revocation_reason: str,
+        relevance_score: float,
+    ) -> bool:
+        node = self.store._board_nodes(self.board_id).get(node_id)
+        if node is None or node.get("_type") != node_type:
+            return False
+        tombstone = {
+            "id": node_id,
+            "_type": node_type,
+            "title": "",
+            "content": "",
+            "context": "",
+            "justification": "",
+            "source_artifact_ref": node.get("source_artifact_ref"),
+            "graph_layer": graph_layer,
+            "maturity_status": maturity_status,
+            "source_session_id": node.get("source_session_id"),
+            "created_at": node.get("created_at"),
+            "created_by_agent": node.get("created_by_agent"),
+            "source_confidence": 0.0,
+            "relevance_score": relevance_score,
+            "query_hits": 0,
+            "priority_boost": 0.0,
+            "revocation_reason": revocation_reason,
+            "human_curated": False,
+            "generation": int(node.get("generation") or 0),
+            "source_span_quote": "",
+            "embedding": None,
+        }
+        self.store._board_nodes(self.board_id)[node_id] = tombstone
+        self.store._edges[self.board_id] = [
+            edge
+            for edge in self.store._board_edges(self.board_id)
+            if edge.get("_from") != node_id and edge.get("_to") != node_id
+        ]
+        return True
+
     def mark_superseded(
         self,
         node_type: str,
@@ -578,12 +678,272 @@ class _InMemoryGraphTransactionScope:
         )
         return True
 
+    def _spec_lineage_edges(self, source_id: str) -> list[dict[str, Any]]:
+        return [
+            edge
+            for edge in self.store._board_edges(self.board_id)
+            if edge.get("_type") == "belongs_to"
+            and edge.get("_from_type") == "Entity"
+            and edge.get("_to_type") == "Entity"
+            and edge.get("_from") == source_id
+        ]
+
+    @staticmethod
+    def _spec_lineage_snapshot(edge: dict[str, Any]) -> SpecLineageEdgeSnapshot:
+        return SpecLineageEdgeSnapshot(
+            source_id=str(edge["_from"]),
+            target_id=str(edge["_to"]),
+            rule_id=str(edge.get("rule_id") or ""),
+            attrs={
+                key: value
+                for key, value in edge.items()
+                if not key.startswith("_")
+            },
+        )
+
+    def _delete_spec_lineage_edge(
+        self,
+        snapshot: SpecLineageEdgeSnapshot,
+    ) -> None:
+        self.store._edges[self.board_id] = [
+            edge
+            for edge in self.store._board_edges(self.board_id)
+            if not (
+                edge.get("_type") == "belongs_to"
+                and edge.get("_from_type") == "Entity"
+                and edge.get("_to_type") == "Entity"
+                and edge.get("_from") == snapshot.source_id
+                and edge.get("_to") == snapshot.target_id
+                and str(edge.get("rule_id") or "") == snapshot.rule_id
+            )
+        ]
+
+    def reconcile_spec_lineage_parent(
+        self,
+        source_id: str,
+        target_id: str,
+        attrs: dict[str, Any],
+    ) -> SpecLineageReconciliationReceipt:
+        rule_id = str(attrs.get("rule_id") or "")
+        if not is_spec_lineage_rule_id(rule_id):
+            raise SpecLineageReconciliationError(
+                "spec_lineage_rule_out_of_scope",
+                f"Rule {rule_id!r} is outside the exclusive Spec-parent family.",
+            )
+
+        nodes = self.store._board_nodes(self.board_id)
+        if (
+            nodes.get(source_id, {}).get("_type") != "Entity"
+            or nodes.get(target_id, {}).get("_type") != "Entity"
+        ):
+            raise SpecLineageReconciliationError(
+                "spec_lineage_endpoint_not_found",
+                "Both the Spec source and its new parent must exist as Entity "
+                "nodes before lineage reconciliation.",
+            )
+
+        existing = self._spec_lineage_edges(source_id)
+        exact_exists = any(
+            edge.get("_to") == target_id
+            and str(edge.get("rule_id") or "") == rule_id
+            for edge in existing
+        )
+        old_edges = tuple(
+            self._spec_lineage_snapshot(edge)
+            for edge in existing
+            if is_spec_lineage_rule_id(str(edge.get("rule_id") or ""))
+            and not (
+                edge.get("_to") == target_id
+                and str(edge.get("rule_id") or "") == rule_id
+            )
+        )
+        ambiguous_legacy_edges = sum(
+            1
+            for edge in existing
+            if str(edge.get("layer") or "") == "legacy"
+            or str(edge.get("rule_id") or "") in {"", "legacy_pre_v2"}
+        )
+
+        new_edge_created = False
+        if not exact_exists:
+            new_edge_created = self.create_edge(
+                "belongs_to",
+                "Entity",
+                "Entity",
+                source_id,
+                target_id,
+                dict(attrs),
+            )
+            if not new_edge_created:
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_new_parent_create_failed",
+                    "The new Spec-parent edge could not be created; old parents "
+                    "were preserved.",
+                )
+
+        receipt = SpecLineageReconciliationReceipt(
+            source_id=source_id,
+            target_id=target_id,
+            target_rule_id=rule_id,
+            target_attrs=dict(attrs),
+            new_edge_created=new_edge_created,
+            removed_edges=old_edges,
+            ambiguous_legacy_edges=ambiguous_legacy_edges,
+        )
+        try:
+            for snapshot in old_edges:
+                self._delete_spec_lineage_edge(snapshot)
+        except Exception as exc:
+            try:
+                self.compensate_spec_lineage_parent(receipt)
+            except Exception as restore_exc:
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_partial_cleanup_restore_failed",
+                    "Old-parent cleanup and restore-first compensation both "
+                    "failed; the replacement edge was preserved.",
+                    receipt=receipt,
+                ) from restore_exc
+            raise SpecLineageReconciliationError(
+                "spec_lineage_old_parent_cleanup_failed",
+                "Old-parent cleanup failed and was restored before the "
+                "replacement edge was removed.",
+                receipt=receipt,
+            ) from exc
+        return receipt
+
+    def clear_spec_lineage_parent(
+        self,
+        source_id: str,
+    ) -> SpecLineageReconciliationReceipt:
+        """Remove the explicit deterministic parent family, preserving ambiguity."""
+
+        nodes = self.store._board_nodes(self.board_id)
+        if nodes.get(source_id, {}).get("_type") != "Entity":
+            raise SpecLineageReconciliationError(
+                "spec_lineage_source_not_found",
+                "The Spec source must exist as an Entity node before lineage "
+                "can be cleared.",
+            )
+
+        existing = self._spec_lineage_edges(source_id)
+        old_edges = tuple(
+            self._spec_lineage_snapshot(edge)
+            for edge in existing
+            if is_spec_lineage_rule_id(str(edge.get("rule_id") or ""))
+        )
+        ambiguous_legacy_edges = sum(
+            1
+            for edge in existing
+            if str(edge.get("layer") or "") == "legacy"
+            or str(edge.get("rule_id") or "") in {"", "legacy_pre_v2"}
+        )
+        receipt = SpecLineageReconciliationReceipt(
+            source_id=source_id,
+            target_id=None,
+            target_rule_id=None,
+            target_attrs={},
+            new_edge_created=False,
+            removed_edges=old_edges,
+            ambiguous_legacy_edges=ambiguous_legacy_edges,
+        )
+        try:
+            for snapshot in old_edges:
+                self._delete_spec_lineage_edge(snapshot)
+            if any(
+                is_spec_lineage_rule_id(str(edge.get("rule_id") or ""))
+                for edge in self._spec_lineage_edges(source_id)
+            ):
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_clear_incomplete",
+                    "One or more deterministic Spec parents remain; retry "
+                    "the explicit clear to converge.",
+                    receipt=receipt,
+                )
+        except Exception as exc:
+            try:
+                self.compensate_spec_lineage_parent(receipt)
+            except Exception as restore_exc:
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_clear_restore_failed",
+                    "Spec-parent clear failed and its before-image could not "
+                    "be fully restored.",
+                    receipt=receipt,
+                ) from restore_exc
+            raise SpecLineageReconciliationError(
+                "spec_lineage_clear_failed",
+                "Spec-parent clear failed and its before-image was restored.",
+                receipt=receipt,
+            ) from exc
+        return receipt
+
+    def compensate_spec_lineage_parent(
+        self,
+        receipt: SpecLineageReconciliationReceipt,
+    ) -> None:
+        for snapshot in receipt.removed_edges:
+            restored = any(
+                edge.get("_to") == snapshot.target_id
+                and str(edge.get("rule_id") or "") == snapshot.rule_id
+                for edge in self._spec_lineage_edges(snapshot.source_id)
+            )
+            if restored:
+                continue
+            created = self.create_edge(
+                "belongs_to",
+                "Entity",
+                "Entity",
+                snapshot.source_id,
+                snapshot.target_id,
+                dict(snapshot.attrs),
+            )
+            if not created:
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_old_parent_restore_failed",
+                    "An old Spec parent could not be restored; the replacement "
+                    "edge was preserved.",
+                )
+
+        if (
+            receipt.new_edge_created
+            and receipt.target_id is not None
+            and receipt.target_rule_id is not None
+        ):
+            self._delete_spec_lineage_edge(
+                SpecLineageEdgeSnapshot(
+                    source_id=receipt.source_id,
+                    target_id=receipt.target_id,
+                    rule_id=receipt.target_rule_id,
+                    attrs=dict(receipt.target_attrs),
+                )
+            )
+
     def find_node_types(self, node_id: str) -> tuple[str, ...]:
         node = self.store._board_nodes(self.board_id).get(node_id)
         return (str(node["_type"]),) if node and node.get("_type") else ()
 
     def delete_edges_by_session(self, session_id: str) -> None:
         self.store.delete_edges_by_session(self.board_id, session_id)
+
+    def delete_edges_by_session_preserving_spec_lineage(
+        self,
+        session_id: str,
+        preserved_edges: tuple[SpecLineageEdgeSnapshot, ...],
+    ) -> None:
+        protected = {
+            (edge.source_id, edge.target_id, edge.rule_id)
+            for edge in preserved_edges
+        }
+        self.store._edges[self.board_id] = [
+            edge
+            for edge in self.store._board_edges(self.board_id)
+            if edge.get("created_by_session_id") != session_id
+            or (
+                str(edge.get("_from") or ""),
+                str(edge.get("_to") or ""),
+                str(edge.get("rule_id") or ""),
+            )
+            in protected
+        ]
 
     def delete_nodes_by_session(
         self,

@@ -506,15 +506,76 @@ def _apply_canonical_projection(
     *,
     include_working: bool,
     canonical_filter_mode: str | None = None,
+    comparison_result: dict | None = None,
 ) -> dict:
     rows = list(result.get("rows") or [])
+    columns = tuple(str(item) for item in result.get("columns") or ())
+
+    def _layer_from_row(row: Any, row_columns: tuple[str, ...]) -> str | None:
+        raw: Any = None
+        observed = False
+        if isinstance(row, dict):
+            for key in ("graph_layer", "layer"):
+                if key in row:
+                    raw = row.get(key)
+                    observed = True
+                    break
+            if not observed:
+                for value in row.values():
+                    if isinstance(value, dict) and "graph_layer" in value:
+                        raw = value.get("graph_layer")
+                        observed = True
+                        break
+        elif isinstance(row, (list, tuple)) and row_columns:
+            for index, column in enumerate(row_columns):
+                normalized = column.strip().strip("`").lower()
+                if normalized in {"graph_layer", "layer"} or normalized.endswith(
+                    ".graph_layer"
+                ):
+                    raw = row[index] if index < len(row) else None
+                    observed = True
+                    break
+        if not observed:
+            return None
+        normalized_layer = str(raw or "").strip().lower()
+        return normalized_layer or "unknown"
+
+    def _layer_counts(payload: dict) -> tuple[dict[str, int], bool]:
+        payload_rows = list(payload.get("rows") or [])
+        payload_columns = tuple(str(item) for item in payload.get("columns") or ())
+        counts: dict[str, int] = {}
+        observed = False
+        for payload_row in payload_rows:
+            layer = _layer_from_row(payload_row, payload_columns)
+            if layer is None:
+                continue
+            observed = True
+            counts[layer] = counts.get(layer, 0) + 1
+        return counts, observed
+
+    returned_layer_counts, returned_layer_observed = _layer_counts(result)
     if include_working:
+        # The legacy field means "rows suppressed by the canonical projection".
+        # In an all-layer result there is no suppression; derive the value from
+        # the identical before/after windows instead of publishing a sentinel.
+        omitted_count = max(0, len(rows) - len(rows))
         return {
             **result,
             "query_state": "canonical_and_working",
             "layers_included": ["canonical", "working"],
             "canonical_filter_enforced": False,
-            "working_omitted_count": 0,
+            "layer_counts": (
+                returned_layer_counts if returned_layer_observed else None
+            ),
+            "working_row_count": (
+                returned_layer_counts.get("working", 0)
+                if returned_layer_observed
+                else None
+            ),
+            "working_omitted_count": omitted_count,
+            "working_omitted_count_exact": True,
+            "working_omitted_count_source": "all_layers_no_projection",
+            "working_omitted_count_scope": "returned_window",
         }
 
     kept: list[Any] = []
@@ -527,13 +588,45 @@ def _apply_canonical_projection(
             if raw is not None:
                 layer = str(raw)
         if layer is None:
-            kept.append(row)
-            continue
-        saw_layer = True
-        if layer == "working":
+            layer = _layer_from_row(row, columns)
+        if layer is not None:
+            saw_layer = True
+        if layer in {"working", "unknown", "legacy_unknown", "none"}:
             omitted += 1
             continue
         kept.append(row)
+
+    omitted_exact = True
+    omitted_source = "row_projection"
+    omitted_layer_counts: dict[str, int] | None = None
+    observed_layer_counts = returned_layer_counts
+    layer_counts_observed = returned_layer_observed
+    if canonical_filter_mode and comparison_result is not None:
+        comparison_rows = list(comparison_result.get("rows") or [])
+        comparison_counts, comparison_observed = _layer_counts(comparison_result)
+        omitted = max(0, len(comparison_rows) - len(rows))
+        omitted_exact = not bool(result.get("truncated")) and not bool(
+            comparison_result.get("truncated")
+        )
+        omitted_source = "paired_query"
+        observed_layer_counts = comparison_counts
+        layer_counts_observed = comparison_observed
+        if comparison_observed:
+            omitted_layer_counts = {
+                layer: max(
+                    0,
+                    count - returned_layer_counts.get(layer, 0),
+                )
+                for layer, count in comparison_counts.items()
+                if count - returned_layer_counts.get(layer, 0) > 0
+            }
+    elif canonical_filter_mode:
+        # Once predicates were pushed into MATCH, the returned rows alone cannot
+        # reveal how many non-canonical rows the backend suppressed.  Unknown is
+        # materially more truthful than the historical hard-coded zero.
+        omitted = None
+        omitted_exact = False
+        omitted_source = "not_observable"
 
     return {
         **result,
@@ -546,7 +639,17 @@ def _apply_canonical_projection(
             canonical_filter_mode
             or ("row_projection" if saw_layer else "partial_no_layer_column")
         ),
+        "layer_counts": observed_layer_counts if layer_counts_observed else None,
+        "working_row_count": (
+            observed_layer_counts.get("working", 0)
+            if layer_counts_observed
+            else None
+        ),
         "working_omitted_count": omitted,
+        "working_omitted_count_exact": omitted_exact,
+        "working_omitted_count_source": omitted_source,
+        "working_omitted_count_scope": "returned_window",
+        "omitted_layer_counts": omitted_layer_counts,
     }
 
 
@@ -581,6 +684,7 @@ def execute_cypher_read_only(
     validate_cypher_read_only(cleaned)
     cleaned = _auto_inject_limit(cleaned, max_rows)
     cleaned = _auto_bound_var_length_path(cleaned, MAX_TRAVERSAL_DEPTH)
+    unfiltered_cleaned = cleaned
     canonical_filter_mode = None
     if not include_working:
         cleaned, canonical_filter_mode = _rewrite_cypher_canonical_only(cleaned)
@@ -588,13 +692,34 @@ def execute_cypher_read_only(
     executor = getattr(get_kg_registry(), "cypher_executor", None)
     if executor is not None:
         logger.debug("[KG] execute_cypher_read_only delegating to registry.cypher_executor")
-        result = executor.execute_read_only(
-            board_id, cleaned, params, max_rows=max_rows,
-        )
+        comparison_result = None
+        paired_execute = getattr(executor, "execute_read_only_pair", None)
+        if (
+            not include_working
+            and canonical_filter_mode == "cypher_rewrite"
+            and callable(paired_execute)
+        ):
+            paired_result = paired_execute(
+                board_id,
+                cleaned,
+                unfiltered_cleaned,
+                params,
+                max_rows=max_rows,
+            )
+            result = dict(paired_result["primary"])
+            comparison_result = dict(paired_result["comparison"])
+        else:
+            result = executor.execute_read_only(
+                board_id,
+                cleaned,
+                params,
+                max_rows=max_rows,
+            )
         return _apply_canonical_projection(
             result,
             include_working=include_working,
             canonical_filter_mode=canonical_filter_mode,
+            comparison_result=comparison_result,
         )
 
     raise TierPowerError(
@@ -1239,7 +1364,10 @@ def get_schema_info(
 
     logger.debug("[KG] get_schema_info board_id=%s include_internal=%s", board_id, include_internal)
 
-    store = get_kg_registry().graph_store
+    # Empty board_id is the MCP global schema-contract view, not authority to
+    # select or enumerate a board. Keep it static so global introspection never
+    # opens an implicit "default" graph or gains all-board scope.
+    store = get_kg_registry().graph_store if board_id else None
     if store is not None:
         result = store.get_schema_info(board_id, include_internal=include_internal)
     else:

@@ -167,8 +167,13 @@ def _registered(store: _MemoryConsolidationStore):
 def _patch_graph_write_shell(monkeypatch, *, lifecycle_calls: list[str]) -> None:
     monkeypatch.setattr(
         consolidation,
-        "under_safe_write",
-        lambda *_args, **_kwargs: nullcontext(),
+        "guarded_board_write",
+        lambda *_args, **_kwargs: nullcontext(
+            SimpleNamespace(
+                durability_applied=True,
+                ensure_owned=lambda **_kwargs: None,
+            )
+        ),
     )
 
     def _lifecycle(**_kwargs):
@@ -193,8 +198,19 @@ async def test_stale_reconcile_branches_before_artifact_load(monkeypatch):
     reconciliations: list[dict[str, Any]] = []
     lifecycle_calls: list[str] = []
 
+    class _BlockingExecution:
+        async def run(self, operation):
+            return operation()
+
+        async def join(self, _timeout: float) -> int:
+            return 0
+
+    blocking_execution = _BlockingExecution()
+
     async def _reconcile(_db, **kwargs):
+        kwargs["before_graph_write"]()
         reconciliations.append(kwargs)
+        kwargs.pop("before_graph_write")
         return SimpleNamespace(
             incomplete=False,
             failed_types=(),
@@ -209,7 +225,11 @@ async def test_stale_reconcile_branches_before_artifact_load(monkeypatch):
     _patch_graph_write_shell(monkeypatch, lifecycle_calls=lifecycle_calls)
 
     with _registered(store):
-        assert await _process_queue_entry(object(), entry)
+        assert await _process_queue_entry(
+            object(),
+            entry,
+            blocking_execution=blocking_execution,
+        )
 
     assert store.load_calls == []
     assert reconciliations == [
@@ -217,6 +237,7 @@ async def test_stale_reconcile_branches_before_artifact_load(monkeypatch):
             "board_id": entry.board_id,
             "source_refs": [f"spec:{entry.artifact_id}"],
             "correlation_id": entry.delete_event_id,
+            "blocking_execution": blocking_execution,
         }
     ]
     assert lifecycle_calls == ["lifecycle"]
@@ -295,6 +316,29 @@ def test_stale_reconcile_completeness_is_explicit_and_fail_closed(result, expect
     assert consolidation._stale_reconcile_is_complete(result) is expected
 
 
+def test_stale_reconcile_empty_retry_cannot_ack_prior_partial_graph_failure():
+    result = SimpleNamespace(
+        incomplete=False,
+        failed_types=(),
+        **_complete_target_contract(),
+    )
+
+    assert (
+        consolidation._stale_reconcile_is_complete(
+            result,
+            previous_error="stale_reconcile_graph_partial:Decision",
+        )
+        is False
+    )
+    assert (
+        consolidation._stale_reconcile_failure_error(
+            existing_error=None,
+            reconcile_details={"failed_types": ["Requirement", "Decision"]},
+        )
+        == "stale_reconcile_graph_partial:Decision,Requirement"
+    )
+
+
 @pytest.mark.asyncio
 async def test_incomplete_stale_reconcile_is_not_acknowledged(monkeypatch):
     from okto_pulse.core.kg import canonical_stale_reconciler
@@ -305,6 +349,7 @@ async def test_incomplete_stale_reconcile_is_not_acknowledged(monkeypatch):
     failure_calls: list[str] = []
 
     async def _incomplete(_db, **_kwargs):
+        _kwargs["before_graph_write"]()
         return SimpleNamespace(incomplete=True, failed_types=("Decision",))
 
     async def _mark_failed(_db, failed_entry, **_kwargs):

@@ -20,6 +20,8 @@ commit. ``KGToolError`` raised by the KG service (``query_global`` /
 
 from __future__ import annotations
 
+from contextvars import Context, copy_context
+
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
@@ -31,6 +33,8 @@ from okto_pulse.core.application.use_cases.base import (
     commit,
 )
 from okto_pulse.core.application.scope import ActorScope
+from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 
 
@@ -426,35 +430,152 @@ class BoostNodeResult:
         self.payload = payload
 
 
+class _BoostFenceHandle:
+    """Keep one synchronous guard context alive across async audit finalization."""
+
+    __slots__ = ("closed", "context", "entered", "lease", "manager")
+
+    def __init__(self) -> None:
+        self.context: Context = copy_context()
+        self.manager: Any = None
+        self.lease: Any = None
+        self.entered = False
+        self.closed = False
+
+
+def _mutate_boost_graph_inside_fence(
+    handle: _BoostFenceHandle,
+    *,
+    guard_factory: Any,
+    kg_service: Any,
+    command: BoostNodeCommand,
+    actor: ActorContext,
+) -> object:
+    """Enter the fence and complete graph IO/lifecycle in one worker context."""
+
+    def _run() -> object:
+        handle.manager = guard_factory(
+            command.board_id,
+            operation="kg.node_boost",
+            owner_id=actor.actor_id,
+            mutation_ref=f"node:{command.node_id}:boost",
+        )
+        handle.lease = handle.manager.__enter__()
+        handle.entered = True
+        try:
+            return run_async_blocking(
+                kg_service.mutate_boost_node_graph(
+                    command.board_id,
+                    command.node_id,
+                    actor_id=actor.actor_id,
+                )
+            )
+        finally:
+            # A Ladybug/Kuzu SET may auto-commit before result
+            # materialization raises. Apply the lifecycle on every exit from
+            # the graph service in the same off-loop guard context.
+            handle.lease.ensure_durable()
+
+    return handle.context.run(_run)
+
+
+def _close_boost_fence_sync(
+    handle: _BoostFenceHandle,
+    error: BaseException | None,
+) -> None:
+    """Close the suspended sync context manager in its original Context."""
+
+    if not handle.entered or handle.closed:
+        return
+
+    def _close() -> None:
+        try:
+            if error is None:
+                handle.lease.ensure_owned(
+                    failure_phase="after_boost_audit_finalize"
+                )
+        except BaseException as ownership_error:
+            try:
+                handle.manager.__exit__(
+                    type(ownership_error),
+                    ownership_error,
+                    ownership_error.__traceback__,
+                )
+            finally:
+                handle.closed = True
+            raise
+        try:
+            handle.manager.__exit__(
+                type(error) if error is not None else None,
+                error,
+                error.__traceback__ if error is not None else None,
+            )
+        finally:
+            handle.closed = True
+
+    handle.context.run(_close)
+
+
+async def _close_boost_fence(
+    handle: _BoostFenceHandle,
+    error: BaseException | None,
+) -> None:
+    await run_blocking_graph_io(
+        lambda: _close_boost_fence_sync(handle, error),
+        task_name="kg.node_boost.fence_exit",
+    )
+
+
 class BoostNodeUseCase:
     """Boost a KG node's ``relevance_score`` (+0.3, clamp [0, 1.5]) and persist its
-    ``ConsolidationAudit`` row (write). Delegates the graph read/SET + audit staging
-    to ``governance.boost_node`` (which holds the graph + ORM audit coupling, so this
-    use case stays relational-boundary clean) and then commits the staged audit via
-    the UnitOfWork.
+    ``ConsolidationAudit`` row (write). The KG service exposes a graph-only mutation
+    and a no-IO audit-staging step: native graph work runs in a worker, while staging
+    and finalizing the request-owned UnitOfWork remain on the request loop.
 
     On a successful boost the audit row persists (bug 547a2aa8 fix — the legacy row
     omitted the NOT-NULL ``artifact_type``/``started_at`` columns, so its commit raised
-    IntegrityError and was silently swallowed). The commit stays best-effort only for
-    a genuinely unexpected failure on the already-boosted graph: it rolls back the
-    (audit-only) staged row and the boost — already persisted in the graph — still
-    succeeds, preserving the legacy 200/404/500 contract. A missing node (governance
-    returns ``None``) is ``EntityNotFoundError("node", node_id)`` (→ adapter 404
-    problem); ``BoostPersistError`` from a failed SET propagates uncaught for the
-    adapter (→ 500 ``graph_error``)."""
+    IntegrityError and was silently swallowed). The graph SET, durability lifecycle
+    and relational audit finalization share one board-writer fence. The commit stays
+    best-effort only for a genuinely unexpected failure on the already-durable graph:
+    it rolls back the (audit-only) staged row and the boost still succeeds, preserving
+    the legacy 200/404/500 contract. A missing node (governance returns ``None``) is
+    ``EntityNotFoundError("node", node_id)`` (→ adapter 404 problem);
+    ``BoostPersistError`` from a failed SET propagates uncaught for the adapter
+    (→ 500 ``graph_error``)."""
 
     async def execute(
         self, command: BoostNodeCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> BoostNodeResult:
+        from okto_pulse.core.kg.guarded_write import guarded_board_write
 
         await _require_board_access(uow.services, actor, command.board_id)
-        payload = await uow.services.kg.boost_node(command.board_id, command.node_id, actor_id=actor.actor_id
-        )
-        if payload is None:
-            raise EntityNotFoundError("node", command.node_id)
+        handle = _BoostFenceHandle()
         try:
-            await commit(uow)
-        except Exception:
-            # Audit is best-effort — the boost is already persisted in the graph.
-            await uow.rollback()
+            mutation = await run_blocking_graph_io(
+                lambda: _mutate_boost_graph_inside_fence(
+                    handle,
+                    guard_factory=guarded_board_write,
+                    kg_service=uow.services.kg,
+                    command=command,
+                    actor=actor,
+                ),
+                task_name="kg.node_boost.graph",
+            )
+            if mutation is None:
+                raise EntityNotFoundError("node", command.node_id)
+
+            # Staging remains on the request loop: it touches the request-owned
+            # UnitOfWork but performs no graph or relational network IO.
+            payload = uow.services.kg.stage_boost_node_audit(mutation)
+            try:
+                await commit(uow)
+            except Exception:
+                # Historical API contract: the audit is best-effort after a
+                # durable graph boost. Keep the fence until rollback completes.
+                await uow.rollback()
+        except BaseException as exc:
+            await _close_boost_fence(handle, exc)
+            raise
+        else:
+            await _close_boost_fence(handle, None)
         return BoostNodeResult(payload)

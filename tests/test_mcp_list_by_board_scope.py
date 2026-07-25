@@ -14,6 +14,7 @@ from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.application.use_cases.mcp_board_crud import (
     McpListByBoardCommand,
     McpListByBoardUseCase,
+    _strict_filter_bool,
 )
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
@@ -31,6 +32,32 @@ from sqlalchemy_test_models import (
 
 
 USER_ID = "list-scope-agent"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (False, False),
+        ("false", False),
+        ("0", False),
+        ("no", False),
+        (True, True),
+        ("true", True),
+        ("1", True),
+        ("yes", True),
+    ],
+)
+def test_include_archived_application_parser_never_uses_truthiness(
+    value,
+    expected,
+):
+    assert _strict_filter_bool(value, field="include_archived") is expected
+
+
+@pytest.mark.parametrize("value", ["off", "2", [], {}, 1, 0])
+def test_include_archived_application_parser_rejects_unknown_types(value):
+    with pytest.raises(ValueError, match="include_archived must be a boolean"):
+        _strict_filter_bool(value, field="include_archived")
 
 
 @pytest.fixture

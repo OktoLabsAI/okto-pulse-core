@@ -16,6 +16,11 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     commit,
 )
+from okto_pulse.core.application.use_cases.card_collaboration import (
+    AttachmentStorageError,
+    InvalidAttachmentFilenameError,
+    validate_attachment_filename,
+)
 from okto_pulse.core.application.use_cases._service_payload import (
     payload,
     payload_choices,
@@ -26,6 +31,12 @@ from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 @dataclass(frozen=True)
 class McpPayloadResult:
     payload: Any
+
+
+def _attachment_error_payload(
+    error: InvalidAttachmentFilenameError | AttachmentStorageError,
+) -> McpPayloadResult:
+    return McpPayloadResult({"error": str(error), "code": error.code})
 
 
 async def _log_card_activity(
@@ -582,13 +593,18 @@ class McpRespondToChoiceUseCase:
                 {"error": "Choice comment not found or invalid selection"}
             )
 
-        comment = await uow.services.comments.respond_to_choice(
-            comment_id=command.comment_id,
-            responder_id=actor.actor_id,
-            responder_name=actor.actor_name or "",
-            selected=command.selected_ids,
-            free_text=command.free_text or None,
-        )
+        from okto_pulse.core.services.qa_selection import QASelectionError
+
+        try:
+            comment = await uow.services.comments.respond_to_choice(
+                comment_id=command.comment_id,
+                responder_id=actor.actor_id,
+                responder_name=actor.actor_name or "",
+                selected=command.selected_ids,
+                free_text=command.free_text or None,
+            )
+        except QASelectionError as exc:
+            return McpPayloadResult(exc.to_error_dict())
         if not comment:
             return McpPayloadResult(
                 {"error": "Choice comment not found or invalid selection"}
@@ -821,22 +837,43 @@ class McpUploadAttachmentUseCase:
                 {"error": "Failed to upload attachment (card not found)"}
             )
 
+        try:
+            filename = validate_attachment_filename(command.filename)
+        except InvalidAttachmentFilenameError as exc:
+            return _attachment_error_payload(exc)
+
         service = uow.services.attachments
-        attachment = await service.upload_attachment(
-            card_id=command.card_id,
-            user_id=actor.actor_id,
-            filename=command.filename,
-            content=command.content,
-            mime_type=command.mime_type,
-        )
+        try:
+            attachment = await service.upload_attachment(
+                card_id=command.card_id,
+                user_id=actor.actor_id,
+                filename=filename,
+                content=command.content,
+                mime_type=command.mime_type,
+            )
+        except OSError:
+            return _attachment_error_payload(AttachmentStorageError("upload"))
         if not attachment:
             return McpPayloadResult(
                 {"error": "Failed to upload attachment (card not found)"}
             )
         try:
+            await _log_card_activity(
+                uow.services,
+                command.board_id,
+                command.card_id,
+                "attachment_uploaded",
+                actor,
+                {"filename": filename, "size": len(command.content)},
+            )
             await commit(uow)
-        except BaseException:
-            await service.discard_uploaded_attachment(attachment)
+        except BaseException as exc:
+            try:
+                await service.discard_uploaded_attachment(attachment)
+            except OSError:
+                return _attachment_error_payload(AttachmentStorageError("upload"))
+            if isinstance(exc, OSError):
+                return _attachment_error_payload(AttachmentStorageError("upload"))
             raise
         return McpPayloadResult(
             {
@@ -920,13 +957,29 @@ class McpDeleteAttachmentUseCase:
             return McpPayloadResult({"error": "Attachment not found"})
 
         service = uow.services.attachments
-        receipt = await service.delete_attachment(command.attachment_id)
+        try:
+            receipt = await service.delete_attachment(command.attachment_id)
+        except OSError:
+            return _attachment_error_payload(AttachmentStorageError("delete"))
         if not receipt:
             return McpPayloadResult({"error": "Attachment not found"})
         try:
+            await _log_card_activity(
+                uow.services,
+                command.board_id,
+                attachment.card_id,
+                "attachment_deleted",
+                actor,
+                {"attachment_id": command.attachment_id},
+            )
             await commit(uow)
-        except BaseException:
-            await service.restore_deleted_attachment(receipt)
+        except BaseException as exc:
+            try:
+                await service.restore_deleted_attachment(receipt)
+            except OSError:
+                return _attachment_error_payload(AttachmentStorageError("delete"))
+            if isinstance(exc, OSError):
+                return _attachment_error_payload(AttachmentStorageError("delete"))
             raise
         return McpPayloadResult({"success": True})
 

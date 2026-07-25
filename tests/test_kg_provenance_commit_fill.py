@@ -54,6 +54,18 @@ def prov_tempdir(monkeypatch):
     monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
     configure_real_graph_test_kg_registry()
 
+    async def _healthy(_board_id, _db, scheduler_control=None):
+        return {
+            "overall_state": "healthy",
+            "graph_state": "healthy",
+            "discovery_state": "healthy",
+            "total_nodes": 1,
+        }
+
+    import okto_pulse.core.services.kg_health_service as health_service
+
+    monkeypatch.setattr(health_service, "get_kg_health", _healthy)
+
     yield base
 
     try:

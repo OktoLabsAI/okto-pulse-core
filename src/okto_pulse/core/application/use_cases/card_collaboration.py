@@ -16,6 +16,7 @@ from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     CommandValidationError,
     EntityNotFoundError,
+    UseCaseError,
     commit,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
@@ -56,6 +57,81 @@ class QuestionNotFoundError(EntityNotFoundError):
 class AttachmentNotFoundError(EntityNotFoundError):
     def __init__(self, attachment_id: str) -> None:
         super().__init__("attachment", attachment_id)
+
+
+MAX_ATTACHMENT_FILENAME_BYTES = 200
+_INVALID_ATTACHMENT_FILENAME_CHARS = frozenset('<>:"/\\|?*')
+_RESERVED_ATTACHMENT_FILENAMES = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{index}" for index in range(1, 10)),
+        *(f"LPT{index}" for index in range(1, 10)),
+    }
+)
+
+
+class InvalidAttachmentFilenameError(CommandValidationError):
+    """A filename that cannot be represented safely by every storage adapter."""
+
+    code = "invalid_attachment_filename"
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Invalid attachment filename: {reason}")
+
+
+class AttachmentStorageError(UseCaseError):
+    """Safe storage failure that never exposes an adapter's local path."""
+
+    code = "attachment_storage_error"
+
+    def __init__(self, operation: str) -> None:
+        self.operation = operation
+        super().__init__("Attachment storage operation failed")
+
+
+def validate_attachment_filename(filename: str) -> str:
+    """Validate one portable storage-object name before any provider write.
+
+    Storage providers may prepend collision-resistant tokens and temporary-file
+    suffixes.  The UTF-8 byte cap leaves room for those additions below the
+    common 255-byte filesystem component limit.  Invalid names are rejected
+    instead of being silently reduced to ``Path(filename).name``.
+    """
+
+    if not isinstance(filename, str) or not filename:
+        raise InvalidAttachmentFilenameError("a non-empty name is required")
+    if filename != filename.strip():
+        raise InvalidAttachmentFilenameError(
+            "leading or trailing whitespace is not allowed"
+        )
+    if filename in {".", ".."}:
+        raise InvalidAttachmentFilenameError("relative path names are not allowed")
+    if filename.endswith("."):
+        raise InvalidAttachmentFilenameError("a trailing dot is not allowed")
+    if any(
+        char in _INVALID_ATTACHMENT_FILENAME_CHARS or ord(char) < 32 or ord(char) == 127
+        for char in filename
+    ):
+        raise InvalidAttachmentFilenameError(
+            "path separators, control characters, or reserved characters "
+            "are not allowed"
+        )
+    device_name = filename.split(".", 1)[0].upper()
+    if device_name in _RESERVED_ATTACHMENT_FILENAMES:
+        raise InvalidAttachmentFilenameError("a reserved device name is not allowed")
+    try:
+        encoded = filename.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise InvalidAttachmentFilenameError("the name must be valid Unicode") from exc
+    if len(encoded) > MAX_ATTACHMENT_FILENAME_BYTES:
+        raise InvalidAttachmentFilenameError(
+            f"the name must not exceed {MAX_ATTACHMENT_FILENAME_BYTES} UTF-8 bytes"
+        )
+    return filename
 
 
 @dataclass(frozen=True)
@@ -481,14 +557,18 @@ class UploadCardAttachmentUseCase:
             board_id=command.board_id,
             write=True,
         )
+        filename = validate_attachment_filename(command.filename)
         service = uow.services.attachments
-        attachment = await service.upload_attachment(
-            card_id=command.card_id,
-            user_id=actor.actor_id,
-            filename=command.filename,
-            content=command.content,
-            mime_type=command.mime_type,
-        )
+        try:
+            attachment = await service.upload_attachment(
+                card_id=command.card_id,
+                user_id=actor.actor_id,
+                filename=filename,
+                content=command.content,
+                mime_type=command.mime_type,
+            )
+        except OSError as exc:
+            raise AttachmentStorageError("upload") from exc
         if not attachment:
             raise CardNotFoundError(command.card_id)
         try:
@@ -497,11 +577,16 @@ class UploadCardAttachmentUseCase:
                 command.card_id,
                 "attachment_uploaded",
                 actor,
-                {"filename": command.filename, "size": len(command.content)},
+                {"filename": filename, "size": len(command.content)},
             )
             await commit(uow)
-        except BaseException:
-            await service.discard_uploaded_attachment(attachment)
+        except BaseException as exc:
+            try:
+                await service.discard_uploaded_attachment(attachment)
+            except OSError as compensation_error:
+                raise AttachmentStorageError("upload") from compensation_error
+            if isinstance(exc, OSError):
+                raise AttachmentStorageError("upload") from exc
             raise
         await _refresh(
             uow,
@@ -564,7 +649,10 @@ class DeleteCardAttachmentUseCase:
         if not attachment or attachment.card_id != command.card_id:
             raise AttachmentNotFoundError(command.attachment_id)
 
-        receipt = await service.delete_attachment(command.attachment_id)
+        try:
+            receipt = await service.delete_attachment(command.attachment_id)
+        except OSError as exc:
+            raise AttachmentStorageError("delete") from exc
         if not receipt:
             raise AttachmentNotFoundError(command.attachment_id)
         try:
@@ -576,6 +664,11 @@ class DeleteCardAttachmentUseCase:
                 {"attachment_id": command.attachment_id},
             )
             await commit(uow)
-        except BaseException:
-            await service.restore_deleted_attachment(receipt)
+        except BaseException as exc:
+            try:
+                await service.restore_deleted_attachment(receipt)
+            except OSError as compensation_error:
+                raise AttachmentStorageError("delete") from compensation_error
+            if isinstance(exc, OSError):
+                raise AttachmentStorageError("delete") from exc
             raise

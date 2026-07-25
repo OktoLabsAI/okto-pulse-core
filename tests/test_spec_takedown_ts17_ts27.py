@@ -386,11 +386,21 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
         return SimpleNamespace(nodes_added=1, edges_added=0)
 
     monkeypatch.setattr(consolidation, "commit_consolidation", _commit)
-    monkeypatch.setattr(consolidation, "under_safe_write", lambda *_a, **_k: nullcontext())
+    monkeypatch.setattr(
+        consolidation,
+        "guarded_board_write",
+        lambda *_a, **_k: nullcontext(
+            SimpleNamespace(
+                durability_applied=True,
+                ensure_owned=lambda **_kwargs: None,
+            )
+        ),
+    )
     monkeypatch.setattr(consolidation, "_apply_board_graph_lifecycle_after_commit", lambda **_kwargs: SimpleNamespace())
     monkeypatch.setattr(consolidation, "_run_post_commit_maintenance", lambda *_args, **_kwargs: asyncio.sleep(0))
 
     async def _reconcile(*_args, **_kwargs):
+        _kwargs["before_graph_write"]()
         assert publication == {"graph": "canonical", "digest": "canonical"}
         publication["graph"] = "working_stale"
         return SimpleNamespace(

@@ -1558,6 +1558,7 @@ def test_human_curated_column_declared_in_schema():
         "0.3.9",
         "0.3.10",
         "0.3.11",
+        "0.3.12",
     }
 
 
@@ -1618,8 +1619,8 @@ def test_update_branch_preserves_curated_node_without_override(caplog):
     """TS7 (control flow): UPDATE hint with curated target + no override → NOOP.
 
     Inspects the source of _do_graph_commit to verify the preservation
-    branch is in place: it must read human_curated, check confidence as
-    the override proxy, emit kg.consolidation.manual_edit_preserved on
+    branch is in place: it must read human_curated, check explicit membership
+    in agent_overrides, emit kg.consolidation.manual_edit_preserved on
     skip and kg.consolidation.reset_manual_flag when the override fires.
     Source-level assertion avoids a full Kùzu commit cycle for a unit test.
     """
@@ -1630,7 +1631,8 @@ def test_update_branch_preserves_curated_node_without_override(caplog):
     assert "_node_is_human_curated" in src
     assert "manual_edit_preserved" in src
     assert "reset_manual_flag" in src
-    assert "hint.confidence" in src
+    assert "explicit_override_candidate_ids" in src
+    assert "hint.confidence" not in src
 
 
 def test_begin_consolidation_has_nothing_changed_log_site():

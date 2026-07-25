@@ -68,7 +68,7 @@ class TestGlobalSchema:
         assert rel_count == 7
 
     def test_schema_version(self):
-        assert GLOBAL_SCHEMA_VERSION == "0.1.1"
+        assert GLOBAL_SCHEMA_VERSION == "0.1.2"
 
     def test_decision_digest_carries_graph_layer(self):
         columns = set()

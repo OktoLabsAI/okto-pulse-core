@@ -352,10 +352,20 @@ def _register_query_tools(board_id, monkeypatch):
     async def _fake_user_boards(*_a, **_k):
         return _FakeAgent(), [board_id]
 
+    async def _board_agent(_board_id: str):
+        return _FakeAgent()
+
+    async def _global_agent():
+        return _FakeAgent()
+
     monkeypatch.setattr(qt, "_get_user_boards", _fake_user_boards)
     double = _MCPDouble()
     register_kg_query_tools(
-        double, get_agent=lambda: None, get_uow=lambda: None,
+        double,
+        get_agent=lambda: None,
+        get_uow=lambda: None,
+        get_board_agent=_board_agent,
+        get_global_agent=_global_agent,
     )
     return double.tools
 

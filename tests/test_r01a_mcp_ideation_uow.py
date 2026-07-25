@@ -29,6 +29,10 @@ import pytest
 from sqlalchemy import func, select
 
 from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.application.ideation_scope import (
+    IdeationScopeValidationError,
+    coerce_scope_score,
+)
 from sqlalchemy_test_models import (
     ActivityLog,
     Board,
@@ -118,6 +122,68 @@ def test_qa_activity_log_is_atomic_in_use_case():
 
     crud = Path(mcp_ideation_crud.__file__).read_text(encoding="utf-8")
     assert crud.count("_log_activity(") == 3, "expected 3 atomic Q&A activity logs"
+
+
+@pytest.mark.parametrize(
+    ("wire_value", "expected"),
+    [
+        ("1", 1),
+        ("+1", 1),
+        ("  +5  ", 5),
+        (1, 1),
+        (5, 5),
+    ],
+)
+def test_scope_score_accepts_only_in_range_ascii_integers(wire_value, expected):
+    assert coerce_scope_score("domains", wire_value) == expected
+
+
+@pytest.mark.parametrize(
+    "wire_value",
+    [
+        "0",
+        "6",
+        "-1",
+        "++1",
+        "--1",
+        "+-1",
+        "-+1",
+        "+ 1",
+        "１",  # full-width Unicode digit
+        "٢",  # Arabic-Indic Unicode digit
+        "−1",  # Unicode minus
+        "1.0",
+        True,
+        False,
+        1.0,
+        None,
+    ],
+    ids=[
+        "zero",
+        "above-max",
+        "negative",
+        "double-plus",
+        "double-minus",
+        "plus-minus",
+        "minus-plus",
+        "spaced-sign",
+        "fullwidth-digit",
+        "arabic-indic-digit",
+        "unicode-minus",
+        "decimal-string",
+        "bool-true",
+        "bool-false",
+        "float",
+        "none",
+    ],
+)
+def test_scope_score_rejects_range_sign_unicode_and_non_integer_values(
+    wire_value,
+):
+    with pytest.raises(IdeationScopeValidationError) as exc:
+        coerce_scope_score("domains", wire_value)
+    assert exc.value.code == "ideation_scope_score_invalid"
+    assert exc.value.to_error_dict()["mutation_applied"] is False
 
 
 # --- runtime harness --------------------------------------------------------
@@ -495,7 +561,12 @@ async def test_ideation_cross_board_matrix_has_no_payload_write_or_log(
         "add_kb": {"error": "Ideation not found"},
         "delete_kb": {"error": "Ideation not found"},
         "ask": {"error": "Ideation not found"},
-        "answer": {"error": "Q&A item not found or invalid selection"},
+        "answer": {
+            "error": "qa_not_found",
+            "code": "qa_not_found",
+            "message": "Q&A item not found",
+            "mutation_applied": False,
+        },
         "delete_qa": {"error": "Q&A item not found"},
         "evaluate_empty_scope": {"error": "Ideation not found"},
     }
@@ -590,7 +661,12 @@ async def test_ideation_missing_parent_matrix_is_not_found_and_zero_write(
         {"error": "Ideation not found"},
         {"error": "Ideation not found"},
         {"error": "Ideation not found"},
-        {"error": "Q&A item not found or invalid selection"},
+        {
+            "error": "qa_not_found",
+            "code": "qa_not_found",
+            "message": "Q&A item not found",
+            "mutation_applied": False,
+        },
         {"error": "Q&A item not found"},
         {"error": "Ideation not found"},
     ]
@@ -700,7 +776,12 @@ async def test_ideation_qa_rejects_same_board_wrong_parent_without_log(
         qa_id=local["qa_id"],
     )
 
-    assert answered == {"error": "Q&A item not found or invalid selection"}
+    assert answered == {
+        "error": "qa_not_found",
+        "code": "qa_not_found",
+        "message": "Q&A item not found",
+        "mutation_applied": False,
+    }
     assert deleted == {"error": "Q&A item not found"}
     assert await _ideation_graph_state(_board_scope_graph) == before
 
@@ -887,6 +968,156 @@ async def test_evaluate_ideation_classifies_submitted_scope_and_persists_it(_see
     )
     assert persisted["complexity"] == "large"
     assert persisted["scope_assessment"] == evaluated["scope_assessment"]
+
+
+@pytest.mark.asyncio
+async def test_evaluate_scope_is_atomic_repairs_legacy_and_audits_only_changes(
+    _seed,
+):
+    """Invalid/no-op retries never mutate or mint misleading audit records."""
+    from okto_pulse.core.infra.database import get_session_factory
+
+    created = await _call(
+        "okto_pulse_create_ideation",
+        board_id=BOARD_ID,
+        title="Adversarial scope evaluation",
+    )
+    iid = created["ideation"]["id"]
+    for next_status in ("review", "approved", "evaluating"):
+        moved = await _call(
+            "okto_pulse_move_ideation",
+            board_id=BOARD_ID,
+            ideation_id=iid,
+            status=next_status,
+        )
+        assert moved["success"] is True
+
+    baseline = await _call(
+        "okto_pulse_evaluate_ideation",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        domains="1",
+        ambiguity="2",
+        dependencies="3",
+    )
+    assert baseline["scope_assessment"] == {
+        "domains": 1,
+        "ambiguity": 2,
+        "dependencies": 3,
+    }
+
+    async def state():
+        async with get_session_factory()() as db:
+            row = await db.get(Ideation, iid)
+            history_count = int(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(IdeationHistory)
+                    .where(IdeationHistory.ideation_id == iid)
+                )
+                or 0
+            )
+            activity_count = int(
+                await db.scalar(
+                    select(func.count())
+                    .select_from(ActivityLog)
+                    .where(
+                        ActivityLog.board_id == BOARD_ID,
+                        ActivityLog.action
+                        == "ideation_complexity_evaluated",
+                    )
+                )
+                or 0
+            )
+            return (
+                dict(row.scope_assessment or {}),
+                row.complexity,
+                history_count,
+                activity_count,
+            )
+
+    initial_state = await state()
+    for invalid in ("++1", "--1", "+-1", "１", "٢", "−1", "6", "-1"):
+        result = await _call(
+            "okto_pulse_evaluate_ideation",
+            board_id=BOARD_ID,
+            ideation_id=iid,
+            domains=invalid,
+        )
+        assert result["code"] == "ideation_scope_score_invalid", invalid
+        assert result["mutation_applied"] is False
+        assert await state() == initial_state
+
+    # Simulate pre-contract persisted data. Correcting another field must fail
+    # atomically with an actionable legacy code; correcting the bad field in the
+    # same request must succeed.
+    async with get_session_factory()() as db:
+        row = await db.get(Ideation, iid)
+        row.scope_assessment = {
+            "domains": 9,
+            "ambiguity": 2,
+            "dependencies": 2,
+        }
+        await db.commit()
+    legacy_state = await state()
+
+    untouched = await _call(
+        "okto_pulse_evaluate_ideation",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        ambiguity="3",
+    )
+    assert untouched["code"] == "ideation_scope_legacy_score_invalid"
+    assert untouched["details"]["field"] == "domains"
+    assert untouched["details"]["remediation"] == (
+        "resubmit_with_valid_domains_score"
+    )
+    assert await state() == legacy_state
+
+    repaired = await _call(
+        "okto_pulse_evaluate_ideation",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        domains="+3",
+    )
+    assert repaired["scope_assessment"] == {
+        "domains": 3,
+        "ambiguity": 2,
+        "dependencies": 2,
+    }
+    repaired_state = await state()
+    assert repaired_state[2] == legacy_state[2] + 1
+    assert repaired_state[3] == legacy_state[3] + 1
+
+    async with get_session_factory()() as db:
+        result = await db.execute(
+            select(IdeationHistory).where(
+                IdeationHistory.ideation_id == iid,
+                IdeationHistory.action == "complexity_evaluated",
+            )
+        )
+        evaluation_history = result.scalars().all()
+        repaired_entries = [
+            row
+            for row in evaluation_history
+            if {
+                (change["field"], change.get("old"), change.get("new"))
+                for change in row.changes
+            }
+            == {("scope_assessment.domains", 9, 3)}
+        ]
+        assert len(repaired_entries) == 1
+
+    # Exact retry is a semantic no-op: the projection is returned, but neither
+    # history nor activity claims a mutation occurred.
+    retry = await _call(
+        "okto_pulse_evaluate_ideation",
+        board_id=BOARD_ID,
+        ideation_id=iid,
+        domains="3",
+    )
+    assert retry["scope_assessment"] == repaired["scope_assessment"]
+    assert await state() == repaired_state
 
 
 @pytest.mark.asyncio

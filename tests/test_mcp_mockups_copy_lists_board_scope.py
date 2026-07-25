@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -79,6 +81,92 @@ def _screen(screen_id: str, title: str) -> dict:
         "design_system_ref": None,
         "design_system_evidence": None,
     }
+
+
+async def test_list_mockups_defaults_to_bounded_summary_and_pages_stably() -> None:
+    board_id = "mockup-summary-board"
+    large_html = "<main>" + ("á" * 32_768) + "</main>"
+    screens = [
+        {
+            "id": f"screen-{index:03d}",
+            "title": f"Screen {index:03d}",
+            "screen_type": "page",
+            "html_content": large_html,
+            "order": index,
+        }
+        for index in range(200)
+    ]
+    entity = SimpleNamespace(board_id=board_id, screen_mockups=screens)
+    service = SimpleNamespace(get_spec=AsyncMock(return_value=entity))
+    uow = SimpleNamespace(services=SimpleNamespace(specs=service))
+    actor = ActorContext(USER_ID, "mcp", board_id=board_id)
+    use_case = McpListScreenMockupsUseCase()
+
+    summary = (
+        await use_case.execute(
+            McpScreenMockupCommand(
+                board_id=board_id,
+                entity_id="spec-summary",
+                entity_type="spec",
+                limit=200,
+            ),
+            actor=actor,
+            uow=uow,
+        )
+    ).payload
+
+    assert (summary["total"], summary["offset"], summary["limit"]) == (200, 0, 200)
+    assert len(summary["screens"]) == 200
+    assert all("html_content" not in screen for screen in summary["screens"])
+    first = summary["screens"][0]
+    assert first["has_html_content"] is True
+    assert first["html_content_bytes"] == len(large_html.encode("utf-8"))
+    assert first["html_content_sha256"] == hashlib.sha256(
+        large_html.encode("utf-8")
+    ).hexdigest()
+    assert len(json.dumps(summary)) < 100_000
+
+    page_command = McpScreenMockupCommand(
+        board_id=board_id,
+        entity_id="spec-summary",
+        entity_type="spec",
+        offset=17,
+        limit=5,
+    )
+    first_page = (
+        await use_case.execute(page_command, actor=actor, uow=uow)
+    ).payload
+    repeated_page = (
+        await use_case.execute(page_command, actor=actor, uow=uow)
+    ).payload
+    assert first_page == repeated_page
+    assert [screen["id"] for screen in first_page["screens"]] == [
+        f"screen-{index:03d}" for index in range(17, 22)
+    ]
+    assert (first_page["total"], first_page["offset"], first_page["limit"]) == (
+        200,
+        17,
+        5,
+    )
+
+    full = (
+        await use_case.execute(
+            McpScreenMockupCommand(
+                board_id=board_id,
+                entity_id="spec-summary",
+                entity_type="spec",
+                offset=17,
+                limit=1,
+                include_content=True,
+            ),
+            actor=actor,
+            uow=uow,
+        )
+    ).payload
+    assert full["screens"][0]["html_content"] == large_html
+    assert full["screens"][0]["html_content_sha256"] == first_page["screens"][0][
+        "html_content_sha256"
+    ]
 
 
 @pytest.fixture
@@ -722,6 +810,17 @@ async def test_same_board_copy_mockup_crud_and_lists_remain_functional(
         "total_on_card": 1,
         "fallback": False,
     }
+    copied_card_mockups = await _call(
+        db_factory,
+        "okto_pulse_list_screen_mockups",
+        board_id=ids["board_a"],
+        entity_type="card",
+        entity_id=ids["card_a"],
+        include_content=True,
+    )
+    assert copied_card_mockups["screens"][0]["html_content"] == (
+        "<main>Local spec screen</main>"
+    )
 
     copied_qa = await _call(
         db_factory,
@@ -762,6 +861,30 @@ async def test_same_board_copy_mockup_crud_and_lists_remain_functional(
         entity_id=ids["story_a"],
     )
     assert listed["total"] == 2
+    listed_screen = next(
+        screen for screen in listed["screens"] if screen["id"] == new_screen_id
+    )
+    assert "html_content" not in listed_screen
+    assert listed_screen["has_html_content"] is True
+    assert listed_screen["html_content_bytes"] == len(
+        "<section>safe</section>".encode("utf-8")
+    )
+
+    listed_with_content = await _call(
+        db_factory,
+        "okto_pulse_list_screen_mockups",
+        board_id=ids["board_a"],
+        entity_type="story",
+        entity_id=ids["story_a"],
+        include_content=True,
+    )
+    full_screen = next(
+        screen
+        for screen in listed_with_content["screens"]
+        if screen["id"] == new_screen_id
+    )
+    assert full_screen["html_content"] == "<section>safe</section>"
+    assert full_screen["html_content_sha256"] == listed_screen["html_content_sha256"]
 
     updated = await _call(
         db_factory,

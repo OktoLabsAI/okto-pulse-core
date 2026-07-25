@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -61,6 +62,21 @@ def _install_pipeline_doubles(
     monkeypatch.setattr(primitives, "finalize_deferred_consolidation", _finalize)
     monkeypatch.setattr(primitives, "abort_deferred_consolidation", _abort)
 
+    class _WriteLease:
+        def ensure_durable(self, **_kwargs) -> None:
+            events.append("durability")
+
+        def ensure_owned(self, **_kwargs) -> None:
+            return None
+
+    @contextmanager
+    def _guarded_write(*_args, **_kwargs):
+        yield _WriteLease()
+
+    from okto_pulse.core.kg import guarded_write
+
+    monkeypatch.setattr(guarded_write, "guarded_board_write", _guarded_write)
+
 
 @pytest.mark.asyncio
 async def test_closeout_commits_relational_uow_before_finalizing(
@@ -92,6 +108,7 @@ async def test_closeout_commits_relational_uow_before_finalizing(
     assert persisted is True
     assert events == [
         "graph_and_relational_staged",
+        "durability",
         "db_commit",
         "finalize",
         "queryable_probe",
@@ -130,7 +147,104 @@ async def test_closeout_commit_failure_aborts_graph_and_never_reports_persisted(
     assert "unexpected_probe" not in events
     assert events == [
         "graph_and_relational_staged",
+        "durability",
         "db_commit",
         "scope_rollback",
         "abort",
+        "durability",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_closeout_graph_error_still_drains_possible_autocommit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    _install_pipeline_doubles(monkeypatch, events)
+
+    async def _partial_commit(*_args, **_kwargs):
+        events.append("graph_partial_error")
+        raise RuntimeError("graph result materialization failed")
+
+    monkeypatch.setattr(primitives, "commit_consolidation", _partial_commit)
+    persister = closeout.ConsolidationPipelinePersister(
+        lambda: _RelationalScope(events, fail_commit=False),
+        agent_id="closeout-agent",
+    )
+
+    persisted = await persister.persist(
+        "board-closeout",
+        "spec",
+        closeout.CloseoutCandidate(
+            node_type="Alternative",
+            title="Alternative",
+            content="Reasoning",
+            source_artifact_ref="spec:closeout:alternative:partial",
+        ),
+    )
+
+    assert persisted is False
+    assert events == [
+        "graph_partial_error",
+        "durability",
+        "scope_rollback",
+        "abort",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_closeout_lifecycle_failure_compensates_before_fence_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    _install_pipeline_doubles(monkeypatch, events)
+
+    class _FailFirstLifecycleLease:
+        calls = 0
+
+        def ensure_durable(self, **_kwargs) -> None:
+            self.calls += 1
+            events.append("durability")
+            if self.calls == 1:
+                raise RuntimeError("forced graph lifecycle failure")
+
+        def ensure_owned(self, **_kwargs) -> None:
+            return None
+
+    @contextmanager
+    def _guarded_write(*_args, **_kwargs):
+        events.append("lock_acquire")
+        try:
+            yield _FailFirstLifecycleLease()
+        finally:
+            events.append("lock_release")
+
+    from okto_pulse.core.kg import guarded_write
+
+    monkeypatch.setattr(guarded_write, "guarded_board_write", _guarded_write)
+    persister = closeout.ConsolidationPipelinePersister(
+        lambda: _RelationalScope(events, fail_commit=False),
+        agent_id="closeout-agent",
+    )
+
+    persisted = await persister.persist(
+        "board-closeout",
+        "spec",
+        closeout.CloseoutCandidate(
+            node_type="Alternative",
+            title="Alternative",
+            content="Reasoning",
+            source_artifact_ref="spec:closeout:alternative:lifecycle",
+        ),
+    )
+
+    assert persisted is False
+    assert events == [
+        "lock_acquire",
+        "graph_and_relational_staged",
+        "durability",
+        "scope_rollback",
+        "abort",
+        "durability",
+        "lock_release",
     ]

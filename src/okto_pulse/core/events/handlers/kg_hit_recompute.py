@@ -24,6 +24,7 @@ import logging
 from okto_pulse.core.events.bus import register_handler
 from okto_pulse.core.events.types import KGHitFlushed
 from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.guarded_write import guarded_board_write
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.scoring import _recompute_relevance
 
@@ -48,7 +49,16 @@ def _recompute_sync(
                 scope, board_id, node_type, node_id, trigger="hit_flush",
             )
 
-    return run_async_blocking(_run())
+    with guarded_board_write(
+        board_id,
+        operation="kg.hit_recompute",
+        owner_id="system:kg_hit_recompute_handler",
+        mutation_ref=f"{node_type}:{node_id}",
+    ) as lease:
+        try:
+            return run_async_blocking(_run())
+        finally:
+            lease.ensure_durable()
 
 
 @register_handler("kg.hit_flushed")

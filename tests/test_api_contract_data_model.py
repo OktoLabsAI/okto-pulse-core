@@ -28,6 +28,7 @@ from typing import get_args
 import pytest
 from pydantic import ValidationError
 
+from okto_pulse.core.mcp.server import _project_api_contracts
 from okto_pulse.core.models.schemas import ApiContract, DecisionStatus
 
 CORE_DIR = Path(__file__).parent.parent / "src" / "okto_pulse" / "core"
@@ -129,6 +130,30 @@ def test_ac3_explicit_http_plus_legacy_method_rejected_on_write() -> None:
         _write({"id": "c", "contract_type": "http", "method": "TOOL", "path": "/x"})
     # negative-wiring: without the explicit http, the same method infers in_process and is fine.
     assert _write({"id": "c", "method": "TOOL", "path": "/x"}).contract_type == "in_process"
+
+
+def test_legacy_read_projection_has_homogeneous_contract_type() -> None:
+    malformed = "legacy-unparsed-row"
+    rows = [
+        {"id": "http", "method": "GET", "path": "/x"},
+        {"id": "tool", "method": "TOOL"},
+        {"id": "component", "method": "component"},
+        {"id": "event", "method": "EVENT"},
+        {"id": "explicit", "contract_type": "grpc", "method": "TOOL"},
+        malformed,
+    ]
+
+    projected = _project_api_contracts(rows)
+
+    assert [row["contract_type"] for row in projected[:-1]] == [
+        "http",
+        "in_process",
+        "in_process",
+        "event",
+        "grpc",
+    ]
+    assert projected[-1] == malformed
+    assert "contract_type" not in rows[0]
 
 
 # ---------------------------------------------------------------------------

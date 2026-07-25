@@ -25,13 +25,14 @@ MAIN_PY = REPO_ROOT / "src" / "okto_pulse" / "core" / "services" / "main.py"
 
 # ---------------------------------------------------------------------------
 # Baselines updated after the 2026-07-14 sprint reviewer-separation and
-# optimistic-versioning contract. If a gate changes intentionally, review its
-# semantic tests and update this versioned constant in the same change.
+# optimistic-versioning contract, then after the 2026-07-25 append-only
+# SpecHistory audit for validation submissions. If a gate changes intentionally,
+# review its semantic tests and update this versioned constant in the same change.
 # ---------------------------------------------------------------------------
 
 EXPECTED_HASHES = {
     "submit_spec_validation": (
-        "109c313b5e35aaef267446eaf5c4aafbe39ba3f3ddfbc885a75f90a234f7cea9"
+        "f9a1bdcb029a535baf584686cc1d1a3584c695646f16936aa15ffd9fe45552a8"
     ),
     "submit_evaluation": (
         "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"

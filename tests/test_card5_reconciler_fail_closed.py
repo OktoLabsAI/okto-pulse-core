@@ -52,7 +52,11 @@ class _GraphScope:
         *,
         rows_by_type: dict[
             str,
-            list[tuple[str, str, str, str] | tuple[str, str, str, str, str]],
+            list[
+                tuple[str, str, str, str]
+                | tuple[str, str, str, str, str]
+                | tuple[str, str, str, str, str, str | None, float | None]
+            ],
         ]
         | None = None,
         fail_query_types: frozenset[str] = frozenset(),
@@ -63,6 +67,7 @@ class _GraphScope:
         self.fail_set_types = fail_set_types
         self.query_types: list[str] = []
         self.writes: list[tuple[str, str]] = []
+        self.write_params: list[dict[str, Any]] = []
 
     def execute(self, query: str, params: dict[str, Any]) -> SimpleNamespace:
         matched = re.search(r"MATCH \(n:([A-Za-z]+)", query)
@@ -74,15 +79,31 @@ class _GraphScope:
                 raise RuntimeError(f"injected QUERY failure for {node_type}")
             rows = self.rows_by_type.get(node_type, [])
             if "n.maturity_status, n.graph_layer" in query:
-                rows = [
-                    row if len(row) == 5 else (*row, "canonical")
-                    for row in rows
-                ]
+                normalized = []
+                for row in rows:
+                    values = list(
+                        (*row, "canonical", None, None)
+                        if len(row) == 4
+                        else (*row, None, None)
+                        if len(row) == 5
+                        else row
+                    )
+                    while len(values) < 12:
+                        values.append(None)
+                    if len(values) == 12:
+                        values.append(True)
+                    if len(values) == 13:
+                        values.append("")
+                    normalized.append(tuple(values))
+                rows = normalized
             return SimpleNamespace(rows=rows)
         if "SET n.graph_layer" in query:
             if node_type in self.fail_set_types:
                 raise RuntimeError(f"injected SET failure for {node_type}")
             self.writes.append((node_type, str(params["node_id"])))
+            self.write_params.append(dict(params))
+            return SimpleNamespace(rows=[])
+        if "SET n.source_content_hash" in query:
             return SimpleNamespace(rows=[])
         raise AssertionError(f"unexpected graph query: {query}")
 
@@ -154,6 +175,7 @@ async def test_incomplete_snapshot_has_zero_graph_debt_and_sync_side_effects(
     )
     debt_calls: list[dict[str, Any]] = []
     sync_calls: list[str] = []
+    graph_write_callbacks: list[str] = []
 
     async def _debt(*_args: object, **kwargs: Any) -> None:
         debt_calls.append(kwargs)
@@ -175,6 +197,7 @@ async def test_incomplete_snapshot_has_zero_graph_debt_and_sync_side_effects(
         board_id="board-card5",
         source_refs=None,
         correlation_id="delete-card5",
+        before_graph_write=lambda: graph_write_callbacks.append("enter"),
     )
 
     assert reader.fetch_calls == ["board-card5"]
@@ -183,11 +206,38 @@ async def test_incomplete_snapshot_has_zero_graph_debt_and_sync_side_effects(
     assert scope.writes == []
     assert debt_calls == []
     assert sync_calls == []
+    assert graph_write_callbacks == []
     assert result.incomplete is True
     assert result.incomplete_cause == cause
     assert result.failed_types == []
     assert result.demoted == []
     assert result.to_dict()["incomplete_cause"] == cause
+
+
+@pytest.mark.asyncio
+async def test_graph_write_callback_runs_once_immediately_before_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_registry(
+        monkeypatch,
+        snapshot=BoardSourceSnapshot(),
+    )
+    events: list[str] = []
+
+    async def _scan(*_args: object, **_kwargs: object) -> list[dict[str, Any]]:
+        events.append("scan")
+        return []
+
+    monkeypatch.setattr(reconciler, "_scan_and_demote", _scan)
+
+    result = await reconcile_stale_canonical(
+        object(),
+        board_id="board-card5",
+        before_graph_write=lambda: events.append("enter"),
+    )
+
+    assert result.incomplete is False
+    assert events == ["enter", "scan"]
 
 
 @pytest.mark.asyncio
@@ -320,6 +370,13 @@ async def test_source_refs_none_and_valid_list_have_distinct_scopes(
     assert result.incomplete is False
     assert result.failed_types == []
     assert result.completed_types == list(ALL_NODE_TYPES)
+    # ``completed_types`` records successful per-type query execution, not a
+    # positive row count.  A successful empty scan is complete and auditable.
+    assert all(
+        result.scanned_by_type[node_type] == 0
+        for node_type in ALL_NODE_TYPES
+        if node_type != "Decision"
+    )
     # The reconciler owns graph mutation only.  Durable GD delivery is
     # transferred later by the queue worker in one relational transaction.
     assert result.global_sync_enqueued is False
@@ -347,8 +404,17 @@ async def test_targeted_retry_reports_existing_working_projection_as_converged(
                     "card:deleted-card",
                     "system:historical_consolidation",
                     "working_stale",
-                    "working",
-                )
+                        "working",
+                        "source_deleted",
+                        0.0,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        True,
+                        "",
+                    )
             ]
         }
     )
@@ -370,6 +436,187 @@ async def test_targeted_retry_reports_existing_working_projection_as_converged(
     assert result.target_skipped_cognitive_count == 0
     assert result.target_preserved_canonical_count == 0
     assert result.to_dict()["target_already_converged_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_targeted_delete_tombstones_active_working_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = _GraphScope(
+        rows_by_type={
+            "Requirement": [
+                (
+                    "active-working-requirement",
+                    "spec:deleted-spec",
+                    "system:deterministic",
+                    "working_immature",
+                    "working",
+                    None,
+                    0.75,
+                )
+            ]
+        }
+    )
+    _install_registry(monkeypatch, snapshot=BoardSourceSnapshot(), scope=scope)
+
+    result = await reconcile_stale_canonical(
+        object(),
+        board_id="board-card5",
+        source_refs=["spec:deleted-spec"],
+        correlation_id="delete-spec-working",
+    )
+
+    assert scope.writes == [("Requirement", "active-working-requirement")]
+    assert scope.write_params == [
+        {
+            "node_id": "active-working-requirement",
+            "graph_layer": "working",
+            "maturity_status": "working_stale",
+            "revocation_reason": "source_deleted",
+            "relevance_score": 0.0,
+            "erased_text": "",
+        }
+    ]
+    assert result.target_found_count == 1
+    assert result.target_demoted_count == 1
+    assert result.target_already_converged_count == 0
+    assert result.demoted[0]["prev_layer"] == "working"
+    assert result.demoted[0]["revocation_reason"] == "source_deleted"
+
+
+@pytest.mark.asyncio
+async def test_fallback_fails_closed_when_deleted_node_has_embedding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = _GraphScope(
+        rows_by_type={
+            "Requirement": [
+                (
+                    "embedded-node",
+                    "spec:deleted-spec",
+                    "system:deterministic",
+                    "canonical_eligible",
+                    "canonical",
+                    None,
+                    0.75,
+                    "private",
+                    "private",
+                    None,
+                    None,
+                    None,
+                    False,
+                    "private-hash",
+                )
+            ]
+        }
+    )
+    _install_registry(monkeypatch, snapshot=BoardSourceSnapshot(), scope=scope)
+
+    result = await reconcile_stale_canonical(
+        object(), board_id="board-card5", source_refs=["spec:deleted-spec"]
+    )
+
+    assert scope.writes == []
+    assert result.incomplete is True
+    assert result.failed_types == ["Requirement"]
+
+
+@pytest.mark.asyncio
+async def test_full_sweep_repairs_incomplete_working_tombstone_and_then_noops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = _GraphScope(
+        rows_by_type={
+            "Requirement": [
+                (
+                    "partial-working-requirement",
+                    "spec:deleted-spec",
+                    "system:deterministic",
+                    "working_stale",
+                    "working",
+                    None,
+                    0.75,
+                ),
+                (
+                    "live-working-requirement",
+                    "spec:existing-draft",
+                    "system:deterministic",
+                    "working_immature",
+                    "working",
+                    None,
+                    0.75,
+                ),
+            ]
+        }
+    )
+    _install_registry(
+        monkeypatch,
+        snapshot=BoardSourceSnapshot(
+            rows=(
+                {
+                    "artifact_type": "spec",
+                    "id": "existing-draft",
+                    "source_ref": "spec:existing-draft",
+                    "status": "draft",
+                    "content_hash": "live-working-source",
+                },
+            )
+        ),
+        scope=scope,
+    )
+
+    first = await reconcile_stale_canonical(
+        object(),
+        board_id="board-card5",
+        source_refs=None,
+        correlation_id="full-sweep-repair",
+    )
+
+    assert scope.write_params == [
+        {
+            "node_id": "partial-working-requirement",
+            "graph_layer": "working",
+            "maturity_status": "working_stale",
+            "revocation_reason": "source_deleted",
+            "relevance_score": 0.0,
+            "erased_text": "",
+        }
+    ]
+    assert first.demoted[0]["revocation_reason"] == "source_deleted"
+
+    scope.rows_by_type["Requirement"] = [
+        (
+            "partial-working-requirement",
+            "spec:deleted-spec",
+            "system:deterministic",
+            "working_stale",
+            "working",
+            "source_deleted",
+            0.0,
+        ),
+        (
+            "live-working-requirement",
+            "spec:existing-draft",
+            "system:deterministic",
+            "working_immature",
+            "working",
+            None,
+            0.75,
+        ),
+    ]
+    scope.writes.clear()
+    scope.write_params.clear()
+
+    second = await reconcile_stale_canonical(
+        object(),
+        board_id="board-card5",
+        source_refs=None,
+        correlation_id="full-sweep-retry",
+    )
+
+    assert scope.writes == []
+    assert scope.write_params == []
+    assert second.demoted == []
 
 
 @pytest.mark.asyncio
@@ -599,7 +846,7 @@ async def test_deleted_bug_routes_preserved_learning_to_canonical_debt(
                     "cognitive:analyst",
                     "canonical_eligible",
                 )
-            ]
+            ],
         }
     )
     _install_registry(monkeypatch, snapshot=BoardSourceSnapshot(), scope=scope)
@@ -622,9 +869,7 @@ async def test_deleted_bug_routes_preserved_learning_to_canonical_debt(
         correlation_id="delete-bug-event",
     )
 
-    assert scope.writes == [
-        ("Bug", "deterministic-bug-from-deleted-source")
-    ]
+    assert scope.writes == [("Bug", "deterministic-bug-from-deleted-source")]
     assert all(node_type != "Learning" for node_type, _node_id in scope.writes)
     assert len(debt_calls) == 1
     assert debt_calls[0]["bug_id"] == "deleted-bug-id"
@@ -725,14 +970,10 @@ async def test_query_and_set_failures_are_explicit_per_node_type(
     scope = _GraphScope(
         rows_by_type=rows,
         fail_query_types=(
-            frozenset({"Requirement"})
-            if failure_boundary == "query"
-            else frozenset()
+            frozenset({"Requirement"}) if failure_boundary == "query" else frozenset()
         ),
         fail_set_types=(
-            frozenset({"Requirement"})
-            if failure_boundary == "set"
-            else frozenset()
+            frozenset({"Requirement"}) if failure_boundary == "set" else frozenset()
         ),
     )
     _install_registry(

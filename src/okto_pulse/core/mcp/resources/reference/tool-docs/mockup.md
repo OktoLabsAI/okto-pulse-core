@@ -92,9 +92,16 @@ Args:
     screen_type: Filter by screen type (optional) — one of: page, modal, drawer, popover, panel
     offset: Skip first N screens (default 0)
     limit: Max screens to return (default 50, max 200)
+    include_content: Include full `html_content` for each screen (default false).
+        Leave false for bounded summary listings; use true only when the HTML
+        body is explicitly needed.
 
 Returns:
-    JSON with filtered/paginated screens
+    JSON with filtered/paginated screens. Summary items omit `html_content` and
+    include `has_html_content`, UTF-8 `html_content_bytes`, and deterministic
+    `html_content_sha256` metadata. `total`, `offset`, and `limit` retain their
+    pagination meanings. With `include_content=true`, each item also contains
+    the full `html_content`.
 
 ## `okto_pulse_update_screen_mockup`
 

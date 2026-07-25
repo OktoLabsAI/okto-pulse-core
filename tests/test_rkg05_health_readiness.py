@@ -145,7 +145,7 @@ async def test_mcp_health_readiness_tool_exposes_signals(db_factory, monkeypatch
     async def _fake_ctx(_board_id):
         return SimpleNamespace(
             agent_id="mcp-agent",
-            permissions=["*"],
+            permissions=["*", "board:read"],
             realm_id="local",
         )
 

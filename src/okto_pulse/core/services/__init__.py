@@ -42,6 +42,10 @@ from okto_pulse.core.services.board_governance import (
     SELF_ANSWERING_NOT_ALLOWED_REASON,
     build_qa_self_answer_denied_details,
 )
+from okto_pulse.core.services.qa_selection import (
+    QASelectionError,
+    validate_choice_selection,
+)
 from okto_pulse.core.services.critical_context_guard import (
     CONTEXT_FINGERPRINT_ALG,
     CRITICAL_ACTION_REGISTRY,
@@ -200,6 +204,8 @@ __all__ = [
     "QASelfAnsweringNotAllowedError",
     "SELF_ANSWERING_NOT_ALLOWED_REASON",
     "build_qa_self_answer_denied_details",
+    "QASelectionError",
+    "validate_choice_selection",
     "CONTEXT_FINGERPRINT_ALG",
     "CRITICAL_ACTION_REGISTRY",
     "CRITICAL_CONTEXT_DECISION_ACTION",

@@ -33,12 +33,23 @@ async def _run_test_graph_io(operation, *, task_name: str):
 
 
 @pytest.fixture(autouse=True)
-def _real_board_graph_registry(_kg_registry_test_fakes):
+def _real_board_graph_registry(_kg_registry_test_fakes, monkeypatch):
     from kg_registry_testing import (
         RealBoardCypherExecutorForTests,
         RealBoardGraphTransactionForTests,
         configure_test_kg_registry,
     )
+    import okto_pulse.core.services.kg_health_service as health_service
+
+    async def _healthy(_board_id, _db, scheduler_control=None):
+        return {
+            "overall_state": "healthy",
+            "graph_state": "healthy",
+            "discovery_state": "healthy",
+            "total_nodes": 1,
+        }
+
+    monkeypatch.setattr(health_service, "get_kg_health", _healthy)
 
     configure_test_kg_registry(
         cypher_executor=RealBoardCypherExecutorForTests(),
@@ -499,7 +510,11 @@ async def test_degraded_graph_returns_contextual_error_without_opening_kuzu(
     )
 
     async def fake_get_kg_health(_board_id, _db, scheduler_control=None):
-        return {"graph_state": "recovery_needed", "overall_state": "recovery_needed"}
+        return {
+            "graph_state": "recovery_needed",
+            "discovery_state": "healthy",
+            "overall_state": "recovery_needed",
+        }
 
     def forbidden_open(_board_id):
         raise AssertionError("degraded commit must not open LadybugDB")

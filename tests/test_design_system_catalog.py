@@ -208,6 +208,38 @@ async def test_board_link_is_singular_and_effective_read_is_real():
         assert await svc.get_board_effective_design_system(board.id) is None
 
 
+@pytest.mark.parametrize("status", ["draft", "archived"])
+async def test_board_link_rejects_non_active_design_systems(status: str):
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        svc = DesignSystemService(db)
+        board = await _board(db)
+        ds = await svc.create_design_system(
+            USER_ID,
+            title=f"{status.title()} DS",
+            scope="global",
+            status=status,
+        )
+
+        with pytest.raises(DesignSystemError) as exc:
+            await svc.link_design_system_to_board(
+                board.id,
+                ds.id,
+                owner_id=USER_ID,
+                board_access_authorized=True,
+            )
+
+        assert exc.value.code == "design_system_not_active"
+        assert exc.value.status_code == 422
+        assert exc.value.details == {
+            "design_system_id": ds.id,
+            "status": status,
+            "required_status": "active",
+        }
+        assert await svc.get_board_effective_design_system(board.id) is None
+
+
 # ---------------------------------------------------------------------------
 # MCP twins — shared service, structured errors
 # ---------------------------------------------------------------------------

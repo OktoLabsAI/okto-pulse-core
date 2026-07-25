@@ -9,7 +9,10 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 ## `okto_pulse_add_card_dependency`
 
 Add a dependency: card_id cannot advance until depends_on_id is done/cancelled.
-Circular dependencies are blocked automatically.
+Repeated requests are idempotent and return the existing dependency. Invalid
+graph shapes return typed errors: `dependency_self_reference` or
+`dependency_cycle_detected`. A forward move with unfinished blockers returns
+`dependencies_incomplete`.
 
 Args:
     board_id: Board ID
@@ -17,7 +20,7 @@ Args:
     depends_on_id: The card it depends on
 
 Returns:
-    JSON with success or error
+    JSON with success and dependency_id, or a typed error envelope
 
 ## `okto_pulse_copy_qa_to_card`
 
@@ -291,10 +294,13 @@ so the bug gate can reach `path_b_ready`. Args: `board_id`, `bug_id`,
 are rejected (`invalid_amendment_status`/`invalid_lineage_state`);
 `lineage_state=complete` needs the declared regression scenario + test-task
 artifacts and the bug's authoritative origin task (`incomplete_lineage_artifacts`);
-`approved`/`done` need complete lineage (`cannot_promote_incomplete_lineage`); a
-`cancelled`/`superseded` revision is terminal and cannot be promoted back
-(`terminal_amendment_revision`). It has NO coverage parameter and **never**
-confirms coverage — that stays validator-only via
+`approved`/`done` need complete lineage (`cannot_promote_incomplete_lineage`).
+A `cancelled`/`superseded` revision is permanently immutable
+(`terminal_amendment_revision`): no later status, lineage, coverage, or artifact
+association mutation is allowed. Only an exact retry of the current terminal
+status is accepted as an effect-free idempotent operation; create a new revision
+for further work. This tool has NO coverage parameter and **never** confirms
+coverage — that stays validator-only via
 `okto_pulse_confirm_amendment_coverage`, so on its own this tool leaves the bug
 `coverage_pending` (it does not close it).
 

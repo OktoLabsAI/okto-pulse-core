@@ -10,6 +10,7 @@ from okto_pulse.core.ports.canonical_debt import (
     CanonicalDebtRecord,
     get_canonical_debt_store,
 )
+from okto_pulse.core.kg.source_maturity import CANONICAL_ARTIFACT_TYPES
 
 
 OPEN_STATES = frozenset(
@@ -21,6 +22,54 @@ TERMINAL_STATES = frozenset(
 RETRYABLE_STATES = frozenset(
     {"pending", "retry_scheduled", "deferred", "failed", "blocked", "retryable"}
 )
+CANONICAL_DEBT_STATES = OPEN_STATES | TERMINAL_STATES
+# Canonical debt can only be created for source kinds that the maturity
+# contract recognizes as canonical. Keep this derived from that single source
+# of truth so list filters cannot drift from writer/rebuild eligibility.
+CANONICAL_DEBT_ARTIFACT_TYPES = frozenset(CANONICAL_ARTIFACT_TYPES)
+
+
+class CanonicalDebtFilterError(ValueError):
+    """Typed, transport-neutral rejection for closed canonical-debt filters."""
+
+    code = "invalid_filter"
+    http_status = 422
+
+    def __init__(self, field: str, value: object, allowed: frozenset[str]) -> None:
+        self.field = field
+        self.value = value
+        self.allowed = tuple(sorted(allowed))
+        super().__init__(
+            f"{field}={value!r} is not a valid canonical-debt filter; "
+            f"allowed: {list(self.allowed)}"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "error": self.code,
+            "code": self.code,
+            "message": str(self),
+            "field": self.field,
+            "value": self.value,
+            "allowed": list(self.allowed),
+        }
+
+
+def validate_canonical_debt_filters(
+    *,
+    artifact_type: str | None = None,
+    state: str | None = None,
+) -> None:
+    """Require exact canonical tokens; never coerce case or whitespace."""
+
+    for field, value, allowed in (
+        ("artifact_type", artifact_type, CANONICAL_DEBT_ARTIFACT_TYPES),
+        ("state", state, CANONICAL_DEBT_STATES),
+    ):
+        if value is None:
+            continue
+        if not isinstance(value, str) or value not in allowed:
+            raise CanonicalDebtFilterError(field, value, allowed)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +167,10 @@ async def list_canonical_debt(
     limit: int = 50,
     offset: int = 0,
 ) -> CanonicalDebtListResult:
+    validate_canonical_debt_filters(
+        artifact_type=artifact_type,
+        state=state,
+    )
     total, rows = await get_canonical_debt_store().list_records(
         db,
         board_id=board_id,
@@ -344,6 +397,9 @@ async def mark_canonical_debt_committed_for_artifact(
 
 
 __all__ = [
+    "CANONICAL_DEBT_ARTIFACT_TYPES",
+    "CANONICAL_DEBT_STATES",
+    "CanonicalDebtFilterError",
     "CanonicalDebtListResult",
     "OPEN_STATES",
     "RETRYABLE_STATES",
@@ -355,4 +411,5 @@ __all__ = [
     "schedule_canonical_debt_retry",
     "summarize_canonical_debt",
     "upsert_canonical_debt",
+    "validate_canonical_debt_filters",
 ]

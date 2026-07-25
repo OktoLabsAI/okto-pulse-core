@@ -634,7 +634,7 @@ _CROSS_BOARD_SPEC_PARENT_CASES = (
     (
         "okto_pulse_answer_spec_question",
         {"qa_id": "__seed_qa__", "answer": "must not persist"},
-        "Q&A item not found or invalid selection",
+        "qa_not_found",
     ),
     (
         "okto_pulse_delete_spec_question",
@@ -673,7 +673,15 @@ async def test_spec_parent_operations_fail_closed_cross_board_without_audit(
         **resolved_args,
     )
 
-    assert result == {"error": resolved_expected_error}
+    if expected_error == "qa_not_found":
+        assert result == {
+            "error": "qa_not_found",
+            "code": "qa_not_found",
+            "message": "Q&A item not found",
+            "mutation_applied": False,
+        }
+    else:
+        assert result == {"error": resolved_expected_error}
     assert await _spec_mutation_state(_seed) == before
 
 
@@ -868,7 +876,12 @@ async def test_spec_qa_child_must_belong_to_requested_spec_without_audit(_seed) 
         qa_id=other_qa_id,
     )
 
-    assert answered == {"error": "Q&A item not found or invalid selection"}
+    assert answered == {
+        "error": "qa_not_found",
+        "code": "qa_not_found",
+        "message": "Q&A item not found",
+        "mutation_applied": False,
+    }
     assert deleted == {"error": "Q&A item not found"}
     assert await _other_qa_state() == before
 

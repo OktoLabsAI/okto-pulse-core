@@ -134,6 +134,7 @@ def _uow(*, commit_error: BaseException | None = None):
     services = SimpleNamespace(
         cards=SimpleNamespace(get_card=AsyncMock(return_value=card)),
         attachments=attachments,
+        boards=SimpleNamespace(_log_activity=AsyncMock()),
         log_card_collaboration_activity=AsyncMock(),
     )
     uow = SimpleNamespace(
@@ -206,12 +207,24 @@ async def test_rest_delete_failure_restores_removed_object(failure_stage: str) -
 
 
 @pytest.mark.asyncio
-async def test_mcp_upload_commit_failure_discards_saved_object() -> None:
+@pytest.mark.parametrize("failure_stage", ["activity", "commit"])
+async def test_mcp_upload_failure_discards_saved_object(failure_stage: str) -> None:
     uow, attachment, _receipt = _uow(
-        commit_error=RuntimeError("injected MCP upload commit failure")
+        commit_error=(
+            RuntimeError("injected MCP upload commit failure")
+            if failure_stage == "commit"
+            else None
+        )
     )
+    if failure_stage == "activity":
+        uow.services.boards._log_activity.side_effect = RuntimeError(
+            "injected MCP upload activity failure"
+        )
 
-    with pytest.raises(RuntimeError, match="injected MCP upload commit failure"):
+    with pytest.raises(
+        RuntimeError,
+        match=f"injected MCP upload {failure_stage} failure",
+    ):
         await McpUploadAttachmentUseCase().execute(
             McpUploadAttachmentCommand(
                 BOARD_ID,
@@ -230,12 +243,24 @@ async def test_mcp_upload_commit_failure_discards_saved_object() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mcp_delete_commit_failure_restores_removed_object() -> None:
+@pytest.mark.parametrize("failure_stage", ["activity", "commit"])
+async def test_mcp_delete_failure_restores_removed_object(failure_stage: str) -> None:
     uow, _attachment, receipt = _uow(
-        commit_error=RuntimeError("injected MCP delete commit failure")
+        commit_error=(
+            RuntimeError("injected MCP delete commit failure")
+            if failure_stage == "commit"
+            else None
+        )
     )
+    if failure_stage == "activity":
+        uow.services.boards._log_activity.side_effect = RuntimeError(
+            "injected MCP delete activity failure"
+        )
 
-    with pytest.raises(RuntimeError, match="injected MCP delete commit failure"):
+    with pytest.raises(
+        RuntimeError,
+        match=f"injected MCP delete {failure_stage} failure",
+    ):
         await McpDeleteAttachmentUseCase().execute(
             McpDeleteAttachmentCommand(BOARD_ID, ATTACHMENT_ID),
             actor=ACTOR,

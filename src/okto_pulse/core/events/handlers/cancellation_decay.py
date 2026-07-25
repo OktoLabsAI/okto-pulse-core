@@ -40,6 +40,9 @@ from okto_pulse.core.kg.canonical_demotion_global_sync import (
 from okto_pulse.core.kg.canonical_stale_reconciler import (
     _source_identity_from_ref,
 )
+from okto_pulse.core.kg.async_bridge import run_async_blocking
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from okto_pulse.core.kg.guarded_write import guarded_board_write
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.kg.source_maturity import (
     CANCELLATION_REVOCATION_REASON,
@@ -87,7 +90,7 @@ def _source_owner_match_clause(source_ref: str) -> tuple[str, dict[str, str]]:
     return clause, {"owner_type": owner_type, "owner_id": owner_id}
 
 
-async def _apply_source_decay(board_id: str, source_ref: str) -> int:
+def _apply_source_decay_sync(board_id: str, source_ref: str) -> int:
     """Apply reversible cancellation decay to one source artifact.
 
     Runs one UPDATE per node type. graph backend v0.6 has no polymorphic MATCH, so
@@ -105,79 +108,126 @@ async def _apply_source_decay(board_id: str, source_ref: str) -> int:
 
     owner_clause, owner_params = _source_owner_match_clause(source_ref)
     now = datetime.now(timezone.utc)
-    total = 0
-    async with await registry.graph_transaction.begin(board_id) as scope:
-        for node_type in NODE_TYPES:
-            cypher = (
-                f"MATCH (n:{node_type}) "
-                "WHERE n.source_artifact_ref IS NOT NULL "
-                "  AND n.revocation_reason IS NULL "
-                f"{owner_clause}"
-                "SET n.pre_cancellation_relevance_score = n.relevance_score, "
-                "    n.relevance_score = "
-                "      CASE WHEN n.relevance_score - $penalty < 0.0 "
-                "           THEN 0.0 "
-                "           ELSE n.relevance_score - $penalty END, "
-                "    n.revocation_reason = $reason, "
-                "    n.superseded_by = $reason, "
-                "    n.superseded_at = $now "
-                "RETURN n.id"
-            )
-            result = scope.execute(
-                cypher,
-                {
-                    **owner_params,
-                    "reason": REVOCATION_REASON,
-                    "penalty": DECAY_PENALTY,
-                    "now": now,
-                },
-            )
-            total += len(result.rows)
-    return total
+    with guarded_board_write(
+        board_id,
+        operation="kg.source_cancellation_decay",
+        owner_id="system:source_lifecycle_handler",
+        mutation_ref=source_ref,
+    ) as lease:
+        try:
+            async def _run() -> int:
+                total = 0
+                async with await registry.graph_transaction.begin(
+                    board_id
+                ) as scope:
+                    for node_type in NODE_TYPES:
+                        cypher = (
+                            f"MATCH (n:{node_type}) "
+                            "WHERE n.source_artifact_ref IS NOT NULL "
+                            "  AND n.revocation_reason IS NULL "
+                            f"{owner_clause}"
+                            "SET n.pre_cancellation_relevance_score = "
+                            "n.relevance_score, "
+                            "    n.relevance_score = "
+                            "      CASE WHEN n.relevance_score - $penalty < 0.0 "
+                            "           THEN 0.0 "
+                            "           ELSE n.relevance_score - $penalty END, "
+                            "    n.revocation_reason = $reason, "
+                            "    n.superseded_by = $reason, "
+                            "    n.superseded_at = $now "
+                            "RETURN n.id"
+                        )
+                        result = scope.execute(
+                            cypher,
+                            {
+                                **owner_params,
+                                "reason": REVOCATION_REASON,
+                                "penalty": DECAY_PENALTY,
+                                "now": now,
+                            },
+                        )
+                        total += len(result.rows)
+                return total
+
+            return run_async_blocking(_run())
+        finally:
+            # The backend auto-commits each SET. Even a later node-type
+            # failure must drain/checkpoint every write that may have landed.
+            lease.ensure_durable()
 
 
-async def _revert_source_decay(board_id: str, source_ref: str) -> int:
-    """Reverse cancellation decay while preserving later base-score updates.
+async def _apply_source_decay(board_id: str, source_ref: str) -> int:
+    """Dispatch the complete fenced mutation away from the delivery loop."""
 
-    Restores only nodes whose revocation_reason matches this module's marker
-    so that future supersedence causes ('auto_superseded', 'source_deleted')
-    stay untouched when a card is restored. Short-circuits when the board has
-    no graph backend graph yet.
-    """
+    return await run_blocking_graph_io(
+        lambda: _apply_source_decay_sync(board_id, source_ref),
+        task_name="kg.source_cancellation_decay",
+    )
+
+
+def _revert_source_decay_sync(board_id: str, source_ref: str) -> int:
+    """Blocking half of :func:`_revert_source_decay`, including its fence."""
+
     registry = get_kg_registry()
     if not registry.graph_runtime_store.exists(board_id):
         return 0
 
     owner_clause, owner_params = _source_owner_match_clause(source_ref)
-    total = 0
-    async with await registry.graph_transaction.begin(board_id) as scope:
-        for node_type in NODE_TYPES:
-            cypher = (
-                f"MATCH (n:{node_type}) "
-                "WHERE n.source_artifact_ref IS NOT NULL "
-                "  AND n.revocation_reason = $reason "
-                "  AND (n.superseded_by IS NULL OR n.superseded_by = $reason) "
-                f"{owner_clause}"
-                "SET n.relevance_score = "
-                "      CASE WHEN n.pre_cancellation_relevance_score IS NULL "
-                "           THEN n.relevance_score + $penalty "
-                "           ELSE n.pre_cancellation_relevance_score END, "
-                "    n.pre_cancellation_relevance_score = NULL, "
-                "    n.revocation_reason = NULL, "
-                "    n.superseded_by = NULL, "
-                "    n.superseded_at = NULL "
-                "RETURN n.id"
-            )
-            result = scope.execute(
-                cypher,
-                {
-                    **owner_params,
-                    "reason": REVOCATION_REASON,
-                    "penalty": DECAY_PENALTY,
-                },
-            )
-            total += len(result.rows)
-    return total
+    with guarded_board_write(
+        board_id,
+        operation="kg.source_cancellation_restore",
+        owner_id="system:source_lifecycle_handler",
+        mutation_ref=source_ref,
+    ) as lease:
+        try:
+            async def _run() -> int:
+                total = 0
+                async with await registry.graph_transaction.begin(
+                    board_id
+                ) as scope:
+                    for node_type in NODE_TYPES:
+                        cypher = (
+                            f"MATCH (n:{node_type}) "
+                            "WHERE n.source_artifact_ref IS NOT NULL "
+                            "  AND n.revocation_reason = $reason "
+                            "  AND (n.superseded_by IS NULL "
+                            "OR n.superseded_by = $reason) "
+                            f"{owner_clause}"
+                            "SET n.relevance_score = "
+                            "      CASE WHEN "
+                            "n.pre_cancellation_relevance_score IS NULL "
+                            "           THEN n.relevance_score + $penalty "
+                            "           ELSE "
+                            "n.pre_cancellation_relevance_score END, "
+                            "    n.pre_cancellation_relevance_score = NULL, "
+                            "    n.revocation_reason = NULL, "
+                            "    n.superseded_by = NULL, "
+                            "    n.superseded_at = NULL "
+                            "RETURN n.id"
+                        )
+                        result = scope.execute(
+                            cypher,
+                            {
+                                **owner_params,
+                                "reason": REVOCATION_REASON,
+                                "penalty": DECAY_PENALTY,
+                            },
+                        )
+                        total += len(result.rows)
+                return total
+
+            return run_async_blocking(_run())
+        finally:
+            lease.ensure_durable()
+
+
+async def _revert_source_decay(board_id: str, source_ref: str) -> int:
+    """Dispatch the complete fenced mutation away from the delivery loop."""
+
+    return await run_blocking_graph_io(
+        lambda: _revert_source_decay_sync(board_id, source_ref),
+        task_name="kg.source_cancellation_restore",
+    )
 
 
 async def _apply_decay(board_id: str, card_id: str) -> int:

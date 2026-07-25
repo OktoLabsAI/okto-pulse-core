@@ -264,8 +264,16 @@ def _register_update_tool(agent_id: str):
     def _get_db():
         return _NullDb()
 
+    async def _get_board_agent(_board_id: str):
+        return await _get_agent()
+
     mcp = _MCPRegistryDouble()
-    register_kg_tools(mcp, get_agent=_get_agent, get_uow=_get_db)
+    register_kg_tools(
+        mcp,
+        get_agent=_get_agent,
+        get_uow=_get_db,
+        get_board_agent=_get_board_agent,
+    )
     return mcp.tools["okto_pulse_kg_update_cognitive_pending_item"]
 
 

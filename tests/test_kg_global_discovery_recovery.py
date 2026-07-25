@@ -2574,7 +2574,12 @@ async def test_board_rebuild_preflight_redirects_discovery_only_recovery(
     from okto_pulse.core.mcp import server
 
     async def board_ctx(_board_id):
-        return server.AgentContext("agent-1", "Agent", "board-1", [])
+        return server.AgentContext(
+            "agent-1",
+            "Agent",
+            "board-1",
+            ["kg.admin.wipe_board"],
+        )
 
     async def execute(_self, _command, **_kwargs):
         return SimpleNamespace(

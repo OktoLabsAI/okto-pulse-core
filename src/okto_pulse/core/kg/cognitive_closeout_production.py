@@ -28,6 +28,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import partial
 from typing import Any, Protocol, runtime_checkable
 
 from okto_pulse.core.kg.agent.extractors import (
@@ -38,6 +39,7 @@ from okto_pulse.core.kg.agent.extractors import (
 from okto_pulse.core.kg.cognitive_source_ref_resolver import (
     resolve_cognitive_source_ref,
 )
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
@@ -410,8 +412,11 @@ class ConsolidationPipelinePersister:
 
     async def persist(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate) -> bool:
         import hashlib
-        import uuid as _uuid
 
+        from okto_pulse.core.kg.guarded_write import (
+            GuardedWriteError,
+            guarded_board_write,
+        )
         from okto_pulse.core.kg.primitives import (
             abort_deferred_consolidation,
             add_edge_candidate,
@@ -422,7 +427,6 @@ class ConsolidationPipelinePersister:
             propose_reconciliation,
             run_cancellation_atomic,
         )
-        from okto_pulse.core.kg.write_barrier import under_safe_write
         from okto_pulse.core.ports.consolidation import (
             get_consolidation_persistence_port,
         )
@@ -445,6 +449,7 @@ class ConsolidationPipelinePersister:
         # persisted", never escape as an uncaught error or a fabricated success.
         deferred_session_id: str | None = None
         relational_commit_confirmed = False
+        deferred_cleanup_handled = False
         try:
             async with self._relational_scope_factory() as db:
                 begin = await begin_consolidation(
@@ -490,31 +495,116 @@ class ConsolidationPipelinePersister:
                 ProposeReconciliationRequest(session_id=begin.session_id),
                 agent_id=self._agent_id, db=None, force_reprocess=True,
             )
-            owner_token = f"cognitive-closeout-worker:{cid}:{_uuid.uuid4().hex}"
-            async with self._relational_scope_factory() as db:
-                with under_safe_write(board_id, owner_token, COGNITIVE_CLOSEOUT_COMMIT_OPERATION):
-                    await commit_consolidation(
-                        CommitConsolidationRequest(session_id=begin.session_id),
-                        agent_id=self._agent_id,
-                        db=db,
-                        defer_session_finalization=True,
-                    )
+            with guarded_board_write(
+                board_id,
+                operation=COGNITIVE_CLOSEOUT_COMMIT_OPERATION,
+                owner_id=self._agent_id,
+                mutation_ref=f"cognitive-closeout:{begin.session_id}",
+            ) as write_lease:
+                graph_commit_applied = False
+                try:
+                    async with self._relational_scope_factory() as db:
+                        try:
+                            await commit_consolidation(
+                                CommitConsolidationRequest(
+                                    session_id=begin.session_id
+                                ),
+                                agent_id=self._agent_id,
+                                db=db,
+                                defer_session_finalization=True,
+                            )
+                            # The returned deferred snapshot belongs to this
+                            # caller even if the immediately following graph
+                            # lifecycle fails. Record ownership first so the
+                            # guarded error path compensates before releasing
+                            # the board fence.
+                            graph_commit_applied = True
+                        finally:
+                            # The primitive compensates a graph exception, but
+                            # both the possible auto-commit and compensation
+                            # still require a durable lifecycle before this
+                            # caller releases the shared fence.
+                            await run_blocking_graph_io(
+                                write_lease.ensure_durable,
+                                task_name=(
+                                    "core.kg.closeout_graph_durability"
+                                ),
+                            )
 
-                    async def _commit_and_finalize() -> None:
-                        nonlocal relational_commit_confirmed
-                        await get_consolidation_persistence_port().commit(db)
-                        relational_commit_confirmed = True
-                        await finalize_deferred_consolidation(
-                            begin.session_id,
-                            agent_id=self._agent_id,
+                        async def _commit_and_finalize() -> None:
+                            nonlocal relational_commit_confirmed
+                            write_lease.ensure_owned(
+                                failure_phase="before_relational_ack",
+                            )
+                            await get_consolidation_persistence_port().commit(db)
+                            relational_commit_confirmed = True
+                            await finalize_deferred_consolidation(
+                                begin.session_id,
+                                agent_id=self._agent_id,
+                            )
+                            write_lease.ensure_owned(
+                                failure_phase="after_relational_ack",
+                            )
+
+                        await run_cancellation_atomic(
+                            _commit_and_finalize(),
+                            task_name="core.kg.closeout_commit_and_finalize",
                         )
+                except BaseException:
+                    if graph_commit_applied:
+                        deferred_cleanup_handled = True
+                        try:
 
-                    await run_cancellation_atomic(
-                        _commit_and_finalize(),
-                        task_name="core.kg.closeout_commit_and_finalize",
-                    )
+                            async def _cleanup_guarded_commit() -> None:
+                                if relational_commit_confirmed:
+                                    await finalize_deferred_consolidation(
+                                        begin.session_id,
+                                        agent_id=self._agent_id,
+                                    )
+                                else:
+                                    await abort_deferred_consolidation(
+                                        begin.session_id,
+                                        agent_id=self._agent_id,
+                                    )
+
+                            await run_cancellation_atomic(
+                                _cleanup_guarded_commit(),
+                                task_name=(
+                                    "core.kg.closeout_guarded_deferred_cleanup"
+                                ),
+                            )
+                            if not relational_commit_confirmed:
+                                try:
+                                    await run_blocking_graph_io(
+                                        partial(
+                                            write_lease.ensure_durable,
+                                            mutation_ref=(
+                                                "cognitive-closeout-abort:"
+                                                f"{begin.session_id}"
+                                            ),
+                                        ),
+                                        task_name=(
+                                            "core.kg.closeout_abort_graph_"
+                                            "durability"
+                                        ),
+                                    )
+                                except GuardedWriteError:
+                                    logger.warning(
+                                        "cognitive_closeout.compensation_"
+                                        "lifecycle_failed session=%s",
+                                        begin.session_id,
+                                        exc_info=True,
+                                    )
+                        except BaseException:
+                            logger.warning(
+                                "cognitive_closeout.guarded_cleanup_failed "
+                                "session=%s",
+                                begin.session_id,
+                                exc_info=True,
+                            )
+                    raise
         except BaseException as exc:
-            if deferred_session_id is not None:
+            if deferred_session_id is not None and not deferred_cleanup_handled:
                 try:
                     async def _cleanup_deferred_commit() -> None:
                         if relational_commit_confirmed:

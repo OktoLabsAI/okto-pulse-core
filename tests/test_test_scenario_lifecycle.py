@@ -386,6 +386,29 @@ async def test_delete_test_scenario_not_found(db_factory):
             await svc.delete_test_scenario(spec_id, USER, "ts_ghost")
 
 
+async def test_delete_spec_removes_only_its_scenario_ids_from_surviving_card(
+    db_factory,
+):
+    _board_id, spec_id, card_id = await _seed_spec(
+        db_factory,
+        scenarios=[
+            {"id": "ts_a", "title": "A", "status": "ready"},
+            {"id": "ts_b", "title": "B", "status": "ready"},
+        ],
+        card_scenarios=["ts_a", "foreign_scenario", "ts_b"],
+    )
+
+    async with db_factory() as db:
+        assert await SpecService(db).delete_spec(spec_id, USER)
+        await db.commit()
+
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        assert card is not None
+        assert card.spec_id is None
+        assert card.test_scenario_ids == ["foreign_scenario"]
+
+
 # ====================================================================
 # TC-6 — status guard (in_progress allowed, locked specs need executable test card)
 # ====================================================================

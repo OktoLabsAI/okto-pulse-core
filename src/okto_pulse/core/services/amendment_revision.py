@@ -25,6 +25,42 @@ logger = logging.getLogger("okto_pulse.services.amendment_revision")
 class AmendmentRevisionError(ValueError):
     """Invalid amendment write or unknown lifecycle value."""
 
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code or message.partition(":")[0]
+
+
+TERMINAL_AMENDMENT_REVISION_STATUSES = frozenset(
+    {
+        AmendmentRevisionStatus.CANCELLED.value,
+        AmendmentRevisionStatus.SUPERSEDED.value,
+    }
+)
+
+
+def amendment_revision_is_terminal(
+    status: AmendmentRevisionStatus | str,
+) -> bool:
+    """Return whether ``status`` makes a revision permanently immutable."""
+    return getattr(status, "value", status) in TERMINAL_AMENDMENT_REVISION_STATUSES
+
+
+def _require_mutable(
+    amendment: AmendmentRevisionRecord,
+    *,
+    mutation: str,
+) -> None:
+    current_status = getattr(amendment.status, "value", amendment.status)
+    if amendment_revision_is_terminal(current_status):
+        raise AmendmentRevisionError(
+            (
+                "terminal_amendment_revision: "
+                f"amendment '{amendment.id}' is '{current_status}' and cannot "
+                f"be mutated via {mutation}; create a new amendment revision"
+            ),
+            code="terminal_amendment_revision",
+        )
+
 
 def _coerce_status(value: AmendmentRevisionStatus | str) -> AmendmentRevisionStatus:
     if isinstance(value, AmendmentRevisionStatus):
@@ -129,6 +165,16 @@ class AmendmentRevisionService:
         amendment = await self._require(amendment_id)
         status = _coerce_status(new_status)
         old = amendment.status
+        if amendment_revision_is_terminal(old):
+            # Retrying the exact terminal transition is the only operation allowed
+            # after cancellation/supersession.  It is a true no-op: no timestamp
+            # bump, persistence call, or duplicate audit record.
+            if getattr(old, "value", old) == status.value:
+                return amendment
+            _require_mutable(
+                amendment,
+                mutation=f"set_status(target_status='{status.value}')",
+            )
         amendment.status = status
         amendment.updated_at = datetime.now(timezone.utc)
         return await self._save(
@@ -145,6 +191,7 @@ class AmendmentRevisionService:
         actor: str,
     ) -> AmendmentRevisionRecord:
         amendment = await self._require(amendment_id)
+        _require_mutable(amendment, mutation="set_lineage_state")
         lineage = _coerce_lineage(lineage_state)
         old = amendment.lineage_state
         amendment.lineage_state = lineage
@@ -167,6 +214,7 @@ class AmendmentRevisionService:
         actor: str,
     ) -> AmendmentRevisionRecord:
         amendment = await self._require(amendment_id)
+        _require_mutable(amendment, mutation="set_coverage_confirmation")
         metadata = dict(amendment.validation_metadata or {})
         metadata[COVERAGE_CONFIRMATION_KEY] = dict(confirmation)
         amendment.validation_metadata = metadata
@@ -195,6 +243,7 @@ class AmendmentRevisionService:
         actor: str,
     ) -> AmendmentRevisionRecord:
         amendment = await self._require(amendment_id)
+        _require_mutable(amendment, mutation="associate_artifacts")
 
         def merge(existing: list[str], incoming: list[str] | None) -> list[str]:
             result = list(existing)
@@ -252,4 +301,9 @@ class AmendmentRevisionService:
         )
 
 
-__all__ = ["AmendmentRevisionService", "AmendmentRevisionError"]
+__all__ = [
+    "AmendmentRevisionService",
+    "AmendmentRevisionError",
+    "TERMINAL_AMENDMENT_REVISION_STATUSES",
+    "amendment_revision_is_terminal",
+]

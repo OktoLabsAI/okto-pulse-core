@@ -33,6 +33,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageParentIntent,
+)
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_NONE,
@@ -114,6 +117,11 @@ class WorkerResult:
     nodes: list[EmittedNode] = field(default_factory=list)
     edges: list[EmittedEdge] = field(default_factory=list)
     missing_link_candidates: list[MissingLinkCandidate] = field(default_factory=list)
+    # Explicit, server-internal intent. Absence of an edge is not interpreted
+    # as deletion because cognitive/partial sessions may emit incomplete sets.
+    spec_lineage_parent_intent: SpecLineageParentIntent = (
+        SpecLineageParentIntent.PRESERVE
+    )
     content_hash: str = ""
     raw_content: str = ""
 
@@ -612,6 +620,8 @@ class DeterministicWorker:
         prefix = f"spec_{spec_id[:8]}"
         artifact_ref = f"spec:{spec_id}"
         result = WorkerResult(raw_content="")
+        if not spec.get("refinement_id") and not spec.get("ideation_id"):
+            result.spec_lineage_parent_intent = SpecLineageParentIntent.CLEAR
         raw_parts: list[str] = [
             spec.get("title") or "",
             spec.get("description") or "",

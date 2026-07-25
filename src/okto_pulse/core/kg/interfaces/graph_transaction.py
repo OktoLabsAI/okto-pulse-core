@@ -3,7 +3,66 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Iterable, Protocol, runtime_checkable
+
+
+SPEC_LINEAGE_RULE_PREFIXES: tuple[str, str] = (
+    "belongs_to/spec_to_ideation@",
+    "belongs_to/spec_to_refinement@",
+)
+
+
+def is_spec_lineage_rule_id(rule_id: str) -> bool:
+    """Return whether ``rule_id`` belongs to the exclusive Spec-parent family."""
+
+    normalized = str(rule_id or "")
+    return any(normalized.startswith(prefix) for prefix in SPEC_LINEAGE_RULE_PREFIXES)
+
+
+class SpecLineageParentIntent(str, Enum):
+    """Internal deterministic-worker intent for the exclusive Spec parent."""
+
+    PRESERVE = "preserve"
+    CLEAR = "clear"
+
+
+@dataclass(frozen=True)
+class SpecLineageEdgeSnapshot:
+    """Complete before-image for one deterministic Spec-parent relationship."""
+
+    source_id: str
+    target_id: str
+    rule_id: str
+    attrs: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SpecLineageReconciliationReceipt:
+    """Receipt used to compensate an auto-committed exclusive-parent swap."""
+
+    source_id: str
+    target_id: str | None
+    target_rule_id: str | None
+    target_attrs: dict[str, Any]
+    new_edge_created: bool
+    removed_edges: tuple[SpecLineageEdgeSnapshot, ...] = ()
+    ambiguous_legacy_edges: int = 0
+
+
+class SpecLineageReconciliationError(RuntimeError):
+    """Typed, fail-closed error for the bounded Spec-parent capability."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        receipt: SpecLineageReconciliationReceipt | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.receipt = receipt
 
 
 @dataclass
@@ -87,9 +146,40 @@ class GraphTransactionScope(Protocol):
         attrs: dict[str, Any],
     ) -> bool: ...
 
+    def reconcile_spec_lineage_parent(
+        self,
+        source_id: str,
+        target_id: str,
+        attrs: dict[str, Any],
+    ) -> SpecLineageReconciliationReceipt:
+        """Create/confirm the new Spec parent before removing its old parent."""
+        ...
+
+    def compensate_spec_lineage_parent(
+        self,
+        receipt: SpecLineageReconciliationReceipt,
+    ) -> None:
+        """Restore old parents before removing a newly-created replacement."""
+        ...
+
+    def clear_spec_lineage_parent(
+        self,
+        source_id: str,
+    ) -> SpecLineageReconciliationReceipt:
+        """Remove only deterministic Spec-parent edges with a compensable receipt."""
+        ...
+
     def find_node_types(self, node_id: str) -> tuple[str, ...]: ...
 
     def delete_edges_by_session(self, session_id: str) -> None: ...
+
+    def delete_edges_by_session_preserving_spec_lineage(
+        self,
+        session_id: str,
+        preserved_edges: tuple[SpecLineageEdgeSnapshot, ...],
+    ) -> None:
+        """Delete session-owned edges without deleting restored Spec parents."""
+        ...
 
     def delete_nodes_by_session(
         self,
@@ -125,4 +215,14 @@ class GraphTransaction(Protocol):
         ...
 
 
-__all__ = ["GraphStatementResult", "GraphTransaction", "GraphTransactionScope"]
+__all__ = [
+    "GraphStatementResult",
+    "GraphTransaction",
+    "GraphTransactionScope",
+    "SPEC_LINEAGE_RULE_PREFIXES",
+    "SpecLineageEdgeSnapshot",
+    "SpecLineageParentIntent",
+    "SpecLineageReconciliationError",
+    "SpecLineageReconciliationReceipt",
+    "is_spec_lineage_rule_id",
+]

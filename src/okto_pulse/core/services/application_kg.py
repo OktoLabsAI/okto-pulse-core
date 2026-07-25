@@ -49,6 +49,23 @@ def configure_write_barrier(mode: str) -> None:
     configure_write_barrier_runtime(WriteBarrierRuntime(mode))
 
 
+def revalidate_board_graph_write_lease(
+    board_id: str,
+    *,
+    failure_phase: str = "graph_statement_precommit",
+) -> None:
+    """Public edition boundary for the final per-statement fence check."""
+
+    from okto_pulse.core.kg.guarded_write import (
+        revalidate_active_board_write_lease,
+    )
+
+    revalidate_active_board_write_lease(
+        board_id,
+        failure_phase=failure_phase,
+    )
+
+
 def drain_kg_health_probes(*, timeout_s: float = 30.0) -> int:
     """Drain health jobs owned by the current runtime composition.
 
@@ -242,6 +259,22 @@ async def boost_node(*args: Any, **kwargs: Any) -> Any:
     from okto_pulse.core.kg.governance import boost_node as _boost
 
     return await _boost(*args, **kwargs)
+
+
+async def mutate_boost_node_graph(*args: Any, **kwargs: Any) -> Any:
+    from okto_pulse.core.kg.governance import (
+        mutate_boost_node_graph as _mutate,
+    )
+
+    return await _mutate(*args, **kwargs)
+
+
+def stage_boost_node_audit(*args: Any, **kwargs: Any) -> Any:
+    from okto_pulse.core.kg.governance import (
+        stage_boost_node_audit as _stage,
+    )
+
+    return _stage(*args, **kwargs)
 
 
 async def list_stale_canonical_parity(*args: Any, **kwargs: Any) -> Any:

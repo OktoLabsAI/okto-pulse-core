@@ -24,6 +24,11 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.history_pagination import (
+    history_page_metadata,
+    validate_history_window,
+    validate_snapshot_version,
+)
 
 
 def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
@@ -263,10 +268,10 @@ class McpDeleteRefinementUseCase:
 class McpGetRefinementSnapshotCommand:
     __slots__ = ("refinement_id", "board_id", "version")
 
-    def __init__(self, refinement_id: str, board_id: str, version: int) -> None:
+    def __init__(self, refinement_id: str, board_id: str, version: object) -> None:
         self.refinement_id = refinement_id
         self.board_id = board_id
-        self.version = version
+        self.version = validate_snapshot_version(version)
 
 
 class McpGetRefinementSnapshotResult:
@@ -294,19 +299,50 @@ class McpGetRefinementSnapshotUseCase:
 
 
 class McpGetRefinementHistoryCommand:
-    __slots__ = ("refinement_id", "board_id", "limit")
+    __slots__ = ("refinement_id", "board_id", "limit", "offset")
 
-    def __init__(self, refinement_id: str, board_id: str, limit: int) -> None:
+    def __init__(
+        self,
+        refinement_id: str,
+        board_id: str,
+        limit: object = 30,
+        offset: object = 0,
+    ) -> None:
+        window = validate_history_window(limit, offset)
         self.refinement_id = refinement_id
         self.board_id = board_id
-        self.limit = limit
+        self.limit = window.limit
+        self.offset = window.offset
 
 
 class McpGetRefinementHistoryResult:
-    __slots__ = ("entries",)
+    __slots__ = (
+        "entries",
+        "total",
+        "has_more",
+        "next_offset",
+        "truncated",
+    )
 
-    def __init__(self, entries: Any) -> None:
+    def __init__(
+        self,
+        entries: Any,
+        *,
+        total: int | None = None,
+        limit: int = 30,
+        offset: int = 0,
+    ) -> None:
         self.entries = entries
+        exact_total = len(entries) if total is None else total
+        metadata = history_page_metadata(
+            total=exact_total,
+            returned=len(entries),
+            window=validate_history_window(limit, offset),
+        )
+        self.total = metadata.total
+        self.has_more = metadata.has_more
+        self.next_offset = metadata.next_offset
+        self.truncated = metadata.truncated
 
 
 class McpGetRefinementHistoryUseCase:
@@ -321,9 +357,17 @@ class McpGetRefinementHistoryUseCase:
             raise EntityNotFoundError("refinement", command.refinement_id)
 
         entries = await service.list_history(
-            command.refinement_id, command.limit
+            command.refinement_id,
+            limit=command.limit,
+            offset=command.offset,
         )
-        return McpGetRefinementHistoryResult(entries)
+        total = await service.count_history(command.refinement_id)
+        return McpGetRefinementHistoryResult(
+            entries,
+            total=total,
+            limit=command.limit,
+            offset=command.offset,
+        )
 
 
 # --- knowledge (single RefinementKnowledgeService + KB membership) -----------
@@ -525,7 +569,7 @@ class McpAnswerRefinementQuestionCommand:
 
 
 class McpAnswerRefinementQuestionResult:
-    __slots__ = ("qa", "qa_not_found", "self_answer_error")
+    __slots__ = ("qa", "qa_not_found", "self_answer_error", "selection_error")
 
     def __init__(
         self,
@@ -533,10 +577,12 @@ class McpAnswerRefinementQuestionResult:
         *,
         qa_not_found: bool = False,
         self_answer_error: Any = None,
+        selection_error: Any = None,
     ) -> None:
         self.qa = qa
         self.qa_not_found = qa_not_found
         self.self_answer_error = self_answer_error
+        self.selection_error = selection_error
 
 
 class McpAnswerRefinementQuestionUseCase:
@@ -548,7 +594,10 @@ class McpAnswerRefinementQuestionUseCase:
     async def execute(
         self, command: McpAnswerRefinementQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAnswerRefinementQuestionResult:
-        from okto_pulse.core.services import QASelfAnsweringNotAllowedError
+        from okto_pulse.core.services import (
+            QASelectionError,
+            QASelfAnsweringNotAllowedError,
+        )
 
         service = uow.services.refinement_qa
         qa_item = await service.get_question(command.qa_id)
@@ -571,6 +620,8 @@ class McpAnswerRefinementQuestionUseCase:
         except QASelfAnsweringNotAllowedError as exc:
             await commit(uow)
             return McpAnswerRefinementQuestionResult(None, self_answer_error=exc)
+        except QASelectionError as exc:
+            return McpAnswerRefinementQuestionResult(None, selection_error=exc)
         if not qa:
             return McpAnswerRefinementQuestionResult(None, qa_not_found=True)
         await uow.services.boards._log_activity(

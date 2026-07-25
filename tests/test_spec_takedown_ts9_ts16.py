@@ -8,7 +8,6 @@ Community test module.
 from __future__ import annotations
 
 import logging
-from contextlib import nullcontext
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -96,7 +95,6 @@ async def test_ts11_partial_and_final_runs_share_delete_event_but_not_attempt(
         "_queue_claim_is_current_and_unfenced",
         _claim_is_current,
     )
-    monkeypatch.setattr(consolidation, "under_safe_write", lambda *_a, **_k: nullcontext())
     monkeypatch.setattr(reconciler, "reconcile_stale_canonical", _reconcile)
     caplog.set_level(logging.INFO, logger="okto_pulse.kg.consolidation_worker")
 

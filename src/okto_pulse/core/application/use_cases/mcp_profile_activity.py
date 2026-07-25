@@ -100,11 +100,14 @@ class McpListMyMentionsCommand:
 
 
 class McpListMyMentionsResult:
-    __slots__ = ("mentions", "show_all")
+    __slots__ = ("mentions", "show_all", "unseen_count")
 
     def __init__(self, mentions: list[dict[str, Any]], *, show_all: bool) -> None:
         self.mentions = mentions
         self.show_all = show_all
+        self.unseen_count = sum(
+            1 for mention in mentions if not bool(mention.get("seen", False))
+        )
 
 
 class McpListMyMentionsUseCase:

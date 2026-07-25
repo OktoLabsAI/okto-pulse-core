@@ -631,6 +631,33 @@ def _optional_bool(value: Any) -> bool | None:
     return str(value).strip().lower() in ("true", "1", "yes")
 
 
+def _strict_filter_bool(
+    value: Any,
+    *,
+    field: str,
+    default: bool = False,
+) -> bool:
+    """Parse the documented bool compatibility literals without truthiness.
+
+    The MCP adapter normally normalizes these values first, but this application
+    boundary is reusable and must not turn ``"false"``/``"0"`` into ``True``.
+    """
+
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    raise ValueError(
+        f"{field} must be a boolean or one of true/false, 1/0, yes/no"
+    )
+
+
 def is_derivation_pending_ideation(item: Any) -> bool:
     status = _enum_value(getattr(item, "status", None))
     complexity = _enum_value(getattr(item, "complexity", None))
@@ -842,7 +869,13 @@ class McpListByBoardUseCase:
 
         if et == "spec":
             surface = "mcp_spec_list"
-            scope = _page_scope(command.board_id)
+            scope = _page_scope(
+                command.board_id,
+                include_archived=_strict_filter_bool(
+                    f.get("include_archived"),
+                    field="include_archived",
+                ),
+            )
             if f.get("status"):
                 filters.append(ApplicationFilter("status", "eq", f["status"]))
             if f.get("assignee_id"):
@@ -850,7 +883,13 @@ class McpListByBoardUseCase:
             any_groups = _label_groups(f.get("labels"))
         elif et == "ideation":
             surface = "mcp_ideation_list"
-            scope = _page_scope(command.board_id)
+            scope = _page_scope(
+                command.board_id,
+                include_archived=_strict_filter_bool(
+                    f.get("include_archived"),
+                    field="include_archived",
+                ),
+            )
             if f.get("status"):
                 filters.append(ApplicationFilter("status", "eq", f["status"]))
             pending = _optional_bool(f.get("derivation_pending"))
@@ -870,6 +909,10 @@ class McpListByBoardUseCase:
             surface = "mcp_refinement_list"
             scope = _page_scope(
                 command.board_id,
+                include_archived=_strict_filter_bool(
+                    f.get("include_archived"),
+                    field="include_archived",
+                ),
                 ideation_id=ideation_id,
             )
             if f.get("status"):
@@ -891,6 +934,10 @@ class McpListByBoardUseCase:
             surface = "mcp_sprint_list"
             scope = _page_scope(
                 command.board_id,
+                include_archived=_strict_filter_bool(
+                    f.get("include_archived"),
+                    field="include_archived",
+                ),
                 spec_id=spec_id,
             )
             if f.get("status"):
@@ -900,7 +947,10 @@ class McpListByBoardUseCase:
             args = command.story_args
             scope = _page_scope(
                 command.board_id,
-                include_archived=bool(args.get("include_archived")),
+                include_archived=_strict_filter_bool(
+                    args.get("include_archived"),
+                    field="include_archived",
+                ),
             )
             if args.get("status_filter"):
                 filters.append(ApplicationFilter("status", "eq", args["status_filter"]))
@@ -919,7 +969,10 @@ class McpListByBoardUseCase:
             surface = "mcp_topic_list"
             scope = _page_scope(
                 command.board_id,
-                include_archived=bool(command.topic_args.get("include_archived")),
+                include_archived=_strict_filter_bool(
+                    command.topic_args.get("include_archived"),
+                    field="include_archived",
+                ),
             )
 
         page = await uow.services.entity_pages.list(

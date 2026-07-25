@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from okto_pulse.core.domain.datetime_utils import isoformat_utc
+
 
 def project_cancellation(entity: Any) -> dict[str, Any]:
     """Return the public cancellation record without assuming an ORM type."""
@@ -12,11 +14,7 @@ def project_cancellation(entity: Any) -> dict[str, Any]:
     return {
         "cancellation_reason": getattr(entity, "cancellation_reason", None),
         "cancelled_by": getattr(entity, "cancelled_by", None),
-        "cancelled_at": (
-            cancelled_at.isoformat()
-            if cancelled_at is not None and hasattr(cancelled_at, "isoformat")
-            else cancelled_at
-        ),
+        "cancelled_at": isoformat_utc(cancelled_at),
     }
 
 

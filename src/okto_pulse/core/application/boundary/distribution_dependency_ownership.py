@@ -126,6 +126,22 @@ def build_distribution_dependency_ledger() -> tuple[DistributionDependency, ...]
             removal_criterion="Replace all public validation models with stdlib contracts.",
         ),
         _entry(
+            "pydantic-core",
+            core,
+            "core",
+            ("pydantic_core",),
+            "direct",
+            ("src/okto_pulse/core/mcp/server.py",),
+            rationale=(
+                "The MCP argument boundary emits JSON-safe custom validation "
+                "errors without embedding exception objects in error context."
+            ),
+            removal_criterion=(
+                "Pydantic exposes an equivalent public custom-error contract, "
+                "or the MCP host no longer requires the raw-envelope validator."
+            ),
+        ),
+        _entry(
             "PyYAML", core, "core", ("yaml",), "direct",
             ("src/okto_pulse/core/application/processors/deterministic_kg.py",),
             rationale="The deterministic processor reads the packaged taxonomy resource.",

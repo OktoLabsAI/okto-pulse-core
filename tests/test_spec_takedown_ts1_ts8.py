@@ -823,6 +823,60 @@ async def _owner_graph_snapshot(
     )
 
 
+def _owner_semantic_payload_snapshot_sync(
+    board_id: str,
+    artifact_type: str,
+    artifact_id: str,
+) -> tuple[tuple[str, str, str, str, str, str, str, bool, str, float], ...]:
+    rows: list[tuple[str, str, str, str, str, str, str, bool, str, float]] = []
+    with open_board_connection(board_id) as (_database, connection):
+        for node_type in ALL_NODE_TYPES:
+            result = connection.execute(
+                f"MATCH (n:{node_type}) RETURN n.id, n.source_artifact_ref, "
+                "n.title, n.content, n.context, n.justification, "
+                "n.source_span_quote, n.embedding IS NOT NULL, "
+                "n.revocation_reason, n.relevance_score"
+            )
+            while result.has_next():
+                row = result.get_next()
+                source_ref = str(row[1] or "")
+                if _source_identity_from_ref(source_ref) != (
+                    artifact_type,
+                    artifact_id,
+                ):
+                    continue
+                rows.append(
+                    (
+                        node_type,
+                        str(row[0]),
+                        str(row[2] or ""),
+                        str(row[3] or ""),
+                        str(row[4] or ""),
+                        str(row[5] or ""),
+                        str(row[6] or ""),
+                        bool(row[7]),
+                        str(row[8] or ""),
+                        float(row[9] or 0.0),
+                    )
+                )
+    return tuple(sorted(rows))
+
+
+async def _owner_semantic_payload_snapshot(
+    board_id: str,
+    artifact_type: str,
+    artifact_id: str,
+) -> tuple[tuple[str, str, str, str, str, str, str, bool, str, float], ...]:
+    return await run_blocking_graph_io(
+        lambda: _owner_semantic_payload_snapshot_sync(
+            board_id,
+            artifact_type,
+            artifact_id,
+        ),
+        task_name="tests.takedown.owner_semantic_payload_snapshot",
+    )
+
+
 async def _force_owner_canonical_fixture(
     board_id: str,
     artifact_type: str,
@@ -1292,9 +1346,42 @@ async def test_ts8_fast_path_and_stale_sweep_converge_same_graph_and_digest(
     assert _normalized(fast_snapshot) == _normalized(sweep_snapshot)
     assert fast_snapshot
     assert all(row[3:] == ("working", "working_stale") for row in fast_snapshot)
-    assert _digest_layer(board_fast, requirement_id) == "working"
-    assert _digest_layer(board_sweep, sweep_requirement_id) == "working"
+    # Global Discovery may physically prune the stale digest or retain an
+    # unlinked/revoked audit row, depending on provider generation. Neither
+    # representation may remain discoverable.
+    assert _digest_layer(board_fast, requirement_id) in {None, "canonical"}
+    assert _digest_layer(board_sweep, sweep_requirement_id) in {
+        None,
+        "canonical",
+    }
     assert requirement_id not in _query_ids(board_fast, "canonical")
     assert sweep_requirement_id not in _query_ids(board_sweep, "canonical")
-    assert requirement_id in _query_ids(board_fast, "all")
-    assert sweep_requirement_id in _query_ids(board_sweep, "all")
+    assert requirement_id not in _query_ids(board_fast, "all")
+    assert sweep_requirement_id not in _query_ids(board_sweep, "all")
+
+    # Administrative all-layer Cypher is intentionally able to inspect
+    # tombstones. It must never recover the deleted source's semantic payload.
+    for board_id in (board_fast, board_sweep):
+        payload_rows = await _owner_semantic_payload_snapshot(
+            board_id,
+            "spec",
+            artifact_id,
+        )
+        assert payload_rows
+        assert all(
+            title == content == context == justification == source_span_quote == ""
+            and revocation_reason == "source_deleted"
+            and relevance_score == 0.0
+            for (
+                _node_type,
+                _node_id,
+                title,
+                content,
+                context,
+                justification,
+                source_span_quote,
+                _embedding_present,
+                revocation_reason,
+                relevance_score,
+            ) in payload_rows
+        )

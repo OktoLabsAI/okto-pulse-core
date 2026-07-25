@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import uuid
+from contextlib import contextmanager
 
 import pytest
 from sqlalchemy import delete, select
@@ -24,6 +25,38 @@ from sqlalchemy import delete, select
 from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
 from okto_pulse.core.application.processors import consolidation as consolidation_mod
 from okto_pulse.core.application.processors.consolidation import ConsolidationProcessor
+
+
+class _RecordingWriteLease:
+    def __init__(self, events: list[str], state: dict[str, bool]) -> None:
+        self.events = events
+        self.state = state
+        self.durability_applied = False
+
+    def ensure_owned(self, *, failure_phase: str) -> None:
+        assert self.state["active"], failure_phase
+        self.events.append(f"owned:{failure_phase}")
+
+    def ensure_durable(self, *, mutation_ref: str, **_kwargs) -> None:
+        assert self.state["active"], mutation_ref
+        self.events.append(f"durable:{mutation_ref}")
+        self.durability_applied = True
+
+
+@contextmanager
+def _recording_write_guard(
+    events: list[str],
+    state: dict[str, bool],
+):
+    assert state["active"] is False
+    state["active"] = True
+    events.append("guard_enter")
+    try:
+        yield _RecordingWriteLease(events, state)
+    finally:
+        assert state["active"] is True
+        events.append("guard_exit")
+        state["active"] = False
 
 
 def _board_id() -> str:
@@ -190,16 +223,27 @@ async def test_consolidation_finalizes_graph_session_only_after_main_uow_commit(
     await _seed_queue_entry(factory, board_id)
     delegate = consolidation_mod.get_consolidation_persistence_port()
     events: list[str] = []
+    guard_state = {"active": False}
 
     class _RecordingStore:
         def __getattr__(self, name):
             return getattr(delegate, name)
 
+        async def ack_claimed_queue_entry(self, db, **identity):
+            assert guard_state["active"] is True
+            events.append("queue_ack")
+            return await delegate.ack_claimed_queue_entry(db, **identity)
+
         async def commit(self, db):
+            ordinal = sum(e.startswith("commit:") for e in events) + 1
+            if ordinal == 2:
+                assert guard_state["active"] is True
             await delegate.commit(db)
-            events.append(f"commit:{sum(e.startswith('commit:') for e in events) + 1}")
+            events.append(f"commit:{ordinal}")
 
     async def _process(_db, _entry, **kwargs):
+        write_lease = kwargs["enter_graph_write"]("worker-publish")
+        write_lease.ensure_durable(mutation_ref="worker-publish")
         kwargs["deferred_session_ids"].append("kgses-worker-deferred")
         events.append("process")
         return True
@@ -207,6 +251,7 @@ async def test_consolidation_finalizes_graph_session_only_after_main_uow_commit(
     async def _finalize(session_id: str, *, agent_id: str) -> None:
         assert session_id == "kgses-worker-deferred"
         assert agent_id == consolidation_mod.AGENT_ID
+        assert guard_state["active"] is True
         events.append("finalize")
 
     async def _abort(*_args, **_kwargs) -> None:
@@ -218,6 +263,14 @@ async def test_consolidation_finalizes_graph_session_only_after_main_uow_commit(
         lambda: _RecordingStore(),
     )
     monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _process)
+    monkeypatch.setattr(
+        consolidation_mod,
+        "guarded_board_write",
+        lambda *_args, **_kwargs: _recording_write_guard(
+            events,
+            guard_state,
+        ),
+    )
     monkeypatch.setattr(consolidation_mod, "finalize_deferred_consolidation", _finalize)
     monkeypatch.setattr(consolidation_mod, "abort_deferred_consolidation", _abort)
     monkeypatch.setattr(
@@ -229,8 +282,158 @@ async def test_consolidation_finalizes_graph_session_only_after_main_uow_commit(
     worker = ConsolidationProcessor(relational_scope_factory=factory)
     assert await worker.process_batch() == 1
 
+    assert events.index("guard_enter") < events.index("queue_ack")
+    assert events.index("queue_ack") < events.index("commit:2")
     assert events.index("commit:2") < events.index("finalize")
     assert events.index("finalize") < events.index("commit:3")
+    assert events.index("finalize") < events.index("guard_exit")
+    assert guard_state["active"] is False
+
+
+@pytest.mark.asyncio
+async def test_worker_continuous_fence_is_strict_through_ack_and_finalize(
+    monkeypatch,
+) -> None:
+    """The real write barrier stays active through relational publication."""
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.core.kg.guarded_write import guarded_board_write
+    from okto_pulse.core.kg.interfaces.graph_lifecycle import (
+        GraphLifecycleStepResult,
+    )
+    from okto_pulse.core.kg.safe_write_lifecycle import (
+        KGSafeWriteLifecycle,
+        LockOwnerProbe,
+    )
+    from okto_pulse.core.kg.single_writer_lock import LockAcquisition
+    from okto_pulse.core.kg.write_barrier import (
+        BarrierMode,
+        get_barrier_mode,
+        get_unguarded_count,
+        require_write_token,
+        reset_unguarded_counter,
+        set_barrier_mode,
+    )
+
+    factory = get_session_factory()
+    board_id = _board_id()
+    await _seed_queue_entry(factory, board_id)
+    delegate = consolidation_mod.get_consolidation_persistence_port()
+    events: list[str] = []
+    commit_calls = 0
+
+    class _WriterLock:
+        token = "worker-continuous-fence"
+        active = False
+
+        def acquire(self, **_kwargs):
+            assert self.active is False
+            self.active = True
+            events.append("guard_enter")
+            return LockAcquisition(
+                acquired=True,
+                owner_token=self.token,
+                expires_at=None,
+                current_owner=None,
+            )
+
+        def is_owner(self, _board_id: str, owner_token: str) -> bool:
+            return self.active and owner_token == self.token
+
+        def renew(self, **_kwargs) -> bool:
+            return self.active
+
+        def release(self, **_kwargs) -> bool:
+            assert self.active is True
+            events.append("guard_exit")
+            self.active = False
+            return True
+
+    writer_lock = _WriterLock()
+
+    def _lifecycle_step(board: str, _graph_type: str, step: str):
+        require_write_token(board)
+        events.append(step)
+        return GraphLifecycleStepResult(ok=True)
+
+    lifecycle = KGSafeWriteLifecycle(
+        step_adapter=_lifecycle_step,
+        owner_probe=LockOwnerProbe(is_active_owner=writer_lock.is_owner),
+    )
+
+    class _GuardAwareStore:
+        def __getattr__(self, name):
+            return getattr(delegate, name)
+
+        async def ack_claimed_queue_entry(self, db, **identity):
+            require_write_token(board_id)
+            events.append("queue_ack")
+            return await delegate.ack_claimed_queue_entry(db, **identity)
+
+        async def commit(self, db):
+            nonlocal commit_calls
+            commit_calls += 1
+            if commit_calls == 2:
+                require_write_token(board_id)
+                events.append("relational_commit")
+            await delegate.commit(db)
+
+    async def _process(_db, _entry, **kwargs):
+        write_lease = kwargs["enter_graph_write"]("worker-publish")
+        require_write_token(board_id)
+        events.append("graph_commit")
+        write_lease.ensure_durable(mutation_ref="worker-publish")
+        kwargs["deferred_session_ids"].append("kgses-worker-strict")
+        return True
+
+    async def _finalize(_session_id: str, *, agent_id: str) -> None:
+        assert agent_id == consolidation_mod.AGENT_ID
+        require_write_token(board_id)
+        events.append("finalize")
+
+    def _guarded(*args, **kwargs):
+        return guarded_board_write(
+            *args,
+            **kwargs,
+            writer_lock=writer_lock,
+            lifecycle=lifecycle,
+        )
+
+    monkeypatch.setattr(
+        consolidation_mod,
+        "get_consolidation_persistence_port",
+        lambda: _GuardAwareStore(),
+    )
+    monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _process)
+    monkeypatch.setattr(consolidation_mod, "guarded_board_write", _guarded)
+    monkeypatch.setattr(consolidation_mod, "finalize_deferred_consolidation", _finalize)
+    monkeypatch.setattr(
+        consolidation_mod,
+        "_run_post_commit_maintenance",
+        lambda *_args, **_kwargs: asyncio.sleep(0),
+    )
+
+    previous_mode = get_barrier_mode()
+    reset_unguarded_counter()
+    set_barrier_mode(BarrierMode.STRICT)
+    try:
+        worker = ConsolidationProcessor(relational_scope_factory=factory)
+        assert await worker.process_batch() == 1
+        assert get_unguarded_count(board_id) == 0
+    finally:
+        set_barrier_mode(previous_mode)
+        reset_unguarded_counter()
+
+    assert events == [
+        "guard_enter",
+        "graph_commit",
+        "checkpoint",
+        "flush",
+        "fsync",
+        "queue_ack",
+        "relational_commit",
+        "finalize",
+        "guard_exit",
+    ]
 
 
 @pytest.mark.asyncio
@@ -246,6 +449,7 @@ async def test_consolidation_commit_failure_compensates_before_queue_retry(
     entry_id = await _seed_queue_entry(factory, board_id)
     delegate = consolidation_mod.get_consolidation_persistence_port()
     events: list[str] = []
+    guard_state = {"active": False}
     commit_calls = 0
 
     class _FailingMainCommitStore:
@@ -256,12 +460,15 @@ async def test_consolidation_commit_failure_compensates_before_queue_retry(
             nonlocal commit_calls
             commit_calls += 1
             if commit_calls == 2:
+                assert guard_state["active"] is True
                 events.append("main_commit_failed")
                 raise RuntimeError("simulated SQLite commit failure")
             await delegate.commit(db)
             events.append(f"commit:{commit_calls}")
 
     async def _process(_db, _entry, **kwargs):
+        write_lease = kwargs["enter_graph_write"]("worker-publish")
+        write_lease.ensure_durable(mutation_ref="worker-publish")
         kwargs["deferred_session_ids"].append("kgses-worker-rollback")
         return True
 
@@ -272,6 +479,7 @@ async def test_consolidation_commit_failure_compensates_before_queue_retry(
         assert session_id == "kgses-worker-rollback"
         assert agent_id == consolidation_mod.AGENT_ID
         assert blocking_execution is not None
+        assert guard_state["active"] is True
         events.append("abort")
 
     monkeypatch.setattr(
@@ -280,6 +488,14 @@ async def test_consolidation_commit_failure_compensates_before_queue_retry(
         lambda: _FailingMainCommitStore(),
     )
     monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _process)
+    monkeypatch.setattr(
+        consolidation_mod,
+        "guarded_board_write",
+        lambda *_args, **_kwargs: _recording_write_guard(
+            events,
+            guard_state,
+        ),
+    )
     monkeypatch.setattr(consolidation_mod, "finalize_deferred_consolidation", _finalize)
     monkeypatch.setattr(consolidation_mod, "abort_deferred_consolidation", _abort)
 
@@ -287,11 +503,91 @@ async def test_consolidation_commit_failure_compensates_before_queue_retry(
     assert await worker.process_batch() == 0
 
     assert events.index("main_commit_failed") < events.index("abort")
+    compensation_durability = (
+        f"durable:consolidation-worker-abort:{entry_id}:"
+        "kgses-worker-rollback"
+    )
+    assert events.index("owned:before_deferred_compensation") < events.index(
+        "abort"
+    )
+    assert events.index("abort") < events.index(
+        "owned:after_deferred_compensation"
+    )
+    assert events.index("abort") < events.index(compensation_durability)
+    assert events.index("abort") < events.index("guard_exit")
+    assert guard_state["active"] is False
     async with factory() as db:
         fresh = await db.get(ConsolidationQueue, entry_id)
         assert fresh is not None
         assert fresh.attempts >= 1
         assert "simulated SQLite commit failure" in (fresh.last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_consolidation_cancellation_compensates_before_guard_release(
+    monkeypatch,
+) -> None:
+    """A real task cancellation cannot release the writer before compensation."""
+    from okto_pulse.core.infra.database import get_session_factory
+
+    factory = get_session_factory()
+    board_id = _board_id()
+    entry_id = await _seed_queue_entry(factory, board_id)
+    events: list[str] = []
+    guard_state = {"active": False}
+    graph_committed = asyncio.Event()
+    never_complete = asyncio.Event()
+
+    async def _process(_db, _entry, **kwargs):
+        write_lease = kwargs["enter_graph_write"]("worker-publish")
+        write_lease.ensure_durable(mutation_ref="worker-publish")
+        kwargs["deferred_session_ids"].append("kgses-worker-cancelled")
+        graph_committed.set()
+        await never_complete.wait()
+        raise AssertionError("unreachable")
+
+    async def _finalize(*_args, **_kwargs) -> None:
+        pytest.fail("cancelled relational work must not finalize the graph")
+
+    async def _abort(session_id: str, *, agent_id: str, blocking_execution) -> None:
+        assert session_id == "kgses-worker-cancelled"
+        assert agent_id == consolidation_mod.AGENT_ID
+        assert blocking_execution is not None
+        assert guard_state["active"] is True
+        events.append("abort")
+
+    monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _process)
+    monkeypatch.setattr(
+        consolidation_mod,
+        "guarded_board_write",
+        lambda *_args, **_kwargs: _recording_write_guard(
+            events,
+            guard_state,
+        ),
+    )
+    monkeypatch.setattr(consolidation_mod, "finalize_deferred_consolidation", _finalize)
+    monkeypatch.setattr(consolidation_mod, "abort_deferred_consolidation", _abort)
+
+    worker = ConsolidationProcessor(relational_scope_factory=factory)
+    task = asyncio.create_task(worker.process_batch())
+    await asyncio.wait_for(graph_committed.wait(), timeout=2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    compensation_durability = (
+        f"durable:consolidation-worker-abort:{entry_id}:"
+        "kgses-worker-cancelled"
+    )
+    assert events.index("owned:before_deferred_compensation") < events.index(
+        "abort"
+    )
+    assert events.index("abort") < events.index(
+        "owned:after_deferred_compensation"
+    )
+    assert events.index("abort") < events.index(compensation_durability)
+    assert events.index(compensation_durability) < events.index("guard_exit")
+    assert guard_state["active"] is False
 
 
 @pytest.mark.asyncio
@@ -313,8 +609,11 @@ async def test_semantic_event_invalidating_claim_compensates_stale_graph_commit(
     board_id = _board_id()
     entry_id = await _seed_queue_entry(factory, board_id)
     events: list[str] = []
+    guard_state = {"active": False}
 
     async def _process(_db, entry, **kwargs):
+        write_lease = kwargs["enter_graph_write"]("worker-publish")
+        write_lease.ensure_durable(mutation_ref="worker-publish")
         kwargs["deferred_session_ids"].append("kgses-stale-snapshot")
         async with factory() as event_db:
             current = await event_db.get(ConsolidationQueue, entry.id)
@@ -338,16 +637,29 @@ async def test_semantic_event_invalidating_claim_compensates_stale_graph_commit(
         assert session_id == "kgses-stale-snapshot"
         assert agent_id == consolidation_mod.AGENT_ID
         assert blocking_execution is not None
+        assert guard_state["active"] is True
         events.append("graph_compensated")
 
     monkeypatch.setattr(consolidation_mod, "_process_queue_entry_serialized", _process)
+    monkeypatch.setattr(
+        consolidation_mod,
+        "guarded_board_write",
+        lambda *_args, **_kwargs: _recording_write_guard(
+            events,
+            guard_state,
+        ),
+    )
     monkeypatch.setattr(consolidation_mod, "finalize_deferred_consolidation", _finalize)
     monkeypatch.setattr(consolidation_mod, "abort_deferred_consolidation", _abort)
 
     worker = ConsolidationProcessor(relational_scope_factory=factory)
     assert await worker.process_batch() == 0
 
-    assert events == ["event_invalidated_claim", "graph_compensated"]
+    assert events.index("event_invalidated_claim") < events.index(
+        "graph_compensated"
+    )
+    assert events.index("graph_compensated") < events.index("guard_exit")
+    assert guard_state["active"] is False
     async with factory() as db:
         successor = await db.get(ConsolidationQueue, entry_id)
     assert successor is not None

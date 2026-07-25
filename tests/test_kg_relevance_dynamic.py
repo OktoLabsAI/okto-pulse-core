@@ -114,6 +114,7 @@ def test_ts29_schema_version_is_0_3_3():
         "0.3.9",
         "0.3.10",
         "0.3.11",
+        "0.3.12",
     }
 
 
@@ -917,19 +918,185 @@ def test_impl_c_decision_audit_delta_matches_priority_step():
     assert abs(DECISION_AUDIT_DELTA - smallest_gap) < 1e-9
 
 
-def test_impl_c_root_entity_id_matches_worker_format():
-    """_root_entity_id must mirror deterministic_worker.process_card format.
-
-    Worker builds ``f"card_{cid[:8]}_entity"`` — handler relies on the same
-    format to find the root node. A divergence here would silently break
-    the recompute path.
-    """
+def test_impl_c_root_entity_id_matches_persisted_identity_policy():
+    """The handler must target the graph id, not the worker candidate id."""
     from okto_pulse.core.events.handlers.card_boost_recompute import (
         _root_entity_id,
     )
+    from okto_pulse.core.kg.node_identity import derive_natural_key, mint_node_id
 
+    board_id = "board-impl-c"
     card_id = "abcdef12-3456-7890-abcd-ef1234567890"
-    assert _root_entity_id(card_id) == "card_abcdef12_entity"
+    expected = mint_node_id(
+        board_id,
+        "Entity",
+        derive_natural_key(f"card:{card_id}", "Entity", None),
+        0,
+    )
+    assert _root_entity_id(board_id, card_id, "Entity") == expected
+    assert expected != "card_abcdef12_entity"
+
+
+def test_impl_c_resolves_active_root_by_source_ref_and_layer():
+    from types import SimpleNamespace
+
+    from okto_pulse.core.events.handlers.card_boost_recompute import (
+        _resolve_root_node,
+        _root_entity_id,
+    )
+
+    board_id = "board-impl-c"
+    card_id = "abcdef12-3456-7890-abcd-ef1234567890"
+    expected_id = _root_entity_id(board_id, card_id, "Entity")
+
+    class Scope:
+        def execute(self, query, params):
+            assert "source_artifact_ref = $source_ref" in query
+            assert "n.superseded_by IS NULL" in query
+            assert "n.superseded_at IS NULL" not in query
+            assert "n.revocation_reason <> 'source_deleted'" in query
+            assert "n.maturity_status <> 'working_stale'" in query
+            assert params == {"source_ref": f"card:{card_id}"}
+            return SimpleNamespace(
+                rows=[
+                    ["legacy-root", "working", "working_immature", 0],
+                    [expected_id, "canonical", "canonical_eligible", 0],
+                ]
+            )
+
+    assert _resolve_root_node(
+        Scope(),
+        board_id=board_id,
+        card_id=card_id,
+        node_type="Entity",
+    ) == (expected_id, "canonical", "canonical_eligible")
+
+
+def test_impl_c_decision_audit_inherits_layer_and_never_strands_on_edge_failure():
+    from types import SimpleNamespace
+
+    from okto_pulse.core.events.handlers.card_boost_recompute import (
+        _emit_boost_decision_node,
+    )
+
+    class Scope:
+        def __init__(self):
+            self.created = None
+            self.cleanup = None
+
+        def create_node(self, node_type, node_id, attrs, *, source_session_id):
+            self.created = (node_type, node_id, attrs, source_session_id)
+
+        def create_edge(self, *args, **kwargs):
+            return False
+
+        def execute(self, query, params):
+            self.cleanup = (query, params)
+            return SimpleNamespace(rows=[])
+
+    scope = Scope()
+    _emit_boost_decision_node(
+        scope,
+        board_id="board-impl-c",
+        card_id="abcdef12-3456-7890-abcd-ef1234567890",
+        spec_id="spec-1",
+        node_type="Entity",
+        root_node_id="entity-root",
+        root_graph_layer="working",
+        root_maturity_status="working_immature",
+        old_boost=0.0,
+        new_boost=0.2,
+        trigger_event_type="card.priority_changed",
+        changed_by="agent-1",
+    )
+
+    _, decision_id, attrs, _ = scope.created
+    assert attrs["graph_layer"] == "working"
+    assert attrs["maturity_status"] == "working_immature"
+    assert attrs["generation"] == 0
+    assert attrs["created_by_agent"] == "system:card_boost_recompute_handler"
+    assert attrs["source_artifact_ref"].startswith(
+        "card:abcdef12-3456-7890-abcd-ef1234567890:boost_audit:"
+    )
+    assert scope.cleanup[1] == {"decision_id": decision_id}
+
+
+def test_impl_c_boost_audit_identity_is_unique_and_replay_idempotent():
+    from types import SimpleNamespace
+
+    from okto_pulse.core.events.handlers.card_boost_recompute import (
+        _emit_boost_decision_node,
+    )
+
+    class Scope:
+        def __init__(self):
+            self.nodes = {}
+            self.edges = set()
+            self.deleted = []
+
+        def execute(self, query, params):
+            if "DETACH DELETE" in query:
+                self.deleted.append(params["decision_id"])
+                self.nodes.pop(params["decision_id"], None)
+                return SimpleNamespace(rows=[])
+            if "-[r:relates_to]" in query:
+                exists = any(
+                    edge[3] == params["decision_id"]
+                    and edge[4] == params["root_node_id"]
+                    for edge in self.edges
+                )
+                return SimpleNamespace(rows=[[1]] if exists else [])
+            node_id = params["decision_id"]
+            return SimpleNamespace(rows=[[node_id]] if node_id in self.nodes else [])
+
+        def create_node(self, node_type, node_id, attrs, *, source_session_id):
+            assert node_type == "Decision"
+            self.nodes[node_id] = (attrs, source_session_id)
+
+        def create_edge(
+            self,
+            edge_type,
+            from_type,
+            to_type,
+            from_id,
+            to_id,
+            attrs,
+        ):
+            edge = (edge_type, from_type, to_type, from_id, to_id)
+            if edge in self.edges:
+                return False
+            self.edges.add(edge)
+            return True
+
+    scope = Scope()
+
+    def emit(old_boost, new_boost):
+        _emit_boost_decision_node(
+            scope,
+            board_id="board-impl-c",
+            card_id="abcdef12-3456-7890-abcd-ef1234567890",
+            spec_id="spec-1",
+            node_type="Entity",
+            root_node_id="entity-root",
+            root_graph_layer="working",
+            root_maturity_status="working_immature",
+            old_boost=old_boost,
+            new_boost=new_boost,
+            trigger_event_type="card.priority_changed",
+            changed_by="agent-1",
+        )
+
+    emit(0.0, 0.2)
+    emit(0.2, 0.1)
+    assert len(scope.nodes) == 2
+    assert len({attrs["source_artifact_ref"] for attrs, _ in scope.nodes.values()}) == 2
+
+    # Replaying an identical transition resolves the deterministic node and
+    # treats the duplicate edge as success without deleting the audit.
+    emit(0.0, 0.2)
+    assert len(scope.nodes) == 2
+    assert len(scope.edges) == 2
+    assert scope.deleted == []
 
 
 def test_impl_c_node_type_resolution():

@@ -24,8 +24,20 @@ class _SourceReader:
 
 
 class _CypherExecutor:
-    def __init__(self, *, graph_ref: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        graph_ref: str | None = None,
+        graph_layer: str = "canonical",
+        maturity_status: str = "canonical_eligible",
+        revocation_reason: str | None = None,
+        relevance_score: float = 0.5,
+    ) -> None:
         self.graph_ref = graph_ref
+        self.graph_layer = graph_layer
+        self.maturity_status = maturity_status
+        self.revocation_reason = revocation_reason
+        self.relevance_score = relevance_score
         self.calls: list[str] = []
 
     def execute_read_only(
@@ -37,7 +49,7 @@ class _CypherExecutor:
         max_rows: int,
     ) -> dict[str, Any]:
         assert board_id == "board-card5-parity"
-        assert params == {"c": "canonical"}
+        assert params == {"c": "canonical", "w": "working"}
         assert max_rows == 10000
         self.calls.append(query)
         if self.graph_ref is not None and "MATCH (n:Requirement)" in query:
@@ -47,6 +59,10 @@ class _CypherExecutor:
                         "requirement-colliding-id",
                         self.graph_ref,
                         "system:layer1_worker",
+                        self.graph_layer,
+                        self.maturity_status,
+                        self.revocation_reason,
+                        self.relevance_score,
                     )
                 ]
             }
@@ -67,8 +83,18 @@ def _install_registry(
     *,
     snapshot: BoardSourceSnapshot,
     graph_ref: str | None = None,
+    graph_layer: str = "canonical",
+    maturity_status: str = "canonical_eligible",
+    revocation_reason: str | None = None,
+    relevance_score: float = 0.5,
 ) -> _CypherExecutor:
-    executor = _CypherExecutor(graph_ref=graph_ref)
+    executor = _CypherExecutor(
+        graph_ref=graph_ref,
+        graph_layer=graph_layer,
+        maturity_status=maturity_status,
+        revocation_reason=revocation_reason,
+        relevance_score=relevance_score,
+    )
     registry = _Registry(_SourceReader(snapshot), executor)
     monkeypatch.setattr(interfaces, "get_kg_registry", lambda: registry)
     monkeypatch.setattr(reconciler, "get_kg_registry", lambda: registry)
@@ -158,6 +184,42 @@ def test_task_source_row_matches_card_graph_reference_aliases(
             ),
         ),
         graph_ref=graph_ref,
+    )
+
+    assert detect_board_graph_stale("board-card5-parity") == []
+
+
+def test_deleted_working_source_without_tombstone_is_not_reported_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_registry(
+        monkeypatch,
+        snapshot=BoardSourceSnapshot(),
+        graph_ref="spec:deleted-spec",
+        graph_layer="working",
+        maturity_status="working_immature",
+        revocation_reason=None,
+        relevance_score=0.75,
+    )
+
+    stale = detect_board_graph_stale("board-card5-parity")
+
+    assert len(stale) == 1
+    assert stale[0]["reason_code"] == "source_deleted_tombstone_missing"
+    assert stale[0]["current_graph_layer"] == "working"
+
+
+def test_deleted_working_source_with_tombstone_is_converged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_registry(
+        monkeypatch,
+        snapshot=BoardSourceSnapshot(),
+        graph_ref="spec:deleted-spec",
+        graph_layer="working",
+        maturity_status="working_stale",
+        revocation_reason="source_deleted",
+        relevance_score=0.0,
     )
 
     assert detect_board_graph_stale("board-card5-parity") == []

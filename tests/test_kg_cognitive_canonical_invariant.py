@@ -205,9 +205,21 @@ async def test_cognitive_working_candidate_rejected_without_mutating_session(
 
 @pytest.mark.asyncio
 async def test_accepted_cognitive_candidate_persists_canonical_eligible(
-    board_id, agent_id, db_factory, board_handle,
+    board_id,
+    agent_id,
+    db_factory,
+    board_handle,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     configure_real_graph_test_kg_registry()
+
+    async def _healthy(*_args, **_kwargs) -> str:
+        return "healthy"
+
+    monkeypatch.setattr(
+        "okto_pulse.core.kg.primitives._resolve_commit_kg_health_state",
+        _healthy,
+    )
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
     spec_ref = f"spec:{spec_id}"
     _root_id, existing_decision_id = await _seed_spec_root_and_decision_async(
@@ -372,8 +384,16 @@ def _register_add_node_tool(agent_id: str):
     async def _get_agent():
         return _FakeAgent(agent_id)
 
+    async def _get_board_agent(_board_id: str):
+        return await _get_agent()
+
     mcp = _MCPRegistryDouble()
-    register_kg_tools(mcp, get_agent=_get_agent, get_uow=lambda: _NullDb())
+    register_kg_tools(
+        mcp,
+        get_agent=_get_agent,
+        get_uow=lambda: _NullDb(),
+        get_board_agent=_get_board_agent,
+    )
     return mcp.tools["okto_pulse_kg_add_node_candidate"]
 
 

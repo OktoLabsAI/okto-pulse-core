@@ -749,6 +749,15 @@ def _card_status_value(card: Any) -> str:
     return getattr(status_attr, "value", str(status_attr) if status_attr is not None else "")
 
 
+def _card_type_value(card: Any) -> str:
+    card_type_attr = getattr(card, "card_type", None)
+    return getattr(
+        card_type_attr,
+        "value",
+        str(card_type_attr) if card_type_attr is not None else "",
+    )
+
+
 def _card_coverage_counts(cards: list | None) -> dict[str, int]:
     raw_cards = list(cards or [])
     effective_cards = [
@@ -783,10 +792,11 @@ def spec_coverage_summary(
 
     Spec 233eaad3 (Analytics cancelled-card filter): aceita ``cards`` opcional
     (lista de Card) e exclui IDs de cards em status ``cancelled`` do cálculo
-    de linkage de TS/BR/Contract/TR/Decision via set difference. AC e FR
-    coverage permanecem inalterados (são estruturais via TS.linked_criteria
-    e BR.linked_requirements). Backward compat: cards=None mantém o
-    comportamento histórico bit-a-bit.
+    de linkage de TS/BR/Contract/TR/Decision via set difference. Para TS,
+    ``scenario_task_linkage`` espelha o gate e exige um card ``test`` efetivo
+    (não cancelado/arquivado). AC e FR coverage permanecem inalterados (são
+    estruturais via TS.linked_criteria e BR.linked_requirements). Backward
+    compat: cards=None mantém o comportamento histórico bit-a-bit.
     """
     acs = spec.acceptance_criteria or []
     frs = spec.functional_requirements or []
@@ -808,10 +818,13 @@ def spec_coverage_summary(
 
     card_counts = _card_coverage_counts(cards)
     cancelled_card_ids: set = set()
-    if cards:
+    effective_test_card_ids: set = set()
+    if cards is not None:
         for c in cards:
             if _card_status_value(c) == "cancelled" or getattr(c, "archived", False):
                 cancelled_card_ids.add(c.id)
+            elif _card_type_value(c) == "test":
+                effective_test_card_ids.add(c.id)
 
     covered_ac = set()
     for ts in _ts:
@@ -836,7 +849,14 @@ def spec_coverage_summary(
     ts_total = len(_ts)
     ts_linked = sum(
         1 for ts in _ts
-        if (set(ts.get("linked_task_ids") or []) - cancelled_card_ids)
+        if (
+            bool(set(ts.get("linked_task_ids") or []))
+            if cards is None
+            else bool(
+                set(ts.get("linked_task_ids") or [])
+                & effective_test_card_ids
+            )
+        )
     )
 
     br_total = len(_brs)

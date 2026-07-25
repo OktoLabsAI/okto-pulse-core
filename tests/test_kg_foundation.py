@@ -194,6 +194,7 @@ class TestBootstrapSchema:
             "0.3.9",
             "0.3.10",
             "0.3.11",
+            "0.3.12",
         }
 
     def test_implements_accepts_requirement_and_constraint_pairs(self):
@@ -574,11 +575,12 @@ class TestReconciliationRules:
         h = reconcile_candidate(cand, nothing_changed=False, existing_matches=[match])
         assert h.operation == ReconciliationOperation.SUPERSEDE
 
-    def test_update_by_stable_id(self):
+    def test_stable_id_selects_decision_lineage_without_overwriting_history(self):
         cand = NodeCandidate(
             candidate_id="c1",
             node_type=KGNodeType.DECISION,
             title="X",
+            content="new assertion",
             source_artifact_ref="orn:spec:x",
             source_confidence=0.9,
         )
@@ -587,11 +589,69 @@ class TestReconciliationRules:
             node_type="Decision",
             stable_id="orn:spec:x",
             title="Old",
+            content="old assertion",
             similarity=0.1,
         )
         h = reconcile_candidate(cand, nothing_changed=False, existing_matches=[match])
-        assert h.operation == ReconciliationOperation.UPDATE
+        assert h.operation == ReconciliationOperation.SUPERSEDE
         assert h.target_node_id == "kg:d3"
+        assert h.confidence == 0.1
+
+    def test_stable_id_allows_semantically_identical_decision_reattestation(self):
+        cand = NodeCandidate(
+            candidate_id="c1",
+            node_type=KGNodeType.DECISION,
+            title="Keep immutable history",
+            content="Same assertion",
+            context="Same context",
+            justification="Same reason",
+            source_artifact_ref="orn:spec:x",
+            source_confidence=0.9,
+        )
+        match = ExistingNodeSummary(
+            graph_node_id="kg:d3",
+            node_type="Decision",
+            stable_id="orn:spec:x",
+            title="Keep immutable history",
+            content="Same assertion",
+            context="Same context",
+            justification="Same reason",
+            similarity=0.0,
+        )
+
+        hint = reconcile_candidate(
+            cand,
+            nothing_changed=False,
+            existing_matches=[match],
+        )
+
+        assert hint.operation == ReconciliationOperation.UPDATE
+        assert hint.confidence == 0.9
+
+    def test_high_similarity_cannot_hide_decision_semantic_change(self):
+        cand = NodeCandidate(
+            candidate_id="c1",
+            node_type=KGNodeType.DECISION,
+            title="Use queue",
+            content="Choose RabbitMQ",
+            source_confidence=0.9,
+        )
+        match = ExistingNodeSummary(
+            graph_node_id="kg:d4",
+            node_type="Decision",
+            stable_id=None,
+            title="Use queue",
+            content="Choose Kafka",
+            similarity=0.99,
+        )
+
+        hint = reconcile_candidate(
+            cand,
+            nothing_changed=False,
+            existing_matches=[match],
+        )
+
+        assert hint.operation == ReconciliationOperation.SUPERSEDE
 
     def test_reconcile_session_batch(self):
         cands = {

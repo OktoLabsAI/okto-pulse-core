@@ -50,7 +50,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 imp1 agent"
-        self.permissions = set()
+        self.permissions = {"board:read"}
 
 
 @pytest.fixture(autouse=True)

@@ -521,14 +521,38 @@ class KGService:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         try:
-            await _run_graph_io(
-                _flush_to_graph,
-                board_id,
-                node_type,
-                node_id,
-                delta,
-                now_iso,
+            from okto_pulse.core.kg.guarded_write import (
+                GuardedWriteError,
+                guarded_board_write,
             )
+
+            with guarded_board_write(
+                board_id,
+                operation="query_hit_flush",
+                owner_id=f"kg-hit-counter:{node_id}",
+                mutation_ref=f"query-hit:{node_type}:{node_id}",
+            ) as write_lease:
+                try:
+                    await _run_graph_io(
+                        _flush_to_graph,
+                        board_id,
+                        node_type,
+                        node_id,
+                        delta,
+                        now_iso,
+                    )
+                finally:
+                    # The SET can auto-commit before materialization/close
+                    # raises. Always checkpoint a possible write before the
+                    # error path may reset the in-memory counter. Lifecycle
+                    # adapters are synchronous, so keep them off the event
+                    # loop alongside the graph statement.
+                    await _run_graph_io(write_lease.ensure_durable)
+        except GuardedWriteError:
+            # Ownership/durability failure is retryable and must remain
+            # visible; silently draining the cache would acknowledge a write
+            # whose persistence is unknown.
+            raise
         except Exception as exc:
             logger.error(
                 "kg.scoring.hit_flush_failed board=%s node=%s delta=%d err=%s",
@@ -934,6 +958,11 @@ class KGService:
                 "source_confidence": r[4],
                 "relevance_score": r[5] if r[5] is not None else 0.5,
                 "superseded_by": r[6],
+                # The decision-history surface is a provenance trace.  Keep
+                # backward compatibility with third-party stores that still
+                # emit the legacy seven-column row while projecting the
+                # canonical source ref whenever the store provides it.
+                "source_artifact_ref": r[7] if len(r) > 7 else None,
             }
             for r in merged
         ]

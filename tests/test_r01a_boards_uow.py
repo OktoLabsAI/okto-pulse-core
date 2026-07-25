@@ -75,8 +75,8 @@ def client(tmp_path):
     # erasure/verified-absence contract (nothing relaxed); the real graph providers
     # stay in place for the per-board graph purge. Bootstrap it so its global graph
     # "exists": the erasure cascade issues cypher DELETEs through ``execute()``, which
-    # raises ``global_graph_absent`` on an un-bootstrapped graph; erase_storage_for_privacy
-    # then flips ``exists`` back to False (the post-delete assertion).
+    # raises ``global_graph_absent`` on an un-bootstrapped graph. Board-scoped privacy
+    # erasure removes the target projection while preserving the shared global runtime.
     global_discovery_runtime = InMemoryGlobalDiscoveryRuntime()
     global_discovery_runtime.bootstrap()
     configure_test_kg_registry(global_discovery_runtime=global_discovery_runtime)
@@ -234,7 +234,9 @@ async def test_delete_board_204_then_404(client) -> None:
     board_id = await _seed_board()
     resp = client.delete(f"{PREFIX}/{board_id}")
     assert resp.status_code == 204, resp.text
-    assert get_kg_registry().require_global_discovery_runtime().state().exists is False
+    global_runtime = get_kg_registry().require_global_discovery_runtime()
+    assert global_runtime.state().exists is True
+    assert global_runtime.purged_reasons == ["board_right_to_erasure"]
     gone = client.delete(f"{PREFIX}/{board_id}")
     assert gone.status_code == 404
     assert client.get(f"{PREFIX}/{board_id}").status_code == 404

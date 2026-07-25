@@ -177,22 +177,32 @@ class BugWorkflowRemediationMessageBuilder:
             BugWorkflowHotfixLaneStatus.NOT_APPLICABLE
         ),
     ) -> BugWorkflowRemediationMessage:
+        eligible_count = max(0, int(eligible_scenarios_count))
+        if eligible_count == 0:
+            # A missing test task is only remediable through Path A when the
+            # canonical lineage resolver found a scenario that can actually be
+            # reused.  Routing an empty eligible set to "create test card"
+            # creates an orphan artifact that the deep gate rejects on retry.
+            return self._semantic_gap_message(
+                reason_code="missing_regression_test_task",
+                eligible_count=0,
+            )
+
         return BugWorkflowRemediationMessage(
             reason_code="missing_regression_test_task",
             remediation_path=BugWorkflowRemediationPath.PATH_A_REUSE_SCENARIO,
             next_action=BugWorkflowNextAction.CREATE_REGRESSION_TEST_CARD,
             semantic_gap_required=False,
-            eligible_scenarios_count=max(0, int(eligible_scenarios_count)),
+            eligible_scenarios_count=eligible_count,
             hotfix_lane_status=hotfix_lane_status,
             message=(
                 "Bug card requires at least one linked regression test card "
                 "before it can move to in_progress."
             ),
             detail=(
-                "Use Path A first: create a fresh test card that references an "
+                "Use Path A: create a fresh test card that references an "
                 "eligible existing scenario from the bug spec, link it to this "
-                "bug, then retry the move. If no eligible scenario exists, treat "
-                "the bug as a semantic gap and use Path B."
+                "bug, then retry the move."
             ),
             actions=(
                 BugWorkflowRemediationAction(

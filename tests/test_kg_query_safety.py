@@ -10,6 +10,7 @@ Covers the spec test scenarios at the component level:
 from __future__ import annotations
 
 import json as _json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -308,6 +309,10 @@ async def _stub_get_agent():
     return _StubAgent()
 
 
+async def _stub_get_board_agent(_board_id: str):
+    return SimpleNamespace(agent_id=_StubAgent.id, permissions=None)
+
+
 def _fresh_mcp(name: str):
     from okto_pulse.core.mcp.catalog import CoreMcpCatalog
 
@@ -331,7 +336,11 @@ async def test_natural_handler_rejects_oversize_before_executor():
         patch.object(kpt, "execute_natural_query", _spy_execute),
         patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent)
+        kpt.register_kg_power_tools(
+            mcp,
+            get_agent=_stub_get_agent,
+            get_board_agent=_stub_get_board_agent,
+        )
         tool = await mcp.get_tool("okto_pulse_kg_query_natural")
         raw = await tool.fn(board_id="b1", nl_query="x" * 5000)
 
@@ -359,7 +368,11 @@ async def test_natural_handler_runs_executor_for_normal_query():
         patch.object(kpt, "execute_natural_query", _spy_execute),
         patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent)
+        kpt.register_kg_power_tools(
+            mcp,
+            get_agent=_stub_get_agent,
+            get_board_agent=_stub_get_board_agent,
+        )
         tool = await mcp.get_tool("okto_pulse_kg_query_natural")
         raw = await tool.fn(board_id="b1", nl_query="which decisions touch caching?")
 
@@ -397,7 +410,11 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
         patch.object(kpt, "execute_cypher_read_only", _spy_cypher),
         patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent)
+        kpt.register_kg_power_tools(
+            mcp,
+            get_agent=_stub_get_agent,
+            get_board_agent=_stub_get_board_agent,
+        )
         tool = await mcp.get_tool("okto_pulse_kg_query_cypher")
         raw = await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n.embedding")
 
@@ -425,7 +442,11 @@ async def test_cypher_handler_rejects_above_hard_cap():
         patch.object(kpt, "execute_cypher_read_only", _spy_cypher),
         patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent)
+        kpt.register_kg_power_tools(
+            mcp,
+            get_agent=_stub_get_agent,
+            get_board_agent=_stub_get_board_agent,
+        )
         tool = await mcp.get_tool("okto_pulse_kg_query_cypher")
         raw = await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n", max_rows=5000)
 

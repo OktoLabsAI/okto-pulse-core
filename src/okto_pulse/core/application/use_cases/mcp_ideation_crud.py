@@ -25,6 +25,12 @@ from okto_pulse.core.application.use_cases.base import (
     EntityNotFoundError,
     commit,
 )
+from okto_pulse.core.application.history_pagination import (
+    history_page_metadata,
+    validate_history_window,
+    validate_snapshot_version,
+)
+from okto_pulse.core.application.ideation_scope import merge_scope_assessment
 
 
 def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
@@ -207,10 +213,10 @@ class McpDeleteIdeationUseCase:
 class McpGetIdeationSnapshotCommand:
     __slots__ = ("ideation_id", "board_id", "version")
 
-    def __init__(self, ideation_id: str, board_id: str, version: int) -> None:
+    def __init__(self, ideation_id: str, board_id: str, version: object) -> None:
         self.ideation_id = ideation_id
         self.board_id = board_id
-        self.version = version
+        self.version = validate_snapshot_version(version)
 
 
 class McpGetIdeationSnapshotResult:
@@ -238,19 +244,50 @@ class McpGetIdeationSnapshotUseCase:
 
 
 class McpGetIdeationHistoryCommand:
-    __slots__ = ("ideation_id", "board_id", "limit")
+    __slots__ = ("ideation_id", "board_id", "limit", "offset")
 
-    def __init__(self, ideation_id: str, board_id: str, limit: int) -> None:
+    def __init__(
+        self,
+        ideation_id: str,
+        board_id: str,
+        limit: object = 30,
+        offset: object = 0,
+    ) -> None:
+        window = validate_history_window(limit, offset)
         self.ideation_id = ideation_id
         self.board_id = board_id
-        self.limit = limit
+        self.limit = window.limit
+        self.offset = window.offset
 
 
 class McpGetIdeationHistoryResult:
-    __slots__ = ("entries",)
+    __slots__ = (
+        "entries",
+        "total",
+        "has_more",
+        "next_offset",
+        "truncated",
+    )
 
-    def __init__(self, entries: Any) -> None:
+    def __init__(
+        self,
+        entries: Any,
+        *,
+        total: int | None = None,
+        limit: int = 30,
+        offset: int = 0,
+    ) -> None:
         self.entries = entries
+        exact_total = len(entries) if total is None else total
+        metadata = history_page_metadata(
+            total=exact_total,
+            returned=len(entries),
+            window=validate_history_window(limit, offset),
+        )
+        self.total = metadata.total
+        self.has_more = metadata.has_more
+        self.next_offset = metadata.next_offset
+        self.truncated = metadata.truncated
 
 
 class McpGetIdeationHistoryUseCase:
@@ -265,9 +302,17 @@ class McpGetIdeationHistoryUseCase:
             raise EntityNotFoundError("ideation", command.ideation_id)
 
         entries = await service.list_history(
-            command.ideation_id, command.limit
+            command.ideation_id,
+            limit=command.limit,
+            offset=command.offset,
         )
-        return McpGetIdeationHistoryResult(entries)
+        total = await service.count_history(command.ideation_id)
+        return McpGetIdeationHistoryResult(
+            entries,
+            total=total,
+            limit=command.limit,
+            offset=command.offset,
+        )
 
 
 # --- knowledge (board-scope via IdeationService + KB membership check) --------
@@ -464,7 +509,7 @@ class McpAnswerIdeationQuestionCommand:
 
 
 class McpAnswerIdeationQuestionResult:
-    __slots__ = ("qa", "qa_not_found", "self_answer_error")
+    __slots__ = ("qa", "qa_not_found", "self_answer_error", "selection_error")
 
     def __init__(
         self,
@@ -472,10 +517,12 @@ class McpAnswerIdeationQuestionResult:
         *,
         qa_not_found: bool = False,
         self_answer_error: Any = None,
+        selection_error: Any = None,
     ) -> None:
         self.qa = qa
         self.qa_not_found = qa_not_found
         self.self_answer_error = self_answer_error
+        self.selection_error = selection_error
 
 
 class McpAnswerIdeationQuestionUseCase:
@@ -487,7 +534,10 @@ class McpAnswerIdeationQuestionUseCase:
     async def execute(
         self, command: McpAnswerIdeationQuestionCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpAnswerIdeationQuestionResult:
-        from okto_pulse.core.services import QASelfAnsweringNotAllowedError
+        from okto_pulse.core.services import (
+            QASelectionError,
+            QASelfAnsweringNotAllowedError,
+        )
 
         service = uow.services.ideation_qa
         qa_item = await service.get_question(command.qa_id)
@@ -508,6 +558,8 @@ class McpAnswerIdeationQuestionUseCase:
         except QASelfAnsweringNotAllowedError as exc:
             await commit(uow)
             return McpAnswerIdeationQuestionResult(None, self_answer_error=exc)
+        except QASelectionError as exc:
+            return McpAnswerIdeationQuestionResult(None, selection_error=exc)
         if not qa:
             return McpAnswerIdeationQuestionResult(None, qa_not_found=True)
         await uow.services.boards._log_activity(
@@ -612,18 +664,23 @@ class McpEvaluateIdeationUseCase:
         if not _in_board_scope(ideation, command.board_id, actor):
             raise EntityNotFoundError("ideation", command.ideation_id)
 
+        previous_scope = dict(ideation.scope_assessment or {})
         if command.scope:
-            existing_scope = ideation.scope_assessment or {}
-            existing_scope.update(command.scope)
-            ideation.scope_assessment = existing_scope
-            mark_mutable_field_modified(ideation, "scope_assessment")
-            # IdeationService.evaluate_complexity performs a fresh read. Expose the
-            # detached ApplicationRecord mutation inside the current transaction so
-            # that read classifies the submitted scores, not the previous DB state.
-            await uow.synchronize()
+            merged_scope = merge_scope_assessment(
+                previous_scope, command.scope
+            )
+            if merged_scope != previous_scope:
+                ideation.scope_assessment = merged_scope
+                mark_mutable_field_modified(ideation, "scope_assessment")
+                # IdeationService.evaluate_complexity performs a fresh read.
+                # Expose the detached-record mutation inside this transaction so
+                # that read classifies submitted scores, not previous DB state.
+                await uow.synchronize()
 
         ideation = await service.evaluate_complexity(
-            command.ideation_id, actor.actor_id
+            command.ideation_id,
+            actor.actor_id,
+            previous_scope_assessment=previous_scope,
         )
         if not ideation:
             raise EntityNotFoundError("ideation", command.ideation_id)

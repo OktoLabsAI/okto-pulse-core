@@ -18,7 +18,7 @@ from okto_pulse.core.mcp.outcome import (
         ({"error": "API key authentication required"}, "authentication_required", False),
         ({"error": "Invalid status; value is required"}, "validation_failed", False),
         ({"error": "Card not found"}, "not_found", False),
-        ({"error": "Spec is locked"}, "resource_locked", True),
+        ({"error": "Spec is locked"}, "spec_locked", True),
         ({"error": "Validation gate blocked"}, "gate_blocked", False),
         ({"error": "Expected version conflict"}, "version_conflict", True),
     ],

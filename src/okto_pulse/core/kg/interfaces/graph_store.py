@@ -62,6 +62,15 @@ class SemanticGraphStore(Protocol):
         graph_layer: str = "all",
     ) -> list[dict]: ...
 
+    def find_active_by_source_ref(
+        self,
+        board_id: str,
+        node_type: str,
+        source_artifact_ref: str,
+    ) -> dict[str, Any] | None:
+        """Return the newest active assertion for an exact lineage ref."""
+        ...
+
     def get_constraint_detail(
         self, board_id: str, constraint_id: str
     ) -> tuple[list[list], list[list], list[list]]: ...

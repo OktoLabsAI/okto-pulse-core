@@ -68,6 +68,12 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     GraphStatementResult,
     GraphTransaction,
     GraphTransactionScope,
+    SPEC_LINEAGE_RULE_PREFIXES,
+    SpecLineageEdgeSnapshot,
+    SpecLineageParentIntent,
+    SpecLineageReconciliationError,
+    SpecLineageReconciliationReceipt,
+    is_spec_lineage_rule_id,
 )
 from okto_pulse.core.kg.interfaces.global_discovery_runtime import (
     GLOBAL_DISCOVERY_WRITER_ARTIFACT_ID,
@@ -160,6 +166,11 @@ __all__ = [
     "GraphStatementResult",
     "GraphTransaction",
     "GraphTransactionScope",
+    "SPEC_LINEAGE_RULE_PREFIXES",
+    "SpecLineageEdgeSnapshot",
+    "SpecLineageParentIntent",
+    "SpecLineageReconciliationError",
+    "SpecLineageReconciliationReceipt",
     "GraphUnavailable",
     "GlobalDiscoveryRuntime",
     "GLOBAL_DISCOVERY_WRITER_ARTIFACT_ID",
@@ -206,5 +217,6 @@ __all__ = [
     "WalRecoveryReport",
     "configure_kg_registry",
     "get_kg_registry",
+    "is_spec_lineage_rule_id",
     "reset_registry_for_tests",
 ]

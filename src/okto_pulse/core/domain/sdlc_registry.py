@@ -109,15 +109,7 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
             IdeationStatus,
             {
                 "draft": [
-                    _edge(
-                        "review",
-                        gate="refinement_scope",
-                        preconditions=("in_scope_present",),
-                        reason_codes=(
-                            "refinement_scope_required",
-                            "transition_not_allowed",
-                        ),
-                    ),
+                    _edge("review"),
                     _edge("cancelled", **_CANCEL),
                 ],
                 "review": [
@@ -138,13 +130,11 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         preconditions=(
                             "ambiguity_gate_ready",
                             "resource_gate_ready",
-                            "cognitive_gate_ready",
                         ),
                         capabilities=("complete",),
                         reason_codes=(
                             "ambiguity_gate_blocked",
                             "resource_gate_blocked",
-                            "cognitive_gate_blocked",
                             "transition_not_allowed",
                         ),
                     ),
@@ -177,7 +167,18 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
             "refinement",
             RefinementStatus,
             {
-                "draft": [_edge("review"), _edge("cancelled", **_CANCEL)],
+                "draft": [
+                    _edge(
+                        "review",
+                        gate="refinement_scope",
+                        preconditions=("in_scope_present",),
+                        reason_codes=(
+                            "refinement_scope_required",
+                            "transition_not_allowed",
+                        ),
+                    ),
+                    _edge("cancelled", **_CANCEL),
+                ],
                 "review": [
                     _edge("draft"),
                     _edge("approved"),

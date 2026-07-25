@@ -426,6 +426,8 @@ SURFACES: dict[str, SurfaceSpec] = {
             "labels",
             "created_at",
             "updated_at",
+            "archived",
+            "pre_archive_status",
         ),
     ),
     "mcp_ideation_list": SurfaceSpec(
@@ -446,6 +448,8 @@ SURFACES: dict[str, SurfaceSpec] = {
             "labels",
             "created_at",
             "updated_at",
+            "archived",
+            "pre_archive_status",
         ),
     ),
     "mcp_refinement_list": SurfaceSpec(
@@ -467,6 +471,8 @@ SURFACES: dict[str, SurfaceSpec] = {
             "labels",
             "created_at",
             "updated_at",
+            "archived",
+            "pre_archive_status",
         ),
     ),
     "mcp_sprint_list": SurfaceSpec(
@@ -487,6 +493,8 @@ SURFACES: dict[str, SurfaceSpec] = {
             "test_scenario_ids",
             "business_rule_ids",
             "labels",
+            "archived",
+            "pre_archive_status",
         ),
     ),
     "mcp_story_list": SurfaceSpec(

@@ -15,10 +15,20 @@ from __future__ import annotations
 
 import json
 import logging
+from functools import partial
 from typing import Any
 
 from pydantic import ValidationError
 
+from okto_pulse.core.kg.guarded_write import (
+    GuardedWriteError,
+    guarded_board_write,
+)
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from okto_pulse.core.mcp.kg_authorization import (
+    kg_permission_error,
+    principal_id,
+)
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     abort_deferred_consolidation,
@@ -85,6 +95,21 @@ def _ok(response) -> str:
     return response.model_dump_json()
 
 
+def _validation_message(error: ValidationError) -> str:
+    """Return a stable, input-safe summary of a Pydantic validation failure."""
+
+    issues: list[str] = []
+    for item in error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    ):
+        location = ".".join(str(part) for part in item.get("loc", ())) or "request"
+        message = str(item.get("msg") or "invalid value")
+        issues.append(f"{location}: {message}")
+    return "validation failed: " + "; ".join(issues)
+
+
 logger = logging.getLogger("okto_pulse.mcp.kg_tools")
 
 
@@ -115,7 +140,13 @@ def _maybe_record_r7_cognitive_hold(
         )
 
 
-def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
+def register_kg_tools(
+    mcp,
+    *,
+    get_agent,
+    get_uow,
+    get_board_agent=None,
+) -> None:
     """Register the 7 KG primitive tools on the given command catalog.
 
     Args:
@@ -125,7 +156,83 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         get_uow: callable returning the MCP UnitOfWorkFactory (spec R01A MCP-FU1);
                  the consolidation write tools obtain a PulseUnitOfWork from it
                  instead of opening a raw AsyncSession.
+        get_board_agent: async callable returning a board-scoped authenticated
+                         context, or None when authentication/ACL resolution
+                         fails. Omitting the callback fails closed.
     """
+
+    async def _authorize_board(
+        agent,
+        board_id: str,
+        required_permission: str,
+    ):
+        if get_board_agent is None:
+            return None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        try:
+            board_agent = await get_board_agent(board_id)
+        except Exception:
+            logger.warning(
+                "kg.mcp.board_acl_resolution_failed board=%s",
+                board_id,
+                exc_info=True,
+            )
+            return None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if board_agent is None:
+            return None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if principal_id(agent) != principal_id(board_agent):
+            return None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        permission_error = kg_permission_error(
+            board_agent,
+            required_permission,
+        )
+        if permission_error is not None:
+            return None, _err(
+                "permission_denied",
+                permission_error,
+                required_permission=required_permission,
+            )
+        return board_agent, None
+
+    async def _authorized_session(
+        session_id: str,
+        agent,
+        *,
+        allow_pending_commit: bool = False,
+        required_permission: str,
+    ):
+        try:
+            session = await _require_open_session(
+                session_id,
+                agent.id,
+                allow_pending_commit=allow_pending_commit,
+            )
+        except KGPrimitiveError as exc:
+            return None, _err(
+                exc.code,
+                exc.message,
+                session_id=exc.session_id,
+                details=exc.details,
+            )
+        _board_agent, access_error = await _authorize_board(
+            agent,
+            session.board_id,
+            required_permission,
+        )
+        if access_error is not None:
+            return None, access_error
+        return session, None
 
     @mcp.tool()
     async def okto_pulse_kg_begin_consolidation(
@@ -147,6 +254,13 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         agent = await get_agent()
         if agent is None:
             return _err("unauthorized", "authentication required")
+        _board_agent, access_error = await _authorize_board(
+            agent,
+            board_id,
+            "kg.session.begin",
+        )
+        if access_error is not None:
+            return access_error
         try:
             req = BeginConsolidationRequest(
                 board_id=board_id,
@@ -156,7 +270,7 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
                 deterministic_candidates=deterministic_candidates or [],
             )
         except ValidationError as e:
-            return _err("invalid_candidate", str(e))
+            return _err("invalid_candidate", _validation_message(e))
         # Spec R01A MCP-FU1 (MCP strangler): route through the transport-free use
         # case + injected MCP UnitOfWorkFactory (get_uow) instead of a raw get_db()
         # session. The commit primitive's internal persistence runs on the same
@@ -194,7 +308,14 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         try:
             req = AddNodeCandidateRequest(session_id=session_id, candidate=candidate)
         except ValidationError as e:
-            return _err("invalid_candidate", str(e))
+            return _err("invalid_candidate", _validation_message(e))
+        _session, access_error = await _authorized_session(
+            req.session_id,
+            agent,
+            required_permission="kg.session.add_node",
+        )
+        if access_error is not None:
+            return access_error
         try:
             resp = await add_node_candidate(req, agent_id=agent.id)
             return _ok(resp)
@@ -226,7 +347,14 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         try:
             req = AddEdgeCandidateRequest(session_id=session_id, candidate=candidate)
         except ValidationError as e:
-            return _err("invalid_candidate", str(e))
+            return _err("invalid_candidate", _validation_message(e))
+        _session, access_error = await _authorized_session(
+            req.session_id,
+            agent,
+            required_permission="kg.session.add_edge",
+        )
+        if access_error is not None:
+            return access_error
         try:
             resp = await add_edge_candidate(req, agent_id=agent.id)
             return _ok(resp)
@@ -256,7 +384,14 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
                 min_similarity=min_similarity,
             )
         except ValidationError as e:
-            return _err("invalid_candidate", str(e))
+            return _err("invalid_candidate", _validation_message(e))
+        _session, access_error = await _authorized_session(
+            req.session_id,
+            agent,
+            required_permission="kg.session.get_similar",
+        )
+        if access_error is not None:
+            return access_error
         try:
             resp = await get_similar_nodes(req, agent_id=agent.id)
             return _ok(resp)
@@ -278,7 +413,14 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         try:
             req = ProposeReconciliationRequest(session_id=session_id)
         except ValidationError as e:
-            return _err("invalid_candidate", str(e))
+            return _err("invalid_candidate", _validation_message(e))
+        _session, access_error = await _authorized_session(
+            req.session_id,
+            agent,
+            required_permission="kg.session.propose",
+        )
+        if access_error is not None:
+            return access_error
         # Spec R01A MCP-FU1 (MCP strangler): transport-free use case + injected MCP
         # UnitOfWorkFactory (get_uow) instead of a raw get_db() session.
         from okto_pulse.core.application.use_cases import (
@@ -319,26 +461,24 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
                 agent_overrides=agent_overrides or {},
             )
         except ValidationError as e:
-            return _err("invalid_candidate", str(e))
+            return _err("invalid_candidate", _validation_message(e))
         # Resolve the session before taking the commit lock so we can key the
         # lock on the correct board_id. _require_open_session also enforces
         # ownership — if it raises here the agent hears the same error they
         # would have heard from commit_consolidation directly.
-        try:
-            session = await _require_open_session(
-                req.session_id,
-                agent.id,
-                allow_pending_commit=True,
-            )
-        except KGPrimitiveError as e:
-            return _err(e.code, e.message, session_id=e.session_id,
-                        details=e.details)
+        session, access_error = await _authorized_session(
+            req.session_id,
+            agent,
+            allow_pending_commit=True,
+            required_permission="kg.session.commit",
+        )
+        if access_error is not None:
+            return access_error
+        assert session is not None
         # Spec R01A MCP-FU1 (MCP strangler): transport-free use case + injected MCP
-        # UnitOfWorkFactory (get_uow) instead of a raw get_db() session. The per-board
-        # commit lock + retry coordinator (serialises concurrent commits while the
-        # graph store holds an exclusive writer lock) runs inside the use case. The
-        # session ownership pre-check (_require_open_session above) and the R7
-        # cognitive-hold side effect on error are unchanged.
+        # UnitOfWorkFactory. The outer guarded boundary owns the real per-board
+        # writer fence and keeps it through graph durability, relational commit,
+        # finalization, or compensation.
         from okto_pulse.core.application.use_cases import (
             CommitConsolidationCommand,
             CommitConsolidationUseCase,
@@ -349,66 +489,127 @@ def register_kg_tools(mcp, *, get_agent, get_uow) -> None:
         try:
             release_after_rollback = False
             relational_commit_confirmed = False
-            try:
-                async with get_uow()(actor=actor) as uow:
-                    result = await CommitConsolidationUseCase().execute(
-                        CommitConsolidationCommand(req, board_id=session.board_id),
-                        actor=actor,
-                        uow=uow,
-                    )
+            with guarded_board_write(
+                session.board_id,
+                operation="mcp_commit_consolidation",
+                owner_id=str(agent.id),
+                mutation_ref=f"consolidation:{req.session_id}",
+            ) as write_lease:
+                try:
+                    async with get_uow()(actor=actor) as uow:
+                        try:
+                            result = await CommitConsolidationUseCase().execute(
+                                CommitConsolidationCommand(
+                                    req,
+                                    board_id=session.board_id,
+                                ),
+                                actor=actor,
+                                uow=uow,
+                            )
+                            # execute() returned with this caller's deferred
+                            # graph snapshot installed. Mark ownership before
+                            # durability: if that lifecycle fails, the catch
+                            # below must still compensate the graph while this
+                            # same board fence is held.
+                            release_after_rollback = True
+                        finally:
+                            # A primitive failure may follow an embedded
+                            # auto-commit and its compensation. Drain both
+                            # possibilities before this fence can be released.
+                            await run_blocking_graph_io(
+                                write_lease.ensure_durable,
+                                task_name=(
+                                    "core.kg.mcp_commit_graph_durability"
+                                ),
+                            )
+                        async def _commit_and_finalize() -> None:
+                            nonlocal relational_commit_confirmed
+                            write_lease.ensure_owned(
+                                failure_phase="before_relational_ack",
+                            )
+                            await uow.commit()
+                            relational_commit_confirmed = True
+                            await finalize_deferred_consolidation(
+                                req.session_id,
+                                agent_id=agent.id,
+                            )
+                            write_lease.ensure_owned(
+                                failure_phase="after_relational_ack",
+                            )
 
-                    async def _commit_and_finalize() -> None:
-                        nonlocal relational_commit_confirmed
-                        await uow.commit()
-                        relational_commit_confirmed = True
-                        await finalize_deferred_consolidation(
-                            req.session_id,
-                            agent_id=agent.id,
-                        )
-
-                    try:
                         await run_cancellation_atomic(
                             _commit_and_finalize(),
                             task_name="core.kg.mcp_commit_and_finalize",
                         )
-                    except BaseException:
-                        release_after_rollback = True
-                        raise
-            except BaseException:
-                # Only this caller's failed relational commit owns a deferred
-                # claim to release. Execute-time errors may belong to a
-                # competing caller and must never release another UOW's claim.
-                if release_after_rollback:
-                    try:
-                        async def _cleanup_deferred_commit() -> None:
-                            if relational_commit_confirmed:
-                                # Durability is already established: retry only
-                                # idempotent terminal cleanup. Releasing here
-                                # would permit conflicting INSERT replay.
-                                await finalize_deferred_consolidation(
-                                    req.session_id,
-                                    agent_id=agent.id,
-                                )
-                            else:
-                                # A client may never retry after this response.
-                                # Compensate graph auto-commits immediately.
-                                await abort_deferred_consolidation(
-                                    req.session_id,
-                                    agent_id=agent.id,
-                                )
+                except BaseException:
+                    # Only this caller's graph-applied deferred snapshot is
+                    # compensated. Execute-time contention never owns another
+                    # invocation's pending claim.
+                    if release_after_rollback:
+                        try:
 
-                        await run_cancellation_atomic(
-                            _cleanup_deferred_commit(),
-                            task_name="core.kg.mcp_deferred_cleanup",
-                        )
-                    except BaseException:
-                        logger.warning(
-                            "kg.deferred_commit.cleanup_failed session=%s",
-                            req.session_id,
-                            exc_info=True,
-                        )
-                raise
+                            async def _cleanup_deferred_commit() -> None:
+                                if relational_commit_confirmed:
+                                    # Relational durability is already
+                                    # established: retry only idempotent
+                                    # terminal cleanup.
+                                    await finalize_deferred_consolidation(
+                                        req.session_id,
+                                        agent_id=agent.id,
+                                    )
+                                else:
+                                    # A client may never retry after this
+                                    # response. Compensate graph auto-commits
+                                    # while the same writer fence is still held.
+                                    await abort_deferred_consolidation(
+                                        req.session_id,
+                                        agent_id=agent.id,
+                                    )
+
+                            await run_cancellation_atomic(
+                                _cleanup_deferred_commit(),
+                                task_name="core.kg.mcp_deferred_cleanup",
+                            )
+                            if not relational_commit_confirmed:
+                                # The compensation is itself a graph mutation;
+                                # best-effort durability must run under the same
+                                # fence without replacing the original error.
+                                try:
+                                    await run_blocking_graph_io(
+                                        partial(
+                                            write_lease.ensure_durable,
+                                            mutation_ref=(
+                                                "consolidation-abort:"
+                                                f"{req.session_id}"
+                                            ),
+                                        ),
+                                        task_name=(
+                                            "core.kg.mcp_abort_graph_durability"
+                                        ),
+                                    )
+                                except GuardedWriteError:
+                                    logger.warning(
+                                        "kg.deferred_commit.compensation_"
+                                        "lifecycle_failed session=%s",
+                                        req.session_id,
+                                        exc_info=True,
+                                    )
+                        except BaseException:
+                            logger.warning(
+                                "kg.deferred_commit.cleanup_failed session=%s",
+                                req.session_id,
+                                exc_info=True,
+                            )
+                    raise
             return _ok(result.resp)
+        except GuardedWriteError as e:
+            return _err(
+                e.code,
+                e.message,
+                session_id=req.session_id,
+                retryable=e.retryable,
+                details=e.details,
+            )
         except KGPrimitiveError as e:
             # R7: a working-only canonical Learning bug-derived commit is an
             # EXPECTED semantic hold — materialize the go-forward hold in the
@@ -458,6 +659,14 @@ offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
                 "board_id must be a non-empty string",
                 reason_code=CognitiveItemListReasonCode.MISSING_BOARD_ID.value,
             )
+
+        _board_agent, access_error = await _authorize_board(
+            agent,
+            board_id,
+            "board.read",
+        )
+        if access_error is not None:
+            return access_error
 
         if status_present and effective_status not in _VALID_LIST_STATUS_FILTERS:
             _emit_list_sample(
@@ -635,6 +844,13 @@ labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg.""
                 outcome=CognitiveItemUpdateOutcome.VALIDATION_ERROR.value,
                 reason_code=CognitiveItemUpdateReasonCode.MISSING_BOARD_ID.value,
             )
+        _board_agent, access_error = await _authorize_board(
+            agent,
+            board_id,
+            "kg.session.commit",
+        )
+        if access_error is not None:
+            return access_error
         if not isinstance(kg_generation_id, str) or not kg_generation_id:
             return _reject(
                 "missing_kg_generation_id",
@@ -866,7 +1082,14 @@ labelled). Full args/contract/invariants: okto-pulse://reference/tool-docs/kg.""
                 session_id=session_id, reason=reason or None
             )
         except ValidationError as e:
-            return _err("invalid_candidate", str(e))
+            return _err("invalid_candidate", _validation_message(e))
+        _session, access_error = await _authorized_session(
+            req.session_id,
+            agent,
+            required_permission="kg.session.abort",
+        )
+        if access_error is not None:
+            return access_error
         try:
             resp = await abort_consolidation(req, agent_id=agent.id)
             return _ok(resp)

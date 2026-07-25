@@ -99,7 +99,15 @@ def _register_tool(get_agent_impl: Callable[[], Any]) -> Callable[..., Any]:
     def _get_db() -> _NullDb:
         return _NullDb()
 
-    register_kg_tools(mcp, get_agent=get_agent_impl, get_uow=_get_db)
+    async def _get_board_agent(_board_id: str):
+        return await get_agent_impl()
+
+    register_kg_tools(
+        mcp,
+        get_agent=get_agent_impl,
+        get_uow=_get_db,
+        get_board_agent=_get_board_agent,
+    )
     return mcp.tools["okto_pulse_kg_list_cognitive_pending_items"], mcp.tools
 
 

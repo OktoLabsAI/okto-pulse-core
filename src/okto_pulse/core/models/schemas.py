@@ -2185,7 +2185,13 @@ class CardCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500, description="Titulo conciso do card (1-500 chars).")
     description: str | None = Field(None, description="Resumo do objetivo ou contexto do card.")
     details: str | None = Field(None, description="Descricao tecnica detalhada, markdown suportado.")
-    status: CardStatus = Field(CardStatus.NOT_STARTED, description="Status inicial do card no board.")
+    status: CardStatus = Field(
+        CardStatus.NOT_STARTED,
+        description=(
+            "Status inicial do card no board: somente not_started ou started. "
+            "Use move_card para avancar o ciclo de vida."
+        ),
+    )
     priority: CardPriority = Field(CardPriority.NONE, description="Prioridade do card: none, low, medium, high, very_high, critical.")
     assignee_id: str | None = Field(None, description="ID do agente ou usuario responsavel pelo card.")
     due_date: datetime | None = Field(None, description="Data limite para conclusao do card (ISO 8601).")
@@ -2232,7 +2238,13 @@ class CardUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo do card (opcional, vazio = sem mudanca).")
     description: str | None = Field(None, description="Nova descricao do card (opcional).")
     details: str | None = Field(None, description="Novos detalhes tecnicos do card (opcional).")
-    status: CardStatus | None = Field(None, description="Novo status do card (use move_card para transicoes com conclusao).")
+    status: CardStatus | None = Field(
+        None,
+        description=(
+            "Reservado para compatibilidade de leitura; update_card rejeita "
+            "alteracoes de status. Use move_card para toda transicao."
+        ),
+    )
     priority: CardPriority | None = Field(None, description="Nova prioridade: none, low, medium, high, very_high, critical.")
     position: int | None = Field(None, description="Nova posicao do card dentro da coluna (zero-indexed).")
     assignee_id: str | None = Field(None, description="Novo ID do responsavel pelo card.")

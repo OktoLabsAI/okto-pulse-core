@@ -9,14 +9,62 @@ from __future__ import annotations
 import json
 import logging
 
+from okto_pulse.core.mcp.kg_authorization import (
+    kg_permission_error,
+    principal_id,
+)
+
 logger = logging.getLogger(__name__)
 
 
-def _err(code: str, message: str) -> str:
-    return json.dumps({"error": code, "message": message})
+def _err(code: str, message: str, **extra) -> str:
+    return json.dumps({"error": code, "message": message, **extra})
 
 
-def register_kg_export_tools(mcp, *, get_agent) -> None:
+def register_kg_export_tools(
+    mcp,
+    *,
+    get_agent,
+    get_board_agent=None,
+) -> None:
+    async def _authorized_board_agent(board_id: str):
+        agent = await get_agent()
+        if agent is None or get_board_agent is None:
+            return None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        try:
+            board_agent = await get_board_agent(board_id)
+        except Exception:
+            logger.warning(
+                "kg.export.board_acl_resolution_failed board=%s",
+                board_id,
+                exc_info=True,
+            )
+            return None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if board_agent is None:
+            return None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if principal_id(board_agent) != principal_id(agent):
+            return None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        permission_error = kg_permission_error(board_agent, "board.read")
+        if permission_error is not None:
+            return None, _err(
+                "permission_denied",
+                permission_error,
+                required_permission="board.read",
+            )
+        return agent, None
+
     @mcp.tool()
     async def okto_pulse_kg_export_jsonld(
         board_id: str,
@@ -34,9 +82,9 @@ partial document. The graph is never modified."""
             export_board_jsonld,
         )
 
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        _agent, auth_error = await _authorized_board_agent(board_id)
+        if auth_error is not None:
+            return auth_error
         import asyncio
 
         try:

@@ -324,6 +324,7 @@ class McpCreateSpecUseCase:
             ResourceLineageResolutionError,
             ResourcePropagationError,
         )
+        from okto_pulse.core.services.main import SpecLineagePreflightError
 
         resolved_lineage = None
         ideation_id = getattr(command.spec_data, "ideation_id", None)
@@ -339,9 +340,15 @@ class McpCreateSpecUseCase:
             except ResourceLineageResolutionError as exc:
                 return McpCreateSpecResult(None, lineage_error=exc)
 
-        spec = await uow.services.specs.create_spec(
-            command.board_id, actor.actor_id, command.spec_data, skip_ownership_check=True
-        )
+        try:
+            spec = await uow.services.specs.create_spec(
+                command.board_id,
+                actor.actor_id,
+                command.spec_data,
+                skip_ownership_check=True,
+            )
+        except SpecLineagePreflightError as exc:
+            return McpCreateSpecResult(None, lineage_error=exc)
         if not spec:
             return McpCreateSpecResult(None)
 

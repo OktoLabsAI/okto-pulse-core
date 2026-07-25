@@ -34,6 +34,7 @@ def _write_core_wheel(path: Path, members: dict[str, str]) -> None:
             "Name: okto-pulse-core\n"
             "Version: 0.3.0\n"
             "Requires-Dist: pydantic>=2.5,<2.14\n"
+            "Requires-Dist: pydantic-core>=2.14.1,<3\n"
             "Requires-Dist: PyYAML>=6,<7\n",
         )
         for member, content in members.items():
@@ -52,6 +53,7 @@ def test_f14_contract_and_all_distribution_surfaces_are_conformant() -> None:
     assert report.ok, report.as_dict()
     assert report.observed[CORE_DISTRIBUTION]["manifest"] == (
         "pydantic",
+        "pydantic-core",
         "pyyaml",
     )
     assert report.observed[CORE_DISTRIBUTION]["manifest"] == report.observed[

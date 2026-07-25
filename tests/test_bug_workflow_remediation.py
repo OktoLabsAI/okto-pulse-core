@@ -210,15 +210,37 @@ def test_standard_sprint_message_is_card_type_neutral():
     )
 
 
-def test_missing_test_task_points_to_path_a_then_path_b_if_needed():
+def test_missing_test_task_with_zero_eligible_scenarios_routes_directly_to_path_b():
     message = BugWorkflowRemediationMessageBuilder().build_missing_regression_test_task()
     payload = message.to_dict()
 
     assert payload["reason_code"] == "missing_regression_test_task"
-    assert payload["next_action"] == BugWorkflowNextAction.CREATE_REGRESSION_TEST_CARD.value
-    assert payload["semantic_gap_required"] is False
-    assert "Path A" in payload["detail"]
+    assert payload["remediation_path"] == BugWorkflowRemediationPath.PATH_B_SEMANTIC_GAP.value
+    assert payload["next_action"] == BugWorkflowNextAction.ESCALATE_SEMANTIC_GAP.value
+    assert payload["semantic_gap_required"] is True
+    assert payload["eligible_scenarios_count"] == 0
+    assert "Path A" not in payload["detail"]
     assert "Path B" in payload["detail"]
+
+
+def test_missing_test_task_with_eligible_scenarios_routes_to_path_a():
+    payload = (
+        BugWorkflowRemediationMessageBuilder()
+        .build_missing_regression_test_task(eligible_scenarios_count=2)
+        .to_dict()
+    )
+
+    assert payload["reason_code"] == "missing_regression_test_task"
+    assert payload["remediation_path"] == (
+        BugWorkflowRemediationPath.PATH_A_REUSE_SCENARIO.value
+    )
+    assert payload["next_action"] == (
+        BugWorkflowNextAction.CREATE_REGRESSION_TEST_CARD.value
+    )
+    assert payload["semantic_gap_required"] is False
+    assert payload["eligible_scenarios_count"] == 2
+    assert "Path A" in payload["detail"]
+    assert "Path B" not in payload["detail"]
 
 
 def test_safe_labels_exclude_payload_text():

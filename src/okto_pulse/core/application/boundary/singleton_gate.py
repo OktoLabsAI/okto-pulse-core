@@ -32,6 +32,7 @@ BASELINE_SINGLETONS_WITHOUT_RUNTIME_LEDGER: frozenset[str] = frozenset()
 SAFE_CONTEXT_LOCAL_STATE: frozenset[str] = frozenset(
     {
         "okto_pulse/core/composition.py::_active_runtime_composition",
+        "okto_pulse/core/kg/guarded_write.py::_active_board_write_leases",
         "okto_pulse/core/kg/global_discovery_writer.py::_active_lease",
         "okto_pulse/core/kg/write_barrier.py::_active_guards",
         "okto_pulse/core/runtime_context.py::_active_runtime_values",

@@ -241,6 +241,15 @@ async def test_stale_sweep_page_is_globally_ordered_deduped_and_bounded(
     assert first.graph_rows_scanned == 3
     assert len(scope.queries) == 1
     assert all(params["scan_limit"] == 3 for _, params in scope.queries)
+    query, params = scope.queries[0]
+    assert "n.graph_layer = $working" in query
+    assert "coalesce(n.revocation_reason, '') <> $source_deleted" in query
+    assert "coalesce(n.title, '') <> ''" in query
+    assert "coalesce(n.content, '') <> ''" in query
+    assert params["working"] == "working"
+    assert params["working_stale"] == "working_stale"
+    assert params["source_deleted"] == "source_deleted"
+    assert params["deleted_relevance"] == 0.0
 
     second = await reconciler.enumerate_stale_sweep_page(
         "board-1", cursor=first.next_cursor, budget=2

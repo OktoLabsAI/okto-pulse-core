@@ -435,7 +435,12 @@ async def test_list_by_board_invalid_filter_key():
     )
     data = _parse(result)
     assert data.get("error_code") == "invalid_filter"
-    assert data.get("supported") == ["status", "labels", "assignee_id"]
+    assert data.get("supported") == [
+        "status",
+        "labels",
+        "assignee_id",
+        "include_archived",
+    ]
     assert data.get("invalid_keys") == ["invalid_key"]
     assert "invalid_key" not in data.get("supported", [])
 
@@ -1244,7 +1249,12 @@ async def test_list_by_board_invalid_filter_error_teaches_derivation_pending():
     )
     data = _parse(result)
     assert data.get("error_code") == "invalid_filter"
-    assert data.get("supported") == ["status", "labels", "derivation_pending"]
+    assert data.get("supported") == [
+        "status",
+        "labels",
+        "derivation_pending",
+        "include_archived",
+    ]
     assert data.get("invalid_keys") == ["pending_derivation"]
     # The human-readable message names the allowed keys too.
     assert "derivation_pending" in data.get("error", "")

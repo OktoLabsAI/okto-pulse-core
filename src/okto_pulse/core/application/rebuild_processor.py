@@ -442,15 +442,26 @@ class RebuildProcessor:
             if control_failure is not None:
                 return control_failure
             now = self._clock()
-            observation = self._effects.wait_for_queue_observation(
-                checkpoint.command,
-                after_sequence=checkpoint.last_sequence,
-                max_wait_seconds=min(
-                    self._plan.observation_wait_seconds,
-                    max(0.0, (tracker.hard_deadline - now).total_seconds()),
-                    max(0.0, (tracker.stall_deadline - now).total_seconds()),
-                ),
-            )
+            try:
+                observation = self._effects.wait_for_queue_observation(
+                    checkpoint.command,
+                    after_sequence=checkpoint.last_sequence,
+                    max_wait_seconds=min(
+                        self._plan.observation_wait_seconds,
+                        max(0.0, (tracker.hard_deadline - now).total_seconds()),
+                        max(0.0, (tracker.stall_deadline - now).total_seconds()),
+                    ),
+                )
+            except Exception as exc:
+                # Queue observation is an external effect just like snapshot,
+                # enqueue and restore. An adapter failure must produce a
+                # durable fail-closed outcome (and compensation), never escape
+                # the processor and discard the already-created receipts.
+                return self._fail(
+                    checkpoint,
+                    RebuildOutcomeCode.EFFECT_FAILED,
+                    f"queue_observation_failed:{type(exc).__name__}",
+                )
             if observation.sequence <= checkpoint.last_sequence:
                 raise ValueError("queue observation sequence must increase")
 
@@ -605,7 +616,11 @@ class RebuildProcessor:
         return self._finish(
             checkpoint.command,
             terminal_state,
-            code if receipt.ok else RebuildOutcomeCode.COMPENSATION_FAILED,
+            # Preserve the primary failure code/detail. The terminal state and
+            # compensation receipt carry the independent secondary failure;
+            # replacing the code here would mask actionable causes such as a
+            # cognitive-preservation integrity error.
+            code,
             promotion_allowed=False,
             compensation_actions=actions,
             receipts=tuple(checkpoint.receipts.values()),

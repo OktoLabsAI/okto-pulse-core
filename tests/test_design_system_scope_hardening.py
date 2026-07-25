@@ -236,10 +236,10 @@ async def test_mcp_design_system_id_operations_hide_cross_owner_board_and_missin
         assert updated["version"] == 2
         baseline = await _state(ids)
 
-        # The MCP get tool always carries a board context. Once that context
-        # has authenticated the actor, their own global catalog item remains
-        # readable even when it is not the board's effective link. Mutations
-        # below remain board/link scoped.
+        # The MCP tools always carry a board context. Once an accessible anchor
+        # board authenticates the actor, their own global catalog rows remain
+        # readable and writable even when they are not that board's effective
+        # link.
         owned_global = await _mcp_call(
             ids["owner_a"],
             "okto_pulse_get_design_system",
@@ -247,6 +247,36 @@ async def test_mcp_design_system_id_operations_hide_cross_owner_board_and_missin
             design_system_id=ids["global_a"],
         )
         assert owned_global["id"] == ids["global_a"]
+
+        owned_unlinked = await _mcp_call(
+            ids["owner_a"],
+            "okto_pulse_create_design_system",
+            board_id=ids["board_a"],
+            title="Owned unlinked global",
+            scope="global",
+        )
+        assert owned_unlinked["id"] not in {
+            link[0] for link in (await _state(ids))[1].values()
+        }
+        updated_unlinked = await _mcp_call(
+            ids["owner_a"],
+            "okto_pulse_update_design_system",
+            board_id=ids["board_a"],
+            design_system_id=owned_unlinked["id"],
+            title="Owned unlinked global updated",
+        )
+        assert updated_unlinked["title"] == "Owned unlinked global updated"
+        assert updated_unlinked["version"] == 2
+        deleted_unlinked = await _mcp_call(
+            ids["owner_a"],
+            "okto_pulse_delete_design_system",
+            board_id=ids["board_a"],
+            design_system_id=owned_unlinked["id"],
+        )
+        assert deleted_unlinked == {
+            "deleted": True,
+            "id": owned_unlinked["id"],
+        }
 
         probes = [
             await _mcp_call(
@@ -276,22 +306,9 @@ async def test_mcp_design_system_id_operations_hide_cross_owner_board_and_missin
             ),
             await _mcp_call(
                 ids["owner_a"],
-                "okto_pulse_update_design_system",
-                board_id=ids["board_b"],
-                design_system_id=ids["global_a"],
-                title="Cross-board write",
-            ),
-            await _mcp_call(
-                ids["owner_a"],
                 "okto_pulse_delete_design_system",
                 board_id=ids["board_a"],
                 design_system_id=ids["global_b"],
-            ),
-            await _mcp_call(
-                ids["owner_a"],
-                "okto_pulse_delete_design_system",
-                board_id=ids["board_b"],
-                design_system_id=ids["global_a"],
             ),
             await _mcp_call(
                 ids["owner_a"],
@@ -303,6 +320,39 @@ async def test_mcp_design_system_id_operations_hide_cross_owner_board_and_missin
         for probe in probes:
             _assert_mcp_not_found(probe)
         assert await _state(ids) == baseline
+
+        # Even an effective legacy/shared link does not authorize mutation of
+        # another owner's global catalog row.
+        async with get_session_factory()() as db:
+            await DesignSystemService(db).link_design_system_to_board(
+                ids["board_a"],
+                ids["global_b"],
+            )
+            await db.commit()
+        linked_foreign_baseline = await _state(ids)
+        for probe in (
+            await _mcp_call(
+                ids["owner_a"],
+                "okto_pulse_update_design_system",
+                board_id=ids["board_a"],
+                design_system_id=ids["global_b"],
+                title="Cross-owner linked write",
+            ),
+            await _mcp_call(
+                ids["owner_a"],
+                "okto_pulse_delete_design_system",
+                board_id=ids["board_a"],
+                design_system_id=ids["global_b"],
+            ),
+        ):
+            _assert_mcp_not_found(probe)
+        assert await _state(ids) == linked_foreign_baseline
+        async with get_session_factory()() as db:
+            await DesignSystemService(db).link_design_system_to_board(
+                ids["board_a"],
+                ids["global_a"],
+            )
+            await db.commit()
 
         deleted = await _mcp_call(
             ids["owner_a"],

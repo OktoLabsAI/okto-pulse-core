@@ -1,9 +1,10 @@
 """MCP tool wrappers for the 9 tier primario intent-based query tools.
 
-Registered via `register_kg_query_tools(mcp, get_agent, get_uow)` called from
-server.py. Each tool authenticates and resolves board ACL through the registered
-AuthContext factory. If the composition root did not provide AuthContext, the
-tool family fails closed instead of consulting a local relational ACL fallback.
+Registered via `register_kg_query_tools(...)` called from server.py. Each tool
+authenticates and resolves realm-scoped board membership through the registered
+AuthContext factory, then resolves the effective board PermissionSet before any
+KG provider access. If either authority is unavailable, the family fails closed
+instead of consulting a local relational ACL fallback.
 """
 
 from __future__ import annotations
@@ -43,6 +44,10 @@ from okto_pulse.core.kg.tool_schemas import (
     SimilarDecisionsResponse,
     SupersedenceChainResponse,
     SupersedenceEntry,
+)
+from okto_pulse.core.mcp.kg_authorization import (
+    kg_permission_error,
+    principal_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,13 +117,163 @@ async def _get_user_boards(get_agent=None, get_uow=None) -> tuple[Any, list[str]
     return None, []
 
 
-def register_kg_query_tools(mcp, *, get_agent, get_uow) -> None:
+def register_kg_query_tools(
+    mcp,
+    *,
+    get_agent,
+    get_uow,
+    get_board_agent=None,
+    get_global_agent=None,
+) -> None:
     """Register the 9 tier primario query tools on the command catalog.
 
     Spec R01A MCP-FU4: the shared ``_get_user_boards`` helper is injected with the
     MCP UnitOfWorkFactory (``get_uow``) instead of a raw ``get_db`` session source,
     so no tool in this family opens a relational session directly.
+
+    ``get_board_agent`` resolves the caller's effective PermissionSet for one
+    board. ``get_global_agent`` resolves non-board-scoped flags for the global
+    query surface. Omitting either required resolver fails closed: AuthContext
+    membership alone does not prove effective read/query permission.
     """
+
+    async def _resolve_board_permissions(
+        agent,
+        board_id: str,
+        required_permission: str,
+    ):
+        if get_board_agent is None:
+            return None, (
+                "unauthorized",
+                "authentication failed or board access denied",
+                None,
+            )
+        try:
+            board_agent = await get_board_agent(board_id)
+        except Exception:
+            logger.warning(
+                "kg.query.board_acl_resolution_failed board=%s",
+                board_id,
+                exc_info=True,
+            )
+            return None, (
+                "unauthorized",
+                "authentication failed or board access denied",
+                None,
+            )
+        if (
+            board_agent is None
+            or principal_id(agent) != principal_id(board_agent)
+        ):
+            return None, (
+                "unauthorized",
+                "authentication failed or board access denied",
+                None,
+            )
+        for permission in dict.fromkeys(
+            ("board.read", required_permission)
+        ):
+            permission_error = kg_permission_error(
+                board_agent,
+                permission,
+            )
+            if permission_error is not None:
+                return None, (
+                    "permission_denied",
+                    permission_error,
+                    permission,
+                )
+        return board_agent, None
+
+    async def _authorize_global_permission(
+        agent,
+        required_permission: str,
+    ) -> str | None:
+        if get_global_agent is None:
+            return _err(
+                "unauthorized",
+                "authentication failed",
+            )
+        try:
+            global_agent = await get_global_agent()
+        except Exception:
+            logger.warning(
+                "kg.query.global_acl_resolution_failed",
+                exc_info=True,
+            )
+            return _err("unauthorized", "authentication failed")
+        if (
+            global_agent is None
+            or principal_id(agent) != principal_id(global_agent)
+        ):
+            return _err("unauthorized", "authentication failed")
+        permission_error = kg_permission_error(
+            global_agent,
+            required_permission,
+        )
+        if permission_error is None:
+            return None
+        return _err(
+            "permission_denied",
+            permission_error,
+            required_permission=required_permission,
+        )
+
+    async def _authorize_explicit_board(
+        agent,
+        realm_boards: list[str],
+        board_id: str,
+        required_permission: str,
+    ) -> str | None:
+        # Preserve the AuthContext realm boundary before consulting the
+        # board-scoped permission resolver.
+        if board_id not in realm_boards:
+            return _err(
+                "permission_denied",
+                f"No access to board {board_id}",
+            )
+        _board_agent, failure = await _resolve_board_permissions(
+            agent,
+            board_id,
+            required_permission,
+        )
+        if failure is None:
+            return None
+        code, message, denied_permission = failure
+        extra = (
+            {"required_permission": denied_permission}
+            if code == "permission_denied"
+            else {}
+        )
+        return _err(code, message, **extra)
+
+    async def _effective_global_boards(
+        agent,
+        realm_boards: list[str],
+        required_permission: str,
+    ) -> tuple[list[str], str | None]:
+        if get_board_agent is None:
+            return [], _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        readable: list[str] = []
+        for candidate_board_id in realm_boards:
+            _board_agent, failure = await _resolve_board_permissions(
+                agent,
+                candidate_board_id,
+                required_permission,
+            )
+            if failure is None:
+                readable.append(candidate_board_id)
+                continue
+            code, message, _denied_permission = failure
+            if code == "permission_denied":
+                # Cross-board queries must not reveal or search boards whose
+                # effective board override revoked read access.
+                continue
+            return [], _err(code, message)
+        return readable, None
 
     @mcp.tool()
     async def okto_pulse_kg_get_decision_history(
@@ -139,6 +294,14 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_explicit_board(
+            agent,
+            boards,
+            board_id,
+            "kg.query.decision_history",
+        )
+        if auth_error is not None:
+            return auth_error
         logger.debug("[KG] kg_get_decision_history called: board_id=%s topic=%r", board_id, topic)
         svc = get_kg_service()
         try:
@@ -180,6 +343,14 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_explicit_board(
+            agent,
+            boards,
+            board_id,
+            "kg.query.related_context",
+        )
+        if auth_error is not None:
+            return auth_error
         logger.debug("[KG] kg_get_related_context called: board_id=%s artifact_id=%s", board_id, artifact_id)
         svc = get_kg_service()
         try:
@@ -231,6 +402,14 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_explicit_board(
+            agent,
+            boards,
+            board_id,
+            "kg.query.supersedence_chain",
+        )
+        if auth_error is not None:
+            return auth_error
         logger.debug("[KG] kg_get_supersedence_chain called: board_id=%s decision_id=%s", board_id, decision_id)
         svc = get_kg_service()
         try:
@@ -262,6 +441,14 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_explicit_board(
+            agent,
+            boards,
+            board_id,
+            "kg.query.contradictions",
+        )
+        if auth_error is not None:
+            return auth_error
         logger.debug("[KG] kg_find_contradictions called: board_id=%s node_id=%s", board_id, node_id)
         svc = get_kg_service()
         try:
@@ -294,6 +481,14 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_explicit_board(
+            agent,
+            boards,
+            board_id,
+            "kg.query.similar_decisions",
+        )
+        if auth_error is not None:
+            return auth_error
         logger.debug("[KG] kg_find_similar_decisions called: board_id=%s topic=%r", board_id, topic)
         svc = get_kg_service()
         try:
@@ -328,6 +523,14 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_explicit_board(
+            agent,
+            boards,
+            board_id,
+            "kg.query.constraint_explain",
+        )
+        if auth_error is not None:
+            return auth_error
         logger.debug("[KG] kg_explain_constraint called: board_id=%s constraint_id=%s", board_id, constraint_id)
         svc = get_kg_service()
         try:
@@ -355,6 +558,14 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_explicit_board(
+            agent,
+            boards,
+            board_id,
+            "kg.query.alternatives",
+        )
+        if auth_error is not None:
+            return auth_error
         logger.debug("[KG] kg_list_alternatives called: board_id=%s decision_id=%s", board_id, decision_id)
         svc = get_kg_service()
         try:
@@ -387,6 +598,14 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_explicit_board(
+            agent,
+            boards,
+            board_id,
+            "kg.query.learning_from_bugs",
+        )
+        if auth_error is not None:
+            return auth_error
         logger.debug("[KG] kg_get_learning_from_bugs called: board_id=%s area=%r", board_id, area)
         svc = get_kg_service()
         try:
@@ -421,6 +640,30 @@ okto-pulse://reference/tool-docs/kg."""
         agent, boards = await _get_user_boards(get_agent, get_uow)
         if agent is None:
             return _err("unauthorized", "authentication required")
+        auth_error = await _authorize_global_permission(
+            agent,
+            "kg.query.global",
+        )
+        if auth_error is not None:
+            return auth_error
+        if board_id:
+            auth_error = await _authorize_explicit_board(
+                agent,
+                boards,
+                board_id,
+                "kg.query.global",
+            )
+            if auth_error is not None:
+                return auth_error
+            target_boards = [board_id]
+        else:
+            target_boards, auth_error = await _effective_global_boards(
+                agent,
+                boards,
+                "kg.query.global",
+            )
+            if auth_error is not None:
+                return auth_error
         logger.debug("[KG] kg_query_global called: board_id=%s nl_query=%r", board_id, nl_query)
         svc = get_kg_service()
         try:
@@ -429,7 +672,6 @@ okto-pulse://reference/tool-docs/kg."""
             applied_layer = normalize_graph_layer(graph_layer)
             if board_id:
                 svc.check_board_access(boards, board_id)
-            target_boards = [board_id] if board_id else boards
             logger.debug("[KG] kg_query_global offloading to thread, target_boards=%d", len(target_boards))
             rows = await asyncio.to_thread(
                 svc.query_global,

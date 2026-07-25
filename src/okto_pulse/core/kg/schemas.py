@@ -44,7 +44,12 @@ class SessionStatus(str, Enum):
 class NodeCandidate(BaseModel):
     """A node proposed by the agent during a session (not yet committed)."""
 
-    model_config = ConfigDict(use_enum_values=True)
+    # Candidate payloads are an agent-facing write contract.  Ignoring an
+    # unknown key is unsafe here because Pydantic would silently substitute a
+    # default for a misspelled semantic field (for example ``confidence``
+    # instead of ``source_confidence``) while the tool still reported the
+    # candidate as accepted.
+    model_config = ConfigDict(use_enum_values=True, extra="forbid")
 
     candidate_id: str = Field(..., description="Agent-supplied id, unique within session")
     node_type: KGNodeType
@@ -92,7 +97,7 @@ class NodeCandidate(BaseModel):
 class EdgeCandidate(BaseModel):
     """An edge proposed by the agent during a session."""
 
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, extra="forbid")
 
     candidate_id: str
     edge_type: KGEdgeType

@@ -17,7 +17,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageEdgeSnapshot,
+    SpecLineageReconciliationError,
+    SpecLineageReconciliationReceipt,
+    is_spec_lineage_rule_id,
+)
 from okto_pulse.core.kg.schema_contract import resolve_relationship_endpoint_pair
 
 logger = logging.getLogger("okto_pulse.kg.transaction")
@@ -79,11 +84,48 @@ class _StoreBackedGraphScope:
         )
         return True
 
+    def reconcile_spec_lineage_parent(self, source_id, target_id, attrs):
+        raise SpecLineageReconciliationError(
+            "spec_lineage_reconciliation_capability_unavailable",
+            "The compatibility graph-store scope cannot reconcile exclusive "
+            "Spec lineage; install a GraphTransaction adapter with the bounded "
+            "Spec-lineage capability.",
+        )
+
+    def clear_spec_lineage_parent(self, source_id):
+        del source_id
+        raise SpecLineageReconciliationError(
+            "spec_lineage_reconciliation_capability_unavailable",
+            "The compatibility graph-store scope cannot clear exclusive Spec "
+            "lineage; install a GraphTransaction adapter with the bounded "
+            "Spec-lineage capability.",
+        )
+
+    def compensate_spec_lineage_parent(self, receipt):
+        del receipt
+        raise SpecLineageReconciliationError(
+            "spec_lineage_compensation_capability_unavailable",
+            "The compatibility graph-store scope cannot compensate exclusive "
+            "Spec lineage.",
+        )
+
     def find_node_types(self, node_id):
         return self._store.find_node_types(self._board_id, node_id)
 
     def delete_edges_by_session(self, session_id):
         self._store.delete_edges_by_session(self._board_id, session_id)
+
+    def delete_edges_by_session_preserving_spec_lineage(
+        self,
+        session_id,
+        preserved_edges,
+    ):
+        del session_id, preserved_edges
+        raise SpecLineageReconciliationError(
+            "spec_lineage_compensation_capability_unavailable",
+            "The compatibility graph-store scope cannot preserve restored "
+            "Spec lineage while compensating session edges.",
+        )
 
     def delete_nodes_by_session(self, session_id, node_types):
         del node_types
@@ -123,6 +165,7 @@ class GraphWriteRecord:
     # Edge-only: anchors for MATCH DELETE pattern.
     from_id: str | None = None
     to_id: str | None = None
+    lineage_receipt: SpecLineageReconciliationReceipt | None = None
 
 
 @dataclass
@@ -322,6 +365,74 @@ class TransactionOrchestrator:
             to_type=to_type,
         )
 
+        rule_id = str(edge_attrs.get("rule_id") or "")
+        if edge_type == "belongs_to" and is_spec_lineage_rule_id(rule_id):
+            if (from_type, to_type) != ("Entity", "Entity"):
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_endpoint_type_invalid",
+                    "Spec lineage reconciliation requires Entity -> Entity "
+                    f"endpoints, received {from_type} -> {to_type}.",
+                )
+            reconcile = getattr(
+                self.graph_scope,
+                "reconcile_spec_lineage_parent",
+                None,
+            )
+            if not callable(reconcile):
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_reconciliation_capability_unavailable",
+                    "The configured GraphTransaction scope does not expose the "
+                    "bounded Spec-lineage reconciliation capability.",
+                )
+            try:
+                receipt = reconcile(from_id, to_id, edge_attrs)
+            except SpecLineageReconciliationError as exc:
+                partial_receipt = exc.receipt
+                if partial_receipt is not None and (
+                    partial_receipt.new_edge_created
+                    or partial_receipt.removed_edges
+                ):
+                    self.records.append(
+                        GraphWriteRecord(
+                            kind="edge",
+                            entity_type=edge_type,
+                            entity_id=f"{from_id}->{to_id}",
+                            from_id=from_id,
+                            to_id=to_id,
+                            lineage_receipt=partial_receipt,
+                        )
+                    )
+                raise
+            if receipt.ambiguous_legacy_edges:
+                logger.warning(
+                    "kg.transaction.spec_lineage_legacy_ambiguous "
+                    "session=%s source=%s count=%d",
+                    self.session_id,
+                    from_id,
+                    receipt.ambiguous_legacy_edges,
+                    extra={
+                        "event": "kg.transaction.spec_lineage_legacy_ambiguous",
+                        "session_id": self.session_id,
+                        "board_id": self.board_id,
+                        "source_id": from_id,
+                        "ambiguous_legacy_edges": receipt.ambiguous_legacy_edges,
+                    },
+                )
+            if receipt.new_edge_created or receipt.removed_edges:
+                self.records.append(
+                    GraphWriteRecord(
+                        kind="edge",
+                        entity_type=edge_type,
+                        entity_id=f"{from_id}->{to_id}",
+                        from_id=from_id,
+                        to_id=to_id,
+                        lineage_receipt=receipt,
+                    )
+                )
+            if receipt.new_edge_created:
+                self.counters.edges_added += 1
+            return
+
         if self._edge_exists(edge_type, from_type, to_type, from_id, to_id):
             logger.info(
                 "kg.transaction.edge_exists session=%s edge=%s from=%s(%s) to=%s(%s)",
@@ -368,6 +479,61 @@ class TransactionOrchestrator:
         )
         self.counters.edges_added += 1
 
+    def clear_spec_lineage_parent(self, source_id: str) -> None:
+        """Apply an explicit deterministic parent unlink with a before-image."""
+
+        self._guard_fresh()
+        clear = getattr(self.graph_scope, "clear_spec_lineage_parent", None)
+        if not callable(clear):
+            raise SpecLineageReconciliationError(
+                "spec_lineage_reconciliation_capability_unavailable",
+                "The configured GraphTransaction scope does not expose the "
+                "bounded Spec-lineage clear capability.",
+            )
+        try:
+            receipt = clear(source_id)
+        except SpecLineageReconciliationError as exc:
+            partial_receipt = exc.receipt
+            if partial_receipt is not None and partial_receipt.removed_edges:
+                self.records.append(
+                    GraphWriteRecord(
+                        kind="edge",
+                        entity_type="belongs_to",
+                        entity_id=f"{source_id}-><none>",
+                        from_id=source_id,
+                        lineage_receipt=partial_receipt,
+                    )
+                )
+            raise
+        if receipt.ambiguous_legacy_edges:
+            logger.warning(
+                "kg.transaction.spec_lineage_clear_legacy_ambiguous "
+                "session=%s source=%s count=%d",
+                self.session_id,
+                source_id,
+                receipt.ambiguous_legacy_edges,
+                extra={
+                    "event": (
+                        "kg.transaction."
+                        "spec_lineage_clear_legacy_ambiguous"
+                    ),
+                    "session_id": self.session_id,
+                    "board_id": self.board_id,
+                    "source_id": source_id,
+                    "ambiguous_legacy_edges": receipt.ambiguous_legacy_edges,
+                },
+            )
+        if receipt.removed_edges:
+            self.records.append(
+                GraphWriteRecord(
+                    kind="edge",
+                    entity_type="belongs_to",
+                    entity_id=f"{source_id}-><none>",
+                    from_id=source_id,
+                    lineage_receipt=receipt,
+                )
+            )
+
     def _edge_exists(
         self,
         edge_type: str,
@@ -411,14 +577,64 @@ class TransactionOrchestrator:
 
         failed: list[GraphWriteRecord] = []
 
+        lineage_receipts = [
+            record.lineage_receipt
+            for record in reversed(self.records)
+            if record.lineage_receipt is not None
+        ]
+        preserved_edges: list[SpecLineageEdgeSnapshot] = []
+        for receipt in lineage_receipts:
+            try:
+                self.graph_scope.compensate_spec_lineage_parent(receipt)
+            except Exception as exc:
+                logger.error(
+                    "kg.compensate.spec_lineage_restore_failed "
+                    "session=%s source=%s target=%s err=%s",
+                    self.session_id,
+                    receipt.source_id,
+                    receipt.target_id,
+                    exc,
+                )
+                raise CompensationError(
+                    "Spec-lineage compensation failed before generic session "
+                    "cleanup; the replacement edge was preserved.",
+                    original_exc=exc,
+                    failed_records=[
+                        record
+                        for record in self.records
+                        if record.lineage_receipt is receipt
+                    ],
+                ) from exc
+            preserved_edges.extend(receipt.removed_edges)
+
         try:
-            self.graph_scope.delete_edges_by_session(self.session_id)
+            if preserved_edges:
+                delete_preserving = getattr(
+                    self.graph_scope,
+                    "delete_edges_by_session_preserving_spec_lineage",
+                    None,
+                )
+                if not callable(delete_preserving):
+                    raise SpecLineageReconciliationError(
+                        "spec_lineage_compensation_capability_unavailable",
+                        "The configured GraphTransaction scope cannot preserve "
+                        "restored Spec lineage during session cleanup.",
+                    )
+                delete_preserving(self.session_id, tuple(preserved_edges))
+            else:
+                self.graph_scope.delete_edges_by_session(self.session_id)
         except Exception as exc:
             logger.error(
                 "kg.compensate.edge_delete_failed session=%s err=%s",
                 self.session_id,
                 exc,
             )
+            if lineage_receipts:
+                raise CompensationError(
+                    "compensating edge delete failed",
+                    original_exc=exc,
+                    failed_records=list(self.records),
+                ) from exc
 
         # 2. Delete nodes created by this session (group by type for efficiency)
         node_types = {

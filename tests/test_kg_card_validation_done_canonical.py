@@ -76,10 +76,11 @@ async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str) -> str:
             "owner-valdone",
             CardCreate(
                 title="Impl card promovido por validation gate",
-                status=CardStatus.IN_PROGRESS,
+                status=CardStatus.STARTED,
                 spec_id=spec_id,
             ),
         )
+        card.status = CardStatus.IN_PROGRESS
         card_id = card.id
         await db.commit()
     return card_id

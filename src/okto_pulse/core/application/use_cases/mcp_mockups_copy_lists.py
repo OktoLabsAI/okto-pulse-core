@@ -70,6 +70,27 @@ def _sanitize_html(html: str) -> str:
     return sanitized
 
 
+def _project_screen_mockup(
+    screen: dict[str, Any],
+    *,
+    include_content: bool,
+) -> dict[str, Any]:
+    """Return a stable list projection without leaking heavy HTML by default."""
+
+    projected = dict(screen)
+    raw_content = screen.get("html_content")
+    html_content = "" if raw_content is None else str(raw_content)
+    encoded_content = html_content.encode("utf-8")
+    projected["has_html_content"] = bool(html_content)
+    projected["html_content_bytes"] = len(encoded_content)
+    projected["html_content_sha256"] = hashlib.sha256(encoded_content).hexdigest()
+    if include_content:
+        projected["html_content"] = html_content
+    else:
+        projected.pop("html_content", None)
+    return projected
+
+
 def _in_board_scope(record: Any, board_id: str, actor: ActorContext) -> bool:
     """Require actor, command, and canonical entity to share one board."""
     return bool(record and actor.board_id == board_id and record.board_id == board_id)
@@ -372,6 +393,7 @@ class McpScreenMockupCommand:
     text: str = ""
     offset: int = 0
     limit: int = 50
+    include_content: bool = False
 
 
 class McpAddScreenMockupUseCase:
@@ -586,6 +608,10 @@ class McpListScreenMockupsUseCase:
             ]
         total = len(screens)
         paginated = screens[command.offset : command.offset + command.limit]
+        projected = [
+            _project_screen_mockup(screen, include_content=command.include_content)
+            for screen in paginated
+        ]
         return McpPayloadResult(
             {
                 "entity_type": command.entity_type,
@@ -593,7 +619,7 @@ class McpListScreenMockupsUseCase:
                 "total": total,
                 "offset": command.offset,
                 "limit": command.limit,
-                "screens": paginated,
+                "screens": projected,
             }
         )
 

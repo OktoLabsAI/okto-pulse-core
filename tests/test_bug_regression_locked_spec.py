@@ -301,15 +301,17 @@ async def test_active_hotfix_lane_does_not_bypass_missing_bug_test_task():
             )
 
     message = str(exc.value)
-    assert "requires at least 1 new test task" in message
+    assert "zero eligible" in message
+    assert "Path B" in message
     assert "assign_hotfix_lane" not in message
     assert "activate_hotfix_lane" not in message
     assert "sprint_not_active" not in message
     payload = exc.value.to_dict()
     assert payload["code"] == "missing_regression_test_task"
-    assert payload["next_action"] == "create_regression_test_card"
-    assert payload["remediation_path"] == "path_a_reuse_existing_scenario"
-    assert payload["semantic_gap_required"] is False
+    assert payload["next_action"] == "escalate_semantic_gap"
+    assert payload["remediation_path"] == "path_b_semantic_gap"
+    assert payload["semantic_gap_required"] is True
+    assert payload["eligible_scenarios_count"] == 0
     assert payload["hotfix_lane_status"] == "not_applicable"
     assert payload["actions"][0]["primary"] is True
 

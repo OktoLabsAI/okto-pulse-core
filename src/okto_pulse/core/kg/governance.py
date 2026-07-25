@@ -13,7 +13,7 @@ import logging
 import uuid
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Any, AsyncIterator
@@ -1060,12 +1060,21 @@ BOOST_CLAMP_MIN = 0.0
 BOOST_CLAMP_MAX = 1.5
 
 
-async def boost_node(
-    db: Any, board_id: str, node_id: str, *, actor_id: str
-) -> dict[str, Any] | None:
-    """Boost a node's ``relevance_score`` by +0.3 (clamp [0, 1.5]) and STAGE the
-    ``ConsolidationAudit`` row on ``db`` (write; the caller owns the commit via the
-    UnitOfWork).
+@dataclass(frozen=True, slots=True)
+class BoostNodeMutation:
+    """Graph result plus an audit record that is still safe to stage on-loop."""
+
+    payload: dict[str, Any]
+    audit: BoostAuditRecord
+
+
+async def mutate_boost_node_graph(
+    board_id: str,
+    node_id: str,
+    *,
+    actor_id: str,
+) -> BoostNodeMutation | None:
+    """Boost a graph node and return, but do not stage, its relational audit.
 
     The graph read/SET runs through the #06 ``GraphTransaction`` port (the embedded
     store auto-commits each statement), and idempotency is NOT enforced — each call
@@ -1073,19 +1082,18 @@ async def boost_node(
     +0.3/clamp arithmetic reproduce the legacy ``api/kg_routes.boost_node``
     byte-for-byte.
 
-    Returns the response dict on success. Returns ``None`` when the node is
+    Returns the mutation on success. Returns ``None`` when the node is
     absent in every node type of the board graph (this module stays
     transport-free — the use case maps that to ``EntityNotFoundError`` → the
     adapter's 404 problem). A failure to persist the SET raises
     :class:`BoostPersistError` (adapter → 500 ``graph_error``).
 
-    The staged audit row carries ALL required NOT-NULL columns (``artifact_type``,
+    The returned audit row carries ALL required NOT-NULL columns (``artifact_type``,
     ``started_at``, …) so it persists on a successful boost — bug 547a2aa8 fix; the
     legacy row omitted those columns, so its commit always raised IntegrityError and
-    was silently swallowed (200 with no audit row). The caller (``BoostNodeUseCase``)
-    commits this row best-effort: the commit guard now only covers a genuinely
-    unexpected failure on the already-mutated graph (split-brain), not a deterministic
-    schema violation."""
+    was silently swallowed (200 with no audit row). Splitting graph mutation from
+    audit staging lets async request paths execute native graph IO in a worker without
+    moving their event-loop-bound UnitOfWork to another loop."""
     import uuid
 
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
@@ -1169,7 +1177,7 @@ async def boost_node(
     boosted_at = datetime.now(timezone.utc)
     boosted_by = actor_id
 
-    # Persist the boost audit row with ALL required NOT-NULL columns populated
+    # Build the boost audit row with ALL required NOT-NULL columns populated
     # (bug 547a2aa8 fix): the legacy staging omitted ``artifact_type`` and
     # ``started_at``, so its commit always raised IntegrityError and was swallowed,
     # dropping the row while the boost still returned 200. ``artifact_type="boost"``
@@ -1179,9 +1187,16 @@ async def boost_node(
     # keep it out of every count). The caller (BoostNodeUseCase) commits this row;
     # that commit stays best-effort only for the already-mutated-graph split-brain
     # case, NOT to mask a deterministic schema violation.
-    get_kg_governance_store().add_boost_audit(
-        db,
-        BoostAuditRecord(
+    return BoostNodeMutation(
+        payload={
+            "node_id": node_id,
+            "node_type": node_type,
+            "score_before": round(score_before, 4),
+            "score_after": round(score_after, 4),
+            "boosted_at": boosted_at.isoformat(),
+            "boosted_by": boosted_by,
+        },
+        audit=BoostAuditRecord(
             session_id=(
                 f"boost-{node_id[:8]}-{int(boosted_at.timestamp())}"
                 f"-{uuid.uuid4().hex[:8]}"
@@ -1194,11 +1209,31 @@ async def boost_node(
         ),
     )
 
-    return {
-        "node_id": node_id,
-        "node_type": node_type,
-        "score_before": round(score_before, 4),
-        "score_after": round(score_after, 4),
-        "boosted_at": boosted_at.isoformat(),
-        "boosted_by": boosted_by,
-    }
+
+def stage_boost_node_audit(
+    db: Any,
+    mutation: BoostNodeMutation,
+) -> dict[str, Any]:
+    """Stage a prepared audit on the caller's original UnitOfWork loop."""
+
+    get_kg_governance_store().add_boost_audit(db, mutation.audit)
+    return dict(mutation.payload)
+
+
+async def boost_node(
+    db: Any,
+    board_id: str,
+    node_id: str,
+    *,
+    actor_id: str,
+) -> dict[str, Any] | None:
+    """Compatibility composition of graph mutation and on-loop audit staging."""
+
+    mutation = await mutate_boost_node_graph(
+        board_id,
+        node_id,
+        actor_id=actor_id,
+    )
+    if mutation is None:
+        return None
+    return stage_boost_node_audit(db, mutation)

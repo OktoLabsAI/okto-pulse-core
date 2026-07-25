@@ -94,15 +94,48 @@ class SprintCompletionBlocker:
         }
 
 
-class SprintScopeResolver:
-    """Resolve and cache scope by semantic versions and card assignment set."""
+@dataclass(frozen=True, slots=True)
+class _SprintScopeIdentity:
+    """Cacheable identity/provenance only; never stores mutable spec payloads."""
 
-    _cache: "OrderedDict[tuple[object, ...], SprintScope]" = OrderedDict()
+    sprint_id: str
+    sprint_version: int
+    spec_id: str
+    spec_version: int
+    card_ids: tuple[str, ...]
+    item_ids: Mapping[str, tuple[str, ...]]
+    provenance: Mapping[str, Mapping[str, tuple[str, ...]]]
+
+
+class SprintScopeResolver:
+    """Resolve scope identities while always projecting current item payloads.
+
+    Scenario status/evidence and structured ``linked_task_ids`` can be updated by
+    narrow writers that intentionally do not bump ``Spec.version``.  Caching the
+    selected dictionaries themselves would therefore make a dry retry observe
+    stale state (including a dangerous passed -> failed fail-open).  The cache
+    stores only selected IDs/provenance; every call reprojects those IDs from the
+    supplied spec.  Membership inputs are fingerprinted independently of semantic
+    versions so narrow link mutations also force identity re-resolution.
+    """
+
+    _cache: "OrderedDict[tuple[object, ...], _SprintScopeIdentity]" = OrderedDict()
     _max_cache_entries = 256
 
     @classmethod
     def clear_cache(cls) -> None:
         cls._cache.clear()
+
+    @classmethod
+    def invalidate(cls, *sprint_ids: str) -> None:
+        """Drop every cached semantic version for the supplied sprints."""
+
+        targets = {str(sprint_id) for sprint_id in sprint_ids if sprint_id}
+        if not targets:
+            return
+        for key in tuple(cls._cache):
+            if str(key[0]) in targets:
+                cls._cache.pop(key, None)
 
     @classmethod
     def resolve(
@@ -117,11 +150,49 @@ class SprintScopeResolver:
             sorted(
                 (
                     str(_value(card, "id", "")),
-                    int(_value(card, "version", 0) or 0),
-                    _enum_value(_value(card, "status")),
+                    _enum_value(_value(card, "card_type")),
+                    tuple(
+                        sorted(
+                            str(value)
+                            for value in (
+                                _value(card, "test_scenario_ids", ()) or ()
+                            )
+                            if value
+                        )
+                    ),
                 )
                 for card in cards
             )
+        )
+        spec_membership_fingerprint = tuple(
+            (
+                collection,
+                tuple(
+                    (
+                        _item_id(item),
+                        tuple(sorted(_linked_task_ids(item))),
+                    )
+                    for item in (_value(spec, collection, ()) or ())
+                    if isinstance(item, Mapping)
+                ),
+            )
+            for collection in _SPEC_COLLECTIONS
+        )
+        explicit_scope_fingerprint = (
+            tuple(
+                sorted(
+                    str(value)
+                    for value in (_value(sprint, "test_scenario_ids", ()) or ())
+                    if value
+                )
+            ),
+            tuple(
+                sorted(
+                    str(value)
+                    for value in (_value(sprint, "business_rule_ids", ()) or ())
+                    if value
+                )
+            ),
         )
         key = (
             str(_value(sprint, "id", "")),
@@ -129,13 +200,17 @@ class SprintScopeResolver:
             str(_value(spec, "id", "")),
             int(_value(spec, "version", 0) or 0),
             card_fingerprint,
+            explicit_scope_fingerprint,
+            spec_membership_fingerprint,
         )
         cached = cls._cache.get(key)
         if cached is not None:
             cls._cache.move_to_end(key)
-            return cached
+            return cls._project(cached, spec)
 
-        card_ids = tuple(sorted(card_id for card_id, _, _ in card_fingerprint if card_id))
+        card_ids = tuple(
+            sorted(card_id for card_id, _, _ in card_fingerprint if card_id)
+        )
         assigned = set(card_ids)
         card_test_ids = {
             str(scenario_id)
@@ -152,10 +227,10 @@ class SprintScopeResolver:
                 str(value) for value in (_value(sprint, "business_rule_ids", ()) or ())
             },
         }
-        resolved: dict[str, tuple[object, ...]] = {}
+        resolved_ids: dict[str, tuple[str, ...]] = {}
         provenance: dict[str, dict[str, tuple[str, ...]]] = {}
         for collection in _SPEC_COLLECTIONS:
-            selected: list[object] = []
+            selected_ids: list[str] = []
             item_sources: dict[str, tuple[str, ...]] = {}
             explicit_ids = explicit_by_collection.get(collection, set())
             for item in _value(spec, collection, ()) or ():
@@ -171,25 +246,47 @@ class SprintScopeResolver:
                 if collection == "test_scenarios" and item_id in card_test_ids:
                     sources.append("assigned_test_card_scope")
                 if sources:
-                    selected.append(item)
+                    selected_ids.append(item_id)
                     item_sources[item_id] = tuple(sources)
-            resolved[collection] = tuple(selected)
+            resolved_ids[collection] = tuple(selected_ids)
             provenance[collection] = item_sources
 
-        scope = SprintScope(
+        identity = _SprintScopeIdentity(
             sprint_id=str(_value(sprint, "id", "")),
             sprint_version=int(_value(sprint, "version", 0) or 0),
             spec_id=str(_value(spec, "id", "")),
             spec_version=int(_value(spec, "version", 0) or 0),
             card_ids=card_ids,
-            items=resolved,
+            item_ids=resolved_ids,
             provenance=provenance,
         )
-        cls._cache[key] = scope
+        cls._cache[key] = identity
         cls._cache.move_to_end(key)
         while len(cls._cache) > cls._max_cache_entries:
             cls._cache.popitem(last=False)
-        return scope
+        return cls._project(identity, spec)
+
+    @staticmethod
+    def _project(identity: _SprintScopeIdentity, spec: object) -> SprintScope:
+        """Hydrate cached IDs from the current spec object on every resolve."""
+
+        current_items: dict[str, tuple[object, ...]] = {}
+        for collection in _SPEC_COLLECTIONS:
+            selected = set(identity.item_ids.get(collection, ()))
+            current_items[collection] = tuple(
+                item
+                for item in (_value(spec, collection, ()) or ())
+                if isinstance(item, Mapping) and _item_id(item) in selected
+            )
+        return SprintScope(
+            sprint_id=identity.sprint_id,
+            sprint_version=identity.sprint_version,
+            spec_id=identity.spec_id,
+            spec_version=identity.spec_version,
+            card_ids=identity.card_ids,
+            items=current_items,
+            provenance=identity.provenance,
+        )
 
 
 def completion_blockers(

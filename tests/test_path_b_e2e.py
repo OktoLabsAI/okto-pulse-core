@@ -474,7 +474,7 @@ async def test_676b_eligible_amendment_unblocks_content_locked_bug_without_bypas
 
         # No direct link + no amendment: the gate still requires a regression
         # (require_test_task_for_bug intact) -> missing_regression_test_task.
-        await _assert_gate_blocks(db, ids, "at least 1 new test task")
+        await _assert_gate_blocks(db, ids, "zero eligible existing scenarios")
 
         # 676b Part A: Path B ACCEPTS the in_progress + content-locked spec.
         created = await api.create(
@@ -489,7 +489,7 @@ async def test_676b_eligible_amendment_unblocks_content_locked_bug_without_bypas
 
         # Anti-bypass: a DRAFT (ineligible) amendment contributes NO test task, so
         # the gate keeps blocking with missing_regression_test_task.
-        await _assert_gate_blocks(db, ids, "at least 1 new test task")
+        await _assert_gate_blocks(db, ids, "zero eligible existing scenarios")
 
         # 676b Part B: once the amendment is eligible (done + complete lineage) its
         # regression test task is an ADDITIVE source -> the gate advances PAST the

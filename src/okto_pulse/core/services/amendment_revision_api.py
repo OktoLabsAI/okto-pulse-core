@@ -23,6 +23,10 @@ from okto_pulse.core.domain.enums import CardType, SpecStatus
 from okto_pulse.core.ports.relational_application import (
     require_relational_application_adapter,
 )
+from okto_pulse.core.services.amendment_revision import (
+    AmendmentRevisionError,
+    amendment_revision_is_terminal,
+)
 
 #: Spec statuses that are ALWAYS content-locked (immutable) — a Path B amendment
 #: always attaches here. ``in_progress`` is handled separately by the
@@ -317,7 +321,11 @@ class AmendmentRevisionApiService:
         automated_regression_refs: list[str] | None = None,
     ) -> dict[str, Any]:
         await self._require_bug(board_id, bug_id)
-        await self._require_scoped_amendment(board_id, bug_id, amendment_id)
+        amendment = await self._require_scoped_amendment(
+            board_id, bug_id, amendment_id
+        )
+        if amendment_revision_is_terminal(amendment.status):
+            raise self._terminal_revision_error(amendment_id, amendment.status)
         if not any(
             (regression_test_task_ids, regression_scenario_ids, automated_regression_refs)
         ):
@@ -327,13 +335,20 @@ class AmendmentRevisionApiService:
                 "regression_scenario_ids or automated_regression_refs.",
                 status_code=422,
             )
-        amendment = await self._backend.associate_artifacts(
-            amendment_id,
-            regression_test_task_ids=regression_test_task_ids,
-            regression_scenario_ids=regression_scenario_ids,
-            automated_regression_refs=automated_regression_refs,
-            actor=actor,
-        )
+        try:
+            amendment = await self._backend.associate_artifacts(
+                amendment_id,
+                regression_test_task_ids=regression_test_task_ids,
+                regression_scenario_ids=regression_scenario_ids,
+                automated_regression_refs=automated_regression_refs,
+                actor=actor,
+            )
+        except AmendmentRevisionError as exc:
+            if exc.code == "terminal_amendment_revision":
+                raise self._terminal_revision_error(
+                    amendment_id, amendment.status
+                ) from exc
+            raise
         return self._serialize_revision(amendment)
 
     async def transition_lifecycle(
@@ -356,9 +371,10 @@ class AmendmentRevisionApiService:
           authoritative origin-task membership (``incomplete_lineage_artifacts``);
         * promotion to a non-blocking status (``approved``/``done``) needs lineage
           already complete (``cannot_promote_incomplete_lineage``);
-        * a ``cancelled``/``superseded`` revision is terminal and can NOT be
-          promoted back to ``approved``/``done`` (``terminal_amendment_revision``) —
-          open a new revision instead;
+        * a ``cancelled``/``superseded`` revision is permanently immutable
+          (``terminal_amendment_revision``): status, lineage, coverage, and
+          artifact associations cannot change; only retrying its exact status is
+          accepted as an effect-free idempotent operation;
         * it NEVER writes coverage (there is no coverage param); the bug stays
           ``coverage_pending`` until the validator runs
           ``confirm_amendment_coverage``.
@@ -378,17 +394,19 @@ class AmendmentRevisionApiService:
         )
 
         promoted = {AmendmentRevisionStatus.APPROVED.value, AmendmentRevisionStatus.DONE.value}
-        terminal = {AmendmentRevisionStatus.CANCELLED.value, AmendmentRevisionStatus.SUPERSEDED.value}
         current_status_val = getattr(amendment.status, "value", amendment.status)
 
-        # Q4: a terminal revision can never be resurrected to approved/done.
-        if current_status_val in terminal and new_status is not None and new_status.value in promoted:
-            raise AmendmentRevisionApiError(
-                "terminal_amendment_revision",
-                f"Amendment '{amendment_id}' is '{current_status_val}' (terminal) and cannot be "
-                "promoted to approved/done. Create a new amendment revision instead.",
-                409,
-            )
+        # Terminality is monotonic.  The sole accepted retry is setting the
+        # already-current terminal status with no lineage request; it returns the
+        # current projection without touching persistence or audit history.
+        if amendment_revision_is_terminal(current_status_val):
+            if (
+                new_status is not None
+                and new_status.value == current_status_val
+                and new_lineage is None
+            ):
+                return self._serialize_revision(amendment)
+            raise self._terminal_revision_error(amendment_id, current_status_val)
 
         effective_lineage_val = (
             new_lineage.value
@@ -423,12 +441,21 @@ class AmendmentRevisionApiService:
 
         # Apply lineage before status so a combined call lands consistently. Coverage
         # is NEVER touched here — it stays validator-only via confirm_amendment_coverage.
-        if new_lineage is not None:
-            amendment = await self._backend.set_lineage_state(
-                amendment_id, new_lineage, actor
-            )
-        if new_status is not None:
-            amendment = await self._backend.set_status(amendment_id, new_status, actor)
+        try:
+            if new_lineage is not None:
+                amendment = await self._backend.set_lineage_state(
+                    amendment_id, new_lineage, actor
+                )
+            if new_status is not None:
+                amendment = await self._backend.set_status(
+                    amendment_id, new_status, actor
+                )
+        except AmendmentRevisionError as exc:
+            if exc.code == "terminal_amendment_revision":
+                raise self._terminal_revision_error(
+                    amendment_id, amendment.status
+                ) from exc
+            raise
         return self._serialize_revision(amendment)
 
     # -- internals ---------------------------------------------------------
@@ -454,6 +481,28 @@ class AmendmentRevisionApiService:
                 f"{[s.value for s in AmendmentLineageState]}.",
                 422,
             ) from None
+
+    @staticmethod
+    def _terminal_revision_error(
+        amendment_id: str,
+        status: AmendmentRevisionStatus | str,
+    ) -> AmendmentRevisionApiError:
+        status_value = getattr(status, "value", status)
+        return AmendmentRevisionApiError(
+            "terminal_amendment_revision",
+            (
+                f"Amendment '{amendment_id}' is '{status_value}' (terminal) and "
+                "is permanently immutable. Status, lineage, coverage, and "
+                "artifact associations cannot change; create a new amendment "
+                "revision instead."
+            ),
+            409,
+            details={
+                "amendment_id": amendment_id,
+                "current_status": str(status_value),
+                "mutation_applied": False,
+            },
+        )
 
     @staticmethod
     def _has_lineage_artifacts(amendment, bug) -> bool:

@@ -29,6 +29,10 @@ import uuid
 
 from okto_pulse.core.kg.async_bridge import run_async_blocking
 from okto_pulse.core.kg.curation_policy import require_curation_allowed
+from okto_pulse.core.kg.guarded_write import (
+    GuardedWriteLease,
+    guarded_board_write,
+)
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.ports.kg_equivalence_ledger import (
     EquivalenceRecord,
@@ -47,10 +51,55 @@ from okto_pulse.core.kg.schema_contract import (
 
 logger = logging.getLogger("okto_pulse.kg.dedup_migration")
 
+_DEDUP_WRITE_OPERATION = "kg_dedup_entities"
+_UNMERGE_WRITE_OPERATION = "kg_unmerge"
+
 # Node attrs we read for tie-break / canonical pick. Must align with the
 # schema in core/kg/schema.py — only `created_at` is required for the
 # "most recent wins" rule. Others surface in the report for ops triage.
 _NODE_REPORT_COLS = ("id", "created_at", "title", "human_curated")
+
+
+class _LeaseFencedGraphScope:
+    """Revalidate ownership immediately before every dedup graph statement.
+
+    The heartbeat poisons ``GuardedWriteLease`` when renewal fails.  Embedded
+    graph statements auto-commit, so merely checking at lifecycle time is too
+    late: an expired writer could otherwise keep issuing statements until the
+    body returns.  This narrow proxy makes the next statement fail closed.
+    """
+
+    def __init__(self, scope: Any, lease: GuardedWriteLease) -> None:
+        self._scope = scope
+        self._lease = lease
+
+    def execute(
+        self,
+        statement: str,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        self._lease.ensure_owned(failure_phase="before_graph_statement")
+        if params is None:
+            return self._scope.execute(statement)
+        return self._scope.execute(statement, params)
+
+    def mark_superseded(
+        self,
+        node_type: str,
+        node_id: str,
+        *,
+        superseded_by: str,
+        superseded_at: str,
+        revocation_reason: str,
+    ) -> None:
+        self._lease.ensure_owned(failure_phase="before_mark_superseded")
+        self._scope.mark_superseded(
+            node_type,
+            node_id,
+            superseded_by=superseded_by,
+            superseded_at=superseded_at,
+            revocation_reason=revocation_reason,
+        )
 
 
 def _all_rel_pairs() -> list[tuple[str, str, str]]:
@@ -259,17 +308,14 @@ def _snapshot_group(
     seen: set[tuple] = set()
     for member in members:
         for rel_name, from_t, to_t in rel_pairs:
-            try:
-                rows = _read_edge_rows(
-                    graph_scope,
-                    f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
-                    f"WHERE a.id = $id OR b.id = $id "
-                    f"RETURN a.id, b.id, r.confidence, "
-                    f"r.created_by_session_id, r.created_at, {attr_cols}",
-                    {"id": member["id"]},
-                )
-            except Exception:
-                continue
+            rows = _read_edge_rows(
+                graph_scope,
+                f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
+                f"WHERE a.id = $id OR b.id = $id "
+                f"RETURN a.id, b.id, r.confidence, "
+                f"r.created_by_session_id, r.created_at, {attr_cols}",
+                {"id": member["id"]},
+            )
             for row in rows:
                 key = (rel_name, from_t, to_t, row[0], row[1])
                 if key in seen:
@@ -317,6 +363,44 @@ def _tombstone_members(
     return len(duplicates)
 
 
+def _reusable_equivalence_record(
+    records: list[EquivalenceRecord],
+    *,
+    node_type: str,
+    source_artifact_ref: str,
+    canonical_id: str,
+    duplicate_ids: set[str],
+    proposal_id: str | None,
+) -> EquivalenceRecord | None:
+    """Return reversal evidence left by an interrupted prior attempt.
+
+    The ledger append intentionally precedes graph mutation.  If the process
+    then fails, a retry must reuse that append instead of creating a second
+    active equivalence record for the same group.
+    """
+
+    for record in records:
+        if (
+            not record.is_active
+            or record.operation != "dedup_entities"
+            or record.node_type != node_type
+            or record.survivor_id != canonical_id
+            or not duplicate_ids.issubset(set(record.merged_ids))
+        ):
+            continue
+        evidence = dict(record.evidence)
+        recorded_ref = evidence.get("source_artifact_ref")
+        if recorded_ref is not None and recorded_ref != source_artifact_ref:
+            continue
+        recorded_proposal = evidence.get("curation_proposal_id")
+        if proposal_id is not None and recorded_proposal != proposal_id:
+            continue
+        if proposal_id is None and recorded_proposal is not None:
+            continue
+        return record
+    return None
+
+
 def migrate_dedup_entities(
     board_id: str,
     *,
@@ -338,44 +422,102 @@ def migrate_dedup_entities(
     edge counts) but nothing is written — graph, ledger and proposals
     all stay untouched (S8).
     """
-    if not dry_run:
-        # FR5/BR2 — enforcement at the operation boundary: forbidden
-        # always raises; an unconfirmed write raises with actionable
-        # remediation.
-        require_curation_allowed(
-            "kg_dedup_hard_delete" if hard_delete else "kg_dedup_entities",
-            confirmed=confirmed,
+    if dry_run:
+        return _run_dedup_migration(
+            board_id,
+            dry_run=True,
+            created_by=created_by,
+            started=datetime.now(timezone.utc).isoformat(),
         )
+
+    # FR5/BR2 — enforcement at the operation boundary: forbidden always
+    # raises; an unconfirmed write raises with actionable remediation.
+    require_curation_allowed(
+        "kg_dedup_hard_delete" if hard_delete else _DEDUP_WRITE_OPERATION,
+        confirmed=confirmed,
+    )
     started = datetime.now(timezone.utc).isoformat()
+    mutation_ref = f"kg-dedup:{board_id}:{uuid.uuid4().hex}"
+    with guarded_board_write(
+        board_id,
+        operation=_DEDUP_WRITE_OPERATION,
+        owner_id=created_by,
+        mutation_ref=mutation_ref,
+    ) as write_lease:
+        return _run_dedup_migration(
+            board_id,
+            dry_run=False,
+            created_by=created_by,
+            started=started,
+            write_lease=write_lease,
+        )
+
+
+def _run_dedup_migration(
+    board_id: str,
+    *,
+    dry_run: bool,
+    created_by: str,
+    started: str,
+    write_lease: GuardedWriteLease | None = None,
+    proposal_id: str | None = None,
+) -> dict[str, Any]:
+    """Execute one dedup scan under the caller-owned board lease.
+
+    The write caller owns exactly one lease from before the ledger append
+    through graph durability and final cache invalidation.  Embedded graph
+    adapters may auto-commit each statement, so an exception after a mutation
+    was attempted still runs the lifecycle before the original failure escapes.
+    """
+
+    if dry_run != (write_lease is None):
+        raise RuntimeError("dedup_write_lease_contract_violation")
+
     rel_pairs = _all_rel_pairs()
     groups_summary: list[dict[str, Any]] = []
     total_dups = 0
     total_edges = 0
     ledger_records = 0
+    graph_write_possible = False
+    active_records: list[EquivalenceRecord] = []
 
     async def _run_migration() -> None:
         # BR1 fail-closed: writing without a composed ledger must abort
         # BEFORE the graph transaction even opens.
         ledger = None if dry_run else require_equivalence_ledger()
-        async with await get_kg_registry().graph_transaction.begin(board_id) as graph_scope:
+        if ledger is not None:
+            active_records.extend(await ledger.active_for_board(board_id))
+        if write_lease is not None:
+            write_lease.ensure_owned(failure_phase="before_graph_transaction")
+        async with await get_kg_registry().graph_transaction.begin(
+            board_id
+        ) as raw_graph_scope:
+            graph_scope = (
+                _LeaseFencedGraphScope(raw_graph_scope, write_lease)
+                if write_lease is not None
+                else raw_graph_scope
+            )
             await _run_migration_in_scope(graph_scope, ledger)
+            if write_lease is not None:
+                write_lease.ensure_owned(failure_phase="before_graph_scope_exit")
 
     async def _run_migration_in_scope(graph_scope: Any, ledger: Any) -> None:
-        nonlocal total_dups, total_edges, ledger_records
+        nonlocal total_dups, total_edges, ledger_records, graph_write_possible
         for node_type in NODE_TYPES:
             try:
                 groups = _fetch_groups(graph_scope, node_type)
             except Exception as exc:
-                logger.warning(
+                logger.error(
                     "kg.dedup.scan_failed type=%s board=%s err=%s",
                     node_type, board_id, exc,
+                    exc_info=True,
                     extra={
                         "event": "kg.dedup.scan_failed",
                         "node_type": node_type,
                         "board_id": board_id,
                     },
                 )
-                continue
+                raise
             for group in groups:
                 members = group["members"]
                 canonical = members[0]
@@ -386,12 +528,28 @@ def migrate_dedup_entities(
                     # FR2 (BR1): complete snapshot appended BEFORE any
                     # graph write — an append failure aborts the whole
                     # operation with the graph untouched.
-                    record_id = f"eqv_{uuid.uuid4().hex[:16]}"
-                    evidence = _snapshot_group(
-                        graph_scope, node_type, members, rel_pairs
+                    reusable = _reusable_equivalence_record(
+                        active_records,
+                        node_type=node_type,
+                        source_artifact_ref=group["source_artifact_ref"],
+                        canonical_id=canonical["id"],
+                        duplicate_ids={d["id"] for d in duplicates},
+                        proposal_id=proposal_id,
                     )
-                    await ledger.append(
-                        EquivalenceRecord(
+                    if reusable is not None:
+                        record_id = reusable.record_id
+                    else:
+                        record_id = f"eqv_{uuid.uuid4().hex[:16]}"
+                        evidence = _snapshot_group(
+                            graph_scope, node_type, members, rel_pairs
+                        )
+                        evidence = {
+                            **evidence,
+                            "source_artifact_ref": group["source_artifact_ref"],
+                        }
+                        if proposal_id is not None:
+                            evidence["curation_proposal_id"] = proposal_id
+                        record = EquivalenceRecord(
                             record_id=record_id,
                             board_id=board_id,
                             node_type=node_type,
@@ -401,10 +559,17 @@ def migrate_dedup_entities(
                             evidence=evidence,
                             created_by=created_by,
                         )
-                    )
-                    ledger_records += 1
+                        write_lease.ensure_owned(
+                            failure_phase="before_equivalence_append"
+                        )
+                        await ledger.append(record)
+                        active_records.append(record)
+                        ledger_records += 1
                     # FR3/D2: reversible default — tombstone, zero edge
                     # writes, zero deletes.
+                    # Set the marker BEFORE the adapter call: an embedded
+                    # auto-commit provider may persist and then raise.
+                    graph_write_possible = True
                     _tombstone_members(
                         graph_scope, node_type, duplicates,
                         canonical["id"], record_id,
@@ -413,18 +578,15 @@ def migrate_dedup_entities(
                     for dup in duplicates:
                         # Dry-run: count the edges that WOULD be involved.
                         for rel_name, from_t, to_t in rel_pairs:
-                            try:
-                                res = graph_scope.execute(
-                                    f"MATCH (a:{from_t})-[r:{rel_name}]->"
-                                    f"(b:{to_t}) "
-                                    f"WHERE a.id = $dup OR b.id = $dup "
-                                    f"RETURN count(r)",
-                                    {"dup": dup["id"]},
-                                )
-                                if res.rows:
-                                    edges_for_group += int(res.rows[0][0])
-                            except Exception:
-                                pass
+                            res = graph_scope.execute(
+                                f"MATCH (a:{from_t})-[r:{rel_name}]->"
+                                f"(b:{to_t}) "
+                                f"WHERE a.id = $dup OR b.id = $dup "
+                                f"RETURN count(r)",
+                                {"dup": dup["id"]},
+                            )
+                            if res.rows:
+                                edges_for_group += int(res.rows[0][0])
                 groups_summary.append({
                     "node_type": node_type,
                     "source_artifact_ref": group["source_artifact_ref"],
@@ -438,13 +600,45 @@ def migrate_dedup_entities(
                 total_dups += len(duplicates)
                 total_edges += edges_for_group
 
-    run_async_blocking(_run_migration())
+    try:
+        run_async_blocking(_run_migration())
+    except BaseException as operation_exc:
+        if write_lease is not None and graph_write_possible:
+            try:
+                write_lease.ensure_durable()
+            except BaseException as lifecycle_exc:
+                logger.error(
+                    "kg.dedup.exception_durability_failed board=%s "
+                    "operation_error=%s lifecycle_error=%s "
+                    "write_may_be_applied=true",
+                    board_id,
+                    type(operation_exc).__name__,
+                    type(lifecycle_exc).__name__,
+                    exc_info=True,
+                    extra={
+                        "event": "kg.dedup.exception_durability_failed",
+                        "board_id": board_id,
+                        "operation_error_type": type(operation_exc).__name__,
+                        "lifecycle_error_type": type(lifecycle_exc).__name__,
+                        "write_may_be_applied": True,
+                    },
+                )
+                raise lifecycle_exc from operation_exc
+        raise
+
+    if write_lease is not None:
+        # This is deliberately inside the writer fence.  A lifecycle failure
+        # therefore prevents both a success report and proposal resolution.
+        write_lease.ensure_durable()
+
     if ledger_records:
         # FR6/TR5: every ledger write invalidates the fold cache.
         from okto_pulse.core.kg.equivalence_fold import (
             invalidate_equivalence_fold_cache,
         )
 
+        if write_lease is not None:
+            write_lease.ensure_owned(failure_phase="before_cache_invalidation")
         invalidate_equivalence_fold_cache(board_id)
     completed = datetime.now(timezone.utc).isoformat()
     report = {
@@ -503,16 +697,13 @@ class StaleProposalError(Exception):
 def _count_incident_edges(graph_scope, rel_pairs, node_id: str) -> int:
     total = 0
     for rel_name, from_t, to_t in rel_pairs:
-        try:
-            res = graph_scope.execute(
-                f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
-                f"WHERE a.id = $id OR b.id = $id RETURN count(r)",
-                {"id": node_id},
-            )
-            if res.rows:
-                total += int(res.rows[0][0])
-        except Exception:
-            pass
+        res = graph_scope.execute(
+            f"MATCH (a:{from_t})-[r:{rel_name}]->(b:{to_t}) "
+            f"WHERE a.id = $id OR b.id = $id RETURN count(r)",
+            {"id": node_id},
+        )
+        if res.rows:
+            total += int(res.rows[0][0])
     return total
 
 
@@ -527,10 +718,7 @@ def _build_canonical_plan(board_id: str) -> dict[str, Any]:
     async def _scan() -> None:
         async with await get_kg_registry().graph_transaction.begin(board_id) as graph_scope:
             for node_type in NODE_TYPES:
-                try:
-                    groups = _fetch_groups(graph_scope, node_type)
-                except Exception:
-                    continue
+                groups = _fetch_groups(graph_scope, node_type)
                 for group in groups:
                     members = group["members"]
                     canonical = members[0]
@@ -553,6 +741,120 @@ def _build_canonical_plan(board_id: str) -> dict[str, Any]:
         key=lambda g: (g["node_type"], g["source_artifact_ref"])
     )
     return {"operation": "dedup_entities", "groups": plan_groups}
+
+
+def _completed_proposal_records(
+    board_id: str,
+    proposal_id: str,
+    plan: dict[str, Any],
+) -> tuple[EquivalenceRecord, ...] | None:
+    """Recognize a prior attempt that mutated fully but failed before ACK.
+
+    Proposal approval applies graph lifecycle before resolving the relational
+    proposal.  A lifecycle/resolve crash can therefore leave the exact proposed
+    tombstones in place while the proposal remains pending.  The tagged
+    append-only records plus live tombstone markers are the durable proof that a
+    retry may finish lifecycle/ACK without treating its own prior write as stale.
+    """
+
+    expected_groups = list(plan.get("groups") or ())
+    if not expected_groups:
+        return None
+    ledger = require_equivalence_ledger()
+
+    async def _verify() -> tuple[EquivalenceRecord, ...] | None:
+        active = await ledger.active_for_board(board_id)
+        tagged = tuple(
+            record
+            for record in active
+            if dict(record.evidence).get("curation_proposal_id") == proposal_id
+        )
+        if len(tagged) != len(expected_groups):
+            return None
+
+        records_by_key: dict[tuple[str, str], EquivalenceRecord] = {}
+        for record in tagged:
+            evidence = dict(record.evidence)
+            source_ref = evidence.get("source_artifact_ref")
+            if not isinstance(source_ref, str) or not source_ref:
+                return None
+            key = (record.node_type, source_ref)
+            if key in records_by_key:
+                return None
+            records_by_key[key] = record
+
+        expected_by_key = {
+            (str(group["node_type"]), str(group["source_artifact_ref"])): group
+            for group in expected_groups
+        }
+        if len(expected_by_key) != len(expected_groups):
+            return None
+        if records_by_key.keys() != expected_by_key.keys():
+            return None
+
+        async with await get_kg_registry().graph_transaction.begin(
+            board_id
+        ) as graph_scope:
+            for key, expected in expected_by_key.items():
+                record = records_by_key[key]
+                if (
+                    record.survivor_id != str(expected["survivor_id"])
+                    or sorted(record.merged_ids)
+                    != sorted(str(value) for value in expected["merged_ids"])
+                ):
+                    return None
+                survivor = graph_scope.execute(
+                    f"MATCH (n:{record.node_type}) WHERE n.id = $id "
+                    "RETURN n.superseded_by",
+                    {"id": record.survivor_id},
+                )
+                if not survivor.rows or survivor.rows[0][0] is not None:
+                    return None
+                for member_id in record.merged_ids:
+                    state = graph_scope.execute(
+                        f"MATCH (n:{record.node_type}) WHERE n.id = $id "
+                        "RETURN n.superseded_by, n.revocation_reason",
+                        {"id": member_id},
+                    )
+                    if not state.rows:
+                        return None
+                    row = state.rows[0]
+                    if (
+                        row[0] != record.survivor_id
+                        or row[1] != f"dedup:{record.record_id}"
+                    ):
+                        return None
+        return tagged
+
+    return run_async_blocking(_verify())
+
+
+def _already_applied_proposal_report(
+    board_id: str,
+    plan: dict[str, Any],
+    *,
+    started: str,
+) -> dict[str, Any]:
+    duplicates = sum(
+        len(group.get("merged_ids") or ())
+        for group in list(plan.get("groups") or ())
+    )
+    return {
+        "board_id": board_id,
+        "dry_run": False,
+        "mode": "tombstone",
+        "groups": 0,
+        "total_duplicates_removed": 0,
+        "nodes_tombstoned": 0,
+        "ledger_records_created": 0,
+        "duplicates_planned": duplicates,
+        "edges_repointed": 0,
+        "edges_planned": 0,
+        "started_at": started,
+        "executed_at": datetime.now(timezone.utc).isoformat(),
+        "details": [],
+        "already_applied": True,
+    }
 
 
 def compute_proposal_hash(plan: dict[str, Any]) -> str:
@@ -618,40 +920,88 @@ def approve_dedup_proposal(
         CurationProposalError,
     )
 
+    def _validate_pending(proposal: CurationProposal | None) -> CurationProposal:
+        if proposal is None:
+            raise CurationProposalError(
+                "curation_proposal_not_found", proposal_id=proposal_id
+            )
+        if proposal.board_id != board_id:
+            raise CurationProposalError(
+                "curation_proposal_board_mismatch",
+                proposal_id=proposal_id,
+                remediation=f"Proposal belongs to board {proposal.board_id}.",
+            )
+        if proposal.status != "pending":
+            raise CurationProposalError(
+                "curation_proposal_already_resolved",
+                proposal_id=proposal_id,
+                remediation=f"Proposal status is {proposal.status!r}.",
+            )
+        return proposal
+
     store = require_curation_proposal_store()
-    proposal = run_async_blocking(store.get(proposal_id))
-    if proposal is None:
-        raise CurationProposalError(
-            "curation_proposal_not_found", proposal_id=proposal_id
-        )
-    if proposal.board_id != board_id:
-        raise CurationProposalError(
-            "curation_proposal_board_mismatch",
-            proposal_id=proposal_id,
-            remediation=f"Proposal belongs to board {proposal.board_id}.",
-        )
-    if proposal.status != "pending":
-        raise CurationProposalError(
-            "curation_proposal_already_resolved",
-            proposal_id=proposal_id,
-            remediation=f"Proposal status is {proposal.status!r}.",
-        )
+    _validate_pending(run_async_blocking(store.get(proposal_id)))
+    require_curation_allowed(_DEDUP_WRITE_OPERATION, confirmed=True)
 
-    current_plan = _build_canonical_plan(board_id)
-    current_hash = compute_proposal_hash(current_plan)
-    if current_hash != proposal.proposal_hash:
-        raise StaleProposalError(
-            proposal_id, proposal.proposal_hash, current_hash
-        )
+    # Recompute the proposal proof, mutate, apply lifecycle and resolve the
+    # relational proposal ACK under ONE board lease.  This closes the race
+    # where the old code released its graph transaction before resolve().
+    with guarded_board_write(
+        board_id,
+        operation=_DEDUP_WRITE_OPERATION,
+        owner_id=created_by,
+        mutation_ref=f"kg-dedup-proposal:{proposal_id}",
+    ) as write_lease:
+        proposal = _validate_pending(run_async_blocking(store.get(proposal_id)))
+        current_plan = _build_canonical_plan(board_id)
+        current_hash = compute_proposal_hash(current_plan)
+        proposal_plan = dict(proposal.plan)
+        if current_hash != proposal.proposal_hash:
+            completed_records = _completed_proposal_records(
+                board_id,
+                proposal_id,
+                proposal_plan,
+            )
+            if completed_records is None:
+                raise StaleProposalError(
+                    proposal_id, proposal.proposal_hash, current_hash
+                )
+            # The previous attempt reached every tagged tombstone but failed
+            # before proposal ACK. Retry the durability barrier and cache
+            # finalization; never scan/mutate unrelated new groups.
+            started = datetime.now(timezone.utc).isoformat()
+            write_lease.ensure_durable()
+            from okto_pulse.core.kg.equivalence_fold import (
+                invalidate_equivalence_fold_cache,
+            )
 
-    # Hash equality proves the current groups ARE the proposed plan —
-    # executing the reversible default acts on exactly those groups.
-    report = migrate_dedup_entities(
-        board_id, confirmed=True, created_by=created_by
-    )
-    run_async_blocking(store.resolve(proposal_id, "resolved"))
-    report["proposal_id"] = proposal_id
-    report["proposal_status"] = "resolved"
+            write_lease.ensure_owned(
+                failure_phase="before_cache_invalidation"
+            )
+            invalidate_equivalence_fold_cache(board_id)
+            report = _already_applied_proposal_report(
+                board_id,
+                proposal_plan,
+                started=started,
+            )
+        else:
+            # Hash equality proves the current groups ARE the proposed plan —
+            # executing the reversible default acts on exactly those groups.
+            report = _run_dedup_migration(
+                board_id,
+                dry_run=False,
+                created_by=created_by,
+                started=datetime.now(timezone.utc).isoformat(),
+                write_lease=write_lease,
+                proposal_id=proposal_id,
+            )
+        # ACK only after successful graph durability, while ownership is still
+        # held.  Any lifecycle/resolve/release failure prevents a success return.
+        write_lease.ensure_owned(failure_phase="before_proposal_resolve")
+        run_async_blocking(store.resolve(proposal_id, "resolved"))
+        report["proposal_id"] = proposal_id
+        report["proposal_status"] = "resolved"
+
     logger.info(
         "kg.curation.approved proposal=%s board=%s",
         proposal_id, board_id,
@@ -695,9 +1045,7 @@ def unmerge_equivalence(board_id: str, record_id: str) -> dict[str, Any]:
         "revoked": False,
     }
 
-    async def _run() -> None:
-        ledger = require_equivalence_ledger()
-        record = await ledger.get(record_id)
+    def _require_record(record: EquivalenceRecord | None) -> EquivalenceRecord:
         if record is None:
             raise EquivalenceLedgerError(
                 "equivalence_record_not_found", record_id=record_id
@@ -709,6 +1057,30 @@ def unmerge_equivalence(board_id: str, record_id: str) -> dict[str, Any]:
                 record_id=record_id,
                 remediation=f"Record belongs to board {record.board_id}.",
             )
+        return record
+
+    ledger = require_equivalence_ledger()
+    record = _require_record(run_async_blocking(ledger.get(record_id)))
+    result["survivor_id"] = record.survivor_id
+    if not record.is_active:
+        logger.warning(
+            "kg.equivalence.unmerge_noop record=%s already revoked at %s",
+            record_id, record.revoked_at,
+        )
+        result["already_revoked"] = True
+        return result
+
+    graph_write_possible = False
+
+    with guarded_board_write(
+        board_id,
+        operation=_UNMERGE_WRITE_OPERATION,
+        owner_id="cli:kg-unmerge",
+        mutation_ref=f"kg-unmerge:{record_id}",
+    ) as write_lease:
+        # Re-read after acquisition so a contender that completed immediately
+        # before us cannot make this call apply the same finalization twice.
+        record = _require_record(run_async_blocking(ledger.get(record_id)))
         result["survivor_id"] = record.survivor_id
         if not record.is_active:
             logger.warning(
@@ -716,24 +1088,85 @@ def unmerge_equivalence(board_id: str, record_id: str) -> dict[str, Any]:
                 record_id, record.revoked_at,
             )
             result["already_revoked"] = True
-            return
+            # The guard requires a closed lifecycle on normal exit.  This path
+            # is only reachable for the acquisition race; it mutates no graph.
+            write_lease.ensure_durable()
+            return result
+
         restored = 0
-        async with await get_kg_registry().graph_transaction.begin(board_id) as graph_scope:
-            for member_id in record.merged_ids:
-                graph_scope.execute(
-                    f"MATCH (n:{record.node_type}) WHERE n.id = $id "
-                    f"AND n.revocation_reason = $reason "
-                    f"SET n.superseded_by = NULL, n.superseded_at = NULL, "
-                    f"n.revocation_reason = NULL",
-                    {"id": member_id, "reason": f"dedup:{record_id}"},
+
+        async def _restore_members() -> None:
+            nonlocal restored, graph_write_possible
+            write_lease.ensure_owned(failure_phase="before_graph_transaction")
+            async with await get_kg_registry().graph_transaction.begin(
+                board_id
+            ) as raw_graph_scope:
+                graph_scope = _LeaseFencedGraphScope(
+                    raw_graph_scope,
+                    write_lease,
                 )
-                restored += 1
-        await ledger.revoke(record_id, "unmerge")
+                for member_id in record.merged_ids:
+                    # Mark before the call because an auto-commit adapter can
+                    # persist the SET and then raise/cancel.
+                    graph_write_possible = True
+                    graph_scope.execute(
+                        f"MATCH (n:{record.node_type}) WHERE n.id = $id "
+                        f"AND n.revocation_reason = $reason "
+                        f"SET n.superseded_by = NULL, n.superseded_at = NULL, "
+                        f"n.revocation_reason = NULL",
+                        {"id": member_id, "reason": f"dedup:{record_id}"},
+                    )
+                    restored += 1
+                write_lease.ensure_owned(
+                    failure_phase="before_graph_scope_exit"
+                )
+
+        try:
+            run_async_blocking(_restore_members())
+        except BaseException as operation_exc:
+            if graph_write_possible:
+                try:
+                    write_lease.ensure_durable()
+                except BaseException as lifecycle_exc:
+                    logger.error(
+                        "kg.equivalence.unmerge_exception_durability_failed "
+                        "record=%s board=%s operation_error=%s "
+                        "lifecycle_error=%s write_may_be_applied=true",
+                        record_id,
+                        board_id,
+                        type(operation_exc).__name__,
+                        type(lifecycle_exc).__name__,
+                        exc_info=True,
+                        extra={
+                            "event": (
+                                "kg.equivalence."
+                                "unmerge_exception_durability_failed"
+                            ),
+                            "record_id": record_id,
+                            "board_id": board_id,
+                            "operation_error_type": type(
+                                operation_exc
+                            ).__name__,
+                            "lifecycle_error_type": type(
+                                lifecycle_exc
+                            ).__name__,
+                            "write_may_be_applied": True,
+                        },
+                    )
+                    raise lifecycle_exc from operation_exc
+            raise
+
+        # Graph durability precedes the relational ledger ACK.  The lease stays
+        # held through revoke + cache finalization and guard release.
+        write_lease.ensure_durable()
+        write_lease.ensure_owned(failure_phase="before_equivalence_revoke")
+        run_async_blocking(ledger.revoke(record_id, "unmerge"))
         # FR6/TR5: revoke is a ledger write — desagrupa imediatamente.
         from okto_pulse.core.kg.equivalence_fold import (
             invalidate_equivalence_fold_cache,
         )
 
+        write_lease.ensure_owned(failure_phase="before_cache_invalidation")
         invalidate_equivalence_fold_cache(board_id)
         result["members_restored"] = restored
         result["revoked"] = True
@@ -748,7 +1181,6 @@ def unmerge_equivalence(board_id: str, record_id: str) -> dict[str, Any]:
             },
         )
 
-    run_async_blocking(_run())
     return result
 
 

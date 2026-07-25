@@ -631,9 +631,11 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
                 "description": "Spec body",
                 "status": "draft",
                 "version": 4,
-                "assignee_id": "spec-owner",
-                "labels": ["golden"],
-                "created_at": "<timestamp>",
+                    "assignee_id": "spec-owner",
+                    "labels": ["golden"],
+                    "archived": False,
+                    "pre_archive_status": None,
+                    "created_at": "<timestamp>",
                 "updated_at": "<timestamp>",
             },
         ),
@@ -652,9 +654,11 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
                 "active_spec_count": 0,
                 "derivation_pending": False,
                 "version": 2,
-                "assignee_id": "ideation-owner",
-                "labels": ["golden"],
-                "created_at": "<timestamp>",
+                    "assignee_id": "ideation-owner",
+                    "labels": ["golden"],
+                    "archived": False,
+                    "pre_archive_status": None,
+                    "created_at": "<timestamp>",
                 "updated_at": "<timestamp>",
             },
         ),
@@ -672,9 +676,11 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
                 "active_spec_count": 1,
                 "derivation_pending": False,
                 "version": 3,
-                "assignee_id": "refinement-owner",
-                "labels": ["golden"],
-                "created_at": "<timestamp>",
+                    "assignee_id": "refinement-owner",
+                    "labels": ["golden"],
+                    "archived": False,
+                    "pre_archive_status": None,
+                    "created_at": "<timestamp>",
                 "updated_at": "<timestamp>",
             },
         ),
@@ -692,9 +698,11 @@ async def test_list_cards_by_status_optional_filters_are_server_side(
                 "normal_sprint_created": True,
                 "spec_version": 4,
                 "test_scenario_ids": ["ts-c11"],
-                "business_rule_ids": ["br-c11"],
-                "labels": ["golden"],
-            },
+                    "business_rule_ids": ["br-c11"],
+                    "labels": ["golden"],
+                    "archived": False,
+                    "pre_archive_status": None,
+                },
         ),
         (
             "story",
@@ -773,9 +781,10 @@ async def test_list_by_board_per_entity_exact_golden_with_additive_total_overall
         "entity_type": entity_type,
         "total": expected_total,
         "total_overall": 2,
-        "offset": 0,
-        "limit": 1,
-        "items": [item_golden(c11_graph)],
+            "offset": 0,
+            "limit": 1,
+            "include_archived": False,
+            "items": [item_golden(c11_graph)],
     }
     if entity_type == "refinement":
         expected["ideation_id"] = c11_graph["ideation"]
@@ -908,6 +917,148 @@ async def test_list_by_board_include_archived_expands_filtered_and_overall_total
 
 
 @pytest.mark.asyncio
+async def test_list_by_board_archived_contract_for_all_sdlc_families_is_paged(
+    c11_graph,
+    mcp_call,
+    db_factory,
+):
+    """False literals stay false; true returns mixed pages with archive metadata."""
+    suffix = uuid.uuid4().hex[:8]
+    archived_ids = {
+        entity: _id(f"{entity}_archived", suffix)
+        for entity in ("spec", "ideation", "refinement", "sprint")
+    }
+    async with db_factory() as db:
+        db.add_all(
+            [
+                Spec(
+                    id=archived_ids["spec"],
+                    board_id=c11_graph["board"],
+                    title="Archived golden spec",
+                    status=SpecStatus.DRAFT,
+                    labels=["golden"],
+                    archived=True,
+                    pre_archive_status="draft",
+                    created_by=ACTOR_ID,
+                    created_at=STAMP,
+                    updated_at=STAMP,
+                ),
+                Ideation(
+                    id=archived_ids["ideation"],
+                    board_id=c11_graph["board"],
+                    title="Archived golden ideation",
+                    status=IdeationStatus.DRAFT,
+                    labels=["golden"],
+                    archived=True,
+                    pre_archive_status="draft",
+                    created_by=ACTOR_ID,
+                    created_at=STAMP,
+                    updated_at=STAMP,
+                ),
+                Refinement(
+                    id=archived_ids["refinement"],
+                    board_id=c11_graph["board"],
+                    ideation_id=c11_graph["ideation"],
+                    title="Archived golden refinement",
+                    status=RefinementStatus.DRAFT,
+                    labels=["golden"],
+                    archived=True,
+                    pre_archive_status="draft",
+                    created_by=ACTOR_ID,
+                    created_at=STAMP,
+                    updated_at=STAMP,
+                ),
+                Sprint(
+                    id=archived_ids["sprint"],
+                    board_id=c11_graph["board"],
+                    spec_id=c11_graph["spec"],
+                    title="Archived golden sprint",
+                    status=SprintStatus.DRAFT,
+                    lane_type=SprintLaneType.NORMAL,
+                    labels=["golden"],
+                    archived=True,
+                    pre_archive_status="draft",
+                    created_by=ACTOR_ID,
+                    created_at=STAMP,
+                    updated_at=STAMP,
+                ),
+            ]
+        )
+        await db.commit()
+
+    cases = [
+        (
+            "spec",
+            {"status": "draft", "labels": ["golden"]},
+            c11_graph["spec"],
+        ),
+        (
+            "ideation",
+            {"status": "draft", "labels": ["golden"]},
+            c11_graph["ideation"],
+        ),
+        (
+            "refinement",
+            {
+                "ideation_id": c11_graph["ideation"],
+                "status": "draft",
+                "labels": ["golden"],
+            },
+            c11_graph["refinement"],
+        ),
+        (
+            "sprint",
+            {"spec_id": c11_graph["spec"], "status": "draft"},
+            c11_graph["sprint"],
+        ),
+    ]
+
+    for (entity_type, base_filters, active_id), false_literal in zip(
+        cases,
+        (False, "false", "0", "no"),
+        strict=True,
+    ):
+        active_only = await mcp_call(
+            "okto_pulse_list_by_board",
+            board_id=c11_graph["board"],
+            entity_type=entity_type,
+            filters={**base_filters, "include_archived": false_literal},
+            limit=10,
+        )
+        assert active_only["include_archived"] is False
+        assert active_only["total"] == 1
+        assert [item["id"] for item in active_only["items"]] == [active_id]
+        assert active_only["items"][0]["archived"] is False
+        assert active_only["items"][0]["pre_archive_status"] is None
+
+        pages = [
+            await mcp_call(
+                "okto_pulse_list_by_board",
+                board_id=c11_graph["board"],
+                entity_type=entity_type,
+                filters={**base_filters, "include_archived": "true"},
+                offset=offset,
+                limit=1,
+            )
+            for offset in (0, 1)
+        ]
+        assert all(page["include_archived"] is True for page in pages)
+        assert all(page["total"] == 2 for page in pages)
+        assert all(page["total_overall"] == 3 for page in pages)
+        assert all(
+            (page["offset"], page["limit"]) == (offset, 1)
+            for offset, page in enumerate(pages)
+        )
+        projected = [page["items"][0] for page in pages]
+        assert {item["id"] for item in projected} == {
+            active_id,
+            archived_ids[entity_type],
+        }
+        archived = next(item for item in projected if item["archived"])
+        assert archived["pre_archive_status"] == "draft"
+
+
+@pytest.mark.asyncio
 async def test_list_by_board_labels_are_exact_json_members(
     c11_graph,
     mcp_call,
@@ -956,6 +1107,13 @@ async def test_list_by_board_labels_are_exact_json_members(
         ("ideation", {"derivation_pending": "not-a-boolean"}),
         ("story", {"linked": "not-a-boolean"}),
         ("topic", {"include_archived": "not-a-boolean"}),
+        ("spec", {"include_archived": "off"}),
+        ("ideation", {"include_archived": []}),
+        (
+            "refinement",
+            {"ideation_id": "unused", "include_archived": 2},
+        ),
+        ("sprint", {"spec_id": "unused", "include_archived": {}}),
     ],
 )
 async def test_list_by_board_rejects_invalid_filter_values(

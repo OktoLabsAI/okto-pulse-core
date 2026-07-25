@@ -10,6 +10,9 @@ from types import SimpleNamespace
 import pytest
 
 from okto_pulse.core.kg import primitives
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageParentIntent,
+)
 from okto_pulse.core.kg.primitives import (
     _run_cancellation_atomic,
     _run_graph_io,
@@ -97,7 +100,9 @@ async def test_commit_consolidation_drains_graph_audit_and_session_finalization(
         session_id="session-cancel-atomic",
         board_id="board-cancel-atomic",
         artifact_id="artifact-cancel-atomic",
+        artifact_type="spec",
         content_hash="hash-cancel-atomic",
+        spec_lineage_parent_intent=SpecLineageParentIntent.PRESERVE,
         node_candidates={},
         edge_candidates={},
         reconciliation_hints={},
@@ -219,7 +224,9 @@ async def test_audit_staging_failure_requests_graph_compensation_and_keeps_sessi
         session_id="session-audit-stage-failure",
         board_id="board-audit-stage-failure",
         artifact_id="artifact-audit-stage-failure",
+        artifact_type="spec",
         content_hash="hash-audit-stage-failure",
+        spec_lineage_parent_intent=SpecLineageParentIntent.PRESERVE,
         node_candidates={},
         edge_candidates={},
         reconciliation_hints={},
@@ -471,6 +478,8 @@ async def test_commit_does_not_inspect_orm_pending_change_collections(
         reconciliation_hints={},
         content_hash="hash-pending-uow",
         artifact_id="artifact-pending-uow",
+        artifact_type="spec",
+        spec_lineage_parent_intent=SpecLineageParentIntent.PRESERVE,
         lock=asyncio.Lock(),
         status=SessionStatus.OPEN,
     )

@@ -9,6 +9,9 @@ from types import SimpleNamespace
 import pytest
 
 from okto_pulse.core.kg import primitives
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageParentIntent,
+)
 from okto_pulse.core.kg.schemas import (
     AbortConsolidationRequest,
     AddNodeCandidateRequest,
@@ -64,6 +67,7 @@ async def test_deferred_retry_restages_relational_without_replaying_graph(
         edge_candidates={},
         reconciliation_hints={},
         content_hash="hash-deferred-retry",
+        spec_lineage_parent_intent=SpecLineageParentIntent.PRESERVE,
         committed_graph_node_refs=[],
         lock=asyncio.Lock(),
     )

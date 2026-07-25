@@ -116,6 +116,21 @@ def _count_entity_id_sync(board_id: str, node_id: str) -> int:
             result.close()
 
 
+def _count_outgoing_belongs_to_sync(board_id: str, node_id: str) -> int:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_db, conn):
+        result = conn.execute(
+            "MATCH (n:Entity)-[:belongs_to]->() "
+            "WHERE n.id = $id RETURN count(*)",
+            {"id": node_id},
+        )
+        try:
+            return int(result.get_next()[0])
+        finally:
+            result.close()
+
+
 async def test_fresh_create_mints_deterministic_recipe_id(
     identity_tempdir, monkeypatch
 ):
@@ -288,6 +303,10 @@ async def test_supersede_mints_generation_plus_one_deterministically(
 
     old = await _node_attrs_async(board_id, old_id)
     assert old["superseded_by"] == expected_successor
+    assert await run_blocking_graph_io(
+        lambda: _count_outgoing_belongs_to_sync(board_id, expected_successor),
+        task_name="tests.deterministic_identity.count_successor_provenance",
+    ) == 1
 
     # At-least-once replay of the same explicit SUPERSEDE must acknowledge the
     # already materialized deterministic successor.  Before the replay guard,
@@ -329,3 +348,88 @@ async def test_supersede_mints_generation_plus_one_deterministically(
     assert replay.nodes_superseded == 0
     assert replay.nodes_merged == 1
     assert (await _node_attrs_async(board_id, old_id))["superseded_by"] == expected_successor
+    assert await run_blocking_graph_io(
+        lambda: _count_outgoing_belongs_to_sync(board_id, expected_successor),
+        task_name="tests.deterministic_identity.count_replayed_provenance",
+    ) == 1
+
+
+async def test_supersede_missing_source_stays_blocked(
+    identity_tempdir, monkeypatch
+):
+    """A target id alone cannot launder an unresolved source into provenance."""
+    from okto_pulse.core.kg.primitives import (
+        KGPrimitiveError,
+        begin_consolidation,
+        commit_consolidation,
+        propose_reconciliation,
+    )
+    from okto_pulse.core.kg.schemas import (
+        BeginConsolidationRequest,
+        CommitConsolidationRequest,
+        KGNodeType,
+        NodeCandidate,
+        ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
+    )
+
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}"
+    await _drive_one_session(
+        session_factory,
+        board_id,
+        artifact_ref,
+        "[MKG-A] Existing source",
+    )
+    old_id = (await _query_one_async(board_id, artifact_ref))["id"]
+
+    missing_ref = f"spec:missing-{spec_id}"
+    candidate_id = "mkga_missing_source_supersede"
+    candidate = NodeCandidate(
+        candidate_id=candidate_id,
+        node_type=KGNodeType.ENTITY,
+        title="[MKG-A] Unresolved source",
+        source_artifact_ref=missing_ref,
+        source_confidence=0.95,
+    )
+    begin = await begin_consolidation(
+        BeginConsolidationRequest(
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=spec_id,
+            raw_content="MKG-A unresolved-source supersede",
+            deterministic_candidates=[candidate],
+        ),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    override = ReconciliationHint(
+        candidate_id=candidate_id,
+        operation=ReconciliationOperation.SUPERSEDE,
+        target_node_id=old_id,
+        confidence=0.9,
+        reason="attempt to supersede from an unresolved source",
+    )
+
+    with pytest.raises(KGPrimitiveError) as excinfo:
+        async with session_factory() as db:
+            await commit_consolidation(
+                CommitConsolidationRequest(
+                    session_id=begin.session_id,
+                    agent_overrides={candidate_id: override},
+                ),
+                agent_id="system:layer1_worker",
+                db=db,
+            )
+
+    assert excinfo.value.code == "kg_node_connectivity_violation"
+    violation = excinfo.value.details["connectivity"]["violations"][0]
+    assert violation["source_artifact_ref"] == missing_ref
+    assert violation["source_resolution_status"] == "unresolved_source_ref"
+    assert (await _node_attrs_async(board_id, old_id))["superseded_by"] is None

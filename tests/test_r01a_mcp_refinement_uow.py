@@ -559,7 +559,12 @@ async def test_refinement_cross_board_matrix_has_no_payload_write_or_log(
         },
         "delete_kb": {"error": "Refinement not found"},
         "ask": {"error": "Refinement not found"},
-        "answer": {"error": "Q&A item not found or invalid selection"},
+        "answer": {
+            "error": "qa_not_found",
+            "code": "qa_not_found",
+            "message": "Q&A item not found",
+            "mutation_applied": False,
+        },
         "delete_qa": {"error": "Q&A item not found"},
     }
     assert "foreign-secret" not in json.dumps(results)
@@ -648,7 +653,12 @@ async def test_refinement_missing_parent_matrix_is_not_found_and_zero_write(
         {"error": "Failed to create knowledge base item — refinement not found"},
         {"error": "Refinement not found"},
         {"error": "Refinement not found"},
-        {"error": "Q&A item not found or invalid selection"},
+        {
+            "error": "qa_not_found",
+            "code": "qa_not_found",
+            "message": "Q&A item not found",
+            "mutation_applied": False,
+        },
         {"error": "Q&A item not found"},
     ]
     assert await _refinement_graph_state(_board_scope_graph) == before
@@ -761,7 +771,12 @@ async def test_refinement_qa_rejects_same_board_wrong_parent_without_log(
         qa_id=local["qa_id"],
     )
 
-    assert answered == {"error": "Q&A item not found or invalid selection"}
+    assert answered == {
+        "error": "qa_not_found",
+        "code": "qa_not_found",
+        "message": "Q&A item not found",
+        "mutation_applied": False,
+    }
     assert deleted == {"error": "Q&A item not found"}
     assert await _refinement_graph_state(_board_scope_graph) == before
 

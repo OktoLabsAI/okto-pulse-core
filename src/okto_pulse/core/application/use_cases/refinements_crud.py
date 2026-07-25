@@ -52,6 +52,11 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.scope import ActorScope, QueryScope
+from okto_pulse.core.application.history_pagination import (
+    history_page_metadata,
+    validate_history_window,
+    validate_snapshot_version,
+)
 
 
 _WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
@@ -493,18 +498,49 @@ class DeriveSpecFromRefinementUseCase:
 
 
 class ListRefinementHistoryCommand:
-    __slots__ = ("refinement_id", "limit")
+    __slots__ = ("refinement_id", "limit", "offset")
 
-    def __init__(self, refinement_id: str, *, limit: int = 50) -> None:
+    def __init__(
+        self,
+        refinement_id: str,
+        *,
+        limit: object = 50,
+        offset: object = 0,
+    ) -> None:
+        window = validate_history_window(limit, offset)
         self.refinement_id = refinement_id
-        self.limit = limit
+        self.limit = window.limit
+        self.offset = window.offset
 
 
 class ListRefinementHistoryResult:
-    __slots__ = ("history",)
+    __slots__ = (
+        "history",
+        "total",
+        "has_more",
+        "next_offset",
+        "truncated",
+    )
 
-    def __init__(self, history: list[Any]) -> None:
+    def __init__(
+        self,
+        history: list[Any],
+        *,
+        total: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> None:
         self.history = history
+        exact_total = len(history) if total is None else total
+        metadata = history_page_metadata(
+            total=exact_total,
+            returned=len(history),
+            window=validate_history_window(limit, offset),
+        )
+        self.total = metadata.total
+        self.has_more = metadata.has_more
+        self.next_offset = metadata.next_offset
+        self.truncated = metadata.truncated
 
 
 class ListRefinementHistoryUseCase:
@@ -515,9 +551,19 @@ class ListRefinementHistoryUseCase:
     ) -> ListRefinementHistoryResult:
         await _require_accessible_refinement(uow, command.refinement_id, actor)
         history = await uow.services.refinements.list_history(
-            command.refinement_id, command.limit
+            command.refinement_id,
+            limit=command.limit,
+            offset=command.offset,
         )
-        return ListRefinementHistoryResult(history)
+        total = await uow.services.refinements.count_history(
+            command.refinement_id
+        )
+        return ListRefinementHistoryResult(
+            history,
+            total=total,
+            limit=command.limit,
+            offset=command.offset,
+        )
 
 
 # ===========================================================================
@@ -724,9 +770,9 @@ class ListRefinementSnapshotsUseCase:
 class GetRefinementSnapshotCommand:
     __slots__ = ("refinement_id", "version")
 
-    def __init__(self, refinement_id: str, version: int) -> None:
+    def __init__(self, refinement_id: str, version: object) -> None:
         self.refinement_id = refinement_id
-        self.version = version
+        self.version = validate_snapshot_version(version)
 
 
 class GetRefinementSnapshotResult:

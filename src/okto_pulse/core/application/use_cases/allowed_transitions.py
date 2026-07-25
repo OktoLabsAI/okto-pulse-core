@@ -333,10 +333,6 @@ class ListAllowedTransitionsUseCase:
         try:
             if entity_type == "ideation" and transition.to_status == "done":
                 await services.ideations._enforce_ambiguity_gate(entity)
-                await services.ideations._validate_cognitive_done(
-                    entity,
-                    read_only_preview=True,
-                )
                 await services.resource_gate.validate_or_raise_entity_completion(
                     entity.board_id,
                     "ideation",
@@ -570,11 +566,20 @@ class ListAllowedTransitionsUseCase:
         sprint: Any,
         target_status: str,
     ) -> str | None:
-        cards = [
-            card
-            for card in (getattr(sprint, "cards", None) or [])
-            if not bool(getattr(card, "archived", False))
-        ]
+        list_assigned_cards = getattr(
+            services.sprints, "list_assigned_cards", None
+        )
+        if callable(list_assigned_cards):
+            cards = list(await list_assigned_cards(sprint.id))
+        else:
+            # Compatibility for persistence-neutral test/service catalogs. Real
+            # runtime catalogs expose list_assigned_cards and never trust an ORM
+            # relationship that may predate a re-assignment in this transaction.
+            cards = [
+                card
+                for card in (getattr(sprint, "cards", None) or [])
+                if not bool(getattr(card, "archived", False))
+            ]
         if target_status == "active":
             if not cards:
                 return "sprint_empty: assign at least one card before activation."
@@ -626,7 +631,7 @@ class ListAllowedTransitionsUseCase:
                 scope = SprintScopeResolver.resolve(
                     sprint=sprint,
                     spec=spec,
-                    cards=getattr(sprint, "cards", None) or [],
+                    cards=cards,
                 )
                 pending = [
                     scenario
@@ -668,7 +673,7 @@ class ListAllowedTransitionsUseCase:
                 scope = SprintScopeResolver.resolve(
                     sprint=sprint,
                     spec=spec,
-                    cards=getattr(sprint, "cards", None) or [],
+                    cards=cards,
                 )
                 scope_blockers = completion_blockers(
                     scope,
@@ -788,6 +793,7 @@ class ListAllowedTransitionsUseCase:
         from okto_pulse.core.services.bug_regression_scenarios import (
             AmendmentLineageFact,
             BugRegressionGateValidator,
+            BugRegressionScenarioEligibilityResolver,
         )
         from okto_pulse.core.services.main import (
             _amendment_regression_test_task_ids,
@@ -809,10 +815,37 @@ class ListAllowedTransitionsUseCase:
             getattr(card, "linked_test_task_ids", None) or []
         ) or _amendment_regression_test_task_ids(amendment_rows)
         if not effective_test_ids:
+            origin_task = (
+                await services.cards.get_card(card.origin_task_id)
+                if getattr(card, "origin_task_id", None)
+                else None
+            )
+            eligibility = (
+                BugRegressionScenarioEligibilityResolver().resolve(
+                    bug_card=card,
+                    spec=spec,
+                    origin_task=origin_task,
+                    amendment_facts=amendment_facts,
+                )
+                if spec is not None and origin_task is not None
+                else None
+            )
+            eligible_count = (
+                len(eligibility.eligible_scenarios) if eligibility else 0
+            )
+            if eligible_count == 0:
+                return (
+                    True,
+                    "missing_regression_test_task: zero eligible existing "
+                    "scenarios; use Path B to resolve the semantic gap before "
+                    "starting this bug.",
+                )
             return (
                 True,
                 "missing_regression_test_task: create and link a fresh "
-                "regression test card before starting this bug.",
+                "regression test card using one of the "
+                f"{eligible_count} eligible existing scenario(s) before "
+                "starting this bug.",
             )
 
         all_scenarios = {
@@ -966,30 +999,63 @@ class ListAllowedTransitionsUseCase:
         pending_scenarios: list[PendingScenario] = []
         if (
             target == CardStatus.DONE
-            and spec
+            and card_type == CardType.TEST
             and not bool(board_settings.get("skip_test_coverage_global", False))
         ):
             from okto_pulse.core.services.main import (
                 scenario_has_authenticated_required_evidence,
             )
 
-            by_id = {
-                item.get("id"): item
-                for item in (getattr(spec, "test_scenarios", None) or [])
-            }
-            for scenario_id in getattr(card, "test_scenario_ids", None) or []:
-                scenario = by_id.get(scenario_id)
-                if scenario and (
-                    scenario.get("status") in {"draft", "ready"}
-                    or not scenario_has_authenticated_required_evidence(
-                        board_id=card.board_id,
-                        spec_id=spec.id,
-                        scenario=scenario,
-                        acceptance_criteria=list(
-                            getattr(spec, "acceptance_criteria", None) or []
-                        ),
+            scenario_ids = [
+                str(value)
+                for value in (getattr(card, "test_scenario_ids", None) or [])
+            ]
+            if not scenario_ids:
+                pending_scenarios.append(
+                    PendingScenario(
+                        scenario_id="__unlinked__",
+                        title="No test scenario is linked to this test card",
+                        status="missing",
                     )
-                ):
+                )
+            elif spec is None:
+                pending_scenarios.extend(
+                    PendingScenario(
+                        scenario_id=scenario_id,
+                        title=f"Unresolved test scenario {scenario_id}",
+                        status="missing",
+                    )
+                    for scenario_id in scenario_ids
+                )
+            else:
+                by_id = {
+                    str(item.get("id")): item
+                    for item in (getattr(spec, "test_scenarios", None) or [])
+                    if isinstance(item, dict) and item.get("id") is not None
+                }
+                for scenario_id in scenario_ids:
+                    scenario = by_id.get(scenario_id)
+                    if scenario is None:
+                        pending_scenarios.append(
+                            PendingScenario(
+                                scenario_id=scenario_id,
+                                title=f"Unresolved test scenario {scenario_id}",
+                                status="missing",
+                            )
+                        )
+                        continue
+                    if not (
+                        scenario.get("status") in {"draft", "ready"}
+                        or not scenario_has_authenticated_required_evidence(
+                            board_id=card.board_id,
+                            spec_id=spec.id,
+                            scenario=scenario,
+                            acceptance_criteria=list(
+                                getattr(spec, "acceptance_criteria", None) or []
+                            ),
+                        )
+                    ):
+                        continue
                     pending_scenarios.append(
                         PendingScenario(
                             scenario_id=scenario_id,
@@ -1055,6 +1121,26 @@ class ListAllowedTransitionsUseCase:
         )
         decision = evaluate_card_transition(facts)
         if not decision.allowed and decision.block:
+            if (
+                decision.block.code == "test_scenarios_pending"
+                and any(
+                    scenario.status == "missing"
+                    for scenario in pending_scenarios
+                )
+            ):
+                missing_ids = [
+                    scenario.scenario_id
+                    for scenario in pending_scenarios
+                    if scenario.status == "missing"
+                    and scenario.scenario_id != "__unlinked__"
+                ]
+                detail = (
+                    "Test-card scenario linkage is empty or contains missing/"
+                    "unresolved scenario ids"
+                )
+                if missing_ids:
+                    detail += f" ({', '.join(missing_ids[:5])})"
+                return f"{decision.block.code}: {detail}."
             return f"{decision.block.code}: {decision.block.detail}"
 
         old_level = services.cards._STATUS_ORDER.get(old_status, 0)

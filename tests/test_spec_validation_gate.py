@@ -38,6 +38,7 @@ from sqlalchemy_test_models import (
     Refinement,
     RefinementStatus,
     Spec,
+    SpecHistory,
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import SpecMove, SpecUpdate
@@ -311,8 +312,22 @@ class TestStateGuard:
                 reviewer_name="Tester",
                 data=_valid_submit_data(),
             )
+            history = (
+                await db.execute(
+                    select(SpecHistory).where(SpecHistory.spec_id == SPEC_ID)
+                )
+            ).scalar_one()
         assert result["outcome"] == "success"
         assert result["spec_status"] == "validated"
+        assert history.action == "validation_submitted"
+        assert history.changes == [
+            {
+                "field": "current_validation_id",
+                "old": None,
+                "new": result["id"],
+            },
+            {"field": "status", "old": "approved", "new": "validated"},
+        ]
 
     async def test_successful_submit_emits_status_consolidation_event(self, db_factory):
         """Spec validation promotion must re-enqueue KG consolidation."""

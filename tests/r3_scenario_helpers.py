@@ -22,6 +22,7 @@ from sqlalchemy_test_models import (
     CardStatus,
     CardType,
     Ideation,
+    IdeationStatus,
     Refinement,
     RefinementKnowledgeBase,
     RefinementStatus,
@@ -76,7 +77,7 @@ async def seed_refinement(
     design_id = sid("refdesign")
     async with db_factory() as db:
         db.add(Ideation(id=ideation_id, board_id=board_id, title="R3 ideation",
-                        created_by=USER_ID))
+                        status=IdeationStatus.DONE, created_by=USER_ID))
         db.add(Refinement(
             id=refinement_id, board_id=board_id, ideation_id=ideation_id,
             title="R3 refinement", created_by=USER_ID,

@@ -32,6 +32,12 @@ from okto_pulse.core.application.use_cases.base import (
 )
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.scope import ActorScope, QueryScope
+from okto_pulse.core.application.history_pagination import (
+    history_page_metadata,
+    validate_history_window,
+    validate_snapshot_version,
+)
+from okto_pulse.core.application.ideation_scope import merge_scope_assessment
 
 
 _WRITE_SHARE_PERMISSIONS = {"editor", "admin"}
@@ -368,22 +374,22 @@ class EvaluateComplexityUseCase:
             uow, command.ideation_id, actor, write=True
         )
 
-        body = command.body
-        scope = ideation.scope_assessment or {}
-        for dim in ("domains", "ambiguity", "dependencies"):
-            if dim in body:
-                scope[dim] = int(body[dim])
-            if f"{dim}_justification" in body:
-                scope[f"{dim}_justification"] = body[f"{dim}_justification"]
+        previous_scope = dict(ideation.scope_assessment or {})
+        scope = merge_scope_assessment(previous_scope, command.body)
 
-        ideation.scope_assessment = scope
-        mark_mutable_field_modified(ideation, "scope_assessment")
-        # evaluate_complexity reads the ideation again through the persistence
-        # port. Flush the detached-record delta first so REST and MCP classify the
-        # same submitted scope values within this transaction.
-        await uow.synchronize()
+        if scope != previous_scope:
+            ideation.scope_assessment = scope
+            mark_mutable_field_modified(ideation, "scope_assessment")
+            # evaluate_complexity reads the ideation again through the persistence
+            # port. Flush the detached-record delta first so REST and MCP classify
+            # the same submitted scope values within this transaction.
+            await uow.synchronize()
 
-        ideation = await service.evaluate_complexity(command.ideation_id, actor.actor_id)
+        ideation = await service.evaluate_complexity(
+            command.ideation_id,
+            actor.actor_id,
+            previous_scope_assessment=previous_scope,
+        )
         if not ideation:
             raise EntityNotFoundError("ideation", command.ideation_id)
         await commit(uow)
@@ -466,9 +472,9 @@ class ListIdeationSnapshotsUseCase:
 class GetIdeationSnapshotCommand:
     __slots__ = ("ideation_id", "version")
 
-    def __init__(self, ideation_id: str, version: int) -> None:
+    def __init__(self, ideation_id: str, version: object) -> None:
         self.ideation_id = ideation_id
-        self.version = version
+        self.version = validate_snapshot_version(version)
 
 
 class GetIdeationSnapshotResult:
@@ -499,18 +505,49 @@ class GetIdeationSnapshotUseCase:
 
 
 class ListIdeationHistoryCommand:
-    __slots__ = ("ideation_id", "limit")
+    __slots__ = ("ideation_id", "limit", "offset")
 
-    def __init__(self, ideation_id: str, *, limit: int = 50) -> None:
+    def __init__(
+        self,
+        ideation_id: str,
+        *,
+        limit: object = 50,
+        offset: object = 0,
+    ) -> None:
+        window = validate_history_window(limit, offset)
         self.ideation_id = ideation_id
-        self.limit = limit
+        self.limit = window.limit
+        self.offset = window.offset
 
 
 class ListIdeationHistoryResult:
-    __slots__ = ("history",)
+    __slots__ = (
+        "history",
+        "total",
+        "has_more",
+        "next_offset",
+        "truncated",
+    )
 
-    def __init__(self, history: list[Any]) -> None:
+    def __init__(
+        self,
+        history: list[Any],
+        *,
+        total: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> None:
         self.history = history
+        exact_total = len(history) if total is None else total
+        metadata = history_page_metadata(
+            total=exact_total,
+            returned=len(history),
+            window=validate_history_window(limit, offset),
+        )
+        self.total = metadata.total
+        self.has_more = metadata.has_more
+        self.next_offset = metadata.next_offset
+        self.truncated = metadata.truncated
 
 
 class ListIdeationHistoryUseCase:
@@ -521,9 +558,19 @@ class ListIdeationHistoryUseCase:
     ) -> ListIdeationHistoryResult:
         await _require_accessible_ideation(uow, command.ideation_id, actor)
         history = await uow.services.ideations.list_history(
-            command.ideation_id, command.limit
+            command.ideation_id,
+            limit=command.limit,
+            offset=command.offset,
         )
-        return ListIdeationHistoryResult(history)
+        total = await uow.services.ideations.count_history(
+            command.ideation_id
+        )
+        return ListIdeationHistoryResult(
+            history,
+            total=total,
+            limit=command.limit,
+            offset=command.offset,
+        )
 
 
 # ===========================================================================

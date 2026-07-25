@@ -101,9 +101,21 @@ def _register_query_tools(monkeypatch, board_id: str) -> dict:
     async def _stub_user_boards(get_agent=None, get_uow=None):
         return _Agent(), [board_id]
 
+    async def _board_agent(_board_id: str):
+        return _Agent()
+
+    async def _global_agent():
+        return _Agent()
+
     monkeypatch.setattr(kqt, "_get_user_boards", _stub_user_boards)
     mcp = _MCPRegistryDouble()
-    kqt.register_kg_query_tools(mcp, get_agent=lambda: None, get_uow=lambda: None)
+    kqt.register_kg_query_tools(
+        mcp,
+        get_agent=lambda: None,
+        get_uow=lambda: None,
+        get_board_agent=_board_agent,
+        get_global_agent=_global_agent,
+    )
     return mcp.tools
 
 

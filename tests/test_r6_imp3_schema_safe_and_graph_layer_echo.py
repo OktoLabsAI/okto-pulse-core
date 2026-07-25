@@ -198,10 +198,15 @@ async def test_get_related_context_raw_uuid_survives_real_fastmcp_transport(
     monkeypatch.setattr(kg_query_tools, "get_kg_service", lambda: FakeService())
 
     host = FastMCP("related-context-transport-regression")
+
+    async def _board_agent(_board_id: str):
+        return Agent()
+
     kg_query_tools.register_kg_query_tools(
         host,
         get_agent=lambda: None,
         get_uow=lambda: None,
+        get_board_agent=_board_agent,
     )
     async with Client(host) as client:
         result = await client.call_tool(

@@ -28,7 +28,7 @@ def _mcp(monkeypatch, db_factory):
     async def _fake_ctx(_board_id):
         return SimpleNamespace(
             agent_id="mcp-agent",
-            permissions=["*"],
+            permissions=["*", "board:read"],
             realm_id="local",
         )
 

@@ -18,6 +18,10 @@ from okto_pulse.core.application.artifact_propagation import (
     propagate_artifacts,
     validate_artifact_selections,
 )
+from okto_pulse.core.application.history_pagination import (
+    validate_history_window,
+    validate_snapshot_version,
+)
 from okto_pulse.core.domain.amendment_eligibility import evaluate_amendment_eligibility
 from okto_pulse.core.domain.card_transition import (
     CARD_STATUS_ORDER,
@@ -134,6 +138,7 @@ from okto_pulse.core.services.board_governance import (
     QASelfAnsweringNotAllowedError,
     build_qa_self_answer_denied_details,
 )
+from okto_pulse.core.services.qa_selection import validate_choice_selection
 from okto_pulse.core.services.bug_regression_observability import (
     emit_no_unlock_invariant,
     observe_bug_regression_resolution,
@@ -143,6 +148,7 @@ from okto_pulse.core.services.bug_regression_scenarios import (
     AmendmentLineageFact,
     BugRegressionCoverageState,
     BugRegressionGateValidator,
+    BugRegressionScenarioEligibilityResolver,
     CoverageConfirmationFact,
     evaluate_coverage_confirmation_consumability,
 )
@@ -1460,6 +1466,8 @@ class SpecLockedError(Exception):
     record with outcome='success'. To edit, the spec must be moved back to
     draft or approved (any backward transition from validated/in_progress/done),
     which atomically clears current_validation_id but preserves validations history.
+    For an eligible existing scenario, leave spec content unchanged for Path A regression evidence;
+    use amendment lineage when expected behavior changed.
     """
 
     def __init__(
@@ -2657,22 +2665,6 @@ def _governed_spec_knowledge_parent(
     return None
 
 
-async def _validate_spec_parent_on_board(
-    db: Any,
-    *,
-    board_id: str,
-    parent_type: str,
-    parent_id: str,
-) -> Any:
-    """Validate a prospective governed Spec parent before staging any write."""
-
-    parent = await _application_get(db, parent_type, parent_id)
-    if parent is None or parent.board_id != board_id:
-        label = parent_type.capitalize()
-        raise ValueError(f"{label} not found on this board")
-    return parent
-
-
 async def _reset_v2_knowledge_for_relink(
     db: Any,
     *,
@@ -2788,7 +2780,9 @@ class CardService:
             entity_id=card.id,
             entity=card,
             target_label="card",
-            resolve_graph_state=not read_only_preview,
+            # Health composition is read-only and must match the mutation path.
+            # Skipping it in previews makes a healthy graph look unavailable.
+            resolve_graph_state=True,
         )
 
     @staticmethod
@@ -2858,6 +2852,9 @@ class CardService:
         query_scope: QueryScope | None = None,
         target_id: str | None = None,
         knowledge_propagation_v2: bool = False,
+        actor_type: str = "user",
+        actor_name: str | None = None,
+        activity_details: Mapping[str, Any] | None = None,
     ) -> ApplicationRecord | None:
         """Create a new card in a board.
 
@@ -2888,6 +2885,30 @@ class CardService:
         origin_task_id = getattr(data, "origin_task_id", None)
         if card_type_val != "bug" and origin_task_id:
             raise ValueError("origin_task_id is only allowed for bug cards")
+
+        # Every card type must enter through the beginning of the lifecycle.
+        # Persisting an advanced state here bypasses move_card's transition,
+        # resource, validation, audit, and KG event boundaries.
+        if data.status not in (CardStatus.NOT_STARTED, CardStatus.STARTED):
+            raise CardOperationError(
+                "card_initial_status_invalid",
+                (
+                    "Cards can only be created with status 'not_started' or "
+                    "'started'. Use move_card to advance the lifecycle."
+                ),
+                remediation=(
+                    "Create the card in an initial status, then use move_card "
+                    "for every subsequent transition."
+                ),
+                facts={
+                    "requested_status": data.status.value,
+                    "allowed_statuses": [
+                        CardStatus.NOT_STARTED.value,
+                        CardStatus.STARTED.value,
+                    ],
+                    "card_type": card_type_val,
+                },
+            )
 
         if card_type_val == "bug":
             if not origin_task_id:
@@ -2957,15 +2978,6 @@ class CardService:
                 raise ValueError("expected_behavior is required for bug cards")
             if not data.observed_behavior:
                 raise ValueError("observed_behavior is required for bug cards")
-
-            # Bug cards must start as not_started — they must go through
-            # the move_card workflow to reach in_progress/done (which enforces
-            # test task linkage). Prevent bypassing via create with status=done.
-            if data.status not in (CardStatus.NOT_STARTED, CardStatus.STARTED):
-                raise ValueError(
-                    "Bug cards can only be created with status 'not_started' or 'started'. "
-                    "Use move_card to advance status — this enforces test task linkage requirements."
-                )
 
         # Enforce: every card must be linked to a spec
         if not data.spec_id:
@@ -3041,7 +3053,7 @@ class CardService:
             entity_id=spec.id,
             critical_action=CriticalAction.CARD_CREATE,
             surface="service",
-            actor_type="user",
+            actor_type=actor_type,
         )
 
         # Get max position for the status column
@@ -3143,17 +3155,27 @@ class CardService:
             session=self.db,
         )
 
-        actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        resolved_actor_name = actor_name or await resolve_actor_name(
+            self.db,
+            user_id,
+            board_id,
+        )
+        extra_activity_details = {
+            field: activity_log_value(value)
+            for field, value in (activity_details or {}).items()
+        }
         await self._log_activity(
             board_id=board_id,
             card_id=card.id,
             action="card_created",
-            actor_type="user",
+            actor_type=actor_type,
             actor_id=user_id,
-            actor_name=actor_name,
+            actor_name=resolved_actor_name,
             details={
+                **extra_activity_details,
                 "title": data.title,
                 "status": data.status.value,
+                "priority": data.priority.value,
                 "traceability": traceability.to_dict(),
             },
         )
@@ -3238,11 +3260,35 @@ class CardService:
         data: CardUpdate,
         *,
         allow_card_resource_write: bool = False,
+        actor_type: str = "user",
+        actor_name: str | None = None,
+        activity_details: Mapping[str, Any] | None = None,
     ) -> ApplicationRecord | None:
         """Update a card."""
         card = await self.get_card(card_id)
         if not card:
             return None
+
+        update_data = data.model_dump(exclude_unset=True)
+        if "status" in update_data:
+            requested_status = update_data["status"]
+            raise CardOperationError(
+                "card_status_update_requires_move",
+                "Card status cannot be changed through update_card.",
+                remediation=(
+                    "Use move_card so transition gates, validation evidence, "
+                    "audit events, and KG projections are enforced."
+                ),
+                facts={
+                    "card_id": card.id,
+                    "current_status": card.status.value,
+                    "requested_status": (
+                        requested_status.value
+                        if isinstance(requested_status, CardStatus)
+                        else requested_status
+                    ),
+                },
+            )
 
         archived_block = archived_card_block(
             CardTransitionFacts(
@@ -3255,7 +3301,6 @@ class CardService:
         if archived_block is not None:
             raise ValueError(archived_block.detail)
 
-        update_data = data.model_dump(exclude_unset=True)
         _ensure_card_resource_write_allowed(
             update_data,
             allow=allow_card_resource_write,
@@ -3335,7 +3380,7 @@ class CardService:
             entity_id=card.id,
             critical_action=CriticalAction.CARD_UPDATE,
             surface="service",
-            actor_type="user",
+            actor_type=actor_type,
             card_id=card.id,
         )
 
@@ -3442,18 +3487,30 @@ class CardService:
             )
             card = await _application_refresh(self.db, card)
 
-        actor_name = await resolve_actor_name(self.db, user_id, card.board_id)
+        resolved_actor_name = actor_name or await resolve_actor_name(
+            self.db,
+            user_id,
+            card.board_id,
+        )
+        extra_activity_details = {
+            field: activity_log_value(value)
+            for field, value in (activity_details or {}).items()
+        }
         await self._log_activity(
             board_id=card.board_id,
             card_id=card_id,
             action="card_updated",
-            actor_type="user",
+            actor_type=actor_type,
             actor_id=user_id,
-            actor_name=actor_name,
+            actor_name=resolved_actor_name,
             # Preserve the legacy top-level fields consumed by summaries and
             # existing integrations, while exposing the same structured
             # field-level diff contract used by Spec history.
-            details={**activity_update_data, "changes": activity_changes},
+            details={
+                **extra_activity_details,
+                **activity_update_data,
+                "changes": activity_changes,
+            },
         )
 
         # spec 28583299 (Ideação #4, FR6/FR7 + api_21467ada/api_ff834434):
@@ -3508,10 +3565,20 @@ class CardService:
 
     async def add_dependency(
         self, card_id: str, depends_on_id: str
-    ) -> ApplicationRecord | None:
-        """Add a dependency. Returns None if duplicate, self-referential, or circular."""
+    ) -> ApplicationRecord:
+        """Add a dependency with idempotent duplicate handling.
+
+        A repeated edge returns the existing record. Invalid graph shapes use
+        distinct, transport-neutral error codes so adapters do not have to
+        infer whether a conflict was a self-reference or a cycle.
+        """
         if card_id == depends_on_id:
-            return None
+            raise CardOperationError(
+                "dependency_self_reference",
+                "A card cannot depend on itself.",
+                remediation="choose_a_different_dependency",
+                facts={"card_id": card_id, "depends_on_id": depends_on_id},
+            )
         existing = await _application_list(
             self.db,
             "card_dependency",
@@ -3522,10 +3589,15 @@ class CardService:
             limit=1,
         )
         if existing:
-            return None
+            return existing[0]
         # Check circular
         if await self._would_create_cycle(card_id, depends_on_id):
-            return None
+            raise CardOperationError(
+                "dependency_cycle_detected",
+                "Adding this dependency would create a cycle.",
+                remediation="remove_or_reverse_a_conflicting_dependency",
+                facts={"card_id": card_id, "depends_on_id": depends_on_id},
+            )
         dep = _new_application_record(
             "card_dependency",
             card_id=card_id,
@@ -4004,9 +4076,64 @@ class CardService:
         if not card:
             raise ValueError("Card not found")
         validations = list(card.validations or [])
-        new_validations = [v for v in validations if v.get("id") != validation_id]
-        if len(new_validations) == len(validations):
+        target = next(
+            (
+                validation
+                for validation in validations
+                if validation.get("id") == validation_id
+            ),
+            None,
+        )
+        if target is None:
             return False
+
+        target_outcome = str(target.get("outcome") or "").lower()
+        if card.status == CardStatus.DONE and target_outcome == "success":
+            board = await _application_get(self.db, "board", card.board_id)
+            spec = (
+                await _application_get(self.db, "spec", card.spec_id)
+                if card.spec_id
+                else None
+            )
+            sprint = (
+                await _application_get(self.db, "sprint", card.sprint_id)
+                if card.sprint_id
+                else None
+            )
+            validation_config = self._resolve_validation_config(
+                card,
+                spec,
+                sprint,
+                getattr(board, "settings", None) or {},
+            )
+            successful_validations = sum(
+                1
+                for validation in validations
+                if str(validation.get("outcome") or "").lower() == "success"
+            )
+            if validation_config["required"] and successful_validations <= 1:
+                raise CardOperationError(
+                    "task_validation_history_required",
+                    (
+                        "The last successful validation of a completed card "
+                        "cannot be deleted while task validation is required."
+                    ),
+                    remediation=(
+                        "Reopen the card through move_card, or retain at least "
+                        "one successful validation as completion evidence."
+                    ),
+                    facts={
+                        "card_id": card.id,
+                        "validation_id": validation_id,
+                        "card_status": card.status.value,
+                        "successful_validations": successful_validations,
+                        "validation_required_from": validation_config[
+                            "resolved_from"
+                        ],
+                    },
+                )
+
+        new_validations = [v for v in validations if v.get("id") != validation_id]
         card.validations = new_validations
         card.mark_dirty("validations")
         return True
@@ -4339,7 +4466,9 @@ class CardService:
         for s in scenarios:
             for cid in s.get("linked_task_ids") or []:
                 all_card_ids.add(cid)
-        # Batch query to get card_type for all linked cards
+        # Batch query to get effective test cards for all historical links.
+        # Cancelled/archived rows remain referenced for audit, but cannot satisfy
+        # execution readiness.
         test_card_ids: set[str] = set()
         if all_card_ids:
             linked_cards = await _application_list(
@@ -4348,7 +4477,21 @@ class CardService:
                 filters=(_apf("id", "in", all_card_ids),),
             )
             for linked_card in linked_cards:
-                if linked_card.card_type == CardType.TEST:
+                card_type = getattr(
+                    linked_card.card_type,
+                    "value",
+                    linked_card.card_type,
+                )
+                card_status = getattr(
+                    linked_card.status,
+                    "value",
+                    linked_card.status,
+                )
+                if (
+                    card_type == CardType.TEST.value
+                    and card_status != CardStatus.CANCELLED.value
+                    and not getattr(linked_card, "archived", False)
+                ):
                     test_card_ids.add(linked_card.id)
         # Check each scenario has at least one TEST card
         unlinked = []
@@ -4365,7 +4508,8 @@ class CardService:
                 f"in spec '{spec.title}' have no linked test cards "
                 f"({titles}{suffix}). "
                 f"REQUIRED ACTION: Create test cards (card_type='test') with test_scenario_ids "
-                f"for each uncovered scenario. Only cards of type 'test' count for coverage. "
+                f"for each uncovered scenario. Only non-cancelled, non-archived cards "
+                f"of type 'test' count for coverage. "
                 f"Alternatively, enable 'skip test coverage' on the spec or board."
             )
 
@@ -5017,24 +5161,61 @@ class CardService:
             if validation_block is not None:
                 raise ValueError(validation_block.detail)
 
-        # Block Done on test cards if linked scenarios not updated
-        if data.status == CardStatus.DONE and card.spec_id and card.test_scenario_ids:
-            spec_for_test_scenarios = await _application_get(
-                self.db, "spec", card.spec_id
+        # Test-card completion is fail-closed over the persisted reference set.
+        # An empty set, a missing spec, or a dangling scenario id is an
+        # inconsistency — never evidence that all linked scenarios passed.
+        if (
+            data.status == CardStatus.DONE
+            and getattr(card, "card_type", CardType.NORMAL) == CardType.TEST
+            and not skip_global
+        ):
+            scenario_ids = [str(value) for value in (card.test_scenario_ids or [])]
+            spec_for_test_scenarios = (
+                await _application_get(self.db, "spec", card.spec_id)
+                if card.spec_id
+                else None
             )
-            if spec_for_test_scenarios and not skip_global:
+            stale: list[dict[str, Any]] = []
+            if not scenario_ids:
+                stale.append(
+                    {
+                        "id": None,
+                        "title": "No test scenario is linked to this test card",
+                        "status": "missing",
+                    }
+                )
+            elif spec_for_test_scenarios is None:
+                stale.extend(
+                    {
+                        "id": scenario_id,
+                        "title": f"Unresolved test scenario {scenario_id}",
+                        "status": "missing",
+                    }
+                    for scenario_id in scenario_ids
+                )
+            else:
                 all_scenarios = {
-                    s["id"]: s for s in (spec_for_test_scenarios.test_scenarios or [])
+                    str(s["id"]): s
+                    for s in (spec_for_test_scenarios.test_scenarios or [])
+                    if isinstance(s, dict) and s.get("id") is not None
                 }
-                stale = []
-                for sid in card.test_scenario_ids or []:
-                    sc = all_scenarios.get(sid)
-                    if sc and (
-                        sc.get("status") in ("draft", "ready")
+                for scenario_id in scenario_ids:
+                    scenario = all_scenarios.get(scenario_id)
+                    if scenario is None:
+                        stale.append(
+                            {
+                                "id": scenario_id,
+                                "title": f"Unresolved test scenario {scenario_id}",
+                                "status": "missing",
+                            }
+                        )
+                        continue
+                    if (
+                        scenario.get("status") in ("draft", "ready")
                         or not scenario_has_authenticated_required_evidence(
                             board_id=card.board_id,
                             spec_id=card.spec_id,
-                            scenario=sc,
+                            scenario=scenario,
                             acceptance_criteria=list(
                                 spec_for_test_scenarios.acceptance_criteria or []
                             ),
@@ -5042,44 +5223,41 @@ class CardService:
                     ):
                         stale.append(
                             {
-                                "id": sid,
-                                "title": sc.get("title", sid),
-                                "status": sc.get("status"),
+                                "id": scenario_id,
+                                "title": scenario.get("title", scenario_id),
+                                "status": scenario.get("status"),
                             }
                         )
-                pending_scenarios = tuple(
-                    PendingScenario(
-                        scenario_id=scenario["id"],
-                        title=scenario["title"],
-                        status=scenario["status"],
-                    )
-                    for scenario in stale
+            pending_scenarios = tuple(
+                PendingScenario(
+                    scenario_id=str(scenario.get("id") or "__unlinked__"),
+                    title=str(scenario["title"]),
+                    status=str(scenario.get("status") or "missing"),
                 )
-                completion_block = test_completion_block(
-                    CardTransitionFacts(
-                        card_id=card.id,
-                        old_status=old_status,
-                        new_status=data.status,
-                        card_type=getattr(card, "card_type", CardType.NORMAL),
-                        spec_id=card.spec_id,
-                        pending_scenarios=pending_scenarios,
-                    )
+                for scenario in stale
+            )
+            completion_block = test_completion_block(
+                CardTransitionFacts(
+                    card_id=card.id,
+                    old_status=old_status,
+                    new_status=data.status,
+                    card_type=CardType.TEST,
+                    spec_id=card.spec_id,
+                    pending_scenarios=pending_scenarios,
                 )
-                if completion_block is not None:
-                    # R4-IMP1: normalized test_card_completion contract with the
-                    # actionable pending scenarios. Same block (draft/ready scenarios
-                    # prevent done); no auto-promotion.
-                    from okto_pulse.core.services.gate_contracts import (
-                        incomplete_test_card_completion_error,
-                    )
+            )
+            if completion_block is not None:
+                from okto_pulse.core.services.gate_contracts import (
+                    incomplete_test_card_completion_error,
+                )
 
-                    raise incomplete_test_card_completion_error(
-                        card_id=card.id,
-                        current_status=old_status.value if old_status else None,
-                        pending_scenarios=stale,
-                        board_id=card.board_id,
-                        spec_id=card.spec_id,
-                    )
+                raise incomplete_test_card_completion_error(
+                    card_id=card.id,
+                    current_status=old_status.value if old_status else None,
+                    pending_scenarios=stale,
+                    board_id=card.board_id,
+                    spec_id=card.spec_id,
+                )
 
         # --- Bug card: block execution-level moves without linked regression tests ---
         # Gate triggers when the bug first crosses into execution level or beyond
@@ -5131,6 +5309,16 @@ class CardService:
             effective_linked_tests = (
                 linked_tests or _amendment_regression_test_task_ids(amendment_rows)
             )
+            spec_for_bug = (
+                await _application_get(self.db, "spec", card.spec_id)
+                if card.spec_id
+                else None
+            )
+            origin_task = (
+                await _application_get(self.db, "card", card.origin_task_id)
+                if card.origin_task_id
+                else None
+            )
             regression_block = bug_regression_evidence_block(
                 CardTransitionFacts(
                     card_id=card.id,
@@ -5145,23 +5333,55 @@ class CardService:
                 )
             )
             if regression_block is not None:
-                workflow_remediation = BugWorkflowRemediationMessageBuilder().build_missing_regression_test_task()
+                eligibility = (
+                    BugRegressionScenarioEligibilityResolver().resolve(
+                        bug_card=card,
+                        spec=spec_for_bug,
+                        origin_task=origin_task,
+                        amendment_facts=amendment_facts,
+                    )
+                    if spec_for_bug is not None and origin_task is not None
+                    else None
+                )
+                eligible_scenarios_count = (
+                    len(eligibility.eligible_scenarios) if eligibility else 0
+                )
+                workflow_remediation = (
+                    BugWorkflowRemediationMessageBuilder()
+                    .build_missing_regression_test_task(
+                        eligible_scenarios_count=eligible_scenarios_count,
+                    )
+                )
+                if eligible_scenarios_count:
+                    message = (
+                        "Bug card requires at least 1 new test task linked before "
+                        "moving to in_progress. REQUIRED STEPS: (1) Create a "
+                        "regression test card with card_type='test', spec_id, and "
+                        "test_scenario_ids using okto_pulse_create_card. The referenced scenario may be an existing scenario on a "
+                        "validated/locked "
+                        "spec; leave spec content unchanged for Path A regression "
+                        "evidence. (2) Link the test task to this bug using "
+                        "okto_pulse_update_card with "
+                        "linked_test_task_ids. (3) Retry moving this bug card to "
+                        "in_progress."
+                    )
+                else:
+                    message = (
+                        "Bug card requires regression coverage before moving to "
+                        "in_progress, but its canonical task lineage has zero "
+                        "eligible existing scenarios. Do not create an unrelated "
+                        "test card. Use Path B: create an amendment, refinement, "
+                        "spec revision, or hotfix spec for the semantic gap."
+                    )
                 raise CardOperationError(
                     regression_block.code,
-                    "Bug card requires at least 1 new test task linked before moving to in_progress. "
-                    "REQUIRED STEPS: "
-                    "(1) Create a regression test card with card_type='test', spec_id, and test_scenario_ids "
-                    "using okto_pulse_create_card. The referenced scenario may be an existing scenario on a "
-                    "validated/locked spec; leave spec content unchanged for Path A regression evidence. "
-                    "(2) Link the test task to this bug using okto_pulse_update_card with linked_test_task_ids, "
-                    "(3) Then retry moving this bug card to in_progress. "
-                    "TO BYPASS: set require_test_task_for_bug=false on the board, or raise "
-                    "bug_test_gate_min_severity above this bug's severity.",
-                    remediation=regression_block.remediation,
+                    message,
+                    remediation=workflow_remediation.next_action.value,
                     facts={
                         "card_id": card.id,
                         "spec_id": card.spec_id,
                         "next_action": workflow_remediation.next_action.value,
+                        "eligible_scenarios_count": eligible_scenarios_count,
                     },
                     workflow_remediation=workflow_remediation,
                 )
@@ -5173,11 +5393,6 @@ class CardService:
             # coverage stays validator-only/fail-closed — no production path confirms
             # coverage before card c9cf9781 (ADJ-B/ADJ-C).
             bug_created = card.created_at
-            spec_for_bug = (
-                await _application_get(self.db, "spec", card.spec_id)
-                if card.spec_id
-                else None
-            )
             all_scenarios = (
                 {
                     str(s["id"]): s
@@ -5328,11 +5543,6 @@ class CardService:
                             workflow_remediation=workflow_remediation,
                         )
 
-            origin_task = (
-                await _application_get(self.db, "card", card.origin_task_id)
-                if card.origin_task_id
-                else None
-            )
             if not origin_task:
                 observe_bug_regression_resolution(
                     board_id=card.board_id,
@@ -5587,7 +5797,15 @@ class CardService:
         if new_level > old_level and data.status != CardStatus.CANCELLED:
             deps_met, blocking = await self.check_dependencies_met(card_id)
             if not deps_met:
-                raise ValueError(f"Dependências não concluídas: {', '.join(blocking)}")
+                raise CardOperationError(
+                    "dependencies_incomplete",
+                    "Card dependencies must be done or cancelled before advancing.",
+                    remediation="complete_blocking_dependencies",
+                    facts={
+                        "card_id": card_id,
+                        "blocking_dependencies": blocking,
+                    },
+                )
 
         if data.status == CardStatus.DONE:
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
@@ -5730,6 +5948,9 @@ class CardService:
         user_id: str,
         *,
         return_receipt: bool = False,
+        actor_type: str = "user",
+        actor_name: str | None = None,
+        activity_details: Mapping[str, Any] | None = None,
     ) -> bool | GovernedArtifactDeletionReceipt:
         """Delete a card.
 
@@ -5823,7 +6044,15 @@ class CardService:
                     bug.linked_test_task_ids = [tid for tid in linked if tid != card_id]
                     bug.mark_dirty("linked_test_task_ids")
 
-        actor_name = await resolve_actor_name(self.db, user_id, board_id)
+        resolved_actor_name = actor_name or await resolve_actor_name(
+            self.db,
+            user_id,
+            board_id,
+        )
+        extra_activity_details = {
+            field: activity_log_value(value)
+            for field, value in (activity_details or {}).items()
+        }
         attachment_receipts: list[AttachmentDeletionReceipt] = []
         attachment_service = AttachmentService(self.db)
         attachments = await _application_list(
@@ -5848,9 +6077,10 @@ class CardService:
                 board_id=board_id,
                 card_id=card_id,
                 action="card_deleted",
-                actor_type="user",
+                actor_type=actor_type,
                 actor_id=user_id,
-                actor_name=actor_name,
+                actor_name=resolved_actor_name,
+                details={**extra_activity_details, "title": card.title},
             )
         except BaseException:
             for receipt in reversed(attachment_receipts):
@@ -6377,15 +6607,9 @@ class CommentService:
         if not comment or comment.comment_type == "text":
             return None
 
-        # Validate selected options exist
-        valid_ids = {c["id"] for c in (comment.choices or [])}
-        for sel in selected:
-            if sel not in valid_ids:
-                return None
-
-        # Single-choice: only one selection allowed
-        if comment.comment_type == "choice" and len(selected) > 1:
-            selected = selected[:1]
+        selected = validate_choice_selection(
+            comment.comment_type, selected, comment.choices
+        )
 
         responses = list(comment.responses or [])
         # Replace existing response from same responder
@@ -6736,6 +6960,35 @@ async def _validate_spec_linked_refs(
         )
 
 
+class SpecLineagePreflightError(ValueError):
+    """Stable pre-mutation error for invalid Spec parent lifecycle lineage."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        facts: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.facts = facts or {}
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "code": self.code,
+            "message": self.message,
+        }
+        if self.facts:
+            payload["facts"] = self.facts
+        return payload
+
+    def to_error_dict(self) -> dict[str, Any]:
+        """Return the stable error envelope expected by MCP create adapters."""
+        return {"error": self.code, **self.to_dict()}
+
+
 class SpecService:
     """Service for spec operations."""
 
@@ -6752,6 +7005,184 @@ class SpecService:
         )
         self._cognitive_readiness_service_factory: Callable[[], Any] = (
             _build_default_cognitive_readiness_service
+        )
+
+    async def _validate_lineage(
+        self,
+        board_id: str,
+        *,
+        ideation_id: str | None,
+        refinement_id: str | None,
+    ) -> None:
+        """Validate explicit parent lifecycle lineage before any Spec mutation.
+
+        This is the single parent-lifecycle predicate used by direct create,
+        relink, and both authoritative ``derive_spec`` workflows.
+        """
+        if not ideation_id and not refinement_id:
+            return
+
+        ideation = None
+        refinement = None
+        if ideation_id:
+            ideation = await _application_get(self.db, "ideation", ideation_id)
+            if ideation is None:
+                raise SpecLineagePreflightError(
+                    "spec_ideation_not_found",
+                    "The requested parent ideation does not exist.",
+                    facts={"board_id": board_id, "ideation_id": ideation_id},
+                )
+            if ideation.board_id != board_id:
+                raise SpecLineagePreflightError(
+                    "spec_ideation_board_mismatch",
+                    "The requested parent ideation belongs to another board.",
+                    facts={
+                        "board_id": board_id,
+                        "ideation_id": ideation_id,
+                        "parent_board_id": ideation.board_id,
+                    },
+                )
+
+        if refinement_id:
+            refinement = await _application_get(
+                self.db,
+                "refinement",
+                refinement_id,
+            )
+            if refinement is None:
+                raise SpecLineagePreflightError(
+                    "spec_refinement_not_found",
+                    "The requested parent refinement does not exist.",
+                    facts={"board_id": board_id, "refinement_id": refinement_id},
+                )
+            if refinement.board_id != board_id:
+                raise SpecLineagePreflightError(
+                    "spec_refinement_board_mismatch",
+                    "The requested parent refinement belongs to another board.",
+                    facts={
+                        "board_id": board_id,
+                        "refinement_id": refinement_id,
+                        "parent_board_id": refinement.board_id,
+                    },
+                )
+            ancestor_ideation_id = getattr(refinement, "ideation_id", None)
+            if ideation is not None:
+                if ancestor_ideation_id != ideation.id:
+                    raise SpecLineagePreflightError(
+                        "spec_parent_lineage_mismatch",
+                        (
+                            "The requested refinement does not belong to the "
+                            "requested ideation."
+                        ),
+                        facts={
+                            "ideation_id": ideation.id,
+                            "refinement_id": refinement.id,
+                            "refinement_ideation_id": ancestor_ideation_id,
+                        },
+                    )
+            else:
+                # A refinement-only request still carries an implicit ideation
+                # parent. Resolve that ancestor explicitly so direct create and
+                # relink callers cannot bypass the lifecycle checks enforced by
+                # the authoritative derive flow, which supplies both ids.
+                if ancestor_ideation_id:
+                    ideation = await _application_get(
+                        self.db,
+                        "ideation",
+                        ancestor_ideation_id,
+                    )
+                if ideation is None:
+                    raise SpecLineagePreflightError(
+                        "spec_ideation_not_found",
+                        (
+                            "The requested refinement's parent ideation does "
+                            "not exist."
+                        ),
+                        facts={
+                            "board_id": board_id,
+                            "ideation_id": ancestor_ideation_id,
+                            "refinement_id": refinement.id,
+                        },
+                    )
+                if ideation.board_id != board_id:
+                    raise SpecLineagePreflightError(
+                        "spec_ideation_board_mismatch",
+                        (
+                            "The requested refinement's parent ideation "
+                            "belongs to another board."
+                        ),
+                        facts={
+                            "board_id": board_id,
+                            "ideation_id": ideation.id,
+                            "refinement_id": refinement.id,
+                            "parent_board_id": ideation.board_id,
+                        },
+                    )
+
+        if ideation is not None and ideation.status != IdeationStatus.DONE:
+            raise SpecLineagePreflightError(
+                "spec_ideation_not_done",
+                "A Spec can only be created from an ideation in status 'done'.",
+                facts={
+                    "ideation_id": ideation.id,
+                    "ideation_status": getattr(
+                        ideation.status,
+                        "value",
+                        str(ideation.status),
+                    ),
+                },
+            )
+
+        if refinement is not None and refinement.status != RefinementStatus.DONE:
+            raise SpecLineagePreflightError(
+                "spec_refinement_not_done",
+                "A Spec can only be created from a refinement in status 'done'.",
+                facts={
+                    "refinement_id": refinement.id,
+                    "refinement_status": getattr(
+                        refinement.status,
+                        "value",
+                        str(refinement.status),
+                    ),
+                },
+            )
+
+        complexity = (
+            getattr(ideation.complexity, "value", ideation.complexity)
+            if ideation is not None
+            else None
+        )
+        if (
+            complexity
+            in {
+                IdeationComplexity.MEDIUM.value,
+                IdeationComplexity.LARGE.value,
+            }
+            and refinement is None
+        ):
+            raise SpecLineagePreflightError(
+                "spec_refinement_required",
+                (
+                    "Ideations with complexity 'medium' or 'large' require a "
+                    "completed refinement before Spec creation."
+                ),
+                facts={
+                    "ideation_id": ideation.id,
+                    "ideation_complexity": complexity,
+                },
+            )
+
+    async def _validate_create_lineage(
+        self,
+        board_id: str,
+        data: SpecCreate,
+    ) -> None:
+        """Validate explicit lineage supplied by a Spec create request."""
+
+        await self._validate_lineage(
+            board_id,
+            ideation_id=data.ideation_id,
+            refinement_id=data.refinement_id,
         )
 
     async def _validate_cognitive_done(
@@ -6773,7 +7204,7 @@ class SpecService:
             entity_id=spec.id,
             entity=spec,
             target_label="spec",
-            resolve_graph_state=not read_only_preview,
+            resolve_graph_state=True,
         )
 
     # ---- Status progression order ----
@@ -6813,15 +7244,28 @@ class SpecService:
         await _application_add(self.db, entry)
 
     async def list_history(
-        self, spec_id: str, limit: int = 50
+        self,
+        spec_id: str,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[ApplicationRecord]:
         """List history entries for a spec, newest first."""
+        window = validate_history_window(limit, offset)
         return await _application_list(
             self.db,
             "spec_history",
             filters=(_apf("spec_id", "eq", spec_id),),
-            order_by=(("created_at", True),),
-            limit=limit,
+            order_by=(("created_at", True), ("id", True)),
+            offset=window.offset,
+            limit=window.limit,
+        )
+
+    async def count_history(self, spec_id: str) -> int:
+        """Count every history entry for a spec independently of a page."""
+        return await _application_count(
+            self.db,
+            "spec_history",
+            filters=(_apf("spec_id", "eq", spec_id),),
         )
 
     @staticmethod
@@ -6871,6 +7315,8 @@ class SpecService:
             return None
         if not await _application_run(self.db, board_query):
             return None
+
+        await self._validate_create_lineage(board_id, data)
 
         # Fail-closed scenario_type (spec ac16b3c9): every scenario in a NEW spec
         # is a new write — reject an unsupported type before insert/flush, never
@@ -7718,26 +8164,16 @@ class SpecService:
             if "refinement_id" in update_data
             else spec.refinement_id
         )
-        parent_link_changed = bool({"ideation_id", "refinement_id"} & set(update_data))
-        if "ideation_id" in update_data and next_ideation_id is not None:
-            await _validate_spec_parent_on_board(
-                self.db,
-                board_id=spec.board_id,
-                parent_type="ideation",
-                parent_id=next_ideation_id,
+        parent_link_changed = (
+            next_ideation_id != spec.ideation_id
+            or next_refinement_id != spec.refinement_id
+        )
+        if parent_link_changed:
+            await self._validate_lineage(
+                spec.board_id,
+                ideation_id=next_ideation_id,
+                refinement_id=next_refinement_id,
             )
-        next_refinement = None
-        if parent_link_changed and next_refinement_id is not None:
-            next_refinement = await _validate_spec_parent_on_board(
-                self.db,
-                board_id=spec.board_id,
-                parent_type="refinement",
-                parent_id=next_refinement_id,
-            )
-        if next_refinement is not None and (
-            getattr(next_refinement, "ideation_id", None) != next_ideation_id
-        ):
-            raise ValueError("Refinement does not belong to the selected Ideation")
         previous_knowledge_parent = _governed_spec_knowledge_parent(
             ideation_id=spec.ideation_id,
             refinement_id=spec.refinement_id,
@@ -7752,11 +8188,29 @@ class SpecService:
             "acceptance_criteria",
             "context",
             "description",
+            # Legacy bulk writers participate in the same optimistic
+            # concurrency contract as their structured-entity counterparts.
+            "business_rules",
+            "api_contracts",
+            "integration_requirements",
+            "observability_requirements",
+            "decisions",
         }
-        # Spec eaf78891 (Ideação #2): semantic_fields are KG-relevant fields
-        # that DO NOT bump version (they are not in content_fields), but DO
-        # need to trigger re-consolidation. We emit SpecSemanticChanged for
-        # them so ConsolidationEnqueuer re-extracts the spec into the KG.
+        # Spec eaf78891 (Ideação #2): semantic_fields are KG-relevant fields.
+        # Some also bump version through content_fields so bulk and structured
+        # writers share one CAS boundary; all still emit SpecSemanticChanged
+        # so ConsolidationEnqueuer re-extracts the spec into the KG. Parent
+        # lineage is semantic too: the deterministic worker emits a different
+        # belongs_to edge when either parent changes.
+        lineage_fields = {"ideation_id", "refinement_id"}
+        changed_lineage_fields = {
+            field
+            for field, current, next_value in (
+                ("ideation_id", spec.ideation_id, next_ideation_id),
+                ("refinement_id", spec.refinement_id, next_refinement_id),
+            )
+            if current != next_value
+        }
         semantic_fields = {
             "decisions",
             "business_rules",
@@ -7765,9 +8219,21 @@ class SpecService:
             "observability_requirements",
             "test_scenarios",
             "screen_mockups",
+            *lineage_fields,
         }
+
+        def _semantic_changed_fields() -> set[str]:
+            # Keep the established re-extraction behavior for explicit
+            # non-lineage semantic writes, but report lineage fields only when
+            # their persisted value actually changes. This prevents an
+            # idempotent parent resend from producing a false lineage event.
+            explicit_non_lineage = (
+                semantic_fields & update_data.keys()
+            ) - lineage_fields
+            return explicit_non_lineage | changed_lineage_fields
+
         bumps_version = bool(content_fields & update_data.keys())
-        bumps_semantic = bool(semantic_fields & update_data.keys())
+        bumps_semantic = bool(_semantic_changed_fields())
 
         # Capture old values for diff
         old_data = {k: getattr(spec, k) for k in update_data.keys()}
@@ -7870,7 +8336,7 @@ class SpecService:
 
         # Re-evaluate bumps_semantic after FR5 migration may have added
         # semantic fields (e.g. business_rules) to update_data.
-        bumps_semantic = bool(semantic_fields & update_data.keys())
+        bumps_semantic = bool(_semantic_changed_fields())
         # Capture old values for any fields added to update_data by FR5 migration
         # (these were absent from the original update_data so old_data missed them).
         for _migrated_field in update_data:
@@ -7991,7 +8457,7 @@ class SpecService:
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import SpecSemanticChanged
 
-            changed_semantic = sorted(semantic_fields & update_data.keys())
+            changed_semantic = sorted(_semantic_changed_fields())
             await event_publish(
                 SpecSemanticChanged(
                     board_id=spec.board_id,
@@ -8592,7 +9058,15 @@ class SpecService:
         if not spec:
             return False
 
-        # Unlink cards
+        # Unlink cards. A deleted spec also owns the scenario ids stored on
+        # those cards; retaining them would leave dangling references that can
+        # make later coverage gates appear satisfied. Remove only ids that
+        # belonged to this spec so any independently valid references survive.
+        deleted_scenario_ids = {
+            str(scenario["id"])
+            for scenario in (spec.test_scenarios or [])
+            if isinstance(scenario, dict) and scenario.get("id")
+        }
         linked_cards = await _application_list(
             self.db,
             "card",
@@ -8610,6 +9084,15 @@ class SpecService:
                 port=self._knowledge_propagation_port,
             )
         for linked_card in linked_cards:
+            existing_scenario_ids = list(linked_card.test_scenario_ids or [])
+            remaining_scenario_ids = [
+                scenario_id
+                for scenario_id in existing_scenario_ids
+                if str(scenario_id) not in deleted_scenario_ids
+            ]
+            if remaining_scenario_ids != existing_scenario_ids:
+                linked_card.test_scenario_ids = remaining_scenario_ids
+                linked_card.mark_dirty("test_scenario_ids")
             linked_card.spec_id = None
         await _application_flush(self.db)
 
@@ -8925,6 +9408,7 @@ class SpecService:
         }
 
         # Append-only: never overwrite history. flag_modified is required for JSONB.
+        old_current_validation_id = spec.current_validation_id
         validations = list(spec.validations or [])
         validations.append(validation)
         spec.validations = validations
@@ -8979,6 +9463,38 @@ class SpecService:
                 "from_status": old_status.value,
                 "to_status": spec.status.value,
             },
+        )
+        history_changes = [
+            {
+                "field": "current_validation_id",
+                "old": old_current_validation_id,
+                "new": validation_id,
+            }
+        ]
+        if old_status != spec.status:
+            history_changes.append(
+                {
+                    "field": "status",
+                    "old": old_status.value,
+                    "new": spec.status.value,
+                }
+            )
+        await self._record_history(
+            spec_id=spec_id,
+            action="validation_submitted",
+            actor_id=reviewer_id,
+            actor_name=reviewer_name,
+            actor_type=(
+                "agent"
+                if reviewer_name and "agent" in reviewer_name.lower()
+                else "user"
+            ),
+            changes=history_changes,
+            summary=(
+                f"Validation submitted: {outcome} "
+                f"({recommendation}; {completeness}/{assertiveness}/{ambiguity})"
+            ),
+            version=spec.version,
         )
 
         return {
@@ -9206,15 +9722,9 @@ class SpecQAService:
         saved_something = False
         choice_types = ("choice", "single_choice", "multi_choice")
         if qa.question_type in choice_types and data.selected:
-            valid_ids = {c["id"] for c in (qa.choices or [])}
-            for sel in data.selected:
-                if sel not in valid_ids:
-                    return None
-            if (
-                qa.question_type in ("choice", "single_choice")
-                and len(data.selected) > 1
-            ):
-                data.selected = data.selected[:1]
+            data.selected = validate_choice_selection(
+                qa.question_type, data.selected, qa.choices
+            )
             qa.selected = data.selected
             saved_something = True
 
@@ -10489,34 +10999,6 @@ class IdeationService:
 
     def __init__(self, db: Any):
         self.db = db
-        self._cognitive_closeout_gate_factory: Callable[[], Any] = (
-            _build_default_cognitive_closeout_gate
-        )
-        self._cognitive_readiness_service_factory: Callable[[], Any] = (
-            _build_default_cognitive_readiness_service
-        )
-
-    async def _validate_cognitive_done(
-        self,
-        ideation: ApplicationRecord,
-        board: ApplicationRecord | None = None,
-        *,
-        read_only_preview: bool = False,
-    ) -> None:
-        if board is None:
-            board = await _application_get(self.db, "board", ideation.board_id)
-        await _evaluate_entity_cognitive_done_or_raise(
-            db=self.db,
-            gate_factory=self._cognitive_closeout_gate_factory,
-            readiness_service_factory=self._cognitive_readiness_service_factory,
-            board=board,
-            board_id=ideation.board_id,
-            entity_type="ideation",
-            entity_id=ideation.id,
-            entity=ideation,
-            target_label="ideation",
-            resolve_graph_state=not read_only_preview,
-        )
 
     _STATUS_ORDER = {
         IdeationStatus.DRAFT: 0,
@@ -10553,15 +11035,28 @@ class IdeationService:
         await _application_add(self.db, entry)
 
     async def list_history(
-        self, ideation_id: str, limit: int = 50
+        self,
+        ideation_id: str,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[IdeationHistory]:
         """List history entries for an ideation, newest first."""
+        window = validate_history_window(limit, offset)
         return await _application_list(
             self.db,
             "ideation_history",
             filters=(_apf("ideation_id", "eq", ideation_id),),
-            order_by=(("created_at", True),),
-            limit=limit,
+            order_by=(("created_at", True), ("id", True)),
+            offset=window.offset,
+            limit=window.limit,
+        )
+
+    async def count_history(self, ideation_id: str) -> int:
+        """Count every history entry for an ideation independently of a page."""
+        return await _application_count(
+            self.db,
+            "ideation_history",
+            filters=(_apf("ideation_id", "eq", ideation_id),),
         )
 
     @staticmethod
@@ -11012,8 +11507,6 @@ class IdeationService:
             # BEFORE ResourceGate so ambiguity errors take precedence (BR4).
             if old_status == IdeationStatus.EVALUATING:
                 await self._enforce_ambiguity_gate(ideation)
-            board = await _application_get(self.db, "board", ideation.board_id)
-            await self._validate_cognitive_done(ideation, board)
             await ResourceGateService(self.db).validate_or_raise_entity_completion(
                 ideation.board_id,
                 "ideation",
@@ -11141,6 +11634,7 @@ class IdeationService:
 
     async def get_snapshot(self, ideation_id: str, version: int):
         """Get a specific version snapshot."""
+        version = validate_snapshot_version(version)
         rows = await _application_list(
             self.db,
             "ideation_snapshot",
@@ -11228,7 +11722,11 @@ class IdeationService:
         return takedown_receipt if return_receipt else True
 
     async def evaluate_complexity(
-        self, ideation_id: str, user_id: str
+        self,
+        ideation_id: str,
+        user_id: str,
+        *,
+        previous_scope_assessment: dict[str, Any] | None = None,
     ) -> Ideation | None:
         """Evaluate and set complexity based on scope_assessment.
 
@@ -11249,7 +11747,13 @@ class IdeationService:
                 f"Move the ideation to 'evaluating' first."
             )
 
-        scope = ideation.scope_assessment or {}
+        from okto_pulse.core.application.ideation_scope import (
+            SCOPE_SCORE_FIELDS,
+            validate_scope_assessment,
+        )
+
+        scope = validate_scope_assessment(ideation.scope_assessment)
+        ideation.scope_assessment = scope
         domains = scope.get("domains", 1)
         ambiguity = scope.get("ambiguity", 1)
         dependencies = scope.get("dependencies", 1)
@@ -11265,18 +11769,37 @@ class IdeationService:
         ideation.complexity = new_complexity
 
         actor_name = await resolve_actor_name(self.db, user_id, ideation.board_id)
-        await self._record_history(
-            ideation_id=ideation_id,
-            action="complexity_evaluated",
-            actor_id=user_id,
-            actor_name=actor_name,
-            changes=[
+        changes = []
+        if previous_scope_assessment is not None:
+            previous_scope = dict(previous_scope_assessment)
+            for field in SCOPE_SCORE_FIELDS:
+                for candidate in (field, f"{field}_justification"):
+                    old_value = previous_scope.get(candidate)
+                    new_value = scope.get(candidate)
+                    if old_value != new_value:
+                        changes.append(
+                            {
+                                "field": f"scope_assessment.{candidate}",
+                                "old": old_value,
+                                "new": new_value,
+                            }
+                        )
+        if old_complexity != new_complexity:
+            changes.append(
                 {
                     "field": "complexity",
                     "old": old_complexity.value if old_complexity else None,
                     "new": new_complexity.value,
                 }
-            ],
+            )
+        if not changes:
+            return ideation
+        await self._record_history(
+            ideation_id=ideation_id,
+            action="complexity_evaluated",
+            actor_id=user_id,
+            actor_name=actor_name,
+            changes=changes,
             summary=f"Complexity evaluated: {new_complexity.value}",
             version=ideation.version,
         )
@@ -11286,7 +11809,12 @@ class IdeationService:
             actor_type="user",
             actor_id=user_id,
             actor_name=actor_name,
-            details={"ideation_id": ideation_id, "complexity": new_complexity.value},
+            details={
+                "ideation_id": ideation_id,
+                "scope_assessment": dict(scope),
+                "complexity": new_complexity.value,
+                "changes": changes,
+            },
         )
         return ideation
 
@@ -11313,14 +11841,12 @@ class IdeationService:
         if not ideation:
             return None
 
-        if ideation.status != IdeationStatus.DONE:
-            raise ValueError("Spec can only be created from a 'done' ideation")
-
-        if ideation.complexity and ideation.complexity != IdeationComplexity.SMALL:
-            raise ValueError(
-                f"Ideation has complexity '{ideation.complexity.value}' — "
-                "create refinements first, then derive specs from refinements"
-            )
+        spec_service = SpecService(self.db)
+        await spec_service._validate_lineage(
+            ideation.board_id,
+            ideation_id=ideation.id,
+            refinement_id=None,
+        )
 
         # Compile rich context from ideation data
         context_parts: list[str] = []
@@ -11367,7 +11893,6 @@ class IdeationService:
             ideation_id=ideation_id,
             labels=ideation.labels,
         )
-        spec_service = SpecService(self.db)
         spec = await spec_service.create_spec(
             ideation.board_id,
             user_id,
@@ -11520,15 +12045,9 @@ class IdeationQAService:
         saved_something = False
         choice_types = ("choice", "single_choice", "multi_choice")
         if qa.question_type in choice_types and data.selected:
-            valid_ids = {c["id"] for c in (qa.choices or [])}
-            for sel in data.selected:
-                if sel not in valid_ids:
-                    return None
-            if (
-                qa.question_type in ("choice", "single_choice")
-                and len(data.selected) > 1
-            ):
-                data.selected = data.selected[:1]
+            data.selected = validate_choice_selection(
+                qa.question_type, data.selected, qa.choices
+            )
             qa.selected = data.selected
             saved_something = True
 
@@ -11604,7 +12123,7 @@ class RefinementService:
             entity_id=refinement.id,
             entity=refinement,
             target_label="refinement",
-            resolve_graph_state=not read_only_preview,
+            resolve_graph_state=True,
         )
 
     _STATUS_ORDER = {
@@ -11641,15 +12160,28 @@ class RefinementService:
         await _application_add(self.db, entry)
 
     async def list_history(
-        self, refinement_id: str, limit: int = 50
+        self,
+        refinement_id: str,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[RefinementHistory]:
         """List history entries for a refinement, newest first."""
+        window = validate_history_window(limit, offset)
         return await _application_list(
             self.db,
             "refinement_history",
             filters=(_apf("refinement_id", "eq", refinement_id),),
-            order_by=(("created_at", True),),
-            limit=limit,
+            order_by=(("created_at", True), ("id", True)),
+            offset=window.offset,
+            limit=window.limit,
+        )
+
+    async def count_history(self, refinement_id: str) -> int:
+        """Count every history entry for a refinement independently of a page."""
+        return await _application_count(
+            self.db,
+            "refinement_history",
+            filters=(_apf("refinement_id", "eq", refinement_id),),
         )
 
     @staticmethod
@@ -12233,6 +12765,7 @@ class RefinementService:
 
     async def get_snapshot(self, refinement_id: str, version: int):
         """Get a specific version snapshot."""
+        version = validate_snapshot_version(version)
         rows = await _application_list(
             self.db,
             "refinement_snapshot",
@@ -12327,8 +12860,12 @@ class RefinementService:
         if not refinement:
             return None
 
-        if refinement.status != RefinementStatus.DONE:
-            raise ValueError("Spec can only be created from a 'done' refinement")
+        spec_service = SpecService(self.db)
+        await spec_service._validate_lineage(
+            refinement.board_id,
+            ideation_id=refinement.ideation_id,
+            refinement_id=refinement.id,
+        )
 
         # Compile rich context from refinement data plus the parent ideation
         # intent. Existing refinements created before parent context was
@@ -12406,7 +12943,6 @@ class RefinementService:
             refinement_id=refinement_id,
             labels=refinement.labels,
         )
-        spec_service = SpecService(self.db)
         spec = await spec_service.create_spec(
             refinement.board_id,
             user_id,
@@ -12558,15 +13094,9 @@ class RefinementQAService:
         saved_something = False
         choice_types = ("choice", "single_choice", "multi_choice")
         if qa.question_type in choice_types and data.selected:
-            valid_ids = {c["id"] for c in (qa.choices or [])}
-            for sel in data.selected:
-                if sel not in valid_ids:
-                    return None
-            if (
-                qa.question_type in ("choice", "single_choice")
-                and len(data.selected) > 1
-            ):
-                data.selected = data.selected[:1]
+            data.selected = validate_choice_selection(
+                qa.question_type, data.selected, qa.choices
+            )
             qa.selected = data.selected
             saved_something = True
 
@@ -13941,6 +14471,19 @@ class SprintService:
         await _attach_open_qa_counts(self.db, rows, "sprint_qa_item", "sprint_id")
         return rows
 
+    async def list_assigned_cards(self, sprint_id: str) -> list[Card]:
+        """Read the canonical assignment set independently of relationship caches."""
+
+        return await _application_list(
+            self.db,
+            "card",
+            filters=(
+                _apf("sprint_id", "eq", sprint_id),
+                _apf("archived", "is_false"),
+            ),
+            order_by=(("created_at", False), ("title", False)),
+        )
+
     async def update_sprint(
         self,
         sprint_id: str,
@@ -13973,6 +14516,13 @@ class SprintService:
             # not need a second transport-specific operation to clear stale lineage.
             update_data.setdefault("origin_sprint_id", None)
             update_data.setdefault("origin_bug_id", None)
+        update_data = {
+            key: value
+            for key, value in update_data.items()
+            if getattr(sprint, key) != value
+        }
+        if not update_data:
+            return sprint
         lane_fields = {"lane_type", "origin_sprint_id", "origin_bug_id"}
         if lane_fields & update_data.keys() and sprint.status != SprintStatus.DRAFT:
             raise ValueError(
@@ -14061,6 +14611,7 @@ class SprintService:
 
         if bumps_version:
             sprint.version += 1
+            SprintScopeResolver.invalidate(sprint.id)
 
         actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
         await self._log_activity(
@@ -14262,10 +14813,11 @@ class SprintService:
                 else False
             )
             if not skip_tc and spec:
+                assigned_cards = await self.list_assigned_cards(sprint_id)
                 scope = SprintScopeResolver.resolve(
                     sprint=sprint,
                     spec=spec,
-                    cards=sprint.cards,
+                    cards=assigned_cards,
                 )
                 scoped = list(scope.items.get("test_scenarios", ()))
                 not_covered = [s for s in scoped if s.get("status") != "passed"]
@@ -14641,7 +15193,7 @@ class SprintService:
             )
         cards_to_assign: list[Card] = []
         cross_spec_path_b_test_ids: list[str] = []
-        for card_id in card_ids:
+        for card_id in dict.fromkeys(card_ids):
             card = await _application_get(self.db, "card", card_id)
             if not card or card.board_id != sprint.board_id:
                 raise SprintOperationError(
@@ -14686,14 +15238,56 @@ class SprintService:
                 )
             cards_to_assign.append(card)
 
-        assigned = 0
-        for card in cards_to_assign:
-            if card.sprint_id != sprint_id:
-                card.sprint_id = sprint_id
-                assigned += 1
+        moved_cards = [card for card in cards_to_assign if card.sprint_id != sprint_id]
+        source_cards: dict[str, list[Card]] = {}
+        for card in moved_cards:
+            if card.sprint_id:
+                source_cards.setdefault(card.sprint_id, []).append(card)
+            card.sprint_id = sprint_id
+        assigned = len(moved_cards)
         if assigned:
-            sprint.version += 1
             actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
+            affected_sprint_ids = {sprint_id, *source_cards.keys()}
+            for source_sprint_id, removed_cards in source_cards.items():
+                source_sprint = await _application_get(
+                    self.db, "sprint", source_sprint_id
+                )
+                if source_sprint is None or source_sprint.board_id != sprint.board_id:
+                    continue
+                source_sprint.version += 1
+                removed_ids = [card.id for card in removed_cards]
+                await self._log_activity(
+                    board_id=source_sprint.board_id,
+                    action="sprint_tasks_unassigned",
+                    actor_type="user",
+                    actor_id=user_id,
+                    actor_name=actor_name,
+                    details={
+                        "sprint_id": source_sprint_id,
+                        "card_ids": removed_ids,
+                        "count": len(removed_ids),
+                        "version": source_sprint.version,
+                        "reassigned_to_sprint_id": sprint_id,
+                        **self._lane_activity_details(source_sprint),
+                    },
+                )
+                await self._record_history(
+                    sprint_id=source_sprint_id,
+                    action="tasks_unassigned",
+                    actor_id=user_id,
+                    actor_name=actor_name,
+                    changes=[
+                        {
+                            "field": "cards",
+                            "removed": removed_ids,
+                            "reassigned_to_sprint_id": sprint_id,
+                        }
+                    ],
+                    summary=f"Reassigned {len(removed_ids)} card(s) to another sprint",
+                    version=source_sprint.version,
+                )
+            sprint.version += 1
+            SprintScopeResolver.invalidate(*affected_sprint_ids)
             await self._log_activity(
                 board_id=sprint.board_id,
                 action="sprint_tasks_assigned",
@@ -14702,7 +15296,7 @@ class SprintService:
                 actor_name=actor_name,
                 details={
                     "sprint_id": sprint_id,
-                    "card_ids": [card.id for card in cards_to_assign],
+                    "card_ids": [card.id for card in moved_cards],
                     "count": assigned,
                     "cross_spec_path_b_test_ids": cross_spec_path_b_test_ids,
                     **self._lane_activity_details(sprint),
@@ -14725,7 +15319,7 @@ class SprintService:
                 changes=[
                     {
                         "field": "cards",
-                        "added": [card.id for card in cards_to_assign],
+                        "added": [card.id for card in moved_cards],
                         "count": assigned,
                         "cross_spec_path_b_test_ids": cross_spec_path_b_test_ids,
                         **self._lane_activity_details(sprint),
@@ -14770,6 +15364,7 @@ class SprintService:
             card.sprint_id = None
         if cards:
             sprint.version += 1
+            SprintScopeResolver.invalidate(sprint.id)
             actor_name = await resolve_actor_name(self.db, user_id, sprint.board_id)
             details = {
                 "sprint_id": sprint_id,
@@ -15185,20 +15780,21 @@ async def mcp_list_my_mentions(
     agent_name: str | None,
     include_seen: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
+    if not agent_name or not agent_name.strip():
+        return [], include_seen
+
     mention_pattern = f"%@{agent_name or ''}%"
     show_all = include_seen
 
-    seen_ids: set[str] = set()
-    if not show_all:
-        seen = await _application_list(
-            db,
-            "agent_seen_item",
-            filters=(
-                _apf("board_id", "eq", board_id),
-                _apf("agent_id", "eq", agent_id),
-            ),
-        )
-        seen_ids = {item.item_id for item in seen}
+    seen = await _application_list(
+        db,
+        "agent_seen_item",
+        filters=(
+            _apf("board_id", "eq", board_id),
+            _apf("agent_id", "eq", agent_id),
+        ),
+    )
+    seen_ids = {item.item_id for item in seen}
 
     cards = await _application_list(
         db,
@@ -15322,6 +15918,7 @@ async def mcp_list_my_mentions(
                 "content": comment.content,
                 "author": comment.author_id,
                 "created_at": comment.created_at.isoformat(),
+                "seen": comment.id in seen_ids,
             }
         )
     for qa, card_title in qa_results:
@@ -15337,6 +15934,7 @@ async def mcp_list_my_mentions(
                 "answer": qa.answer,
                 "asked_by": qa.asked_by,
                 "created_at": qa.created_at.isoformat(),
+                "seen": qa.id in seen_ids,
             }
         )
     for spec_qa, spec_title in spec_qa_results:
@@ -15355,6 +15953,7 @@ async def mcp_list_my_mentions(
                 "selected": spec_qa.selected,
                 "asked_by": spec_qa.asked_by,
                 "created_at": spec_qa.created_at.isoformat(),
+                "seen": spec_qa.id in seen_ids,
             }
         )
     for ideation_qa, ideation_title in ideation_qa_results:
@@ -15373,6 +15972,7 @@ async def mcp_list_my_mentions(
                 "selected": ideation_qa.selected,
                 "asked_by": ideation_qa.asked_by,
                 "created_at": ideation_qa.created_at.isoformat(),
+                "seen": ideation_qa.id in seen_ids,
             }
         )
     for refinement_qa, refinement_title in refinement_qa_results:
@@ -15391,6 +15991,7 @@ async def mcp_list_my_mentions(
                 "selected": refinement_qa.selected,
                 "asked_by": refinement_qa.asked_by,
                 "created_at": refinement_qa.created_at.isoformat(),
+                "seen": refinement_qa.id in seen_ids,
             }
         )
     mentions.sort(key=lambda m: m["created_at"], reverse=True)
@@ -15405,6 +16006,17 @@ async def mcp_mark_mentions_seen(
     agent_name: str | None,
     item_ids: list[str],
 ) -> tuple[int, int]:
+    requested_ids = list(dict.fromkeys(item_ids))
+    mentions, _ = await mcp_list_my_mentions(
+        db,
+        board_id=board_id,
+        agent_id=agent_id,
+        agent_name=agent_name,
+        include_seen=True,
+    )
+    mention_ids = {str(item["item_id"]) for item in mentions}
+    eligible_ids = [item_id for item_id in requested_ids if item_id in mention_ids]
+
     existing_rows = (
         await _application_list(
             db,
@@ -15412,15 +16024,15 @@ async def mcp_mark_mentions_seen(
             filters=(
                 _apf("board_id", "eq", board_id),
                 _apf("agent_id", "eq", agent_id),
-                _apf("item_id", "in", item_ids),
+                _apf("item_id", "in", eligible_ids),
             ),
         )
-        if item_ids
+        if eligible_ids
         else []
     )
     existing_ids = {item.item_id for item in existing_rows}
     marked = 0
-    for item_id in item_ids:
+    for item_id in eligible_ids:
         if item_id in existing_ids:
             continue
         await _application_add(
@@ -15440,12 +16052,12 @@ async def mcp_mark_mentions_seen(
         comments = await _application_list(
             db,
             "comment",
-            filters=(_apf("id", "in", item_ids),),
+            filters=(_apf("id", "in", eligible_ids),),
         )
         qa_items = await _application_list(
             db,
             "qa_item",
-            filters=(_apf("id", "in", item_ids),),
+            filters=(_apf("id", "in", eligible_ids),),
         )
         card_ids = {item.card_id for item in comments} | {
             item.card_id for item in qa_items
@@ -15465,7 +16077,7 @@ async def mcp_mark_mentions_seen(
         spec_qa_items = await _application_list(
             db,
             "spec_qa_item",
-            filters=(_apf("id", "in", item_ids),),
+            filters=(_apf("id", "in", eligible_ids),),
         )
         for spec_id in {item.spec_id for item in spec_qa_items}:
             await board_service._log_activity(
@@ -15480,7 +16092,7 @@ async def mcp_mark_mentions_seen(
         ideation_qa_items = await _application_list(
             db,
             "ideation_qa_item",
-            filters=(_apf("id", "in", item_ids),),
+            filters=(_apf("id", "in", eligible_ids),),
         )
         for ideation_id in {item.ideation_id for item in ideation_qa_items}:
             await board_service._log_activity(
@@ -15495,7 +16107,7 @@ async def mcp_mark_mentions_seen(
         refinement_qa_items = await _application_list(
             db,
             "refinement_qa_item",
-            filters=(_apf("id", "in", item_ids),),
+            filters=(_apf("id", "in", eligible_ids),),
         )
         for refinement_id in {item.refinement_id for item in refinement_qa_items}:
             await board_service._log_activity(
@@ -15506,7 +16118,7 @@ async def mcp_mark_mentions_seen(
                 actor_name=agent_name,
                 details={"refinement_id": refinement_id, "item_count": marked},
             )
-    return marked, len(item_ids)
+    return marked, len(requested_ids)
 
 
 async def mcp_get_unseen_summary(

@@ -251,7 +251,7 @@ async def test_mcp_dependency_cross_board_returns_not_found_and_zero_edge(
 
 
 @pytest.mark.asyncio
-async def test_mcp_dependency_duplicate_is_conflict_and_keeps_single_edge(
+async def test_mcp_dependency_duplicate_is_idempotent_and_keeps_single_edge(
     _relation_graph,
 ) -> None:
     kwargs = {
@@ -262,7 +262,8 @@ async def test_mcp_dependency_duplicate_is_conflict_and_keeps_single_edge(
     duplicate = await _call_add_dependency(_relation_graph, **kwargs)
 
     assert created["success"] is True
-    assert "existe" in duplicate.get("error", "").lower()
+    assert duplicate["success"] is True
+    assert duplicate["dependency_id"] == created["dependency_id"]
     assert await _edge_count(_relation_graph, **kwargs) == 1
 
 

@@ -104,7 +104,10 @@ async def test_ts_ff3cef78_board_link_blocking_mandate_true():
         assert block["effective"]["design_system_id"] == ds_id
         assert block["effective"]["title"] == "Teste DS"
         assert block["effective"]["source"] == "board_link"
-        assert block["effective"]["version"] is not None
+        assert block["effective"]["version"] == 1
+        assert block["effective"]["pinned_version"] == 1
+        assert block["effective"]["catalog_version"] == 1
+        assert block["effective"]["version_is_current"] is True
         assert block["gate_mode"] == "blocking"
         assert block["mandate"] is True
     finally:
@@ -132,6 +135,69 @@ async def test_ts_0fd51a8b_board_link_off_mandate_false():
         assert block["effective"]["design_system_id"] == ds_id
         assert block["gate_mode"] == "off"
         assert block["mandate"] is False
+    finally:
+        await _cleanup([board_id] if board_id else [], [ds_id] if ds_id else [])
+
+
+async def test_effective_projection_distinguishes_pin_from_newer_catalog_row():
+    """A board pin remains stable while the mutable catalog row advances.
+
+    The projection must expose both versions instead of silently combining the
+    pinned version with live catalog metadata as if they represented one row.
+    """
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    board_id = ds_id = None
+    try:
+        async with get_session_factory()() as db:
+            board = await _seed_board(db, gate_mode="blocking")
+            board_id = board.id
+            service = DesignSystemService(db)
+            ds = await service.create_design_system(
+                USER_ID,
+                title="Pinned DS v1",
+                scope="global",
+                payload={"tokens": {"version": 1}},
+            )
+            ds_id = ds.id
+            await service.link_design_system_to_board(board_id, ds_id)
+            updated = await service.update_design_system(
+                ds_id,
+                USER_ID,
+                title="Catalog DS v2",
+                payload={"tokens": {"version": 2}},
+            )
+            assert updated.version == 2
+            await db.commit()
+
+        projected = await _call(
+            "okto_pulse_get_board_design_system",
+            board_id=board_id,
+        )
+        effective = projected["effective"]
+        assert effective["design_system_id"] == ds_id
+        assert effective["version"] == 1
+        assert effective["pinned_version"] == 1
+        assert effective["catalog_version"] == 2
+        assert effective["version_is_current"] is False
+        assert effective["title"] == "Catalog DS v2"
+
+        # Re-link is the explicit operation that refreshes the board pin.
+        async with get_session_factory()() as db:
+            await DesignSystemService(db).link_design_system_to_board(
+                board_id,
+                ds_id,
+            )
+            await db.commit()
+        refreshed = await _call(
+            "okto_pulse_get_board_design_system",
+            board_id=board_id,
+        )
+        assert refreshed["effective"]["version"] == 2
+        assert refreshed["effective"]["pinned_version"] == 2
+        assert refreshed["effective"]["catalog_version"] == 2
+        assert refreshed["effective"]["version_is_current"] is True
     finally:
         await _cleanup([board_id] if board_id else [], [ds_id] if ds_id else [])
 
@@ -193,6 +259,10 @@ async def test_ts_4288636b_default_snapshot_normalizes_title_null_and_gate_from_
         assert block["effective"]["status"] == "active"
         assert block["effective"]["scope"] == "global"
         assert block["effective"]["exists"] is True
+        assert block["effective"]["version"] == 1
+        assert block["effective"]["pinned_version"] == 1
+        assert block["effective"]["catalog_version"] == 1
+        assert block["effective"]["version_is_current"] is True
         assert block["effective"]["gate_mode"] == "advisory"
         assert block["gate_mode"] == "advisory"  # from BoardSettings, NOT the snapshot mirror
         assert block["gate_mode"] != "blocking"
@@ -231,6 +301,9 @@ async def test_ts_9c7f3ee0_dangling_effective_axes_are_not_collapsed(monkeypatch
         "source": "board_link",
         "design_system_id": "missing-design-system",
         "version": 7,
+        "pinned_version": 7,
+        "catalog_version": None,
+        "version_is_current": False,
         "title": None,
         "status": None,
         "scope": None,

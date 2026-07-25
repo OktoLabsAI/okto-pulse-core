@@ -202,6 +202,23 @@ async def test_profile_activity_success_envelopes_are_compatible(db_factory) -> 
         assert mentions["mentions"][0]["type"] == "comment"
         assert mentions["mentions"][0]["item_id"] == ids["comment_id"]
 
+        ignored = json.loads(
+            await mcp_server.okto_pulse_mark_as_seen.fn(
+                board_id=board_id,
+                item_ids=["not-a-real-mention"],
+            )
+        )
+        assert ignored == {
+            "success": True,
+            "marked_count": 0,
+            "total_requested": 1,
+        }
+        still_unseen = json.loads(
+            await mcp_server.okto_pulse_list_my_mentions.fn(board_id=board_id)
+        )
+        assert still_unseen["unseen_count"] == 1
+        assert still_unseen["mentions"][0]["item_id"] == ids["comment_id"]
+
         marked = json.loads(
             await mcp_server.okto_pulse_mark_as_seen.fn(
                 board_id=board_id,
@@ -215,6 +232,16 @@ async def test_profile_activity_success_envelopes_are_compatible(db_factory) -> 
         )
         assert unseen_after_mark["unseen_count"] == 0
         assert unseen_after_mark["mentions"] == []
+
+        all_mentions = json.loads(
+            await mcp_server.okto_pulse_list_my_mentions.fn(
+                board_id=board_id,
+                include_seen=True,
+            )
+        )
+        assert all_mentions["unseen_count"] == 0
+        assert all_mentions["mentions"][0]["item_id"] == ids["comment_id"]
+        assert all_mentions["mentions"][0]["seen"] is True
 
         summary = json.loads(
             await mcp_server.okto_pulse_get_unseen_summary.fn(board_id=board_id)
@@ -237,8 +264,10 @@ async def test_profile_activity_success_envelopes_are_compatible(db_factory) -> 
             )
         )
         assert set(activity) == {"items", "next_cursor"}
-        assert activity["items"][0]["id"] == ids["activity_id"]
-        assert activity["items"][0]["details"]["title"] == "Mention target"
+        seeded_activity = next(
+            item for item in activity["items"] if item["id"] == ids["activity_id"]
+        )
+        assert seeded_activity["details"]["title"] == "Mention target"
 
 
 @pytest.mark.asyncio

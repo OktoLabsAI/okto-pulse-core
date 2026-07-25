@@ -22,6 +22,9 @@ from okto_pulse.core.kg.orphan_integrity import (
     OrphanScanQueryError,
     SAFE_ORPHAN_AUDIT_FIELDS,
     SAFE_ORPHAN_METRIC_LABELS,
+    SOURCE_REF_MISSING,
+    SOURCE_REF_RESOLVED,
+    SOURCE_REF_UNRESOLVED,
     schema_node_types_for_orphan_scanner,
     schema_relationship_pairs_for_orphan_scanner,
 )
@@ -31,12 +34,14 @@ from kg_schema_testing import (
     NODE_TYPES,
     REL_TYPES,
     open_materialized_board_connection as open_board_connection,
+    resolve_relationship_endpoint_pair,
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
 from kg_registry_testing import (
     RealBoardCypherExecutorForTests,
     configure_test_kg_registry,
 )
+from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
 
 
 @pytest.fixture(autouse=True)
@@ -123,6 +128,80 @@ def test_orphan_scanner_uses_schema_node_and_relationship_catalogs() -> None:
     assert schema_relationship_pairs_for_orphan_scanner() == tuple(expected)
 
 
+def test_boost_audit_relates_to_endpoints_are_schema_valid() -> None:
+    """The handler's Decision anchor must be materializable for every card root."""
+
+    assert resolve_relationship_endpoint_pair(
+        "relates_to",
+        from_type="Decision",
+        to_type="Entity",
+    ) == ("Decision", "Entity")
+    assert resolve_relationship_endpoint_pair(
+        "relates_to",
+        from_type="Decision",
+        to_type="Bug",
+    ) == ("Decision", "Bug")
+
+
+def test_boost_audit_edges_materialize_and_clear_zero_degree_diagnostics() -> None:
+    """Both normal and bug-card audit Decisions receive real graph degree."""
+
+    board_id = f"boost-audit-schema-{uuid.uuid4()}"
+    decision_entity_id = f"decision-entity-{uuid.uuid4().hex[:12]}"
+    decision_bug_id = f"decision-bug-{uuid.uuid4().hex[:12]}"
+    entity_id = f"entity-{uuid.uuid4().hex[:12]}"
+    bug_id = f"bug-{uuid.uuid4().hex[:12]}"
+    with open_board_connection(board_id) as (_db, kconn):
+        orchestrator = TransactionOrchestrator(
+            graph_scope=kconn,
+            session_id=f"boost-schema-{uuid.uuid4().hex[:8]}",
+            board_id=board_id,
+        )
+        _seed_node(
+            kconn,
+            orchestrator,
+            "Decision",
+            decision_entity_id,
+            "card:card-normal:boost_audit:normal",
+        )
+        _seed_node(kconn, orchestrator, "Entity", entity_id, "card:card-normal")
+        _seed_node(
+            kconn,
+            orchestrator,
+            "Decision",
+            decision_bug_id,
+            "card:card-bug:boost_audit:bug",
+        )
+        _seed_node(kconn, orchestrator, "Bug", bug_id, "card:card-bug")
+        orchestrator.create_edge(
+            "relates_to",
+            decision_entity_id,
+            entity_id,
+            attrs={"layer": "deterministic", "rule_id": "boost_audit"},
+            from_type="Decision",
+            to_type="Entity",
+        )
+        orchestrator.create_edge(
+            "relates_to",
+            decision_bug_id,
+            bug_id,
+            attrs={"layer": "deterministic", "rule_id": "boost_audit"},
+            from_type="Decision",
+            to_type="Bug",
+        )
+
+        report = OrphanNodeScanner().scan(
+            board_id=board_id,
+            node_type="Decision",
+            connection=kconn,
+        )
+
+    assert report.orphan_count == 0
+    assert build_orphan_integrity_projection(
+        report
+    ).classification_delta == "none"
+
+
 def test_scanner_batches_connectivity_with_constant_query_count_for_many_nodes() -> None:
     node_count = 250
     connected_count = 100
@@ -155,6 +234,125 @@ def test_scanner_batches_connectivity_with_constant_query_count_for_many_nodes()
     assert report.orphan_count == node_count - connected_count
     assert report.orphan_count_by_type == {"Learning": node_count - connected_count}
     assert len(report.samples) == 3
+
+
+@pytest.mark.asyncio
+async def test_scanner_resolves_sources_from_board_scoped_relational_truth(
+    db_factory,
+) -> None:
+    """Live, absent, malformed and cross-board refs keep a strict tri-state."""
+
+    token = uuid.uuid4().hex
+    board_id = f"orphan-source-board-{token}"
+    other_board_id = f"orphan-source-other-{token}"
+    live_spec_id = f"orphan-source-live-{token}"
+    live_card_id = f"orphan-source-card-{token}"
+    cross_board_spec_id = f"orphan-source-cross-{token}"
+    actor_id = f"orphan-source-actor-{token}"
+    async with db_factory() as db:
+        db.add_all(
+            [
+                Board(id=board_id, name="Source board", owner_id=actor_id),
+                Board(
+                    id=other_board_id,
+                    name="Other source board",
+                    owner_id=actor_id,
+                ),
+                Spec(
+                    id=live_spec_id,
+                    board_id=board_id,
+                    title="Live source",
+                    status=SpecStatus.DRAFT,
+                    created_by=actor_id,
+                ),
+                Spec(
+                    id=cross_board_spec_id,
+                    board_id=other_board_id,
+                    title="Cross-board source",
+                    status=SpecStatus.DRAFT,
+                    created_by=actor_id,
+                ),
+                Card(
+                    id=live_card_id,
+                    board_id=board_id,
+                    title="Live boost source",
+                    created_by=actor_id,
+                ),
+            ]
+        )
+        await db.commit()
+
+    rows = (
+        ("learning-live", f"spec:{live_spec_id}", None, "agent:cognitive"),
+        (
+            "learning-absent",
+            f"spec:absent-{token}",
+            None,
+            "agent:cognitive",
+        ),
+        ("learning-malformed", "spec::broken", None, "agent:cognitive"),
+        (
+            "learning-cross-board",
+            f"spec:{cross_board_spec_id}",
+            None,
+            "agent:cognitive",
+        ),
+        ("learning-missing-ref", None, None, "agent:cognitive"),
+    )
+    report = OrphanNodeScanner().scan(
+        board_id=board_id,
+        node_type="Learning",
+        limit=10,
+        connection=_BatchScannerConnection(rows),
+    )
+
+    status_by_node = {
+        sample.node_id: sample.source_resolution_status
+        for sample in report.samples
+    }
+    assert status_by_node == {
+        "learning-live": SOURCE_REF_RESOLVED,
+        "learning-absent": SOURCE_REF_UNRESOLVED,
+        "learning-malformed": SOURCE_REF_UNRESOLVED,
+        "learning-cross-board": SOURCE_REF_UNRESOLVED,
+        "learning-missing-ref": SOURCE_REF_MISSING,
+    }
+    assert report.unresolved_reasons == {
+        SOURCE_REF_RESOLVED: 1,
+        SOURCE_REF_UNRESOLVED: 3,
+        SOURCE_REF_MISSING: 1,
+    }
+
+    # Relational resolution is diagnostic only: even a live source cannot
+    # excuse a zero-degree graph node or hide it from the Health projection.
+    projection = build_orphan_integrity_projection(report).to_safe_dict()
+    assert report.orphan_count == 5
+    assert projection["integrity_warning"] is True
+    assert projection["classification_delta"] == "at_risk"
+    assert projection["orphan_count"] == 5
+    assert projection["unresolved_reasons"] == report.unresolved_reasons
+
+    # A boost audit can have a live relational source and still be a genuine
+    # graph orphan: source resolution enriches the diagnostic, never degree.
+    boost_report = OrphanNodeScanner().scan(
+        board_id=board_id,
+        node_type="Decision",
+        connection=_BatchScannerConnection(
+            (
+                (
+                    "decision-boost-orphan",
+                    f"card:{live_card_id}:boost_audit:deadbeef",
+                    None,
+                    "system:card_boost_recompute_handler",
+                ),
+            )
+        ),
+    )
+    boost_projection = build_orphan_integrity_projection(boost_report).to_safe_dict()
+    assert boost_report.orphan_count == 1
+    assert boost_report.samples[0].source_resolution_status == SOURCE_REF_RESOLVED
+    assert boost_projection["classification_delta"] == "at_risk"
+    assert boost_projection["integrity_warning"] is True
 
 
 @pytest.mark.parametrize("fail_phase", ["enumeration", "connectivity"])
@@ -469,6 +667,64 @@ def test_backfill_creates_one_provenance_edge_and_rerun_noop() -> None:
         to_type="Entity",
         from_id=requirement_id,
         to_id=spec_entity_id,
+    ) == 1
+
+
+def test_default_backfill_does_not_starve_actionable_orphans_beyond_limit() -> None:
+    board_id = f"orphan-backfill-fair-{uuid.uuid4()}"
+    source_root = f"spec:{uuid.uuid4()}"
+    board_root_id = f"entity_board_root_{uuid.uuid4().hex[:12]}"
+    source_entity_id = f"entity_source_{uuid.uuid4().hex[:12]}"
+    actionable_id = f"zzz_requirement_actionable_{uuid.uuid4().hex[:12]}"
+
+    with open_board_connection(board_id) as (_db, kconn):
+        orch = TransactionOrchestrator(
+            graph_scope=kconn,
+            session_id=f"seed_{uuid.uuid4().hex[:8]}",
+            board_id=board_id,
+        )
+        _seed_node(kconn, orch, "Entity", board_root_id, f"board:{board_id}")
+        _seed_node(kconn, orch, "Entity", source_entity_id, source_root)
+        orch.create_edge(
+            "belongs_to",
+            source_entity_id,
+            board_root_id,
+            attrs={"confidence": 1.0},
+            from_type="Entity",
+            to_type="Entity",
+        )
+        for index in range(3):
+            _seed_node(
+                kconn,
+                orch,
+                "Requirement",
+                f"aaa_requirement_unresolved_{index}_{uuid.uuid4().hex[:8]}",
+                f"spec:missing-{index}:fr:0",
+            )
+        _seed_node(
+            kconn,
+            orch,
+            "Requirement",
+            actionable_id,
+            f"{source_root}:fr:actionable",
+        )
+
+        result = OrphanBackfillReconciler().run(
+            board_id=board_id,
+            limit=1,
+            connection=kconn,
+        )
+
+    assert result.detected == 1
+    assert result.connected == 1
+    assert result.samples[0].node_id == actionable_id
+    assert _edge_count(
+        board_id,
+        edge_type="belongs_to",
+        from_type="Requirement",
+        to_type="Entity",
+        from_id=actionable_id,
+        to_id=source_entity_id,
     ) == 1
 
 

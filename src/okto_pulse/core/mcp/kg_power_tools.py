@@ -14,6 +14,10 @@ import logging
 import re
 from typing import Any
 
+from okto_pulse.core.mcp.kg_authorization import (
+    kg_permission_error,
+    principal_id,
+)
 from okto_pulse.core.kg.tier_power import (
     TierPowerError,
     check_rate_limit,
@@ -157,7 +161,57 @@ def _err(code: str, message: str, **extra: Any) -> str:
     return json.dumps(payload, default=str)
 
 
-def register_kg_power_tools(mcp, *, get_agent) -> None:
+def register_kg_power_tools(
+    mcp,
+    *,
+    get_agent,
+    get_board_agent=None,
+    get_global_agent=None,
+) -> None:
+    async def _authorized_board_agent(
+        board_id: str,
+        required_permission: str,
+    ):
+        agent = await get_agent()
+        if agent is None or get_board_agent is None:
+            return None, None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        try:
+            board_agent = await get_board_agent(board_id)
+        except Exception:
+            logger.warning(
+                "kg.power.board_acl_resolution_failed board=%s",
+                board_id,
+                exc_info=True,
+            )
+            return None, None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if board_agent is None:
+            return None, None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if principal_id(board_agent) != principal_id(agent):
+            return None, None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        for permission in dict.fromkeys(("board.read", required_permission)):
+            permission_error = kg_permission_error(
+                board_agent,
+                permission,
+            )
+            if permission_error is not None:
+                return None, None, _err(
+                    "permission_denied",
+                    permission_error,
+                    required_permission=permission,
+                )
+        return agent, board_agent, None
 
     @mcp.tool()
     async def okto_pulse_kg_query_cypher(
@@ -175,9 +229,13 @@ normalize, auto-LIMIT, variable-length paths bounded to *..20, timeout 5s defaul
 rows bounded to an agent-safe page, numeric scores rounded. max_rows: 0=agent-safe
 default (50), 1..1000 explicit, >1000 rejected. Full args/returns:
 okto-pulse://reference/tool-docs/kg."""
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "kg.power.cypher",
+        )
+        if auth_error is not None:
+            return auth_error
+        assert agent is not None
         logger.debug("[KG] kg_query_cypher called: board_id=%s cypher_len=%d max_rows=%d timeout_ms=%d",
                      board_id, len(cypher), max_rows, timeout_ms)
         try:
@@ -254,9 +312,13 @@ okto-pulse://reference/tool-docs/kg."""
         metadata/legacy_unknown never count as canonical/working leakage.
         Docs: okto-pulse://reference/tool-docs/kg.
         """
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "kg.power.natural",
+        )
+        if auth_error is not None:
+            return auth_error
+        assert agent is not None
         logger.debug("[KG] kg_query_natural called: board_id=%s query=%r limit=%d",
                      board_id, nl_query[:80], limit)
         try:
@@ -307,18 +369,65 @@ okto-pulse://reference/tool-docs/kg."""
         types and vector indexes (global namespace when board_id is empty).
         Internal types require include_internal="true" + admin role.
         """
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        want_internal = include_internal.lower() in ("true", "1", "yes")
+        if board_id:
+            agent, board_agent, auth_error = await _authorized_board_agent(
+                board_id,
+                "kg.power.schema_info",
+            )
+            if auth_error is not None:
+                return auth_error
+            permission_context = board_agent
+        else:
+            # Global schema introspection is static contract metadata. It never
+            # enumerates or opens a board graph, and therefore has no implicit
+            # all-board scope.
+            if get_global_agent is None:
+                return _err(
+                    "unauthorized",
+                    "authentication failed",
+                )
+            try:
+                agent = await get_global_agent()
+            except Exception:
+                logger.warning(
+                    "kg.power.global_acl_resolution_failed",
+                    exc_info=True,
+                )
+                return _err("unauthorized", "authentication failed")
+            if agent is None:
+                return _err("unauthorized", "authentication required")
+            permission_context = agent
+            permission_error = kg_permission_error(
+                permission_context,
+                "kg.power.schema_info",
+            )
+            if permission_error is not None:
+                return _err(
+                    "permission_denied",
+                    permission_error,
+                    required_permission="kg.power.schema_info",
+                )
+        if want_internal:
+            permission_error = kg_permission_error(
+                permission_context,
+                "kg.admin.settings_read",
+                legacy_fallback=None,
+            )
+            if permission_error is not None:
+                return _err(
+                    "permission_denied",
+                    permission_error,
+                    required_permission="kg.admin.settings_read",
+                )
 
         logger.debug("[KG] kg_schema_info called: board_id=%s include_internal=%s",
                      board_id, include_internal)
-        want_internal = include_internal.lower() in ("true", "1", "yes")
         logger.debug("[KG] kg_schema_info offloading to thread")
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 get_schema_info,
-                board_id or "default",
+                board_id,
                 include_internal=want_internal,
             ),
             timeout=30.0,
@@ -344,9 +453,12 @@ args: okto-pulse://reference/tool-docs/kg."""
 
         from okto_pulse.core.kg.grounding import check_entities_present
 
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        _agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "board.read",
+        )
+        if auth_error is not None:
+            return auth_error
 
         try:
             rows = json.loads(retrieved_rows_json) if retrieved_rows_json else []
@@ -411,9 +523,12 @@ normal re-consolidation; the graph is never modified. node_type optionally
 narrows to one table."""
         from okto_pulse.core.kg.provenance_drift import provenance_drift_report
 
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        _agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "board.read",
+        )
+        if auth_error is not None:
+            return auth_error
         try:
             report = await asyncio.wait_for(
                 provenance_drift_report(
@@ -444,9 +559,13 @@ narrows to one table."""
         critic output, no progress, exhausted budget/deadline and provider
         failures. ``graph_layer`` is canonical|working|all (default canonical).
         """
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "kg.power.natural",
+        )
+        if auth_error is not None:
+            return auth_error
+        assert agent is not None
         try:
             from okto_pulse.core.kg.interfaces import get_kg_registry
             from okto_pulse.core.kg.kg_service import (

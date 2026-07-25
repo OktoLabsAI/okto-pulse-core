@@ -271,6 +271,29 @@ def test_ts5_node_candidate_default_priority_boost():
     assert cand.priority_boost == 0.0
 
 
+def test_node_candidate_rejects_unknown_confidence_alias():
+    """Agent write typos must fail instead of silently using the 0.7 default."""
+    from pydantic import ValidationError
+
+    from okto_pulse.core.kg.schemas import KGNodeType, NodeCandidate
+
+    with pytest.raises(ValidationError, match="confidence"):
+        NodeCandidate(
+            candidate_id="c1",
+            node_type=KGNodeType.DECISION,
+            title="strict candidate",
+            confidence=0.2,
+        )
+
+    candidate = NodeCandidate(
+        candidate_id="c2",
+        node_type=KGNodeType.DECISION,
+        title="explicit confidence",
+        source_confidence=0.2,
+    )
+    assert candidate.source_confidence == pytest.approx(0.2)
+
+
 def test_ts5_node_candidate_rejects_boost_above_cap():
     """TS5: priority_boost > 0.2 raises Pydantic ValidationError."""
     from pydantic import ValidationError

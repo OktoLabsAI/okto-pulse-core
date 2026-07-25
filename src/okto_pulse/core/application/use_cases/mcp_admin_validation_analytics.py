@@ -403,6 +403,7 @@ class McpUpdateDesignSystemUseCase:
             actor.actor_id,
             board_id=command.board_id,
             board_access_authorized=True,
+            allow_owned_global_without_link=True,
             **kwargs,
         )
         await commit(uow)
@@ -432,6 +433,7 @@ class McpDeleteDesignSystemUseCase:
             actor.actor_id,
             board_id=command.board_id,
             board_access_authorized=True,
+            allow_owned_global_without_link=True,
         )
         if not deleted:
             return _DataResult(

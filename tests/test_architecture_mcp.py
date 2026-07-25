@@ -1016,7 +1016,9 @@ async def test_mcp_task_context_projects_architecture_findings_full_and_summary(
 
 
 @pytest.mark.asyncio
-async def test_mcp_spec_lock_blocks_architecture_update(_seed_spec_card):
+async def test_mcp_spec_lock_allows_dry_run_but_blocks_architecture_writes(
+    _seed_spec_card,
+):
     from okto_pulse.core.infra.database import get_session_factory
 
     board_id, spec_id, _ = _seed_spec_card
@@ -1037,14 +1039,59 @@ async def test_mcp_spec_lock_blocks_architecture_update(_seed_spec_card):
         spec.current_validation_id = "val-success"
         await db.commit()
 
+    create_preview = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Dry-run on locked spec",
+        global_description="Critique is read-only and must remain available.",
+    )
+    update_preview = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        design_id=design_id,
+        global_description="Dry-run update must not persist.",
+    )
     updated = await _call(
         "okto_pulse_update_architecture_design",
         board_id=board_id,
         design_id=design_id,
         global_description="Should be blocked.",
     )
-    assert "error" in updated
-    assert "locked" in updated["error"]
+    committed_preview = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Commit on locked spec",
+        global_description="This mutation must be blocked.",
+        commit=True,
+    )
+
+    assert create_preview["success"] is True
+    assert create_preview["mode"] == "create"
+    assert update_preview["success"] is True
+    assert update_preview["mode"] == "update"
+    for blocked in (updated, committed_preview):
+        assert blocked["error"] == "spec_locked"
+        assert blocked["code"] == "spec_locked"
+        assert blocked["details"] == {
+            "spec_id": spec_id,
+            "current_validation_id": "val-success",
+            "mutation_applied": False,
+        }
+
+    async with db_factory() as db:
+        designs = (
+            await db.execute(
+                select(ArchitectureDesign).where(
+                    ArchitectureDesign.spec_id == spec_id,
+                )
+            )
+        ).scalars().all()
+        assert len(designs) == 1
+        assert designs[0].global_description == "Architecture before validation."
 
 
 @pytest.mark.asyncio

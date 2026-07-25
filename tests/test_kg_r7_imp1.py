@@ -23,6 +23,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+import pytest_asyncio
 
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.connectivity_guard import (
@@ -61,14 +62,24 @@ from okto_pulse.core.kg.source_maturity import (
 )
 
 
-@pytest.fixture
-def board_id():
+@pytest_asyncio.fixture
+async def board_id(db_factory):
     """Per-test isolated board graph (overrides the shared conftest board) so
     accumulated nodes from one R7 test never leak the layer verdict of another."""
     from kg_schema_testing import bootstrap_board_graph
+    from sqlalchemy_test_models import Board
 
     bid = f"r7board-{uuid.uuid4().hex[:12]}"
     bootstrap_board_graph(bid)
+    async with db_factory() as db:
+        db.add(
+            Board(
+                id=bid,
+                name=f"R7 board {bid}",
+                owner_id="r7-test",
+            )
+        )
+        await db.commit()
     return bid
 
 

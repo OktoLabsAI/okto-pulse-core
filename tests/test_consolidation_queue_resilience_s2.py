@@ -426,6 +426,48 @@ async def test_worker_commit_refuses_ack_when_checkpoint_fails(monkeypatch):
         registry.graph_lifecycle.apply_step = original_step_adapter
 
 
+@pytest.mark.asyncio
+async def test_worker_commit_error_still_drains_possible_autocommit(
+    monkeypatch,
+):
+    """A primitive error can follow an auto-commit plus compensation."""
+
+    import okto_pulse.core.application.processors.consolidation as worker
+
+    events: list[str] = []
+
+    async def fake_commit(*_args, **_kwargs):
+        events.append("graph_partial_error")
+        raise RuntimeError("result materialization failed")
+
+    class _Lease:
+        durability_applied = False
+
+        def ensure_durable(self, **_kwargs) -> None:
+            events.append("durability")
+            self.durability_applied = True
+
+    lease = _Lease()
+    monkeypatch.setattr(worker, "commit_consolidation", fake_commit)
+    entry = SimpleNamespace(
+        id="queue-partial-error",
+        board_id=BOARD_ID_S2,
+        artifact_type="spec",
+        artifact_id="spec-partial-error",
+    )
+
+    with pytest.raises(RuntimeError, match="result materialization failed"):
+        await worker._commit_consolidation_with_board_graph_lifecycle(
+            entry=entry,
+            session_id="session-partial-error",
+            summary_text="partial error",
+            db=object(),
+            enter_graph_write=lambda _mutation_ref: lease,
+        )
+
+    assert events == ["graph_partial_error", "durability"]
+
+
 # ----------------------------------------------------------------------
 # AC7 — route_to_dead_letter moves row from queue to DLQ with full history
 # ----------------------------------------------------------------------

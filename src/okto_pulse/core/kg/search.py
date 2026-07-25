@@ -25,6 +25,9 @@ class SimilarNodeRaw:
     title: str
     distance: float  # cosine distance, 0 = identical, 1 = orthogonal, 2 = opposite
     source_artifact_ref: str | None = None
+    content: str | None = None
+    context: str | None = None
+    justification: str | None = None
 
     @property
     def similarity(self) -> float:
@@ -63,6 +66,9 @@ def find_similar_nodes_by_type(
                 node_type=str(row.get("node_type") or node_type),
                 title=str(row.get("title") or ""),
                 source_artifact_ref=row.get("source_artifact_ref"),
+                content=row.get("content"),
+                context=row.get("context"),
+                justification=row.get("justification"),
                 distance=1.0 - float(row["similarity"]),
             )
             for row in rows[:top_k]
@@ -103,6 +109,9 @@ def find_similar_for_candidate(
             node_type=r.node_type,
             stable_id=r.source_artifact_ref or None,
             title=r.title,
+            content=r.content,
+            context=r.context,
+            justification=r.justification,
             similarity=r.similarity,
         )
         for r in raw

@@ -42,12 +42,14 @@ class SpecBoardFilters(TypedDict, total=False):
     status: str
     labels: list[str]
     assignee_id: str
+    include_archived: bool
 
 
 class IdeationBoardFilters(TypedDict, total=False):
     status: str
     labels: list[str]
     derivation_pending: bool
+    include_archived: bool
 
 
 class RefinementBoardFilters(IdeationBoardFilters, total=False):
@@ -57,6 +59,7 @@ class RefinementBoardFilters(IdeationBoardFilters, total=False):
 class SprintBoardFilters(TypedDict, total=False):
     status: str
     spec_id: str
+    include_archived: bool
 
 
 class StoryBoardFilters(TypedDict, total=False):
@@ -102,10 +105,16 @@ class KnowledgeFilters(TypedDict, total=False):
 
 # okto_pulse_list_by_board
 ALLOWED_FILTERS_BY_BOARD: dict[str, list[str]] = {
-    "spec": ["status", "labels", "assignee_id"],
-    "ideation": ["status", "labels", "derivation_pending"],
-    "refinement": ["status", "labels", "ideation_id", "derivation_pending"],
-    "sprint": ["status", "spec_id"],
+    "spec": ["status", "labels", "assignee_id", "include_archived"],
+    "ideation": ["status", "labels", "derivation_pending", "include_archived"],
+    "refinement": [
+        "status",
+        "labels",
+        "ideation_id",
+        "derivation_pending",
+        "include_archived",
+    ],
+    "sprint": ["status", "spec_id", "include_archived"],
     "story": ["status", "topic_id", "linked", "converted", "include_archived"],
     "topic": ["include_archived"],
 }

@@ -21,6 +21,7 @@ from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 from typing import Any
 
+from okto_pulse.core.domain.datetime_utils import isoformat_utc
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
@@ -107,6 +108,8 @@ class McpGetSprintUseCase:
         sprint = await uow.services.sprints.get_sprint(command.sprint_id)
         if not sprint or sprint.board_id != actor.board_id:
             return McpGetSprintResult(not_found=True)
+        cards = await uow.services.sprints.list_assigned_cards(sprint.id)
+        pre_archive_status = getattr(sprint, "pre_archive_status", None)
         result = {
             "id": sprint.id, "spec_id": sprint.spec_id, "board_id": sprint.board_id,
             "title": sprint.title, "description": sprint.description,
@@ -126,9 +129,13 @@ class McpGetSprintUseCase:
             "skip_rules_coverage": sprint.skip_rules_coverage,
             "skip_qualitative_validation": sprint.skip_qualitative_validation,
             "version": sprint.version, "labels": sprint.labels,
+            "archived": bool(getattr(sprint, "archived", False)),
+            "pre_archive_status": getattr(
+                pre_archive_status, "value", pre_archive_status
+            ),
             "cards": [
                 {"id": c.id, "title": c.title, "status": c.status.value, "priority": c.priority.value}
-                for c in sprint.cards
+                for c in cards
             ],
             "qa_items": [
                 {"id": q.id, "question": q.question, "answer": q.answer, "asked_by": q.asked_by}
@@ -139,10 +146,8 @@ class McpGetSprintUseCase:
             "updated_at": sprint.updated_at.isoformat() if sprint.updated_at else None,
             "cancellation_reason": getattr(sprint, "cancellation_reason", None),
             "cancelled_by": getattr(sprint, "cancelled_by", None),
-            "cancelled_at": (
-                sprint.cancelled_at.isoformat()
-                if getattr(sprint, "cancelled_at", None)
-                else None
+            "cancelled_at": isoformat_utc(
+                getattr(sprint, "cancelled_at", None)
             ),
         }
         return McpGetSprintResult(result)
@@ -196,6 +201,7 @@ class McpGetSprintContextUseCase:
         spec = await uow.services.specs.get_spec(sprint.spec_id)
         if not spec or spec.board_id != sprint.board_id:
             raise EntityNotFoundError("sprint", command.sprint_id)
+        cards = await uow.services.sprints.list_assigned_cards(sprint.id)
 
         from okto_pulse.core.services.reviewer_separation import (
             evaluate_reviewer_separation,
@@ -205,7 +211,7 @@ class McpGetSprintContextUseCase:
             board=board,
             reviewer_id=actor.actor_id,
             sprint=sprint,
-            cards=sprint.cards,
+            cards=cards,
         )
 
         result: dict = {
@@ -232,6 +238,12 @@ class McpGetSprintContextUseCase:
             "skip_rules_coverage": sprint.skip_rules_coverage,
             "skip_qualitative_validation": sprint.skip_qualitative_validation,
             "labels": sprint.labels or [],
+            "archived": bool(getattr(sprint, "archived", False)),
+            "pre_archive_status": getattr(
+                getattr(sprint, "pre_archive_status", None),
+                "value",
+                getattr(sprint, "pre_archive_status", None),
+            ),
             "cards": [
                 {
                     "id": c.id,
@@ -241,7 +253,7 @@ class McpGetSprintContextUseCase:
                     "card_type": c.card_type.value if c.card_type else "normal",
                     "test_scenario_ids": c.test_scenario_ids or [],
                 }
-                for c in sprint.cards
+                for c in cards
             ],
             "qa_items": [
                 {"id": q.id, "question": q.question, "answer": q.answer, "asked_by": q.asked_by}
@@ -252,10 +264,8 @@ class McpGetSprintContextUseCase:
             "updated_at": sprint.updated_at.isoformat() if sprint.updated_at else None,
             "cancellation_reason": getattr(sprint, "cancellation_reason", None),
             "cancelled_by": getattr(sprint, "cancelled_by", None),
-            "cancelled_at": (
-                sprint.cancelled_at.isoformat()
-                if getattr(sprint, "cancelled_at", None)
-                else None
+            "cancelled_at": isoformat_utc(
+                getattr(sprint, "cancelled_at", None)
             ),
             "reviewer_separation": reviewer_separation.to_dict(),
         }
@@ -272,7 +282,7 @@ class McpGetSprintContextUseCase:
             scope = SprintScopeResolver.resolve(
                 sprint=sprint,
                 spec=spec,
-                cards=sprint.cards,
+                cards=cards,
             )
 
             result["spec"] = {

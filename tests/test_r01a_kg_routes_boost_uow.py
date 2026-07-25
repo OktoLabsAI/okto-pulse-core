@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import inspect
 import uuid
+from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -359,6 +361,194 @@ async def test_boost_use_case_raises_not_found_for_missing_node() -> None:
             await BoostNodeUseCase().execute(
                 BoostNodeCommand(board_id, "does-not-exist"), actor=actor, uow=uow
             )
+
+
+@pytest.mark.asyncio
+async def test_boost_holds_one_writer_fence_through_durability_and_audit_commit(
+    monkeypatch,
+) -> None:
+    """The graph SET cannot escape the board writer/durability boundary."""
+    import okto_pulse.core.application.use_cases.kg_routes_crud as crud
+    import okto_pulse.core.kg.guarded_write as guarded
+
+    trace: list[str] = []
+
+    class _Lease:
+        def ensure_durable(self) -> None:
+            assert trace[-1] == "graph_mutation"
+            trace.append("durability")
+
+        def ensure_owned(self, *, failure_phase: str) -> None:
+            assert failure_phase == "after_boost_audit_finalize"
+            assert trace[-1] == "audit_commit"
+            trace.append("ownership_after_finalize")
+
+    @contextmanager
+    def _guarded_board_write(*_args, **_kwargs):
+        trace.append("fence_enter")
+        try:
+            yield _Lease()
+        finally:
+            trace.append("fence_exit")
+
+    async def _allow_access(*_args, **_kwargs) -> None:
+        trace.append("access")
+
+    class _KG:
+        async def mutate_boost_node_graph(self, *_args, **_kwargs):
+            assert trace[-1] == "fence_enter"
+            trace.append("graph_mutation")
+            return object()
+
+        def stage_boost_node_audit(self, _mutation):
+            return {"node_id": "node-1"}
+
+    async def _commit(_uow) -> None:
+        assert trace[-1] == "durability"
+        trace.append("audit_commit")
+
+    async def _rollback() -> None:
+        trace.append("rollback")
+
+    monkeypatch.setattr(crud, "_require_board_access", _allow_access)
+    monkeypatch.setattr(guarded, "guarded_board_write", _guarded_board_write)
+    monkeypatch.setattr(crud, "commit", _commit)
+    uow = SimpleNamespace(
+        services=SimpleNamespace(kg=_KG()),
+        rollback=_rollback,
+    )
+    actor = crud.ActorContext("actor-1", "rest")
+
+    result = await crud.BoostNodeUseCase().execute(
+        crud.BoostNodeCommand("board-1", "node-1"),
+        actor=actor,
+        uow=uow,
+    )
+
+    assert result.payload == {"node_id": "node-1"}
+    assert trace == [
+        "access",
+        "fence_enter",
+        "graph_mutation",
+        "durability",
+        "audit_commit",
+        "ownership_after_finalize",
+        "fence_exit",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_boost_lifecycle_failure_never_commits_or_acknowledges(
+    monkeypatch,
+) -> None:
+    import okto_pulse.core.application.use_cases.kg_routes_crud as crud
+    import okto_pulse.core.kg.guarded_write as guarded
+    from okto_pulse.core.kg.guarded_write import GuardedWriteError
+
+    committed = False
+
+    class _Lease:
+        def ensure_durable(self) -> None:
+            raise GuardedWriteError(
+                "safe_lifecycle_failed",
+                "injected lifecycle failure",
+                retryable=True,
+            )
+
+    @contextmanager
+    def _guarded_board_write(*_args, **_kwargs):
+        yield _Lease()
+
+    async def _allow_access(*_args, **_kwargs) -> None:
+        return None
+
+    class _KG:
+        async def mutate_boost_node_graph(self, *_args, **_kwargs):
+            return object()
+
+        def stage_boost_node_audit(self, _mutation):
+            return {"node_id": "node-1"}
+
+    async def _commit(_uow) -> None:
+        nonlocal committed
+        committed = True
+
+    async def _rollback() -> None:
+        raise AssertionError("use-case rollback is not the lifecycle failure owner")
+
+    monkeypatch.setattr(crud, "_require_board_access", _allow_access)
+    monkeypatch.setattr(guarded, "guarded_board_write", _guarded_board_write)
+    monkeypatch.setattr(crud, "commit", _commit)
+    uow = SimpleNamespace(
+        services=SimpleNamespace(kg=_KG()),
+        rollback=_rollback,
+    )
+
+    with pytest.raises(GuardedWriteError, match="injected lifecycle failure"):
+        await crud.BoostNodeUseCase().execute(
+            crud.BoostNodeCommand("board-1", "node-1"),
+            actor=crud.ActorContext("actor-1", "rest"),
+            uow=uow,
+        )
+
+    assert committed is False
+
+
+@pytest.mark.asyncio
+async def test_boost_possible_autocommit_runs_lifecycle_before_error_escapes(
+    monkeypatch,
+) -> None:
+    import okto_pulse.core.application.use_cases.kg_routes_crud as crud
+    import okto_pulse.core.kg.guarded_write as guarded
+
+    trace: list[str] = []
+
+    class _Lease:
+        def ensure_durable(self) -> None:
+            trace.append("durability")
+
+    @contextmanager
+    def _guarded_board_write(*_args, **_kwargs):
+        trace.append("fence_enter")
+        try:
+            yield _Lease()
+        finally:
+            trace.append("fence_exit")
+
+    async def _allow_access(*_args, **_kwargs) -> None:
+        return None
+
+    class _KG:
+        async def mutate_boost_node_graph(self, *_args, **_kwargs):
+            trace.append("set_auto_committed")
+            raise RuntimeError("result materialization failed")
+
+        def stage_boost_node_audit(self, _mutation):
+            raise AssertionError("failed graph mutation cannot stage audit")
+
+    async def _rollback() -> None:
+        raise AssertionError("audit rollback cannot own a graph service failure")
+
+    monkeypatch.setattr(crud, "_require_board_access", _allow_access)
+    monkeypatch.setattr(guarded, "guarded_board_write", _guarded_board_write)
+    uow = SimpleNamespace(
+        services=SimpleNamespace(kg=_KG()),
+        rollback=_rollback,
+    )
+
+    with pytest.raises(RuntimeError, match="result materialization failed"):
+        await crud.BoostNodeUseCase().execute(
+            crud.BoostNodeCommand("board-1", "node-1"),
+            actor=crud.ActorContext("actor-1", "rest"),
+            uow=uow,
+        )
+
+    assert trace == [
+        "fence_enter",
+        "set_auto_committed",
+        "durability",
+        "fence_exit",
+    ]
 
 
 # --- bug 547a2aa8 regression: boost audit row persistence -------------------

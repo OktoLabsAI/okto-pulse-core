@@ -100,7 +100,15 @@ def update_tool(isolated_base_dir: Path) -> Callable[..., Any]:
         async def __aexit__(self, *_exc: Any) -> bool:
             return False
 
-    register_kg_tools(mcp, get_agent=_agent, get_uow=lambda: _NullDb())
+    async def _board_agent(_board_id: str) -> _FakeAgent:
+        return await _agent()
+
+    register_kg_tools(
+        mcp,
+        get_agent=_agent,
+        get_uow=lambda: _NullDb(),
+        get_board_agent=_board_agent,
+    )
     return mcp.tools["okto_pulse_kg_update_cognitive_pending_item"]
 
 

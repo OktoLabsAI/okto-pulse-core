@@ -113,6 +113,8 @@ def _error_code(payload: Mapping[str, Any], message: str | None) -> str:
         return "permission_denied"
     if "not found" in lowered:
         return "not_found"
+    if "spec" in lowered and re.search(r"\blocked\b", lowered):
+        return "spec_locked"
     if re.search(r"\blocked\b", lowered):
         return "resource_locked"
     if "conflict" in lowered or "version" in lowered and "expected" in lowered:

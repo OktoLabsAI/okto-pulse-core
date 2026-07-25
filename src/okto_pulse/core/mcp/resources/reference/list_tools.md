@@ -28,10 +28,10 @@ lists the allowed keys and whose `invalid_keys` field echoes the rejected ones.
 
 | entity_type | Allowed filter keys | Required |
 |---|---|---|
-| `spec` | `status`, `labels`, `assignee_id` | — |
-| `ideation` | `status`, `labels`, `derivation_pending` | — |
-| `refinement` | `ideation_id`, `status`, `labels`, `derivation_pending` | `ideation_id` |
-| `sprint` | `spec_id`, `status` | `spec_id` |
+| `spec` | `status`, `labels`, `assignee_id`, `include_archived` | — |
+| `ideation` | `status`, `labels`, `derivation_pending`, `include_archived` | — |
+| `refinement` | `ideation_id`, `status`, `labels`, `derivation_pending`, `include_archived` | `ideation_id` |
+| `sprint` | `spec_id`, `status`, `include_archived` | `spec_id` |
 | `story` | `status`, `topic_id`, `linked`, `converted`, `include_archived` | — |
 | `topic` | `include_archived` | — |
 

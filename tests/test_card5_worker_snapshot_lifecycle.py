@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
+import asyncio
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -54,8 +56,13 @@ def _patch_worker_shell(monkeypatch, *, lifecycle_calls: list[str]) -> None:
     )
     monkeypatch.setattr(
         consolidation,
-        "under_safe_write",
-        lambda *_args, **_kwargs: nullcontext(),
+        "guarded_board_write",
+        lambda *_args, **_kwargs: nullcontext(
+            SimpleNamespace(
+                durability_applied=True,
+                ensure_owned=lambda **_kwargs: None,
+            )
+        ),
     )
 
     def _lifecycle(**_kwargs: Any) -> SimpleNamespace:
@@ -111,6 +118,7 @@ async def test_partial_type_failure_keeps_graph_lifecycle(monkeypatch):
     lifecycle_calls: list[str] = []
 
     async def _partial_failure(_db: object, **_kwargs: Any) -> SimpleNamespace:
+        _kwargs["before_graph_write"]()
         return SimpleNamespace(
             incomplete=True,
             incomplete_cause=None,
@@ -137,3 +145,141 @@ async def test_partial_type_failure_keeps_graph_lifecycle(monkeypatch):
 
     assert processed is False
     assert lifecycle_calls == ["lifecycle"]
+
+
+@pytest.mark.asyncio
+async def test_exception_after_graph_callback_runs_lifecycle_before_reraise(
+    monkeypatch,
+):
+    from okto_pulse.core.kg import canonical_stale_reconciler
+
+    lifecycle_calls: list[str] = []
+
+    async def _write_then_fail(_db: object, **kwargs: Any) -> SimpleNamespace:
+        kwargs["before_graph_write"]()
+        raise RuntimeError("graph scan failed after possible auto-commit")
+
+    monkeypatch.setattr(
+        canonical_stale_reconciler,
+        "reconcile_stale_canonical",
+        _write_then_fail,
+    )
+    _patch_worker_shell(monkeypatch, lifecycle_calls=lifecycle_calls)
+
+    with pytest.raises(
+        RuntimeError,
+        match="graph scan failed after possible auto-commit",
+    ):
+        await consolidation._process_stale_reconcile_entry(
+            object(),
+            _entry(),
+        )
+
+    assert lifecycle_calls == ["lifecycle"]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_graph_scan_drains_before_lifecycle_and_reraise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from okto_pulse.core.kg import canonical_stale_reconciler
+
+    event_loop_thread = threading.get_ident()
+    events: list[str] = []
+    threads: dict[str, int] = {}
+    graph_started = threading.Event()
+    release_graph = threading.Event()
+    lease = SimpleNamespace(
+        durability_applied=True,
+        ensure_owned=lambda **_kwargs: None,
+    )
+
+    def _snapshot(_board_id: str):
+        threads["snapshot"] = threading.get_ident()
+        events.append("snapshot")
+        return {}, True, None
+
+    async def _scan(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        threads["graph"] = threading.get_ident()
+        events.append("graph_started")
+        graph_started.set()
+        release_graph.wait(timeout=5.0)
+        events.append("graph_finished")
+        return []
+
+    async def _claim_is_current(*_args: Any, **_kwargs: Any) -> bool:
+        return True
+
+    def _lifecycle(**kwargs: Any) -> SimpleNamespace:
+        assert kwargs["write_lease"] is lease
+        assert events[-1] == "graph_finished"
+        threads["lifecycle"] = threading.get_ident()
+        events.append("lifecycle")
+        return SimpleNamespace()
+
+    @contextmanager
+    def _guarded_write(*_args: Any, **_kwargs: Any):
+        threads["callback"] = threading.get_ident()
+        events.append("callback")
+        try:
+            yield lease
+        finally:
+            threads["guard_exit"] = threading.get_ident()
+            events.append("guard_exit")
+
+    monkeypatch.setattr(
+        canonical_stale_reconciler,
+        "_build_source_classification_map",
+        _snapshot,
+    )
+    monkeypatch.setattr(
+        canonical_stale_reconciler,
+        "_scan_and_demote",
+        _scan,
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "_queue_claim_is_current_and_unfenced",
+        _claim_is_current,
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "_apply_board_graph_lifecycle_after_commit",
+        _lifecycle,
+    )
+    monkeypatch.setattr(
+        consolidation,
+        "guarded_board_write",
+        _guarded_write,
+    )
+
+    task = asyncio.create_task(
+        consolidation._process_stale_reconcile_entry(
+            object(),
+            _entry(),
+        )
+    )
+    try:
+        assert await asyncio.to_thread(graph_started.wait, 1.0) is True
+        task.cancel()
+        await asyncio.sleep(0)
+        assert task.done() is False
+    finally:
+        release_graph.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert events == [
+        "snapshot",
+        "callback",
+        "graph_started",
+        "graph_finished",
+        "lifecycle",
+        "guard_exit",
+    ]
+    assert threads["snapshot"] != event_loop_thread
+    assert threads["graph"] != event_loop_thread
+    assert threads["callback"] == event_loop_thread
+    assert threads["lifecycle"] == event_loop_thread
+    assert threads["guard_exit"] == event_loop_thread

@@ -203,17 +203,21 @@ async def test_mcp_delete_use_case_returns_durable_takedown_receipt() -> None:
             actor_id: str,
             *,
             return_receipt: bool,
+            actor_type: str,
+            actor_name: str | None,
         ) -> object:
             assert (card_id, actor_id, return_receipt) == (
                 "card-1",
                 "agent-1",
                 True,
             )
+            assert actor_type == "agent"
+            assert actor_name == "Agent 1"
             return receipt
 
     class _Boards:
         async def _log_activity(self, **_kwargs: object) -> None:
-            return None
+            raise AssertionError("CardService is the only activity producer")
 
     class _Uow:
         def __init__(self) -> None:

@@ -6,13 +6,76 @@ version: "1.0"
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
 
+## Authorization and board scope
+
+Every board-scoped tool authenticates the request and resolves the caller's
+effective `AgentContext` for that exact board before opening a graph, Unit of
+Work, ledger, embedding provider, or writer lock. Session tools first resolve
+session ownership, derive its board, and then apply that board's ACL. A denied
+request is fail-closed and has no mutation side effect.
+
+Required permission by affected family:
+
+| Tool/family | `required_permission` |
+|---|---|
+| begin / add node / add edge / get similar / propose / commit / abort consolidation | `kg.session.begin` / `kg.session.add_node` / `kg.session.add_edge` / `kg.session.get_similar` / `kg.session.propose` / `kg.session.commit` / `kg.session.abort` |
+| list cognitive pending items | `board.read` |
+| update cognitive pending item | `kg.session.commit` |
+| decision history / related context / supersedence / contradictions / similar decisions / constraint explanation / alternatives / learning from bugs | `board.read` plus the matching `kg.query.decision_history`, `kg.query.related_context`, `kg.query.supersedence_chain`, `kg.query.contradictions`, `kg.query.similar_decisions`, `kg.query.constraint_explain`, `kg.query.alternatives`, or `kg.query.learning_from_bugs` |
+| global intent query | global `kg.query.global`; each included board also requires effective `board.read` and `kg.query.global` |
+| Cypher / natural / reflective query | `kg.power.cypher` / `kg.power.natural` |
+| schema info | `kg.power.schema_info` |
+| schema info with `include_internal=true` | additionally `kg.admin.settings_read` |
+| grounding / provenance drift / JSON-LD export | `board.read` |
+| health / health-readiness / canonical debt / partition integrity / digest mismatch / stale parity | `board.read` |
+| cognitive-readiness evaluations and lists / cognitive DLQ / bug cognitive closure evaluation | `board.read` |
+| orphan report / dead-letter list | `board.read` |
+| originates-from audit / takedown status / queue drill-down / connectivity DLQ diagnose and verify | `board.read` |
+| orphan backfill | `board.read` for `dry_run=true`; `kg.admin.historical_consolidation` for apply |
+| manual KG tick | `kg.admin.historical_consolidation` (board-effective for one board; global effective context for all boards) |
+| rebuild preflight / confirm / run | `kg.admin.wipe_board` |
+| quarantine restore plan / apply | global `kg.admin.wipe_board`, then the resolved destination board's effective `kg.admin.wipe_board` |
+
+Board overrides are honored because checks use the resolved board context, not
+the global agent object. Explicit legacy flat principals retain their historical
+`board:read` fallback for non-admin KG operations. Administrative schema
+introspection and every administrative mutation above have no legacy
+`board:read` fallback. Global administrative operations authenticate through
+the global effective context; a raw authenticated principal is not sufficient.
+`okto_pulse_kg_schema_info` with an empty `board_id` returns static global
+contract metadata and never opens, selects, or enumerates a board graph.
+
+Missing authentication or board access returns the non-enumerating
+`unauthorized` envelope. A resolved caller lacking a required flag receives
+`permission_denied` plus `required_permission`; for example:
+
+```json
+{
+  "error": {
+    "code": "permission_denied",
+    "message": "Permission denied: requires 'kg.power.cypher'",
+    "required_permission": "kg.power.cypher"
+  }
+}
+```
+
+The JSON-LD export keeps its legacy flat error projection while carrying the
+same information:
+`{"error":"permission_denied","message":"...","required_permission":"board.read"}`.
+
 ## `okto_pulse_kg_abort_consolidation`
 
 Covered fully by the live tool description.
 
 ## `okto_pulse_kg_add_edge_candidate`
 
-Covered fully by the live tool description.
+Add an edge candidate to an open consolidation session.
+
+`candidate` is a strict object with `candidate_id`, `edge_type`,
+`from_candidate_id`, `to_candidate_id`, and optional `confidence`, `layer`,
+`rule_id`, `created_by`, and `fallback_reason`. Unknown fields are rejected
+with `invalid_candidate`; they are never silently ignored. Edge confidence is
+named `confidence`, while node confidence is named `source_confidence`.
 
 ## `okto_pulse_kg_add_node_candidate`
 
@@ -42,7 +105,13 @@ uncertainty, rejected paths, risks, or contextual notes, prefer `Assumption` or
 
 Args:
     session_id: Session from begin_consolidation
-    candidate: Dict with candidate_id, node_type, title, content, etc.
+    candidate: Strict object with `candidate_id`, `node_type`, `title`, and
+        optional `content`, `context`, `justification`,
+        `source_artifact_ref`, `graph_layer`, `maturity_status`,
+        `source_confidence`, `relevance_score`, `priority_boost`,
+        extraction-provenance fields, and `kind_of`. Unknown fields are
+        rejected with `invalid_candidate`; they are never silently ignored.
+        Node confidence is named `source_confidence` (not `confidence`).
 
 Returns:
     JSON with accepted=true and node_count_in_session
@@ -448,6 +517,7 @@ Returns:
 ## `okto_pulse_kg_orphan_report`
 
 Return a bounded safe orphan-node report for a board KG.
+Requires the board's effective `board.read` permission.
 
 The payload intentionally exposes safe identifiers and aggregate diagnostics
 only: board_id, generation_id, orphan counts, safe samples, unresolved reasons,
@@ -465,6 +535,12 @@ Returns:
 ## `okto_pulse_kg_orphan_backfill`
 
 Run explicit orphan backfill for structurally resolvable nodes.
+`dry_run=true` requires effective `board.read` and acquires no writer lock.
+Applying the backfill requires effective
+`kg.admin.historical_consolidation`. The complete board batch runs under one
+single-writer fence and safe-write barrier; checkpoint/flush/fsync must finish
+even when a later row fails after an earlier edge was written. A lifecycle
+failure returns an error and never a successful backfill summary.
 
 Defaults to dry_run=true. The tool refuses writes when KG Health is
 `recovery_needed` or `quarantined`, so operators use the recovery flow instead
@@ -714,7 +790,12 @@ Args:
     timeout_ms: Timeout in ms (default 5000, max 30000)
     include_working: Optional boolean. Default false enforces canonical-only
         visibility. Pass true to query working + canonical rows during working
-        graph validation, rebuild checks, or E2E ingestion tests.
+        graph validation, rebuild checks, or E2E ingestion tests. Governed
+        source-deletion tombstones may remain visible for lineage/audit checks,
+        but their semantic payload (`title`, `content`, `context`,
+        `justification`, and source quote) is erased. The Community provider
+        replaces indexed nodes and drops their embedding too; independently,
+        vector fields are always response-boundary stripped by this tool.
 
 Layer contract:
     Node rows use `graph_layer` as the persisted node property. Do not query
@@ -733,7 +814,14 @@ Schema-safe queries:
 Returns:
     JSON with rows, row_count, truncated, row_bounds, sanitization,
     execution_time_ms, query_state, canonical_filter_enforced,
-    working_omitted_count
+    working_omitted_count. The legacy `working_omitted_count` name denotes the
+    total rows suppressed by canonical projection, including invalid/unknown
+    layer rows; it is derived from paired bounded query windows in the Community
+    provider. `working_omitted_count_exact`, `working_omitted_count_source`,
+    `working_omitted_count_scope=returned_window`, `layer_counts`,
+    `working_row_count`, and `omitted_layer_counts` explain the measurement.
+    Providers without paired-query observability return null rather than a
+    misleading zero.
 
 ## `okto_pulse_kg_query_global`
 
@@ -819,6 +907,12 @@ Returns:
 ## `okto_pulse_kg_tick_run_now`
 
 Prose covered by the live tool description. Delta:
+
+Authorization:
+    Requires `kg.admin.historical_consolidation`. A board tick checks the
+    destination board's effective overrides before resolving the lease
+    provider. A global tick authenticates through the global effective context;
+    raw-principal authentication alone never authorizes it.
 
 Args:
     board_id: Optional board UUID. Empty string = global tick (all boards).
@@ -1038,6 +1132,8 @@ Run the KG rebuild preflight for a board — gemelar do REST POST /api/v1/kg/reb
 Executes the pre-rebuild check (read-only, TR13): enumerates real sources
 via BoardSourceStore (the relational store), classifies the KG health state, and persists
 the immutable manifest needed for /confirm.
+Requires the board's effective `kg.admin.wipe_board` permission before opening
+the Unit of Work, source provider, manifest store, or writer machinery.
 
 **Admission gate (FR8):** refuses with `rebuild_refused_quarantined` when
 `graph_state == 'quarantined'`. Board `graph_state=recovery_needed` is admitted.
@@ -1072,6 +1168,8 @@ Emit the single-use confirmation token for a rebuild — gemelar do REST POST /a
 Loads the manifest persisted in /preflight via `manifest_ref` (NEVER
 re-enumerates), verifies that `preflight_hash` matches, and issues the
 confirmation token. Pass the token to `okto_pulse_kg_rebuild_run`.
+Requires the board's effective `kg.admin.wipe_board` before loading the
+manifest or issuing a token.
 
 Args:
     board_id: UUID of the board (same used in /preflight).
@@ -1100,6 +1198,8 @@ Consumes the single-use token emitted by `okto_pulse_kg_rebuild_confirm`
 and executes the full rebuild under the admin lane KG-01. NEVER mutates
 the graph if the token is invalid, the manifest has changed, or the
 exclusive lock cannot be acquired.
+Requires the board's effective `kg.admin.wipe_board` before admission, token
+consumption, provider resolution, or lock acquisition.
 
 **Admission gate (FR8):** re-checks quarantine even before consuming the
 token. `recovery_needed` IS ADMITTED.
@@ -1126,6 +1226,10 @@ Errors:
 ## `okto_pulse_kg_quarantine_restore`
 
 KG quarantine restore — dry-run/apply with backup-swap (KGD-01 FR4/BR4).
+Both plan and apply require `kg.admin.wipe_board`. Because `quarantine_id`
+does not reveal its owning board, the handler first checks the global effective
+admin context, resolves the minimum plan, and then re-checks the destination
+board's effective override before returning any plan path or applying files.
 
 `apply=false` (default) returns the auditable plan (files, destinations,
 conflicts, sizes) with NO mutation. `apply=true` moves the board's live files

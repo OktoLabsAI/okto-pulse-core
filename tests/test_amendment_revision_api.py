@@ -25,6 +25,7 @@ from okto_pulse.core.domain.amendment_eligibility import (
 )
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
+    ActivityLog,
     AmendmentHotfixRevision,
     Board,
     BugSeverity,
@@ -670,6 +671,114 @@ async def test_transition_terminal_state_cannot_resurrect():
                 actor=USER_ID, status="done",
             )
         assert e.value.code == "terminal_amendment_revision"
+
+
+@pytest.mark.parametrize("terminal_status", ["cancelled", "superseded"])
+async def test_terminal_revision_api_is_monotonic_and_returns_typed_409(
+    terminal_status,
+):
+    """Every API mutation is blocked after terminality, not only promotion."""
+    from sqlalchemy import select
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    async with get_session_factory()() as db:
+        ids = await _seed(db)
+        api = AmendmentRevisionApiService(db)
+        created = await api.create(
+            board_id=ids["board"],
+            bug_id=ids["bug"],
+            author=USER_ID,
+        )
+        amendment_id = created["id"]
+        terminal = await api.transition_lifecycle(
+            board_id=ids["board"],
+            bug_id=ids["bug"],
+            amendment_id=amendment_id,
+            actor=USER_ID,
+            status=terminal_status,
+        )
+        before_updated_at = terminal["updated_at"]
+        audit_count = len(
+            (
+                await db.execute(
+                    select(ActivityLog).where(
+                        ActivityLog.board_id == ids["board"]
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # An exact terminal-status retry succeeds without a persistence/audit
+        # side effect.  It is the only accepted operation after terminality.
+        retry = await api.transition_lifecycle(
+            board_id=ids["board"],
+            bug_id=ids["bug"],
+            amendment_id=amendment_id,
+            actor=USER_ID,
+            status=terminal_status,
+        )
+        assert retry["status"] == terminal_status
+        assert datetime.fromisoformat(retry["updated_at"]).replace(
+            tzinfo=None
+        ) == datetime.fromisoformat(before_updated_at).replace(tzinfo=None)
+
+        other_terminal = (
+            "superseded" if terminal_status == "cancelled" else "cancelled"
+        )
+        lifecycle_mutations = [
+            {"status": "draft"},
+            {"status": "review"},
+            {"status": other_terminal},
+            {"lineage_state": "complete"},
+            {"lineage_state": "incomplete"},
+            {"status": terminal_status, "lineage_state": "incomplete"},
+        ]
+        for mutation in lifecycle_mutations:
+            with pytest.raises(AmendmentRevisionApiError) as exc:
+                await api.transition_lifecycle(
+                    board_id=ids["board"],
+                    bug_id=ids["bug"],
+                    amendment_id=amendment_id,
+                    actor=USER_ID,
+                    **mutation,
+                )
+            assert exc.value.code == "terminal_amendment_revision", mutation
+            assert exc.value.status_code == 409
+            assert exc.value.to_dict()["details"] == {
+                "amendment_id": amendment_id,
+                "current_status": terminal_status,
+                "mutation_applied": False,
+            }
+
+        with pytest.raises(AmendmentRevisionApiError) as associate_exc:
+            await api.associate(
+                board_id=ids["board"],
+                bug_id=ids["bug"],
+                amendment_id=amendment_id,
+                actor=USER_ID,
+                regression_test_task_ids=["test-1"],
+            )
+        assert associate_exc.value.code == "terminal_amendment_revision"
+        assert associate_exc.value.status_code == 409
+        assert associate_exc.value.details["mutation_applied"] is False
+
+        assert (
+            len(
+                (
+                    await db.execute(
+                        select(ActivityLog).where(
+                            ActivityLog.board_id == ids["board"]
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            == audit_count
+        )
 
 
 async def test_transition_lifecycle_tool_has_no_coverage_or_bypass_param():

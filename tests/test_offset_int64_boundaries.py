@@ -23,6 +23,8 @@ _OPERATIONAL_OFFSET_TOOLS = (
     "okto_pulse_list_architecture_propagation_legacy",
 )
 
+_DISTINCT_RANGE_ERROR_TOOLS = frozenset(_OPERATIONAL_OFFSET_TOOLS[:6])
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool_name", _OPERATIONAL_OFFSET_TOOLS)
@@ -48,7 +50,12 @@ async def test_mcp_operational_lists_reject_offset_above_sqlite_int64(
             await tool.fn(board_id="board-offset-boundary", offset=PAGE_OFFSET_MAX + 1)
         )
 
-    assert payload["error"] == "invalid_pagination"
+    expected = (
+        "invalid_pagination_range"
+        if tool_name in _DISTINCT_RANGE_ERROR_TOOLS
+        else "invalid_pagination"
+    )
+    assert payload["error"] == expected
 
 
 @pytest.mark.asyncio

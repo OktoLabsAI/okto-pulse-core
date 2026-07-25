@@ -6,16 +6,16 @@ the REST endpoints never had, so they cannot be reused as-is (would drift):
 1. **Board ownership scoping** — every MCP card tool fetches the card and rejects
    a cross-board id with the legacy ``{"error": "Card not found"}``. The REST use
    cases operate by ``card_id`` only.
-2. **Atomic MCP activity log** — ``update_card``/``delete_card`` write a
-   ``board_service._log_activity`` row in the SAME transaction as the mutation
-   (REST does not; ``CardService`` emits a DomainEvent, not that row).
+2. **Atomic MCP activity log** — the use case passes the resolved actor context
+   to ``CardService``, the single canonical producer, and commits that one row
+   in the SAME transaction as the mutation.
 3. **MCP-specific JSON envelopes / except order** — handled by the tool adapter,
    NOT here.
 
 These use cases are MCP-orchestration-specific but stay transport-free: they do
-the board-scope, call ``CardService``, write the activity log where the legacy
-MCP contract did, and commit a SINGLE UoW transaction. They return domain
-objects — the adapter owns the exact ``json.dumps`` envelope and the
+the board-scope, call ``CardService`` with the actor metadata, and commit a
+SINGLE UoW transaction. They return domain objects — the adapter owns the exact
+``json.dumps`` envelope and the
 ``CardOperationError``/``GateContractError``/``ResourceGateError``/``ValueError``
 except order (per Codex decision: option A with adapter envelope).
 """
@@ -34,10 +34,6 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.domain.enums import CardStatus
 from okto_pulse.core.domain.knowledge_selection import KnowledgeTargetType
 from okto_pulse.core.ports.knowledge_propagation import KnowledgeTargetKey
-from okto_pulse.core.services.activity_log import (
-    activity_log_changes,
-    activity_log_value,
-)
 from okto_pulse.core.services.card_knowledge_snapshot import (
     build_card_knowledge_snapshot,
     card_knowledge_snapshots_equivalent,
@@ -52,6 +48,16 @@ def _require_actor_board(actor: ActorContext, board_id: str) -> None:
 
     if actor.board_id is None or actor.board_id != board_id:
         raise EntityNotFoundError("card", board_id)
+
+
+def _activity_actor_type(actor: ActorContext) -> str:
+    """Map transport source to the persisted activity actor taxonomy."""
+
+    if actor.source == "mcp":
+        return "agent"
+    if actor.source == "rest":
+        return "user"
+    return actor.source
 
 
 async def _get_card_in_scope(
@@ -97,11 +103,11 @@ class McpCreateCardResult:
 
 
 class McpCreateCardUseCase:
-    """Create card, traceability backlinks and activity in one transaction.
+    """Create card, traceability backlinks and one activity in one transaction.
 
     ``CardService.create_card`` invokes the shared idempotent traceability writer
-    for scenario/FR/BR targets.  The MCP-specific activity row is appended before
-    the one and only commit, so any failure rolls the entire operation back.
+    for scenario/FR/BR targets and owns the canonical activity row. The use case
+    supplies MCP actor metadata and performs the one commit.
     """
 
     async def execute(
@@ -140,20 +146,17 @@ class McpCreateCardUseCase:
 
         service = uow.services.cards
         card = await service.create_card(
-            command.board_id, actor.actor_id, command.data, skip_ownership_check=True
+            command.board_id,
+            actor.actor_id,
+            command.data,
+            skip_ownership_check=True,
+            actor_type=_activity_actor_type(actor),
+            actor_name=actor.actor_name,
+            activity_details=command.activity_details,
         )
         if not card:
             return McpCreateCardResult(None)
 
-        await uow.services.boards._log_activity(
-            board_id=command.board_id,
-            card_id=card.id,
-            action="card_created",
-            actor_type="agent",
-            actor_id=actor.actor_id,
-            actor_name=actor.actor_name,
-            details=command.activity_details,
-        )
         await commit(uow)
         return McpCreateCardResult(card)
 
@@ -213,9 +216,9 @@ class McpUpdateCardResult:
 
 
 class McpUpdateCardUseCase:
-    """Update a board-scoped card AND write the ``card_updated`` activity row in a
-    single transaction (the legacy MCP tool's atomic contract). Cross-board/missing
-    → ``EntityNotFoundError``. ``CardService.update_card`` gate errors
+    """Update a board-scoped card and its one canonical ``card_updated`` row in a
+    single transaction. Cross-board/missing → ``EntityNotFoundError``.
+    ``CardService.update_card`` gate errors
     (``CardOperationError``/``ValueError``) propagate for the adapter to map."""
 
     async def execute(
@@ -226,32 +229,16 @@ class McpUpdateCardUseCase:
         uow: PulseUnitOfWork,
     ) -> McpUpdateCardResult:
         service = uow.services.cards
-        card = await _get_card_in_scope(
+        await _get_card_in_scope(
             service, command.card_id, command.board_id, actor
         )
-        update_data = command.data.model_dump(exclude_unset=True)
-        changes = activity_log_changes(
-            {field: getattr(card, field, None) for field in update_data},
-            update_data,
-            update_data,
-        )
-        activity_details = {
-            field: activity_log_value(value)
-            for field, value in command.activity_details.items()
-        }
         updated = await service.update_card(
-            command.card_id, actor.actor_id, command.data
-        )
-        await uow.services.boards._log_activity(
-            board_id=command.board_id,
-            card_id=command.card_id,
-            action="card_updated",
-            actor_type="agent",
-            actor_id=actor.actor_id,
+            command.card_id,
+            actor.actor_id,
+            command.data,
+            actor_type=_activity_actor_type(actor),
             actor_name=actor.actor_name,
-            # Keep every legacy MCP metadata field and add the same diff
-            # envelope emitted by the canonical CardService producer.
-            details={**activity_details, "changes": changes},
+            activity_details=command.activity_details,
         )
         await commit(uow)
         return McpUpdateCardResult(updated)
@@ -318,10 +305,13 @@ class McpDeleteCardResult:
 
 
 class McpDeleteCardUseCase:
-    """Delete a board-scoped card and atomically write ``card_deleted`` only
-    after the canonical writer accepts the delete. This ordering keeps governed
-    conflicts at zero audit/mutation. Cross-board/missing →
-    ``EntityNotFoundError`` (adapter ``"Card not found"``)."""
+    """Delete a board-scoped card and its one canonical activity atomically.
+
+    The service owns ``card_deleted`` after the governed writer accepts the
+    delete. This ordering keeps governed conflicts at zero audit/mutation.
+    Cross-board/missing → ``EntityNotFoundError`` (adapter
+    ``"Card not found"``).
+    """
 
     async def execute(
         self,
@@ -331,13 +321,15 @@ class McpDeleteCardUseCase:
         uow: PulseUnitOfWork,
     ) -> McpDeleteCardResult:
         service = uow.services.cards
-        card = await _get_card_in_scope(
+        await _get_card_in_scope(
             service, command.card_id, command.board_id, actor
         )
         delete_result = await service.delete_card(
             command.card_id,
             actor.actor_id,
             return_receipt=True,
+            actor_type=_activity_actor_type(actor),
+            actor_name=actor.actor_name,
         )
         if not delete_result:
             raise EntityNotFoundError("card", command.card_id)
@@ -347,15 +339,6 @@ class McpDeleteCardUseCase:
         takedown = receipt_serializer()
         if not isinstance(takedown, dict):
             raise RuntimeError("governed_delete_receipt_invalid")
-        await uow.services.boards._log_activity(
-            board_id=command.board_id,
-            card_id=command.card_id,
-            action="card_deleted",
-            actor_type="agent",
-            actor_id=actor.actor_id,
-            actor_name=actor.actor_name,
-            details={"title": card.title},
-        )
         try:
             await commit(uow)
         except BaseException:
@@ -699,6 +682,8 @@ class McpCopyKnowledgeToCardUseCase:
                 actor.actor_id,
                 CardUpdate(knowledge_bases=existing),
                 allow_card_resource_write=True,
+                actor_type=_activity_actor_type(actor),
+                actor_name=actor.actor_name,
             )
             await commit(uow)
         return McpCopyKnowledgeToCardResult(

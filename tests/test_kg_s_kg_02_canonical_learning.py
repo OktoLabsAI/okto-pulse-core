@@ -150,7 +150,7 @@ def _mcp(monkeypatch, db_factory):
         return SimpleNamespace(
             agent_id="mcp-agent",
             agent_name="mcp-agent",
-            permissions=["*"],
+            permissions=["*", "board:read"],
         )
 
     register_mcp_test_runtime(db_factory)
