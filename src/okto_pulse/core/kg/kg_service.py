@@ -152,6 +152,17 @@ class _HitCacheRegistry:
             self._hit_locks.clear()
             self._has_lock.clear()
 
+    def clone_for_runtime(self) -> "_HitCacheRegistry":
+        """Copy cached values without sharing mutable state or asyncio locks."""
+        clone = type(self)(max_size=self._max_size)
+        with self._lock:
+            clone._order.update(self._order)
+            clone._pending_hits.update(self._pending_hits)
+            clone._last_flush.update(self._last_flush)
+            clone._hit_locks.update({key: asyncio.Lock() for key in self._has_lock})
+            clone._has_lock.update(self._has_lock)
+        return clone
+
     def snapshot(self) -> dict[tuple[str, str], int]:
         """Return a shallow copy of pending hits. For debugging/metrics."""
         return dict(self._pending_hits)

@@ -20,11 +20,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from okto_pulse.core.composition import RuntimeComposition, runtime_composition_scope
 from okto_pulse.core.kg.kg_service import (
     HIT_FLUSH_THRESHOLD,
     KGService,
+    _HIT_LOCKS,
     _LAST_FLUSH,
     _PENDING_HITS,
+    _HitCacheRegistry,
     _hits_snapshot,
     _reset_hit_state_for_tests,
 )
@@ -148,6 +151,62 @@ async def test_ts10_concurrent_hits_no_lost_updates(stub_conn):
 
 def test_threshold_constant_matches_spec():
     assert HIT_FLUSH_THRESHOLD == 10
+
+
+def test_hit_cache_clone_detaches_mutable_state_and_locks():
+    original = _HitCacheRegistry(max_size=7)
+    key = ("board-clone", "node-clone")
+    original_flush = datetime.now(timezone.utc) - timedelta(hours=1)
+    clone_flush = datetime.now(timezone.utc)
+    original.set_pending(key, 3)
+    original.set_flush(key, original_flush)
+    original_lock = original.get_lock(key)
+
+    clone = original.clone_for_runtime()
+    clone.set_pending(key, 4)
+    clone.set_flush(key, clone_flush)
+
+    assert original.snapshot()[key] == 3
+    assert clone.snapshot()[key] == 4
+    assert original.get_flush(key) == original_flush
+    assert clone.get_flush(key) == clone_flush
+    assert clone.get_lock(key) is not original_lock
+    assert clone._max_size == 7
+
+
+def test_runtime_compositions_do_not_share_hit_cache_state():
+    _reset_hit_state_for_tests()
+    try:
+        key = ("board-runtime", "node-runtime")
+        _PENDING_HITS[key] = 3
+        first = RuntimeComposition(
+            settings_provider=object(),
+            auth_provider=object(),
+            storage_provider=object(),
+            event_bus=object(),
+            uow_factory=object(),
+        )
+        second = RuntimeComposition(
+            settings_provider=object(),
+            auth_provider=object(),
+            storage_provider=object(),
+            event_bus=object(),
+            uow_factory=object(),
+        )
+
+        with runtime_composition_scope(first):
+            assert _PENDING_HITS[key] == 3
+            _PENDING_HITS[key] = 4
+            first_lock = _HIT_LOCKS[key]._lock
+
+        with runtime_composition_scope(second):
+            assert _PENDING_HITS[key] == 3
+            second_lock = _HIT_LOCKS[key]._lock
+
+        assert first_lock is not second_lock
+        assert _PENDING_HITS[key] == 3
+    finally:
+        _reset_hit_state_for_tests()
 
 
 @pytest.mark.asyncio
