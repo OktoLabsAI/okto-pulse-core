@@ -10,6 +10,7 @@ from __future__ import annotations
 from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
 import asyncio
+import inspect
 import json
 import logging
 import uuid as _uuid
@@ -30,6 +31,55 @@ logger = logging.getLogger("okto_pulse.application.kg_events_hub")
 POLL_INTERVAL_SECONDS = 1.0
 SUBSCRIBER_QUEUE_MAXSIZE = 512
 OUTBOX_BATCH_LIMIT = 50
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _event_order_key(event: KGOutboxEvent) -> tuple[datetime, str]:
+    # Outbox rows are expected to carry a timestamp.  Keep a deterministic
+    # position even for a defensive transport event that does not.
+    created_at = (
+        _as_utc(event.created_at)
+        if event.created_at is not None
+        else datetime.max.replace(tzinfo=timezone.utc)
+    )
+    return created_at, event.event_id
+
+
+def _event_is_after_cursor(
+    event: KGOutboxEvent,
+    *,
+    after: datetime,
+    after_event_id: str | None,
+) -> bool:
+    """Apply the same composite boundary required from reader providers."""
+
+    if event.created_at is None:
+        return False
+    event_created_at = _as_utc(event.created_at)
+    cursor_created_at = _as_utc(after)
+    if event_created_at != cursor_created_at:
+        return event_created_at > cursor_created_at
+    return after_event_id is not None and event.event_id > after_event_id
+
+
+def _supports_composite_cursor(method: Any) -> bool:
+    """Detect readers that implement the optional composite-cursor keyword."""
+
+    try:
+        parameters = inspect.signature(method).parameters.values()
+    except (TypeError, ValueError):
+        # Opaque callables are expected to follow the current public protocol.
+        return True
+    return any(
+        parameter.name == "after_event_id"
+        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
 
 
 def format_sse(event_type: str, payload: Mapping[str, Any]) -> str:
@@ -58,7 +108,9 @@ def format_outbox_row_sse(event: KGOutboxEvent | Mapping[str, Any]) -> str:
             "event_id": event.event_id,
             "session_id": event.session_id,
             "event_type": event.event_type,
-            "created_at": event.created_at.isoformat() if event.created_at else None,
+            "created_at": _as_utc(event.created_at).isoformat()
+            if event.created_at
+            else None,
             "payload": dict(event.payload),
         }
         return format_sse(event.event_type, payload)
@@ -76,6 +128,7 @@ class KgEventsSubscription:
     queue: asyncio.Queue[str]
     cursor: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     initial_progress: dict[str, int] | None = None
+    cursor_event_id: str | None = None
 
 
 class _BoardStream:
@@ -84,6 +137,7 @@ class _BoardStream:
         self.subscribers: set[asyncio.Queue[str]] = set()
         self.task: asyncio.Task[None] | None = None
         self.last_seen: datetime = datetime.now(timezone.utc)
+        self.last_seen_event_id: str | None = None
         self.last_progress: dict[str, int] | None = None
 
     def broadcast(self, chunk: str) -> None:
@@ -113,6 +167,12 @@ class KgEventsHub:
         poll_interval: float = POLL_INTERVAL_SECONDS,
     ) -> None:
         self._reader = reader or get_kg_events_reader_port()
+        self._reader_poll_supports_composite_cursor = _supports_composite_cursor(
+            self._reader.poll
+        )
+        self._reader_replay_supports_composite_cursor = _supports_composite_cursor(
+            self._reader.replay
+        )
         self._poll_interval = poll_interval
         self._streams: dict[str, _BoardStream] = {}
         self._closed = False
@@ -121,6 +181,12 @@ class KgEventsHub:
         """Replace the provider before serving a new composed runtime."""
 
         self._reader = reader
+        self._reader_poll_supports_composite_cursor = _supports_composite_cursor(
+            reader.poll
+        )
+        self._reader_replay_supports_composite_cursor = _supports_composite_cursor(
+            reader.replay
+        )
 
     def subscribe(self, board_id: str) -> KgEventsSubscription:
         if self._closed:
@@ -139,6 +205,7 @@ class KgEventsHub:
             board_id=board_id,
             queue=queue,
             cursor=stream.last_seen,
+            cursor_event_id=stream.last_seen_event_id,
             initial_progress=stream.last_progress,
         )
 
@@ -158,11 +225,17 @@ class KgEventsHub:
         board_id: str,
         after: datetime,
         limit: int,
+        after_event_id: str | None = None,
     ) -> Sequence[KGOutboxEvent]:
+        kwargs: dict[str, Any] = {
+            "board_id": board_id,
+            "after": after,
+            "limit": limit,
+        }
+        if self._reader_replay_supports_composite_cursor:
+            kwargs["after_event_id"] = after_event_id
         return await self._reader.replay(
-            board_id=board_id,
-            after=after,
-            limit=limit,
+            **kwargs,
         )
 
     async def aclose(self) -> None:
@@ -184,15 +257,42 @@ class KgEventsHub:
 
         while stream.subscribers and not self._closed:
             try:
-                result = await self._reader.poll(
-                    board_id=stream.board_id,
-                    after=stream.last_seen,
-                    limit=OUTBOX_BATCH_LIMIT,
+                kwargs: dict[str, Any] = {
+                    "board_id": stream.board_id,
+                    "after": stream.last_seen,
+                    "limit": OUTBOX_BATCH_LIMIT,
+                }
+                if self._reader_poll_supports_composite_cursor:
+                    kwargs["after_event_id"] = stream.last_seen_event_id
+                result = await self._reader.poll(**kwargs)
+                ordered_events = sorted(
+                    result.events,
+                    key=_event_order_key,
                 )
-                for event in result.events:
+                for event in ordered_events:
+                    if event.created_at is None:
+                        logger.warning(
+                            "kg_events_hub.event_missing_created_at "
+                            "board=%s event_id=%s",
+                            stream.board_id,
+                            event.event_id,
+                            extra={
+                                "event": "kg_events_hub.event_missing_created_at",
+                                "board_id": stream.board_id,
+                                "event_id": event.event_id,
+                            },
+                        )
+                        continue
+                    if not _event_is_after_cursor(
+                        event,
+                        after=stream.last_seen,
+                        after_event_id=stream.last_seen_event_id,
+                    ):
+                        continue
                     stream.broadcast(format_outbox_row_sse(event))
                     if event.created_at is not None:
-                        stream.last_seen = event.created_at
+                        stream.last_seen = _as_utc(event.created_at)
+                        stream.last_seen_event_id = event.event_id
                 progress = dict(result.progress)
                 if progress != stream.last_progress:
                     stream.last_progress = progress

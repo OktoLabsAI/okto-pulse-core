@@ -59,8 +59,16 @@ class KGEventsReaderPort(Protocol):
         board_id: str,
         after: datetime,
         limit: int,
+        after_event_id: str | None = None,
     ) -> KGEventsPoll:
-        """Return events after ``after`` plus the current queue progress."""
+        """Return events after the stable composite cursor.
+
+        Providers must order events by ``(created_at, event_id)``.  When
+        ``after_event_id`` is present, include rows whose timestamp is newer
+        than ``after`` or whose timestamp is equal and event id is
+        lexicographically greater.  ``None`` preserves the legacy strict
+        timestamp boundary (``created_at > after``).
+        """
 
     async def replay(
         self,
@@ -68,8 +76,9 @@ class KGEventsReaderPort(Protocol):
         board_id: str,
         after: datetime,
         limit: int,
+        after_event_id: str | None = None,
     ) -> Sequence[KGOutboxEvent]:
-        """Return ordered events for a reconnecting client."""
+        """Return deterministically ordered events after the composite cursor."""
 
 
 _RUNTIME_KEY = "ports.kg_events.reader"
