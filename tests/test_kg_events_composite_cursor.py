@@ -229,6 +229,63 @@ async def test_replay_forwards_composite_boundary_and_keeps_legacy_default() -> 
     ]
 
 
+@pytest.mark.asyncio
+async def test_hub_keeps_legacy_reader_without_composite_keyword_compatible() -> None:
+    created_at = datetime.now(timezone.utc) + timedelta(minutes=1)
+
+    class _LegacyReader:
+        def __init__(self) -> None:
+            self.poll_calls = 0
+            self.replay_calls = 0
+
+        async def poll(
+            self,
+            *,
+            board_id: str,
+            after: datetime,
+            limit: int,
+        ) -> KGEventsPoll:
+            del board_id, after, limit
+            self.poll_calls += 1
+            events = [_event("event-legacy", created_at)] if self.poll_calls == 1 else []
+            return KGEventsPoll(events=events, progress={"pending": 0, "total": 1})
+
+        async def replay(
+            self,
+            *,
+            board_id: str,
+            after: datetime,
+            limit: int,
+        ) -> list[KGOutboxEvent]:
+            del board_id, after, limit
+            self.replay_calls += 1
+            return []
+
+    reader = _LegacyReader()
+    hub = KgEventsHub(reader, poll_interval=0.001)
+    subscription = hub.subscribe("board-legacy-reader")
+    try:
+        chunk = await asyncio.wait_for(subscription.queue.get(), timeout=2)
+        while "event-legacy" not in chunk:
+            chunk = await asyncio.wait_for(subscription.queue.get(), timeout=2)
+        for _ in range(100):
+            if reader.poll_calls >= 2:
+                break
+            await asyncio.sleep(0.001)
+
+        assert reader.poll_calls >= 2
+        await hub.replay(
+            board_id="board-legacy-reader",
+            after=created_at,
+            after_event_id="event-legacy",
+            limit=10,
+        )
+        assert reader.replay_calls == 1
+    finally:
+        hub.unsubscribe(subscription)
+        await hub.aclose()
+
+
 def test_subscription_preserves_legacy_positional_progress_argument() -> None:
     queue: asyncio.Queue[str] = asyncio.Queue()
     cursor = datetime(2026, 7, 27, tzinfo=timezone.utc)

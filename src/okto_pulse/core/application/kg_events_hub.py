@@ -10,6 +10,7 @@ from __future__ import annotations
 from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
 import asyncio
+import inspect
 import json
 import logging
 import uuid as _uuid
@@ -64,6 +65,21 @@ def _event_is_after_cursor(
     if event_created_at != cursor_created_at:
         return event_created_at > cursor_created_at
     return after_event_id is not None and event.event_id > after_event_id
+
+
+def _supports_composite_cursor(method: Any) -> bool:
+    """Detect readers that implement the optional composite-cursor keyword."""
+
+    try:
+        parameters = inspect.signature(method).parameters.values()
+    except (TypeError, ValueError):
+        # Opaque callables are expected to follow the current public protocol.
+        return True
+    return any(
+        parameter.name == "after_event_id"
+        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
 
 
 def format_sse(event_type: str, payload: Mapping[str, Any]) -> str:
@@ -151,6 +167,12 @@ class KgEventsHub:
         poll_interval: float = POLL_INTERVAL_SECONDS,
     ) -> None:
         self._reader = reader or get_kg_events_reader_port()
+        self._reader_poll_supports_composite_cursor = _supports_composite_cursor(
+            self._reader.poll
+        )
+        self._reader_replay_supports_composite_cursor = _supports_composite_cursor(
+            self._reader.replay
+        )
         self._poll_interval = poll_interval
         self._streams: dict[str, _BoardStream] = {}
         self._closed = False
@@ -159,6 +181,12 @@ class KgEventsHub:
         """Replace the provider before serving a new composed runtime."""
 
         self._reader = reader
+        self._reader_poll_supports_composite_cursor = _supports_composite_cursor(
+            reader.poll
+        )
+        self._reader_replay_supports_composite_cursor = _supports_composite_cursor(
+            reader.replay
+        )
 
     def subscribe(self, board_id: str) -> KgEventsSubscription:
         if self._closed:
@@ -199,11 +227,15 @@ class KgEventsHub:
         limit: int,
         after_event_id: str | None = None,
     ) -> Sequence[KGOutboxEvent]:
+        kwargs: dict[str, Any] = {
+            "board_id": board_id,
+            "after": after,
+            "limit": limit,
+        }
+        if self._reader_replay_supports_composite_cursor:
+            kwargs["after_event_id"] = after_event_id
         return await self._reader.replay(
-            board_id=board_id,
-            after=after,
-            limit=limit,
-            after_event_id=after_event_id,
+            **kwargs,
         )
 
     async def aclose(self) -> None:
@@ -225,12 +257,14 @@ class KgEventsHub:
 
         while stream.subscribers and not self._closed:
             try:
-                result = await self._reader.poll(
-                    board_id=stream.board_id,
-                    after=stream.last_seen,
-                    limit=OUTBOX_BATCH_LIMIT,
-                    after_event_id=stream.last_seen_event_id,
-                )
+                kwargs: dict[str, Any] = {
+                    "board_id": stream.board_id,
+                    "after": stream.last_seen,
+                    "limit": OUTBOX_BATCH_LIMIT,
+                }
+                if self._reader_poll_supports_composite_cursor:
+                    kwargs["after_event_id"] = stream.last_seen_event_id
+                result = await self._reader.poll(**kwargs)
                 ordered_events = sorted(
                     result.events,
                     key=_event_order_key,
