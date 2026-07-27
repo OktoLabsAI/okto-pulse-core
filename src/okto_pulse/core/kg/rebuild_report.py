@@ -28,16 +28,23 @@ Layout:
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any
+
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.rebuild_audit import (
+    resolve_rebuild_audit_artifact_store,
+)
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_report")
 
@@ -47,14 +54,16 @@ REPORTS_DIRNAME = "reports"
 REPORT_REF_PREFIX = "report_"
 
 
-TERMINAL_STATUSES_REQUIRING_REPORT: frozenset[str] = frozenset({
-    "completed",
-    "partially_rebuilt",
-    "rolled_back",
-    "failed_orphan_validation",
-    "rebuild_failed",
-    "recovery_failed",
-})
+TERMINAL_STATUSES_REQUIRING_REPORT: frozenset[str] = frozenset(
+    {
+        "completed",
+        "partially_rebuilt",
+        "rolled_back",
+        "failed_orphan_validation",
+        "rebuild_failed",
+        "recovery_failed",
+    }
+)
 
 
 # TR7 — sensitive key detection. The match is on the key NAME anywhere
@@ -81,13 +90,15 @@ SENSITIVE_KEY_PATTERNS: tuple[re.Pattern[str], ...] = (
 # payload is operator-visible and could exfiltrate a live KG-01 lock
 # token if a faulty step adapter included it in drilldown. Per TR7 the
 # report may only carry refs/hashes/decisions — lock material is OUT.
-_ALLOWLISTED_KEYS: frozenset[str] = frozenset({
-    "report_ref",
-    "manifest_ref",
-    "confirmation_id",
-    "audit_ref",
-    "history_ref",
-})
+_ALLOWLISTED_KEYS: frozenset[str] = frozenset(
+    {
+        "report_ref",
+        "manifest_ref",
+        "confirmation_id",
+        "audit_ref",
+        "history_ref",
+    }
+)
 
 
 # Value-shape heuristic: long base64-ish strings inside arbitrary values
@@ -170,9 +181,7 @@ class RebuildReportPayload:
     summary: RebuildReportSummary
     hashes: dict[str, str] = field(default_factory=dict)
     source_refs: tuple[str, ...] = field(default_factory=tuple)
-    reconciliation_decisions: tuple[dict[str, Any], ...] = field(
-        default_factory=tuple
-    )
+    reconciliation_decisions: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     drilldown: dict[str, Any] = field(default_factory=dict)
     operator_notes: str | None = None
 
@@ -226,8 +235,8 @@ class TerminalGuardDecision:
 
 # OR or_56ec0300 — kg_rebuild_report_total (event: created|failed|opened)
 _REPORT_LABELS = ("board_id", "status", "event")
-_report_counter: dict[tuple[str, str, str], int] = {}
-_report_counter_lock = threading.Lock()
+_report_counter = runtime_state("kg.rebuild_report.report_counter", dict)
+_report_counter_lock = runtime_lock("kg.rebuild_report.report_counter")
 
 
 def _bump_report(*, board_id: str, status: str, event: str) -> None:
@@ -271,8 +280,8 @@ def reset_report_counter() -> None:
 
 # OR or_9b4a7726 — kg_rebuild_report_persist_total (outcome)
 _PERSIST_LABELS = ("board_id", "status", "outcome")
-_persist_counter: dict[tuple[str, str, str], int] = {}
-_persist_counter_lock = threading.Lock()
+_persist_counter = runtime_state("kg.rebuild_report.persist_counter", dict)
+_persist_counter_lock = runtime_lock("kg.rebuild_report.persist_counter")
 
 
 def _bump_persist(*, board_id: str, status: str, outcome: str) -> None:
@@ -315,9 +324,14 @@ def reset_persist_counter() -> None:
 
 
 # OR or_f933b2ba — kg_rebuild_terminal_report_total
-_TERMINAL_LABELS = ("board_id", "candidate_terminal_status", "publishable_status", "with_report_ref")
-_terminal_counter: dict[tuple[str, str, str, str], int] = {}
-_terminal_counter_lock = threading.Lock()
+_TERMINAL_LABELS = (
+    "board_id",
+    "candidate_terminal_status",
+    "publishable_status",
+    "with_report_ref",
+)
+_terminal_counter = runtime_state("kg.rebuild_report.terminal_counter", dict)
+_terminal_counter_lock = runtime_lock("kg.rebuild_report.terminal_counter")
 
 
 def _bump_terminal(
@@ -349,7 +363,10 @@ def get_terminal_count(
         for (b, cts, pst, wrr), value in _terminal_counter.items():
             if b != board_id:
                 continue
-            if candidate_terminal_status is not None and cts != candidate_terminal_status:
+            if (
+                candidate_terminal_status is not None
+                and cts != candidate_terminal_status
+            ):
                 continue
             if publishable_status is not None and pst != publishable_status:
                 continue
@@ -397,16 +414,29 @@ class RebuildReportStore:
     sensitive-payload check first, then writes the JSON atomically.
     """
 
-    base_dir: Path
+    base_dir: object | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
-    def _reports_dir(self) -> Path:
-        return self.base_dir / REBUILD_DIRNAME / REPORTS_DIRNAME
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
 
-    def _report_path(self, report_id: str) -> Path:
-        return self._reports_dir() / f"{report_id}.json"
+    @staticmethod
+    def _report_key(board_id: str, report_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="rebuild_report",
+            board_id=board_id,
+            artifact_id=report_id,
+        )
 
     def _new_report_id(self) -> str:
         return f"{REPORT_REF_PREFIX}{uuid.uuid4().hex}"
@@ -426,7 +456,9 @@ class RebuildReportStore:
         except Exception as exc:
             logger.error(
                 "kg.rebuild.report.serialize_failed board=%s run=%s err=%s",
-                board_id, run_id, exc,
+                board_id,
+                run_id,
+                exc,
             )
             _bump_persist(
                 board_id=board_id,
@@ -452,7 +484,9 @@ class RebuildReportStore:
         if sensitive_path is not None:
             logger.warning(
                 "kg.rebuild.report.sensitive_rejected board=%s run=%s path=%s",
-                board_id, run_id, sensitive_path,
+                board_id,
+                run_id,
+                sensitive_path,
             )
             _bump_persist(
                 board_id=board_id,
@@ -476,24 +510,22 @@ class RebuildReportStore:
 
         with self._lock:
             try:
-                reports_dir = self._reports_dir()
-                reports_dir.mkdir(parents=True, exist_ok=True)
                 report_id = self._new_report_id()
-                path = self._report_path(report_id)
                 persisted_at = datetime.now(timezone.utc).isoformat()
                 record = {
                     "report_id": report_id,
                     "persisted_at": persisted_at,
                     **persistable,
                 }
-                tmp = path.with_suffix(".json.tmp")
-                with tmp.open("w", encoding="utf-8") as fh:
-                    json.dump(record, fh, indent=2)
-                tmp.replace(path)
+                report_key = self._report_key(board_id, report_id)
+                self.artifact_store.write_json_atomic(report_key, record)
+                report_ref = self.artifact_store.reference(report_key)
             except Exception as exc:
                 logger.error(
                     "kg.rebuild.report.persist_failed board=%s run=%s err=%s",
-                    board_id, run_id, exc,
+                    board_id,
+                    run_id,
+                    exc,
                 )
                 _bump_persist(
                     board_id=board_id,
@@ -527,7 +559,7 @@ class RebuildReportStore:
         )
         return ReportPersistResult(
             outcome=ReportPersistOutcome.STORED.value,
-            report_ref=str(path),
+            report_ref=report_ref,
             report_id=report_id,
             board_id=board_id,
             run_id=run_id,
@@ -539,16 +571,15 @@ class RebuildReportStore:
         """Open a persisted report. Bumps the ``opened`` counter so
         operators can see drilldown traffic (br_752614b4)."""
 
-        path = Path(report_ref)
-        if not path.exists():
-            return None
         try:
-            with path.open("r", encoding="utf-8") as fh:
-                record = json.load(fh)
+            record = self.artifact_store.read_json_reference(report_ref)
+            if record is None:
+                return None
         except Exception as exc:
             logger.error(
                 "kg.rebuild.report.load_failed ref=%s err=%s",
-                report_ref, exc,
+                report_ref,
+                exc,
             )
             return None
         summary = record.get("summary", {})
@@ -589,9 +620,7 @@ class RebuildReportTerminalStateGuard:
         kg_generation_id: str | None,
     ) -> TerminalGuardDecision:
         if candidate_terminal_status not in TERMINAL_STATUSES_REQUIRING_REPORT:
-            raise ValueError(
-                f"invalid_terminal_status: {candidate_terminal_status!r}"
-            )
+            raise ValueError(f"invalid_terminal_status: {candidate_terminal_status!r}")
 
         outcome = report_persist_result.outcome
         has_ref = isinstance(report_persist_result.report_ref, str) and bool(

@@ -16,7 +16,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Ideation,
     IdeationKnowledgeBase,
@@ -26,7 +26,7 @@ from okto_pulse.core.models.db import (
     SpecKnowledgeBase,
     SpecStatus,
 )
-from okto_pulse.core.services.main import (
+from okto_pulse.core.application.artifact_propagation import (
     _PROPAGATED_KB_PREFIX,
     _propagated_kb_description,
     propagate_artifacts,

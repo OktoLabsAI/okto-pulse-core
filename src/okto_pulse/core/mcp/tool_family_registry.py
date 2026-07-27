@@ -6,7 +6,7 @@ with a concrete ``rejected_reason``.
 
 Owner assertiveness gate (the governing rule): *agent assertiveness > tool count*.
 A family is eligible ONLY when consolidation preserves the per-type typed
-guidance. FastMCP derives the agent-facing JSON schema from the function
+guidance. The Community host derives the agent-facing JSON schema from the function
 SIGNATURE, not the docstring — so an opaque ``payload: dict`` consolidation hides
 the per-type required fields and induces agent errors. Therefore the ONLY allowed
 consolidation mode here is ``consolidate_with_dedicated_routing``: a single tool
@@ -173,7 +173,7 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
             "api_contract: method/path + 3 nested-JSON blobs; decision: rationale; "
             "integration_requirement/observability_requirement: enum-gated "
             "integration_type/signal_type discriminators). A target_type+payload "
-            "signature exposes ZERO per-type schema via FastMCP, inducing "
+            "signature exposes ZERO per-type schema to the MCP host, inducing "
             "missing-required-field errors and the documented business_rule<->decision "
             "confusion. No homogeneous sub-cluster exists. Decisive codebase precedent: "
             "okto_pulse_update_spec_entity already carves api_contract OUT to a dedicated "
@@ -184,9 +184,10 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
         family_id="test_scenario",
         eligible=False,
         target_types=("test_scenario",),
-        operations=("add", "update_status", "list"),
+        operations=("add", "execute_evidence", "update_status", "list"),
         legacy_aliases=(
             "okto_pulse_add_test_scenario",
+            "okto_pulse_execute_test_scenario_evidence",
             "okto_pulse_update_test_scenario_status",
             "okto_pulse_list_test_scenarios",
         ),
@@ -198,7 +199,7 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
             "fields, or unclassed run-log evidence with last_run_at+"
             "(output_snippet|test_run_id)+expected_output_snapshot+"
             "non_replayable_justification); a generic dict "
-            "cannot express status-conditional requiredness in a FastMCP schema, blinding "
+            "cannot express status-conditional requiredness in an MCP schema, blinding "
             "the agent exactly where test-theater prevention depends on it. Consolidating "
             "would re-merge status mutation into the body-edit path that was deliberately "
             "split to avoid a second NC-9 bypass. TC-R4.4 already mandates dedicated routing."

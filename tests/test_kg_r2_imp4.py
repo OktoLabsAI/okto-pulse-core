@@ -26,7 +26,8 @@ from okto_pulse.core.kg.primitives import (
     commit_consolidation,
     propose_reconciliation,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.schemas import (
     AddEdgeCandidateRequest,
     BeginConsolidationRequest,
@@ -39,16 +40,29 @@ from okto_pulse.core.kg.stale_canonical_parity import (
     GD_NOT_EVALUATED,
     list_stale_canonical_parity,
 )
-from okto_pulse.core.kg.workers.consolidation import (
+from okto_pulse.core.application.processors.consolidation import (
     _worker_edge_to_candidate,
     _worker_node_to_candidate,
 )
-from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
-from okto_pulse.core.models.db import Board, Spec
+from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+from sqlalchemy_test_models import Board, Spec
 from okto_pulse.core.services.kg_health_service import get_kg_health
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    RealBoardGraphTransactionForTests,
+    configure_test_kg_registry,
+)
 
 USER_ID = "user-r2-imp4"
 SCP_CODE = "stale_canonical_parity"
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -59,7 +73,10 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 
 async def _new_board(db_factory) -> str:
     board_id = f"r2i4-{uuid.uuid4().hex[:10]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.r2_imp4.bootstrap_board_graph",
+    )
     async with db_factory() as db:
         if await db.get(Board, board_id) is None:
             db.add(Board(id=board_id, name="r2 imp4", owner_id=USER_ID))
@@ -127,7 +144,7 @@ async def _commit_worker_result(db_factory, board_id, agent_id, result):
         )
 
 
-def _count_canonical(board_id, node_type) -> int:
+def _count_canonical_sync(board_id, node_type) -> int:
     with open_board_connection(board_id) as (_db, conn):
         res = conn.execute(
             f"MATCH (n:{node_type}) WHERE n.graph_layer = $c RETURN count(n)",
@@ -136,12 +153,19 @@ def _count_canonical(board_id, node_type) -> int:
         return int(res.get_next()[0]) if res.has_next() else 0
 
 
+async def _count_canonical(board_id, node_type) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_canonical_sync(board_id, node_type),
+        task_name="tests.r2_imp4.count_canonical",
+    )
+
+
 async def _make_stale_spec(db_factory, board_id):
     spec_id = f"spec-{uuid.uuid4().hex[:10]}"
     await _insert_spec(db_factory, board_id, spec_id, status="done")
     result = DeterministicWorker().process_spec(_spec_dict(spec_id, board_id, "done"))
     await _commit_worker_result(db_factory, board_id, "system:layer1_worker", result)
-    assert _count_canonical(board_id, "Requirement") >= 1
+    assert await _count_canonical(board_id, "Requirement") >= 1
     await _set_spec_status(db_factory, spec_id, "draft")  # regress (real maturity signal)
     return spec_id
 
@@ -159,7 +183,7 @@ def _issues(health, code):
 async def test_board_graph_stale_exposed_read_only(db_factory):
     board_id = await _new_board(db_factory)
     await _make_stale_spec(db_factory, board_id)
-    canonical_before = _count_canonical(board_id, "Requirement")
+    canonical_before = await _count_canonical(board_id, "Requirement")
     assert canonical_before >= 1
 
     async with db_factory() as db:
@@ -175,7 +199,7 @@ async def test_board_graph_stale_exposed_read_only(db_factory):
     assert result["global_discovery_evaluation"] in (GD_EVALUATED, GD_NOT_EVALUATED)
 
     # NO-MUTATING PATH: the diagnostic did NOT demote — the node is still canonical.
-    assert _count_canonical(board_id, "Requirement") == canonical_before
+    assert await _count_canonical(board_id, "Requirement") == canonical_before
 
 
 @pytest.mark.asyncio
@@ -236,7 +260,8 @@ async def test_gd_evaluation_is_safe_when_unavailable(db_factory, monkeypatch):
 
     import okto_pulse.core.kg.global_discovery.layer_parity as lp
 
-    async def _boom(db, *, board_id):
+    async def _boom(db, *, board_id, blocking_execution=None):
+        del blocking_execution
         raise RuntimeError("simulated R1 digest layer unavailable")
 
     monkeypatch.setattr(lp, "detect_digest_layer_mismatches", _boom)
@@ -246,3 +271,52 @@ async def test_gd_evaluation_is_safe_when_unavailable(db_factory, monkeypatch):
     assert result["global_discovery_evaluation"] == GD_NOT_EVALUATED
     assert result["count"] >= 1
     assert result["items"][0]["global_discovery_stale_digest"] is None  # unknown, not False
+
+
+@pytest.mark.asyncio
+async def test_gd_unavailable_result_is_not_collapsed_to_evaluated_empty(
+    monkeypatch,
+):
+    import okto_pulse.core.kg.global_discovery.layer_parity as lp
+    import okto_pulse.core.kg.stale_canonical_parity as stale_module
+
+    board_item = {
+        "node_id": "stale-node",
+        "node_type": "Requirement",
+        "source_artifact_ref": "spec:source",
+        "board_graph_stale": True,
+    }
+    monkeypatch.setattr(
+        stale_module,
+        "detect_board_graph_stale",
+        lambda board_id: [dict(board_item)],
+    )
+
+    async def _not_evaluated(
+        db,
+        *,
+        board_id,
+        blocking_execution=None,
+    ):
+        return {
+            "status": "unavailable",
+            "evaluation": "not_evaluated",
+            "reason": "global_discovery_read_failed",
+            "items": [],
+        }
+
+    monkeypatch.setattr(lp, "detect_digest_layer_mismatches", _not_evaluated)
+
+    result = await list_stale_canonical_parity(
+        object(),
+        board_id="board-unavailable-result",
+    )
+
+    assert result["global_discovery_status"] == "unavailable"
+    assert result["global_discovery_evaluation"] == GD_NOT_EVALUATED
+    assert (
+        result["global_discovery_evaluation_reason"]
+        == "global_discovery_read_failed"
+    )
+    assert result["global_discovery_stale_digest_count"] == 0
+    assert result["items"][0]["global_discovery_stale_digest"] is None

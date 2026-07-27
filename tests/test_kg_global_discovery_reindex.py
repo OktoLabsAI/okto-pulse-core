@@ -28,10 +28,20 @@ from okto_pulse.core.kg.global_discovery_reindex import (
     get_reindex_samples,
     reset_reindex_counter,
 )
+from okto_pulse.core.kg.global_discovery_writer import GlobalDiscoveryWriterLease
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
 
 
 BOARD = "board-001"
+
+
+class _AlwaysOwnedWriterLock:
+    def is_owner(self, _board_id: str, _owner_token: str) -> bool:
+        return True
+
+    def release(self, *, board_id: str, owner_token: str) -> bool:
+        del board_id, owner_token
+        return True
 
 
 @pytest.fixture
@@ -46,8 +56,17 @@ def base_dir(tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def _reset_counter() -> None:
     reset_reindex_counter()
-    yield
-    reset_reindex_counter()
+    lease = GlobalDiscoveryWriterLease(
+        lock=_AlwaysOwnedWriterLock(),  # type: ignore[arg-type]
+        owner_token="reindex-test-writer",
+        operation="test_global_discovery_reindex",
+    )
+    try:
+        with lease.guard():
+            yield
+    finally:
+        lease.release()
+        reset_reindex_counter()
 
 
 # -------- Status store ----------------------------------------------------
@@ -162,6 +181,7 @@ def test_latest_for_board_returns_most_recent(base_dir: Path) -> None:
     )
     latest = store.latest_for_board(BOARD)
     assert latest is not None
+    assert newer.recorded_at > older.recorded_at
     assert latest["recorded_at"] == newer.recorded_at
 
 

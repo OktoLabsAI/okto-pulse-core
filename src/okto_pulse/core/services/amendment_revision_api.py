@@ -5,32 +5,61 @@ payload + reason codes + mutation restrictions.
 
 Fail-closed + never a bypass (FR5): there is NO skip_gate/override_gate path here;
 the REST request models forbid extra fields and the MCP tools have no such args.
-Every mutation is audit-backed (delegated to AmendmentRevisionService) and every
-failure is a structured ``AmendmentRevisionApiError`` (code/message/status_code +
-to_dict) — never a silent no-op (TR4).
+Every mutation is audit-backed by the persistence backend and every failure is a
+structured ``AmendmentRevisionApiError`` (code/message/status_code + to_dict) —
+never a silent no-op (TR4).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any, Protocol
 
 from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
-from okto_pulse.core.models.db import Card, CardType, Spec, SpecStatus
-from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
-from okto_pulse.core.services.bug_regression_preview import (
-    BugRegressionScenarioPreviewError,
-    BugRegressionScenarioPreviewService,
+from okto_pulse.core.domain.enums import CardType, SpecStatus
+from okto_pulse.core.ports.relational_application import (
+    require_relational_application_adapter,
+)
+from okto_pulse.core.services.amendment_revision import (
+    AmendmentRevisionError,
+    amendment_revision_is_terminal,
 )
 
-#: Path B amendments only attach to a done/locked (validated) original spec — an
-#: in_progress/draft spec is still editable, so it needs no amendment.
+#: Spec statuses that are ALWAYS content-locked (immutable) — a Path B amendment
+#: always attaches here. ``in_progress`` is handled separately by the
+#: content-lock-aware predicate below (it may be locked or still editable).
 _DONE_OR_LOCKED_SPEC_STATUSES = frozenset({SpecStatus.VALIDATED, SpecStatus.DONE})
+
+
+def _path_b_eligible(spec: Any) -> bool:
+    """Content-lock-aware Path B eligibility (spec 62cf2d36, fr_0d2f84a1/fr_58b6aa0b).
+
+    A bug's original spec admits a Path B amendment when it is either:
+
+    - ``validated``/``done`` (always content-locked / immutable), OR
+    - ``in_progress`` AND currently content-locked — its ``current_validation_id``
+      points to a validation with ``outcome='success'`` (a validated spec moved to
+      in_progress for execution).
+
+    ``in_progress`` WITHOUT an active passed validation is still editable, so the
+    spec should be edited directly; a ``failed``/``stale``/``superseded`` validation
+    is NOT a lock. This is the exact dual of
+    ``services.main.spec_is_content_locked`` so the content-lock gate and Path B can
+    never contradict — there is no spec that is content-locked (cannot be edited)
+    yet Path-B-ineligible (the catch-22 this fix removes).
+    """
+    if spec.status in _DONE_OR_LOCKED_SPEC_STATUSES:
+        return True
+    if spec.status != SpecStatus.IN_PROGRESS:
+        return False
+    # Deferred import: services.main is a heavy module; importing it lazily here
+    # avoids a module-load cycle (main imports the amendment service, not this API).
+    from okto_pulse.core.services.main import spec_is_content_locked
+
+    return spec_is_content_locked(spec)
 
 #: Bypass-intent field names rejected fail-closed on any write surface (FR5).
 BYPASS_FIELD_NAMES = frozenset(
@@ -41,7 +70,7 @@ BYPASS_FIELD_NAMES = frozenset(
 @dataclass  # NOT frozen: an Exception must stay mutable (Python sets __traceback__ on
 # propagation; a frozen dataclass raises FrozenInstanceError -> 500). See DesignSystemError.
 class AmendmentRevisionApiError(Exception):
-    """Structured error for REST + MCP (mirrors BugRegressionScenarioPreviewError).
+    """Structured error for REST + MCP callers.
 
     The payload is enough for an agent to know the next safe action without
     parsing raw exception text (AC3)."""
@@ -75,12 +104,104 @@ def reject_bypass_fields(payload: dict[str, Any] | None) -> None:
             )
 
 
+class AmendmentRevisionApiBackend(Protocol):
+    async def get_bug(self, board_id: str, bug_id: str) -> Any | None: ...
+
+    async def get_spec(self, board_id: str, spec_id: str) -> Any | None: ...
+
+    async def create_amendment(
+        self,
+        *,
+        board_id: str,
+        original_spec_id: str,
+        origin_bug_id: str,
+        author: str,
+        origin_task_ids: list[str] | None = None,
+        affected_task_ids: list[str] | None = None,
+        revision_spec_id: str | None = None,
+        regression_scenario_ids: list[str] | None = None,
+        regression_test_task_ids: list[str] | None = None,
+        automated_regression_refs: list[str] | None = None,
+    ) -> Any: ...
+
+    async def get_amendment(self, amendment_id: str) -> Any | None: ...
+
+    async def list_amendments_for_bug(
+        self,
+        *,
+        board_id: str,
+        original_spec_id: str,
+        origin_bug_id: str,
+    ) -> list[Any]: ...
+
+    async def associate_artifacts(
+        self,
+        amendment_id: str,
+        *,
+        regression_test_task_ids: list[str] | None = None,
+        regression_scenario_ids: list[str] | None = None,
+        automated_regression_refs: list[str] | None = None,
+        actor: str,
+    ) -> Any: ...
+
+    async def set_lineage_state(
+        self,
+        amendment_id: str,
+        lineage_state: AmendmentLineageState,
+        actor: str,
+    ) -> Any: ...
+
+    async def set_status(
+        self,
+        amendment_id: str,
+        new_status: AmendmentRevisionStatus,
+        actor: str,
+    ) -> Any: ...
+
+    async def path_b_resolution(
+        self,
+        *,
+        board_id: str,
+        bug_id: str,
+        candidate_scenario_ids: list[str],
+    ) -> dict[str, Any]: ...
+
+    def eligibility(self, amendment: Any) -> Any: ...
+
+
+_BACKEND_METHODS = frozenset(
+    {
+        "get_bug",
+        "get_spec",
+        "create_amendment",
+        "get_amendment",
+        "list_amendments_for_bug",
+        "associate_artifacts",
+        "set_lineage_state",
+        "set_status",
+        "path_b_resolution",
+        "eligibility",
+    }
+)
+
+
+def _is_backend(candidate: Any) -> bool:
+    return all(callable(getattr(candidate, name, None)) for name in _BACKEND_METHODS)
+
+
 class AmendmentRevisionApiService:
     """Validate + orchestrate amendment-revision operations for a bug."""
 
-    def __init__(self, db: AsyncSession) -> None:
-        self._db = db
-        self._store = AmendmentRevisionService(db)
+    def __init__(self, backend: AmendmentRevisionApiBackend | Any) -> None:
+        self._backend = (
+            backend if _is_backend(backend) else self._legacy_backend(backend)
+        )
+
+    @staticmethod
+    def _legacy_backend(session_like: Any) -> AmendmentRevisionApiBackend:
+        return require_relational_application_adapter().amendment_revision_backend(
+            session_like
+        )
 
     async def create(
         self,
@@ -110,20 +231,29 @@ class AmendmentRevisionApiService:
                 status_code=422,
             )
 
-        spec = await self._db.get(Spec, resolved_spec_id)
+        spec = await self._backend.get_spec(board_id, resolved_spec_id)
         if spec is None or spec.board_id != board_id:
             raise AmendmentRevisionApiError(
                 "original_spec_not_found",
                 f"Original spec '{resolved_spec_id}' was not found on this board.",
                 status_code=404,
             )
-        if spec.status not in _DONE_OR_LOCKED_SPEC_STATUSES:
+        if not _path_b_eligible(spec):
+            status_label = getattr(spec.status, "value", spec.status)
+            editable_hint = (
+                " It is in_progress but NOT content-locked, so it is still editable — "
+                "edit the spec directly instead of opening a Path B amendment."
+                if spec.status == SpecStatus.IN_PROGRESS
+                else ""
+            )
             raise AmendmentRevisionApiError(
                 "original_spec_not_done_or_locked",
-                f"Original spec '{resolved_spec_id}' is '{getattr(spec.status, 'value', spec.status)}'. "
-                "Path B amendments only attach to a done/validated (locked) spec; "
-                "edit the spec directly while it is still in progress.",
+                f"Original spec '{resolved_spec_id}' is '{status_label}' and not "
+                "content-locked. Path B amendments attach to a done/validated spec, "
+                "or to an in_progress spec that is still content-locked by an active "
+                f"passed validation (current_validation_id -> outcome=success).{editable_hint}",
                 status_code=409,
+                details={"spec_status": str(status_label), "content_locked": False},
             )
 
         # initial_status: draft-only. Never let a create mint approved/done
@@ -136,7 +266,7 @@ class AmendmentRevisionApiService:
                 status_code=422,
             )
 
-        amendment = await self._store.create(
+        amendment = await self._backend.create_amendment(
             board_id=board_id,
             original_spec_id=resolved_spec_id,
             origin_bug_id=bug_id,
@@ -147,14 +277,7 @@ class AmendmentRevisionApiService:
             regression_scenario_ids=regression_scenario_ids,
             regression_test_task_ids=regression_test_task_ids,
             automated_regression_refs=automated_regression_refs,
-            # NEVER accept coverage_confirmation here — the reserved key is
-            # writable only by the validator-only confirm_amendment_coverage
-            # writer (non-forgeable). create() also strips it defensively.
-            validation_metadata=None,
         )
-        # Load server-side columns (created_at/updated_at) inside the async
-        # context before serializing — avoids a lazy MissingGreenlet.
-        await self._db.refresh(amendment)
         return self._serialize_revision(amendment)
 
     async def get(self, *, board_id: str, bug_id: str, amendment_id: str) -> dict[str, Any]:
@@ -164,7 +287,7 @@ class AmendmentRevisionApiService:
 
     async def list_for_bug(self, *, board_id: str, bug_id: str) -> dict[str, Any]:
         bug = await self._require_bug(board_id, bug_id)
-        amendments = await self._store.list_for_bug(
+        amendments = await self._backend.list_amendments_for_bug(
             board_id=board_id,
             original_spec_id=bug.spec_id,
             origin_bug_id=bug_id,
@@ -198,7 +321,11 @@ class AmendmentRevisionApiService:
         automated_regression_refs: list[str] | None = None,
     ) -> dict[str, Any]:
         await self._require_bug(board_id, bug_id)
-        await self._require_scoped_amendment(board_id, bug_id, amendment_id)
+        amendment = await self._require_scoped_amendment(
+            board_id, bug_id, amendment_id
+        )
+        if amendment_revision_is_terminal(amendment.status):
+            raise self._terminal_revision_error(amendment_id, amendment.status)
         if not any(
             (regression_test_task_ids, regression_scenario_ids, automated_regression_refs)
         ):
@@ -208,14 +335,20 @@ class AmendmentRevisionApiService:
                 "regression_scenario_ids or automated_regression_refs.",
                 status_code=422,
             )
-        amendment = await self._store.associate_artifacts(
-            amendment_id,
-            regression_test_task_ids=regression_test_task_ids,
-            regression_scenario_ids=regression_scenario_ids,
-            automated_regression_refs=automated_regression_refs,
-            actor=actor,
-        )
-        await self._db.refresh(amendment)  # load onupdate updated_at (no MissingGreenlet)
+        try:
+            amendment = await self._backend.associate_artifacts(
+                amendment_id,
+                regression_test_task_ids=regression_test_task_ids,
+                regression_scenario_ids=regression_scenario_ids,
+                automated_regression_refs=automated_regression_refs,
+                actor=actor,
+            )
+        except AmendmentRevisionError as exc:
+            if exc.code == "terminal_amendment_revision":
+                raise self._terminal_revision_error(
+                    amendment_id, amendment.status
+                ) from exc
+            raise
         return self._serialize_revision(amendment)
 
     async def transition_lifecycle(
@@ -238,9 +371,10 @@ class AmendmentRevisionApiService:
           authoritative origin-task membership (``incomplete_lineage_artifacts``);
         * promotion to a non-blocking status (``approved``/``done``) needs lineage
           already complete (``cannot_promote_incomplete_lineage``);
-        * a ``cancelled``/``superseded`` revision is terminal and can NOT be
-          promoted back to ``approved``/``done`` (``terminal_amendment_revision``) —
-          open a new revision instead;
+        * a ``cancelled``/``superseded`` revision is permanently immutable
+          (``terminal_amendment_revision``): status, lineage, coverage, and
+          artifact associations cannot change; only retrying its exact status is
+          accepted as an effect-free idempotent operation;
         * it NEVER writes coverage (there is no coverage param); the bug stays
           ``coverage_pending`` until the validator runs
           ``confirm_amendment_coverage``.
@@ -260,17 +394,19 @@ class AmendmentRevisionApiService:
         )
 
         promoted = {AmendmentRevisionStatus.APPROVED.value, AmendmentRevisionStatus.DONE.value}
-        terminal = {AmendmentRevisionStatus.CANCELLED.value, AmendmentRevisionStatus.SUPERSEDED.value}
         current_status_val = getattr(amendment.status, "value", amendment.status)
 
-        # Q4: a terminal revision can never be resurrected to approved/done.
-        if current_status_val in terminal and new_status is not None and new_status.value in promoted:
-            raise AmendmentRevisionApiError(
-                "terminal_amendment_revision",
-                f"Amendment '{amendment_id}' is '{current_status_val}' (terminal) and cannot be "
-                "promoted to approved/done. Create a new amendment revision instead.",
-                409,
-            )
+        # Terminality is monotonic.  The sole accepted retry is setting the
+        # already-current terminal status with no lineage request; it returns the
+        # current projection without touching persistence or audit history.
+        if amendment_revision_is_terminal(current_status_val):
+            if (
+                new_status is not None
+                and new_status.value == current_status_val
+                and new_lineage is None
+            ):
+                return self._serialize_revision(amendment)
+            raise self._terminal_revision_error(amendment_id, current_status_val)
 
         effective_lineage_val = (
             new_lineage.value
@@ -305,11 +441,21 @@ class AmendmentRevisionApiService:
 
         # Apply lineage before status so a combined call lands consistently. Coverage
         # is NEVER touched here — it stays validator-only via confirm_amendment_coverage.
-        if new_lineage is not None:
-            amendment = await self._store.set_lineage_state(amendment_id, new_lineage, actor)
-        if new_status is not None:
-            amendment = await self._store.set_status(amendment_id, new_status, actor)
-        await self._db.refresh(amendment)
+        try:
+            if new_lineage is not None:
+                amendment = await self._backend.set_lineage_state(
+                    amendment_id, new_lineage, actor
+                )
+            if new_status is not None:
+                amendment = await self._backend.set_status(
+                    amendment_id, new_status, actor
+                )
+        except AmendmentRevisionError as exc:
+            if exc.code == "terminal_amendment_revision":
+                raise self._terminal_revision_error(
+                    amendment_id, amendment.status
+                ) from exc
+            raise
         return self._serialize_revision(amendment)
 
     # -- internals ---------------------------------------------------------
@@ -337,6 +483,28 @@ class AmendmentRevisionApiService:
             ) from None
 
     @staticmethod
+    def _terminal_revision_error(
+        amendment_id: str,
+        status: AmendmentRevisionStatus | str,
+    ) -> AmendmentRevisionApiError:
+        status_value = getattr(status, "value", status)
+        return AmendmentRevisionApiError(
+            "terminal_amendment_revision",
+            (
+                f"Amendment '{amendment_id}' is '{status_value}' (terminal) and "
+                "is permanently immutable. Status, lineage, coverage, and "
+                "artifact associations cannot change; create a new amendment "
+                "revision instead."
+            ),
+            409,
+            details={
+                "amendment_id": amendment_id,
+                "current_status": str(status_value),
+                "mutation_applied": False,
+            },
+        )
+
+    @staticmethod
     def _has_lineage_artifacts(amendment, bug) -> bool:
         membership = set(amendment.origin_task_ids or []) | set(amendment.affected_task_ids or [])
         return (
@@ -345,8 +513,8 @@ class AmendmentRevisionApiService:
             and bug.origin_task_id in membership
         )
 
-    async def _require_bug(self, board_id: str, bug_id: str) -> Card:
-        bug = await self._db.get(Card, bug_id)
+    async def _require_bug(self, board_id: str, bug_id: str) -> Any:
+        bug = await self._backend.get_bug(board_id, bug_id)
         if bug is None or bug.board_id != board_id:
             raise AmendmentRevisionApiError(
                 "bug_not_found", f"Bug '{bug_id}' was not found on this board.", 404
@@ -362,7 +530,7 @@ class AmendmentRevisionApiService:
         return bug
 
     async def _require_scoped_amendment(self, board_id: str, bug_id: str, amendment_id: str):
-        amendment = await self._store.get(amendment_id)
+        amendment = await self._backend.get_amendment(amendment_id)
         if amendment is None:
             raise AmendmentRevisionApiError(
                 "amendment_not_found",
@@ -381,31 +549,14 @@ class AmendmentRevisionApiService:
     async def _path_b_resolution(
         self, board_id: str, bug_id: str, candidate_scenario_ids: list[str]
     ) -> dict[str, Any]:
-        try:
-            payload = await BugRegressionScenarioPreviewService(self._db).resolve(
-                board_id=board_id,
-                bug_id=bug_id,
-                candidate_scenario_ids=candidate_scenario_ids or None,
-            )
-        except BugRegressionScenarioPreviewError as exc:
-            # structured, not an exception leak (AC3): surface why the bug-level
-            # resolution could not be computed.
-            return {"available": False, **exc.to_dict()}
-        return {
-            "available": True,
-            "coverage_state": payload.get("coverage_state"),
-            "coverage_pending_scenarios": payload.get("coverage_pending_scenarios"),
-            "missing_links": payload.get("missing_links"),
-            "safe_next_actions": payload.get("safe_next_actions"),
-            "next_action": payload.get("next_action"),
-            "eligible_regression_artifacts": payload.get("eligible_regression_artifacts"),
-            "rejected_regression_artifacts": payload.get("rejected_regression_artifacts"),
-            "rejected_scenarios": payload.get("rejected_scenarios"),
-            "amendment_revision_id": payload.get("amendment_revision_id"),
-        }
+        return await self._backend.path_b_resolution(
+            board_id=board_id,
+            bug_id=bug_id,
+            candidate_scenario_ids=candidate_scenario_ids,
+        )
 
     def _serialize_revision(self, amendment) -> dict[str, Any]:
-        verdict = AmendmentRevisionService.eligibility(amendment)
+        verdict = self._backend.eligibility(amendment)
         return {
             "id": amendment.id,
             "board_id": amendment.board_id,

@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
 from okto_pulse.core.kg.health_state import (
     DEFAULT_BUFFER_AT_RISK_PCT,
     GraphTelemetry,

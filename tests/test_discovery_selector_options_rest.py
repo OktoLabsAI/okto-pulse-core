@@ -6,9 +6,9 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api import discovery as discovery_api
+from okto_pulse.community.api import discovery as discovery_api
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.services.discovery_selector_catalog import (
     SAFE_SELECTOR_OPTION_FIELDS,
     SUPPORTED_SPEC_CHILD_TYPES,

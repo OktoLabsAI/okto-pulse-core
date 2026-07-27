@@ -19,21 +19,12 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import flag_modified, set_committed_value
-
-from okto_pulse.core.models.db import (
-    ArchitectureDesign,
-    ArchitectureDesignVersion,
-    ArchitectureDiagramPayload,
-    ArchitectureFinding,
-    ArchitectureFindingRun,
-    ArchitectureWarningAcknowledgement,
-    Card,
-    Ideation,
-    Refinement,
-    Spec,
+from okto_pulse.core.ports.architecture_persistence import (
+    ArchitectureFilter,
+    ArchitectureOperator,
+    ArchitectureQuery,
+    ArchitectureRecord,
+    get_architecture_persistence_port,
 )
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
@@ -51,11 +42,69 @@ from okto_pulse.core.services.architecture_observability import (
 )
 
 PARENT_MODELS = {
-    "ideation": (Ideation, "ideation_id"),
-    "refinement": (Refinement, "refinement_id"),
-    "spec": (Spec, "spec_id"),
-    "card": (Card, "card_id"),
+    "ideation": ("ideation", "ideation_id"),
+    "refinement": ("refinement", "refinement_id"),
+    "spec": ("spec", "spec_id"),
+    "card": ("card", "card_id"),
 }
+
+
+def _arf(
+    field: str,
+    operator: ArchitectureOperator,
+    value: Any = None,
+) -> ArchitectureFilter:
+    return ArchitectureFilter(field, operator, value)
+
+
+async def _architecture_list(
+    context: Any,
+    entity: str,
+    *,
+    filters: tuple[ArchitectureFilter, ...] = (),
+    any_filters: tuple[ArchitectureFilter, ...] = (),
+    order_by: tuple[tuple[str, bool], ...] = (),
+    limit: int | None = None,
+) -> list[ArchitectureRecord]:
+    rows = await get_architecture_persistence_port().list(
+        context,
+        ArchitectureQuery(
+            entity=entity,
+            filters=filters,
+            any_filters=any_filters,
+            order_by=order_by,
+            limit=limit,
+        ),
+    )
+    return list(rows)
+
+
+async def _architecture_get(
+    context: Any,
+    entity: str,
+    record_id: str,
+) -> ArchitectureRecord | None:
+    return await get_architecture_persistence_port().get(
+        context,
+        entity=entity,
+        record_id=record_id,
+    )
+
+
+async def _architecture_create(
+    context: Any,
+    entity: str,
+    **values: Any,
+) -> ArchitectureRecord:
+    return await get_architecture_persistence_port().create(
+        context,
+        entity=entity,
+        values=values,
+    )
+
+
+async def _architecture_flush(context: Any) -> None:
+    await get_architecture_persistence_port().flush(context)
 
 SEMANTIC_PATCH_FIELDS = {
     "title",
@@ -1349,7 +1398,7 @@ class ArchitectureDiagramStore:
     details. A blob-storage adapter can later keep the same methods.
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def save_payload(
@@ -1359,20 +1408,25 @@ class ArchitectureDiagramStore:
         diagram_id: str,
         format: str,
         payload: Any,
-    ) -> ArchitectureDiagramPayload:
-        result = await self.db.execute(
-            select(ArchitectureDiagramPayload).where(
-                ArchitectureDiagramPayload.design_id == design_id,
-                ArchitectureDiagramPayload.diagram_id == diagram_id,
-            )
+    ) -> ArchitectureRecord:
+        rows = await _architecture_list(
+            self.db,
+            "architecture_diagram_payload",
+            filters=(
+                _arf("design_id", "eq", design_id),
+                _arf("diagram_id", "eq", diagram_id),
+            ),
+            limit=1,
         )
-        row = result.scalar_one_or_none()
+        row = rows[0] if rows else None
         content_hash = _hash_payload(payload)
         size_bytes = _payload_size(payload)
         payload_json = None if isinstance(payload, str) else payload
         payload_text = payload if isinstance(payload, str) else None
         if row is None:
-            row = ArchitectureDiagramPayload(
+            row = await _architecture_create(
+                self.db,
+                "architecture_diagram_payload",
                 board_id=board_id,
                 design_id=design_id,
                 diagram_id=diagram_id,
@@ -1384,14 +1438,13 @@ class ArchitectureDiagramStore:
                 content_hash=content_hash,
                 size_bytes=size_bytes,
             )
-            self.db.add(row)
         else:
             row.format = format
             row.adapter_payload_json = payload_json
             row.payload_text = payload_text
             row.content_hash = content_hash
             row.size_bytes = size_bytes
-        await self.db.flush()
+        await _architecture_flush(self.db)
         return row
 
     async def load_payload(self, ref: str) -> Any:
@@ -1403,10 +1456,11 @@ class ArchitectureDiagramStore:
     async def delete_payload(self, ref: str) -> None:
         row = await self._get_payload_row(ref)
         if row is not None:
-            await self.db.delete(row)
-            await self.db.flush()
+            await get_architecture_persistence_port().delete(self.db, row)
 
-    async def copy_payload(self, source_ref: str, target_design_id: str, target_diagram_id: str) -> ArchitectureDiagramPayload:
+    async def copy_payload(
+        self, source_ref: str, target_design_id: str, target_diagram_id: str
+    ) -> ArchitectureRecord:
         row = await self._get_payload_row(source_ref)
         if row is None:
             raise KeyError(f"diagram payload not found: {source_ref}")
@@ -1435,13 +1489,17 @@ class ArchitectureDiagramStore:
             "size_bytes": row.size_bytes,
         }
 
-    async def _get_payload_row(self, ref: str) -> ArchitectureDiagramPayload | None:
-        result = await self.db.execute(
-            select(ArchitectureDiagramPayload).where(
-                (ArchitectureDiagramPayload.id == ref) | (ArchitectureDiagramPayload.storage_key == ref)
-            )
+    async def _get_payload_row(self, ref: str) -> ArchitectureRecord | None:
+        rows = await _architecture_list(
+            self.db,
+            "architecture_diagram_payload",
+            any_filters=(
+                _arf("id", "eq", ref),
+                _arf("storage_key", "eq", ref),
+            ),
+            limit=1,
         )
-        return result.scalar_one_or_none()
+        return rows[0] if rows else None
 
 
 ARCHITECTURE_FINDING_ACTIVE = "active"
@@ -1518,7 +1576,7 @@ class ArchitectureFindingRunStore:
     invalid payloads.
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Any):
         self.db = db
 
     async def upsert_latest_run(
@@ -1532,7 +1590,11 @@ class ArchitectureFindingRunStore:
         validator_summary: dict[str, Any] | None,
         structured_warnings: list[ArchitectureWarningRecord | dict[str, Any]],
     ) -> dict[str, Any]:
-        design = await self.db.get(ArchitectureDesign, design_id)
+        design = await _architecture_get(
+            self.db,
+            "architecture_design",
+            design_id,
+        )
         if design is None:
             raise ValueError(f"architecture design not found: {design_id}")
         if design.board_id != board_id:
@@ -1544,24 +1606,28 @@ class ArchitectureFindingRunStore:
 
         await self._delete_existing_run(design_id, critic_run_id)
 
-        previous_runs = await self.db.execute(
-            select(ArchitectureFindingRun).where(
-                ArchitectureFindingRun.design_id == design_id,
-                ArchitectureFindingRun.is_current == True,  # noqa: E712
-            )
+        previous_runs = await _architecture_list(
+            self.db,
+            "architecture_finding_run",
+            filters=(
+                _arf("design_id", "eq", design_id),
+                _arf("is_current", "is_true"),
+            ),
         )
-        for run in previous_runs.scalars().all():
+        for run in previous_runs:
             run.is_current = False
 
-        previous_active = await self.db.execute(
-            select(ArchitectureFinding).where(
-                ArchitectureFinding.design_id == design_id,
-                ArchitectureFinding.lifecycle == ARCHITECTURE_FINDING_ACTIVE,
-            )
+        previous_active = await _architecture_list(
+            self.db,
+            "architecture_finding",
+            filters=(
+                _arf("design_id", "eq", design_id),
+                _arf("lifecycle", "eq", ARCHITECTURE_FINDING_ACTIVE),
+            ),
         )
         previous_by_key = {
             finding.finding_key: finding
-            for finding in previous_active.scalars().all()
+            for finding in previous_active
         }
 
         warning_rows = self._dedupe_warnings(design_id, structured_warnings)
@@ -1576,7 +1642,9 @@ class ArchitectureFindingRunStore:
                 finding.lifecycle = ARCHITECTURE_FINDING_RESOLVED
                 resolved_count += 1
 
-        run = ArchitectureFindingRun(
+        run = await _architecture_create(
+            self.db,
+            "architecture_finding_run",
             board_id=board_id,
             design_id=design_id,
             design_version=design_version,
@@ -1590,13 +1658,12 @@ class ArchitectureFindingRunStore:
             actor_id=str(actor.get("actor_id") or "system"),
             actor_name=actor.get("actor_name"),
         )
-        self.db.add(run)
-        await self.db.flush()
-
-        findings: list[ArchitectureFinding] = []
+        findings: list[ArchitectureRecord] = []
         for key, warning in warning_rows.items():
             kind, target_ref, path = architecture_warning_target(warning)
-            finding = ArchitectureFinding(
+            finding = await _architecture_create(
+                self.db,
+                "architecture_finding",
                 run_id=run.id,
                 board_id=board_id,
                 design_id=design_id,
@@ -1615,9 +1682,8 @@ class ArchitectureFindingRunStore:
                 lifecycle=ARCHITECTURE_FINDING_ACTIVE,
                 raw_warning=warning,
             )
-            self.db.add(finding)
             findings.append(finding)
-        await self.db.flush()
+        await _architecture_flush(self.db)
 
         return {
             "design_id": design_id,
@@ -1633,24 +1699,29 @@ class ArchitectureFindingRunStore:
         *,
         design_id: str,
         lifecycle: str | None = None,
-    ) -> list[ArchitectureFinding]:
-        stmt = select(ArchitectureFinding).where(ArchitectureFinding.design_id == design_id)
+    ) -> list[ArchitectureRecord]:
+        filters = [_arf("design_id", "eq", design_id)]
         if lifecycle is not None:
-            stmt = stmt.where(ArchitectureFinding.lifecycle == lifecycle)
-        stmt = stmt.order_by(ArchitectureFinding.created_at.asc(), ArchitectureFinding.finding_key.asc())
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
-
-    async def get_current_run(self, design_id: str) -> ArchitectureFindingRun | None:
-        result = await self.db.execute(
-            select(ArchitectureFindingRun)
-            .where(
-                ArchitectureFindingRun.design_id == design_id,
-                ArchitectureFindingRun.is_current == True,  # noqa: E712
-            )
-            .order_by(ArchitectureFindingRun.created_at.desc())
+            filters.append(_arf("lifecycle", "eq", lifecycle))
+        return await _architecture_list(
+            self.db,
+            "architecture_finding",
+            filters=tuple(filters),
+            order_by=(("created_at", False), ("finding_key", False)),
         )
-        return result.scalars().first()
+
+    async def get_current_run(self, design_id: str) -> ArchitectureRecord | None:
+        rows = await _architecture_list(
+            self.db,
+            "architecture_finding_run",
+            filters=(
+                _arf("design_id", "eq", design_id),
+                _arf("is_current", "is_true"),
+            ),
+            order_by=(("created_at", True),),
+            limit=1,
+        )
+        return rows[0] if rows else None
 
     async def record_acknowledgements(
         self,
@@ -1661,7 +1732,7 @@ class ArchitectureFindingRunStore:
         finding_keys: list[str],
         actor: dict[str, Any],
         statement: str | None = None,
-    ) -> list[ArchitectureWarningAcknowledgement]:
+    ) -> list[ArchitectureRecord]:
         run = await self._get_run(design_id, critic_run_id)
         if run is None:
             raise ValueError(f"architecture finding run not found: {critic_run_id}")
@@ -1671,19 +1742,28 @@ class ArchitectureFindingRunStore:
         if missing:
             raise ValueError(f"warning acknowledgement references unknown active findings: {missing}")
 
-        acknowledgements: list[ArchitectureWarningAcknowledgement] = []
+        acknowledgements: list[ArchitectureRecord] = []
         for finding_key in finding_keys:
-            result = await self.db.execute(
-                select(ArchitectureWarningAcknowledgement).where(
-                    ArchitectureWarningAcknowledgement.design_id == design_id,
-                    ArchitectureWarningAcknowledgement.critic_run_id == critic_run_id,
-                    ArchitectureWarningAcknowledgement.finding_key == finding_key,
-                    ArchitectureWarningAcknowledgement.actor_id == str(actor.get("actor_id") or "system"),
-                )
+            rows = await _architecture_list(
+                self.db,
+                "architecture_warning_acknowledgement",
+                filters=(
+                    _arf("design_id", "eq", design_id),
+                    _arf("critic_run_id", "eq", critic_run_id),
+                    _arf("finding_key", "eq", finding_key),
+                    _arf(
+                        "actor_id",
+                        "eq",
+                        str(actor.get("actor_id") or "system"),
+                    ),
+                ),
+                limit=1,
             )
-            row = result.scalar_one_or_none()
+            row = rows[0] if rows else None
             if row is None:
-                row = ArchitectureWarningAcknowledgement(
+                row = await _architecture_create(
+                    self.db,
+                    "architecture_warning_acknowledgement",
                     board_id=board_id,
                     design_id=design_id,
                     design_version=run.design_version,
@@ -1694,29 +1774,32 @@ class ArchitectureFindingRunStore:
                     actor_name=actor.get("actor_name"),
                     statement=statement,
                 )
-                self.db.add(row)
             else:
                 row.actor_type = str(actor.get("actor_type") or row.actor_type)
                 row.actor_name = actor.get("actor_name")
                 row.statement = statement
             acknowledgements.append(row)
-        await self.db.flush()
+        await _architecture_flush(self.db)
         return acknowledgements
 
     async def _delete_existing_run(self, design_id: str, critic_run_id: str) -> None:
         existing = await self._get_run(design_id, critic_run_id)
         if existing is not None:
-            await self.db.delete(existing)
-            await self.db.flush()
+            await get_architecture_persistence_port().delete(self.db, existing)
 
-    async def _get_run(self, design_id: str, critic_run_id: str) -> ArchitectureFindingRun | None:
-        result = await self.db.execute(
-            select(ArchitectureFindingRun).where(
-                ArchitectureFindingRun.design_id == design_id,
-                ArchitectureFindingRun.critic_run_id == critic_run_id,
-            )
+    async def _get_run(
+        self, design_id: str, critic_run_id: str
+    ) -> ArchitectureRecord | None:
+        rows = await _architecture_list(
+            self.db,
+            "architecture_finding_run",
+            filters=(
+                _arf("design_id", "eq", design_id),
+                _arf("critic_run_id", "eq", critic_run_id),
+            ),
+            limit=1,
         )
-        return result.scalar_one_or_none()
+        return rows[0] if rows else None
 
     def _dedupe_warnings(
         self,
@@ -1737,7 +1820,7 @@ class ArchitectureFindingRunStore:
             fingerprints[key] = fingerprint
         return by_key
 
-    def _finding_to_dict(self, finding: ArchitectureFinding) -> dict[str, Any]:
+    def _finding_to_dict(self, finding: ArchitectureRecord) -> dict[str, Any]:
         return {
             "finding_key": finding.finding_key,
             "code": finding.warning_code,
@@ -1754,7 +1837,7 @@ class ArchitectureFindingRunStore:
 
 
 async def backfill_architecture_finding_runs(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str | None = None,
     only_missing: bool = False,
@@ -1774,23 +1857,29 @@ async def backfill_architecture_finding_runs(
     antes do fix da re-hidratação).
     """
     repo = ArchitectureDesignRepository(db)
-    stmt = select(ArchitectureDesign)
+    persistence = get_architecture_persistence_port()
+    filters: tuple[ArchitectureFilter, ...] = ()
     if board_id:
-        stmt = stmt.where(ArchitectureDesign.board_id == board_id)
-    designs = list((await db.execute(stmt)).scalars().all())
+        filters = (_arf("board_id", "eq", board_id),)
+    designs = await _architecture_list(
+        db,
+        "architecture_design",
+        filters=filters,
+    )
 
     stats = {"designs": 0, "skipped": 0, "with_findings": 0, "findings": 0, "errors": 0}
     for design in designs:
-        if only_missing:
-            existing = await db.execute(
-                select(ArchitectureFindingRun.id)
-                .where(ArchitectureFindingRun.design_id == design.id)
-                .limit(1)
-            )
-            if existing.first() is not None:
-                stats["skipped"] += 1
-                continue
         try:
+            if only_missing:
+                existing = await _architecture_list(
+                    db,
+                    "architecture_finding_run",
+                    filters=(_arf("design_id", "eq", design.id),),
+                    limit=1,
+                )
+                if existing:
+                    stats["skipped"] += 1
+                    continue
             diagrams = await repo._diagrams_for_validation(design.diagrams or [])
             critique = repo.critique_payload(
                 {
@@ -1835,6 +1924,10 @@ async def backfill_architecture_finding_runs(
                 },
                 structured_warnings=warnings,
             )
+            # The sweep is best-effort per design. Commit each successful unit
+            # immediately so SQLite never holds its single writer lock while
+            # the remaining designs are hydrated and critiqued.
+            await persistence.commit(db)
             stats["designs"] += 1
             if warnings:
                 stats["with_findings"] += 1
@@ -1845,7 +1938,14 @@ async def backfill_architecture_finding_runs(
                 design.id,
             )
             stats["errors"] += 1
-    await db.commit()
+            try:
+                await persistence.rollback(db)
+            except Exception:
+                logger.exception(
+                    "architecture.finding_backfill.rollback_failed design_id=%s",
+                    design.id,
+                )
+                raise
     return stats
 
 
@@ -1859,7 +1959,7 @@ class ArchitectureFindingGate:
     analysis; the backend architecture critic remains the source of truth.
     """
 
-    db: AsyncSession
+    db: Any
 
     async def evaluate(
         self,
@@ -1961,7 +2061,7 @@ class ArchitectureFindingGate:
 
     @staticmethod
     def _finding_to_remediation(
-        finding: ArchitectureFinding,
+        finding: ArchitectureRecord,
         ref: dict[str, Any],
     ) -> dict[str, Any]:
         return {
@@ -2090,6 +2190,57 @@ class ArchitecturePropagationBlocked(ValueError):
         return self.eligibility.to_dict()
 
 
+class ArchitectureDesignSelectionError(ValueError):
+    """An explicit Architecture selection did not resolve on the source parent.
+
+    Selection tokens are part of the public propagation contract.  Callers may use
+    a physical snapshot id, the canonical ``source_design_id``, a ``source_ref`` or
+    the Resource Gate ``architecture:<root-id>`` token.  A supplied token that does
+    not resolve is never treated as an empty successful copy: the whole operation
+    fails before eligibility checks or target writes.
+    """
+
+    code = "architecture_design_selection_invalid"
+
+    def __init__(
+        self,
+        *,
+        source_parent_type: str,
+        source_parent_id: str,
+        requested: list[str],
+        matched: list[str],
+        missing: list[str],
+    ) -> None:
+        self.source_parent_type = source_parent_type
+        self.source_parent_id = source_parent_id
+        self.requested = tuple(requested)
+        self.matched = tuple(matched)
+        self.missing = tuple(missing)
+        super().__init__(self.code)
+
+    def to_error_dict(self) -> dict[str, Any]:
+        return {
+            "error": self.code,
+            "code": self.code,
+            "detail": (
+                "One or more Architecture Design selection tokens do not resolve "
+                "on the requested source parent."
+            ),
+            "source_parent_type": self.source_parent_type,
+            "source_parent_id": self.source_parent_id,
+            "requested": list(self.requested),
+            "matched": list(self.matched),
+            "missing": list(self.missing),
+            "accepted_identity_fields": [
+                "id",
+                "source_design_id",
+                "source_ref",
+                "architecture:<root-id>",
+            ],
+            "retryable": False,
+        }
+
+
 def _propagation_remediation(
     *, blocked: bool, verdict_status: str, finding_keys: list[str]
 ) -> str | None:
@@ -2194,7 +2345,7 @@ class ArchitecturePropagationEligibilityPolicy:
     (ArchitecturePropagationService, REST, MCP, auto-derive) is Spec B.
     """
 
-    db: AsyncSession
+    db: Any
 
     async def evaluate(self, design_id: str) -> ArchitecturePropagationEligibility:
         """Return the canonical eligibility verdict for a source design (never mutates)."""
@@ -2224,8 +2375,8 @@ class ArchitecturePropagationEligibilityPolicy:
 
     @staticmethod
     def _revalidation_reason(
-        design: ArchitectureDesign,
-        run: ArchitectureFindingRun | None,
+        design: ArchitectureRecord,
+        run: ArchitectureRecord | None,
     ) -> str | None:
         if run is None:
             return PROPAGATION_REVALIDATION_MISSING_RUN
@@ -2238,8 +2389,8 @@ class ArchitecturePropagationEligibilityPolicy:
 
     async def _evaluate_persisted(
         self,
-        design: ArchitectureDesign,
-        run: ArchitectureFindingRun,
+        design: ArchitectureRecord,
+        run: ArchitectureRecord,
         store: ArchitectureFindingRunStore,
     ) -> ArchitecturePropagationEligibility:
         findings = await store.list_findings(design_id=design.id)
@@ -2269,8 +2420,8 @@ class ArchitecturePropagationEligibilityPolicy:
 
     async def _evaluate_revalidated(
         self,
-        design: ArchitectureDesign,
-        run: ArchitectureFindingRun | None,
+        design: ArchitectureRecord,
+        run: ArchitectureRecord | None,
         repo: ArchitectureDesignRepository,
         store: ArchitectureFindingRunStore,
         reason: str,
@@ -2337,12 +2488,14 @@ class ArchitecturePropagationEligibilityPolicy:
     async def _acknowledgements_audit(
         self, design_id: str, critic_run_id: str | None
     ) -> list[dict[str, Any]]:
-        stmt = select(ArchitectureWarningAcknowledgement).where(
-            ArchitectureWarningAcknowledgement.design_id == design_id
-        )
+        filters = [_arf("design_id", "eq", design_id)]
         if critic_run_id:
-            stmt = stmt.where(ArchitectureWarningAcknowledgement.critic_run_id == critic_run_id)
-        result = await self.db.execute(stmt)
+            filters.append(_arf("critic_run_id", "eq", critic_run_id))
+        rows = await _architecture_list(
+            self.db,
+            "architecture_warning_acknowledgement",
+            filters=tuple(filters),
+        )
         return [
             {
                 "finding_key": ack.finding_key,
@@ -2353,11 +2506,11 @@ class ArchitecturePropagationEligibilityPolicy:
                 "statement": ack.statement,
                 "audit_only": True,
             }
-            for ack in result.scalars().all()
+            for ack in rows
         ]
 
     @staticmethod
-    def _finding_payload(finding: ArchitectureFinding) -> dict[str, Any]:
+    def _finding_payload(finding: ArchitectureRecord) -> dict[str, Any]:
         return {
             "finding_key": finding.finding_key,
             "code": finding.warning_code,
@@ -2379,7 +2532,7 @@ class ArchitectureDesignRepository:
 
     def __init__(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         diagram_store: ArchitectureDiagramStore | None = None,
         adapter_registry: ArchitectureDiagramAdapterRegistry | None = None,
@@ -2388,21 +2541,35 @@ class ArchitectureDesignRepository:
         self.diagram_store = diagram_store or ArchitectureDiagramStore(db)
         self.adapter_registry = adapter_registry or ArchitectureDiagramAdapterRegistry()
 
-    async def list(self, parent_type: str, parent_id: str, include_payloads: bool = False) -> list[ArchitectureDesign]:
+    async def list(
+        self,
+        parent_type: str,
+        parent_id: str,
+        include_payloads: bool = False,
+    ) -> list[ArchitectureRecord]:
         _, parent_field = self._parent_config(parent_type)
-        result = await self.db.execute(
-            select(ArchitectureDesign)
-            .where(ArchitectureDesign.parent_type == parent_type, getattr(ArchitectureDesign, parent_field) == parent_id)
-            .order_by(ArchitectureDesign.updated_at.desc(), ArchitectureDesign.title.asc())
+        designs = await _architecture_list(
+            self.db,
+            "architecture_design",
+            filters=(
+                _arf("parent_type", "eq", parent_type),
+                _arf(parent_field, "eq", parent_id),
+            ),
+            order_by=(("updated_at", True), ("title", False)),
         )
-        designs = list(result.scalars().all())
         if include_payloads:
             for design in designs:
                 await self._attach_payloads(design)
         return designs
 
-    async def get(self, design_id: str, include_payloads: bool = False) -> ArchitectureDesign | None:
-        design = await self.db.get(ArchitectureDesign, design_id)
+    async def get(
+        self, design_id: str, include_payloads: bool = False
+    ) -> ArchitectureRecord | None:
+        design = await _architecture_get(
+            self.db,
+            "architecture_design",
+            design_id,
+        )
         if design is not None and include_payloads:
             await self._attach_payloads(design)
         return design
@@ -2415,13 +2582,13 @@ class ArchitectureDesignRepository:
         actor_id: str,
         *,
         allow_card_parent_write: bool = False,
-    ) -> ArchitectureDesign:
+    ) -> ArchitectureRecord:
         _ensure_card_architecture_write_allowed(
             parent_type,
             allow=allow_card_parent_write,
         )
-        parent_model, parent_field = self._parent_config(parent_type)
-        parent = await self.db.get(parent_model, parent_id)
+        parent_entity, parent_field = self._parent_config(parent_type)
+        parent = await _architecture_get(self.db, parent_entity, parent_id)
         if parent is None:
             raise ValueError(f"{parent_type} parent not found: {parent_id}")
         payload = _dump_model_or_dict(data)
@@ -2441,7 +2608,9 @@ class ArchitectureDesignRepository:
             payload=critique_input,
             acknowledgement=acknowledgement,
         )
-        design = ArchitectureDesign(
+        design = await _architecture_create(
+            self.db,
+            "architecture_design",
             id=design_id,
             board_id=board_id,
             parent_type=parent_type,
@@ -2459,15 +2628,13 @@ class ArchitectureDesignRepository:
             requires_arch_review=False,
             created_by=actor_id,
         )
-        self.db.add(design)
-        await self.db.flush()
         design.diagrams = await self._normalize_diagrams(
             board_id,
             design.id,
             payload.get("diagrams") or [],
             entities=payload.get("entities") or [],
         )
-        flag_modified(design, "diagrams")
+        await _architecture_flush(self.db)
         await self.snapshot(design.id, actor_id, "Initial architecture design")
         await self._persist_finding_run(
             design=design,
@@ -2476,8 +2643,8 @@ class ArchitectureDesignRepository:
             acknowledgement=acknowledgement,
         )
         await self._publish_parent_semantic_change(design, actor_id)
-        await self.db.flush()
-        await self.db.refresh(design)
+        await _architecture_flush(self.db)
+        await get_architecture_persistence_port().refresh(self.db, design)
         if parent_type == "spec":
             await self._propagate_spec_architecture_change(
                 design,
@@ -2493,7 +2660,7 @@ class ArchitectureDesignRepository:
         actor_id: str,
         *,
         allow_card_parent_write: bool = False,
-    ) -> ArchitectureDesign:
+    ) -> ArchitectureRecord:
         design = await self.get(design_id)
         if design is None:
             raise ValueError(f"architecture design not found: {design_id}")
@@ -2537,7 +2704,6 @@ class ArchitectureDesignRepository:
         for field_name in ("entities", "interfaces"):
             if field_name in payload:
                 setattr(design, field_name, payload[field_name] or [])
-                flag_modified(design, field_name)
         if "diagrams" in payload:
             design.diagrams = await self._normalize_diagrams(
                 design.board_id,
@@ -2545,7 +2711,6 @@ class ArchitectureDesignRepository:
                 payload["diagrams"] or [],
                 entities=candidate_payload.get("entities") or [],
             )
-            flag_modified(design, "diagrams")
         for field_name in ("source_ref", "source_version", "source_design_id"):
             if field_name in payload:
                 setattr(design, field_name, payload[field_name])
@@ -2553,6 +2718,7 @@ class ArchitectureDesignRepository:
         design.breaking_change_flag = False
         design.requires_arch_review = False
         design.version += 1
+        await _architecture_flush(self.db)
         await self.snapshot(design.id, actor_id, change_summary or "Architecture design updated")
         await self._persist_finding_run(
             design=design,
@@ -2562,8 +2728,8 @@ class ArchitectureDesignRepository:
         )
         if semantic_change:
             await self._publish_parent_semantic_change(design, actor_id)
-        await self.db.flush()
-        await self.db.refresh(design)
+        await _architecture_flush(self.db)
+        await get_architecture_persistence_port().refresh(self.db, design)
         if design.parent_type == "spec":
             await self._propagate_spec_architecture_change(
                 design,
@@ -2687,7 +2853,7 @@ class ArchitectureDesignRepository:
     async def _persist_finding_run(
         self,
         *,
-        design: ArchitectureDesign,
+        design: ArchitectureRecord,
         critique: dict[str, Any],
         actor_id: str,
         acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None,
@@ -2768,8 +2934,7 @@ class ArchitectureDesignRepository:
         spec_board_id = design.board_id if design.parent_type == "spec" else None
         deleted_design_id = design.id
         await self._publish_parent_semantic_change(design, actor_id)
-        await self.db.delete(design)
-        await self.db.flush()
+        await get_architecture_persistence_port().delete(self.db, design)
         if spec_parent_id and spec_board_id:
             from okto_pulse.core.services.spec_resource_propagation import (
                 SpecResourcePropagationService,
@@ -2786,7 +2951,7 @@ class ArchitectureDesignRepository:
 
     async def _propagate_spec_architecture_change(
         self,
-        design: ArchitectureDesign,
+        design: ArchitectureRecord,
         actor_id: str | None,
         *,
         trigger: str,
@@ -2808,12 +2973,16 @@ class ArchitectureDesignRepository:
             trigger=trigger,
         )
 
-    async def snapshot(self, design_id: str, actor_id: str, reason: str | None = None) -> ArchitectureDesignVersion:
+    async def snapshot(
+        self, design_id: str, actor_id: str, reason: str | None = None
+    ) -> ArchitectureRecord:
         design = await self.get(design_id)
         if design is None:
             raise ValueError(f"architecture design not found: {design_id}")
         envelope = self._envelope_snapshot(design)
-        version = ArchitectureDesignVersion(
+        return await _architecture_create(
+            self.db,
+            "architecture_design_version",
             design_id=design.id,
             version=design.version,
             envelope_snapshot=envelope,
@@ -2829,18 +2998,17 @@ class ArchitectureDesignRepository:
             created_by=actor_id,
             change_summary=reason,
         )
-        self.db.add(version)
-        await self.db.flush()
-        return version
 
     async def diff(self, design_id: str, from_version: int, to_version: int) -> ArchitectureDiffResponse:
-        result = await self.db.execute(
-            select(ArchitectureDesignVersion).where(
-                ArchitectureDesignVersion.design_id == design_id,
-                ArchitectureDesignVersion.version.in_([from_version, to_version]),
-            )
+        rows = await _architecture_list(
+            self.db,
+            "architecture_design_version",
+            filters=(
+                _arf("design_id", "eq", design_id),
+                _arf("version", "in", [from_version, to_version]),
+            ),
         )
-        versions = {item.version: item for item in result.scalars().all()}
+        versions = {item.version: item for item in rows}
         if from_version not in versions or to_version not in versions:
             raise ValueError("architecture design version not found")
         before = versions[from_version].envelope_snapshot
@@ -2863,7 +3031,7 @@ class ArchitectureDesignRepository:
             requires_arch_review=False,
         )
 
-    def to_summary(self, design: ArchitectureDesign) -> ArchitectureDesignSummary:
+    def to_summary(self, design: ArchitectureRecord) -> ArchitectureDesignSummary:
         diagrams = list(design.diagrams or [])
         return ArchitectureDesignSummary(
             id=design.id,
@@ -2873,6 +3041,7 @@ class ArchitectureDesignRepository:
             title=design.title,
             version=design.version,
             source_ref=design.source_ref,
+            source_design_id=design.source_design_id,
             source_version=design.source_version,
             stale=False,
             breaking_change_flag=False,
@@ -2883,7 +3052,7 @@ class ArchitectureDesignRepository:
             updated_at=design.updated_at,
         )
 
-    def to_response(self, design: ArchitectureDesign) -> ArchitectureDesignResponse:
+    def to_response(self, design: ArchitectureRecord) -> ArchitectureDesignResponse:
         return ArchitectureDesignResponse(
             id=design.id,
             board_id=design.board_id,
@@ -2906,14 +3075,14 @@ class ArchitectureDesignRepository:
             updated_at=design.updated_at,
         )
 
-    def parent_id_for(self, design: ArchitectureDesign) -> str:
+    def parent_id_for(self, design: ArchitectureRecord) -> str:
         _, parent_field = self._parent_config(design.parent_type)
         parent_id = getattr(design, parent_field)
         if not parent_id:
             raise ValueError(f"architecture design has no {parent_field}")
         return parent_id
 
-    def source_ref_for(self, design: ArchitectureDesign) -> str:
+    def source_ref_for(self, design: ArchitectureRecord) -> str:
         return f"architecture_design:{design.id}"
 
     def critique_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -3504,7 +3673,7 @@ class ArchitectureDesignRepository:
             normalized_diagrams.append(diagram)
         return normalized_diagrams
 
-    async def _attach_payloads(self, design: ArchitectureDesign) -> None:
+    async def _attach_payloads(self, design: ArchitectureRecord) -> None:
         diagrams = []
         for diagram in design.diagrams or []:
             enriched = dict(diagram)
@@ -3515,9 +3684,9 @@ class ArchitectureDesignRepository:
                 except KeyError:
                     enriched["adapter_payload_missing"] = True
             diagrams.append(enriched)
-        set_committed_value(design, "diagrams", diagrams)
+        design.attach("diagrams", diagrams)
 
-    def _envelope_snapshot(self, design: ArchitectureDesign) -> dict[str, Any]:
+    def _envelope_snapshot(self, design: ArchitectureRecord) -> dict[str, Any]:
         return {
             "id": design.id,
             "board_id": design.board_id,
@@ -3545,7 +3714,7 @@ class ArchitectureDesignRepository:
 
     async def _publish_parent_semantic_change(
         self,
-        design: ArchitectureDesign,
+        design: ArchitectureRecord,
         actor_id: str | None,
     ) -> None:
         """Emit the existing semantic events that feed KG consolidation.
@@ -3582,17 +3751,109 @@ class ArchitectureDesignRepository:
             )
 
 
+def architecture_design_identity_values(design: ArchitectureRecord) -> set[str]:
+    """Return every supported public selection token for ``design``.
+
+    ``id`` changes at every snapshot hop while ``source_design_id`` remains the
+    canonical root.  Resource Gate callers commonly hold ``architecture:<root>``
+    or ``architecture_design:<root>`` rather than the physical intermediate id,
+    so all forms intentionally converge here.
+    """
+
+    values: set[str] = set()
+
+    def add(value: Any) -> None:
+        if value in (None, ""):
+            return
+        token = str(value).strip()
+        if not token:
+            return
+        values.add(token)
+        tail = token
+        for separator in (":", "/", "\\"):
+            if separator in tail:
+                tail = tail.rsplit(separator, 1)[-1]
+        if tail:
+            values.add(tail)
+            values.add(f"architecture:{tail}")
+            values.add(f"architecture_design:{tail}")
+
+    add(design.id)
+    add(design.source_design_id)
+    add(design.source_ref)
+    return values
+
+
 class ArchitecturePropagationService:
     """Copy architecture snapshots between ceremony artifacts."""
 
     def __init__(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         repository: ArchitectureDesignRepository | None = None,
     ):
         self.db = db
         self.repository = repository or ArchitectureDesignRepository(db)
+
+    async def preflight_copy_from_parent(
+        self,
+        *,
+        source_parent_type: str,
+        source_parent_id: str,
+        design_ids: list[str] | None = None,
+    ) -> list[ArchitectureRecord]:
+        """Resolve and gate a propagation selection without writing a target.
+
+        Derive flows call this before creating their target artifact, which keeps
+        invalid/foreign explicit selections and blocked sources transactionally
+        fail-closed even when a transport converts the exception to a response.
+        """
+
+        source_parent = await self._get_parent(source_parent_type, source_parent_id)
+        if source_parent is None:
+            raise ValueError(f"{source_parent_type} parent not found: {source_parent_id}")
+
+        source_designs = await self.repository.list(
+            source_parent_type,
+            source_parent_id,
+            include_payloads=True,
+        )
+        if design_ids is not None:
+            requested = list(
+                dict.fromkeys(
+                    str(item).strip()
+                    for item in design_ids
+                    if str(item).strip()
+                )
+            )
+            identities = {
+                design.id: architecture_design_identity_values(design)
+                for design in source_designs
+            }
+            matched = [
+                token
+                for token in requested
+                if any(token in design_tokens for design_tokens in identities.values())
+            ]
+            missing = [token for token in requested if token not in matched]
+            if missing:
+                raise ArchitectureDesignSelectionError(
+                    source_parent_type=source_parent_type,
+                    source_parent_id=source_parent_id,
+                    requested=requested,
+                    matched=matched,
+                    missing=missing,
+                )
+            wanted = set(requested)
+            source_designs = [
+                design
+                for design in source_designs
+                if architecture_design_identity_values(design) & wanted
+            ]
+
+        await self.assert_sources_eligible(source_designs, flow="copy_from_parent")
+        return source_designs
 
     async def copy_from_parent(
         self,
@@ -3603,7 +3864,7 @@ class ArchitecturePropagationService:
         actor_id: str,
         design_ids: list[str] | None = None,
         architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None = None,
-    ) -> list[ArchitectureDesign]:
+    ) -> list[ArchitectureRecord]:
         source_parent = await self._get_parent(source_parent_type, source_parent_id)
         target_parent = await self._get_parent(target_parent_type, target_parent_id)
         if source_parent is None:
@@ -3613,21 +3874,22 @@ class ArchitecturePropagationService:
         if getattr(source_parent, "board_id") != getattr(target_parent, "board_id"):
             raise ValueError("source and target parents must belong to the same board")
 
-        source_designs = await self.repository.list(source_parent_type, source_parent_id, include_payloads=True)
-        if design_ids is not None:
-            wanted = set(design_ids)
-            source_designs = [design for design in source_designs if design.id in wanted]
+        source_designs = await self.preflight_copy_from_parent(
+            source_parent_type=source_parent_type,
+            source_parent_id=source_parent_id,
+            design_ids=design_ids,
+        )
 
-        # Spec B: enforce canonical propagation eligibility against every REAL source
-        # BEFORE any create/update, so a blocking source never yields a partial target
-        # snapshot. ``architecture_warning_acknowledgement`` stays audit-only here.
-        await self.assert_sources_eligible(source_designs, flow="copy_from_parent")
-
-        copied: list[ArchitectureDesign] = []
+        copied: list[ArchitectureRecord] = []
         for source_design in source_designs:
             source_ref = self.repository.source_ref_for(source_design)
-            existing = await self._find_existing_copy(target_parent_type, target_parent_id, source_ref)
             payload = self._payload_from_source(source_design, source_ref)
+            existing = await self._find_existing_copy(
+                target_parent_type,
+                target_parent_id,
+                source_ref,
+                source_design_id=payload.get("source_design_id"),
+            )
             if architecture_warning_acknowledgement is not None:
                 payload["architecture_warning_acknowledgement"] = architecture_warning_acknowledgement
             if existing is None:
@@ -3660,7 +3922,7 @@ class ArchitecturePropagationService:
                     allow_card_parent_write=target_parent_type == "card",
                 )
             copied.append(copied_design)
-        await self.db.flush()
+        await _architecture_flush(self.db)
         return copied
 
     async def copy_spec_to_card(
@@ -3670,7 +3932,7 @@ class ArchitecturePropagationService:
         actor_id: str,
         design_ids: list[str] | None = None,
         architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None = None,
-    ) -> list[ArchitectureDesign]:
+    ) -> list[ArchitectureRecord]:
         return await self.copy_from_parent(
             "spec",
             spec_id,
@@ -3690,7 +3952,7 @@ class ArchitecturePropagationService:
         actor_id: str,
         design_ids: list[str] | None = None,
         architecture_warning_acknowledgement: ArchitectureWarningAcknowledgementRequest | dict[str, Any] | None = None,
-    ) -> tuple[list[ArchitectureDesign], dict[str, Any]]:
+    ) -> tuple[list[ArchitectureRecord], dict[str, Any]]:
         """Copy every effective spec Architecture obligation to a card.
 
         Direct spec designs still use the standard spec -> card copy path. When
@@ -3700,6 +3962,7 @@ class ArchitecturePropagationService:
         """
         from okto_pulse.core.services.effective_resource_propagation import (
             ResourcePropagationError,
+            effective_ref_identity_values,
             resolve_effective_card_copy_plan,
         )
 
@@ -3713,11 +3976,12 @@ class ArchitecturePropagationService:
             refs = list(plan.get("fallback_refs") or [])
             wanted = set(design_ids or [])
             if wanted:
+                # Card 5c43a364: match design_ids against EVERY canonical identity
+                # of the effective ref (root + intermediate), not just the immediate
+                # id, so design_ids=[root_id] still resolves a multi-hop inherited ref.
                 refs = [
                     ref for ref in refs
-                    if str(ref.get("id") or "") in wanted
-                    or str(ref.get("resource_id") or "") in wanted
-                    or str(ref.get("unique_resource_id") or "") in wanted
+                    if effective_ref_identity_values(ref) & wanted
                 ]
             grouped: dict[tuple[str, str], list[str]] = {}
             for ref in refs:
@@ -3739,7 +4003,7 @@ class ArchitecturePropagationService:
                     coverage_obligation_id=plan.get("coverage_obligation_id"),
                 )
 
-            copied: list[ArchitectureDesign] = []
+            copied: list[ArchitectureRecord] = []
             for (source_parent_type, source_parent_id), source_design_ids in grouped.items():
                 copied.extend(
                     await self.copy_from_parent(
@@ -3781,7 +4045,7 @@ class ArchitecturePropagationService:
 
     async def assert_sources_eligible(
         self,
-        source_designs: list[ArchitectureDesign],
+        source_designs: list[ArchitectureRecord],
         *,
         flow: str,
     ) -> None:
@@ -3821,26 +4085,38 @@ class ArchitecturePropagationService:
             raise ArchitecturePropagationBlocked(eligibility)
 
     async def _get_parent(self, parent_type: str, parent_id: str) -> Any | None:
-        parent_model, _ = self.repository._parent_config(parent_type)
-        return await self.db.get(parent_model, parent_id)
+        parent_entity, _ = self.repository._parent_config(parent_type)
+        return await _architecture_get(self.db, parent_entity, parent_id)
 
     async def _find_existing_copy(
         self,
         target_parent_type: str,
         target_parent_id: str,
         source_ref: str,
-    ) -> ArchitectureDesign | None:
+        *,
+        source_design_id: str | None = None,
+    ) -> ArchitectureRecord | None:
         _, target_field = self.repository._parent_config(target_parent_type)
-        result = await self.db.execute(
-            select(ArchitectureDesign).where(
-                ArchitectureDesign.parent_type == target_parent_type,
-                getattr(ArchitectureDesign, target_field) == target_parent_id,
-                ArchitectureDesign.source_ref == source_ref,
+        origin_filters = [_arf("source_ref", "eq", source_ref)]
+        if source_design_id:
+            origin_filters.append(
+                _arf("source_design_id", "eq", source_design_id)
             )
+        rows = await _architecture_list(
+            self.db,
+            "architecture_design",
+            filters=(
+                _arf("parent_type", "eq", target_parent_type),
+                _arf(target_field, "eq", target_parent_id),
+            ),
+            any_filters=tuple(origin_filters),
+            limit=1,
         )
-        return result.scalar_one_or_none()
+        return rows[0] if rows else None
 
-    def _payload_from_source(self, design: ArchitectureDesign, source_ref: str) -> dict[str, Any]:
+    def _payload_from_source(
+        self, design: ArchitectureRecord, source_ref: str
+    ) -> dict[str, Any]:
         diagrams = []
         for diagram in design.diagrams or []:
             copied = copy.deepcopy(diagram)
@@ -3860,7 +4136,9 @@ class ArchitecturePropagationService:
             "diagrams": diagrams,
             "source_ref": source_ref,
             "source_version": design.version,
-            "source_design_id": design.id,
+            # Card 5c43a364: carry the canonical ROOT origin (not the immediate
+            # parent) so a multi-hop inherited copy covers the gate obligation.
+            "source_design_id": design.source_design_id or design.id,
             "stale": False,
             "breaking_change_flag": False,
             "requires_arch_review": False,

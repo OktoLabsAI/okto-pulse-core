@@ -20,15 +20,15 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
-from okto_pulse.core.api.kg_rebuild import (
+import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
+from okto_pulse.community.api.kg_rebuild import (
     _REBUILD_REJECT_STATES,
     _refuse_rebuild_if_quarantined,
     router as rebuild_router,
 )
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db
-from okto_pulse.core.models.db import Board, BoardShare
+from sqlalchemy_test_models import Board, BoardShare
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ def _install_rebuild_health(monkeypatch, graph_state: str):
     """Stub kg_rebuild_mod.get_kg_health to return the given graph_state."""
     calls: list[str] = []
 
-    async def _stub(board_id, db):
+    async def _stub(board_id, db, scheduler_control=None):
         calls.append(board_id)
         return {"graph_state": graph_state, "metric_status": "available"}
 
@@ -216,6 +216,7 @@ def _make_rebuild_client(user_id: str) -> tuple[TestClient, object]:
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: user_id
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app, raise_server_exceptions=False), db_factory
 
 
@@ -233,16 +234,16 @@ def test_fr10_preflight_nonexistent_board_returns_404(_rebuild_scope_board):
     )
 
 
-def test_fr10_preflight_unauthorized_user_returns_403(_rebuild_scope_board):
-    """FR10 BEHAVIORAL: preflight by user with no board access → HTTP 403."""
+def test_fr10_preflight_unauthorized_user_returns_404(_rebuild_scope_board):
+    """FR10 BEHAVIORAL: denied and missing boards share the 404 envelope."""
     board_id = _rebuild_scope_board
     client, _ = _make_rebuild_client(_OTHER_ID)
     resp = client.post(
         "/api/v1/kg/rebuild/preflight",
         params={"board_id": board_id},
     )
-    assert resp.status_code == 403, (
-        f"Expected 403 for unauthorized user, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 404, (
+        f"Expected 404 for unauthorized user, got {resp.status_code}: {resp.text}"
     )
 
 
@@ -296,8 +297,8 @@ def test_fr10_confirm_nonexistent_board_returns_404(_rebuild_scope_board):
     )
 
 
-def test_fr10_confirm_unauthorized_user_returns_403(_rebuild_scope_board):
-    """FR10 BEHAVIORAL: confirm by user with no board access → HTTP 403."""
+def test_fr10_confirm_unauthorized_user_returns_404(_rebuild_scope_board):
+    """FR10 BEHAVIORAL: denied and missing boards share the 404 envelope."""
     board_id = _rebuild_scope_board
     client, _ = _make_rebuild_client(_OTHER_ID)
     resp = client.post(
@@ -309,8 +310,8 @@ def test_fr10_confirm_unauthorized_user_returns_403(_rebuild_scope_board):
             "manifest_ref": _DUMMY_MANIFEST,
         },
     )
-    assert resp.status_code == 403, (
-        f"Expected 403 for unauthorized user, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 404, (
+        f"Expected 404 for unauthorized user, got {resp.status_code}: {resp.text}"
     )
 
 
@@ -356,8 +357,8 @@ def test_fr10_run_nonexistent_board_returns_404(_rebuild_scope_board):
     )
 
 
-def test_fr10_run_unauthorized_user_returns_403(_rebuild_scope_board):
-    """FR10 BEHAVIORAL: run by user with no board access → HTTP 403."""
+def test_fr10_run_unauthorized_user_returns_404(_rebuild_scope_board):
+    """FR10 BEHAVIORAL: denied and missing boards share the 404 envelope."""
     board_id = _rebuild_scope_board
     client, _ = _make_rebuild_client(_OTHER_ID)
     resp = client.post(
@@ -371,8 +372,8 @@ def test_fr10_run_unauthorized_user_returns_403(_rebuild_scope_board):
             "reason": "test",
         },
     )
-    assert resp.status_code == 403, (
-        f"Expected 403 for unauthorized user, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 404, (
+        f"Expected 404 for unauthorized user, got {resp.status_code}: {resp.text}"
     )
 
 
@@ -406,7 +407,7 @@ def test_fr9_health_probe_uses_get_kg_health_in_preflight():
     a hardcoded stub returning 'healthy').  Verified by source inspection:
     the stub that returned base_state='healthy' unconditionally must be gone,
     and _raw_health from the real get_kg_health call must be used."""
-    import okto_pulse.core.api.kg_rebuild as m
+    import okto_pulse.community.api.kg_rebuild as m
     source = inspect.getsource(m.post_rebuild_preflight)
     # Real health call must be present.
     assert "get_kg_health" in source, (
@@ -427,7 +428,7 @@ def test_fr9_health_probe_uses_get_kg_health_in_preflight():
 def test_all_three_endpoints_accept_db_parameter():
     """FR10 (defence-in-depth): each REST endpoint must accept an async DB
     session dependency so the per-board scope check can query the Board table."""
-    import okto_pulse.core.api.kg_rebuild as m
+    import okto_pulse.community.api.kg_rebuild as m
     for fn in (m.post_rebuild_preflight, m.post_rebuild_confirm, m.post_rebuild_run):
         sig = inspect.signature(fn)
         assert "db" in sig.parameters, (
@@ -517,10 +518,43 @@ async def test_ts_30de5f98_twin_auth_none_returns_auth_error_no_side_effects(
 
     import okto_pulse.core.mcp.server as srv_mod
 
-    # Redirect _REBUILD_BASE_DIR to tmp_path so any accidental write is
-    # captured without polluting the real rebuild store.
-    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
-    monkeypatch.setattr(kg_rebuild_mod, "_REBUILD_BASE_DIR", tmp_path)
+    from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+        REBUILD_AUDIT_GLOBAL_BOARD_ID,
+        RebuildAuditKey,
+    )
+    from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
+
+    artifact_store = require_rebuild_audit_artifact_store()
+
+    def _artifact_snapshot() -> dict[str, list[dict]]:
+        return {
+            "source_manifest": list(
+                artifact_store.list_json(
+                    RebuildAuditKey(
+                        namespace="source_manifest",
+                        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+                    )
+                )
+            ),
+            "confirmation_token": list(
+                artifact_store.list_json(
+                    RebuildAuditKey(
+                        namespace="confirmation_token",
+                        board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+                    )
+                )
+            ),
+            "rebuild_report": list(
+                artifact_store.list_json(
+                    RebuildAuditKey(
+                        namespace="rebuild_report",
+                        board_id="b-auth-test",
+                    )
+                )
+            ),
+        }
+
+    before_artifacts = _artifact_snapshot()
 
     # Patch _get_agent_ctx in the server module to return None —
     # simulates unauthenticated / board-access-denied.
@@ -541,7 +575,9 @@ async def test_ts_30de5f98_twin_auth_none_returns_auth_error_no_side_effects(
         f"Expected auth error JSON, got: {body}"
     )
 
-    # (b) Zero files written anywhere under tmp_path.
+    # (b) Zero artifacts written to the rebuild audit store, and no legacy
+    # filesystem write under tmp_path.
+    assert _artifact_snapshot() == before_artifacts
     all_files = list(tmp_path.rglob("*"))
     written_files = [f for f in all_files if f.is_file()]
     assert written_files == [], (

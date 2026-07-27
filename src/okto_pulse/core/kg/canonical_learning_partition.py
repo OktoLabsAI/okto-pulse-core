@@ -24,11 +24,14 @@ from __future__ import annotations
 import hashlib
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.services.canonical_debt_service import (
     reconcile_canonical_debt_with_evidence,
     upsert_canonical_debt,
+)
+from okto_pulse.core.ports.canonical_debt import (
+    CanonicalDebtRecord,
+    get_canonical_debt_store,
 )
 
 logger = logging.getLogger("okto_pulse.kg.canonical_learning_partition")
@@ -36,6 +39,17 @@ logger = logging.getLogger("okto_pulse.kg.canonical_learning_partition")
 # Reason code for an ALREADY-materialized canonical Learning whose bug evidence
 # is working-only (distinct from IMP1's go-forward pre-commit hold reason).
 HISTORICAL_DEBT_REASON = "canonical_learning_historical_working_only_bug_evidence_debt"
+
+# A governed delete removes the durable Bug source while preserving its material
+# canonical Learning.  This reason is more specific than the historical
+# working-only classification and must therefore survive later generic
+# partition-maintenance passes until canonical evidence resolves the debt.
+SOURCE_ABSENT_DEBT_REASON = "source_absent"
+
+CANONICAL_LEARNING_DEBT_REASONS: frozenset[str] = frozenset({
+    HISTORICAL_DEBT_REASON,
+    SOURCE_ABSENT_DEBT_REASON,
+})
 
 # Stable target_status for the partition-integrity debt class (part of the
 # CanonicalDebt idempotency key together with board/artifact/content_hash).
@@ -50,24 +64,26 @@ _BUG_REF_PREFIXES = ("bug:", "card:bug:")
 def _is_bug_derived_ref(source_ref: str) -> bool:
     """True iff the Learning's source_artifact_ref denotes a known bug source.
 
-    Mirrors the IMP1 guard's bug-derived signal for graph nodes (where only the
-    source_ref is available). Provenance-only Learnings never match, so they are
-    excluded from the partition-integrity check (no false positives)."""
-    return source_ref.startswith(_BUG_REF_PREFIXES) or ":bug:" in source_ref
+    Delegates to the shared cognitive source_ref resolver (RKG-02 / BR3) — the
+    single authorized parser. Form-based here (no canonical_bug_probe): a graph
+    Learning carries only its source_ref, so bug:/card:bug:/:bug: are bug-derived
+    while a plain card:<uuid> is not (provenance-only Learnings never match)."""
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+        resolve_cognitive_source_ref,
+    )
+    return resolve_cognitive_source_ref(source_ref).is_bug_derived
 
 
 def _bug_artifact_id(source_ref: str) -> str:
     """Extract a stable, <=36-char artifact_id (the source bug uuid) from a
-    bug-derived Learning source_ref. Falls back to a truncated ref."""
-    parts = source_ref.split(":")
-    if source_ref.startswith("card:bug:") and len(parts) >= 3:
-        return parts[2][:36]
-    if source_ref.startswith("bug:") and len(parts) >= 2:
-        return parts[1][:36]
-    if ":bug:" in source_ref:
-        idx = parts.index("bug") if "bug" in parts else -1
-        if idx != -1 and idx + 1 < len(parts):
-            return parts[idx + 1][:36]
+    bug-derived Learning source_ref via the shared resolver. Falls back to a
+    truncated ref."""
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+        resolve_cognitive_source_ref,
+    )
+    resolution = resolve_cognitive_source_ref(source_ref)
+    if resolution.is_bug_derived and ":" in resolution.canonical_artifact_ref:
+        return resolution.canonical_artifact_ref.split(":", 1)[1][:36]
     return source_ref[:36]
 
 
@@ -82,7 +98,69 @@ def _stable_content_hash(source_ref: str, node_id: str) -> str:
     return f"clp_{digest}"
 
 
-def _scan_partition(kconn) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+async def upsert_canonical_learning_debt(
+    db: object,
+    *,
+    board_id: str,
+    node_id: str,
+    source_ref: str,
+    failure_reason: str,
+    actor_id: str | None = None,
+    correlation_id: str | None = None,
+) -> CanonicalDebtRecord:
+    """Upsert the one partition-integrity debt owned by a canonical Learning.
+
+    All writers share the same per-Learning content hash so stale reconciliation,
+    historical maintenance and canonical-evidence reconciliation converge on one
+    row.  ``source_absent`` is sticky over the less-specific historical reason:
+    a later maintenance scan must not erase the governed-delete diagnosis or its
+    correlation id merely because the graph also looks working-only.
+    """
+
+    if not node_id or not source_ref:
+        raise ValueError("canonical_learning_debt_identity_required")
+    if failure_reason not in CANONICAL_LEARNING_DEBT_REASONS:
+        raise ValueError("canonical_learning_debt_reason_invalid")
+
+    artifact_id = _bug_artifact_id(source_ref)
+    content_hash = _stable_content_hash(source_ref, node_id)
+    existing = await get_canonical_debt_store().find_by_identity(
+        db,
+        board_id=board_id,
+        artifact_type="bug",
+        artifact_id=artifact_id,
+        target_status=PARTITION_TARGET_STATUS,
+        content_hash=content_hash,
+    )
+    effective_reason = failure_reason
+    effective_correlation_id = correlation_id
+    if existing is not None:
+        if (
+            existing.failure_reason == SOURCE_ABSENT_DEBT_REASON
+            and failure_reason == HISTORICAL_DEBT_REASON
+        ):
+            effective_reason = SOURCE_ABSENT_DEBT_REASON
+        if effective_correlation_id is None:
+            effective_correlation_id = existing.correlation_id
+
+    return await upsert_canonical_debt(
+        db,
+        board_id=board_id,
+        artifact_type="bug",
+        artifact_id=artifact_id,
+        source_ref=source_ref,
+        content_hash=content_hash,
+        target_status=PARTITION_TARGET_STATUS,
+        canonical_state="pending",
+        graph_layer="canonical",
+        maturity_status="canonical_eligible",
+        failure_reason=effective_reason,
+        owner_agent_id=actor_id,
+        correlation_id=effective_correlation_id,
+    )
+
+
+def _scan_partition(graph_scope) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     """Scan the board graph for canonical bug-derived Learnings.
 
     Returns ``(violating, satisfied)`` where each item is ``(node_id, source_ref)``:
@@ -90,45 +168,32 @@ def _scan_partition(kconn) -> tuple[list[tuple[str, str]], list[tuple[str, str]]
       Bug edge (NULL/working Bug is fail-closed, never counts).
     - satisfied: canonical bug-derived Learning WITH at least one validates ->
       canonical Bug edge.
-    Uses two simple MATCH queries (no EXISTS-subquery) for LadybugDB safety.
+    Uses two simple MATCH queries (no EXISTS-subquery) for embedded graph backend safety.
     """
     all_learnings: list[tuple[str, str]] = []
     try:
-        res = kconn.execute(
+        res = graph_scope.execute(
             "MATCH (l:Learning) WHERE l.graph_layer = 'canonical' "
             "RETURN l.id, l.source_artifact_ref"
         )
-        try:
-            while res.has_next():
-                row = res.get_next()
-                node_id = str(row[0])
-                source_ref = str(row[1] or "")
-                if node_id and _is_bug_derived_ref(source_ref):
-                    all_learnings.append((node_id, source_ref))
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+        for row in res.rows:
+            node_id = str(row[0])
+            source_ref = str(row[1] or "")
+            if node_id and _is_bug_derived_ref(source_ref):
+                all_learnings.append((node_id, source_ref))
     except Exception as exc:  # pragma: no cover - defensive (degraded graph)
         logger.warning("kg.clp.scan_learnings_failed err=%s", exc)
         return [], []
 
     satisfied_ids: set[str] = set()
     try:
-        res = kconn.execute(
+        res = graph_scope.execute(
             "MATCH (l:Learning)-[r:validates]->(b:Bug) "
             "WHERE l.graph_layer = 'canonical' AND b.graph_layer = 'canonical' "
             "RETURN l.id"
         )
-        try:
-            while res.has_next():
-                satisfied_ids.add(str(res.get_next()[0]))
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+        for row in res.rows:
+            satisfied_ids.add(str(row[0]))
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("kg.clp.scan_satisfied_failed err=%s", exc)
 
@@ -163,7 +228,7 @@ def _canonical_evidence_for(node_id: str, source_ref: str) -> dict[str, str]:
 
 
 async def detect_historical_canonical_learning_debt(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     actor_id: str,
@@ -174,26 +239,23 @@ async def detect_historical_canonical_learning_debt(
     Idempotent: upsert keyed by (board, artifact, target_status, content_hash).
     Storage is CanonicalDebt only — never cognitive pending / DLQ. Returns
     ``{opened, source_refs}``."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    with open_board_connection(board_id) as (_kdb, kconn):
-        violating, _satisfied = _scan_partition(kconn)
+    # R05-C: scan through the #06 GraphTransaction port. _scan_partition only
+    # calls conn.execute()/result iteration, and the scope proxies execute to the
+    # same connection — so passing `scope` is behaviour-identical (_kdb unused).
+    async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+        violating, _satisfied = _scan_partition(scope)
 
     opened: list[str] = []
     for node_id, source_ref in violating:
-        await upsert_canonical_debt(
+        await upsert_canonical_learning_debt(
             db,
             board_id=board_id,
-            artifact_type="bug",
-            artifact_id=_bug_artifact_id(source_ref),
+            node_id=node_id,
             source_ref=source_ref,
-            content_hash=_stable_content_hash(source_ref, node_id),
-            target_status=PARTITION_TARGET_STATUS,
-            canonical_state="pending",
-            graph_layer="canonical",
-            maturity_status="canonical_eligible",
             failure_reason=HISTORICAL_DEBT_REASON,
-            owner_agent_id=actor_id,
+            actor_id=actor_id,
         )
         opened.append(source_ref)
     if opened:
@@ -206,7 +268,7 @@ async def detect_historical_canonical_learning_debt(
 
 
 async def reconcile_canonical_learning_partition_debt(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     actor_id: str,
@@ -220,10 +282,11 @@ async def reconcile_canonical_learning_partition_debt(
     calls the layer-blind ``reconcile_canonical_debt_with_evidence``.
     ``extra_evidence`` (optional) is folded through the SAME pre-filter, so a
     caller cannot smuggle working-layer evidence past the guard."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    with open_board_connection(board_id) as (_kdb, kconn):
-        _violating, satisfied = _scan_partition(kconn)
+    # R05-C: scan through the #06 GraphTransaction port (see detect_* above).
+    async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+        _violating, satisfied = _scan_partition(scope)
 
     evidence = [_canonical_evidence_for(nid, ref) for nid, ref in satisfied]
     if extra_evidence:
@@ -247,7 +310,7 @@ async def reconcile_canonical_learning_partition_debt(
 
 
 async def run_canonical_learning_partition_maintenance(
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     actor_id: str,
@@ -257,30 +320,25 @@ async def run_canonical_learning_partition_maintenance(
 
     Non-raising by contract for the worker: detection and reconcile are best
     effort; a failure here must never fail the (already successful) commit."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
+    # R05-C: scan through the #06 GraphTransaction port (see detect_* above).
     try:
-        with open_board_connection(board_id) as (_kdb, kconn):
-            violating, satisfied = _scan_partition(kconn)
+        async with await get_kg_registry().graph_transaction.begin(board_id) as scope:
+            violating, satisfied = _scan_partition(scope)
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("kg.clp.maintenance_scan_failed board=%s err=%s", board_id, exc)
         return {"opened": 0, "closed": 0}
 
     opened = 0
     for node_id, source_ref in violating:
-        await upsert_canonical_debt(
+        await upsert_canonical_learning_debt(
             db,
             board_id=board_id,
-            artifact_type="bug",
-            artifact_id=_bug_artifact_id(source_ref),
+            node_id=node_id,
             source_ref=source_ref,
-            content_hash=_stable_content_hash(source_ref, node_id),
-            target_status=PARTITION_TARGET_STATUS,
-            canonical_state="pending",
-            graph_layer="canonical",
-            maturity_status="canonical_eligible",
             failure_reason=HISTORICAL_DEBT_REASON,
-            owner_agent_id=actor_id,
+            actor_id=actor_id,
         )
         opened += 1
 
@@ -298,10 +356,13 @@ async def run_canonical_learning_partition_maintenance(
 
 
 __all__ = [
+    "CANONICAL_LEARNING_DEBT_REASONS",
     "EVIDENCE_LAYER_CANONICAL",
     "HISTORICAL_DEBT_REASON",
     "PARTITION_TARGET_STATUS",
+    "SOURCE_ABSENT_DEBT_REASON",
     "detect_historical_canonical_learning_debt",
     "reconcile_canonical_learning_partition_debt",
     "run_canonical_learning_partition_maintenance",
+    "upsert_canonical_learning_debt",
 ]

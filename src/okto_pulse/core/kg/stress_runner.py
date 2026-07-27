@@ -5,11 +5,11 @@ backpressure, quarantine) and persists release-grade evidence so the
 spec-validation gate can confirm zero corruption survives the hardening.
 
 The runner is intentionally backend-agnostic: it does NOT call
-LadybugDB directly. Each chaos mode is a deterministic, seeded
+embedded graph backend directly. Each chaos mode is a deterministic, seeded
 simulator that exercises the primitives via a pluggable
 ``ChaosExecutor`` callable. The default executor uses
 ``unittest.mock``-style fakes; production CI wires a real executor
-that hooks the primitives into ladybug's actual write paths.
+that hooks the primitives into graph backend's actual write paths.
 
 TR10: CI pass requires every corruption counter == 0 across all
 iterations. The runner refuses to mark ``passed=True`` otherwise.
@@ -23,16 +23,21 @@ substitute for the CI destructive profile and the response carries a
 
 from __future__ import annotations
 
-import json
 import logging
 import random
 import secrets
-import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable
+
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    REBUILD_AUDIT_GLOBAL_BOARD_ID,
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.rebuild_audit import resolve_rebuild_audit_artifact_store
 
 logger = logging.getLogger("okto_pulse.kg.stress_runner")
 
@@ -172,9 +177,9 @@ _default_executor._is_default_chaos_executor = True  # type: ignore[attr-defined
 _STRESS_CORRUPTION_LABELS = ("profile", "chaos_mode", "counter")
 _STRESS_EVIDENCE_LABELS = ("profile", "outcome")
 
-_corruption_counter: dict[tuple[str, str, str], int] = {}
-_evidence_counter: dict[tuple[str, str], int] = {}
-_stress_counter_lock = threading.Lock()
+_corruption_counter = runtime_state("kg.stress_runner.corruption_counter", dict)
+_evidence_counter = runtime_state("kg.stress_runner.evidence_counter", dict)
+_stress_counter_lock = runtime_lock("kg.stress_runner.counters")
 
 
 def _bump_corruption(profile: str, chaos_mode: str, counter: str) -> None:
@@ -256,6 +261,7 @@ def get_stress_evidence_labels() -> tuple[str, ...]:
 def _read_software_version() -> str:
     try:
         from importlib.metadata import version
+
         return version("okto-pulse-core")
     except Exception:
         return SOFTWARE_VERSION_FALLBACK
@@ -267,13 +273,24 @@ class KGStressProfileRunner:
 
     The runner is pure orchestration: it dispatches iterations to the
     supplied ``executor`` (a callable plugged by tests or by the CI
-    runner that wires the primitives into the LadybugDB write paths),
+    runner that wires the primitives into the embedded graph backend write paths),
     aggregates outcomes into counters, and writes a single
     ``evidence.json`` per run. No graph storage is touched directly.
     """
 
-    base_dir: Path
+    base_dir: object | None
     executor: ChaosExecutor = _default_executor
+    artifact_store: RebuildAuditArtifactStore | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
 
     def run(
         self,
@@ -381,21 +398,17 @@ class KGStressProfileRunner:
                 )
 
         evidence_id = f"stress_{secrets.token_urlsafe(12)}"
-        evidence_dir = self.base_dir / STRESS_DIRNAME / evidence_id
-        try:
-            evidence_dir.mkdir(parents=True, exist_ok=False)
-        except FileExistsError:
+        evidence_key = RebuildAuditKey(
+            namespace="stress_evidence",
+            board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+            artifact_id=evidence_id,
+        )
+        if self.artifact_store.exists(evidence_key):
             raise StressError(
                 StressErrorCode.STRESS_ENVIRONMENT_UNAVAILABLE,
                 retryable=True,
                 reason=f"evidence id collision: {evidence_id}",
             )
-        except OSError as exc:
-            raise StressError(
-                StressErrorCode.STRESS_ENVIRONMENT_UNAVAILABLE,
-                retryable=True,
-                reason=f"mkdir failed: {exc}",
-            ) from exc
 
         corruption = 0
         wal_truncated = 0
@@ -479,13 +492,10 @@ class KGStressProfileRunner:
         per_mode_complete = True
         if profile == StressProfile.CI_DESTRUCTIVE.value:
             per_mode_complete = all(
-                iterations_per_mode.get(m, 0) >= 1
-                for m in CANONICAL_CHAOS_MODES
+                iterations_per_mode.get(m, 0) >= 1 for m in CANONICAL_CHAOS_MODES
             )
         passed = (
-            counters.is_release_clean()
-            and not below_ci_floor
-            and per_mode_complete
+            counters.is_release_clean() and not below_ci_floor and per_mode_complete
         )
         outcome_label = "passed" if passed else "failed"
 
@@ -505,10 +515,8 @@ class KGStressProfileRunner:
             "failure_artifacts": failure_artifacts,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
-        evidence_file = evidence_dir / EVIDENCE_FILENAME
         try:
-            with evidence_file.open("w", encoding="utf-8") as fh:
-                json.dump(evidence_payload, fh, indent=2)
+            self.artifact_store.write_json_atomic(evidence_key, evidence_payload)
         except Exception as exc:
             raise StressError(
                 StressErrorCode.STRESS_ENVIRONMENT_UNAVAILABLE,
@@ -520,22 +528,28 @@ class KGStressProfileRunner:
         logger.warning(
             "kg.stress.run_completed profile=%s iterations=%d/%d passed=%s "
             "evidence=%s corruption=%d wal_trunc=%d orphaned=%d purge_without=%d",
-            profile, iterations_completed, iterations, passed,
-            evidence_file,
-            corruption, wal_truncated, orphaned, purge_without,
+            profile,
+            iterations_completed,
+            iterations,
+            passed,
+            self.artifact_store.reference(evidence_key),
+            corruption,
+            wal_truncated,
+            orphaned,
+            purge_without,
             extra={
                 "event": "kg.stress.run_completed",
                 "profile": profile,
                 "iterations_completed": iterations_completed,
                 "passed": passed,
-                "evidence_ref": str(evidence_file),
+                "evidence_ref": self.artifact_store.reference(evidence_key),
             },
         )
         return StressResponse(
             passed=passed,
             iterations_completed=iterations_completed,
             counters=counters,
-            evidence_ref=str(evidence_file),
+            evidence_ref=self.artifact_store.reference(evidence_key),
             profile=profile,
             seed=seed,
             iterations_per_mode=dict(iterations_per_mode),

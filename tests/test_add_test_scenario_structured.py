@@ -10,6 +10,8 @@ keeps the tolerant read resolver for coverage. Covers the 9 spec scenarios
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -17,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.services.main import SpecService
 
 pytestmark = pytest.mark.asyncio
@@ -82,7 +84,7 @@ async def _seed(db_factory, acs: list) -> tuple[str, str]:
 
 
 async def _add_scenario(db_factory, board_id, spec_id, *, linked_criteria, title="Scenario"):
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
     ), patch.object(mcp_server, "check_permission", return_value=None):
@@ -207,7 +209,7 @@ async def test_coverage_round_trip_after_create(db_factory):
     created = await _add_scenario(db_factory, board_id, spec_id, linked_criteria="ac_cccc3333")
     assert created.get("success") is True, created
 
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     with patch.object(
         mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))
     ), patch.object(mcp_server, "check_permission", return_value=None):

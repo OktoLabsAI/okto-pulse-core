@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 import pytest
 
@@ -19,29 +20,60 @@ class FakeSession:
         self.calls.append("close")
 
 
+class FakeRuntime:
+    engine = object()
+
+    def __init__(self, session: FakeSession) -> None:
+        self._session = session
+        self.session_factory = lambda: session
+
+    @asynccontextmanager
+    async def transactional_session(self):
+        try:
+            yield self._session
+            await self._session.commit()
+        except BaseException:
+            await self._session.rollback()
+            raise
+        finally:
+            await self._session.close()
+
+    @asynccontextmanager
+    async def cancel_safe_session_scope(self, session_factory=None):
+        yield (session_factory or self.session_factory)()
+
+
 @pytest.mark.asyncio
-async def test_get_db_rolls_back_and_closes_on_cancelled_error(monkeypatch):
+async def test_get_db_delegates_cancelled_cleanup_to_runtime():
     session = FakeSession()
-    monkeypatch.setattr(database, "get_session_factory", lambda: lambda: session)
+    previous_runtime = database.resolve_database_runtime()
+    database.configure_database_runtime(runtime=FakeRuntime(session))
 
-    dependency = database.get_db()
-    yielded = await dependency.__anext__()
+    try:
+        dependency = database.get_db()
+        yielded = await dependency.__anext__()
 
-    assert yielded is session
-    with pytest.raises(asyncio.CancelledError):
-        await dependency.athrow(asyncio.CancelledError())
+        assert yielded is session
+        with pytest.raises(asyncio.CancelledError):
+            await dependency.athrow(asyncio.CancelledError())
+    finally:
+        database.configure_database_runtime(runtime=previous_runtime)
 
     assert session.calls == ["rollback", "close"]
 
 
 @pytest.mark.asyncio
-async def test_get_db_session_rolls_back_and_closes_on_cancelled_error(monkeypatch):
+async def test_get_db_session_delegates_cancelled_cleanup_to_runtime():
     session = FakeSession()
-    monkeypatch.setattr(database, "get_session_factory", lambda: lambda: session)
+    previous_runtime = database.resolve_database_runtime()
+    database.configure_database_runtime(runtime=FakeRuntime(session))
 
-    with pytest.raises(asyncio.CancelledError):
-        async with database.get_db_session() as yielded:
-            assert yielded is session
-            raise asyncio.CancelledError()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            async with database.get_db_session() as yielded:
+                assert yielded is session
+                raise asyncio.CancelledError()
+    finally:
+        database.configure_database_runtime(runtime=previous_runtime)
 
     assert session.calls == ["rollback", "close"]

@@ -13,8 +13,9 @@ from sqlalchemy import select
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.kg.rebuild_audit import CognitivePendingMarker
 from okto_pulse.core.kg.rebuild_audit import CognitiveConsolidationItemStore
+from okto_pulse.core.kg.rebuild_audit import require_rebuild_audit_artifact_store
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -54,7 +55,10 @@ def isolated_closeout_kg_dir(
 
 
 def _seed_pending_item(base_dir: Path, board_id: str, source_ref: str) -> None:
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    del base_dir
+    marker = CognitivePendingMarker(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     marker.mark_for_generation(
         board_id=board_id,
         kg_generation_id=generate_kg_generation_id(),
@@ -294,7 +298,16 @@ async def test_move_card_done_blocks_task_test_and_bug_before_status_mutation(
     card_type: CardType,
     expected_entity_type: str,
 ) -> None:
-    _, _, card_id = await _seed_card(card_type, CardStatus.VALIDATION)
+    _, _, card_id = await _seed_card(
+        card_type,
+        CardStatus.VALIDATION,
+        board_settings={
+            # This test isolates cognitive closeout.  Satisfy the independent
+            # lifecycle prerequisites that otherwise (correctly) fail first.
+            "require_task_validation": False,
+            "skip_test_coverage_global": True,
+        },
+    )
     gate = _BlockingGate()
 
     db_factory = get_session_factory()
@@ -331,7 +344,12 @@ async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL,
         CardStatus.VALIDATION,
-        board_settings={"skip_cognitive_consolidation": True},
+        board_settings={
+            "skip_cognitive_consolidation": True,
+            # The board skip is scoped to cognitive closeout; disable the
+            # independent task-validation gate for this direct-move fixture.
+            "require_task_validation": False,
+        },
     )
     _seed_pending_item(isolated_closeout_kg_dir, board_id, f"task:{card_id}")
 
@@ -360,7 +378,9 @@ async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_
     card = await _card_row(card_id)
     assert card.status == CardStatus.DONE
 
-    store = CognitiveConsolidationItemStore(base_dir=isolated_closeout_kg_dir)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     latest = store.latest_generation(board_id)
     assert latest is not None
     items = store.list_items(board_id, latest)
@@ -494,7 +514,11 @@ async def test_done_blocks_on_technical_dlq_before_status_mutation(
 ) -> None:
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL, CardStatus.VALIDATION,
-        board_settings={"cognitive_readiness_policy": "blocking"},
+        board_settings={
+            "cognitive_readiness_policy": "blocking",
+            # Isolate readiness from the independent task-validation gate.
+            "require_task_validation": False,
+        },
     )
     await _seed_dlq(board_id, card_id)
     _enable_global_blocking_flag(monkeypatch)

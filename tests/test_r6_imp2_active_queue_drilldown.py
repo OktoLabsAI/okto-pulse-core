@@ -15,6 +15,8 @@ dead_letter rows and assert they do NOT inflate the active depth.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -25,20 +27,30 @@ import pytest_asyncio
 from sqlalchemy import delete
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     ConsolidationDeadLetter,
     ConsolidationQueue,
     GlobalUpdateOutbox,
 )
 from okto_pulse.core.services.queue_health_service import (
+    ActiveQueueSnapshotContractError,
+    _validate_active_queue_snapshot,
     classify_active_queue,
     get_active_queue_drilldown,
 )
+from okto_pulse.core.ports.queue_health import ActiveQueueStorageSnapshot
 
 USER_ID = "r6-imp2-user"
-NOW = datetime.now(timezone.utc)
 BOARD_PREFIX = "r6imp2-board"
+
+
+def _now() -> datetime:
+    # Captured per call, NOT at import: this module is imported during pytest
+    # COLLECTION, so a module-level NOW would make every seeded age drift by
+    # the collection→execution gap — in a full-suite run the "30s-old" outbox
+    # row arrives minutes old and classify_active_queue flips transient→stuck.
+    return datetime.now(timezone.utc)
 
 
 def _id(prefix: str) -> str:
@@ -70,13 +82,13 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r6 imp2 agent"
-        self.permissions = set()
+        self.permissions = {"board:read"}
 
 
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -84,11 +96,29 @@ async def _call(name: str, **kwargs) -> dict:
         return json.loads(await tool.fn(**kwargs))
 
 
-def _cq(board, *, artifact_type, status, age_s=10):
+def _cq(
+    board,
+    *,
+    artifact_type,
+    status,
+    age_s=10,
+    work_kind="consolidate",
+    attempts=0,
+    next_retry_at=None,
+    claimed_at=None,
+    claim_timeout_at=None,
+    last_error=None,
+):
     return ConsolidationQueue(
         id=_id("cq"), board_id=board, artifact_type=artifact_type,
         artifact_id=_id("art"), status=status,
-        triggered_at=NOW - timedelta(seconds=age_s),
+        triggered_at=_now() - timedelta(seconds=age_s),
+        work_kind=work_kind,
+        attempts=attempts,
+        next_retry_at=next_retry_at,
+        claimed_at=claimed_at,
+        claim_timeout_at=claim_timeout_at,
+        last_error=last_error,
     )
 
 
@@ -96,8 +126,8 @@ def _outbox(board, *, retry_count, processed=False, age_s=10):
     return GlobalUpdateOutbox(
         id=_id("ob"), event_id=_id("ev"), board_id=board, session_id="s",
         event_type="node_upsert", payload={"x": 1}, retry_count=retry_count,
-        processed_at=(NOW if processed else None),
-        created_at=NOW - timedelta(seconds=age_s),
+        processed_at=(_now() if processed else None),
+        created_at=_now() - timedelta(seconds=age_s),
     )
 
 
@@ -115,6 +145,32 @@ def test_classify_active_queue_thresholds():
     assert classify_active_queue(depth=5000, oldest_age_s=400, alert_threshold=5000, stuck_age_s=300) == "backpressure"
 
 
+def test_incomplete_adapter_snapshot_fails_closed() -> None:
+    snapshot = ActiveQueueStorageSnapshot(
+        consolidation_by_status={"pending": 1, "claimed": 0},
+        consolidation_by_category={"card": 1},
+        consolidation_oldest_at=_now() - timedelta(minutes=20),
+        outbox_depth=0,
+        outbox_oldest_at=None,
+        consolidation_ready_count=0,
+        consolidation_scheduled_retry_count=0,
+        consolidation_claimed_count=0,
+        consolidation_overdue_claimed_count=0,
+        consolidation_ready_oldest_at=None,
+        consolidation_overdue_claimed_oldest_at=None,
+        consolidation_next_retry_at=None,
+        consolidation_by_work_kind={},
+        consolidation_max_attempts=0,
+        consolidation_items=(),
+    )
+
+    with pytest.raises(
+        ActiveQueueSnapshotContractError,
+        match="pending_partition_mismatch",
+    ):
+        _validate_active_queue_snapshot(snapshot)
+
+
 # ===========================================================================
 # Integration — drill-down over real rows; sources separated; DLQ excluded
 # ===========================================================================
@@ -125,6 +181,7 @@ async def test_drilldown_separates_sources_and_excludes_terminal(db_factory):
     board = _id(BOARD_PREFIX)
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
+        await db.flush()
         # ConsolidationQueue: 2 pending (spec, card) + 1 claimed (card) ACTIVE; an
         # oldest pending at 400s (=> stuck); 1 done is NOT active.
         db.add(_cq(board, artifact_type="spec", status="pending", age_s=400))
@@ -169,12 +226,106 @@ async def test_drilldown_idle_when_no_active_work(db_factory):
     board = _id(BOARD_PREFIX)
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
+        await db.flush()
         db.add(_cq(board, artifact_type="card", status="done", age_s=5))
         db.add(_outbox(board, retry_count=5))  # dead_letter only
         await db.commit()
         dd = await get_active_queue_drilldown(db, board)
     assert dd["total_active_depth"] == 0
     assert dd["classification"] == "idle"
+
+
+@pytest.mark.asyncio
+async def test_scheduled_retry_is_visible_but_not_misclassified_as_stuck(
+    db_factory,
+):
+    board = _id(BOARD_PREFIX)
+    retry_at = _now() + timedelta(minutes=10)
+    async with db_factory() as db:
+        db.add(Board(id=board, name="scheduled retry", owner_id=USER_ID))
+        await db.flush()
+        db.add(
+            _cq(
+                board,
+                artifact_type="card",
+                status="pending",
+                age_s=1200,
+                work_kind="stale_reconcile",
+                attempts=2,
+                next_retry_at=retry_at,
+                last_error="database is locked",
+            )
+        )
+        await db.commit()
+        dd = await get_active_queue_drilldown(db, board)
+
+    cq = next(
+        source
+        for source in dd["sources"]
+        if source["source"] == "consolidation_queue"
+    )
+    assert cq["queue_depth"] == 1
+    assert cq["oldest_age_seconds"] >= 1200
+    assert cq["oldest_actionable_age_seconds"] == 0
+    assert cq["classification"] == "transient"
+    assert cq["reason"] == "scheduled_retry_not_yet_eligible"
+    assert cq["next_action"] == "wait_for_scheduled_retry"
+    assert cq["state_counts"] == {
+        "ready": 0,
+        "scheduled_retry": 1,
+        "claimed": 0,
+        "overdue_claimed": 0,
+    }
+    assert cq["by_work_kind"] == {"stale_reconcile": 1}
+    assert cq["max_attempts"] == 2
+    assert cq["items"][0]["operational_state"] == "scheduled_retry"
+    assert cq["items"][0]["next_retry_at"] is not None
+    assert cq["items"][0]["reason"] == "retry_backoff_not_elapsed"
+
+
+@pytest.mark.asyncio
+async def test_drilldown_uses_source_worker_and_worst_source_action(
+    db_factory,
+    monkeypatch,
+):
+    from okto_pulse.core.services import queue_health_service as qhs
+
+    board = _id(BOARD_PREFIX)
+    async with db_factory() as db:
+        db.add(Board(id=board, name="r6 source workers", owner_id=USER_ID))
+        await db.flush()
+        db.add(_cq(board, artifact_type="card", status="pending", age_s=20))
+        db.add(_outbox(board, retry_count=0, age_s=400))
+        await db.commit()
+
+        monkeypatch.setattr(
+            qhs,
+            "_runtime_worker_mode",
+            lambda family: "running"
+            if family == "consolidation_worker"
+            else "stopped",
+        )
+        dd = await get_active_queue_drilldown(db, board)
+
+    assert dd["worker_modes"] == {
+        "consolidation_queue": "running",
+        "global_update_outbox": "stopped",
+    }
+    by_source = {source["source"]: source for source in dd["sources"]}
+    assert by_source["consolidation_queue"]["worker_family"] == (
+        "consolidation_worker"
+    )
+    assert by_source["global_update_outbox"]["worker_family"] == "outbox_worker"
+    assert by_source["global_update_outbox"]["classification"] == "stuck"
+    assert dd["diagnostic"] == {
+        "bounded": True,
+        "worst_source": "global_update_outbox",
+        "classification": "stuck",
+        "worker_mode": "stopped",
+        "reason": "oldest_active_item_exceeds_stuck_threshold",
+    }
+    assert dd["next_action"] == "start_outbox_worker"
+    assert dd["worker_mode"] == "stopped"
 
 
 # ===========================================================================
@@ -189,6 +340,7 @@ async def test_kg_health_surfaces_active_queue_issue_and_counts(db_factory):
     board = _id(BOARD_PREFIX)
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
+        await db.flush()
         db.add(_cq(board, artifact_type="spec", status="pending", age_s=400))
         db.add(_outbox(board, retry_count=0, age_s=30))
         await db.commit()
@@ -221,6 +373,7 @@ async def test_mcp_queue_drilldown_tool(db_factory):
     board = _id(BOARD_PREFIX)
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 imp2", owner_id=USER_ID))
+        await db.flush()
         db.add(_cq(board, artifact_type="card", status="pending", age_s=20))
         await db.commit()
 

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastapi.routing import APIRoute
 
-from okto_pulse.core.api.analytics import _hours_between, router
+from okto_pulse.community.api.analytics import _hours_between, router
 from okto_pulse.core.services.analytics_service import _hours_between as service_hours_between
 
 

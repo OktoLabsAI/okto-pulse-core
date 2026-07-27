@@ -27,6 +27,7 @@ from typing import Any
 
 import pytest
 
+from okto_pulse.core.discovery_intent_catalog import DEFAULT_DISCOVERY_INTENTS
 from okto_pulse.core.discovery_params_schema import (
     SUPPORTED_DISCOVERY_PARAM_TYPES,
     normalize_discovery_params_schema,
@@ -35,39 +36,9 @@ from okto_pulse.core.models.schemas import DiscoveryIntentResponse
 from okto_pulse.core.services import discovery_executor
 
 
-# The seed intents shipped with the community edition. Kept in sync with
-# _bootstrap_default_discovery_intents (infra/database.py). Duplicating here
-# is intentional: the test has to fail if database.py diverges.
-SEED_INTENTS: list[dict[str, Any]] = [
-    {"name": "coverage_for_fr", "tool_binding": "okto_pulse_list_test_scenarios",
-     "params_schema": {"fr_id": {"type": "spec_child_selector", "required": True, "label": "Functional requirement", "child_types": ["functional_requirement"]}}},
-    {"name": "uncovered_requirements", "tool_binding": "okto_pulse_list_uncovered_requirements",
-     "params_schema": None},
-    {"name": "scenarios_without_tasks", "tool_binding": "okto_pulse_list_test_scenarios",
-     "params_schema": None},
-    {"name": "decisions_superseded", "tool_binding": "okto_pulse_list_supersedence_chains",
-     "params_schema": None},
-    {"name": "contradictions_in_kg", "tool_binding": "okto_pulse_kg_find_contradictions",
-     "params_schema": None},
-    {"name": "decisions_by_topic", "tool_binding": "okto_pulse_kg_find_similar_decisions",
-     "params_schema": {"topic": {"type": "text", "required": True, "label": "Topic / phrase"}}},
-    {"name": "blockers_current_sprint", "tool_binding": "okto_pulse_list_blockers",
-     "params_schema": None},
-    {"name": "dependencies_of_card", "tool_binding": "okto_pulse_get_card_dependencies",
-     "params_schema": {"card_id": {"type": "entity_selector", "entity_type": "card", "required": True, "label": "Card"}}},
-    {"name": "similar_nodes_to_text", "tool_binding": "okto_pulse_kg_query_natural",
-     "params_schema": {"query": {"type": "text", "required": True, "label": "Phrase"}}},
-    {"name": "learning_from_bugs", "tool_binding": "okto_pulse_kg_get_learning_from_bugs",
-     "params_schema": None},
-    {"name": "learnings_by_relevance", "tool_binding": "okto_pulse_kg_list_learnings_by_relevance",
-     "params_schema": None},
-    {"name": "key_decisions", "tool_binding": "okto_pulse_kg_list_key_decisions",
-     "params_schema": None},
-    {"name": "recent_activity", "tool_binding": "okto_pulse_get_activity_log",
-     "params_schema": None},
-    {"name": "my_mentions", "tool_binding": "okto_pulse_list_my_mentions",
-     "params_schema": None},
-]
+# The seed intents shipped with the community edition. Core owns the pure
+# catalog; Community owns the SQL upsert that materialises it.
+SEED_INTENTS: list[dict[str, Any]] = list(DEFAULT_DISCOVERY_INTENTS)
 
 
 # Bindings the dispatcher MUST handle. Drift here signals either a typo in

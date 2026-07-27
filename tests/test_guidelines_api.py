@@ -6,10 +6,12 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.guidelines import router as guidelines_router
-from okto_pulse.core.infra import auth as _auth_mod
-from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.models.db import Board
+from okto_pulse.community.api.guidelines import router as guidelines_router
+from okto_pulse.community.api import auth_deps as _auth_mod
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.core.infra.database import get_session_factory
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
+from sqlalchemy_test_models import Board
 
 
 USER_ID = "guidelines-api-user"
@@ -21,18 +23,31 @@ async def _client_and_board():
     board_id = f"guidelines-board-{uuid.uuid4()}"
 
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Guidelines API Board", owner_id=USER_ID))
+        db.add(
+            Board(
+                id=board_id,
+                name="Guidelines API Board",
+                owner_id=USER_ID,
+                realm_id="local",
+            )
+        )
         await db.commit()
 
     app = FastAPI()
     app.include_router(guidelines_router, prefix="/api/v1")
 
-    async def _override_db():
+    async def _override_uow():
         async with db_factory() as session:
-            yield session
+            try:
+                yield resolve_unit_of_work_factory().wrap(session)
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
 
-    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_unit_of_work] = _override_uow
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
 
     return TestClient(app), board_id
 

@@ -75,7 +75,46 @@ jobs:
         run: |
           python -m venv /tmp/wheel-check-env
           /tmp/wheel-check-env/bin/pip install dist/*.whl
-          /tmp/wheel-check-env/bin/python -c "import okto_pulse.core; print('wheel imports cleanly')"
+          /tmp/wheel-check-env/bin/pip install pytest pytest-asyncio
+          cd /tmp
+          /tmp/wheel-check-env/bin/python - <<'PY'
+          import importlib
+          import pkgutil
+          import sys
+          import okto_pulse.core
+
+          forbidden = ("fastapi", "starlette", "sqlalchemy", "aiosqlite", "okto_pulse.community")
+          modules = []
+          for item in pkgutil.walk_packages(
+              okto_pulse.core.__path__, okto_pulse.core.__name__ + "."
+          ):
+              importlib.import_module(item.name)
+              modules.append(item.name)
+          bad = sorted(
+              name for name in sys.modules
+              if any(name == token or name.startswith(token + ".") for token in forbidden)
+          )
+          assert not bad, bad
+          print(f"core-wheel-imports={len(modules)} forbidden-loaded=0")
+          PY
+          /tmp/wheel-check-env/bin/python -m pytest --noconftest -q \
+            "$GITHUB_WORKSPACE/tests/test_f01_repository_domain_ports.py" \
+            "$GITHUB_WORKSPACE/tests/test_f02_fake_saas_uow.py" \
+            "$GITHUB_WORKSPACE/tests/test_f02_uow_session_boundary.py" \
+            "$GITHUB_WORKSPACE/tests/test_f03_realm_scope_contract.py" \
+            "$GITHUB_WORKSPACE/tests/test_f05_card_transition_policy.py" \
+            "$GITHUB_WORKSPACE/tests/test_f05_domain_event_delivery.py" \
+            "$GITHUB_WORKSPACE/tests/test_f05_queue_health_policy.py" \
+            "$GITHUB_WORKSPACE/tests/test_f05_service_ownership.py" \
+            "$GITHUB_WORKSPACE/tests/test_f05_spec_materialization_policy.py" \
+            "$GITHUB_WORKSPACE/tests/test_f06_rebuild_processor.py" \
+            "$GITHUB_WORKSPACE/tests/test_f09_graph_neutral_ports.py" \
+            "$GITHUB_WORKSPACE/tests/test_f10_worker_processor_boundary.py" \
+            "$GITHUB_WORKSPACE/tests/test_f11_telemetry_edition_boundary.py" \
+            "$GITHUB_WORKSPACE/tests/test_f12_thin_inbound_boundaries.py" \
+            "$GITHUB_WORKSPACE/tests/test_f15_persistence_edition_gate.py" \
+            "$GITHUB_WORKSPACE/tests/test_f16_saas_closure_report.py" \
+            "$GITHUB_WORKSPACE/tests/test_public_contract_manifest.py"
 
   security:
     name: security + license

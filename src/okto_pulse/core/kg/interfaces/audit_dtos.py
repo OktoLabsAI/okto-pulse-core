@@ -27,8 +27,8 @@ class ConsolidationAuditData(BaseModel):
 class NodeRefData(BaseModel):
     session_id: str
     board_id: str
-    kuzu_node_id: str
-    kuzu_node_type: str
+    graph_node_id: str
+    graph_node_type: str
     operation: str
 
 

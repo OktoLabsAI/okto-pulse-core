@@ -24,8 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from okto_pulse.core.ports.skip_overrides import get_skip_override_read_port
 
 GATE_AMBIGUITY = "ambiguity_gate"
 GATE_COGNITIVE = "cognitive_consolidation"
@@ -85,36 +84,27 @@ def _revisit_expired(revisit_at: str | None) -> bool:
 
 
 async def _ambiguity_skip_override(
-    db: AsyncSession, ideation, board_id: str,
+    db: object, ideation, board_id: str,
 ) -> SkipOverride | None:
     """The ideation's own ambiguity skip, with applied_by/at from the latest
     audit log entry that turned it ON. Returns None when not skipped."""
     if not getattr(ideation, "skip_ambiguity_gate", False):
         return None
 
-    from okto_pulse.core.models.db import ActivityLog
-
     applied_by: str | None = None
     applied_at: str | None = None
     source_channel = SOURCE_AMBIGUITY
-    rows = (await db.execute(
-        select(ActivityLog)
-        .where(
-            ActivityLog.board_id == board_id,
-            ActivityLog.action == _AMBIGUITY_SKIP_ACTION,
-        )
-        .order_by(ActivityLog.created_at.desc())
-    )).scalars().all()
-    for log in rows:
-        details = log.details or {}
-        if str(details.get("ideation_id") or "") != str(ideation.id):
-            continue
-        if details.get("new_value") is True:
-            applied_by = log.actor_id
-            applied_at = log.created_at.isoformat() if log.created_at else None
-            if details.get("source"):
-                source_channel = f"{SOURCE_AMBIGUITY}:{details['source']}"
-            break
+    fact = await get_skip_override_read_port().latest_enabled_ambiguity_skip(
+        db,
+        board_id=board_id,
+        ideation_id=str(ideation.id),
+        action=_AMBIGUITY_SKIP_ACTION,
+    )
+    if fact is not None:
+        applied_by = fact.actor_id
+        applied_at = fact.created_at.isoformat() if fact.created_at else None
+        if fact.source:
+            source_channel = f"{SOURCE_AMBIGUITY}:{fact.source}"
 
     return SkipOverride(
         gate=GATE_AMBIGUITY,
@@ -148,11 +138,13 @@ def _cognitive_skip_overrides(board_id: str, relevant_ids: set[str]) -> list[Ski
     from okto_pulse.core.kg.rebuild_audit import (
         CognitiveConsolidationItemStore,
         CognitiveItemStatus,
-        default_rebuild_base_dir,
+        require_rebuild_audit_artifact_store,
     )
 
     try:
-        store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+        store = CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
         gen = store.latest_generation(board_id)
         if gen is None:
             return []
@@ -183,7 +175,7 @@ def _cognitive_skip_overrides(board_id: str, relevant_ids: set[str]) -> list[Ski
     return out
 
 
-async def ideation_skip_overrides(db: AsyncSession, ideation, board_id: str) -> list[dict[str, Any]]:
+async def ideation_skip_overrides(db: object, ideation, board_id: str) -> list[dict[str, Any]]:
     """R5-IMP2 read-model for get_ideation_context: the ideation's own ambiguity
     skip (effective override). Cognitive skips are per-artifact and surface in the
     spec/readiness contexts, not here."""
@@ -191,7 +183,7 @@ async def ideation_skip_overrides(db: AsyncSession, ideation, board_id: str) -> 
     return [override.to_dict()] if override else []
 
 
-async def spec_skip_overrides(db: AsyncSession, spec, board_id: str) -> list[dict[str, Any]]:
+async def spec_skip_overrides(db: object, spec, board_id: str) -> list[dict[str, Any]]:
     """R5-IMP2 read-model for get_spec_context: cognitive skips for the spec and its
     cards (the effective overrides on this spec's artifacts). The parent ideation's
     ambiguity skip is lineage/history, NOT an effective override of the spec, so it

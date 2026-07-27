@@ -19,20 +19,24 @@ import os
 
 import pytest
 
-from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
-from okto_pulse.core.kg.schema import (
+from okto_pulse.community.adapters.graph_connection_pool import (
+    reset_connection_pool_for_tests,
+)
+from kg_schema_testing import (
     LEGACY_NODE_COLUMNS,
     NODE_TYPES,
     RELEVANCE_COLUMNS,
     SCHEMA_VERSION,
-    _board_needs_v030_migration,
-    _node_has_legacy_columns,
-    _node_has_relevance_columns,
     bootstrap_board_graph,
     close_all_connections,
-    migrate_board_to_v030,
     open_board_connection,
 )
+
+kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+_board_needs_v030_migration = kg_runtime._board_needs_v030_migration
+_node_has_legacy_columns = kg_runtime._node_has_legacy_columns
+_node_has_relevance_columns = kg_runtime._node_has_relevance_columns
+migrate_board_to_v030 = kg_runtime.migrate_board_to_v030
 
 
 @pytest.fixture
@@ -45,7 +49,19 @@ def fresh_board():
 
 
 def test_schema_version_is_v030():
-    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
+    assert SCHEMA_VERSION in {
+        "0.3.2",
+        "0.3.3",
+        "0.3.4",
+        "0.3.5",
+        "0.3.6",
+        "0.3.7",
+        "0.3.8",
+        "0.3.9",
+        "0.3.10",
+        "0.3.11",
+        "0.3.12",
+    }
 
 
 def test_relevance_columns_declared():

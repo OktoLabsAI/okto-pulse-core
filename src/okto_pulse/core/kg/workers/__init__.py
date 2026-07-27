@@ -1,13 +1,7 @@
-"""Background workers for the knowledge graph layer."""
+"""Task-free knowledge graph worker support modules.
 
-from okto_pulse.core.kg.workers.cleanup import (
-    SessionCleanupWorker,
-    get_cleanup_worker,
-    reset_cleanup_worker_for_tests,
-)
+Runtime runners live in edition packages. Public application processors are
+available from :mod:`okto_pulse.core.application.processors`.
+"""
 
-__all__ = [
-    "SessionCleanupWorker",
-    "get_cleanup_worker",
-    "reset_cleanup_worker_for_tests",
-]
+__all__: list[str] = []

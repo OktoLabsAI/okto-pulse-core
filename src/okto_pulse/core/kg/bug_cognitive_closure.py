@@ -26,7 +26,6 @@ from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.cognitive_readiness import (
     CognitiveReadinessError,
@@ -43,6 +42,7 @@ from okto_pulse.core.services.bug_workflow_remediation import (
     BugWorkflowRemediationMessageBuilder,
     BugWorkflowRemediationPath,
 )
+from okto_pulse.core.ports.bug_cognitive_context import BugCognitiveContext
 
 
 class BugCognitiveActionLabel(str, Enum):
@@ -109,7 +109,7 @@ def bug_cognitive_source_ref(bug_id: str) -> str:
 
 async def record_bug_cognitive_skip(
     service: CognitiveReadinessService,
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     bug_id: str,
@@ -185,8 +185,226 @@ _EVIDENCE_CATEGORIES: tuple[str, ...] = (
     "lineage",
 )
 
+_REQUIRED_EVIDENCE_CATEGORIES: tuple[str, ...] = (
+    "root_cause",
+    "fix_narrative",
+    "impact",
+    "regression_proof",
+    "validation",
+    "test_scenarios",
+    "lineage",
+)
 
-def classify_bug_evidence(evidence: Mapping[str, Any] | None) -> dict[str, Any]:
+_POSITIVE_STATES = frozenset({
+    "done", "passed", "pass", "success", "succeeded", "verified",
+    "approved", "accepted", "complete", "completed", "implemented",
+    "confirmed", "valid",
+})
+_NEGATIVE_STATES = frozenset({
+    "", "false", "failed", "fail", "failure", "pending", "unknown",
+    "unverified", "rejected", "invalid", "incomplete", "not_run",
+    "not-run", "not run", "none", "null", "n/a", "no",
+})
+_CONTROL_BOOLEAN_KEYS = frozenset({
+    "confirmed", "implemented", "passed", "product_runtime_exercised",
+    "success", "verified",
+})
+
+
+def _meaningful_text(value: Any, *, minimum: int = 1) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return len(text) >= minimum and text.lower() not in _NEGATIVE_STATES
+
+
+def _semantic_content(value: Any) -> bool:
+    """Content/state check that never treats a container as evidence by itself."""
+
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return _meaningful_text(value)
+    if isinstance(value, Mapping):
+        for key in _CONTROL_BOOLEAN_KEYS:
+            if key in value and value.get(key) is not True:
+                return False
+        for key in ("status", "state", "verdict", "outcome"):
+            if key in value:
+                state = str(value.get(key) or "").strip().lower()
+                if state in _NEGATIVE_STATES:
+                    return False
+                if state in _POSITIVE_STATES:
+                    return True
+        return any(
+            _semantic_content(value.get(key))
+            for key in (
+                "content", "description", "details", "evidence", "narrative",
+                "reason", "root_cause", "summary", "text", "value",
+            )
+            if key in value
+        )
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_semantic_content(item) for item in value)
+    return False
+
+
+def _successful_state(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if not isinstance(value, Mapping):
+        return False
+    for key in _CONTROL_BOOLEAN_KEYS:
+        if key in value:
+            return value.get(key) is True
+    for key in ("status", "state", "verdict", "outcome", "recommendation"):
+        if key in value:
+            return str(value.get(key) or "").strip().lower() in _POSITIVE_STATES
+    return False
+
+
+def _has_conclusion(rows: Sequence[Mapping[str, object]]) -> bool:
+    return any(
+        _meaningful_text(str(row.get("text") or row.get("content") or ""), minimum=4)
+        for row in rows
+    )
+
+
+def _scenario_has_verified_execution(
+    scenario: Mapping[str, object], context: BugCognitiveContext
+) -> bool:
+    status = str(scenario.get("status") or "").strip().lower()
+    if status not in _POSITIVE_STATES:
+        return False
+    evidence = scenario.get("evidence")
+    if not isinstance(evidence, Mapping):
+        return False
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        compute_test_scenario_semantic_sha256,
+        verify_mcp_replay_evidence_v2,
+    )
+
+    if not context.spec_id:
+        return False
+    try:
+        scenario_sha256 = compute_test_scenario_semantic_sha256(
+            board_id=context.board_id,
+            spec_id=context.spec_id,
+            scenario=scenario,
+            acceptance_criteria=list(context.acceptance_criteria),
+        )
+    except (TypeError, ValueError):
+        return False
+    result = verify_mcp_replay_evidence_v2(
+        status,
+        evidence,
+        scenario_id=str(scenario.get("id") or "") or None,
+        scenario_sha256=scenario_sha256,
+    )
+    if not result.verified:
+        return False
+    from okto_pulse.core.ports.test_evidence import (
+        resolve_test_evidence_write_verifier,
+    )
+
+    verifier = resolve_test_evidence_write_verifier()
+    if verifier is None:
+        return False
+    verification = verifier.verify(
+        board_id=context.board_id,
+        spec_id=context.spec_id,
+        scenario_id=str(scenario.get("id") or ""),
+        scenario_sha256=scenario_sha256,
+        status=status,
+        actor_id=None,
+        evidence=evidence,
+    )
+    return verification.verified
+
+
+def _linked_test_passed(context: BugCognitiveContext) -> bool:
+    for task in context.linked_test_tasks:
+        if (task.card_type or "").strip().lower() != "test":
+            continue
+        if (task.status or "").strip().lower() not in _POSITIVE_STATES:
+            continue
+        if any(_successful_state(row) for row in task.validations) or _has_conclusion(
+            task.conclusions
+        ):
+            return True
+    return False
+
+
+def _canonical_evidence(context: BugCognitiveContext | None) -> dict[str, bool]:
+    if context is None:
+        return {category: False for category in _EVIDENCE_CATEGORIES}
+
+    scenarios_present = any(
+        isinstance(row, Mapping)
+        and (
+            _meaningful_text(str(row.get("id") or ""))
+            or _meaningful_text(str(row.get("title") or ""), minimum=4)
+        )
+        for row in context.test_scenarios
+    )
+    regression_in_lineage = any(
+        str(row.get("lineage_state") or "").strip().lower() == "complete"
+        and str(row.get("status") or "").strip().lower() in _POSITIVE_STATES
+        and _successful_state(
+            row.get("validation_metadata")
+            if isinstance(row.get("validation_metadata"), Mapping)
+            else {}
+        )
+        and (
+            _semantic_content(row.get("automated_regression_refs"))
+            or _semantic_content(row.get("regression_scenario_ids"))
+            or _semantic_content(row.get("regression_test_task_ids"))
+        )
+        for row in context.lineage
+    )
+    return {
+        "root_cause": _meaningful_text(context.action_plan, minimum=20),
+        "fix_narrative": _has_conclusion(context.conclusions),
+        "impact": (
+            _meaningful_text(context.expected_behavior, minimum=4)
+            and _meaningful_text(context.observed_behavior, minimum=4)
+            and context.expected_behavior.strip() != context.observed_behavior.strip()
+        ),
+        "regression_proof": (
+            _linked_test_passed(context)
+            or any(
+                _scenario_has_verified_execution(row, context)
+                for row in context.test_scenarios
+            )
+            or regression_in_lineage
+        ),
+        "validation": any(_successful_state(row) for row in context.validations),
+        "technical_comments": any(
+            _meaningful_text(str(row.get("content") or ""), minimum=4)
+            for row in context.comments
+        ),
+        "test_scenarios": scenarios_present,
+        "lineage": bool(
+            context.spec_id and (context.origin_task_id or context.lineage)
+        ),
+    }
+
+
+def _caller_evidence(evidence: Mapping[str, Any] | None) -> dict[str, bool]:
+    ev = evidence or {}
+    return {
+        category: _semantic_content(ev.get(category))
+        for category in _EVIDENCE_CATEGORIES
+    }
+
+
+def classify_bug_evidence(
+    evidence: Mapping[str, Any] | None,
+    *,
+    context: BugCognitiveContext | None = None,
+) -> dict[str, Any]:
     """Classify bug evidence by the deterministic categories (fr_2e10da4e).
 
     ``has_reusable_learning`` is True ONLY when the deterministic preconditions
@@ -195,12 +413,41 @@ def classify_bug_evidence(evidence: Mapping[str, Any] | None) -> dict[str, Any]:
     no_action, never a fabricated Learning (dec_6d34ae43).
     """
 
-    ev = evidence or {}
-    present = {cat: bool(ev.get(cat)) for cat in _EVIDENCE_CATEGORIES}
+    canonical = _canonical_evidence(context)
+    caller = _caller_evidence(evidence)
+    # Caller evidence is additive: it can contribute a missing signal but can
+    # neither delete nor replace a canonical one.  Sources remain explicit.
+    present = {
+        category: canonical[category] or caller[category]
+        for category in _EVIDENCE_CATEGORIES
+    }
+    sources = {
+        category: tuple(
+            source
+            for source, available in (
+                ("canonical_context", canonical[category]),
+                (f"caller_evidence:{category}", caller[category]),
+            )
+            if available
+        )
+        for category in _EVIDENCE_CATEGORIES
+    }
     has_reusable_learning = present["root_cause"] and present["fix_narrative"]
+    missing = tuple(
+        category
+        for category in _REQUIRED_EVIDENCE_CATEGORIES
+        if not present[category]
+    )
+    context_verified = bool(context is not None and context.verified)
     return {
         "categories_present": present,
+        "category_sources": sources,
         "has_reusable_learning": has_reusable_learning,
+        "required_categories": _REQUIRED_EVIDENCE_CATEGORIES,
+        "missing_categories": missing,
+        "context_verified": context_verified,
+        "evidence_ready": context_verified and not missing,
+        "caller_evidence_additive": True,
     }
 
 
@@ -214,27 +461,179 @@ def _evaluate_response(
     evidence_classification: dict[str, Any],
     bug_action_label: str | None,
     remediation: str | None = None,
+    readiness_effect: str | None = None,
+    blocking: bool | None = None,
+    precedence_explanation: Mapping[str, Any] | None = None,
+    bug_context: BugCognitiveContext | None = None,
+    cognitive_work_item_present: bool | None = None,
 ) -> dict[str, Any]:
-    # readiness_effect / blocking / precedence_explanation are MIRRORED from the
-    # central CognitiveReadinessService verdict — never recomputed (tr_28465cc7).
+    effective_readiness = readiness_effect or verdict.readiness_effect
+    effective_blocking = verdict.blocking if blocking is None else blocking
+    effective_precedence = dict(
+        precedence_explanation or verdict.precedence_explanation
+    )
     return {
         "status": status,
         "outcome_type": outcome_type,
         "reason_code": reason_code,
         "graph_commit_required": graph_commit_required,
-        "readiness_effect": verdict.readiness_effect,
-        "blocking": verdict.blocking,
-        "precedence_explanation": dict(verdict.precedence_explanation),
+        "readiness_effect": effective_readiness,
+        "blocking": effective_blocking,
+        "precedence_explanation": effective_precedence,
         "artifact_id": verdict.artifact_id,
         "bug_action_label": bug_action_label,
         "evidence_classification": evidence_classification,
+        "pipeline_readiness": {
+            "readiness_effect": verdict.readiness_effect,
+            "blocking": verdict.blocking,
+            "precedence_explanation": dict(verdict.precedence_explanation),
+        },
+        "evidence_readiness": {
+            "ready": evidence_classification["evidence_ready"],
+            "blocking": not evidence_classification["evidence_ready"],
+            "missing_categories": evidence_classification["missing_categories"],
+            "context_verified": evidence_classification["context_verified"],
+        },
+        "cognitive_work_item": {
+            "present": cognitive_work_item_present,
+            "required": bool(bug_context and bug_context.eligible_for_closeout),
+        },
+        "context": {
+            "contract_version": bug_context.contract_version if bug_context else None,
+            "verified": bool(bug_context and bug_context.verified),
+            "eligible_for_closeout": bool(
+                bug_context and bug_context.eligible_for_closeout
+            ),
+            "canonical_bug_present": (
+                bug_context.canonical_bug_present if bug_context else None
+            ),
+            "provenance_refs": (
+                bug_context.provenance_refs if bug_context else ()
+            ),
+            "load_errors": bug_context.load_errors if bug_context else (
+                "bug_cognitive_context_unavailable",
+            ),
+        },
         "technical_remediation": remediation,
     }
 
 
+def _aggregate_readiness(
+    *,
+    verdict: CognitiveReadinessVerdict,
+    context: BugCognitiveContext | None,
+    classification: Mapping[str, Any],
+    cognitive_work_item_present: bool,
+    action: str,
+) -> tuple[str, bool, dict[str, Any], str | None, str | None]:
+    """Aggregate pipeline, context and evidence without masking any blocker."""
+
+    pipeline = dict(verdict.precedence_explanation)
+    if verdict.blocking and verdict.readiness_effect == "blocking_technical":
+        return (
+            verdict.readiness_effect,
+            True,
+            pipeline,
+            "blocked",
+            "resolve_technical_debt_before_commit",
+        )
+    if context is None:
+        return (
+            "blocking_technical",
+            True,
+            {"tier": "bug_cognitive_context_unavailable", "pipeline": pipeline},
+            "bug_cognitive_context_unavailable",
+            "assemble_bug_cognitive_context",
+        )
+    if context.load_errors:
+        return (
+            "blocking_technical",
+            True,
+            {
+                "tier": "bug_cognitive_context_load_failed",
+                "errors": context.load_errors,
+                "pipeline": pipeline,
+            },
+            "bug_cognitive_context_load_failed",
+            "retry_bug_cognitive_context_assembly",
+        )
+    if not context.card_exists:
+        return (
+            "blocking_technical",
+            True,
+            {"tier": "bug_source_not_found", "pipeline": pipeline},
+            "bug_source_not_found",
+            "restore_or_reconcile_bug_source",
+        )
+    if context.eligible_for_closeout and not cognitive_work_item_present:
+        return (
+            "blocking_cognitive",
+            True,
+            {"tier": "missing_cognitive_work_item", "pipeline": pipeline},
+            "missing_cognitive_work_item",
+            "requeue_cognitive_closeout",
+        )
+    if action == CREATE_LEARNING and not context.eligible_for_closeout:
+        return (
+            "blocking_cognitive",
+            True,
+            {"tier": "bug_not_eligible_for_closeout", "pipeline": pipeline},
+            "bug_not_eligible_for_closeout",
+            "move_bug_to_done_before_cognitive_closeout",
+        )
+    if context.canonical_bug_present is not True:
+        tier = (
+            "canonical_bug_node_absent"
+            if context.canonical_bug_present is False
+            else "canonical_bug_state_unverified"
+        )
+        return (
+            "blocking_technical",
+            True,
+            {"tier": tier, "pipeline": pipeline},
+            tier,
+            "reconcile_canonical_bug_node",
+        )
+    if context.eligible_for_closeout and not classification["evidence_ready"]:
+        return (
+            "blocking_cognitive",
+            True,
+            {
+                "tier": "bug_evidence_incomplete",
+                "missing_categories": classification["missing_categories"],
+                "pipeline": pipeline,
+            },
+            "evidence_incomplete",
+            "complete_bug_cognitive_evidence",
+        )
+    if (
+        action == CREATE_LEARNING
+        and cognitive_work_item_present
+        and verdict.blocking
+        and verdict.readiness_effect == "blocking_cognitive"
+    ):
+        # An active cognitive item is the work CREATE_LEARNING is meant to
+        # resolve.  It remains visible under pipeline_readiness, but is not an
+        # admission blocker once source, graph and evidence are all verified.
+        return (
+            "ready_for_cognitive_commit",
+            False,
+            {"tier": "bug_closeout_ready_to_commit", "pipeline": pipeline},
+            None,
+            None,
+        )
+    return (
+        verdict.readiness_effect,
+        verdict.blocking,
+        pipeline,
+        None,
+        None,
+    )
+
+
 async def evaluate_bug_cognitive_closure(
     service: CognitiveReadinessService,
-    db: AsyncSession,
+    db: object,
     *,
     board_id: str,
     bug_id: str,
@@ -246,6 +645,7 @@ async def evaluate_bug_cognitive_closure(
     evidence_refs: Sequence[str] | None = None,
     revisit_at: str | None = None,
     kg_generation_id: str | None = None,
+    bug_context: BugCognitiveContext | None = None,
 ) -> dict[str, Any]:
     """Bug cognitive-closure evidence evaluation (api_8c29ce5d / br_4f1fedd9 /
     dec_7b75ce29). The SAME classification the REST/UI and the MCP twin run.
@@ -261,7 +661,7 @@ async def evaluate_bug_cognitive_closure(
     to no_action — it surfaces as technical remediation / blocking.
     """
 
-    if not evidence:
+    if not evidence and bug_context is None:
         raise CognitiveReadinessError(
             "missing_bug_evidence",
             "Bug evidence is required to evaluate cognitive closure.",
@@ -269,7 +669,7 @@ async def evaluate_bug_cognitive_closure(
         )
 
     source_ref = bug_cognitive_source_ref(bug_id)
-    classification = classify_bug_evidence(evidence)
+    classification = classify_bug_evidence(evidence, context=bug_context)
     action = str(requested_action or EVALUATE)
 
     # Skip / no_action → delegate to the central write-path (400/409 there).
@@ -295,6 +695,8 @@ async def evaluate_bug_cognitive_closure(
             bug_action_label=project_bug_action_label(
                 reason_code=item.reason_code, outcome_type=item.outcome_type,
             ),
+            bug_context=bug_context,
+            cognitive_work_item_present=True,
         )
 
     verdict = await service.evaluate_artifact(
@@ -302,46 +704,63 @@ async def evaluate_bug_cognitive_closure(
         kg_generation_id=kg_generation_id,
     )
 
+    work_item_present = bool(
+        service.cognitive_items_for(board_id, source_ref, kg_generation_id)
+    )
+    (
+        aggregate_effect,
+        aggregate_blocking,
+        aggregate_precedence,
+        blocking_status,
+        aggregate_remediation,
+    ) = _aggregate_readiness(
+        verdict=verdict,
+        context=bug_context,
+        classification=classification,
+        cognitive_work_item_present=work_item_present,
+        action=action,
+    )
+
     if action == CREATE_LEARNING:
-        # Open technical debt/DLQ blocks any graph commit — stays blocking, never
-        # silently converted to no_action.
-        if verdict.blocking and verdict.readiness_effect == "blocking_technical":
+        if aggregate_blocking:
             return _evaluate_response(
-                status="blocked", outcome_type=None, reason_code=None,
-                graph_commit_required=True, verdict=verdict,
+                status=blocking_status or "blocked",
+                outcome_type=None,
+                reason_code=None,
+                graph_commit_required=False,
+                verdict=verdict,
                 evidence_classification=classification, bug_action_label=None,
-                remediation="resolve_technical_debt_before_commit",
+                remediation=aggregate_remediation,
+                readiness_effect=aggregate_effect,
+                blocking=True,
+                precedence_explanation=aggregate_precedence,
+                bug_context=bug_context,
+                cognitive_work_item_present=work_item_present,
             )
-        # No reusable learning ⇒ closure is no_action, NOT a fabricated Learning.
-        if not classification["has_reusable_learning"]:
-            return _evaluate_response(
-                status="no_reusable_learning", outcome_type=None,
-                reason_code=CognitiveReasonCode.NO_REUSABLE_LEARNING.value,
-                graph_commit_required=False, verdict=verdict,
-                evidence_classification=classification,
-                bug_action_label=BugCognitiveActionLabel.NO_REUSABLE_LEARNING.value,
-            )
-        # Missing bug node ⇒ NO fabricated relation; technical remediation/debt.
-        if not service.cognitive_items_for(board_id, source_ref, kg_generation_id):
-            return _evaluate_response(
-                status="technical_remediation_required", outcome_type=None,
-                reason_code=None, graph_commit_required=True, verdict=verdict,
-                evidence_classification=classification, bug_action_label=None,
-                remediation="bug_node_absent",
-            )
-        # Reusable learning + node present ⇒ a real commit is required downstream.
         return _evaluate_response(
             status="ready_to_commit", outcome_type=None, reason_code=None,
             graph_commit_required=True, verdict=verdict,
             evidence_classification=classification,
             bug_action_label=BugCognitiveActionLabel.CREATE_LEARNING_VALIDATES_BUG.value,
+            readiness_effect=aggregate_effect,
+            blocking=aggregate_blocking,
+            precedence_explanation=aggregate_precedence,
+            bug_context=bug_context,
+            cognitive_work_item_present=work_item_present,
         )
 
-    # Pure classification (no write) — surfaces readiness + recommendation.
+    # Pure classification is still fail-closed: a source, graph, work-item or
+    # evidence gap is surfaced as the status instead of reporting a false ready.
     return _evaluate_response(
-        status="evaluated", outcome_type=None, reason_code=None,
+        status=blocking_status or "evaluated", outcome_type=None, reason_code=None,
         graph_commit_required=False, verdict=verdict,
         evidence_classification=classification, bug_action_label=None,
+        remediation=aggregate_remediation,
+        readiness_effect=aggregate_effect,
+        blocking=aggregate_blocking,
+        precedence_explanation=aggregate_precedence,
+        bug_context=bug_context,
+        cognitive_work_item_present=work_item_present,
     )
 
 

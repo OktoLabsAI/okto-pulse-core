@@ -10,6 +10,8 @@ the "no auto-promotion" teeth assert the entity status is UNCHANGED after a bloc
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -17,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -52,7 +54,7 @@ class _Ctx:
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
@@ -120,10 +122,18 @@ async def _seed_board_spec(db_factory, *, spec_status, require_validation=True):
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4", owner_id=USER_ID,
                      settings={"require_spec_validation": require_validation}))
+        # An active Decision satisfies the decision-required gate (spec
+        # 4028ebd4) so the moves below reach the spec_validation gate contract
+        # actually under test; Decision->Task coverage is skipped because that
+        # gate has its own suite and would fire first otherwise.
         db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=spec_status,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[],
-                    technical_requirements=[], decisions=[]))
+                    technical_requirements=[],
+                    decisions=[{"id": "dec_seed", "title": "Seed decision",
+                                "rationale": "Fixture decision for the gate contract tests.",
+                                "status": "active"}],
+                    skip_decisions_coverage=True))
         await db.commit()
     return board_id, spec_id
 

@@ -9,8 +9,9 @@ module.
 from __future__ import annotations
 
 import logging
-import threading
 from typing import Callable
+
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 
 from .decompose import DecomposeRewriter
 from .fusion import FusionRewriter
@@ -19,14 +20,17 @@ from .noop import NoopRewriter
 
 logger = logging.getLogger("okto_pulse.kg.query_rewrite")
 
-_cache: dict[str, object] = {}
-_cache_lock = threading.Lock()
+_cache = runtime_state("kg.query_rewrite.factory_cache", dict)
+_cache_lock = runtime_lock("kg.query_rewrite.factory_cache")
 
 
 def get_rewriter(
     strategy: str,
     *,
     llm_fn: Callable | None = None,
+    provider=None,
+    board_id: str | None = None,
+    actor_id: str | None = None,
     fusion_paraphrases: int = 3,
 ):
     """Return a rewriter instance for the requested strategy.
@@ -39,6 +43,16 @@ def get_rewriter(
       - ``"fusion"`` — FusionRewriter,
           needs `llm_fn: Callable[[str, int], list[str]]`.
 
+    LLM wiring (hyde/decompose/fusion): pass EITHER a legacy ``llm_fn``
+    callable (takes precedence) OR an R13-A ``provider`` (an
+    ``LLMProvider``) from which the matching bridge callable is derived
+    via ``llm_provider_bridges``. The bridge is memoized per
+    ``(provider, board_id, actor_id)`` so the derived ``llm_fn`` keeps a
+    stable identity and the per-``id(llm_fn)`` cache below still works.
+    With NEITHER, the factory is fail-closed and raises ``ValueError`` —
+    it never silently degrades to noop. The ``provider`` is ignored for
+    the ``none``/unknown strategies (behaviour unchanged).
+
     Unknown strategies fall back to NoopRewriter with a warning so a
     typo in configuration never breaks the retrieval pipeline.
     """
@@ -47,11 +61,17 @@ def get_rewriter(
     if strategy == "none":
         return _get_or_create("none", NoopRewriter)
 
-    if strategy in ("hyde", "decompose", "fusion") and llm_fn is None:
-        raise ValueError(
-            f"Rewriter strategy {strategy!r} requires an `llm_fn` — "
-            f"the project's LLM provider must be wired by the caller."
-        )
+    if strategy in ("hyde", "decompose", "fusion"):
+        if llm_fn is None and provider is not None:
+            llm_fn = _bridge_llm_fn(
+                strategy, provider, board_id=board_id, actor_id=actor_id
+            )
+        if llm_fn is None:
+            raise ValueError(
+                f"Rewriter strategy {strategy!r} requires an `llm_fn` or "
+                f"`provider` — the project's LLM access must be wired by "
+                f"the caller."
+            )
 
     if strategy == "hyde":
         # Cache per (strategy, id(llm_fn)) — two different callables
@@ -78,6 +98,29 @@ def get_rewriter(
         strategy,
     )
     return _get_or_create("none", NoopRewriter)
+
+
+def _bridge_llm_fn(strategy: str, provider, *, board_id, actor_id):
+    """Derive the legacy ``llm_fn`` from an R13-A ``LLMProvider`` via the
+    matching bridge. Imported lazily to avoid any import cycle and to keep
+    the contract port out of this module's import graph until needed.
+
+    The bridge is memoized per ``(provider, board_id, actor_id)``, so
+    repeated calls with the same wiring return the SAME callable object —
+    preserving the ``id(llm_fn)`` cache identity used by ``_get_or_create``.
+    """
+    from .llm_provider_bridges import (
+        make_decompose_llm_fn,
+        make_fusion_llm_fn,
+        make_hyde_llm_fn,
+    )
+
+    makers = {
+        "hyde": make_hyde_llm_fn,
+        "decompose": make_decompose_llm_fn,
+        "fusion": make_fusion_llm_fn,
+    }
+    return makers[strategy](provider, board_id=board_id, actor_id=actor_id)
 
 
 def _get_or_create(key: str, ctor):

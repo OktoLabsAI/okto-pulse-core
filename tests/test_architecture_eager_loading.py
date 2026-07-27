@@ -5,7 +5,7 @@ import uuid
 import pytest
 from sqlalchemy import inspect as sqlalchemy_inspect
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
     Card,
@@ -29,6 +29,7 @@ from okto_pulse.core.models.schemas import (
     RefinementSummary,
     SpecSummary,
 )
+from okto_pulse.core.ports.application_persistence import ApplicationRecord
 from okto_pulse.core.services.main import (
     BoardService,
     IdeationService,
@@ -70,6 +71,9 @@ def _architecture_design(
 
 
 def _assert_loaded(instance, relationship_name: str) -> None:
+    if isinstance(instance, ApplicationRecord):
+        assert relationship_name in instance.values
+        return
     assert relationship_name not in sqlalchemy_inspect(instance).unloaded
 
 

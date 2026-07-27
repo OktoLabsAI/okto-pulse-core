@@ -15,10 +15,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from okto_pulse.core.api.ideations import router as ideations_router
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api.ideations import router as ideations_router
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     Ideation,
@@ -181,6 +181,7 @@ async def _client():
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app), db_factory
 
 

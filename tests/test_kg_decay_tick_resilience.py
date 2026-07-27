@@ -14,7 +14,7 @@ Maps to NC-9 test evidence for the following acceptance criteria:
     AC4  — boards_failed present in _run_daily_tick return dict AND in the
              kg.relevance.tick.completed structured log extra.
     AC7  — module docstrings in kg_decay_tick.py and events/types.py no
-             longer contain "cron at 03:00 UTC"; both cite IntervalTrigger.
+             longer contain "cron at 03:00 UTC"; both cite scheduler adapter.
     AC8  — _refuse_tick_if_degraded(None, db) returns None without querying
              board health (tick global is not health-gated, FR9).
 """
@@ -165,9 +165,7 @@ def test_ac1b_regression_fleet_abort_without_isolation():
 
     boards = ["board-A", "board-B", "board-C"]
     with pytest.raises(RuntimeError, match="graph is locked"):
-        asyncio.get_event_loop().run_until_complete(
-            _broken_run_daily_tick(boards, raise_on="board-B")
-        )
+        asyncio.run(_broken_run_daily_tick(boards, raise_on="board-B"))
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +243,7 @@ async def test_ac2b_regression_session_add_raises_integrity_error(
     is load-bearing.
     """
     from sqlalchemy.exc import IntegrityError
-    from okto_pulse.core.models.db import KGTickRun
+    from sqlalchemy_test_models import KGTickRun
 
     session = clean_tick_run_session
     now = datetime.now(timezone.utc)
@@ -262,6 +260,7 @@ async def test_ac2b_regression_session_add_raises_integrity_error(
     )
     session.add(row)
     await session.flush()
+    session.expunge(row)
 
     # A second add with the same PK must raise.
     row2 = KGTickRun(
@@ -391,13 +390,13 @@ async def test_ac4_boards_failed_in_dict_and_log(caplog, db_session):
 
 
 # ---------------------------------------------------------------------------
-# AC7 — docstrings updated: no "03:00 UTC", cite IntervalTrigger
+# AC7 — docstrings updated: no "03:00 UTC", cite scheduler adapter
 # ---------------------------------------------------------------------------
 
 
 def test_ac7_module_docstring_no_cron_utc():
     """AC7a: kg_decay_tick.py module docstring must NOT contain '03:00 UTC'
-    and MUST mention 'IntervalTrigger'.
+    and MUST mention the scheduler adapter boundary.
     """
     source = _KG_DECAY_TICK_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -405,17 +404,17 @@ def test_ac7_module_docstring_no_cron_utc():
 
     assert "03:00 UTC" not in module_docstring, (
         "kg_decay_tick.py module docstring still contains stale '03:00 UTC'. "
-        "Update it to reflect the IntervalTrigger mechanism."
+        "Update it to reflect the scheduler adapter mechanism."
     )
-    assert "IntervalTrigger" in module_docstring, (
-        "kg_decay_tick.py module docstring must mention 'IntervalTrigger' "
-        "to reflect the actual scheduling mechanism."
+    assert "scheduler adapter" in module_docstring, (
+        "kg_decay_tick.py module docstring must mention the scheduler adapter "
+        "to reflect the boundary mechanism."
     )
 
 
 def test_ac7_events_types_docstring_no_cron_utc():
     """AC7b: KGDailyTick docstring in events/types.py must NOT contain
-    '03:00 UTC' and MUST mention 'IntervalTrigger'.
+    '03:00 UTC' and MUST mention the scheduler adapter boundary.
     """
     source = _EVENTS_TYPES_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -432,10 +431,10 @@ def test_ac7_events_types_docstring_no_cron_utc():
     )
     assert "03:00 UTC" not in kg_daily_tick_docstring, (
         "KGDailyTick docstring in events/types.py still contains '03:00 UTC'. "
-        "Update to reflect the IntervalTrigger mechanism."
+        "Update to reflect the scheduler adapter mechanism."
     )
-    assert "IntervalTrigger" in kg_daily_tick_docstring, (
-        "KGDailyTick docstring in events/types.py must mention 'IntervalTrigger'."
+    assert "scheduler adapter" in kg_daily_tick_docstring, (
+        "KGDailyTick docstring in events/types.py must mention the scheduler adapter."
     )
 
 
@@ -449,12 +448,12 @@ async def test_ac8_global_tick_not_health_gated():
     """AC8: _refuse_tick_if_degraded(None, db) must return None immediately
     without ever calling get_kg_health (FR9 — global tick is not health-gated).
     """
-    from okto_pulse.core.api.kg_tick import _refuse_tick_if_degraded
+    from okto_pulse.community.api.kg_tick import _refuse_tick_if_degraded
 
     mock_db = AsyncMock()
 
     with patch(
-        "okto_pulse.core.api.kg_tick.get_kg_health",
+        "okto_pulse.community.api.kg_tick.get_kg_health",
         new_callable=AsyncMock,
     ) as mock_health:
         result = await _refuse_tick_if_degraded(None, mock_db)
@@ -485,7 +484,7 @@ async def test_tick_fanout_publishes_per_real_board_never_star(db_session):
     from okto_pulse.core.events.handlers.kg_decay_tick import (
         publish_tick_events,
     )
-    from okto_pulse.core.models.db import Board, DomainEventRow
+    from sqlalchemy_test_models import Board, DomainEventRow
 
     bids = [f"board-tickfk-{_uuid.uuid4().hex[:8]}" for _ in range(2)]
     for bid in bids:
@@ -520,7 +519,7 @@ async def test_tick_fanout_scoped_to_single_board(db_session):
     from okto_pulse.core.events.handlers.kg_decay_tick import (
         publish_tick_events,
     )
-    from okto_pulse.core.models.db import Board
+    from sqlalchemy_test_models import Board
 
     bid = f"board-tickfk-{_uuid.uuid4().hex[:8]}"
     db_session.add(Board(id=bid, name=bid, owner_id="user-tickfk"))
@@ -531,27 +530,27 @@ async def test_tick_fanout_scoped_to_single_board(db_session):
 
 
 def test_tick_next_run_catch_up_semantics():
-    """IntervalTrigger de 24h nunca dispara num processo que reinicia —
+    """Scheduler interval de 24h nunca dispara num processo que reinicia —
     o next_run_time explícito honra o último tick persistido."""
     from datetime import timedelta
 
-    from okto_pulse.core.app import _tick_next_run_from_last
+    from okto_pulse.core.application.startup import tick_next_run_from_last
 
     now = datetime(2026, 6, 10, 12, 0, 0, tzinfo=timezone.utc)
     floor = now + timedelta(seconds=120)
 
     # Sem histórico → dispara logo após o boot.
-    assert _tick_next_run_from_last(None, 1440, now) == floor
+    assert tick_next_run_from_last(None, 1440, now) == floor
     # Último tick vencido (3 dias atrás, interval 24h) → dispara logo.
     stale = now - timedelta(days=3)
-    assert _tick_next_run_from_last(stale, 1440, now) == floor
+    assert tick_next_run_from_last(stale, 1440, now) == floor
     # Último tick recente → respeita o vencimento real.
     fresh = now - timedelta(hours=2)
-    assert _tick_next_run_from_last(fresh, 1440, now) == fresh + timedelta(
+    assert tick_next_run_from_last(fresh, 1440, now) == fresh + timedelta(
         minutes=1440
     )
     # Naive datetime (SQLite) é tratado como UTC.
     naive_fresh = (now - timedelta(hours=2)).replace(tzinfo=None)
-    assert _tick_next_run_from_last(naive_fresh, 1440, now) == fresh + timedelta(
+    assert tick_next_run_from_last(naive_fresh, 1440, now) == fresh + timedelta(
         minutes=1440
     )

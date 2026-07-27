@@ -26,9 +26,10 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     CognitivePendingMarker,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     DomainEventRow,
     Ideation,
@@ -150,7 +151,9 @@ def _seed_cognitive_item(
     deterministic guard does not trip."""
 
     gen = generate_kg_generation_id()
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    del base_dir
+    artifact_store = require_rebuild_audit_artifact_store()
+    marker = CognitivePendingMarker(artifact_store=artifact_store)
     marker.mark_for_generation(
         board_id=board_id,
         kg_generation_id=gen,
@@ -164,7 +167,7 @@ def _seed_cognitive_item(
         event_ref="evt_cog_int",
     )
     if status != CognitiveItemStatus.PENDING.value:
-        store = CognitiveConsolidationItemStore(base_dir=base_dir)
+        store = CognitiveConsolidationItemStore(artifact_store=artifact_store)
         items = store.list_items(board_id, gen)
         store.update_item(
             board_id=board_id,

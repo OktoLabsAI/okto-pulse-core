@@ -2,15 +2,19 @@
 version: "1.0"
 ---
 
+Knowledge Base placement and promotion are governed by
+`okto-pulse://reference/knowledge-governance`. A KB supports the Ideation; it
+does not replace its scope, questions, or first-class downstream artifacts.
+
 # Ideations Workflow — Scope Evaluation & Ambiguity-Killer Protocol
 
 ## 2.1 Ideations
 
 Ideations are the starting point for solution definition. Stories may exist before them as optional intake context. When asked to evaluate or create an ideation:
 
-> **MANDATORY — Query the KG before evaluating.** Before calling `okto_pulse_evaluate_ideation`, you MUST run the Stage 1 query set from the "Query Timing" section of the Knowledge Graph chapter: `okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_query_global`, `okto_pulse_kg_get_learning_from_bugs`. Cite any hit explicitly in the ideation (decision_id + one-line summary). Failing to do this is a protocol violation — duplicate ideations and cross-board conflicts are traced back to this skip.
+> **MANDATORY — Query the KG first.** Before moving the ideation to `evaluating` and before answering any Q&A on it, you MUST run the Stage 1 query set from the "Query Timing" section of the Knowledge Graph chapter: `okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_query_global`, `okto_pulse_kg_get_learning_from_bugs`. Cite any hit explicitly in the ideation (decision_id + one-line summary). Failing to do this is a protocol violation — duplicate ideations and cross-board conflicts are traced back to this skip.
 >
-> **Degraded-KG exception (`kg_health`-first):** if `okto_pulse_kg_health` reports a degraded `graph_state` (`recovery_needed` or `quarantined`), the mandatory triad above is EXPECTED to be unavailable — follow the **Degraded-KG Fallback Rule** in the "Query Timing" section of the Knowledge Graph chapter: record the degraded `graph_state` in the ideation and proceed. The triad skip on a degraded graph is not treated as a violation.
+> **Degraded-KG exception:** if `okto_pulse_kg_health` reports a degraded `graph_state`, follow the **Degraded-KG Fallback Rule** in the "Query Timing" section of the Knowledge Graph chapter — record the degraded state in the ideation and proceed; the triad skip is not a violation.
 
 1. **Evaluate scope**: Use `okto_pulse_evaluate_ideation` with scores 1-5 for each dimension:
 
@@ -57,6 +61,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
 4. **Evaluation only in "evaluating"**: `okto_pulse_evaluate_ideation` only works when status is `evaluating`
 5. **Editing only in "draft"**: `okto_pulse_update_ideation` only works when status is `draft`
 6. **Derivations only from "done"**: Specs and refinements can only be created from a `done` ideation (immutable snapshot)
+7. **Triage pending derivations**: the canonical surface to find done ideations that still lack a derived child is `okto_pulse_list_by_board(entity_type="ideation", filters={"derivation_pending": true})` — see `okto-pulse://reference/list_tools`
 
 ## 2.1a Ambiguity-Killer Protocol — ASK Before Advancing (MANDATORY)
 
@@ -68,7 +73,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
 
 | Symptom of ambiguity | Example | Required action |
 |---|---|---|
-| The user used a vague verb ("improve", "optimize", "support", "handle") | "improve onboarding" | Ask `okto_pulse_ask_ideation_choice_question` with concrete options such as "Reduce drop-off (Recommended)", "Shorten time-to-first-value", "Add new onboarding steps", and `allow_free_text=true` so the user can add a metric or override. |
+| The user used a vague verb ("improve", "optimize", "support", "handle") | "improve onboarding" | Ask `okto_pulse_ask_ideation_choice_question` with native option objects such as `{"label":"Reduce drop-off","recommended":true}` plus alternatives, and `allow_free_text=true` so the user can add a metric or override. |
 | The user used a noun without a definition or scope ("the dashboard", "the system", "users") | "users should see their data" | Ask which user role, which surface, which data slice. Use `okto_pulse_ask_ideation_choice_question` when there is a finite list. |
 | Multiple plausible interpretations of the same sentence | "send notifications when something changes" | Enumerate the interpretations and let the user pick. |
 | The success criterion is implicit | "make it faster" | Ask for a measurable target (latency p95, throughput, perceived load time, etc.). |
@@ -81,7 +86,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
 **Operational protocol:**
 
 1. After receiving the user's request and BEFORE writing `problem_statement` / `proposed_approach`, do an honest ambiguity scan against the table above.
-2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Prefer `okto_pulse_ask_ideation_choice_question` whenever the answer can be picked from a known set. Use 2-5 mutually exclusive options, mark the safest or most likely option as **Recommended** when you can justify it, include concise tradeoffs in option labels or the question body, and set `allow_free_text=true` so the user has an additional comment field for overrides, combinations, missing options, or constraints. Use `okto_pulse_ask_ideation_question` only when the answer is genuinely open-ended and a finite option set would be misleading.
+2. For every gap you find, post a question on the ideation. **One question per Q&A item.** Prefer `okto_pulse_ask_ideation_choice_question` whenever the answer can be picked from a known set. Use 2-5 mutually exclusive option objects, set `recommended: true` on the safest or most likely option when you can justify it, keep the label free of presentation suffixes, put concise rationale in `tradeoff` or the question body, and set `allow_free_text=true` so the user has an additional comment field for overrides, combinations, missing options, or constraints. Use `okto_pulse_ask_ideation_question` only when the answer is genuinely open-ended and a finite option set would be misleading.
 3. Use Q&A before creating or finalizing mockups when the visual surface is ambiguous. Use Q&A before creating or finalizing architecture designs when entities, interfaces, contracts, boundaries, or diagrams are ambiguous.
 4. Wait for answers. Do NOT fill the gap with a guess and proceed silently.
 5. After answers come in, re-read the full ideation context (`okto_pulse_get_ideation_context`) and confirm your understanding by either:
@@ -92,7 +97,7 @@ Ideations are the starting point for solution definition. Stories may exist befo
 **Question shape requirements:**
 
 - Bias toward multiple choice. If you can name plausible options, ask a structured choice question instead of embedding "A/B/C" inside a free-text prompt.
-- Include a recommendation whenever you can responsibly make one. Put "(Recommended)" in the option label and explain the reason briefly; the user can still pick another path.
+- Include a recommendation whenever you can responsibly make one. Set the option object's native `recommended` boolean to `true`; do not encode it in the label. Explain the reason briefly in `tradeoff` or the question; the user can still pick another path.
 - Always enable the additional free-text/comment field (`allow_free_text=true`) on choice questions so the user can qualify the selection.
 - Avoid yes/no questions when the real decision has three or more viable paths; enumerate the paths and let the user choose.
 - Do not collapse unrelated ambiguity into one poll. Ask separate Q&A items so each decision can be answered, audited, and reused downstream.

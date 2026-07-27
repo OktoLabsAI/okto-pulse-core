@@ -17,6 +17,8 @@ rows; the dedup teeth COUNT the dead_letter_backlog occurrences in each profile.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -25,7 +27,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     ConsolidationDeadLetter,
     ConsolidationQueue,
@@ -45,13 +47,13 @@ class _Ctx:
     def __init__(self):
         self.agent_id = USER_ID
         self.agent_name = "r6 test2 agent"
-        self.permissions = set()
+        self.permissions = {"board:read"}
 
 
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -87,6 +89,7 @@ async def _seed_all(db_factory):
     board = _id("board")
     async with db_factory() as db:
         db.add(Board(id=board, name="r6 test2", owner_id=USER_ID))
+        await db.flush()
         db.add(_cq(board, artifact_type="spec", status="pending", age_s=20))
         db.add(_cq(board, artifact_type="card", status="claimed", age_s=15))
         db.add(_cq(board, artifact_type="card", status="done", age_s=5))   # NOT active

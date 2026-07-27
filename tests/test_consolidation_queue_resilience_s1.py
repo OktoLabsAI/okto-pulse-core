@@ -13,9 +13,10 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sa_text
 
-from okto_pulse.core.infra.config import CoreSettings, configure_settings, get_settings
+from okto_pulse.community.config import CommunitySettings
+from okto_pulse.core.infra.config import configure_settings, get_settings
 from okto_pulse.core.infra.database import get_session_factory
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ConsolidationDeadLetter,
     ConsolidationQueue,
 )
@@ -41,7 +42,7 @@ async def _reset_settings_state():
     """Reset module-level boot snapshot + clean app_settings table to avoid
     cross-test bleed (each test computes restart_required against its own
     fresh boot baseline)."""
-    from okto_pulse.core.services import settings_service as _ss
+    import sqlalchemy_test_runtime_settings_service as _ss
 
     _ss._boot_snapshot.clear()
     try:
@@ -72,23 +73,27 @@ async def _reset_settings_state():
 async def settings_client():
     """Minimal ASGI client wrapping just the settings router."""
     from fastapi import FastAPI
-    from okto_pulse.core.api.settings import router
-    from okto_pulse.core.infra.auth import require_user
-    from okto_pulse.core.infra.database import get_db
+    from okto_pulse.community.api.auth_deps import require_principal
+    from okto_pulse.community.api.deps import get_unit_of_work
+    from okto_pulse.community.api.settings import router
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+    from okto_pulse.core.ports.authentication import Principal
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
 
-    async def _fake_user():
-        return "user-test"
-
-    async def _override_db():
+    async def _override_uow():
         factory = get_session_factory()
         async with factory() as session:
-            yield session
+            yield resolve_unit_of_work_factory().wrap(session)
 
-    app.dependency_overrides[require_user] = _fake_user
-    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[require_principal] = lambda: Principal(
+        "user-test",
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
+    app.dependency_overrides[get_unit_of_work] = _override_uow
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -131,24 +136,24 @@ def test_impl1_consolidation_dead_letter_table_exists():
 @pytest.mark.asyncio
 async def test_ac6_put_graph_db_field_triggers_restart_required(settings_client):
     """AC6: PUT em campo Graph DB → restart_required=true."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     await settings_client.get("/api/v1/settings/runtime")  # boot snapshot
 
     resp = await settings_client.put(
         "/api/v1/settings/runtime",
-        json={"kg_kuzu_buffer_pool_mb": 256},
+        json={"kg_kuzu_buffer_pool_mb": 512},
     )
     assert resp.status_code == 200
     body = resp.json()
     assert body["restart_required"] is True
     # Effective value is still the boot value (constructor-time).
-    assert body["kg_kuzu_buffer_pool_mb"] == 512
+    assert body["kg_kuzu_buffer_pool_mb"] == 256
 
 
 @pytest.mark.asyncio
 async def test_ac6_complement_put_event_queue_field_does_not_trigger_restart(settings_client):
     """Complemento AC6: PUT em campo Event Queue → restart_required=false."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
     await settings_client.get("/api/v1/settings/runtime")
 
     resp = await settings_client.put(
@@ -216,7 +221,7 @@ def test_ac8_legacy_env_yields_to_canonical(monkeypatch):
 async def test_ac14_put_max_workers_out_of_range_returns_422(settings_client):
     """AC14: PUT body={kg_queue_max_concurrent_workers: 99} → 422 (Pydantic
     range violation), nada persistido."""
-    configure_settings(CoreSettings())
+    configure_settings(CommunitySettings())
 
     before = await settings_client.get("/api/v1/settings/runtime")
     baseline = before.json()["kg_queue_max_concurrent_workers"]

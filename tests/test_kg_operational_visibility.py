@@ -22,10 +22,13 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from okto_pulse.core.kg.rebuild_audit import CognitivePendingMarker
+from okto_pulse.core.kg.rebuild_audit import (
+    CognitivePendingMarker,
+    require_rebuild_audit_artifact_store,
+)
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
 from okto_pulse.core.mcp.kg_tools import register_kg_tools
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     CanonicalDebt,
     ConsolidationDeadLetter,
@@ -59,8 +62,11 @@ def _row(artifact_type: str, id_: str) -> dict:
 
 
 def _seed_pending(base_dir, board_id: str, sources: list[dict]) -> str:
+    del base_dir
     gen = generate_kg_generation_id()
-    CognitivePendingMarker(base_dir=base_dir).mark_for_generation(
+    CognitivePendingMarker(
+        artifact_store=require_rebuild_audit_artifact_store()
+    ).mark_for_generation(
         board_id=board_id,
         kg_generation_id=gen,
         source_set=sources,
@@ -70,6 +76,9 @@ def _seed_pending(base_dir, board_id: str, sources: list[dict]) -> str:
 
 
 async def _insert_dlq_row(db, board_id: str, artifact_id: str) -> str:
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name="opviz-dlq", owner_id="user-opviz"))
+        await db.flush()
     row_id = f"dlq_{uuid.uuid4().hex[:10]}"
     db.add(
         ConsolidationDeadLetter(
@@ -119,8 +128,16 @@ def _register_pending_tool():
     async def _get_agent():
         return _Agent()
 
+    async def _get_board_agent(_board_id: str):
+        return await _get_agent()
+
     reg = _Reg()
-    register_kg_tools(reg, get_agent=_get_agent, get_db=lambda: _NullDb())
+    register_kg_tools(
+        reg,
+        get_agent=_get_agent,
+        get_uow=lambda: _NullDb(),
+        get_board_agent=_get_board_agent,
+    )
     return reg.tools["okto_pulse_kg_list_cognitive_pending_items"]
 
 

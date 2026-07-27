@@ -32,27 +32,31 @@ from okto_pulse.core.kg.canonical_learning_partition import (
     PARTITION_TARGET_STATUS,
 )
 from okto_pulse.core.kg.canonical_partition_integrity import (
+    CLASSIFICATION_WEAK_PROVENANCE,
     evaluate_canonical_learning_publication,
     pending_or_debt_exclusions,
+)
+from okto_pulse.core.kg.global_discovery.layer_parity import (
+    resolve_expected_digest_layer,
 )
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
 )
 from okto_pulse.core.kg.embedding import get_embedding_provider
 from okto_pulse.core.kg.global_discovery import metrics as gdm
-from okto_pulse.core.kg.global_discovery.outbox_worker import OutboxWorker
-from okto_pulse.core.kg.global_discovery.schema import (
+from okto_pulse.core.application.processors.global_outbox import GlobalOutboxProcessor
+from global_graph_testing import (
     bootstrap_global_discovery,
-    open_global_connection,
-    reset_global_db_for_tests,
+    execute_global_read,
+    reset_global_discovery_runtime_for_tests,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
-from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+from okto_pulse.core.kg.primitives import _apply_graph_node_create
 from okto_pulse.core.kg.rebuild_audit import (
     normalize_cognitive_artifact_id,
     record_cognitive_working_only_hold,
 )
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
 from okto_pulse.core.kg.source_maturity import (
     GRAPH_LAYER_CANONICAL,
     GRAPH_LAYER_WORKING,
@@ -60,19 +64,37 @@ from okto_pulse.core.kg.source_maturity import (
     MATURITY_WORKING_IMMATURE,
 )
 from okto_pulse.core.kg.transaction import TransactionOrchestrator
-from okto_pulse.core.models.db import Board, GlobalUpdateOutbox, KuzuNodeRef
+from sqlalchemy_test_models import Board, GlobalUpdateOutbox, KuzuNodeRef
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    configure_test_kg_registry,
+)
 
 USER_ID = "user-r7-imp5"
 QUERY_TEXT = "caching strategy for the gateway learning"
 
 
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes, _tmp_rebuild_dir):
+    from okto_pulse.community.adapters.rebuild_audit_storage import (
+        CommunityFileSystemRebuildAuditArtifactStore,
+    )
+
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        rebuild_audit_artifact_store=(
+            CommunityFileSystemRebuildAuditArtifactStore(_tmp_rebuild_dir)
+        ),
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _bootstrap_global():
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -116,21 +138,23 @@ def _node_attrs(source_ref, graph_layer, maturity, *, title, embedding):
 
 
 def _seed_learning(
-    board_id, *, source_ref, title=QUERY_TEXT, canonical=0, working=0,
+    board_id, *, source_ref, title=QUERY_TEXT, canonical=0, working=0, relates_to=(),
 ) -> tuple[str, list[str], list[str]]:
     """Seed one CANONICAL Learning (embedded on ``title``) with ``canonical`` /
-    ``working`` layer Bug evidence via ``validates`` edges. Returns
-    (learning_id, canonical_bug_ids, working_bug_ids)."""
+    ``working`` layer Bug evidence via ``validates`` edges. ``relates_to`` is an
+    iterable of ``(endpoint_node_type, endpoint_layer)`` — each materializes an
+    endpoint node + a ``relates_to`` edge (S-KG-02 non-bug taxonomy association).
+    Returns (learning_id, canonical_bug_ids, working_bug_ids)."""
     learning_id = f"imp5l_{uuid.uuid4().hex[:12]}"
     canon_ids: list[str] = []
     work_ids: list[str] = []
     emb = get_embedding_provider().encode(title)
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn, sqlite_session=None,
+            graph_scope=kconn,
             session_id=f"seed_{uuid.uuid4().hex[:8]}", board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch, "Learning", learning_id,
             _node_attrs(
                 source_ref, GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE,
@@ -139,7 +163,7 @@ def _seed_learning(
         )
         for _ in range(canonical):
             bug_id = f"imp5cb_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, "Bug", bug_id,
                 _node_attrs(
                     f"bug:{bug_id}", GRAPH_LAYER_CANONICAL, MATURITY_CANONICAL_ELIGIBLE,
@@ -151,7 +175,7 @@ def _seed_learning(
             canon_ids.append(bug_id)
         for _ in range(working):
             bug_id = f"imp5wb_{uuid.uuid4().hex[:10]}"
-            _apply_kuzu_node_create_with_timestamp(
+            _apply_graph_node_create(
                 orch, "Bug", bug_id,
                 _node_attrs(
                     f"bug:{bug_id}", GRAPH_LAYER_WORKING, MATURITY_WORKING_IMMATURE,
@@ -161,6 +185,21 @@ def _seed_learning(
             orch.create_edge(edge_type="validates", from_id=learning_id, to_id=bug_id,
                              attrs={"confidence": 0.9}, from_type="Learning", to_type="Bug")
             work_ids.append(bug_id)
+        for endpoint_type, layer in relates_to:
+            maturity = (
+                MATURITY_CANONICAL_ELIGIBLE if layer == GRAPH_LAYER_CANONICAL
+                else MATURITY_WORKING_IMMATURE
+            )
+            ep_id = f"imp5ep_{uuid.uuid4().hex[:10]}"
+            _apply_graph_node_create(
+                orch, endpoint_type, ep_id,
+                _node_attrs(
+                    f"{endpoint_type.lower()}:{ep_id}", layer, maturity,
+                    title=f"ep {ep_id}", embedding=[0.0] * 384,
+                ),
+            )
+            orch.create_edge(edge_type="relates_to", from_id=learning_id, to_id=ep_id,
+                             attrs={"confidence": 1.0}, from_type="Learning", to_type=endpoint_type)
     return learning_id, canon_ids, work_ids
 
 
@@ -171,6 +210,29 @@ def _delete_node(board_id, node_type, node_id):
         )
 
 
+async def _ensure_outbox_audit_parent(db, board_id: str, session_id: str) -> None:
+    """Persist the relational parents required by KuzuNodeRef fixtures."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy_test_models import ConsolidationAudit
+
+    if await db.get(Board, board_id) is None:
+        db.add(Board(id=board_id, name=f"R7 IMP5 {board_id}", owner_id=USER_ID))
+        await db.flush()
+    if await db.get(ConsolidationAudit, session_id) is None:
+        now = datetime.now(timezone.utc)
+        db.add(ConsolidationAudit(
+            session_id=session_id,
+            board_id=board_id,
+            artifact_id=f"outbox-{session_id[-16:]}",
+            artifact_type="test_fixture",
+            agent_id=USER_ID,
+            started_at=now,
+            committed_at=now,
+        ))
+        await db.flush()
+
+
 async def _run_outbox(db_factory, board_id, refs) -> int:
     """Insert KuzuNodeRef add-rows + one outbox event, then process it.
 
@@ -178,6 +240,7 @@ async def _run_outbox(db_factory, board_id, refs) -> int:
     session_id = f"kgses_{uuid.uuid4().hex[:16]}"
     async with db_factory() as db:
         await db.execute(delete(GlobalUpdateOutbox))  # isolate from other modules
+        await _ensure_outbox_audit_parent(db, board_id, session_id)
         for node_type, node_id in refs:
             db.add(KuzuNodeRef(
                 session_id=session_id, board_id=board_id,
@@ -189,21 +252,17 @@ async def _run_outbox(db_factory, board_id, refs) -> int:
             payload={"session_id": session_id, "nodes_added": len(refs)},
         ))
         await db.commit()
-    worker = OutboxWorker(db_factory, interval_seconds=5)
+    worker = GlobalOutboxProcessor(db_factory, interval_seconds=5)
     return await worker.process_once()
 
 
 def _digest_layer(board_id, node_id) -> str | None:
-    _gdb, gconn = open_global_connection()
-    try:
-        res = gconn.execute(
-            "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
-            "RETURN d.graph_layer",
-            {"b": board_id, "n": node_id},
-        )
-        return str(res.get_next()[0]) if res.has_next() else None
-    finally:
-        del gconn, _gdb
+    res = execute_global_read(
+        "MATCH (d:DecisionDigest) WHERE d.board_id = $b AND d.original_node_id = $n "
+        "RETURN d.graph_layer",
+        {"b": board_id, "n": node_id},
+    )
+    return str(res.rows[0][0]) if res.rows else None
 
 
 def _source_layer(board_id, learning_id) -> str | None:
@@ -241,11 +300,55 @@ def test_policy_mixed_is_publishable_working_never_counts():
     assert reason is None
 
 
-def test_policy_provenance_only_non_bug_derived_is_publishable():
+def test_policy_non_bug_requires_resolved_source_and_canonical_taxonomy():
+    # S-KG-02 / TR60 supersedes the R7-IMP5 "#4 non-bug always publishable" rule:
+    # a non-bug Learning is complete-canonical ONLY with a RESOLVED source AND a
+    # canonical relates_to to one of the seven S-KG-01 taxonomy endpoints. The
+    # authority shares the single classifier so it never diverges from the
+    # read-model diagnostic (no un-sourced/un-associated non-bug canonical leak on
+    # the digest/parity path).
+
+    # Resolved source, NO canonical taxonomy association -> NOT publishable.
     publishable, reason = evaluate_canonical_learning_publication(
-        source_artifact_ref="learning:provenance:xyz", canonical_bug_count=0,
+        source_artifact_ref="spec:spec-1:learning:0", canonical_bug_count=0,
     )
-    assert publishable is True  # #4 — not newly blocked by IMP5
+    assert publishable is False
+    assert reason == CLASSIFICATION_WEAK_PROVENANCE
+
+    # Resolved source + a canonical relates_to taxonomy endpoint -> publishable.
+    publishable, reason = evaluate_canonical_learning_publication(
+        source_artifact_ref="spec:spec-1:learning:0", canonical_bug_count=0,
+        relates_to_endpoints=(("Decision", GRAPH_LAYER_CANONICAL),),
+    )
+    assert publishable is True
+    assert reason is None
+
+    # A working-layer taxonomy endpoint is fail-closed (mirrors the guard).
+    publishable, _reason = evaluate_canonical_learning_publication(
+        source_artifact_ref="spec:spec-1:learning:0", canonical_bug_count=0,
+        relates_to_endpoints=(("Decision", GRAPH_LAYER_WORKING),),
+    )
+    assert publishable is False
+
+
+def test_resolve_expected_digest_layer_non_bug_downgrades_without_taxonomy():
+    # The shared resolver downgrades a non-bug canonical Learning to 'working' when
+    # the publication authority does not publish, and keeps it 'canonical' when a
+    # canonical taxonomy relates_to is present (S-KG-02 threading).
+    layer, reason = resolve_expected_digest_layer(
+        node_type="Learning", raw_graph_layer=GRAPH_LAYER_CANONICAL,
+        source_artifact_ref="spec:spec-1:learning:0", canonical_bug_count=0,
+        relates_to_endpoints=(),
+    )
+    assert layer == GRAPH_LAYER_WORKING
+    assert reason == CLASSIFICATION_WEAK_PROVENANCE
+
+    layer, reason = resolve_expected_digest_layer(
+        node_type="Learning", raw_graph_layer=GRAPH_LAYER_CANONICAL,
+        source_artifact_ref="spec:spec-1:learning:0", canonical_bug_count=0,
+        relates_to_endpoints=(("Decision", GRAPH_LAYER_CANONICAL),),
+    )
+    assert layer == GRAPH_LAYER_CANONICAL
     assert reason is None
 
 
@@ -342,15 +445,33 @@ async def test_worker_keeps_mixed_learning_canonical(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_worker_keeps_provenance_only_canonical(db_factory):
+async def test_worker_non_bug_taxonomy_gates_digest_layer(db_factory):
+    # S-KG-02 / TR60 end-to-end (threading proof): the outbox worker reads the
+    # Learning's relates_to taxonomy endpoints and publishes the digest at
+    # 'canonical' ONLY when a canonical S-KG-01 endpoint association exists; a
+    # resolved-but-unassociated non-bug Learning is downgraded to 'working'
+    # (supersedes the R7-IMP5 "#4 always kept canonical").
     board_id = await _new_board(db_factory)
-    # Non-bug-derived (provenance-only) Learning — #4, not newly blocked.
-    ref = f"learning:provenance:{uuid.uuid4().hex}"
-    lid, _c, _w = _seed_learning(board_id, source_ref=ref, canonical=0, working=0)
+    gdm.reset_canonical_incomplete_excluded_counter()
 
-    assert await _run_outbox(db_factory, board_id, [("Learning", lid)]) == 1
-    assert _digest_layer(board_id, lid) == GRAPH_LAYER_CANONICAL
-    assert gdm.get_canonical_incomplete_excluded_count(board_id=board_id) == 0
+    # (a) resolved source, NO canonical taxonomy relates_to -> downgraded to working.
+    ref_weak = f"spec:spec-{uuid.uuid4().hex}:learning:0"
+    lid_weak, _c, _w = _seed_learning(board_id, source_ref=ref_weak, canonical=0, working=0)
+    assert await _run_outbox(db_factory, board_id, [("Learning", lid_weak)]) == 1
+    assert _digest_layer(board_id, lid_weak) == GRAPH_LAYER_WORKING
+    assert _source_layer(board_id, lid_weak) == GRAPH_LAYER_CANONICAL  # source NEVER demoted
+    assert gdm.get_canonical_incomplete_excluded_count(board_id=board_id) == 1
+
+    # (b) same shape + a CANONICAL relates_to taxonomy endpoint -> kept canonical.
+    ref_ok = f"spec:spec-{uuid.uuid4().hex}:learning:0"
+    lid_ok, _c2, _w2 = _seed_learning(
+        board_id, source_ref=ref_ok, canonical=0, working=0,
+        relates_to=(("Decision", GRAPH_LAYER_CANONICAL),),
+    )
+    assert await _run_outbox(db_factory, board_id, [("Learning", lid_ok)]) == 1
+    assert _digest_layer(board_id, lid_ok) == GRAPH_LAYER_CANONICAL
+    # No NEW exclusion for the publishable one.
+    assert gdm.get_canonical_incomplete_excluded_count(board_id=board_id) == 1
 
 
 @pytest.mark.asyncio

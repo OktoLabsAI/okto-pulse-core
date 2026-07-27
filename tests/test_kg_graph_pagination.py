@@ -25,8 +25,9 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from okto_pulse.core.api import kg_routes
-from okto_pulse.core.api.kg_routes import router as kg_router
+from okto_pulse.community.api import kg_routes
+from okto_pulse.community.api.kg_routes import router as kg_router
+from okto_pulse.core.application.use_cases import ActorContext
 
 
 SEED_BOARD = "board-s8-pagination"
@@ -164,6 +165,11 @@ def client(monkeypatch):
     )
     app = FastAPI()
     app.include_router(kg_router, prefix="/api/v1")
+    async def _override_actor():
+        return ActorContext("test-user", "rest", board_id=SEED_BOARD, roles=("admin",))
+
+    app.dependency_overrides[kg_routes.require_kg_actor] = _override_actor
+    app.dependency_overrides[kg_routes.require_kg_board_actor] = _override_actor
     return TestClient(app)
 
 
@@ -451,6 +457,11 @@ class TestNodesAndStats:
         )
         app = FastAPI()
         app.include_router(kg_router, prefix="/api/v1")
+        async def _override_actor():
+            return ActorContext("test-user", "rest", board_id=SEED_BOARD, roles=("admin",))
+
+        app.dependency_overrides[kg_routes.require_kg_actor] = _override_actor
+        app.dependency_overrides[kg_routes.require_kg_board_actor] = _override_actor
         local_client = TestClient(app)
 
         resp = local_client.get(f"/api/v1/kg/boards/{SEED_BOARD}/stats")
@@ -506,41 +517,22 @@ class TestCrossPageEdges:
     conectados como se fossem órfãos."""
 
     def test_fetch_edges_includes_edges_with_one_endpoint_in_page(self, monkeypatch):
-        from okto_pulse.core.api import kg_routes
+        from okto_pulse.community.api import kg_routes
+        from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-        class _Result:
-            def __init__(self, rows):
-                self._rows = list(rows)
-
-            def has_next(self):
-                return bool(self._rows)
-
-            def get_next(self):
-                return self._rows.pop(0)
-
-            def close(self):
-                pass
-
-        class _Conn:
-            def execute(self, query):
+        class _CypherExecutor:
+            def execute_read_only(self, _board_id, query, _params=None, **_kwargs):
                 if ":belongs_to" in query and "(a:Requirement)" in query:
-                    return _Result([
-                        ("req-in-page", "entity-OUT-of-page", 0.9),
-                        ("req-other-page", "entity-in-page", 0.8),
-                        ("req-out", "entity-out", 0.7),
-                    ])
-                return _Result([])
+                    return {
+                        "rows": [
+                            ("req-in-page", "entity-OUT-of-page", 0.9),
+                            ("req-other-page", "entity-in-page", 0.8),
+                            ("req-out", "entity-out", 0.7),
+                        ]
+                    }
+                return {"rows": []}
 
-        class _BC:
-            def __enter__(self):
-                return (None, _Conn())
-
-            def __exit__(self, *a):
-                return None
-
-        import okto_pulse.core.kg.schema as schema
-
-        monkeypatch.setattr(schema, "open_board_connection", lambda _bid: _BC())
+        monkeypatch.setattr(get_kg_registry(), "cypher_executor", _CypherExecutor())
         monkeypatch.setattr(
             kg_routes,
             "_relation_pairs",

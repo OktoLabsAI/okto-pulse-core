@@ -19,13 +19,15 @@ behavior by invoking the handler with a fully wired async DB session.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from okto_pulse.core.models.db import Board, BugSeverity, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, BugSeverity, CardType, Spec, SpecStatus
 from okto_pulse.core.mcp import server as mcp_server
 
 
@@ -126,7 +128,7 @@ def _stub_ctx():
 async def _call_create_card(**kwargs) -> dict:
     """Resolve the registered FastMCP handler and invoke it directly."""
     from okto_pulse.core.infra.database import get_session_factory
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool("okto_pulse_create_card")
     fn = tool.fn  # underlying async function (after xml_safety + body)
     result_json = await fn(**kwargs)

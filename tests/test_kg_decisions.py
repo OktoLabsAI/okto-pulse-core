@@ -19,7 +19,7 @@ import re
 
 import pytest
 
-from okto_pulse.core.kg.workers.deterministic_worker import (
+from okto_pulse.core.application.processors.deterministic_kg import (
     DeterministicWorker,
 )
 from okto_pulse.core.models.schemas import Decision, DecisionStatus

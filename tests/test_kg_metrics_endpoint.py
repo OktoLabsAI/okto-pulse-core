@@ -13,8 +13,8 @@ import os
 
 import pytest
 
-from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
-from okto_pulse.core.kg.schema import (
+from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
+from kg_schema_testing import (
     bootstrap_board_graph,
     close_all_connections,
     open_board_connection,
@@ -79,7 +79,7 @@ def _seed_mixed_graph(board_id: str) -> None:
 
 
 def test_metrics_empty_board(board):
-    from okto_pulse.core.api.kg_routes import get_kg_metrics
+    from okto_pulse.community.api.kg_routes import get_kg_metrics
     import asyncio
     result = asyncio.run(get_kg_metrics(board))
     assert result["kg_bootstrapped"] is True
@@ -89,7 +89,7 @@ def test_metrics_empty_board(board):
 
 
 def test_metrics_missing_board_returns_noop():
-    from okto_pulse.core.api.kg_routes import get_kg_metrics
+    from okto_pulse.community.api.kg_routes import get_kg_metrics
     import asyncio
     result = asyncio.run(get_kg_metrics("nonexistent-xxx"))
     assert result["kg_bootstrapped"] is False
@@ -97,7 +97,7 @@ def test_metrics_missing_board_returns_noop():
 
 
 def test_metrics_mixed_layers(board):
-    from okto_pulse.core.api.kg_routes import get_kg_metrics
+    from okto_pulse.community.api.kg_routes import get_kg_metrics
     import asyncio
     _seed_mixed_graph(board)
     result = asyncio.run(get_kg_metrics(board))
@@ -113,7 +113,7 @@ def test_metrics_mixed_layers(board):
 
 
 def test_metrics_node_counts(board):
-    from okto_pulse.core.api.kg_routes import get_kg_metrics
+    from okto_pulse.community.api.kg_routes import get_kg_metrics
     import asyncio
     _seed_mixed_graph(board)
     result = asyncio.run(get_kg_metrics(board))
@@ -123,7 +123,7 @@ def test_metrics_node_counts(board):
 
 
 def test_metrics_includes_health_targets(board):
-    from okto_pulse.core.api.kg_routes import get_kg_metrics
+    from okto_pulse.community.api.kg_routes import get_kg_metrics
     import asyncio
     result = asyncio.run(get_kg_metrics(board))
     ht = result["health_targets"]

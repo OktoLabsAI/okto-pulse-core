@@ -18,6 +18,8 @@ coexistence teeth drive the REAL MCP tools and assert they still refuse.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import os
 import sys
@@ -26,13 +28,15 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from sqlalchemy import select
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_r5i3_"))
 
-import okto_pulse.core.api.cognitive_action_center as ac_api
-from okto_pulse.core.api.cognitive_action_center import (
+import okto_pulse.community.api.cognitive_action_center as ac_api
+from okto_pulse.community.api.cognitive_action_center import (
     CognitiveClearRequest,
     CognitiveSkipRequest,
     clear_cognitive_skip_endpoint,
@@ -44,8 +48,9 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveItemStatus,
     compute_cognitive_item_id,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import ActivityLog, Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import ActivityLog, Board, Ideation, IdeationStatus
 from okto_pulse.core.services.main import IdeationService
 
 USER_ID = "r5-imp3-human"
@@ -119,8 +124,8 @@ async def test_ambiguity_rest_endpoint_is_human_authorized(db_factory):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.ideations import router as ideations_router
-    from okto_pulse.core.infra import auth as _auth_mod
+    from okto_pulse.community.api.ideations import router as ideations_router
+    from okto_pulse.community.api import auth_deps as _auth_mod
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     board_id = _id("board")
@@ -143,6 +148,7 @@ async def test_ambiguity_rest_endpoint_is_human_authorized(db_factory):
 
     app.dependency_overrides[get_db] = _odb
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     client = TestClient(app)
 
     resp = client.patch(f"/api/v1/ideations/{ideation_id}/ambiguity-gate-skip",
@@ -157,8 +163,6 @@ async def test_ambiguity_rest_endpoint_is_human_authorized(db_factory):
 
 
 def _seed_pending(store, board, gen, source_ref):
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
     item = {
         "item_id": compute_cognitive_item_id(board, gen, source_ref),
         "board_id": board, "kg_generation_id": gen, "source_ref": source_ref,
@@ -166,9 +170,17 @@ def _seed_pending(store, board, gen, source_ref):
         "status": CognitiveItemStatus.PENDING.value,
         "recorded_at": "2026-06-17T00:00:00+00:00",
     }
-    record = {"pending_count": 1, "pending_refs": [source_ref], "status": "pending",
+    record = {"board_id": board, "kg_generation_id": gen,
+              "pending_count": 1, "pending_refs": [source_ref], "status": "pending",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=gen,
+        ),
+        record,
+    )
 
 
 @pytest.mark.asyncio
@@ -192,7 +204,7 @@ async def test_cognitive_human_apply_and_remove_are_audited(db_factory, tmp_path
             CognitiveSkipRequest(source_ref=source_ref, reason_code="trivial_fix",
                                  justification="no reusable learning",
                                  evidence_refs=["card:other"]),
-            db, actor=USER_ID,
+            SQLAlchemyUnitOfWork(db), actor=USER_ID,
         )
     # Audit on the response + the durable ledger: user, reason, justification, ts.
     assert applied["status"] == CognitiveItemStatus.SKIPPED.value
@@ -209,7 +221,10 @@ async def test_cognitive_human_apply_and_remove_are_audited(db_factory, tmp_path
     # REMOVE (clear/reopen) via the HUMAN REST endpoint.
     async with db_factory() as db:
         cleared = await clear_cognitive_skip_endpoint(
-            board, CognitiveClearRequest(source_ref=source_ref), db, actor=USER_ID,
+            board,
+            CognitiveClearRequest(source_ref=source_ref),
+            SQLAlchemyUnitOfWork(db),
+            actor=USER_ID,
         )
     assert cleared["status"] == CognitiveItemStatus.PENDING.value
     assert cleared["actor"] == USER_ID
@@ -235,7 +250,7 @@ class _Ctx:
 async def _mcp_call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):

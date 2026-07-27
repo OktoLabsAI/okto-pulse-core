@@ -2,11 +2,50 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from enum import Enum
+
 from okto_pulse.core.mcp.server import _activity_log_summary
 from okto_pulse.core.services.activity_log import (
+    activity_log_changes,
     activity_log_summary,
     sanitize_activity_details,
 )
+
+
+class _ActivityPriority(Enum):
+    LOW = "low"
+    HIGH = "high"
+
+
+def test_activity_log_changes_are_json_safe_and_detached():
+    previous_labels = ["backend"]
+    next_labels = ["backend", "urgent"]
+    changes = activity_log_changes(
+        {
+            "priority": _ActivityPriority.LOW,
+            "labels": previous_labels,
+            "due_date": datetime(2026, 7, 21, 10, 0, tzinfo=timezone.utc),
+        },
+        {
+            "priority": _ActivityPriority.HIGH,
+            "labels": next_labels,
+            "due_date": datetime(2026, 7, 22, 10, 0, tzinfo=timezone.utc),
+        },
+    )
+
+    previous_labels.append("mutated-after-snapshot")
+    next_labels.append("mutated-after-snapshot")
+
+    assert changes == [
+        {"field": "priority", "old": "low", "new": "high"},
+        {"field": "labels", "old": ["backend"], "new": ["backend", "urgent"]},
+        {
+            "field": "due_date",
+            "old": "2026-07-21T10:00:00+00:00",
+            "new": "2026-07-22T10:00:00+00:00",
+        },
+    ]
 
 
 def test_summary_for_arch_create_carries_trigger_and_counts():

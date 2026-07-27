@@ -26,11 +26,22 @@ from okto_pulse.core.telemetry.event_contract import (  # noqa: E402
 )
 from okto_pulse.core.telemetry.schema import TELEMETRY_EVENT_TYPES  # noqa: E402
 
-SRC = ROOT / "src" / "okto_pulse" / "core"
+CORE_SRC = ROOT / "src" / "okto_pulse" / "core"
+COMMUNITY_SRC = (
+    ROOT.parent
+    / "okto_labs_pulse_community"
+    / "src"
+    / "okto_pulse"
+    / "community"
+)
 
 
-def _src(rel: str) -> str:
-    return (SRC / rel).read_text(encoding="utf-8")
+def _core_src(rel: str) -> str:
+    return (CORE_SRC / rel).read_text(encoding="utf-8")
+
+
+def _community_src(rel: str) -> str:
+    return (COMMUNITY_SRC / rel).read_text(encoding="utf-8")
 
 
 # --- ts_d0621cf9: the live contract covers exactly the declared types ---------
@@ -47,21 +58,28 @@ def test_live_contract_has_no_violations() -> None:
 # --- wired types are REAL: emitter present + aggregate live (no ghost) --------
 
 def test_wired_types_have_real_emitter_and_live_aggregate() -> None:
-    app_src = _src("app.py")
-    metrics_src = _src("api/metrics.py")
-    sender_src = _src("telemetry/sender.py")
+    app_src = _community_src("app.py")
+    metrics_src = _community_src("api/metrics.py")
+    # R10-E Pass 2: TelemetryBeaconSender moved to Community. Read the community
+    # sender source (sibling repo) to verify aggregates are still materialised.
+    community_sender = (
+        ROOT.parent
+        / "okto_labs_pulse_community"
+        / "src" / "okto_pulse" / "community" / "adapters" / "telemetry_sender.py"
+    )
+    sender_src = community_sender.read_text(encoding="utf-8")
     for entry in TELEMETRY_EVENT_CONTRACT.values():
         if entry.coverage != COVERAGE_WIRED:
             continue
         # a wired aggregate must really be one the sender materialises
         assert entry.aggregate in LIVE_AGGREGATE_MAPS
-        assert entry.aggregate in sender_src, f"{entry.aggregate} not produced by sender.py"
+        assert entry.aggregate in sender_src, f"{entry.aggregate} not produced by community telemetry_sender.py"
     # the wired emitters exist in code: http via the app middleware, guided_help via
     # the generic event endpoint, and cli/mcp/kg/lifecycle/pipeline via the R5A-B
     # runtime emitter helpers.
     assert 'record_event("http"' in app_src
     assert "record_event(" in metrics_src
-    emitters_src = _src("telemetry/emitters.py")
+    emitters_src = _core_src("telemetry/emitters.py")
     for fn in (
         "def emit_cli_event",
         "def emit_mcp_event",
@@ -70,9 +88,9 @@ def test_wired_types_have_real_emitter_and_live_aggregate() -> None:
         "def emit_pipeline_transition_event",
     ):
         assert fn in emitters_src, f"missing real emitter {fn}"
-    # every live aggregate name is actually a sender metrics key (no ghost in the set)
+    # every live aggregate name is in the community sender (no ghost in the set)
     for aggregate in LIVE_AGGREGATE_MAPS:
-        assert aggregate in sender_src, f"LIVE_AGGREGATE_MAPS lists {aggregate} but sender.py never emits it"
+        assert aggregate in sender_src, f"LIVE_AGGREGATE_MAPS lists {aggregate} but community telemetry_sender.py never emits it"
 
 
 # --- ts_e8f6c83d: after R5A-B every maintained type is wired (no pending) ------
@@ -90,10 +108,16 @@ def test_no_maintained_type_is_pending_after_r5a_b() -> None:
 
 def test_lifecycle_and_pipeline_now_have_live_aggregates() -> None:
     # R5A-B added the dedicated maps that used to be missing (the closed gap).
-    sender_src = _src("telemetry/sender.py")
+    # R10-E Pass 2: sender moved to Community — verify in the community adapter.
+    community_sender = (
+        ROOT.parent
+        / "okto_labs_pulse_community"
+        / "src" / "okto_pulse" / "community" / "adapters" / "telemetry_sender.py"
+    )
+    sender_src = community_sender.read_text(encoding="utf-8")
     for aggregate in ("lifecycle_counts", "pipeline_transition_counts"):
         assert aggregate in LIVE_AGGREGATE_MAPS
-        assert aggregate in sender_src  # the sender materialises them now
+        assert aggregate in sender_src  # the community sender materialises them
 
 
 # --- tr_8c6167d8: the contract test FAILS on each violation mode --------------

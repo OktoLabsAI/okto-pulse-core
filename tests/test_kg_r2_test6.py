@@ -54,14 +54,14 @@ async def test_fast_path_then_sweep_is_idempotent(db_factory):
         fast = await reconcile_stale_canonical(db, board_id=board_id, source_refs=[spec_ref])
         await db.commit()
     assert fast.demoted
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0
 
     # ... a following full sweep is a NO-OP (already converged).
     async with db_factory() as db:
         sweep = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
     assert sweep.demoted == []
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0
 
 
 @pytest.mark.asyncio
@@ -75,14 +75,14 @@ async def test_sweep_then_fast_path_is_idempotent(db_factory):
         sweep = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
     assert sweep.demoted
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0
 
     # ... a following event fast-path is a NO-OP (same converged final state).
     async with db_factory() as db:
         fast = await reconcile_stale_canonical(db, board_id=board_id, source_refs=[spec_ref])
         await db.commit()
     assert fast.demoted == []
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0
 
 
 # ===========================================================================
@@ -98,7 +98,7 @@ async def test_canonical_current_is_real_pipeline_and_reconcile_is_convergent(db
     # ANTI-THEATER: the canonical-current node was produced by the real
     # DeterministicWorker + commit_consolidation — its source_artifact_ref points
     # at the real SQL spec, not a synthetic seed key.
-    canonical = first_canonical_node(board_id, "Requirement")
+    canonical = await first_canonical_node(board_id, "Requirement")
     assert canonical is not None
     _node_id, source_ref = canonical
     assert source_ref.startswith(f"spec:{spec_id}"), source_ref
@@ -110,10 +110,10 @@ async def test_canonical_current_is_real_pipeline_and_reconcile_is_convergent(db
         first = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
     assert first.demoted
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0
 
     async with db_factory() as db:
         again = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
     assert again.demoted == []
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0

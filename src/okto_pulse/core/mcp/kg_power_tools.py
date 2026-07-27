@@ -1,16 +1,23 @@
 """MCP tools for the 3 tier power escape hatch tools.
 
-Registered via `register_kg_power_tools(mcp, get_agent, get_db)`.
+Registered via `register_kg_power_tools(mcp, get_agent)`. These graph-only escape
+hatches never open a relational session (spec R01A MCP-FU4 dropped the unused
+``get_db`` injection).
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
 from typing import Any
 
+from okto_pulse.core.mcp.kg_authorization import (
+    kg_permission_error,
+    principal_id,
+)
 from okto_pulse.core.kg.tier_power import (
     TierPowerError,
     check_rate_limit,
@@ -126,7 +133,7 @@ async def _record_cypher_hits(
     """Fire-and-forget loop that increments the hit counter for each pair.
 
     ``record_query_hit`` is a thin wrapper around the in-process counter
-    that lazy-flushes to LadybugDB when ``HIT_FLUSH_THRESHOLD`` is reached. The
+    that lazy-flushes to the graph store when ``HIT_FLUSH_THRESHOLD`` is reached. The
     invocation must NEVER block the query response (BR3 + dec_3a6eb8ad).
     """
     try:
@@ -154,7 +161,57 @@ def _err(code: str, message: str, **extra: Any) -> str:
     return json.dumps(payload, default=str)
 
 
-def register_kg_power_tools(mcp, *, get_agent, get_db) -> None:
+def register_kg_power_tools(
+    mcp,
+    *,
+    get_agent,
+    get_board_agent=None,
+    get_global_agent=None,
+) -> None:
+    async def _authorized_board_agent(
+        board_id: str,
+        required_permission: str,
+    ):
+        agent = await get_agent()
+        if agent is None or get_board_agent is None:
+            return None, None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        try:
+            board_agent = await get_board_agent(board_id)
+        except Exception:
+            logger.warning(
+                "kg.power.board_acl_resolution_failed board=%s",
+                board_id,
+                exc_info=True,
+            )
+            return None, None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if board_agent is None:
+            return None, None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        if principal_id(board_agent) != principal_id(agent):
+            return None, None, _err(
+                "unauthorized",
+                "authentication failed or board access denied",
+            )
+        for permission in dict.fromkeys(("board.read", required_permission)):
+            permission_error = kg_permission_error(
+                board_agent,
+                permission,
+            )
+            if permission_error is not None:
+                return None, None, _err(
+                    "permission_denied",
+                    permission_error,
+                    required_permission=permission,
+                )
+        return agent, board_agent, None
 
     @mcp.tool()
     async def okto_pulse_kg_query_cypher(
@@ -172,9 +229,13 @@ normalize, auto-LIMIT, variable-length paths bounded to *..20, timeout 5s defaul
 rows bounded to an agent-safe page, numeric scores rounded. max_rows: 0=agent-safe
 default (50), 1..1000 explicit, >1000 rejected. Full args/returns:
 okto-pulse://reference/tool-docs/kg."""
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "kg.power.cypher",
+        )
+        if auth_error is not None:
+            return auth_error
+        assert agent is not None
         logger.debug("[KG] kg_query_cypher called: board_id=%s cypher_len=%d max_rows=%d timeout_ms=%d",
                      board_id, len(cypher), max_rows, timeout_ms)
         try:
@@ -241,26 +302,30 @@ okto-pulse://reference/tool-docs/kg."""
         until: str = "",
         graph_layer: str = "canonical",
     ) -> str:
-        """Natural-language search over a board's knowledge graph using hybrid search
-(embedding + HNSW + traversal), falling back to string match if embedding is
-unavailable. Deterministic — invokes NO LLM (local sentence-transformers or stub).
-Args include nl_query, limit (default 20), min_confidence (default 0.5), and optional
-since/until ISO-8601 bounds on created_at. graph_layer (canonical|working|all,
-default canonical) scopes results by KG layer; an invalid value fails closed with a
-structured error BEFORE execution. Returns nodes, total_matches, applied_graph_layer
-(echo) and a layer_audit (counts_by_layer) where metadata/legacy_unknown never count
-as canonical/working leakage, plus optional warning and temporal_filter metadata when
-a time bound is active. Full args: okto-pulse://reference/tool-docs/kg."""
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        """Natural-language search over a board's knowledge graph using hybrid
+        search (embedding + HNSW + traversal), falling back to string match when
+        embedding is unavailable. Deterministic — invokes NO LLM. Optional
+        min_confidence (default 0.5) and since/until ISO-8601 bounds on
+        created_at; graph_layer (canonical|working|all, default canonical) scopes
+        results by KG layer and fails closed on invalid values BEFORE execution.
+        Returns nodes, total_matches, applied_graph_layer and a layer_audit where
+        metadata/legacy_unknown never count as canonical/working leakage.
+        Docs: okto-pulse://reference/tool-docs/kg.
+        """
+        agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "kg.power.natural",
+        )
+        if auth_error is not None:
+            return auth_error
+        assert agent is not None
         logger.debug("[KG] kg_query_natural called: board_id=%s query=%r limit=%d",
                      board_id, nl_query[:80], limit)
         try:
             check_rate_limit(agent.id)
             # FR0: reject an oversize natural query at the MCP boundary BEFORE
             # the embedding provider is resolved. execute_natural_query resolves
-            # registry.embedding_provider internally, so the guard MUST run
+            # registry.require_embedding_provider internally, so the guard MUST run
             # before it is offloaded — never invoking any embedding call.
             rejection = KGNaturalQueryBoundaryGuard().check(nl_query)
             if rejection is not None:
@@ -300,30 +365,69 @@ a time bound is active. Full args: okto-pulse://reference/tool-docs/kg."""
         board_id: str = "",
         include_internal: str = "false",
     ) -> str:
+        """Return KG schema introspection: schema_version, stable node types, rel
+        types and vector indexes (global namespace when board_id is empty).
+        Internal types require include_internal="true" + admin role.
         """
-        Return schema introspection: stable node types, rel types, vector
-        indexes. Internal types require include_internal=true + admin role.
-
-        Args:
-            board_id: Optional board ID (empty = global schema namespace)
-            include_internal: "true" to include internal types (admin only)
-
-        Returns:
-            JSON with schema_version, stable_node_types, stable_rel_types,
-            vector_indexes, optionally internal_*_types
-        """
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        want_internal = include_internal.lower() in ("true", "1", "yes")
+        if board_id:
+            agent, board_agent, auth_error = await _authorized_board_agent(
+                board_id,
+                "kg.power.schema_info",
+            )
+            if auth_error is not None:
+                return auth_error
+            permission_context = board_agent
+        else:
+            # Global schema introspection is static contract metadata. It never
+            # enumerates or opens a board graph, and therefore has no implicit
+            # all-board scope.
+            if get_global_agent is None:
+                return _err(
+                    "unauthorized",
+                    "authentication failed",
+                )
+            try:
+                agent = await get_global_agent()
+            except Exception:
+                logger.warning(
+                    "kg.power.global_acl_resolution_failed",
+                    exc_info=True,
+                )
+                return _err("unauthorized", "authentication failed")
+            if agent is None:
+                return _err("unauthorized", "authentication required")
+            permission_context = agent
+            permission_error = kg_permission_error(
+                permission_context,
+                "kg.power.schema_info",
+            )
+            if permission_error is not None:
+                return _err(
+                    "permission_denied",
+                    permission_error,
+                    required_permission="kg.power.schema_info",
+                )
+        if want_internal:
+            permission_error = kg_permission_error(
+                permission_context,
+                "kg.admin.settings_read",
+                legacy_fallback=None,
+            )
+            if permission_error is not None:
+                return _err(
+                    "permission_denied",
+                    permission_error,
+                    required_permission="kg.admin.settings_read",
+                )
 
         logger.debug("[KG] kg_schema_info called: board_id=%s include_internal=%s",
                      board_id, include_internal)
-        want_internal = include_internal.lower() in ("true", "1", "yes")
         logger.debug("[KG] kg_schema_info offloading to thread")
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 get_schema_info,
-                board_id or "default",
+                board_id,
                 include_internal=want_internal,
             ),
             timeout=30.0,
@@ -349,9 +453,12 @@ args: okto-pulse://reference/tool-docs/kg."""
 
         from okto_pulse.core.kg.grounding import check_entities_present
 
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        _agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "board.read",
+        )
+        if auth_error is not None:
+            return auth_error
 
         try:
             rows = json.loads(retrieved_rows_json) if retrieved_rows_json else []
@@ -403,65 +510,166 @@ args: okto-pulse://reference/tool-docs/kg."""
         return json.dumps(result, default=str)
 
     @mcp.tool()
+    async def okto_pulse_kg_provenance_drift(
+        board_id: str,
+        node_type: str = "",
+    ) -> str:
+        """Read-only artifact→node drift report: compares each node's persisted
+source_content_hash against the artifact's latest consolidation and current
+existence. Reasons: content_changed | artifact_missing (deleted source, terminal)
+| audit_missing (live source without a durable comparison anchor).
+Returns checked_count/drifted_count/skipped_count + drifted list. Remedy is a
+normal re-consolidation; the graph is never modified. node_type optionally
+narrows to one table."""
+        from okto_pulse.core.kg.provenance_drift import provenance_drift_report
+
+        _agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "board.read",
+        )
+        if auth_error is not None:
+            return auth_error
+        try:
+            report = await asyncio.wait_for(
+                provenance_drift_report(
+                    board_id, node_type or None
+                ),
+                timeout=60.0,
+            )
+        except ValueError as e:
+            return _err("invalid_node_type", str(e))
+        return json.dumps(report, default=str)
+
+    @mcp.tool()
     async def okto_pulse_kg_query_reflective(
         board_id: str,
         nl_query: str,
         limit: int = 20,
+        min_confidence: float = 0.5,
+        graph_layer: str = "canonical",
+        max_iterations: int = 3,
+        deadline_ms: int = 5000,
+        budget_units: int = 10,
     ) -> str:
+        """Run the bounded retrieve→critic→corrective-action KG loop.
+
+        Authorization and board ACL are checked before graph/embedding access.
+        The Community runtime supplies a deterministic critic, so no LLM is
+        required. Terminal reasons distinguish accepted, rejected, malformed
+        critic output, no progress, exhausted budget/deadline and provider
+        failures. ``graph_layer`` is canonical|working|all (default canonical).
         """
-        V1 stub of the reflective retrieve loop (ideação db8e984f).
-
-        The full agentic loop (critic_evaluate → dispatch action →
-        retrieve retry) requires an LLM callable (critic_fn) — MCP
-        tools can't receive Python callables, so this V1 delegates to
-        the standard execute_natural_query and labels the response
-        as a "v1_stub_no_critic_wired" stop reason.
-
-        To use the real loop, call
-        ``okto_pulse.core.kg.retrieve_critic.reflect()`` programmatically
-        from a Python host that wires its own LLM provider.
-
-        Args:
-            board_id: Board ID (authorization: kg.query.global).
-            nl_query: Natural-language query (same as
-                okto_pulse_kg_query_natural).
-            limit: Max rows (default 20).
-
-        Returns:
-            JSON with rows + reflection metadata:
-            ``{nodes, total_matches, stopped_reason, iterations}``.
-        """
-        agent = await get_agent()
-        if agent is None:
-            return _err("unauthorized", "authentication required")
+        agent, _board_agent, auth_error = await _authorized_board_agent(
+            board_id,
+            "kg.power.natural",
+        )
+        if auth_error is not None:
+            return auth_error
+        assert agent is not None
         try:
-            check_rate_limit(agent.id)
+            from okto_pulse.core.kg.interfaces import get_kg_registry
+            from okto_pulse.core.kg.kg_service import (
+                KGToolError,
+                get_kg_service,
+                normalize_graph_layer,
+            )
+            from okto_pulse.core.kg.retrieve_critic import run_reflective_query
+
+            if not board_id.strip():
+                return _err("invalid_board_id", "board_id is required")
+            if not nl_query.strip():
+                return _err("invalid_query", "nl_query is required")
+            rejection = KGNaturalQueryBoundaryGuard().check(nl_query)
+            if rejection is not None:
+                return _err(
+                    "query_too_large",
+                    rejection["detail"],
+                    embedding_invoked=False,
+                    query_chars=rejection["rejection"]["query_chars"],
+                    max_chars=rejection["rejection"]["max_chars"],
+                )
+            if not 1 <= int(limit) <= 100:
+                return _err("invalid_limit", "limit must be between 1 and 100")
+            if not 0.0 <= float(min_confidence) <= 1.0:
+                return _err(
+                    "invalid_min_confidence",
+                    "min_confidence must be between 0 and 1",
+                )
+            if not 1 <= int(max_iterations) <= 8:
+                return _err(
+                    "invalid_max_iterations",
+                    "max_iterations must be between 1 and 8",
+                )
+            if not 50 <= int(deadline_ms) <= 30_000:
+                return _err(
+                    "invalid_deadline_ms",
+                    "deadline_ms must be between 50 and 30000",
+                )
+            if not 1 <= int(budget_units) <= 10_000:
+                return _err(
+                    "invalid_budget_units",
+                    "budget_units must be between 1 and 10000",
+                )
+            applied_layer = normalize_graph_layer(graph_layer)
+
+            registry = get_kg_registry()
+            factory = registry.auth_context_factory
+            if factory is None:
+                return _err(
+                    "unauthorized",
+                    "KG AuthContext provider is not configured",
+                )
+            auth = factory()
+            agent_id = await auth.get_agent_id()
+            if agent_id is None:
+                return _err("unauthorized", "authentication required")
+            boards = sorted(set(await auth.get_accessible_boards() or []))
+            get_kg_service().check_board_access(boards, board_id)
+            check_rate_limit(str(agent_id))
+
+            retrieval = registry.require_reflective_retrieval()
+            critic = registry.require_reflective_critic()
+            telemetry = registry.reflective_telemetry
+            acl_raw = json.dumps(
+                {"agent_id": str(agent_id), "boards": boards},
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            acl_scope_hash = hashlib.sha256(acl_raw.encode("utf-8")).hexdigest()
+
             result = await asyncio.wait_for(
                 asyncio.to_thread(
-                    execute_natural_query,
-                    board_id, nl_query, limit=limit,
+                    run_reflective_query,
+                    board_id=board_id,
+                    query=nl_query,
+                    limit=int(limit),
+                    min_confidence=float(min_confidence),
+                    graph_layer=applied_layer,
+                    max_iterations=int(max_iterations),
+                    deadline_ms=int(deadline_ms),
+                    budget_units=int(budget_units),
+                    acl_scope_hash=acl_scope_hash,
+                    retrieval=retrieval,
+                    critic=critic,
+                    telemetry=telemetry,
                 ),
-                timeout=30.0,
+                timeout=(int(deadline_ms) / 1000.0) + 0.25,
             )
-            payload = {
-                "nodes": result.get("nodes", []),
-                "total_matches": result.get("total_matches", 0),
-                "stopped_reason": "v1_stub_no_critic_wired",
-                "iterations": [
-                    {
-                        "iteration": 0,
-                        "adequacy": "sufficient",
-                        "action": "accept",
-                        "rows_count": len(result.get("nodes", [])),
-                        "note": (
-                            "V1 stub: no critic LLM wired over MCP. "
-                            "Use reflect() in Python for the full loop."
-                        ),
-                    }
-                ],
-            }
-            return json.dumps(payload, default=str)
+            result["applied_graph_layer"] = applied_layer
+            return json.dumps(round_kg_numbers(result), default=str)
         except asyncio.TimeoutError:
-            return _err("timeout", "Query exceeded 30s timeout")
+            return _err("timeout", "Reflective query exceeded its deadline")
+        except KGToolError as e:
+            return _err(e.code, e.message, details=e.details)
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
+        except (RuntimeError, TypeError, ValueError) as e:
+            logger.warning(
+                "kg.reflective.provider_failure board=%s error=%s",
+                board_id,
+                type(e).__name__,
+            )
+            return _err(
+                "reflective_provider_unavailable",
+                "Reflective KG providers are unavailable or invalid",
+            )

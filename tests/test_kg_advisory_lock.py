@@ -3,23 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+from contextvars import copy_context
 
 import pytest
 
-from okto_pulse.core.kg.workers.advisory_lock import (
+from coordination_fakes import FakeWriteLockPort
+from okto_pulse.core.ports.advisory_lock import (
     advisory_lock,
     advisory_lock_sync,
     get_async_lock,
     get_sync_lock,
     reset_locks_for_tests,
 )
+from okto_pulse.core.ports.coordination import (
+    register_coordination_providers,
+    reset_coordination_providers_for_tests,
+)
 
 
 @pytest.fixture(autouse=True)
 def _reset():
+    reset_coordination_providers_for_tests()
+    register_coordination_providers(write_lock_port=FakeWriteLockPort())
     reset_locks_for_tests()
     yield
     reset_locks_for_tests()
+    reset_coordination_providers_for_tests()
 
 
 def test_get_async_lock_returns_same_instance_for_same_key():
@@ -83,7 +92,10 @@ def test_get_sync_lock_serialises_threads():
         with advisory_lock_sync("b-sync", "art-1"):
             seen.append(i)
 
-    threads = [threading.Thread(target=worker, args=(i,)) for i in range(3)]
+    threads = [
+        threading.Thread(target=copy_context().run, args=(worker, i))
+        for i in range(3)
+    ]
     for t in threads:
         t.start()
     for t in threads:
@@ -102,7 +114,7 @@ def test_get_sync_lock_distinct_keys_do_not_share():
 async def test_emit_session_committed_writes_outbox_row():
     """Emitter inserts a properly-typed row into the global_update_outbox."""
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.models.db import GlobalUpdateOutbox
+    from sqlalchemy_test_models import GlobalUpdateOutbox
     from okto_pulse.core.kg.workers.commit_events import (
         EVENT_TYPE_SESSION_COMMITTED,
         emit_session_committed,

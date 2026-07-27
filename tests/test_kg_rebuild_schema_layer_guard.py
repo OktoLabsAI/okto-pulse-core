@@ -19,7 +19,7 @@ import uuid
 import pytest
 
 from okto_pulse.core.kg import schema_layer_guard as guard
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     bootstrap_board_graph,
     open_board_connection,
 )
@@ -28,12 +28,15 @@ from okto_pulse.core.kg.schema_layer_guard import (
     ensure_graph_layer_schema,
     is_graph_layer_schema_error,
 )
-from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
-from okto_pulse.core.models.db import ConsolidationQueue
+from okto_pulse.core.application.processors.consolidation import ConsolidationProcessor
+from sqlalchemy_test_models import ConsolidationQueue
 
 
 @pytest.fixture(autouse=True)
 def _reset_schema_layer_counter():
+    from kg_registry_testing import configure_test_kg_registry
+
+    configure_test_kg_registry(graph_provider="real")
     guard.reset_schema_layer_migration_counter()
     yield
     guard.reset_schema_layer_migration_counter()
@@ -173,7 +176,7 @@ def test_detector_ignores_benign_and_unrelated_errors():
 @pytest.mark.asyncio
 async def test_worker_recovers_legacy_schema_instead_of_dead_letter(db_factory):
     board_id, raw_error = _legacy_board_with_seeded_node()
-    worker = ConsolidationWorker(session_factory=db_factory)
+    worker = ConsolidationProcessor(relational_scope_factory=db_factory)
 
     entry = ConsolidationQueue(
         id=str(uuid.uuid4()),
@@ -220,11 +223,11 @@ async def test_worker_dead_letters_structured_diagnostic_not_raw(
         return None
 
     monkeypatch.setattr(
-        "okto_pulse.core.kg.workers.consolidation.route_to_dead_letter",
+        "okto_pulse.core.application.processors.consolidation.route_to_dead_letter",
         _capture_route_to_dead_letter,
     )
 
-    worker = ConsolidationWorker(session_factory=db_factory)
+    worker = ConsolidationProcessor(relational_scope_factory=db_factory)
     entry = ConsolidationQueue(
         id=str(uuid.uuid4()),
         board_id=board_id,

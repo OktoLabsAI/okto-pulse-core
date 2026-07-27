@@ -29,6 +29,11 @@ from okto_pulse.core.kg.quarantine import (
     get_quarantine_counter_samples,
     reset_quarantine_counter,
 )
+from okto_pulse.core.kg.interfaces.storage_ref import StorageRef
+
+
+def _storage_ref(path: Path) -> StorageRef:
+    return StorageRef(str(path), "testing_local_storage")
 
 
 @pytest.fixture(autouse=True)
@@ -57,8 +62,11 @@ def quarantine_base(tmp_path: Path) -> Path:
 @pytest.fixture
 def service(kg_root: Path, quarantine_base: Path) -> KGQuarantineService:
     return KGQuarantineService(
-        base_dir=quarantine_base,
-        scope_roots=[kg_root / "boards", kg_root / "global"],
+        base_storage_ref_hint=_storage_ref(quarantine_base),
+        scope_storage_refs=[
+            _storage_ref(kg_root / "boards"),
+            _storage_ref(kg_root / "global"),
+        ],
     )
 
 
@@ -80,7 +88,7 @@ def test_create_moves_files_and_writes_manifest(
     response = service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src), str(sidecar)],
+        affected_storage_refs=[_storage_ref(src), _storage_ref(sidecar)],
         reason="corruption detected during open",
         correlation_ids=["corr-1", "corr-2"],
         kg_generation_id="gen-42",
@@ -111,7 +119,7 @@ def test_manifest_has_all_TR8_fields(
     response = service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src)],
+        affected_storage_refs=[_storage_ref(src)],
         reason="orphaned lock cleanup",
         correlation_ids=["corr-x"],
         kg_generation_id="gen-7",
@@ -160,11 +168,11 @@ def test_path_outside_scope_is_rejected(
         service.create(
             board_id="b1",
             graph_type="board_graph",
-            affected_paths=[str(outside)],
+            affected_storage_refs=[_storage_ref(outside)],
             reason="corruption",
             correlation_ids=["corr-1"],
         )
-    assert excinfo.value.code is QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE
+    assert excinfo.value.code is QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE
     assert excinfo.value.retryable is False
     # The app-data file was NOT moved.
     assert outside.exists()
@@ -185,11 +193,11 @@ def test_partial_scope_violation_aborts_whole_request(
         service.create(
             board_id="b1",
             graph_type="board_graph",
-            affected_paths=[str(inside), str(outside)],
+            affected_storage_refs=[_storage_ref(inside), _storage_ref(outside)],
             reason="corruption detected",
             correlation_ids=["c1"],
         )
-    assert excinfo.value.code is QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE
+    assert excinfo.value.code is QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE
     # Both files are intact — abort happened before any move.
     assert inside.exists()
     assert outside.exists()
@@ -201,24 +209,24 @@ def test_unknown_graph_type_rejected(service: KGQuarantineService, kg_root: Path
         service.create(
             board_id="b1",
             graph_type="bogus",
-            affected_paths=[str(src)],
+            affected_storage_refs=[_storage_ref(src)],
             reason="corruption",
             correlation_ids=["c1"],
         )
-    assert excinfo.value.code is QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE
+    assert excinfo.value.code is QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE
     assert src.exists()
 
 
-def test_empty_affected_paths_rejected(service: KGQuarantineService):
+def test_empty_affected_storage_refs_rejected(service: KGQuarantineService):
     with pytest.raises(QuarantineError) as excinfo:
         service.create(
             board_id="b1",
             graph_type="board_graph",
-            affected_paths=[],
+            affected_storage_refs=[],
             reason="corruption",
             correlation_ids=["c1"],
         )
-    assert excinfo.value.code is QuarantineErrorCode.AFFECTED_PATH_OUT_OF_SCOPE
+    assert excinfo.value.code is QuarantineErrorCode.STORAGE_REF_OUT_OF_SCOPE
 
 
 # --- TR9: retention ------------------------------------------------------------
@@ -233,7 +241,7 @@ def test_default_retention_is_30_days(
     response = service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src)],
+        affected_storage_refs=[_storage_ref(src)],
         reason="corruption",
         correlation_ids=["c1"],
     )
@@ -254,15 +262,18 @@ def test_configurable_retention_is_honoured(
     from datetime import datetime, timedelta, timezone
 
     service = KGQuarantineService(
-        base_dir=quarantine_base,
-        scope_roots=[kg_root / "boards", kg_root / "global"],
+        base_storage_ref_hint=_storage_ref(quarantine_base),
+        scope_storage_refs=[
+            _storage_ref(kg_root / "boards"),
+            _storage_ref(kg_root / "global"),
+        ],
         config=QuarantineConfig(retention_days=14),
     )
     src = _make_file(kg_root / "boards" / "b1" / "graph.lbug")
     response = service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src)],
+        affected_storage_refs=[_storage_ref(src)],
         reason="corruption",
         correlation_ids=["c1"],
     )
@@ -286,7 +297,7 @@ def test_kg_quarantine_total_carries_required_or_labels(
     service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src)],
+        affected_storage_refs=[_storage_ref(src)],
         reason="corruption detected",
         correlation_ids=["c1"],
     )
@@ -296,7 +307,7 @@ def test_kg_quarantine_total_carries_required_or_labels(
         service.create(
             board_id="b1",
             graph_type="bogus",
-            affected_paths=[str(src)],
+            affected_storage_refs=[_storage_ref(src)],
             reason="corruption",
             correlation_ids=["c1"],
         )
@@ -336,7 +347,7 @@ def test_reason_buckets_keep_label_cardinality_bounded(
         service.create(
             board_id="b1",
             graph_type="board_graph",
-            affected_paths=[str(src)],
+            affected_storage_refs=[_storage_ref(src)],
             reason=reason_text,
             correlation_ids=[f"c{n}"],
         )
@@ -358,7 +369,7 @@ def test_inspect_returns_manifest_for_known_id(
     response = service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src)],
+        affected_storage_refs=[_storage_ref(src)],
         reason="corruption",
         correlation_ids=["c1"],
         kg_generation_id="gen-99",
@@ -380,7 +391,7 @@ def test_list_active_returns_unexpired_manifests(
     resp = service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src)],
+        affected_storage_refs=[_storage_ref(src)],
         reason="corruption",
         correlation_ids=["c1"],
     )
@@ -399,14 +410,14 @@ def test_two_creates_get_distinct_quarantine_ids(
     resp_a = service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src_a)],
+        affected_storage_refs=[_storage_ref(src_a)],
         reason="corruption",
         correlation_ids=["a"],
     )
     resp_b = service.create(
         board_id="b1",
         graph_type="board_graph",
-        affected_paths=[str(src_b)],
+        affected_storage_refs=[_storage_ref(src_b)],
         reason="corruption",
         correlation_ids=["b"],
     )
@@ -416,9 +427,12 @@ def test_two_creates_get_distinct_quarantine_ids(
 # --- Configuration sanity ------------------------------------------------------
 
 
-def test_empty_scope_roots_rejected(quarantine_base: Path):
+def test_empty_scope_storage_refs_rejected(quarantine_base: Path):
     with pytest.raises(ValueError):
-        KGQuarantineService(base_dir=quarantine_base, scope_roots=[])
+        KGQuarantineService(
+            base_storage_ref_hint=_storage_ref(quarantine_base),
+            scope_storage_refs=[],
+        )
 
 
 # --- val_79e6f555 rework: integration with real purge call sites --------------
@@ -445,7 +459,7 @@ def test_manifest_failed_preserves_evidence_as_partial(
         service.create(
             board_id="b1",
             graph_type="board_graph",
-            affected_paths=[str(src)],
+            affected_storage_refs=[_storage_ref(src)],
             reason="corruption",
             correlation_ids=["c1"],
         )
@@ -465,7 +479,8 @@ def test_manifest_failed_preserves_evidence_as_partial(
 def test_purge_board_graph_storage_goes_through_quarantine(tmp_path: Path):
     """val_79e6f555 regression: purge_board_graph_storage MUST move
     files to quarantine first, never unlink directly."""
-    import okto_pulse.core.kg.schema as schema_module
+    import kg_schema_testing as schema_module
+    import okto_pulse.community.adapters.kg_runtime as kg_runtime
 
     storage_root = tmp_path / "okto-data" / "boards"
     storage_root.mkdir(parents=True)
@@ -480,8 +495,8 @@ def test_purge_board_graph_storage_goes_through_quarantine(tmp_path: Path):
     import okto_pulse.core.kg.quarantine as quarantine_module
     quarantine_module.reset_quarantine_counter()
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(schema_module, "board_kuzu_path", fake_board_kuzu_path)
-    monkey.setattr(schema_module, "close_board_db_cache", lambda *_: None)
+    monkey.setattr(kg_runtime, "board_kuzu_path", fake_board_kuzu_path)
+    monkey.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
 
     try:
         primary = fake_board_kuzu_path("b1")
@@ -520,7 +535,8 @@ def test_purge_board_graph_storage_goes_through_quarantine(tmp_path: Path):
 def test_purge_board_graph_storage_aborts_when_quarantine_fails(tmp_path: Path):
     """val_79e6f555 regression: if KGQuarantineService.create raises,
     purge MUST be aborted and the original files preserved."""
-    import okto_pulse.core.kg.schema as schema_module
+    import kg_schema_testing as schema_module
+    import okto_pulse.community.adapters.kg_runtime as kg_runtime
     import okto_pulse.core.kg.quarantine as quarantine_module
 
     storage_root = tmp_path / "okto-data" / "boards"
@@ -532,8 +548,8 @@ def test_purge_board_graph_storage_aborts_when_quarantine_fails(tmp_path: Path):
         return d / "graph.lbug"
 
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(schema_module, "board_kuzu_path", fake_board_kuzu_path)
-    monkey.setattr(schema_module, "close_board_db_cache", lambda *_: None)
+    monkey.setattr(kg_runtime, "board_kuzu_path", fake_board_kuzu_path)
+    monkey.setattr(kg_runtime, "close_board_db_cache", lambda *_: None)
     # Make KGQuarantineService.create always raise.
     original_create = quarantine_module.KGQuarantineService.create
 
@@ -574,9 +590,9 @@ def test_purge_global_discovery_storage_goes_through_quarantine(
 ):
     """val_79e6f555 regression: purge_global_discovery_storage MUST move
     discovery.lbug + sidecars to quarantine first."""
-    import okto_pulse.core.kg.global_discovery.schema as gd_schema
+    import global_graph_testing as gd_schema
     import okto_pulse.core.kg.quarantine as quarantine_module
-    from okto_pulse.core.kg.write_barrier import under_global_safe_write
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     storage_root = tmp_path / "okto-data" / "global"
     storage_root.mkdir(parents=True)
@@ -586,16 +602,16 @@ def test_purge_global_discovery_storage_goes_through_quarantine(
     sidecar.write_text("global-wal")
 
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(gd_schema, "_global_kuzu_path", lambda: primary)
-    monkey.setattr(gd_schema, "close_global_connection", lambda: None)
+    runtime = get_kg_registry().global_discovery_runtime
+    monkey.setattr(runtime, "_global_graph_path", lambda: primary)
+    monkey.setattr(runtime, "close", lambda: None)
 
     quarantine_module.reset_quarantine_counter()
 
     try:
-        with under_global_safe_write("global-token", "purge_test"):
-            removed = gd_schema.purge_global_discovery_storage(
-                reason="corruption detected on open"
-            )
+        removed = gd_schema.purge_global_discovery_storage(
+            reason="corruption detected on open"
+        )
 
         assert not primary.exists()
         assert not sidecar.exists()
@@ -633,9 +649,10 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
     ``discovery_backup_*`` artifact is created (manifest replaces the
     ad-hoc backup), (d) bootstrap is called and the new file is created.
     """
-    import okto_pulse.core.kg.global_discovery.schema as gd_schema
+    import global_graph_testing as gd_schema
     import okto_pulse.core.kg.global_discovery.clustering as clustering
     import okto_pulse.core.kg.quarantine as quarantine_module
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     storage_root = tmp_path / "okto-data" / "global"
     storage_root.mkdir(parents=True)
@@ -652,11 +669,14 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
         primary.write_text("freshly-bootstrapped")
         return primary
 
-    monkeypatch.setattr(gd_schema, "_global_kuzu_path", lambda: primary)
-    monkeypatch.setattr(gd_schema, "close_global_connection", lambda: None)
+    runtime = get_kg_registry().global_discovery_runtime
+    monkeypatch.setattr(runtime, "_global_graph_path", lambda: primary)
+    monkeypatch.setattr(runtime, "close", lambda: None)
+    monkeypatch.setattr(runtime, "bootstrap", fake_bootstrap)
     monkeypatch.setattr(gd_schema, "bootstrap_global_discovery", fake_bootstrap)
-    # clustering imports bootstrap_global_discovery and
-    # purge_global_discovery_storage lazily, so patches above cover both.
+    # clustering resolves lifecycle through GlobalDiscoveryRuntime; keep the
+    # schema patch only as a compatibility assertion for callers still using
+    # the facade directly.
 
     quarantine_module.reset_quarantine_counter()
 
@@ -665,8 +685,7 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
     assert result["status"] == "rebuilt"
     # The old ad-hoc backup field is gone — replaced by quarantined paths.
     assert "backup_path" not in result
-    assert "quarantined_paths" in result
-    assert len(result["quarantined_paths"]) == 2
+    assert result["quarantined_storage_refs"] == ["global-discovery"]
 
     # bootstrap was actually called.
     assert bootstrap_called["count"] == 1
@@ -705,9 +724,9 @@ def test_rebuild_from_scratch_quarantines_discovery_before_drop(
 
 
 def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
-    import okto_pulse.core.kg.global_discovery.schema as gd_schema
+    import global_graph_testing as gd_schema
     import okto_pulse.core.kg.quarantine as quarantine_module
-    from okto_pulse.core.kg.write_barrier import under_global_safe_write
+    from okto_pulse.core.kg.interfaces import get_kg_registry
 
     storage_root = tmp_path / "okto-data" / "global"
     storage_root.mkdir(parents=True)
@@ -715,8 +734,9 @@ def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
     primary.write_text("global-evidence")
 
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(gd_schema, "_global_kuzu_path", lambda: primary)
-    monkey.setattr(gd_schema, "close_global_connection", lambda: None)
+    runtime = get_kg_registry().global_discovery_runtime
+    monkey.setattr(runtime, "_global_graph_path", lambda: primary)
+    monkey.setattr(runtime, "close", lambda: None)
 
     original_create = quarantine_module.KGQuarantineService.create
 
@@ -732,10 +752,7 @@ def test_purge_global_discovery_aborts_when_quarantine_fails(tmp_path: Path):
     )
 
     try:
-        with under_global_safe_write("token", "purge_test"):
-            removed = gd_schema.purge_global_discovery_storage(
-                reason="corruption"
-            )
+        removed = gd_schema.purge_global_discovery_storage(reason="corruption")
         assert removed == []
         assert primary.exists()
         assert primary.read_text() == "global-evidence"

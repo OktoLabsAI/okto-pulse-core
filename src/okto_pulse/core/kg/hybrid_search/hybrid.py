@@ -6,7 +6,7 @@ Orchestrates the three stages of the hybrid pipeline:
        intent. Per-type results merged and ordered by similarity.
     2. **Graph expand** — from each seed, walk up to `max_hops` along the
        intent's `expand_edges`. The implementation is parametrised via an
-       injected `GraphExpander` so tests don't need a live Kùzu handle.
+       injected `GraphExpander` so tests don't need a live graph backend handle.
     3. **Hybrid ranking** — linear blend of vector_sim + graph_proximity_inv
        + edge_confidence + recency_decay, weighted per-intent.
 
@@ -141,7 +141,7 @@ class VectorSeedProvider(Protocol):
 
 
 class GraphExpander(Protocol):
-    """Runs the per-intent Kùzu path query."""
+    """Runs the per-intent graph backend path query."""
 
     def expand(
         self,
@@ -285,7 +285,7 @@ def kg_search_hybrid(
 
     - ``rerank``: one of ``"none"`` (default, passthrough),
       ``"token_overlap"`` (zero-dep lexical baseline),
-      ``"cross_encoder"`` (sentence-transformers MS MARCO),
+      ``"cross_encoder"`` (edition-registered cross-encoder adapter),
       ``"llm"`` (RankGPT-style, requires ``rerank_llm_fn``).
     - ``rerank_pool``: how many top-K first-stage results to hand over
       to the reranker. Larger pool = better precision but proportional

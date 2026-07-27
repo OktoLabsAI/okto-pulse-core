@@ -17,8 +17,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from pydantic import ValidationError
-from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.events import publish as event_publish
 from okto_pulse.core.events.types import (
@@ -29,13 +27,16 @@ from okto_pulse.core.events.types import (
     StructuredSpecEntityUpdated,
 )
 from okto_pulse.core.infra.permissions import PermissionSet
-from okto_pulse.core.models.db import Spec
 from okto_pulse.core.models.schemas import (
     ApiContract,
     BusinessRule,
     Decision,
     IntegrationRequirement,
     ObservabilityRequirement,
+)
+from okto_pulse.core.ports.structured_spec import (
+    StructuredSpecRecord,
+    get_structured_spec_store,
 )
 from okto_pulse.core.services.main import (
     SpecLockedError,
@@ -486,7 +487,7 @@ class StructuredSpecEntityService:
 
     def __init__(
         self,
-        db: AsyncSession,
+        db: Any,
         *,
         metrics_sink: StructuredSpecEntityMetricsSink | None = None,
         ack_store: StructuredSpecEntityAckStore | None = None,
@@ -501,7 +502,10 @@ class StructuredSpecEntityService:
         if command.operation not in STRUCTURED_SPEC_ENTITY_OPERATIONS:
             return self._failure(command, StructuredSpecEntityErrorCode.UNSUPPORTED_OPERATION)
 
-        spec = await self.db.get(Spec, command.spec_id)
+        spec = await get_structured_spec_store().get(
+            self.db,
+            spec_id=command.spec_id,
+        )
         if spec is None:
             return self._failure(command, StructuredSpecEntityErrorCode.SPEC_NOT_FOUND)
         if command.board_id is not None and spec.board_id != command.board_id:
@@ -521,7 +525,12 @@ class StructuredSpecEntityService:
 
         permission = self._required_permission(command)
         if command.permission_set is not None:
-            err = command.permission_set.check_with_state(permission, entity="spec", status=str(spec.status.value))
+            status = getattr(spec.status, "value", spec.status)
+            err = command.permission_set.check_with_state(
+                permission,
+                entity="spec",
+                status=str(status),
+            )
             if err is not None:
                 return self._failure(
                     command,
@@ -611,7 +620,6 @@ class StructuredSpecEntityService:
         for changed_field, value in update_data.items():
             old_values.setdefault(changed_field, copy.deepcopy(getattr(spec, changed_field, None) or []))
             setattr(spec, changed_field, value)
-            flag_modified(spec, changed_field)
         spec.version = old_version + 1
 
         changed_fields = list(update_data.keys())
@@ -693,7 +701,11 @@ class StructuredSpecEntityService:
                 f"{entity_id or command.entity_id or ''}".strip()
             ),
         )
-        await self.db.flush()
+        await get_structured_spec_store().save(
+            self.db,
+            spec,
+            changed_fields=changed_fields,
+        )
 
         result = StructuredSpecEntityResult(
             success=True,
@@ -715,7 +727,7 @@ class StructuredSpecEntityService:
     def _handle_impact_ack(
         self,
         *,
-        spec: Spec,
+        spec: StructuredSpecRecord,
         field_name: str,
         command: StructuredSpecEntityCommand,
         current_items: list[Any],
@@ -831,7 +843,7 @@ class StructuredSpecEntityService:
     def _build_impact_report(
         self,
         *,
-        spec: Spec,
+        spec: StructuredSpecRecord,
         command: StructuredSpecEntityCommand,
         field_name: str,
         current_items: list[Any],
@@ -984,7 +996,7 @@ class StructuredSpecEntityService:
     async def _apply_operation(
         self,
         *,
-        spec: Spec,
+        spec: StructuredSpecRecord,
         field_name: str,
         command: StructuredSpecEntityCommand,
         current_items: list[Any],
@@ -1161,7 +1173,7 @@ class StructuredSpecEntityService:
 
     def _migrate_materialized_legacy_refs(
         self,
-        spec: Spec,
+        spec: StructuredSpecRecord,
         entity_type: str,
         mappings: list[dict[str, str]],
     ) -> dict[str, Any]:
@@ -1175,7 +1187,7 @@ class StructuredSpecEntityService:
 
     def _migrate_functional_requirement_refs(
         self,
-        spec: Spec,
+        spec: StructuredSpecRecord,
         mappings: list[dict[str, str]],
     ) -> dict[str, Any]:
         replacements = self._legacy_replacement_map(mappings)
@@ -1202,7 +1214,7 @@ class StructuredSpecEntityService:
 
     def _migrate_acceptance_criterion_refs(
         self,
-        spec: Spec,
+        spec: StructuredSpecRecord,
         mappings: list[dict[str, str]],
     ) -> dict[str, Any]:
         replacements = self._legacy_replacement_map(mappings)

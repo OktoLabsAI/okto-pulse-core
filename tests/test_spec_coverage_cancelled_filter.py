@@ -17,11 +17,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 
+from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.analytics_service import (
     _coverage_row_for_spec,
     spec_coverage_summary,
 )
+from okto_pulse.core.services.main import CardService
 
 
 # ---------------------------------------------------------------------------
@@ -62,14 +65,20 @@ def _make_spec(
     )
 
 
-def _card(card_id: str, status: str):
+def _card(
+    card_id: str,
+    status: str,
+    *,
+    archived: bool = False,
+    card_type: str = "normal",
+):
     """Fabrica um card-like com .id e .status (string ou enum-like)."""
     return SimpleNamespace(
         id=card_id,
         status=SimpleNamespace(value=status),
         spec_id="spec-test",
-        archived=False,
-        card_type=SimpleNamespace(value="normal"),
+        archived=archived,
+        card_type=SimpleNamespace(value=card_type),
     )
 
 
@@ -107,7 +116,10 @@ class TestBackwardCompat:
         baseline = spec_coverage_summary(spec)
         with_cards = spec_coverage_summary(
             spec,
-            cards=[_card("c1", "in_progress"), _card("c2", "done")],
+            cards=[
+                _card("c1", "in_progress", card_type="test"),
+                _card("c2", "done"),
+            ],
         )
         for k in (
             "scenarios_linked",
@@ -123,9 +135,118 @@ class TestBackwardCompat:
 class TestTSDrop:
     def test_ts_drop_when_only_card_cancelled(self):
         spec = _make_spec(test_scenarios=[{"linked_task_ids": ["c_a"]}])
-        cov = spec_coverage_summary(spec, cards=[_card("c_a", "cancelled")])
+        cov = spec_coverage_summary(
+            spec,
+            cards=[_card("c_a", "cancelled", card_type="test")],
+        )
         assert cov["scenarios_linked"] == 0
         assert cov["scenario_task_linkage_pct"] == 0.0
+
+    def test_archived_test_card_does_not_satisfy_scenario_linkage(self):
+        spec = _make_spec(test_scenarios=[{"linked_task_ids": ["c_archived"]}])
+        cov = spec_coverage_summary(
+            spec,
+            cards=[
+                _card(
+                    "c_archived",
+                    "done",
+                    archived=True,
+                    card_type="test",
+                )
+            ],
+        )
+        assert cov["scenarios_linked"] == 0
+        assert spec.test_scenarios[0]["linked_task_ids"] == ["c_archived"]
+
+    def test_active_normal_card_does_not_satisfy_scenario_linkage(self):
+        spec = _make_spec(test_scenarios=[{"linked_task_ids": ["c_normal"]}])
+        cov = spec_coverage_summary(
+            spec,
+            cards=[_card("c_normal", "in_progress", card_type="normal")],
+        )
+        assert cov["scenarios_linked"] == 0
+        assert cov["scenario_task_linkage_pct"] == 0.0
+
+    def test_active_test_card_satisfies_scenario_linkage(self):
+        spec = _make_spec(test_scenarios=[{"linked_task_ids": ["c_test"]}])
+        cov = spec_coverage_summary(
+            spec,
+            cards=[_card("c_test", "in_progress", card_type="test")],
+        )
+        assert cov["scenarios_linked"] == 1
+        assert cov["scenario_task_linkage_pct"] == 100.0
+
+    def test_authoritative_empty_card_set_does_not_count_dangling_link(self):
+        spec = _make_spec(test_scenarios=[{"linked_task_ids": ["missing"]}])
+        cov = spec_coverage_summary(spec, cards=[])
+        assert cov["scenarios_linked"] == 0
+        assert spec.test_scenarios[0]["linked_task_ids"] == ["missing"]
+
+    def test_card_counts_distinguish_raw_from_gate_effective(self):
+        spec = _make_spec()
+        cov = spec_coverage_summary(
+            spec,
+            cards=[
+                _card("c_done", "done"),
+                _card("c_cancelled", "cancelled"),
+                _card("c_archived", "done", archived=True),
+            ],
+        )
+        assert cov["cards_total"] == 3
+        assert cov["cards_done"] == 2
+        assert cov["cards_total_raw"] == 3
+        assert cov["cards_done_raw"] == 2
+        assert cov["cards_total_effective"] == 1
+        assert cov["cards_done_effective"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "archived", "card_type", "passes"),
+    (
+        ("in_progress", False, "test", True),
+        ("cancelled", False, "test", False),
+        ("done", True, "test", False),
+        ("in_progress", False, "normal", False),
+    ),
+)
+async def test_execution_readiness_uses_only_effective_test_cards(
+    monkeypatch,
+    status,
+    archived,
+    card_type,
+    passes,
+):
+    linked_card = _card(
+        "linked-card",
+        status,
+        archived=archived,
+        card_type=card_type,
+    )
+
+    async def _linked_cards(*_args, **_kwargs):
+        return [linked_card]
+
+    monkeypatch.setattr(main_service, "_application_list", _linked_cards)
+    scenario = {
+        "id": "ts_effective",
+        "title": "Effective coverage",
+        "linked_task_ids": ["linked-card"],
+    }
+    spec = SimpleNamespace(
+        title="Effective test coverage",
+        test_scenarios=[scenario],
+        skip_test_coverage=False,
+    )
+    board = SimpleNamespace(settings={})
+
+    if passes:
+        await CardService(object()).check_test_coverage(spec, board)
+    else:
+        with pytest.raises(ValueError, match="no linked test cards"):
+            await CardService(object()).check_test_coverage(spec, board)
+
+    assert scenario["linked_task_ids"] == ["linked-card"]
 
 
 # ---------------------------------------------------------------------------

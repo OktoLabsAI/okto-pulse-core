@@ -1,3 +1,6 @@
+---
+version: "1.0"
+---
 # MCP Resources — Workflows
 
 Cada arquivo `.md` neste diretório é exposto via `@mcp.resource(uri="okto-pulse://workflows/<nome>")` e contém o workflow operacional de uma entidade do SDLC (cards, specs, ideations, refinements, sprints, kg, stories).

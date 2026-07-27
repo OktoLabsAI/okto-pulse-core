@@ -25,16 +25,23 @@ The history record is the durable trail the audit event references via
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any
+
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.rebuild_audit import (
+    resolve_rebuild_audit_artifact_store,
+)
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_generation")
 
@@ -43,17 +50,21 @@ REBUILD_DIRNAME = "rebuild"
 GENERATIONS_DIRNAME = "generations"
 HISTORY_DIRNAME = "history"
 CURRENT_FILENAME = "current.json"
+GENERATION_CURRENT_NAMESPACE = "generation_current"
+GENERATION_HISTORY_NAMESPACE = "generation_history"
 
 
 # Promotion is restricted to terminal states that produced a real
 # generation. ``rolled_back`` is allowed because the new "current"
 # generation may be the previous one promoted forward as the safe
 # fallback after a failed rebuild.
-PROMOTABLE_TERMINAL_STATUSES: frozenset[str] = frozenset({
-    "completed",
-    "partially_rebuilt",
-    "rolled_back",
-})
+PROMOTABLE_TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {
+        "completed",
+        "partially_rebuilt",
+        "rolled_back",
+    }
+)
 
 
 _UUID_V4_RE = re.compile(
@@ -115,8 +126,8 @@ class PromotionEvaluation:
 # --- Counter (diagnostic; OR or_56ec0300 surface is in rebuild_report) ------
 
 _PROMOTION_LABELS = ("board_id", "status", "outcome")
-_promotion_counter: dict[tuple[str, str, str], int] = {}
-_promotion_counter_lock = threading.Lock()
+_promotion_counter = runtime_state("kg.rebuild_generation.promotion_counter", dict)
+_promotion_counter_lock = runtime_lock("kg.rebuild_generation.promotion_counter")
 
 
 def _bump_promotion(*, board_id: str, status: str, outcome: str) -> None:
@@ -162,83 +173,71 @@ def reset_promotion_counter() -> None:
 
 
 @dataclass(frozen=True, slots=True)
-class KGGenerationRepository:
-    """File-backed repository for the per-board current generation.
+class RebuildAuditKGGenerationRepository:
+    """Generation pointer repository backed by ``RebuildAuditArtifactStore``.
 
-    All state lives under ``<base_dir>/rebuild/generations/<board_id>/``.
-    A pointer file (``current.json``) names the active generation; one
-    history record per generation lives in ``history/``. The pointer is
-    rewritten atomically (``.tmp`` + ``replace``) so a crash mid-promote
-    cannot leave a half-written pointer.
+    This is the storage-agnostic counterpart of ``KGGenerationRepository``.
+    It keeps the same public repository contract while moving durable current
+    generation state behind the rebuild/audit artifact-store port.
     """
 
-    base_dir: Path
+    base_dir: object | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
-    def _board_dir(self, board_id: str) -> Path:
-        return (
-            self.base_dir
-            / REBUILD_DIRNAME
-            / GENERATIONS_DIRNAME
-            / board_id
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
         )
 
-    def _current_path(self, board_id: str) -> Path:
-        return self._board_dir(board_id) / CURRENT_FILENAME
+    @staticmethod
+    def _current_key(board_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace=GENERATION_CURRENT_NAMESPACE,
+            board_id=board_id,
+            artifact_id="current",
+        )
 
-    def _history_path(self, board_id: str, generation_id: str) -> Path:
-        return (
-            self._board_dir(board_id)
-            / HISTORY_DIRNAME
-            / f"{generation_id}.json"
+    @staticmethod
+    def _history_key(board_id: str, generation_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace=GENERATION_HISTORY_NAMESPACE,
+            board_id=board_id,
+            kg_generation_id=generation_id,
         )
 
     def get_current(self, board_id: str) -> str | None:
-        """Return the current ``kg_generation_id`` for the board, or
-        ``None`` if no generation has ever been promoted."""
+        """Return the current ``kg_generation_id`` for the board.
 
-        path = self._current_path(board_id)
-        if not path.exists():
-            return None
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                payload = json.load(fh)
-        except Exception as exc:
-            logger.error(
-                "kg.generation.current_read_failed board=%s err=%s",
-                board_id, exc,
-            )
+        Store exceptions deliberately propagate so callers can distinguish
+        "no generation exists" from "generation store unavailable".
+        """
+
+        payload = self.artifact_store.read_json(self._current_key(board_id))
+        if payload is None:
             return None
         value = payload.get("kg_generation_id")
         if not isinstance(value, str) or not is_valid_kg_generation_id(value):
             return None
         return value
 
-    def get_history_ref(
-        self, board_id: str, generation_id: str
-    ) -> str | None:
-        """Return the durable history path for a generation, if any."""
+    def get_history_ref(self, board_id: str, generation_id: str) -> str | None:
+        key = self._history_key(board_id, generation_id)
+        return (
+            self.artifact_store.reference(key)
+            if self.artifact_store.exists(key)
+            else None
+        )
 
-        path = self._history_path(board_id, generation_id)
-        return str(path) if path.exists() else None
-
-    def load_history(
-        self, board_id: str, generation_id: str
-    ) -> dict[str, Any] | None:
-        path = self._history_path(board_id, generation_id)
-        if not path.exists():
-            return None
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                return json.load(fh)
-        except Exception as exc:
-            logger.error(
-                "kg.generation.history_read_failed board=%s gen=%s err=%s",
-                board_id, generation_id, exc,
-            )
-            return None
+    def load_history(self, board_id: str, generation_id: str) -> dict[str, Any] | None:
+        return self.artifact_store.read_json(self._history_key(board_id, generation_id))
 
     def promote_current(
         self,
@@ -254,15 +253,8 @@ class KGGenerationRepository:
         run_id: str | None = None,
         operator_override_ref: str | None = None,
     ) -> PromotionResult:
-        """Advance the board pointer to ``kg_generation_id``.
+        """Advance the board pointer through the injected artifact store."""
 
-        Returns ``PromotionResult`` with the outcome. The pointer is NOT
-        moved unless ``outcome == "promoted"``. ``report_ref`` is the
-        durable receipt produced by ``RebuildReportStore.persist`` —
-        without it promotion is rejected per IR ir_6d092147.
-        """
-
-        # 1. Status MUST be a recognised promotable terminal status.
         if status not in PROMOTABLE_TERMINAL_STATUSES:
             _bump_promotion(
                 board_id=board_id,
@@ -278,12 +270,10 @@ class KGGenerationRepository:
                 promoted_at=None,
                 history_ref=None,
                 detail=(
-                    f"status={status!r} not in "
-                    f"{sorted(PROMOTABLE_TERMINAL_STATUSES)}"
+                    f"status={status!r} not in {sorted(PROMOTABLE_TERMINAL_STATUSES)}"
                 ),
             )
 
-        # 2. New generation id MUST be UUID v4.
         if not is_valid_kg_generation_id(kg_generation_id):
             _bump_promotion(
                 board_id=board_id,
@@ -301,7 +291,6 @@ class KGGenerationRepository:
                 detail="kg_generation_id is not a canonical UUID v4 string",
             )
 
-        # 3. previous id, when supplied, MUST be UUID v4.
         if previous_kg_generation_id is not None and not is_valid_kg_generation_id(
             previous_kg_generation_id
         ):
@@ -321,9 +310,6 @@ class KGGenerationRepository:
                 detail="previous_kg_generation_id is not a canonical UUID v4 string",
             )
 
-        # 4. report_ref MUST be a non-empty string. The repository never
-        # judges durability beyond presence — that's the caller's
-        # responsibility (RebuildReportStore returned outcome=stored).
         if not isinstance(report_ref, str) or not report_ref.strip():
             _bump_promotion(
                 board_id=board_id,
@@ -341,11 +327,30 @@ class KGGenerationRepository:
                 detail="report_ref required for promotion (ir_6d092147)",
             )
 
-        # 5. Under lock: previous pointer must match the supplied
-        # previous id. This prevents two concurrent promotions racing
-        # the same board.
         with self._lock:
-            stored_previous = self.get_current(board_id)
+            try:
+                stored_previous = self.get_current(board_id)
+            except Exception as exc:
+                logger.error(
+                    "kg.generation.artifact_current_read_failed board=%s err=%s",
+                    board_id,
+                    exc,
+                )
+                _bump_promotion(
+                    board_id=board_id,
+                    status=status,
+                    outcome=PromotionOutcome.PERSIST_FAILED.value,
+                )
+                return PromotionResult(
+                    outcome=PromotionOutcome.PERSIST_FAILED.value,
+                    board_id=board_id,
+                    previous_kg_generation_id=previous_kg_generation_id,
+                    current_kg_generation_id=None,
+                    report_ref=report_ref,
+                    promoted_at=None,
+                    history_ref=None,
+                    detail=f"current_read_exception={type(exc).__name__}",
+                )
             if stored_previous != previous_kg_generation_id:
                 _bump_promotion(
                     board_id=board_id,
@@ -388,26 +393,19 @@ class KGGenerationRepository:
                 "status": status,
                 "promoted_at": promoted_at,
             }
-
-            board_dir = self._board_dir(board_id)
-            history_dir = board_dir / HISTORY_DIRNAME
+            history_key = self._history_key(board_id, kg_generation_id)
             try:
-                history_dir.mkdir(parents=True, exist_ok=True)
-                history_path = self._history_path(board_id, kg_generation_id)
-                tmp_history = history_path.with_suffix(".json.tmp")
-                with tmp_history.open("w", encoding="utf-8") as fh:
-                    json.dump(history_payload, fh, indent=2)
-                tmp_history.replace(history_path)
-
-                current_path = self._current_path(board_id)
-                tmp_current = current_path.with_suffix(".json.tmp")
-                with tmp_current.open("w", encoding="utf-8") as fh:
-                    json.dump(pointer_payload, fh, indent=2)
-                tmp_current.replace(current_path)
+                self.artifact_store.write_json_atomic(history_key, history_payload)
+                self.artifact_store.write_json_atomic(
+                    self._current_key(board_id), pointer_payload
+                )
             except Exception as exc:
                 logger.error(
-                    "kg.generation.promote_persist_failed board=%s gen=%s err=%s",
-                    board_id, kg_generation_id, exc,
+                    "kg.generation.artifact_promote_persist_failed "
+                    "board=%s gen=%s err=%s",
+                    board_id,
+                    kg_generation_id,
+                    exc,
                 )
                 _bump_promotion(
                     board_id=board_id,
@@ -437,9 +435,12 @@ class KGGenerationRepository:
                 current_kg_generation_id=kg_generation_id,
                 report_ref=report_ref,
                 promoted_at=promoted_at,
-                history_ref=str(history_path),
+                history_ref=self.artifact_store.reference(history_key),
                 detail=None,
             )
+
+
+KGGenerationRepository = RebuildAuditKGGenerationRepository
 
 
 # --- Promotion guard ---------------------------------------------------------
@@ -511,6 +512,8 @@ class KGGenerationPromotionGuard:
 
 __all__ = [
     "CURRENT_FILENAME",
+    "GENERATION_CURRENT_NAMESPACE",
+    "GENERATION_HISTORY_NAMESPACE",
     "GENERATIONS_DIRNAME",
     "HISTORY_DIRNAME",
     "KGGenerationPromotionGuard",
@@ -520,6 +523,7 @@ __all__ = [
     "PromotionOutcome",
     "PromotionResult",
     "REBUILD_DIRNAME",
+    "RebuildAuditKGGenerationRepository",
     "generate_kg_generation_id",
     "get_promotion_count",
     "get_promotion_counter_labels",

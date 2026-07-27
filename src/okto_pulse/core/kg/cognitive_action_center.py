@@ -29,9 +29,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from okto_pulse.core.kg.cognitive_readiness import (
     CANONICAL_DEBT_OPEN_SIGNAL,
     REVISIT_REQUIRED_REASON_CODES,
@@ -47,7 +44,7 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveItemStatus,
     normalize_cognitive_artifact_id,
 )
-from okto_pulse.core.models.db import CanonicalDebt, ConsolidationDeadLetter
+from okto_pulse.core.ports.kg_operational import get_kg_operational_read_model_port
 from okto_pulse.core.services.canonical_debt_service import OPEN_STATES
 
 
@@ -163,7 +160,7 @@ class CognitiveActionCenterReadModel:
 
     async def list_signals(
         self,
-        db: AsyncSession,
+        context: Any,
         *,
         board_id: str,
         signal: str = SIGNAL_ALL,
@@ -189,7 +186,7 @@ class CognitiveActionCenterReadModel:
         bounded_offset = max(0, int(offset or 0))
 
         try:
-            raw = await self._gather(db, board_id, kg_generation_id)
+            raw = await self._gather(context, board_id, kg_generation_id)
         except Exception as exc:  # source read failure → 503
             raise CognitiveReadinessError(
                 "readiness_source_unavailable",
@@ -227,7 +224,7 @@ class CognitiveActionCenterReadModel:
                     r.artifact_type or r.source_ref_original.split(":", 1)[0]
                 ).lower()
                 verdict = await self._service.evaluate_artifact(
-                    db, board_id=board_id, source_ref=r.source_ref_original,
+                    context, board_id=board_id, source_ref=r.source_ref_original,
                     kg_generation_id=kg_generation_id,
                     has_reusable_cognition=primary_type not in ("task", "test"),
                 )
@@ -255,7 +252,7 @@ class CognitiveActionCenterReadModel:
         return {"items": items, "summary": summary, "precedence": list(PRECEDENCE_ORDER)}
 
     async def _gather(
-        self, db: AsyncSession, board_id: str, kg_generation_id: str | None
+        self, context: Any, board_id: str, kg_generation_id: str | None
     ) -> list[_RawSignal]:
         raw: list[_RawSignal] = []
 
@@ -276,9 +273,11 @@ class CognitiveActionCenterReadModel:
                     recorded_at=getattr(item, "recorded_at", None),
                 ))
 
-        debt_rows = (await db.execute(
-            select(CanonicalDebt).where(CanonicalDebt.board_id == board_id)
-        )).scalars().all()
+        port = get_kg_operational_read_model_port()
+        debt_rows = await port.list_canonical_debt_signals(
+            context,
+            board_id=board_id,
+        )
         for row in debt_rows:
             ref = row.source_ref or f"{row.artifact_type}:{row.artifact_id}"
             is_open = str(row.canonical_state or "") in OPEN_STATES
@@ -295,11 +294,10 @@ class CognitiveActionCenterReadModel:
                 revisit_at=None,
             ))
 
-        dlq_rows = (await db.execute(
-            select(ConsolidationDeadLetter).where(
-                ConsolidationDeadLetter.board_id == board_id
-            )
-        )).scalars().all()
+        dlq_rows = await port.list_dead_letter_signals(
+            context,
+            board_id=board_id,
+        )
         for row in dlq_rows:
             ref = f"{row.artifact_type}:{row.artifact_id}"
             raw.append(_RawSignal(
@@ -373,7 +371,7 @@ class CognitiveActionCenterReadModel:
 
     async def metrics(
         self,
-        db: AsyncSession,
+        context: Any,
         *,
         board_id: str,
         kg_generation_id: str | None = None,
@@ -386,7 +384,7 @@ class CognitiveActionCenterReadModel:
         Precedence is read from the central service, never recomputed here."""
 
         try:
-            raw = await self._gather(db, board_id, kg_generation_id)
+            raw = await self._gather(context, board_id, kg_generation_id)
         except Exception as exc:
             raise CognitiveReadinessError(
                 "readiness_source_unavailable",
@@ -415,7 +413,7 @@ class CognitiveActionCenterReadModel:
                     r.artifact_type or r.source_ref_original.split(":", 1)[0]
                 ).lower()
                 verdict = await self._service.evaluate_artifact(
-                    db, board_id=board_id, source_ref=r.source_ref_original,
+                    context, board_id=board_id, source_ref=r.source_ref_original,
                     kg_generation_id=kg_generation_id,
                     has_reusable_cognition=primary_type not in ("task", "test"),
                 )

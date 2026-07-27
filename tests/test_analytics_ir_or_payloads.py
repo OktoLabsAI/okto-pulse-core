@@ -6,9 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from okto_pulse.core.api.analytics import _spec_detail, board_spec_analytics
+from okto_pulse.core.services.analytics_service import _spec_detail
+from okto_pulse.core.services.analytics_service import compute_spec_analytics
 from okto_pulse.core.mcp.server import _mcp_spec_coverage_summary
-from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.services.analytics_service import (
     _coverage_row_for_spec,
     compute_coverage,
@@ -134,7 +135,7 @@ async def test_compute_coverage_row_includes_ir_or_fields_additively(db_factory)
 async def test_modern_and_legacy_spec_detail_include_ir_or_arrays_and_summary(db_factory):
     await _seed_ir_or_board(db_factory)
     async with db_factory() as db:
-        modern = await board_spec_analytics(BOARD_ID, SPEC_ID, user_id=OWNER_ID, db=db)
+        modern = await compute_spec_analytics(db, BOARD_ID, SPEC_ID)
         legacy = await _spec_detail(db, BOARD_ID, SPEC_ID)
 
     for payload in (modern, legacy):

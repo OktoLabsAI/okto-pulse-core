@@ -1,91 +1,163 @@
-"""Compensating transaction pattern for Kùzu + SQLite commits.
+"""Compensating transaction pattern for graph writes.
 
-Kùzu is an embedded graph DB without distributed transactions. When we commit
-a consolidation session we need atomic semantics across two stores:
+The application UnitOfWork owns relational commit and rollback. This
+orchestrator records graph mutations so the use case can compensate them when
+the UnitOfWork fails after graph writes were applied.
 
-1. Kùzu writes (CREATE nodes + edges) happen first.
-2. SQLite transaction (audit row + kuzu_node_refs + outbox event) happens second.
-3. On any failure of step 2, we MUST reverse step 1 — this is the "compensate".
-
-The orchestrator tracks every Kùzu write keyed by session_id so a failure can
+The orchestrator tracks every graph write keyed by session_id so a failure can
 delete exactly those nodes/edges via `source_session_id` / `created_by_session_id`
-filters. Edges use a per-rel-type DELETE loop because Kùzu has no universal
+filters. Edges use a per-rel-type DELETE loop because some graph backends lack a
 `MATCH ()-[r]-() DELETE r` that works across rel tables.
 
-Usage:
-
-    orch = TransactionOrchestrator(kuzu_conn, sqlite_session, session_id,
-                                   board_id=board_id)
-    orch.create_node("Decision", node_id, attrs)
-    orch.create_edge("supersedes", from_id, to_id, attrs)
-    try:
-        await orch.commit_sqlite(sqlite_mutations)
-    except Exception:
-        await orch.compensate()  # reverses Kùzu writes
-        raise
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.kg.schema import (
-    MULTI_REL_TYPES,
-    NODE_TYPES,
-    REL_TYPES,
-    resolve_relationship_endpoint_pair,
+from okto_pulse.core.kg.interfaces.graph_transaction import (
+    SpecLineageEdgeSnapshot,
+    SpecLineageReconciliationError,
+    SpecLineageReconciliationReceipt,
+    is_spec_lineage_rule_id,
 )
+from okto_pulse.core.kg.schema_contract import resolve_relationship_endpoint_pair
 
 logger = logging.getLogger("okto_pulse.kg.transaction")
 
 
-def _relationship_pairs() -> list[tuple[str, str, str]]:
-    """Return every concrete relationship table/pair used by compensation."""
-    pairs = list(REL_TYPES)
-    for rel_name, endpoint_pairs in MULTI_REL_TYPES:
-        pairs.extend((rel_name, from_type, to_type) for from_type, to_type in endpoint_pairs)
-    return pairs
+class _StoreBackedGraphScope:
+    """Semantic compatibility scope for callers carrying a read-only handle."""
+
+    def __init__(self, board_id: str, store: Any, raw_scope: Any) -> None:
+        self._board_id = board_id
+        self._store = store
+        self._raw_scope = raw_scope
+
+    def execute(self, statement: str, params: dict[str, Any] | None = None) -> Any:
+        if params is None:
+            return self._raw_scope.execute(statement)
+        return self._raw_scope.execute(statement, params)
+
+    def create_node(self, node_type, node_id, attrs, *, source_session_id):
+        self._store.create_node(
+            self._board_id,
+            node_type,
+            node_id,
+            {**attrs, "source_session_id": source_session_id},
+        )
+
+    def update_node(self, node_type, node_id, attrs):
+        self._store.update_node(self._board_id, node_type, node_id, attrs)
+
+    def mark_superseded(self, node_type, node_id, **values):
+        self._store.mark_superseded(
+            self._board_id,
+            node_type,
+            node_id,
+            **values,
+        )
+
+    def edge_exists(self, edge_type, from_type, to_type, from_id, to_id):
+        return self._store.edge_exists(
+            self._board_id,
+            edge_type,
+            from_type,
+            to_type,
+            from_id,
+            to_id,
+        )
+
+    def create_edge(self, edge_type, from_type, to_type, from_id, to_id, attrs):
+        if not self.find_node_types(from_id) or not self.find_node_types(to_id):
+            return False
+        self._store.create_edge(
+            self._board_id,
+            edge_type,
+            from_id,
+            to_id,
+            attrs,
+            from_type=from_type,
+            to_type=to_type,
+        )
+        return True
+
+    def reconcile_spec_lineage_parent(self, source_id, target_id, attrs):
+        raise SpecLineageReconciliationError(
+            "spec_lineage_reconciliation_capability_unavailable",
+            "The compatibility graph-store scope cannot reconcile exclusive "
+            "Spec lineage; install a GraphTransaction adapter with the bounded "
+            "Spec-lineage capability.",
+        )
+
+    def clear_spec_lineage_parent(self, source_id):
+        del source_id
+        raise SpecLineageReconciliationError(
+            "spec_lineage_reconciliation_capability_unavailable",
+            "The compatibility graph-store scope cannot clear exclusive Spec "
+            "lineage; install a GraphTransaction adapter with the bounded "
+            "Spec-lineage capability.",
+        )
+
+    def compensate_spec_lineage_parent(self, receipt):
+        del receipt
+        raise SpecLineageReconciliationError(
+            "spec_lineage_compensation_capability_unavailable",
+            "The compatibility graph-store scope cannot compensate exclusive "
+            "Spec lineage.",
+        )
+
+    def find_node_types(self, node_id):
+        return self._store.find_node_types(self._board_id, node_id)
+
+    def delete_edges_by_session(self, session_id):
+        self._store.delete_edges_by_session(self._board_id, session_id)
+
+    def delete_edges_by_session_preserving_spec_lineage(
+        self,
+        session_id,
+        preserved_edges,
+    ):
+        del session_id, preserved_edges
+        raise SpecLineageReconciliationError(
+            "spec_lineage_compensation_capability_unavailable",
+            "The compatibility graph-store scope cannot preserve restored "
+            "Spec lineage while compensating session edges.",
+        )
+
+    def delete_nodes_by_session(self, session_id, node_types):
+        del node_types
+        self._store.delete_nodes_by_session(self._board_id, session_id)
+        return ()
+
+    def increment_attestation(self, node_type, node_id, *, attested_at):
+        self._store.increment_attestation(
+            self._board_id,
+            node_type,
+            node_id,
+            attested_at=attested_at,
+        )
 
 
 def _result_has_row(result: Any) -> bool:
     """Best-effort detection that a Cypher CREATE ... RETURN matched endpoints."""
     if result is None:
         return False
+    rows = getattr(result, "rows", None)
+    if rows is not None:
+        return bool(rows)
     try:
-        if hasattr(result, "has_next"):
-            return bool(result.has_next())
-        if hasattr(result, "get_next"):
-            try:
-                result.get_next()
-                return True
-            except Exception:
-                return False
-        try:
-            next(iter(result))
-            return True
-        except StopIteration:
-            return False
-        except TypeError:
-            return False
-    finally:
-        close = getattr(result, "close", None)
-        if callable(close):
-            close()
-
-
-def _close_result(result: Any) -> None:
-    close = getattr(result, "close", None)
-    if callable(close):
-        close()
+        next(iter(result))
+        return True
+    except (StopIteration, TypeError):
+        return False
 
 
 @dataclass
-class KuzuWriteRecord:
-    """One mutation applied to Kùzu — used for compensating delete."""
+class GraphWriteRecord:
+    """One mutation applied to the graph adapter, used for compensating delete."""
 
     kind: str  # "node" | "edge"
     entity_type: str  # "Decision", "supersedes", etc.
@@ -93,6 +165,7 @@ class KuzuWriteRecord:
     # Edge-only: anchors for MATCH DELETE pattern.
     from_id: str | None = None
     to_id: str | None = None
+    lineage_receipt: SpecLineageReconciliationReceipt | None = None
 
 
 @dataclass
@@ -105,7 +178,7 @@ class CommitCounters:
     nodes_superseded (SUPERSEDE) or nodes_noop (NOOP), so
     ``processed_candidates`` closes as their sum. ``merge_audit_items`` carries
     the per-merge audit payload surfaced in the commit response (NOT a
-    KuzuWriteRecord — the reused node belongs to a prior session and must not
+    GraphWriteRecord — the reused node belongs to a prior session and must not
     enter compensation rollback).
     """
 
@@ -122,60 +195,76 @@ class CompensationError(Exception):
     """Raised when compensating delete itself fails — operator intervention needed."""
 
     def __init__(self, message: str, original_exc: Exception | None = None,
-                 failed_records: list[KuzuWriteRecord] | None = None):
+                 failed_records: list[GraphWriteRecord] | None = None):
         super().__init__(message)
         self.original_exc = original_exc
         self.failed_records = failed_records or []
 
 
-@dataclass
+@dataclass(init=False)
 class TransactionOrchestrator:
-    """Coordinates Kùzu writes with SQLite commits using the compensating
-    transaction pattern.
+    """Coordinates graph writes and their compensation.
 
-    The orchestrator is single-use: instantiate once per commit, call
-    `create_node` / `create_edge` zero or more times, then `commit_sqlite`.
-    On any SQLite failure, call `compensate` to reverse the Kùzu writes.
+    The orchestrator is single-use. On a later UnitOfWork failure, call
+    ``compensate`` to reverse graph writes.
     """
 
-    kuzu_conn: Any  # kuzu.Connection
-    sqlite_session: AsyncSession
+    graph_scope: Any
     session_id: str
     board_id: str
-    records: list[KuzuWriteRecord] = field(default_factory=list)
+    records: list[GraphWriteRecord] = field(default_factory=list)
     counters: CommitCounters = field(default_factory=CommitCounters)
-    _committed: bool = False
     _compensated: bool = False
 
+    def __init__(
+        self,
+        graph_scope: Any | None = None,
+        session_id: str = "",
+        board_id: str = "",
+    ) -> None:
+        if graph_scope is None:
+            raise TypeError("TransactionOrchestrator requires a graph_scope")
+        if not callable(getattr(graph_scope, "create_node", None)):
+            from okto_pulse.core.kg.interfaces import get_kg_registry
+
+            store = get_kg_registry().graph_store
+            if store is None:
+                raise RuntimeError("semantic_graph_store_not_configured")
+            graph_scope = _StoreBackedGraphScope(board_id, store, graph_scope)
+        self.graph_scope = graph_scope
+        self.session_id = session_id
+        self.board_id = board_id
+        self.records = []
+        self.counters = CommitCounters()
+        self._compensated = False
+
+    def execute_graph(self, stmt: str, params: dict[str, Any] | None = None) -> Any:
+        """Execute a graph statement through the composed graph transaction port."""
+
+        if params is None:
+            return self.graph_scope.execute(stmt)
+        return self.graph_scope.execute(stmt, params)
+
     # ------------------------------------------------------------------
-    # Kùzu write phase
+    # Graph write phase
     # ------------------------------------------------------------------
 
     def create_node(self, node_type: str, node_id: str, attrs: dict[str, Any]) -> None:
-        """Insert a new node into Kùzu and record it for compensation.
+        """Insert a new node into the graph and record it for compensation.
 
         `attrs` must NOT include `id`, `source_session_id`, or `board_id` —
         those are injected here so the caller can't forget them.
         """
         self._guard_fresh()
-        params: dict[str, Any] = dict(attrs)
-        params["id"] = node_id
-        params["source_session_id"] = self.session_id
-
-        # Kùzu can't coerce an ISO string to TIMESTAMP via plain param
-        # binding — created_at must be wrapped in timestamp() (mirrors the
-        # _apply_kuzu_node_create_with_timestamp shim used by the CREATE path).
-        # Required so supersede_node's create works once it has real call
-        # sites (spec eca49df9 / TR6).
-        columns = ", ".join(
-            f"{k}: timestamp(${k})" if k == "created_at" else f"{k}: ${k}"
-            for k in params
+        self.graph_scope.create_node(
+            node_type,
+            node_id,
+            dict(attrs),
+            source_session_id=self.session_id,
         )
-        stmt = f"CREATE (n:{node_type} {{{columns}}})"
-        self.kuzu_conn.execute(stmt, params)
 
         self.records.append(
-            KuzuWriteRecord(kind="node", entity_type=node_type, entity_id=node_id)
+            GraphWriteRecord(kind="node", entity_type=node_type, entity_id=node_id)
         )
         self.counters.nodes_added += 1
 
@@ -185,7 +274,7 @@ class TransactionOrchestrator:
         Spec eca49df9 (TR6) wires this as the production call site for
         op==UPDATE. It previously had NO call site, which masked the fact that
         the node schema (see schema.py) has no ``updated_by_session_id`` /
-        ``updated_at`` columns — SETting them raised a Kùzu Binder exception.
+        ``updated_at`` columns — SETting them raised a graph backend Binder exception.
         Only the caller-supplied content attrs are SET (callers pass the
         _NODE_UPDATEABLE_ATTRS subset, never ``embedding`` which is HNSW-locked).
 
@@ -193,13 +282,10 @@ class TransactionOrchestrator:
         compensate to (compensating rollback only protects partial ADD writes,
         not UPDATE overwrites; documented in the spec)."""
         self._guard_fresh()
-        set_clauses = ", ".join(f"n.{k} = ${k}" for k in attrs if k != "id")
-        if not set_clauses:
+        values = {key: value for key, value in attrs.items() if key != "id"}
+        if not values:
             return
-        params = {k: v for k, v in attrs.items() if k != "id"}
-        params["id"] = node_id
-        stmt = f"MATCH (n:{node_type} {{id: $id}}) SET {set_clauses}"
-        self.kuzu_conn.execute(stmt, params)
+        self.graph_scope.update_node(node_type, node_id, values)
         self.counters.nodes_updated += 1
 
     def supersede_node(
@@ -222,27 +308,25 @@ class TransactionOrchestrator:
         self.counters.nodes_superseded += 1
 
         # 2. Mark the old node as superseded
-        self.kuzu_conn.execute(
-            f"MATCH (old:{node_type} {{id: $old_id}}) "
-            f"SET old.superseded_by = $new_id, "
-            f"old.superseded_at = timestamp($ts), "
-            f"old.revocation_reason = $reason",
-            {
-                "old_id": superseded_node_id,
-                "new_id": new_node_id,
-                "ts": _now_iso(),
-                "reason": revocation_reason or "",
-            },
+        self.graph_scope.mark_superseded(
+            node_type,
+            superseded_node_id,
+            superseded_by=new_node_id,
+            superseded_at=_now_iso(),
+            revocation_reason=revocation_reason or "",
         )
 
-        # 3. Create the :supersedes edge
-        if node_type == "Decision":
-            self.create_edge(
-                "supersedes",
-                new_node_id,
-                superseded_node_id,
-                attrs={"confidence": 1.0},
-            )
+        # 3. Create the walkable :supersedes edge — universal for ALL node
+        # types (spec MKG-D-S1 FR4; was Decision-only until the rel became
+        # multi-pair). from/to hints are mandatory for multi-pair rels.
+        self.create_edge(
+            "supersedes",
+            new_node_id,
+            superseded_node_id,
+            attrs={"confidence": 1.0},
+            from_type=node_type,
+            to_type=node_type,
+        )
 
     def create_edge(
         self,
@@ -281,6 +365,74 @@ class TransactionOrchestrator:
             to_type=to_type,
         )
 
+        rule_id = str(edge_attrs.get("rule_id") or "")
+        if edge_type == "belongs_to" and is_spec_lineage_rule_id(rule_id):
+            if (from_type, to_type) != ("Entity", "Entity"):
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_endpoint_type_invalid",
+                    "Spec lineage reconciliation requires Entity -> Entity "
+                    f"endpoints, received {from_type} -> {to_type}.",
+                )
+            reconcile = getattr(
+                self.graph_scope,
+                "reconcile_spec_lineage_parent",
+                None,
+            )
+            if not callable(reconcile):
+                raise SpecLineageReconciliationError(
+                    "spec_lineage_reconciliation_capability_unavailable",
+                    "The configured GraphTransaction scope does not expose the "
+                    "bounded Spec-lineage reconciliation capability.",
+                )
+            try:
+                receipt = reconcile(from_id, to_id, edge_attrs)
+            except SpecLineageReconciliationError as exc:
+                partial_receipt = exc.receipt
+                if partial_receipt is not None and (
+                    partial_receipt.new_edge_created
+                    or partial_receipt.removed_edges
+                ):
+                    self.records.append(
+                        GraphWriteRecord(
+                            kind="edge",
+                            entity_type=edge_type,
+                            entity_id=f"{from_id}->{to_id}",
+                            from_id=from_id,
+                            to_id=to_id,
+                            lineage_receipt=partial_receipt,
+                        )
+                    )
+                raise
+            if receipt.ambiguous_legacy_edges:
+                logger.warning(
+                    "kg.transaction.spec_lineage_legacy_ambiguous "
+                    "session=%s source=%s count=%d",
+                    self.session_id,
+                    from_id,
+                    receipt.ambiguous_legacy_edges,
+                    extra={
+                        "event": "kg.transaction.spec_lineage_legacy_ambiguous",
+                        "session_id": self.session_id,
+                        "board_id": self.board_id,
+                        "source_id": from_id,
+                        "ambiguous_legacy_edges": receipt.ambiguous_legacy_edges,
+                    },
+                )
+            if receipt.new_edge_created or receipt.removed_edges:
+                self.records.append(
+                    GraphWriteRecord(
+                        kind="edge",
+                        entity_type=edge_type,
+                        entity_id=f"{from_id}->{to_id}",
+                        from_id=from_id,
+                        to_id=to_id,
+                        lineage_receipt=receipt,
+                    )
+                )
+            if receipt.new_edge_created:
+                self.counters.edges_added += 1
+            return
+
         if self._edge_exists(edge_type, from_type, to_type, from_id, to_id):
             logger.info(
                 "kg.transaction.edge_exists session=%s edge=%s from=%s(%s) to=%s(%s)",
@@ -297,24 +449,15 @@ class TransactionOrchestrator:
             )
             return
 
-        attr_cols = ", ".join(f"{k}: ${k}" for k in edge_attrs)
-        stmt = (
-            f"MATCH (a:{from_type} {{id: $from_id}}), "
-            f"(b:{to_type} {{id: $to_id}}) "
-            f"CREATE (a)-[r:{edge_type} {{{attr_cols}}}]->(b) "
-            "RETURN r.created_by_session_id"
+        created = self.graph_scope.create_edge(
+            edge_type,
+            from_type,
+            to_type,
+            from_id,
+            to_id,
+            edge_attrs,
         )
-        params = dict(edge_attrs)
-        params["from_id"] = from_id
-        params["to_id"] = to_id
-
-        # created_at is a TIMESTAMP column — wrap with timestamp() function.
-        # Replace the literal param binding with the function call.
-        stmt = stmt.replace("created_at: $created_at",
-                            "created_at: timestamp($created_at)")
-
-        result = self.kuzu_conn.execute(stmt, params)
-        if not _result_has_row(result):
+        if not created:
             actual_from = self._find_node_types(from_id)
             actual_to = self._find_node_types(to_id)
             raise ValueError(
@@ -326,7 +469,7 @@ class TransactionOrchestrator:
             )
 
         self.records.append(
-            KuzuWriteRecord(
+            GraphWriteRecord(
                 kind="edge",
                 entity_type=edge_type,
                 entity_id=f"{from_id}->{to_id}",
@@ -335,6 +478,61 @@ class TransactionOrchestrator:
             )
         )
         self.counters.edges_added += 1
+
+    def clear_spec_lineage_parent(self, source_id: str) -> None:
+        """Apply an explicit deterministic parent unlink with a before-image."""
+
+        self._guard_fresh()
+        clear = getattr(self.graph_scope, "clear_spec_lineage_parent", None)
+        if not callable(clear):
+            raise SpecLineageReconciliationError(
+                "spec_lineage_reconciliation_capability_unavailable",
+                "The configured GraphTransaction scope does not expose the "
+                "bounded Spec-lineage clear capability.",
+            )
+        try:
+            receipt = clear(source_id)
+        except SpecLineageReconciliationError as exc:
+            partial_receipt = exc.receipt
+            if partial_receipt is not None and partial_receipt.removed_edges:
+                self.records.append(
+                    GraphWriteRecord(
+                        kind="edge",
+                        entity_type="belongs_to",
+                        entity_id=f"{source_id}-><none>",
+                        from_id=source_id,
+                        lineage_receipt=partial_receipt,
+                    )
+                )
+            raise
+        if receipt.ambiguous_legacy_edges:
+            logger.warning(
+                "kg.transaction.spec_lineage_clear_legacy_ambiguous "
+                "session=%s source=%s count=%d",
+                self.session_id,
+                source_id,
+                receipt.ambiguous_legacy_edges,
+                extra={
+                    "event": (
+                        "kg.transaction."
+                        "spec_lineage_clear_legacy_ambiguous"
+                    ),
+                    "session_id": self.session_id,
+                    "board_id": self.board_id,
+                    "source_id": source_id,
+                    "ambiguous_legacy_edges": receipt.ambiguous_legacy_edges,
+                },
+            )
+        if receipt.removed_edges:
+            self.records.append(
+                GraphWriteRecord(
+                    kind="edge",
+                    entity_type="belongs_to",
+                    entity_id=f"{source_id}-><none>",
+                    from_id=source_id,
+                    lineage_receipt=receipt,
+                )
+            )
 
     def _edge_exists(
         self,
@@ -346,97 +544,25 @@ class TransactionOrchestrator:
     ) -> bool:
         """Return True when this semantic edge already exists.
 
-        Kùzu does not enforce a unique constraint for relationship tables, so
+        graph backend does not enforce a unique constraint for relationship tables, so
         repeated artifact consolidation can otherwise materialize the same
         edge many times. The KG treats `(edge_type, from_id, to_id)` as the
         natural identity for all current relationships.
         """
-        stmt = (
-            f"MATCH (a:{from_type} {{id: $from_id}})-[r:{edge_type}]->"
-            f"(b:{to_type} {{id: $to_id}}) "
-            "RETURN r.created_by_session_id LIMIT 1"
+        return self.graph_scope.edge_exists(
+            edge_type,
+            from_type,
+            to_type,
+            from_id,
+            to_id,
         )
-        result = self.kuzu_conn.execute(stmt, {
-            "from_id": from_id,
-            "to_id": to_id,
-        })
-        try:
-            if hasattr(result, "has_next"):
-                return bool(result.has_next())
-            try:
-                next(iter(result))
-                return True
-            except StopIteration:
-                return False
-            except TypeError:
-                return False
-        finally:
-            _close_result(result)
 
     def _find_node_types(self, node_id: str) -> list[str]:
         """Best-effort lookup used only to make failed edge errors actionable."""
-        found: list[str] = []
-        for node_type in NODE_TYPES:
-            try:
-                result = self.kuzu_conn.execute(
-                    f"MATCH (n:{node_type} {{id: $node_id}}) "
-                    "RETURN n.id LIMIT 1",
-                    {"node_id": node_id},
-                )
-                try:
-                    if hasattr(result, "has_next") and result.has_next():
-                        found.append(node_type)
-                finally:
-                    _close_result(result)
-            except Exception:
-                continue
-        return found
-
-    # ------------------------------------------------------------------
-    # SQLite commit phase
-    # ------------------------------------------------------------------
-
-    async def commit_sqlite(
-        self,
-        mutations: Callable[[AsyncSession], Any],
-    ) -> CommitCounters:
-        """Apply the SQLite-side mutations inside a transaction and commit.
-
-        `mutations` is a callable that takes the AsyncSession and stages all
-        ORM objects (audit row, kuzu_node_refs, outbox event, etc.). The
-        orchestrator owns flush/commit semantics and triggers compensating
-        delete on failure.
-        """
-        self._guard_fresh()
-        try:
-            result = mutations(self.sqlite_session)
-            if hasattr(result, "__await__"):
-                await result
-            await self.sqlite_session.commit()
-            self._committed = True
-            logger.info(
-                "kg.transaction.commit session=%s nodes=%d updated=%d "
-                "superseded=%d edges=%d",
-                self.session_id,
-                self.counters.nodes_added,
-                self.counters.nodes_updated,
-                self.counters.nodes_superseded,
-                self.counters.edges_added,
-            )
-            return self.counters
-        except Exception as exc:
-            logger.warning(
-                "kg.transaction.sqlite_commit_failed session=%s err=%s — "
-                "triggering compensating delete",
-                self.session_id,
-                exc,
-            )
-            await self.sqlite_session.rollback()
-            await self.compensate()
-            raise
+        return list(self.graph_scope.find_node_types(node_id))
 
     async def compensate(self) -> None:
-        """Reverse every Kùzu write recorded so far.
+        """Reverse every graph write recorded so far.
 
         Strategy: iterate `records` in reverse insertion order. Delete edges
         first (they depend on nodes), then nodes. Uses session_id filters in
@@ -449,44 +575,81 @@ class TransactionOrchestrator:
             self._compensated = True
             return
 
-        failed: list[KuzuWriteRecord] = []
+        failed: list[GraphWriteRecord] = []
 
-        # 1. Delete edges created by this session (any rel type)
-        for rel_name, from_type, to_type in _relationship_pairs():
+        lineage_receipts = [
+            record.lineage_receipt
+            for record in reversed(self.records)
+            if record.lineage_receipt is not None
+        ]
+        preserved_edges: list[SpecLineageEdgeSnapshot] = []
+        for receipt in lineage_receipts:
             try:
-                self.kuzu_conn.execute(
-                    f"MATCH (a:{from_type})-[r:{rel_name}]->(b:{to_type}) "
-                    f"WHERE r.created_by_session_id = $sid DELETE r",
-                    {"sid": self.session_id},
-                )
+                self.graph_scope.compensate_spec_lineage_parent(receipt)
             except Exception as exc:
                 logger.error(
-                    "kg.compensate.edge_delete_failed rel=%s session=%s err=%s",
-                    rel_name, self.session_id, exc,
+                    "kg.compensate.spec_lineage_restore_failed "
+                    "session=%s source=%s target=%s err=%s",
+                    self.session_id,
+                    receipt.source_id,
+                    receipt.target_id,
+                    exc,
                 )
-                # Continue deleting other rel types — partial compensation is
-                # better than none.
+                raise CompensationError(
+                    "Spec-lineage compensation failed before generic session "
+                    "cleanup; the replacement edge was preserved.",
+                    original_exc=exc,
+                    failed_records=[
+                        record
+                        for record in self.records
+                        if record.lineage_receipt is receipt
+                    ],
+                ) from exc
+            preserved_edges.extend(receipt.removed_edges)
+
+        try:
+            if preserved_edges:
+                delete_preserving = getattr(
+                    self.graph_scope,
+                    "delete_edges_by_session_preserving_spec_lineage",
+                    None,
+                )
+                if not callable(delete_preserving):
+                    raise SpecLineageReconciliationError(
+                        "spec_lineage_compensation_capability_unavailable",
+                        "The configured GraphTransaction scope cannot preserve "
+                        "restored Spec lineage during session cleanup.",
+                    )
+                delete_preserving(self.session_id, tuple(preserved_edges))
+            else:
+                self.graph_scope.delete_edges_by_session(self.session_id)
+        except Exception as exc:
+            logger.error(
+                "kg.compensate.edge_delete_failed session=%s err=%s",
+                self.session_id,
+                exc,
+            )
+            if lineage_receipts:
+                raise CompensationError(
+                    "compensating edge delete failed",
+                    original_exc=exc,
+                    failed_records=list(self.records),
+                ) from exc
 
         # 2. Delete nodes created by this session (group by type for efficiency)
         node_types = {
             r.entity_type for r in self.records if r.kind == "node"
         }
-        for node_type in node_types:
-            try:
-                self.kuzu_conn.execute(
-                    f"MATCH (n:{node_type}) "
-                    f"WHERE n.source_session_id = $sid DETACH DELETE n",
-                    {"sid": self.session_id},
-                )
-            except Exception as exc:
-                logger.error(
-                    "kg.compensate.node_delete_failed type=%s session=%s err=%s",
-                    node_type, self.session_id, exc,
-                )
-                failed.extend(
-                    r for r in self.records
-                    if r.kind == "node" and r.entity_type == node_type
-                )
+        failed_types = self.graph_scope.delete_nodes_by_session(
+            self.session_id,
+            tuple(sorted(node_types)),
+        )
+        for node_type in failed_types:
+            failed.extend(
+                record
+                for record in self.records
+                if record.kind == "node" and record.entity_type == node_type
+            )
 
         self._compensated = True
         logger.info(
@@ -504,8 +667,6 @@ class TransactionOrchestrator:
     # ------------------------------------------------------------------
 
     def _guard_fresh(self) -> None:
-        if self._committed:
-            raise RuntimeError("orchestrator already committed")
         if self._compensated:
             raise RuntimeError("orchestrator already compensated")
 

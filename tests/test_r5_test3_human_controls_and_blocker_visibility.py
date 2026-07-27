@@ -15,6 +15,8 @@ drive the REAL MCP evaluate/list tools over a seeded skip + open debt / DLQ.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import os
 import sys
@@ -23,13 +25,15 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWork
 from sqlalchemy import select
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_r5t3_"))
 
-import okto_pulse.core.api.cognitive_action_center as ac_api
-from okto_pulse.core.api.cognitive_action_center import (
+import okto_pulse.community.api.cognitive_action_center as ac_api
+from okto_pulse.community.api.cognitive_action_center import (
     CognitiveClearRequest,
     CognitiveSkipRequest,
     clear_cognitive_skip_endpoint,
@@ -40,10 +44,11 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     compute_cognitive_item_id,
-    default_rebuild_base_dir,
+    require_rebuild_audit_artifact_store,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     ConsolidationDeadLetter,
@@ -73,13 +78,13 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 test3 agent"
-        self.permissions = set()
+        self.permissions = {"board:read"}
 
 
 async def _mcp(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -94,8 +99,6 @@ async def _skip_logs(db, ideation_id):
 
 
 def _seed_item(store, board, source_ref, status):
-    path = store._record_path(board, GEN)
-    path.parent.mkdir(parents=True, exist_ok=True)
     item = {
         "item_id": compute_cognitive_item_id(board, GEN, source_ref),
         "board_id": board, "kg_generation_id": GEN, "source_ref": source_ref,
@@ -105,11 +108,19 @@ def _seed_item(store, board, source_ref, status):
     if status == CognitiveItemStatus.SKIPPED.value:
         item["reason_code"] = "duplicate_bug"
         item["outcome_type"] = "no_action_required"
-    record = {"pending_count": 1 if status == CognitiveItemStatus.PENDING.value else 0,
+    record = {"board_id": board, "kg_generation_id": GEN,
+              "pending_count": 1 if status == CognitiveItemStatus.PENDING.value else 0,
               "pending_refs": [source_ref] if status == CognitiveItemStatus.PENDING.value else [],
               "status": "pending" if status == CognitiveItemStatus.PENDING.value else "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=GEN,
+        ),
+        record,
+    )
 
 
 # ===========================================================================
@@ -159,7 +170,7 @@ async def test_ts_9455d0bf_human_cognitive_apply_and_remove_audited(db_factory, 
         applied = await record_cognitive_skip_endpoint(
             board, CognitiveSkipRequest(source_ref=source_ref, reason_code="duplicate_bug",
                                         justification="dup of X", evidence_refs=["card:other"]),
-            db, actor=USER_ID)
+            SQLAlchemyUnitOfWork(db), actor=USER_ID)
     assert applied["status"] == CognitiveItemStatus.SKIPPED.value
     assert applied["actor"] == USER_ID and applied["reason_code"] == "duplicate_bug"
     assert applied["justification"] == "dup of X" and applied["evidence_refs"] == ["card:other"]
@@ -167,7 +178,11 @@ async def test_ts_9455d0bf_human_cognitive_apply_and_remove_audited(db_factory, 
 
     async with db_factory() as db:
         cleared = await clear_cognitive_skip_endpoint(
-            board, CognitiveClearRequest(source_ref=source_ref), db, actor=USER_ID)
+            board,
+            CognitiveClearRequest(source_ref=source_ref),
+            SQLAlchemyUnitOfWork(db),
+            actor=USER_ID,
+        )
     assert cleared["status"] == CognitiveItemStatus.PENDING.value
     assert cleared["actor"] == USER_ID and cleared["updated_at"] is not None
     # durable ledger reflects the reopen.
@@ -192,7 +207,9 @@ async def test_ts_85e18262_open_debt_visible_and_blocking_with_active_skip(db_fa
             target_status="canonical", canonical_state="blocked")
         await db.commit()
     # An ACTIVE cognitive skip exists for the SAME artifact (read-only context).
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_item(store, board, source_ref, CognitiveItemStatus.SKIPPED.value)
 
     # BLOCKING: the verdict is the technical tier, NOT ready/skip.
@@ -214,12 +231,15 @@ async def test_ts_85e18262_dlq_visible_and_blocking_with_active_skip(db_factory)
     board, source_ref = _id("board"), f"bug:{UUID_A}"
     async with db_factory() as db:
         db.add(Board(id=board, name="r5 test3", owner_id=USER_ID))
+        await db.flush()
         db.add(ConsolidationDeadLetter(
             id=_id("dlq"), board_id=board, artifact_type="card", artifact_id=UUID_A,
             original_queue_id="q1", attempts=3,
             errors=[{"attempt": 1, "error_type": "X", "message": "boom"}]))
         await db.commit()
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_item(store, board, source_ref, CognitiveItemStatus.SKIPPED.value)
 
     verdict = await _mcp("okto_pulse_kg_evaluate_cognitive_readiness",
@@ -257,7 +277,7 @@ async def test_ts_85e18262_human_skip_cannot_mark_debt_resolved(db_factory, tmp_
         with pytest.raises(HTTPException) as exc:
             await record_cognitive_skip_endpoint(
                 board, CognitiveSkipRequest(source_ref=source_ref, reason_code="duplicate_bug"),
-                db, actor=USER_ID)
+                SQLAlchemyUnitOfWork(db), actor=USER_ID)
     assert exc.value.status_code == 409
     assert exc.value.detail["error"] == "technical_debt_cannot_be_skipped"
     # the item was NOT skipped — debt not masked.

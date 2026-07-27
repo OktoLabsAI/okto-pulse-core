@@ -26,7 +26,78 @@ unless the service signature changes.
 
 from __future__ import annotations
 
-from typing import Optional
+import json
+from typing import Any, Literal, Optional, TypeAlias, TypedDict
+
+
+BoardEntityType: TypeAlias = Literal[
+    "spec", "ideation", "refinement", "sprint", "story", "topic"
+]
+QaEntityType: TypeAlias = Literal["spec", "ideation", "refinement"]
+KnowledgeEntityType: TypeAlias = Literal["spec", "ideation", "refinement", "card"]
+SnapshotEntityType: TypeAlias = Literal["ideation", "refinement"]
+
+
+class SpecBoardFilters(TypedDict, total=False):
+    status: str
+    labels: list[str]
+    assignee_id: str
+    include_archived: bool
+
+
+class IdeationBoardFilters(TypedDict, total=False):
+    status: str
+    labels: list[str]
+    derivation_pending: bool
+    include_archived: bool
+
+
+class RefinementBoardFilters(IdeationBoardFilters, total=False):
+    ideation_id: str
+
+
+class SprintBoardFilters(TypedDict, total=False):
+    status: str
+    spec_id: str
+    include_archived: bool
+
+
+class StoryBoardFilters(TypedDict, total=False):
+    status: str
+    topic_id: str
+    linked: bool
+    converted: bool
+    include_archived: bool
+
+
+class TopicBoardFilters(TypedDict, total=False):
+    include_archived: bool
+
+
+BoardListFilters: TypeAlias = (
+    SpecBoardFilters
+    | IdeationBoardFilters
+    | RefinementBoardFilters
+    | SprintBoardFilters
+    | StoryBoardFilters
+    | TopicBoardFilters
+)
+
+
+class QaFilters(TypedDict, total=False):
+    status: str
+    asked_by: str
+
+
+class SprintQaFilters(TypedDict, total=False):
+    status: str
+
+
+QaListFilters: TypeAlias = QaFilters | SprintQaFilters
+
+
+class KnowledgeFilters(TypedDict, total=False):
+    mime_type: str
 
 # ---------------------------------------------------------------------------
 # Allowed filter key tables
@@ -34,10 +105,16 @@ from typing import Optional
 
 # okto_pulse_list_by_board
 ALLOWED_FILTERS_BY_BOARD: dict[str, list[str]] = {
-    "spec": ["status", "labels", "assignee_id"],
-    "ideation": ["status", "labels"],
-    "refinement": ["status", "labels", "ideation_id"],
-    "sprint": ["status", "spec_id"],
+    "spec": ["status", "labels", "assignee_id", "include_archived"],
+    "ideation": ["status", "labels", "derivation_pending", "include_archived"],
+    "refinement": [
+        "status",
+        "labels",
+        "ideation_id",
+        "derivation_pending",
+        "include_archived",
+    ],
+    "sprint": ["status", "spec_id", "include_archived"],
     "story": ["status", "topic_id", "linked", "converted", "include_archived"],
     "topic": ["include_archived"],
 }
@@ -75,6 +152,28 @@ _SCOPE_MAP: dict[str, dict[str, list[str]]] = {
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def parse_filter_payload(raw: dict[str, Any] | str | None) -> dict[str, Any]:
+    """Decode the explicit legacy JSON form and require an object payload."""
+
+    if raw is None:
+        return {}
+    decoded: Any = raw
+    if isinstance(raw, str):
+        if not raw.strip():
+            return {}
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Invalid JSON filter object: {exc.msg} (at pos {exc.pos})"
+            ) from exc
+    if not isinstance(decoded, dict):
+        raise ValueError(
+            f"filters must be an object, got {type(decoded).__name__}"
+        )
+    return dict(decoded)
 
 
 def validate_filters(
@@ -133,6 +232,23 @@ def validate_filters(
         )
 
     return True, None
+
+
+def supported_filter_keys(entity_type: str, scope: str = "by_board") -> list[str]:
+    """Return the allow-listed filter keys for an entity/scope pair."""
+    return list(_SCOPE_MAP.get(scope, {}).get(entity_type, []))
+
+
+def invalid_filter_keys(
+    entity_type: str,
+    filters: dict | None,
+    scope: str = "by_board",
+) -> list[str]:
+    """Return caller-supplied keys that are not in the central allow-list."""
+    if not filters:
+        return []
+    allowed = set(supported_filter_keys(entity_type, scope=scope))
+    return [key for key in filters.keys() if key not in allowed]
 
 
 def supported_entity_types(scope: str = "by_board") -> list[str]:

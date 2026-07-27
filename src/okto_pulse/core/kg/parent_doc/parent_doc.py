@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import select
+from okto_pulse.core.ports.parent_artifact import get_parent_artifact_read_port
 
 logger = logging.getLogger("okto_pulse.kg.parent_doc")
 
@@ -48,9 +48,6 @@ async def resolve_parent_artifacts(
     The DB param is an async SQLAlchemy session. The function is
     async because the project's DB layer is async.
     """
-    # Import models lazily to avoid circular imports at package load.
-    from okto_pulse.core.models.db import Card, Spec, Sprint
-
     by_type: dict[str, set[str]] = {"spec": set(), "sprint": set(), "card": set()}
     ref_to_key: dict[str, tuple[str, str]] = {}
     for ref in refs:
@@ -64,28 +61,21 @@ async def resolve_parent_artifacts(
     out: dict[str, dict[str, Any]] = {}
     payload_by_key: dict[tuple[str, str], dict[str, Any]] = {}
 
-    models = {"spec": Spec, "sprint": Sprint, "card": Card}
     for artifact_type, ids in by_type.items():
         if not ids:
             continue
-        model = models[artifact_type]
         try:
-            result = await db.execute(
-                select(model.id, model.title, model.status).where(
-                    model.id.in_(ids)
-                )
+            records = await get_parent_artifact_read_port().read_many(
+                db,
+                artifact_type=artifact_type,
+                ids=frozenset(ids),
             )
-            for row_id, row_title, row_status in result.all():
-                status_value = (
-                    row_status.value
-                    if hasattr(row_status, "value")
-                    else str(row_status)
-                )
-                payload_by_key[(artifact_type, row_id)] = {
+            for record in records:
+                payload_by_key[(artifact_type, record.id)] = {
                     "type": artifact_type,
-                    "id": row_id,
-                    "title": row_title or "",
-                    "status": status_value,
+                    "id": record.id,
+                    "title": record.title,
+                    "status": record.status,
                 }
         except Exception as e:  # noqa: BLE001 — any DB failure degrades silently
             logger.warning(

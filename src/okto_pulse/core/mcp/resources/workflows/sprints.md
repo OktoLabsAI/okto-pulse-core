@@ -11,12 +11,12 @@ Sprints break large specs into incremental deliverables with scoped gates and ev
 **Lifecycle:** draft → active → review → closed (cancelled from any state)
 
 **When to use sprints:**
-- Specs with many tasks (typically 6+ cards) benefit from sprint breakdown
-- The system automatically suggests sprints during spec validation (approved → validated) when task count exceeds the threshold
+- Specs with many tasks (8+ cards, the default threshold) benefit from sprint breakdown
+- The system automatically suggests sprints during spec validation (approved → validated) when task count exceeds the threshold (default 8)
 - Sprints are optional — specs can work without them
 
 **Creating sprints:**
-1. Use `okto_pulse_suggest_sprints(board_id, spec_id, threshold?)` to get AI-suggested breakdown
+1. Use `okto_pulse_suggest_sprints(board_id, spec_id, threshold?)` (threshold default: 8) to get AI-suggested breakdown
 2. Create sprints with `okto_pulse_create_sprint` — scope test_scenario_ids and business_rule_ids from the spec
 3. Assign cards with `okto_pulse_assign_tasks_to_sprint(board_id, sprint_id, card_ids)`
 
@@ -34,11 +34,14 @@ Sprints expose `lane_type` so normal delivery work and post-closure bug work are
 The lane enum is intentionally limited to delivery vs post-closure hotfix
 semantics.
 
-Hotfix lanes carry optional lineage fields:
-- `origin_sprint_id` — the closed original sprint that produced the post-closure work, when applicable.
-- `origin_bug_id` — the bug card that triggered the lane, when available.
+Hotfix lanes carry explicit lineage:
+- `origin_bug_id` is **required** and must identify a bug card in the same board and spec.
+- `origin_sprint_id` is optional; when supplied, it must identify a sprint in the same board and spec. A hotfix is eligible when the spec is done or that origin sprint is closed.
 
-An `active` hotfix lane satisfies the same sprint ownership gate as an `active` normal sprint. It does not bypass bug governance: bug cards in hotfix lanes still need the required linked post-bug test card when the board bug regression gate applies.
+Normal lanes cannot carry either origin field. Updating a hotfix lane to `normal`
+clears both origins atomically.
+
+An `active` hotfix lane satisfies the same sprint ownership gate as an `active` normal sprint. It does not bypass bug governance: bug cards in hotfix lanes still need the required linked post-bug test card when the board bug regression gate applies. Cards remain same-spec by default. The sole cross-spec assignment is a validator-confirmed Path B regression test task whose amendment binds the lane's origin bug, task, scenario and revision spec; incomplete, unconfirmed or unrelated amendments never open that boundary.
 
 ### MANDATORY — Detailed Sprint Fields
 
@@ -92,6 +95,11 @@ For scope to resolve correctly, **you MUST link spec artifacts to cards** using 
 
 When a sprint is in `review` status, submit an evaluation via `okto_pulse_submit_sprint_evaluation`. Each dimension scores 0-100 with a mandatory justification:
 
+First read `okto_pulse_get_sprint_context(profile="full")` and inspect the
+current caller's `reviewer_separation` projection. When its mode is `enforce`
+and `allowed=false`, use a different authorized principal; retrying with the
+same creator, assignee, or executor is not a transient recovery action.
+
 | Dimension | What to evaluate |
 |-----------|-----------------|
 | `breakdown_completeness` | Do the assigned cards fully cover the sprint's scoped requirements? Are there gaps? |
@@ -101,8 +109,6 @@ When a sprint is in `review` status, submit an evaluation via `okto_pulse_submit
 | `overall_score` | Overall assessment considering all dimensions. |
 
 **recommendation:** `approve` (sprint can close), `request_changes` (needs rework), `reject` (fundamentally flawed)
-
-**Permission flags:** 25 flags under `sprint.*` — entity (9), move (4), interact_in (5), qa (3), evaluations (3), history_read (1)
 
 ### Sprint Status Transitions
 

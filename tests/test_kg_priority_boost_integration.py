@@ -13,14 +13,13 @@ import os
 
 import pytest
 
-from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
-from okto_pulse.core.kg.schema import (
+from okto_pulse.community.adapters.graph_connection_pool import reset_connection_pool_for_tests
+from kg_schema_testing import (
     NODE_TYPES,
     PRIORITY_BOOST_COLUMNS,
-    _ensure_priority_boost_columns,
-    apply_schema_to_connection,
     bootstrap_board_graph,
     close_all_connections,
+    open_materialized_board_connection,
     open_board_connection,
 )
 from okto_pulse.core.kg.scoring import (
@@ -30,6 +29,10 @@ from okto_pulse.core.kg.scoring import (
     _recompute_relevance_batch,
     reset_histogram,
 )
+
+kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+_ensure_priority_boost_columns = kg_runtime._ensure_priority_boost_columns
+apply_schema_to_connection = kg_runtime.apply_schema_to_connection
 
 
 @pytest.fixture
@@ -138,7 +141,7 @@ def test_ts8_insert_persists_priority_boost(fresh_board):
 
 def test_ts8_fetch_node_inputs_surfaces_priority_boost(fresh_board):
     """_fetch_node_inputs includes priority_boost in its returned dict."""
-    with open_board_connection(fresh_board) as (_db, conn):
+    with open_materialized_board_connection(fresh_board) as (_db, conn):
         _insert_entity(conn, "e-ts8-fetch", source_conf=0.5, boost=0.15)
         inputs = _fetch_node_inputs(conn, "Entity", "e-ts8-fetch")
         assert inputs is not None
@@ -147,7 +150,7 @@ def test_ts8_fetch_node_inputs_surfaces_priority_boost(fresh_board):
 
 def test_fetch_node_inputs_without_contradicts_has_zero_penalty(fresh_board):
     """OPTIONAL MATCH rows without :contradicts must not count as penalty."""
-    with open_board_connection(fresh_board) as (_db, conn):
+    with open_materialized_board_connection(fresh_board) as (_db, conn):
         _insert_entity(conn, "e-no-contradicts", source_conf=1.0, boost=0.0)
         inputs = _fetch_node_inputs(conn, "Entity", "e-no-contradicts")
 
@@ -169,7 +172,7 @@ def test_ts8_recompute_preserves_frozen_boost_in_column(fresh_board):
     We check the column value, not the derived score — the score can move
     legitimately as degree/hits/penalty evolve; the boost must not.
     """
-    with open_board_connection(fresh_board) as (_db, conn):
+    with open_materialized_board_connection(fresh_board) as (_db, conn):
         _insert_entity(conn, "e-ts8-frozen", source_conf=0.5, boost=0.10)
         _recompute_relevance(conn, fresh_board, "Entity", "e-ts8-frozen",
                              trigger="test_frozen")
@@ -177,13 +180,12 @@ def test_ts8_recompute_preserves_frozen_boost_in_column(fresh_board):
             "MATCH (n:Entity {id: 'e-ts8-frozen'}) "
             "RETURN n.priority_boost"
         )
-        assert res.has_next()
-        assert res.get_next()[0] == pytest.approx(0.10)
+        assert res.rows[0][0] == pytest.approx(0.10)
 
 
 def test_ts8_recompute_twice_still_frozen(fresh_board):
     """Running recompute multiple times never touches priority_boost."""
-    with open_board_connection(fresh_board) as (_db, conn):
+    with open_materialized_board_connection(fresh_board) as (_db, conn):
         _insert_entity(conn, "e-ts8-twice", source_conf=0.8, boost=0.20)
         _recompute_relevance(conn, fresh_board, "Entity", "e-ts8-twice",
                              trigger="first")
@@ -192,7 +194,7 @@ def test_ts8_recompute_twice_still_frozen(fresh_board):
         res = conn.execute(
             "MATCH (n:Entity {id: 'e-ts8-twice'}) RETURN n.priority_boost"
         )
-        assert res.get_next()[0] == pytest.approx(0.20)
+        assert res.rows[0][0] == pytest.approx(0.20)
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +210,7 @@ def test_ts10_recompute_batch_surfaces_boost_to_fetch(fresh_board):
     batch recompute relies on — if _fetch returns the correct boost, the
     inline _compute_relevance receives it and produces per-node scores.
     """
-    with open_board_connection(fresh_board) as (_db, conn):
+    with open_materialized_board_connection(fresh_board) as (_db, conn):
         _insert_entity(conn, "e-ts10-a", source_conf=0.5, boost=0.20)
         _insert_entity(conn, "e-ts10-b", source_conf=0.5, boost=0.0)
         _recompute_relevance_batch(
@@ -228,10 +230,7 @@ def test_ts10_recompute_batch_surfaces_boost_to_fetch(fresh_board):
             "MATCH (n:Entity) WHERE n.id IN ['e-ts10-a','e-ts10-b'] "
             "RETURN n.id, n.priority_boost"
         )
-        persisted: dict[str, float] = {}
-        while res.has_next():
-            row = res.get_next()
-            persisted[row[0]] = float(row[1])
+        persisted = {row[0]: float(row[1]) for row in res.rows}
     assert persisted["e-ts10-a"] == pytest.approx(0.20)
     assert persisted["e-ts10-b"] == pytest.approx(0.0)
 

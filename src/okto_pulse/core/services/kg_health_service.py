@@ -5,16 +5,16 @@ JSON payload describing the live state of a board's knowledge graph:
 
     * SQL aggregations against ConsolidationQueue + ConsolidationDeadLetter
       for queue depth, oldest pending age, and dead letter count.
-    * Kùzu aggregations across all node tables for total_nodes, the count
+    * graph backend aggregations across all node tables for total_nodes, the count
       of nodes whose relevance_score is in the [0.45, 0.55] "default"
       band (sintoma de inflation), and avg_relevance.
     * In-process counter from scoring.get_contradict_warn_count for
       contradict_warn_count.
     * schema_version is a fixed string ("1.0") versioning the response
-      payload independently of the Kùzu schema.
+      payload independently of the graph backend schema.
 
-When Kùzu hasn't been bootstrapped for the board (or any aggregation
-fails), Kùzu-derived fields gracefully degrade to zero and the response
+When graph backend hasn't been bootstrapped for the board (or any aggregation
+fails), graph backend-derived fields gracefully degrade to zero and the response
 still ships. The endpoint must never 500 on a healthy app DB.
 """
 
@@ -22,15 +22,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 import re
 import threading
 import time
 import uuid
+from collections.abc import Callable
+from concurrent.futures import Future
+from contextvars import ContextVar, copy_context
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
-
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from okto_pulse.core.kg.health_state import (
     GraphTelemetry,
@@ -49,17 +51,27 @@ from okto_pulse.core.kg.memory_pressure_collector import (
     get_samples,
     record_sample,
 )
-from okto_pulse.core.kg.schema import board_kuzu_path
+from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+from okto_pulse.core.kg.interfaces.graph_runtime_store import (
+    GraphRuntimeObservationState,
+)
+from okto_pulse.core.kg.materialization_health import (
+    CensusStatus,
+    HealthProbeDeadline,
+    MaterializationEvidence,
+    MaterializationEvidenceRequest,
+    MaterializationHealthBaseline,
+    MaterializationHealthPolicy,
+)
 from okto_pulse.core.kg.scoring import get_contradict_warn_count
 from okto_pulse.core.infra.config import get_settings
-from okto_pulse.core.models.db import (
-    Board,
-    ConsolidationAudit,
-    ConsolidationDeadLetter,
-    ConsolidationQueue,
-    KGTickRun,
-    KuzuNodeRef,
+from okto_pulse.core.ports.kg_health import get_kg_health_read_port
+from okto_pulse.core.ports.materialization_health import (
+    get_materialization_evidence_port,
 )
+from okto_pulse.core.ports.relational_runtime import cancel_safe_session
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
+from okto_pulse.core.ports.scheduler import KG_DAILY_TICK_JOB_ID, SchedulerControl
 
 # KG-01 contract api_3ed9037f: REST surface restricts metric_status to
 # `available|unavailable`. The internal classifier may produce `partial`
@@ -85,7 +97,11 @@ _STATE_SEVERITY = {
 logger = logging.getLogger("okto_pulse.services.kg_health")
 
 
-HEALTH_SCHEMA_VERSION = "1.0"
+HEALTH_SCHEMA_VERSION = "1.1"
+LEGACY_HEALTH_SCHEMA_VERSION = "1.0"
+_MATERIALIZATION_EVIDENCE_BUDGET_S = 2.0
+_MATERIALIZATION_EVIDENCE_UNAVAILABLE = "materialization_evidence_unavailable"
+_CURRENT_GENERATION_STORE_UNAVAILABLE_REASON = "current_generation_store_unavailable"
 
 # Spec 20f67c2a (Ideação #5): "default score" band used to flag inflation
 # sintoma. Nodes whose relevance_score falls in [0.45, 0.55] are likely
@@ -97,21 +113,44 @@ DEFAULT_SCORE_BAND_HIGH = 0.55
 # emits a structured WARN log so observability tooling can flag the board.
 DEFAULT_SCORE_RATIO_ALARM_THRESHOLD = 0.7
 
-_SENSITIVE_ERROR_RE = re.compile(
-    r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.lbug|\.py\b)",
-    re.IGNORECASE,
-)
-_KG_DAILY_TICK_JOB_ID = "kg_daily_tick"
+# The canonical-partition overlay is optional health enrichment.  Its SQL read
+# is bounded so a busy relational store cannot hold the complete health request,
+# but cancelling an aiosqlite statement invalidates the connection that owns the
+# active transaction.  The read therefore runs in its own cancellation-safe
+# scope; the caller's session must never inherit that cancelled transaction.
+_DIGEST_OVERLAY_TIMEOUT_S = 0.1
 
 _SENSITIVE_ERROR_RE = re.compile(
-    r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.lbug|\.py\b)",
+    r"([A-Za-z]:\\|/[^ \t\r\n]+/|Traceback|File \"|\.py\b|"
+    r"(?:postgres(?:ql)?|mysql|mariadb|sqlite|mongodb(?:\+srv)?|redis|amqps?)://|"
+    r"(?:password|passwd|pwd|token|secret)=)",
     re.IGNORECASE,
 )
-_KG_DAILY_TICK_JOB_ID = "kg_daily_tick"
 
 
 class BoardNotFoundError(Exception):
     """Raised when the requested board does not exist."""
+
+
+async def _load_digest_partition_overlay(*, board_id: str) -> dict[str, str]:
+    """Load the optional digest overlay in an isolated relational scope.
+
+    ``asyncio.wait_for`` cancels its child query on timeout.  SQLAlchemy marks
+    an aiosqlite connection invalid in that case and requires a rollback before
+    it can reconnect.  ``cancel_safe_session`` delegates rollback + close to the
+    edition-owned runtime, keeping both cancellation cleanup and concrete
+    session behavior outside Core while preserving the caller's transaction.
+    """
+
+    from okto_pulse.core.kg.canonical_partition_integrity import (
+        pending_or_debt_exclusions,
+    )
+
+    async with cancel_safe_session() as overlay_db:
+        return await asyncio.wait_for(
+            pending_or_debt_exclusions(overlay_db, board_id=board_id),
+            timeout=_DIGEST_OVERLAY_TIMEOUT_S,
+        )
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -127,12 +166,17 @@ def _iso(value: datetime | None) -> str | None:
     return normalized.isoformat() if normalized is not None else None
 
 
-def _safe_scheduler_error(value: Any) -> str | None:
-    """Return a bounded, UI-safe scheduler error summary.
+def safe_health_error(
+    value: Any,
+    *,
+    sensitive_reason: str = "health_error_redacted",
+    max_chars: int = 180,
+) -> str | None:
+    """Return a bounded, UI-safe error summary for health surfaces.
 
     The KG Health surface is user/agent facing. It must not expose local graph
-    paths, Python file paths, stack frames, or payload bodies. When those appear,
-    keep only a bounded reason code.
+    paths, DSNs, Python file paths, stack frames, credentials or payload bodies.
+    When those appear, keep only a caller-provided bounded reason code.
     """
 
     if value is None:
@@ -142,8 +186,16 @@ def _safe_scheduler_error(value: Any) -> str | None:
         return None
     first_line = text.splitlines()[0].strip()
     if _SENSITIVE_ERROR_RE.search(text):
-        return "scheduler_tick_failed"
-    return first_line[:180]
+        return sensitive_reason
+    return first_line[: max(1, min(int(max_chars), 240))]
+
+
+def _safe_scheduler_error(value: Any) -> str | None:
+    return safe_health_error(
+        value,
+        sensitive_reason="scheduler_tick_failed",
+        max_chars=180,
+    )
 
 
 def _read_decay_settings() -> tuple[int | None, str | None]:
@@ -159,17 +211,18 @@ def _read_decay_settings() -> tuple[int | None, str | None]:
         return None, "settings_unavailable"
 
 
-def _read_next_scheduled_at() -> tuple[str | None, str | None]:
+async def _read_next_scheduled_at(
+    scheduler_control: SchedulerControl | None,
+) -> tuple[str | None, str | None]:
+    if scheduler_control is None:
+        return None, "scheduler_unavailable"
+    if not scheduler_control.is_available():
+        return None, "scheduler_unavailable"
     try:
-        from okto_pulse.core.kg.scheduler_singleton import get_scheduler
-
-        scheduler = get_scheduler()
-        if scheduler is None:
-            return None, "scheduler_unavailable"
-        job = scheduler.get_job(_KG_DAILY_TICK_JOB_ID)
-        if job is None:
-            return None, "scheduler_job_unavailable"
-        return _iso(getattr(job, "next_run_time", None)), None
+        snapshot = await scheduler_control.get_job_snapshot(KG_DAILY_TICK_JOB_ID)
+        if not snapshot.exists:
+            return None, snapshot.message or "scheduler_job_unavailable"
+        return _iso(snapshot.next_run_time), None
     except Exception as exc:
         logger.info(
             "kg.health.scheduler_next_run_unavailable reason=%s",
@@ -192,7 +245,7 @@ def _is_after(left: datetime | None, right: datetime | None) -> bool:
     return left > right
 
 
-async def _load_tick_evidence(db: AsyncSession) -> dict[str, Any]:
+async def _load_tick_evidence(db: Any) -> dict[str, Any]:
     """Load independent tick facts from KGTickRun.
 
     This keeps success, failure, terminal legacy state, and in-progress rows as
@@ -201,29 +254,39 @@ async def _load_tick_evidence(db: AsyncSession) -> dict[str, Any]:
     """
 
     try:
-        latest_success = await db.scalar(
-            select(KGTickRun)
-            .where(KGTickRun.completed_at.is_not(None), KGTickRun.error.is_(None))
-            .order_by(KGTickRun.completed_at.desc())
-            .limit(1)
+        rows = list(await get_kg_health_read_port().list_tick_runs(db))
+        terminal = [row for row in rows if row.completed_at is not None]
+        successes = [row for row in terminal if row.error is None]
+        failures = [row for row in rows if row.error is not None]
+        running = [row for row in rows if row.completed_at is None]
+        latest_success = (
+            max(successes, key=lambda row: _as_utc(row.completed_at))
+            if successes
+            else None
         )
-        latest_failure = await db.scalar(
-            select(KGTickRun)
-            .where(KGTickRun.error.is_not(None))
-            .order_by(KGTickRun.completed_at.desc(), KGTickRun.started_at.desc())
-            .limit(1)
+        latest_failure = (
+            max(
+                failures,
+                key=lambda row: _as_utc(row.completed_at) or _as_utc(row.started_at),
+            )
+            if failures
+            else None
         )
-        latest_terminal = await db.scalar(
-            select(KGTickRun)
-            .where(KGTickRun.completed_at.is_not(None))
-            .order_by(KGTickRun.completed_at.desc())
-            .limit(1)
+        latest_terminal = (
+            max(
+                terminal,
+                key=lambda row: _as_utc(row.completed_at),
+            )
+            if terminal
+            else None
         )
-        running_row = await db.scalar(
-            select(KGTickRun)
-            .where(KGTickRun.completed_at.is_(None))
-            .order_by(KGTickRun.started_at.desc())
-            .limit(1)
+        running_row = (
+            max(
+                running,
+                key=lambda row: _as_utc(row.started_at),
+            )
+            if running
+            else None
         )
     except Exception as exc:
         return {
@@ -245,14 +308,17 @@ async def _load_tick_evidence(db: AsyncSession) -> dict[str, Any]:
     }
 
 
-def _build_decay_scheduler_diagnostics(
+async def _build_decay_scheduler_diagnostics(
     *,
     tick_evidence: dict[str, Any],
     tick_in_progress: bool,
     now: datetime,
+    scheduler_control: SchedulerControl | None = None,
 ) -> dict[str, Any]:
     tolerance_seconds, settings_reason = _read_decay_settings()
-    next_scheduled_at, next_reason = _read_next_scheduled_at()
+    next_scheduled_at, next_reason = await _read_next_scheduled_at(
+        scheduler_control,
+    )
     latest_success = tick_evidence.get("latest_success")
     latest_failure = tick_evidence.get("latest_failure")
     running_row = tick_evidence.get("running_row")
@@ -389,42 +455,48 @@ def _build_health_diagnostics(
 
     issues: list[dict[str, Any]] = []
     if empty_after_materialized_history:
-        issues.append({
-            "code": "board_graph_empty_after_materialized_history",
-            "component": "board_graph",
-            "severity": "critical",
-            "reason": "graph:empty_after_materialized_history",
-            "description": (
-                "SQLite audit/ref history shows prior KG materialization but "
-                "LadybugDB currently returns zero nodes."
-            ),
-            "operator_action": "run_explicit_rebuild",
-        })
+        issues.append(
+            {
+                "code": "board_graph_empty_after_materialized_history",
+                "component": "board_graph",
+                "severity": "critical",
+                "reason": "graph:empty_after_materialized_history",
+                "description": (
+                    "Relational audit/ref history shows prior KG materialization "
+                    "but the graph adapter currently returns zero nodes."
+                ),
+                "operator_action": "run_explicit_rebuild",
+            }
+        )
     elif board_graph_queryable:
-        issues.append({
-            "code": "board_graph_queryable",
-            "component": "board_graph",
-            "severity": "info",
-            "reason": graph_read_status,
-            "description": (
-                "The board graph opened and returned materialized content; "
-                "this is not a board-graph recovery signal."
-            ),
-            "operator_action": "none",
-        })
+        issues.append(
+            {
+                "code": "board_graph_queryable",
+                "component": "board_graph",
+                "severity": "info",
+                "reason": graph_read_status,
+                "description": (
+                    "The board graph opened and returned materialized content; "
+                    "this is not a board-graph recovery signal."
+                ),
+                "operator_action": "none",
+            }
+        )
 
     if rest_metric_status == "unavailable":
-        issues.append({
-            "code": "telemetry_unavailable",
-            "component": "health_telemetry",
-            "severity": "warning",
-            "reason": "metric_status:unavailable",
-            "description": (
-                "Health sensors are unavailable, so canonical state remains "
-                "at_risk by policy even when the graph is queryable."
-            ),
-            "operator_action": "inspect_telemetry",
-        })
+        issues.append(
+            {
+                "code": "telemetry_unavailable",
+                "component": "health_telemetry",
+                "severity": "warning",
+                "reason": "metric_status:unavailable",
+                "description": (
+                    "Health sensors are unavailable, so canonical state remains "
+                    "at_risk by policy even when the graph is queryable."
+                ),
+                "operator_action": "inspect_telemetry",
+            }
+        )
 
     # R6-IMP5: dead_letter_backlog is emitted ONCE below (the FR7 issue with its
     # own drill_down_tool). The earlier duplicate append (same code, no drill-down)
@@ -439,36 +511,40 @@ def _build_health_diagnostics(
         ";".join(discovery_reasons) if discovery_reasons else discovery_state.value
     )
     if discovery_recovery_required:
-        issues.append({
-            "code": "discovery_recovery_required",
-            "component": "global_discovery",
-            "severity": "critical",
-            "reason": discovery_health_cause,
-            "description": (
-                "The global discovery graph has a concrete recovery signal. "
-                "This can make overall KG Health recovery_needed even when the "
-                "current board graph is queryable."
-            ),
-            "operator_action": "run_explicit_global_discovery_recovery",
-        })
+        issues.append(
+            {
+                "code": "discovery_recovery_required",
+                "component": "global_discovery",
+                "severity": "critical",
+                "reason": discovery_health_cause,
+                "description": (
+                    "The global discovery graph has a concrete recovery signal. "
+                    "This can make overall KG Health recovery_needed even when the "
+                    "current board graph is queryable."
+                ),
+                "operator_action": "run_explicit_global_discovery_recovery",
+            }
+        )
 
     # FR7 (spec 007d1308 / dec_68fd26a2): the dead-letter queue is its own
     # operational signal with its own drill-down tool, kept distinct from
     # cognitive pending and canonical debt.
     if dead_letter_count > 0:
-        issues.append({
-            "code": "dead_letter_backlog",
-            "component": "consolidation_queue",
-            "severity": "warning",
-            "reason": "dead_letter_count_gt_zero",
-            "description": (
-                f"{dead_letter_count} consolidation row(s) are dead-lettered "
-                "and need inspection/reprocess. Distinct from cognitive pending "
-                "and canonical debt."
-            ),
-            "operator_action": "inspect_dead_letters",
-            "drill_down_tool": "okto_pulse_kg_dead_letter_list",
-        })
+        issues.append(
+            {
+                "code": "dead_letter_backlog",
+                "component": "consolidation_queue",
+                "severity": "warning",
+                "reason": "dead_letter_count_gt_zero",
+                "description": (
+                    f"{dead_letter_count} consolidation row(s) are dead-lettered "
+                    "and need inspection/reprocess. Distinct from cognitive pending "
+                    "and canonical debt."
+                ),
+                "operator_action": "inspect_dead_letters",
+                "drill_down_tool": "okto_pulse_kg_dead_letter_list",
+            }
+        )
 
     if board_graph_recovery_required:
         primary = "board_graph_recovery_required"
@@ -498,8 +574,680 @@ def _build_health_diagnostics(
     }
 
 
+# Heavy KG adapters are synchronous and can block for minutes on an embedded
+# graph lock. Health reads use a fixed, runtime-owned daemon pool so the event
+# loop never executes those calls and a stuck backend cannot create an unbounded
+# thread per request/board/probe. Idle workers retire and are restarted lazily;
+# copied runtime compositions receive a fresh queue/pool and never share jobs.
+_HEALTH_PROBE_BUDGET_S = 0.35
+_HEALTH_PARITY_PROBE_BUDGET_S = 0.3
+_HEALTH_PROBE_CACHE_TTL_S = 30.0
+_HEALTH_PROBE_WORKERS = 4
+_HEALTH_PROBE_QUEUE_SIZE = 64
+_HEALTH_PROBE_WORKER_IDLE_S = 30.0
+
+
+class _DaemonHealthProbePool:
+    """Small fixed worker pool whose jobs carry their originating ContextVar."""
+
+    def __init__(
+        self,
+        *,
+        max_workers: int,
+        max_queue_size: int,
+        idle_timeout_s: float = _HEALTH_PROBE_WORKER_IDLE_S,
+    ) -> None:
+        self._max_workers = max_workers
+        self._idle_timeout_s = max(0.001, float(idle_timeout_s))
+        self._jobs: queue.Queue[tuple[Future[Any], Any, Callable[[], Any]]] = (
+            queue.Queue(maxsize=max_queue_size)
+        )
+        self._start_lock = threading.Lock()
+        self._threads: list[threading.Thread] = []
+        self._thread_sequence = 0
+        # A health request is intentionally allowed to return before its
+        # bounded daemon probes finish.  Runtime teardown still needs an
+        # ownership boundary for those jobs: closing an embedded graph while
+        # an old-runtime probe can open another connection races the next
+        # runtime and can strand a WAL/lease.  Track every submitted future,
+        # including additive orphan refreshes that are not represented in the
+        # request-level single-flight map.
+        self._idle_condition = threading.Condition()
+        self._pending_futures: set[Future[Any]] = set()
+
+    def clone_for_runtime(self) -> "_DaemonHealthProbePool":
+        """Return an empty pool owned by a copied runtime composition.
+
+        Jobs, queues and worker threads never cross runtime boundaries. The
+        cloned pool remains lazy, so copying a composition does not start
+        threads until that runtime actually performs a health probe.
+        """
+
+        return _DaemonHealthProbePool(
+            max_workers=self._max_workers,
+            max_queue_size=self._jobs.maxsize,
+            idle_timeout_s=self._idle_timeout_s,
+        )
+
+    def _prune_threads_locked(self) -> None:
+        self._threads[:] = [thread for thread in self._threads if thread.is_alive()]
+
+    def active_worker_count(self) -> int:
+        """Return the live worker count after pruning retired threads."""
+
+        with self._start_lock:
+            self._prune_threads_locked()
+            return len(self._threads)
+
+    def _retire_future(self, future: Future[Any]) -> None:
+        with self._idle_condition:
+            self._pending_futures.discard(future)
+            self._idle_condition.notify_all()
+
+    def wait_until_idle(self, *, timeout_s: float) -> int:
+        """Wait for every job owned by this runtime-local pool.
+
+        Returns the number of jobs still running/queued at the deadline.  A
+        child job submitted by a running probe cannot create a false idle gap:
+        the parent remains tracked until its build callable returns.
+        """
+
+        if timeout_s < 0:
+            raise ValueError("timeout_s must be non-negative")
+        deadline = time.monotonic() + timeout_s
+        with self._idle_condition:
+            while self._pending_futures:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._idle_condition.wait(timeout=remaining)
+            return len(self._pending_futures)
+
+    def _ensure_started(self) -> None:
+        with self._start_lock:
+            self._prune_threads_locked()
+            for _index in range(self._max_workers - len(self._threads)):
+                self._thread_sequence += 1
+                thread = threading.Thread(
+                    target=self._worker,
+                    name=(f"okto-pulse-health-probe-{self._thread_sequence}"),
+                    daemon=True,
+                )
+                thread.start()
+                self._threads.append(thread)
+
+    def submit(
+        self,
+        *,
+        context: Any,
+        build: Callable[[], Any],
+    ) -> Future[Any] | None:
+        future: Future[Any] = Future()
+        try:
+            self._jobs.put_nowait((future, context, build))
+        except queue.Full:
+            future.cancel()
+            return None
+        with self._idle_condition:
+            self._pending_futures.add(future)
+        future.add_done_callback(self._retire_future)
+        # Enqueue before checking workers. This closes the retirement race: an
+        # idle worker either sees the queued job, or removes itself before this
+        # call starts a replacement.
+        self._ensure_started()
+        return future
+
+    def _worker(self) -> None:
+        while True:
+            try:
+                future, context, build = self._jobs.get(timeout=self._idle_timeout_s)
+            except queue.Empty:
+                with self._start_lock:
+                    if not self._jobs.empty():
+                        continue
+                    current = threading.current_thread()
+                    if current in self._threads:
+                        self._threads.remove(current)
+                    return
+            try:
+                if not future.set_running_or_notify_cancel():
+                    continue
+                try:
+                    value = context.run(build)
+                except BaseException as exc:  # Future preserves worker failure
+                    future.set_exception(exc)
+                else:
+                    future.set_result(value)
+            finally:
+                self._jobs.task_done()
+
+
+class _HealthProbeOwnerContext:
+    """Runtime-owned worker attribution used by multi-step probe guards."""
+
+    def __init__(self) -> None:
+        self._value: ContextVar[tuple[str, tuple[int, int]] | None] = ContextVar(
+            "kg_health_probe_owner", default=None
+        )
+
+    def get(self) -> tuple[str, tuple[int, int]] | None:
+        return self._value.get()
+
+    def set(self, value: tuple[str, tuple[int, int]]) -> Any:
+        return self._value.set(value)
+
+    def reset(self, token: Any) -> None:
+        self._value.reset(token)
+
+    def clone_for_runtime(self) -> "_HealthProbeOwnerContext":
+        return _HealthProbeOwnerContext()
+
+
+def _new_health_probe_pool() -> _DaemonHealthProbePool:
+    return _DaemonHealthProbePool(
+        max_workers=_HEALTH_PROBE_WORKERS,
+        max_queue_size=_HEALTH_PROBE_QUEUE_SIZE,
+        idle_timeout_s=_HEALTH_PROBE_WORKER_IDLE_S,
+    )
+
+
+_HEALTH_PROBE_POOL = runtime_state(
+    "services.kg_health.probe_pool",
+    _new_health_probe_pool,
+)
+_HEALTH_PROBE_CACHE = runtime_state("services.kg_health.probe_cache", dict)
+_HEALTH_PROBE_INFLIGHT = runtime_state("services.kg_health.probe_inflight", dict)
+_HEALTH_PROBE_RESET_EPOCHS = runtime_state(
+    "services.kg_health.probe_reset_epochs",
+    dict,
+)
+_HEALTH_PROBE_GENERATION_HINTS = runtime_state(
+    "services.kg_health.probe_generation_hints",
+    dict,
+)
+_HEALTH_PROBE_PHASES = runtime_state("services.kg_health.probe_phases", dict)
+_HEALTH_PROBE_PARTIALS = runtime_state("services.kg_health.probe_partials", dict)
+_HEALTH_PROBE_LOCK = runtime_lock("services.kg_health.probes")
+_HEALTH_PROBE_OWNER = runtime_state(
+    "services.kg_health.probe_owner",
+    _HealthProbeOwnerContext,
+)
+
+
+def drain_health_probe_runtime(*, timeout_s: float = 30.0) -> int:
+    """Drain daemon health jobs owned by the current runtime composition.
+
+    Health reads stay latency-bounded during normal operation, while edition
+    lifecycle adapters can call this synchronous boundary from their teardown
+    worker before checkpointing/closing embedded graph handles.  The return
+    value is the number of jobs that did not finish within ``timeout_s``.
+    """
+
+    return _HEALTH_PROBE_POOL.wait_until_idle(timeout_s=timeout_s)
+
+
+@dataclass(frozen=True)
+class _HealthProbeRequest:
+    name: str
+    board_id: str
+    generation_id: str | None
+    build: Callable[[], Any]
+    fallback: Any
+    ttl_s: float = _HEALTH_PROBE_CACHE_TTL_S
+    prefer_fresh_within_budget: bool = False
+
+
+@dataclass(frozen=True)
+class _HealthProbeResult:
+    value: Any
+    status: str
+    reason: str
+    age_seconds: float | None
+    refresh_in_progress: bool
+
+    def diagnostic(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "reason": self.reason,
+            "age_seconds": (
+                round(self.age_seconds, 3) if self.age_seconds is not None else None
+            ),
+            "refresh_in_progress": self.refresh_in_progress,
+        }
+
+
+@dataclass(frozen=True)
+class BoundedHealthProbeResult:
+    """Public projection over the runtime-owned daemon probe machinery."""
+
+    value: Any
+    status: str
+    reason: str
+    age_seconds: float | None
+    refresh_in_progress: bool
+
+
+def _snapshot_derived_diagnostic(
+    *,
+    source_status: str,
+    source_reason: str | None,
+    snapshot: _HealthProbeResult,
+    max_age_seconds: float = _HEALTH_PROBE_CACHE_TTL_S,
+) -> dict[str, Any]:
+    """Describe a snapshot-derived value without hiding its cache age.
+
+    ``source_status`` reports whether the underlying probe step succeeded;
+    ``snapshot_freshness`` reports whether its cached value is current,
+    stale-while-revalidate, or unavailable. Previously a cached cognitive count
+    could still say ``available`` after the owning snapshot had become stale.
+    """
+
+    normalized_source_status = str(source_status or "unavailable")
+    status = normalized_source_status
+    reason = source_reason or (
+        "ok" if normalized_source_status == "available" else snapshot.reason
+    )
+    if normalized_source_status == "available" and snapshot.status == "stale":
+        status = "stale"
+        reason = snapshot.reason
+    freshness = snapshot.diagnostic()
+    freshness["is_stale"] = snapshot.status == "stale"
+    freshness["max_age_seconds"] = float(max_age_seconds)
+    return {
+        "status": status,
+        "reason": reason,
+        "source_status": normalized_source_status,
+        "snapshot_freshness": freshness,
+    }
+
+
+def _health_probe_epoch(board_id: str) -> tuple[int, int]:
+    return (
+        int(_HEALTH_PROBE_RESET_EPOCHS.get("*", 0)),
+        int(_HEALTH_PROBE_RESET_EPOCHS.get(board_id, 0)),
+    )
+
+
+def _health_probe_key(request: _HealthProbeRequest) -> tuple[str, str]:
+    return (request.name, request.board_id)
+
+
+def _cached_health_probe_result(
+    request: _HealthProbeRequest,
+    *,
+    now: float,
+) -> _HealthProbeResult | None:
+    entry = _HEALTH_PROBE_CACHE.get(_health_probe_key(request))
+    if entry is None:
+        return None
+    completed_at, generation_id, ok, value, reason = entry
+    if generation_id != request.generation_id:
+        return None
+    age = max(0.0, now - float(completed_at))
+    refresh_in_progress = _health_probe_key(request) in _HEALTH_PROBE_INFLIGHT
+    if not ok:
+        return _HealthProbeResult(
+            value=request.fallback,
+            status="unavailable",
+            reason=str(reason or "probe_failed"),
+            age_seconds=age,
+            refresh_in_progress=refresh_in_progress,
+        )
+    return _HealthProbeResult(
+        value=value,
+        status="available" if age < request.ttl_s else "stale",
+        reason="ok" if age < request.ttl_s else "cache_expired_refresh_scheduled",
+        age_seconds=age,
+        refresh_in_progress=refresh_in_progress,
+    )
+
+
+def _ensure_health_probe(
+    request: _HealthProbeRequest,
+) -> tuple[_HealthProbeResult, Future[Any] | None]:
+    key = _health_probe_key(request)
+    with _HEALTH_PROBE_LOCK:
+        cached = _cached_health_probe_result(request, now=time.monotonic())
+        if cached is not None and (
+            cached.status == "available"
+            or (
+                cached.status == "unavailable"
+                and cached.age_seconds is not None
+                and cached.age_seconds < request.ttl_s
+            )
+        ):
+            return cached, None
+
+        inflight = _HEALTH_PROBE_INFLIGHT.get(key)
+        future: Future[Any] | None = None
+        reason = "probe_not_cached"
+        schedule = inflight is None
+        if inflight is not None:
+            _token, inflight_generation, future = inflight
+            if inflight_generation != request.generation_id:
+                future = None
+                reason = "previous_generation_refresh_in_progress"
+                # A stale-generation job must not prevent a first-write
+                # generation from forcing a fresh bounded probe. The fixed
+                # queue/pool remains the concurrency bound; the token guard
+                # below prevents the replaced job from publishing stale data.
+                schedule = True
+            else:
+                reason = "refresh_in_progress"
+        if schedule:
+            token = uuid.uuid4().hex
+            epoch = _health_probe_epoch(request.board_id)
+
+            def run_probe() -> None:
+                try:
+                    with _HEALTH_PROBE_LOCK:
+                        # A queued job may start after a test/runtime reset.
+                        # Do not spend a managed worker on invalidated I/O or
+                        # let that old owner publish phase/cache state.
+                        if _health_probe_epoch(request.board_id) != epoch:
+                            return
+                        _HEALTH_PROBE_PHASES[key] = request.name
+                    owner_context_token = _HEALTH_PROBE_OWNER.set(
+                        (request.board_id, epoch)
+                    )
+                    try:
+                        value = request.build()
+                    except Exception as exc:
+                        ok = False
+                        value = None
+                        failure_reason = type(exc).__name__
+                    else:
+                        ok = True
+                        failure_reason = "ok"
+                    finally:
+                        _HEALTH_PROBE_OWNER.reset(owner_context_token)
+                    with _HEALTH_PROBE_LOCK:
+                        current = _HEALTH_PROBE_INFLIGHT.get(key)
+                        if (
+                            _health_probe_epoch(request.board_id) == epoch
+                            and current is not None
+                            and current[0] == token
+                        ):
+                            _HEALTH_PROBE_CACHE[key] = (
+                                time.monotonic(),
+                                request.generation_id,
+                                ok,
+                                value,
+                                failure_reason,
+                            )
+                finally:
+                    with _HEALTH_PROBE_LOCK:
+                        current = _HEALTH_PROBE_INFLIGHT.get(key)
+                        if current is not None and current[0] == token:
+                            _HEALTH_PROBE_PHASES.pop(key, None)
+                            _HEALTH_PROBE_INFLIGHT.pop(key, None)
+
+            future = _HEALTH_PROBE_POOL.submit(
+                context=copy_context(),
+                build=run_probe,
+            )
+            if future is None:
+                reason = "probe_queue_saturated"
+            else:
+                _HEALTH_PROBE_INFLIGHT[key] = (
+                    token,
+                    request.generation_id,
+                    future,
+                )
+                reason = "refresh_scheduled"
+
+        if cached is not None:
+            return _HealthProbeResult(
+                value=cached.value,
+                status="stale",
+                reason=reason,
+                age_seconds=cached.age_seconds,
+                refresh_in_progress=future is not None,
+            ), future
+        return _HealthProbeResult(
+            value=request.fallback,
+            status="unavailable",
+            reason=reason,
+            age_seconds=None,
+            refresh_in_progress=future is not None,
+        ), future
+
+
+def _read_health_probe_result(
+    request: _HealthProbeRequest,
+    *,
+    fallback_reason: str,
+) -> _HealthProbeResult:
+    with _HEALTH_PROBE_LOCK:
+        cached = _cached_health_probe_result(request, now=time.monotonic())
+        if cached is not None:
+            return cached
+        phase = _HEALTH_PROBE_PHASES.get(_health_probe_key(request))
+        reason = fallback_reason
+        if phase and fallback_reason == "probe_budget_exceeded":
+            reason = f"probe_budget_exceeded:{phase}"
+        return _HealthProbeResult(
+            value=request.fallback,
+            status="unavailable",
+            reason=reason,
+            age_seconds=None,
+            refresh_in_progress=(_health_probe_key(request) in _HEALTH_PROBE_INFLIGHT),
+        )
+
+
+async def _resolve_health_probe_batch(
+    requests: tuple[_HealthProbeRequest, ...],
+    *,
+    budget_s: float = _HEALTH_PROBE_BUDGET_S,
+) -> dict[str, _HealthProbeResult]:
+    initial: dict[str, _HealthProbeResult] = {}
+    cold_futures: dict[Future[Any], str] = {}
+    for request in requests:
+        result, future = _ensure_health_probe(request)
+        initial[request.name] = result
+        if (
+            result.status == "unavailable"
+            or (result.status == "stale" and request.prefer_fresh_within_budget)
+        ) and future is not None:
+            cold_futures[future] = request.name
+
+    if cold_futures and budget_s > 0:
+        # Shield the concurrent futures from caller cancellation. A cancelled
+        # queued future would otherwise skip ``run_probe`` in the worker and
+        # strand its single-flight marker forever.
+        wrapped = [
+            asyncio.shield(asyncio.wrap_future(future)) for future in cold_futures
+        ]
+        await asyncio.wait(wrapped, timeout=budget_s)
+
+    resolved: dict[str, _HealthProbeResult] = {}
+    for request in requests:
+        initial_result = initial[request.name]
+        if initial_result.status == "stale" and not request.prefer_fresh_within_budget:
+            resolved[request.name] = initial_result
+            continue
+        resolved[request.name] = _read_health_probe_result(
+            request,
+            fallback_reason=(
+                "probe_budget_exceeded"
+                if initial_result.refresh_in_progress
+                else initial_result.reason
+            ),
+        )
+    return resolved
+
+
+async def run_bounded_health_probe(
+    *,
+    name: str,
+    board_id: str,
+    generation_id: str | None,
+    build: Callable[[], Any],
+    fallback: Any,
+    deadline_at: float,
+    ttl_s: float = _HEALTH_PROBE_CACHE_TTL_S,
+) -> BoundedHealthProbeResult:
+    """Run one synchronous health probe in the fixed daemon/single-flight pool.
+
+    ``deadline_at`` is an absolute monotonic deadline shared with the caller's
+    other probes. A generation change bypasses cached and in-flight work from
+    the previous generation without spawning an unbounded worker or retry loop.
+    """
+
+    remaining = max(0.0, float(deadline_at) - time.monotonic())
+    if remaining <= 0.0:
+        return BoundedHealthProbeResult(
+            value=fallback,
+            status="unavailable",
+            reason="probe_deadline_exhausted",
+            age_seconds=None,
+            refresh_in_progress=False,
+        )
+    request = _HealthProbeRequest(
+        name=str(name),
+        board_id=str(board_id),
+        generation_id=generation_id,
+        build=build,
+        fallback=fallback,
+        ttl_s=max(0.0, float(ttl_s)),
+        prefer_fresh_within_budget=True,
+    )
+    resolved = await _resolve_health_probe_batch(
+        (request,),
+        budget_s=remaining,
+    )
+    result = resolved[request.name]
+    return BoundedHealthProbeResult(
+        value=result.value,
+        status=result.status,
+        reason=result.reason,
+        age_seconds=result.age_seconds,
+        refresh_in_progress=result.refresh_in_progress,
+    )
+
+
+def _reset_health_probe_cache_for_tests(board_id: str | None = None) -> None:
+    with _HEALTH_PROBE_LOCK:
+        if board_id is None:
+            _HEALTH_PROBE_RESET_EPOCHS["*"] = (
+                int(_HEALTH_PROBE_RESET_EPOCHS.get("*", 0)) + 1
+            )
+            _HEALTH_PROBE_CACHE.clear()
+            _HEALTH_PROBE_INFLIGHT.clear()
+            _HEALTH_PROBE_GENERATION_HINTS.clear()
+            _HEALTH_PROBE_PHASES.clear()
+            _HEALTH_PROBE_PARTIALS.clear()
+            return
+
+        _HEALTH_PROBE_RESET_EPOCHS[board_id] = (
+            int(_HEALTH_PROBE_RESET_EPOCHS.get(board_id, 0)) + 1
+        )
+        for state in (
+            _HEALTH_PROBE_CACHE,
+            _HEALTH_PROBE_INFLIGHT,
+            _HEALTH_PROBE_PHASES,
+            _HEALTH_PROBE_PARTIALS,
+        ):
+            for key in [key for key in state if key[1] == board_id]:
+                state.pop(key, None)
+        _HEALTH_PROBE_GENERATION_HINTS.pop(board_id, None)
+
+
+def _run_health_probe_step(
+    *,
+    probe_name: str,
+    board_id: str,
+    step_name: str,
+    build: Callable[[], Any],
+) -> Any:
+    with _HEALTH_PROBE_LOCK:
+        owner = _HEALTH_PROBE_OWNER.get()
+        if (
+            owner is not None
+            and owner[0] == board_id
+            and _health_probe_epoch(board_id) != owner[1]
+        ):
+            raise RuntimeError("health_probe_invalidated")
+        _HEALTH_PROBE_PHASES[(probe_name, board_id)] = step_name
+    return build()
+
+
+def _assert_health_probe_epoch(
+    *,
+    board_id: str,
+    epoch: tuple[int, int],
+) -> None:
+    """Stop an invalidated multi-step probe before it starts more I/O."""
+
+    with _HEALTH_PROBE_LOCK:
+        if _health_probe_epoch(board_id) != epoch:
+            raise RuntimeError("health_probe_invalidated")
+
+
+def _begin_health_probe_partial(
+    *,
+    probe_name: str,
+    board_id: str,
+    generation_id: str | None,
+) -> tuple[int, int]:
+    with _HEALTH_PROBE_LOCK:
+        owner = _HEALTH_PROBE_OWNER.get()
+        epoch = (
+            owner[1]
+            if owner is not None and owner[0] == board_id
+            else _health_probe_epoch(board_id)
+        )
+        if _health_probe_epoch(board_id) == epoch:
+            _HEALTH_PROBE_PARTIALS[(probe_name, board_id)] = (
+                epoch,
+                generation_id,
+                {},
+            )
+    return epoch
+
+
+def _publish_health_probe_partial(
+    *,
+    probe_name: str,
+    board_id: str,
+    generation_id: str | None,
+    epoch: tuple[int, int],
+    values: dict[str, Any],
+) -> None:
+    key = (probe_name, board_id)
+    with _HEALTH_PROBE_LOCK:
+        current = _HEALTH_PROBE_PARTIALS.get(key)
+        if (
+            current is None
+            or current[0] != epoch
+            or current[1] != generation_id
+            or _health_probe_epoch(board_id) != epoch
+        ):
+            return
+        partial = dict(current[2])
+        partial.update(values)
+        _HEALTH_PROBE_PARTIALS[key] = (epoch, generation_id, partial)
+
+
+def _read_health_probe_partial(
+    *,
+    probe_name: str,
+    board_id: str,
+    generation_id: str | None,
+) -> dict[str, Any]:
+    with _HEALTH_PROBE_LOCK:
+        current = _HEALTH_PROBE_PARTIALS.get((probe_name, board_id))
+        if (
+            current is None
+            or current[0] != _health_probe_epoch(board_id)
+            or current[1] != generation_id
+        ):
+            return {}
+        return dict(current[2])
+
+
 # Cache TTL do orphan scan: o scan conta o grau de CADA node por tipo de
-# relação (O(nodes × rel_types) queries Kùzu) — em campo (3927 nodes) uma
+# relação (O(nodes × rel_types) queries graph backend) — em campo (3927 nodes) uma
 # única execução leva minutos e rodava NO EVENT LOOP a cada GET /kg/health
 # (py-spy 2026-06-10: 28/30 dumps presos em _node_degree). A projeção é
 # aditiva/observacional: minutos de defasagem são inofensivos.
@@ -511,25 +1259,170 @@ def _build_health_diagnostics(
 # fail-open. Agora: 1 scan por board por vez; quem chega durante um scan
 # recebe o último resultado cacheado mesmo expirado (stale-while-
 # revalidate) ou a projeção indisponível quando nunca houve scan.
-_ORPHAN_PROJECTION_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_ORPHAN_PROJECTION_CACHE = runtime_state(
+    "services.kg_health.orphan_projection_cache",
+    dict,
+)
 _ORPHAN_PROJECTION_TTL_S = 300.0
-_ORPHAN_SCAN_INFLIGHT: set[str] = set()
-_ORPHAN_SCAN_INFLIGHT_LOCK = threading.Lock()
+_ORPHAN_SCAN_INFLIGHT = runtime_state(
+    "services.kg_health.orphan_scan_inflight_state",
+    dict,
+)
+_ORPHAN_SCAN_INFLIGHT_LOCK = runtime_lock("services.kg_health.orphan_scan_inflight")
+_ORPHAN_REFRESH_SCHEDULED = runtime_state(
+    "services.kg_health.orphan_refresh_scheduled",
+    dict,
+)
+_ORPHAN_RESET_EPOCHS = runtime_state(
+    "services.kg_health.orphan_reset_epochs",
+    dict,
+)
+
+
+def _orphan_reset_epoch(board_id: str) -> tuple[int, int]:
+    """Return the runtime-local global + board reset epoch."""
+
+    return (
+        int(_ORPHAN_RESET_EPOCHS.get("*", 0)),
+        int(_ORPHAN_RESET_EPOCHS.get(board_id, 0)),
+    )
+
+
+def _cached_orphan_projection(
+    *,
+    board_id: str,
+    generation_id: str | None,
+    now: float,
+) -> tuple[dict[str, Any] | None, bool]:
+    """Return a generation-matched projection and whether it is fresh.
+
+    Cache entries created before the generation-aware format are accepted only
+    when their projection explicitly identifies the requested generation. This
+    keeps a rolling upgrade fail-closed instead of serving an old generation as
+    current health evidence.
+    """
+
+    entry = _ORPHAN_PROJECTION_CACHE.get(board_id)
+    if entry is None:
+        return None, False
+
+    if len(entry) == 3:
+        completed_at, cached_generation_id, projection = entry
+    else:  # pragma: no cover - rolling-upgrade compatibility
+        completed_at, projection = entry
+        cached_generation_id = projection.get("generation_id")
+    if cached_generation_id != generation_id:
+        return None, False
+    return projection, now - float(completed_at) < _ORPHAN_PROJECTION_TTL_S
 
 
 def reset_orphan_projection_cache_for_tests(board_id: str | None = None) -> None:
-    if board_id is None:
-        _ORPHAN_PROJECTION_CACHE.clear()
-        with _ORPHAN_SCAN_INFLIGHT_LOCK:
+    """Invalidate orphan refresh state without trusting late worker cleanup.
+
+    A graph call already executing in a daemon thread cannot be cancelled. The
+    reset epoch makes its eventual publication a no-op, while owner tokens stop
+    that old worker from clearing a newer scan's markers.
+    """
+
+    with _ORPHAN_SCAN_INFLIGHT_LOCK:
+        if board_id is None:
+            _ORPHAN_RESET_EPOCHS["*"] = int(_ORPHAN_RESET_EPOCHS.get("*", 0)) + 1
+            _ORPHAN_PROJECTION_CACHE.clear()
             _ORPHAN_SCAN_INFLIGHT.clear()
-    else:
-        _ORPHAN_PROJECTION_CACHE.pop(board_id, None)
-        with _ORPHAN_SCAN_INFLIGHT_LOCK:
-            _ORPHAN_SCAN_INFLIGHT.discard(board_id)
+            _ORPHAN_REFRESH_SCHEDULED.clear()
+        else:
+            _ORPHAN_RESET_EPOCHS[board_id] = (
+                int(_ORPHAN_RESET_EPOCHS.get(board_id, 0)) + 1
+            )
+            _ORPHAN_PROJECTION_CACHE.pop(board_id, None)
+            _ORPHAN_SCAN_INFLIGHT.pop(board_id, None)
+            _ORPHAN_REFRESH_SCHEDULED.pop(board_id, None)
+    _reset_health_probe_cache_for_tests(board_id)
+
+
+def _orphan_projection_unavailable(*, scan_error: str) -> dict[str, Any]:
+    from okto_pulse.core.kg.orphan_integrity import (
+        build_orphan_integrity_projection,
+    )
+
+    return build_orphan_integrity_projection(
+        None,
+        scan_error=scan_error,
+    ).to_safe_dict()
+
+
+def _get_or_schedule_orphan_integrity_for_health(
+    *, board_id: str, generation_id: str | None
+) -> dict[str, Any]:
+    """Return cached integrity immediately and refresh it in the background.
+
+    The orphan scan is an additive health enrichment and can take minutes on a
+    large graph.  A health/readiness call must never inherit that latency.  The
+    first caller schedules one daemon refresh and receives an unavailable
+    projection; later callers receive stale-while-revalidate until the refresh
+    atomically replaces the cache.
+    """
+
+    with _ORPHAN_SCAN_INFLIGHT_LOCK:
+        cached, cache_is_fresh = _cached_orphan_projection(
+            board_id=board_id,
+            generation_id=generation_id,
+            now=time.monotonic(),
+        )
+        if cache_is_fresh:
+            assert cached is not None
+            return cached
+
+        should_schedule = board_id not in _ORPHAN_REFRESH_SCHEDULED
+        if should_schedule:
+            refresh_token = uuid.uuid4().hex
+            refresh_epoch = _orphan_reset_epoch(board_id)
+            _ORPHAN_REFRESH_SCHEDULED[board_id] = refresh_token
+
+    if should_schedule:
+
+        def refresh() -> None:
+            try:
+                _build_orphan_integrity_for_health(
+                    board_id=board_id,
+                    generation_id=generation_id,
+                    _expected_epoch=refresh_epoch,
+                )
+            except Exception as exc:  # pragma: no cover - defensive worker shell
+                logger.warning(
+                    "kg.health.orphan_refresh_failed board=%s reason=%s",
+                    board_id,
+                    type(exc).__name__,
+                )
+            finally:
+                with _ORPHAN_SCAN_INFLIGHT_LOCK:
+                    if _ORPHAN_REFRESH_SCHEDULED.get(board_id) == refresh_token:
+                        _ORPHAN_REFRESH_SCHEDULED.pop(board_id, None)
+
+        future = _HEALTH_PROBE_POOL.submit(
+            context=copy_context(),
+            build=refresh,
+        )
+        if future is None:
+            with _ORPHAN_SCAN_INFLIGHT_LOCK:
+                if _ORPHAN_REFRESH_SCHEDULED.get(board_id) == refresh_token:
+                    _ORPHAN_REFRESH_SCHEDULED.pop(board_id, None)
+            logger.warning(
+                "kg.health.orphan_refresh_not_started board=%s reason=%s",
+                board_id,
+                "probe_queue_saturated",
+            )
+
+    if cached is not None:
+        return cached
+    return _orphan_projection_unavailable(scan_error="ScanScheduled")
 
 
 def _build_orphan_integrity_for_health(
-    *, board_id: str, generation_id: str | None
+    *,
+    board_id: str,
+    generation_id: str | None,
+    _expected_epoch: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
     """Return the KG-ZO-02 orphan integrity projection for Health.
 
@@ -543,22 +1436,35 @@ def _build_orphan_integrity_for_health(
         build_orphan_integrity_projection,
     )
 
-    now = time.monotonic()
-    cached = _ORPHAN_PROJECTION_CACHE.get(board_id)
-    if cached is not None and now - cached[0] < _ORPHAN_PROJECTION_TTL_S:
-        return cached[1]
-
     with _ORPHAN_SCAN_INFLIGHT_LOCK:
+        current_epoch = _orphan_reset_epoch(board_id)
+        if _expected_epoch is not None and current_epoch != _expected_epoch:
+            return build_orphan_integrity_projection(
+                None,
+                scan_error="ScanInvalidated",
+            ).to_safe_dict()
+
+        cached, cache_is_fresh = _cached_orphan_projection(
+            board_id=board_id,
+            generation_id=generation_id,
+            now=time.monotonic(),
+        )
+        if cache_is_fresh:
+            assert cached is not None
+            return cached
+
         if board_id in _ORPHAN_SCAN_INFLIGHT:
             # Outro scan deste board está em andamento: serve o stale (ou a
             # projeção indisponível) em vez de empilhar mais um leitor.
             if cached is not None:
-                return cached[1]
+                return cached
             return build_orphan_integrity_projection(
                 None,
                 scan_error="ScanAlreadyInProgress",
             ).to_safe_dict()
-        _ORPHAN_SCAN_INFLIGHT.add(board_id)
+        scan_token = uuid.uuid4().hex
+        scan_epoch = current_epoch
+        _ORPHAN_SCAN_INFLIGHT[board_id] = scan_token
 
     try:
         report = OrphanNodeScanner().scan(
@@ -571,12 +1477,19 @@ def _build_orphan_integrity_for_health(
         # 300s − duração e, com scan ≥ TTL, gerava scans costas-com-costas
         # — um leitor quase perpétuo no board que starvava a higiene de
         # buffer. Com o carimbo no fim, há sempre 300s de janela sem scan.
-        _ORPHAN_PROJECTION_CACHE[board_id] = (time.monotonic(), projection)
+        with _ORPHAN_SCAN_INFLIGHT_LOCK:
+            if _orphan_reset_epoch(board_id) == scan_epoch:
+                _ORPHAN_PROJECTION_CACHE[board_id] = (
+                    time.monotonic(),
+                    generation_id,
+                    projection,
+                )
         return projection
     except Exception as exc:
         logger.debug(
             "kg.health.orphan_integrity_scan_unavailable board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         # Falhas NÃO são cacheadas — a próxima chamada re-tenta o scan.
         return build_orphan_integrity_projection(
@@ -585,7 +1498,8 @@ def _build_orphan_integrity_for_health(
         ).to_safe_dict()
     finally:
         with _ORPHAN_SCAN_INFLIGHT_LOCK:
-            _ORPHAN_SCAN_INFLIGHT.discard(board_id)
+            if _ORPHAN_SCAN_INFLIGHT.get(board_id) == scan_token:
+                _ORPHAN_SCAN_INFLIGHT.pop(board_id, None)
 
 
 def _telemetry_ok(graph_type: str) -> GraphTelemetry:
@@ -622,147 +1536,75 @@ def _telemetry_wal_or_open_error(graph_type: str) -> GraphTelemetry:
 
 
 def _compute_board_graph_high_water_mark_pct(board_id: str) -> float | None:
-    """Compute the real high-water-mark percentage for the board's LadybugDB files.
-
-    Sums the on-disk sizes of graph.lbug and all its siblings (e.g.
-    graph.lbug.wal, graph.lbug.shm) using the same glob pattern as
-    ``_fsync_board_graph_files`` in schema.py (lines 567-571), then
-    divides by ``kg_kuzu_max_db_size_gb * 1024**3`` and clamps to [0, 100].
-
-    Returns ``None`` (not 0.0) when:
-    - graph.lbug does not exist (AC4: absent graph, not even 0.0).
-    - any ``OSError`` is raised during ``Path.stat()`` (AC5: IO errors must
-      not propagate to the health endpoint — TR2).
-
-    This is the proxy for FR2 (spec R2c): real on-disk usage drives the
-    HighWaterMarkSample fed to the correlator, so the correlator sees real
-    pressure rather than the synthetic 0.0 placeholder that was previously
-    hardcoded in ``_telemetry_ok``.
-    """
+    """Return high-water mark from the logical graph runtime footprint."""
     try:
-        path = board_kuzu_path(board_id)
+        footprint = get_kg_registry().graph_runtime_store.footprint(board_id)
     except Exception as exc:
         logger.debug(
-            "kg.health.hwm.path_resolution_failed board=%s err=%s",
-            board_id, exc,
+            "kg.health.hwm.footprint_failed board=%s err=%s",
+            board_id,
+            exc,
         )
         return None
 
-    # AC4: absent graph.lbug → None, not 0.0
-    if not path.exists():
-        return None
-
-    try:
-        total_bytes = path.stat().st_size
-    except OSError as exc:
-        logger.debug(
-            "kg.health.hwm.stat_failed board=%s path=%s err=%s",
-            board_id, path, exc,
-        )
-        return None
-
-    # Include siblings (e.g. .wal, .shm) — same glob as _fsync_board_graph_files
-    for sibling in sorted(path.parent.glob(path.name + ".*")):
-        try:
-            total_bytes += sibling.stat().st_size
-        except OSError as exc:
-            logger.debug(
-                "kg.health.hwm.sibling_stat_failed board=%s sibling=%s err=%s",
-                board_id, sibling, exc,
-            )
-            # Partial read: still return None to avoid misleading partial sums
-            return None
-
-    try:
-        settings = get_settings()
-        max_bytes = settings.kg_kuzu_max_db_size_gb * 1024 ** 3
-    except Exception as exc:
-        logger.debug(
-            "kg.health.hwm.config_failed board=%s err=%s",
-            board_id, exc,
-        )
-        return None
-
-    if max_bytes <= 0:
-        return None
-
-    pct = (total_bytes / max_bytes) * 100.0
-    # Clamp to [0, 100]
-    return max(0.0, min(100.0, pct))
+    return footprint.percentage if footprint.status == "available" else None
 
 
-def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
-    """Build an explanatory file-size proxy payload for REST/MCP/UI.
-
-    The underlying high-water calculation remains the existing on-disk size
-    proxy. This object makes that explicit and intentionally does not expose
-    filesystem paths.
-    """
-
-    base: dict[str, Any] = {
-        "source": "file_size_proxy",
+def _unavailable_storage_footprint_proxy(
+    reason: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "source": "runtime_capability",
         "status": "unavailable",
         "percentage": None,
         "high_water_mark_pct": None,
-        "graph_lbug_bytes": None,
+        "graph_primary_bytes": None,
+        "primary_bytes": None,
         "sidecar_bytes": None,
         "total_bytes": None,
         "configured_max_db_size_bytes": None,
         "configured_max_db_size_gb": None,
         "is_direct_memory_telemetry": False,
         "description": (
-            "On-disk storage footprint proxy derived from graph.lbug file sizes."
+            "Storage footprint projection derived from the graph runtime adapter."
         ),
         "tooltip": (
-            "This is not live Ladybug memory telemetry. It is a file-size proxy "
-            "used as an early warning signal."
+            "This is not live graph memory telemetry. It is an adapter-provided "
+            "early warning signal."
         ),
-        "unavailable_reason": None,
+        "unavailable_reason": reason,
     }
 
+
+def _build_storage_footprint_proxy(board_id: str) -> dict[str, Any]:
+    """Build an explanatory storage footprint payload for REST/MCP/UI."""
+
+    base = _unavailable_storage_footprint_proxy()
+
     try:
-        settings = get_settings()
-        max_bytes = int(settings.kg_kuzu_max_db_size_gb * 1024 ** 3)
-        base["configured_max_db_size_gb"] = int(settings.kg_kuzu_max_db_size_gb)
-        base["configured_max_db_size_bytes"] = max_bytes
+        footprint = get_kg_registry().graph_runtime_store.footprint(board_id)
     except Exception:
-        base["unavailable_reason"] = "settings_unavailable"
+        base["unavailable_reason"] = "footprint_unavailable"
         return base
 
-    if max_bytes <= 0:
-        base["unavailable_reason"] = "invalid_max_db_size"
-        return base
-
-    try:
-        path = board_kuzu_path(board_id)
-    except Exception:
-        base["unavailable_reason"] = "path_resolution_failed"
-        return base
-
-    if not path.exists():
-        base["unavailable_reason"] = "graph_lbug_absent"
-        return base
-
-    try:
-        graph_bytes = int(path.stat().st_size)
-        sidecar_bytes = 0
-        for sibling in sorted(path.parent.glob(path.name + ".*")):
-            sidecar_bytes += int(sibling.stat().st_size)
-    except OSError:
-        base["unavailable_reason"] = "stat_failed"
-        return base
-
-    total_bytes = graph_bytes + sidecar_bytes
-    pct = max(0.0, min(100.0, (total_bytes / max_bytes) * 100.0))
-    base.update({
-        "status": "available",
-        "percentage": pct,
-        "high_water_mark_pct": pct,
-        "graph_lbug_bytes": graph_bytes,
-        "sidecar_bytes": sidecar_bytes,
-        "total_bytes": total_bytes,
-        "unavailable_reason": None,
-    })
+    configured_max_gb = None
+    if footprint.configured_max_bytes is not None:
+        configured_max_gb = int(footprint.configured_max_bytes / (1024**3))
+    base.update(
+        {
+            "source": footprint.source,
+            "status": footprint.status,
+            "percentage": footprint.percentage,
+            "high_water_mark_pct": footprint.percentage,
+            "graph_primary_bytes": footprint.primary_bytes,
+            "primary_bytes": footprint.primary_bytes,
+            "sidecar_bytes": footprint.sidecar_bytes,
+            "total_bytes": footprint.total_bytes,
+            "configured_max_db_size_bytes": footprint.configured_max_bytes,
+            "configured_max_db_size_gb": configured_max_gb,
+            "unavailable_reason": footprint.unavailable_reason,
+        }
+    )
     return base
 
 
@@ -777,7 +1619,7 @@ def _probe_board_graph_telemetry(
 
     FR2 (spec R2c): when the graph exists (schema version known or nodes
     present), this probe now computes the REAL high-water-mark percentage
-    from on-disk file sizes (graph.lbug + siblings) and records a
+    from on-disk file sizes (board graph + siblings) and records a
     HighWaterMarkSample via the collector so the MemoryPressureCorrelator
     receives real observations.  IO errors are swallowed with a DEBUG log
     and degrade to ``high_water_mark_pct=None`` (TR2: health never 500s).
@@ -803,7 +1645,7 @@ def _probe_board_graph_telemetry(
             recent_commit_errors=0,
         )
     try:
-        if board_kuzu_path(board_id).exists():
+        if get_kg_registry().graph_runtime_store.exists(board_id):
             return _telemetry_wal_or_open_error("board")
     except Exception:
         return _telemetry_unavailable("board")
@@ -830,89 +1672,521 @@ def _record_board_hwm_sample(board_id: str, hwm_pct: float | None) -> None:
     except Exception as exc:  # pragma: no cover — defensive
         logger.debug(
             "kg.health.hwm.record_sample_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
 
 
 def _probe_global_discovery_telemetry() -> GraphTelemetry:
-    """Probe global discovery without bootstrapping or purging it.
-
-    If the file exists and cannot be opened, this is a current recovery signal,
-    not merely missing telemetry. If it is absent, the discovery metric is
-    unavailable because there is no graph to inspect yet.
-    """
+    """Classify global discovery from non-opening runtime metadata only."""
 
     try:
-        from okto_pulse.core.kg.global_discovery.schema import (
-            _global_kuzu_path,
-            open_global_connection,
+        runtime = get_kg_registry().require_global_discovery_runtime()
+    except Exception:
+        return _telemetry_unavailable("discovery")
+
+    try:
+        state = runtime.state()
+    except Exception:
+        return _telemetry_unavailable("discovery")
+    return _telemetry_from_materialization_observation(
+        state.normalized_state,
+        graph_type="discovery",
+    )
+
+
+_GRAPH_HEALTH_PROBE = "graph_snapshot"
+_ARTIFACT_HEALTH_PROBE = "artifact_snapshot"
+_PARITY_HEALTH_PROBE = "parity_snapshot"
+_DISCOVERY_HEALTH_PROBE = "discovery_snapshot"
+
+
+def _unavailable_kg_layer_counts(reason: str) -> dict[str, Any]:
+    return {
+        "status": "unavailable",
+        "by_layer": {
+            "canonical": 0,
+            "working": 0,
+            "none": 0,
+            "legacy_unknown": 0,
+            "unclassified": 0,
+        },
+        "by_maturity_status": {},
+        "reason": reason,
+    }
+
+
+def _graph_health_snapshot_fallback(reason: str) -> dict[str, Any]:
+    return {
+        "graph_metrics": _zero_graph_metrics(),
+        "graph_schema_version": None,
+        "graph_telemetry": _telemetry_unavailable("board"),
+        "storage_footprint_proxy": _unavailable_storage_footprint_proxy(reason),
+        "kg_layer_counts": _unavailable_kg_layer_counts(reason),
+    }
+
+
+def _build_graph_health_snapshot(
+    board_id: str,
+    generation_id: str | None = None,
+) -> dict[str, Any]:
+    """Run all synchronous graph reads in one managed, bounded worker job."""
+
+    epoch = _begin_health_probe_partial(
+        probe_name=_GRAPH_HEALTH_PROBE,
+        board_id=board_id,
+        generation_id=generation_id,
+    )
+
+    def step(field: str, name: str, build: Callable[[], Any]) -> Any:
+        _assert_health_probe_epoch(board_id=board_id, epoch=epoch)
+        value = _run_health_probe_step(
+            probe_name=_GRAPH_HEALTH_PROBE,
+            board_id=board_id,
+            step_name=name,
+            build=build,
         )
-    except Exception:
-        return _telemetry_unavailable("discovery")
+        _publish_health_probe_partial(
+            probe_name=_GRAPH_HEALTH_PROBE,
+            board_id=board_id,
+            generation_id=generation_id,
+            epoch=epoch,
+            values={field: value},
+        )
+        return value
 
-    try:
-        path = _global_kuzu_path()
-    except Exception:
-        return _telemetry_unavailable("discovery")
-    if not path.exists():
-        return _telemetry_unavailable("discovery")
+    graph_metrics = step(
+        "graph_metrics",
+        "graph_metrics",
+        lambda: _aggregate_graph_metrics(board_id),
+    )
+    graph_schema_version = step(
+        "graph_schema_version",
+        "schema_version",
+        lambda: _get_graph_schema_version(board_id),
+    )
+    graph_telemetry = step(
+        "graph_telemetry",
+        "board_telemetry",
+        lambda: _probe_board_graph_telemetry(
+            board_id=board_id,
+            total_nodes=int(graph_metrics.get("total_nodes") or 0),
+            graph_schema_version=graph_schema_version,
+            empty_after_materialized_history=False,
+        ),
+    )
+    storage_footprint_proxy = step(
+        "storage_footprint_proxy",
+        "storage_footprint",
+        lambda: _build_storage_footprint_proxy(board_id),
+    )
+    kg_layer_counts = step(
+        "kg_layer_counts",
+        "layer_counts",
+        lambda: _aggregate_kg_layer_counts(board_id),
+    )
 
-    try:
-        _db, conn = open_global_connection()
+    return {
+        "graph_metrics": graph_metrics,
+        "graph_schema_version": graph_schema_version,
+        "graph_telemetry": graph_telemetry,
+        "storage_footprint_proxy": storage_footprint_proxy,
+        "kg_layer_counts": kg_layer_counts,
+    }
+
+
+def _parity_health_snapshot_fallback(reason: str) -> dict[str, Any]:
+    return {
+        "stale_board_items": [],
+        "stale_board_status": "unavailable",
+        "digest_inputs": {
+            "status": "unavailable",
+            "reason": reason,
+            "digests": [],
+            "board_meta": {},
+            "needs_overlay": False,
+        },
+    }
+
+
+def _build_parity_health_snapshot(
+    board_id: str,
+    generation_id: str | None = None,
+) -> dict[str, Any]:
+    epoch = _begin_health_probe_partial(
+        probe_name=_PARITY_HEALTH_PROBE,
+        board_id=board_id,
+        generation_id=generation_id,
+    )
+
+    def step(name: str, build: Callable[[], Any]) -> Any:
+        _assert_health_probe_epoch(board_id=board_id, epoch=epoch)
+        return _run_health_probe_step(
+            probe_name=_PARITY_HEALTH_PROBE,
+            board_id=board_id,
+            step_name=name,
+            build=build,
+        )
+
+    def stale_board_items() -> tuple[list[dict[str, Any]], str]:
         try:
-            res = conn.execute("CALL SHOW_TABLES() RETURN name")
-            try:
-                # Consuming one row is enough to prove the graph opens and the
-                # catalog is readable. Empty catalog still means the storage
-                # itself was readable.
-                if res.has_next():
-                    res.get_next()
-            finally:
-                res.close()
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-        return _telemetry_ok("discovery")
-    except Exception as exc:
-        logger.warning(
-            "kg.health.discovery_probe_failed err=%s",
-            exc,
-            extra={
-                "event": "kg.health.discovery_probe_failed",
-                "error": str(exc),
-            },
+            from okto_pulse.core.kg.stale_canonical_parity import (
+                detect_board_graph_stale,
+            )
+
+            return detect_board_graph_stale(board_id), "available"
+        except Exception:
+            return [], "unavailable"
+
+    stale_items, stale_status = step("stale_canonical_parity", stale_board_items)
+    _publish_health_probe_partial(
+        probe_name=_PARITY_HEALTH_PROBE,
+        board_id=board_id,
+        generation_id=generation_id,
+        epoch=epoch,
+        values={
+            "stale_board_items": stale_items,
+            "stale_board_status": stale_status,
+        },
+    )
+
+    def digest_inputs() -> dict[str, Any]:
+        try:
+            from okto_pulse.core.kg.global_discovery.layer_parity import (
+                collect_digest_layer_mismatch_inputs,
+            )
+
+            return collect_digest_layer_mismatch_inputs(board_id)
+        except Exception as exc:
+            return {
+                "status": "unavailable",
+                "reason": type(exc).__name__,
+                "digests": [],
+                "board_meta": {},
+                "needs_overlay": False,
+            }
+
+    digest_snapshot = step("digest_layer_parity", digest_inputs)
+    _publish_health_probe_partial(
+        probe_name=_PARITY_HEALTH_PROBE,
+        board_id=board_id,
+        generation_id=generation_id,
+        epoch=epoch,
+        values={"digest_inputs": digest_snapshot},
+    )
+    return {
+        "stale_board_items": stale_items,
+        "stale_board_status": stale_status,
+        "digest_inputs": digest_snapshot,
+    }
+
+
+def _artifact_health_snapshot_fallback(reason: str) -> dict[str, Any]:
+    return {
+        "current_kg_generation_id": None,
+        "generation_status": "unavailable",
+        "generation_reason": reason,
+        "cognitive_pending_active": 0,
+        "partition_cognitive_pending": 0,
+        "cognitive_status": "unavailable",
+        "source_diag": {
+            "source_count": None,
+            "canonical_source_count": None,
+            "working_source_count": None,
+            "enumeration_failure": True,
+            "error": reason,
+        },
+    }
+
+
+def _read_cognitive_health_counts(board_id: str) -> tuple[int, int, str]:
+    try:
+        from okto_pulse.core.kg.cognitive_readiness import R7_HOLD_REASON_CODES
+        from okto_pulse.core.kg.rebuild_audit import (
+            CognitiveConsolidationItemStore,
+            compute_status_counts,
+            require_rebuild_audit_artifact_store,
         )
-        return _telemetry_wal_or_open_error("discovery")
+
+        store = CognitiveConsolidationItemStore(
+            artifact_store=require_rebuild_audit_artifact_store()
+        )
+        generation = store.latest_generation(board_id)
+        if not generation:
+            return 0, 0, "available"
+        items = list(store.list_items(board_id, generation))
+        counts = compute_status_counts(items)
+        active = (
+            int(counts.get("pending", 0))
+            + int(counts.get("in_progress", 0))
+            + int(counts.get("failed", 0))
+        )
+        active_statuses = {"pending", "in_progress", "failed"}
+        partition = sum(
+            1
+            for item in items
+            if item.status in active_statuses
+            and str(getattr(item, "reason_code", "") or "") in R7_HOLD_REASON_CODES
+        )
+        return active, partition, "available"
+    except Exception:
+        return 0, 0, "unavailable"
 
 
-async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
+def _read_current_kg_generation(board_id: str) -> tuple[str | None, str, str]:
+    """Read the generation pointer from its file-backed repository."""
+
+    try:
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+        from okto_pulse.core.kg.rebuild_generation import (
+            RebuildAuditKGGenerationRepository,
+        )
+
+        artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
+        generation_id = RebuildAuditKGGenerationRepository(
+            artifact_store=artifact_store
+        ).get_current(board_id)
+        return generation_id, "available", "ok"
+    except Exception:
+        return None, "unavailable", _CURRENT_GENERATION_STORE_UNAVAILABLE_REASON
+
+
+def _build_artifact_health_snapshot(board_id: str) -> dict[str, Any]:
+    """Read generation/source/cognitive files once outside the event loop."""
+
+    epoch = _begin_health_probe_partial(
+        probe_name=_ARTIFACT_HEALTH_PROBE,
+        board_id=board_id,
+        generation_id=None,
+    )
+
+    def step(name: str, build: Callable[[], Any]) -> Any:
+        _assert_health_probe_epoch(board_id=board_id, epoch=epoch)
+        return _run_health_probe_step(
+            probe_name=_ARTIFACT_HEALTH_PROBE,
+            board_id=board_id,
+            step_name=name,
+            build=build,
+        )
+
+    generation_id, generation_status, generation_reason = step(
+        "current_generation",
+        lambda: _read_current_kg_generation(board_id),
+    )
+    _publish_health_probe_partial(
+        probe_name=_ARTIFACT_HEALTH_PROBE,
+        board_id=board_id,
+        generation_id=None,
+        epoch=epoch,
+        values={
+            "current_kg_generation_id": generation_id,
+            "generation_status": generation_status,
+            "generation_reason": generation_reason,
+        },
+    )
+
+    cognitive_pending, partition_pending, cognitive_status = step(
+        "cognitive_items",
+        lambda: _read_cognitive_health_counts(board_id),
+    )
+    _publish_health_probe_partial(
+        probe_name=_ARTIFACT_HEALTH_PROBE,
+        board_id=board_id,
+        generation_id=None,
+        epoch=epoch,
+        values={
+            "cognitive_pending_active": cognitive_pending,
+            "partition_cognitive_pending": partition_pending,
+            "cognitive_status": cognitive_status,
+        },
+    )
+    source_diag = step(
+        "rebuild_source_diagnostics",
+        lambda: _probe_rebuild_source_diagnostics(board_id),
+    )
+    _publish_health_probe_partial(
+        probe_name=_ARTIFACT_HEALTH_PROBE,
+        board_id=board_id,
+        generation_id=None,
+        epoch=epoch,
+        values={"source_diag": source_diag},
+    )
+    return {
+        "current_kg_generation_id": generation_id,
+        "generation_status": generation_status,
+        "generation_reason": generation_reason,
+        "cognitive_pending_active": cognitive_pending,
+        "partition_cognitive_pending": partition_pending,
+        "cognitive_status": cognitive_status,
+        "source_diag": source_diag,
+    }
+
+
+async def _collect_materialization_evidence(
+    board_id: str,
+) -> tuple[MaterializationEvidence | None, str, bool]:
+    """Collect one generation-fenced snapshot under one absolute deadline."""
+
+    port = get_materialization_evidence_port()
+    if port is None:
+        return None, "materialization_evidence_provider_unavailable", False
+
+    deadline = HealthProbeDeadline(
+        deadline_at=time.monotonic() + _MATERIALIZATION_EVIDENCE_BUDGET_S
+    )
+    try:
+        async with asyncio.timeout(deadline.remaining_seconds(now=time.monotonic())):
+            generation = str(await port.current_generation(board_id)).strip()
+            if not generation:
+                return None, "materialization_generation_unavailable", True
+            evidence = await port.probe(
+                MaterializationEvidenceRequest(
+                    board_id=board_id,
+                    generation=generation,
+                    deadline=deadline,
+                )
+            )
+    except TimeoutError:
+        return None, "materialization_evidence_timeout", True
+    except Exception:
+        return None, "materialization_evidence_provider_unavailable", True
+    return evidence, "ok", True
+
+
+def _materialization_reason_codes(reason: str) -> dict[str, str]:
+    stable = str(reason or _MATERIALIZATION_EVIDENCE_UNAVAILABLE)
+    return {
+        "board_graph": stable,
+        "board_census": stable,
+        "global_discovery": stable,
+    }
+
+
+def _is_confirmed_empty_evidence(
+    evidence: MaterializationEvidence | None,
+) -> bool:
+    if evidence is None:
+        return False
+    return (
+        evidence.board_store.normalized_state
+        is GraphRuntimeObservationState.CONFIRMED_ABSENT
+        and evidence.census.status is CensusStatus.AVAILABLE
+        and evidence.board_store.generation is not None
+        and evidence.board_store.generation == evidence.census.generation
+        and evidence.census.is_confirmed_zero
+    )
+
+
+def _telemetry_from_materialization_observation(
+    observation: GraphRuntimeObservationState,
+    *,
+    graph_type: str,
+) -> GraphTelemetry:
+    if observation in {
+        GraphRuntimeObservationState.PRESENT_READABLE_CANDIDATE,
+        GraphRuntimeObservationState.CONFIRMED_ABSENT,
+    }:
+        return _telemetry_ok(graph_type)
+    if observation is GraphRuntimeObservationState.PRESENT_UNREADABLE_OR_ERROR:
+        return _telemetry_wal_or_open_error(graph_type)
+    return _telemetry_unavailable(graph_type)
+
+
+def _not_materialized_artifact_snapshot() -> dict[str, Any]:
+    return {
+        "current_kg_generation_id": None,
+        "generation_status": "available",
+        "generation_reason": "board_not_materialized",
+        "cognitive_pending_active": 0,
+        "partition_cognitive_pending": 0,
+        "cognitive_status": "available",
+        "source_diag": {
+            "source_count": 0,
+            "canonical_source_count": 0,
+            "working_source_count": 0,
+            "enumeration_failure": False,
+            "error": None,
+            "skipped": "board_not_materialized",
+        },
+    }
+
+
+def _not_materialized_orphan_projection() -> dict[str, Any]:
+    return {
+        "classification_delta": "none",
+        "integrity_warning": False,
+        "orphan_count": 0,
+        "orphan_count_by_type": {},
+        "samples": [],
+        "unresolved_reasons": {},
+        "allowlisted_root_count": 0,
+        "generation_id": None,
+        "correlation_id": None,
+        "zero_orphan_validation": "not_applicable",
+        "reason": "board_not_materialized",
+    }
+
+
+def _unavailable_orphan_projection(reason: str) -> dict[str, Any]:
+    """Return a fail-closed projection without touching board graph storage."""
+
+    return {
+        "classification_delta": "unavailable",
+        "integrity_warning": False,
+        "orphan_count": 0,
+        "orphan_count_by_type": {},
+        "samples": [],
+        "unresolved_reasons": {},
+        "allowlisted_root_count": 0,
+        "generation_id": None,
+        "correlation_id": None,
+        "zero_orphan_validation": "unavailable",
+        "reason": reason,
+    }
+
+
+async def get_kg_health(
+    board_id: str,
+    db: Any,
+    *,
+    scheduler_control: SchedulerControl | None = None,
+) -> dict[str, Any]:
     """Compose the /api/v1/kg/health payload for ``board_id``.
 
     Raises ``BoardNotFoundError`` when the board is not found in the
-    SQLite app DB. All Kùzu-derived metrics degrade to zero on lookup
-    errors — the endpoint never 500s for a transient Kùzu issue.
+    SQLite app DB. All graph backend-derived metrics degrade to zero on lookup
+    errors — the endpoint never 500s for a transient graph backend issue.
     """
-    board = await db.get(Board, board_id)
-    if board is None:
+    relational = await get_kg_health_read_port().queue_snapshot(
+        db,
+        board_id=board_id,
+    )
+    if not relational.board_exists:
         raise BoardNotFoundError(f"board not found: {board_id}")
+
+    (
+        materialization_evidence,
+        materialization_probe_reason,
+        materialization_port_configured,
+    ) = await _collect_materialization_evidence(board_id)
+    materialization_observation = (
+        materialization_evidence.board_store.normalized_state
+        if materialization_evidence is not None
+        else None
+    )
+    confirmed_empty_evidence = _is_confirmed_empty_evidence(materialization_evidence)
+    # A non-present observation is already authoritative for the safety
+    # decision. Do not fall through to legacy graph reads that may open or
+    # bootstrap an absent/unreadable store.
+    skip_board_graph_reads = materialization_port_configured and (
+        materialization_observation
+        is not GraphRuntimeObservationState.PRESENT_READABLE_CANDIDATE
+    )
 
     now = datetime.now(timezone.utc)
 
-    queue_depth = await db.scalar(
-        select(func.count()).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.status.in_(["pending", "claimed"]),
-        )
-    ) or 0
-
-    oldest_triggered = await db.scalar(
-        select(func.min(ConsolidationQueue.triggered_at)).where(
-            ConsolidationQueue.board_id == board_id,
-            ConsolidationQueue.status.in_(["pending", "claimed"]),
-        )
-    )
+    queue_depth = relational.queue_depth
+    oldest_triggered = relational.oldest_triggered_at
     if oldest_triggered is not None:
         if oldest_triggered.tzinfo is None:
             oldest_triggered = oldest_triggered.replace(tzinfo=timezone.utc)
@@ -920,19 +2194,23 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     else:
         oldest_pending_age_s = 0.0
 
-    dead_letter_count = await db.scalar(
-        select(func.count()).where(
-            ConsolidationDeadLetter.board_id == board_id,
-        )
-    ) or 0
+    dead_letter_count = relational.dead_letter_count
 
     # R6-IMP2: active operational-queue drill-down (ConsolidationQueue pending/
     # claimed + global_update_outbox retry-window rows). DLQ / canonical debt are
     # deliberately NOT counted here — that separation is R6-IMP5.
     from okto_pulse.core.services.queue_health_service import (
         get_active_queue_drilldown,
+        get_global_outbox_dead_letter_drilldown,
     )
+
     active_queue = await get_active_queue_drilldown(db, board_id)
+    global_outbox_dead_letter = await get_global_outbox_dead_letter_drilldown(
+        db,
+        board_id,
+        limit=0,
+    )
+    global_outbox_dead_letter_count = int(global_outbox_dead_letter["total_count"])
 
     tick_evidence = await _load_tick_evidence(db)
     last_terminal_tick = tick_evidence.get("latest_terminal")
@@ -951,7 +2229,7 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         last_decay_tick_at = None
         nodes_recomputed_in_last_tick = 0
         boards_processed_in_last_tick = 0  # BR5: default 0 when no tick_run
-        boards_failed_in_last_tick = 0     # BR5: default 0 when no tick_run
+        boards_failed_in_last_tick = 0  # BR5: default 0 when no tick_run
     if last_terminal_tick is not None:
         last_tick_status = "failed" if last_terminal_tick.error else "completed"
         last_tick_error = _safe_scheduler_error(last_terminal_tick.error)
@@ -959,25 +2237,316 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         last_tick_status = None
         last_tick_error = None
 
-    # to_thread: ambos abrem conexões Kùzu e executam queries SÍNCRONAS —
-    # rodando no event loop, qualquer board grande/lento congela o servidor
-    # inteiro (py-spy 2026-06-10).
-    kuzu_metrics = await asyncio.to_thread(_aggregate_kuzu_metrics, board_id)
-    graph_schema_version = await asyncio.to_thread(
-        _get_graph_schema_version, board_id
-    )
+    generation_hint = _HEALTH_PROBE_GENERATION_HINTS.get(board_id)
+    probe_requests: list[_HealthProbeRequest] = []
+    if not skip_board_graph_reads:
+        probe_requests.append(
+            _HealthProbeRequest(
+                name=_GRAPH_HEALTH_PROBE,
+                board_id=board_id,
+                generation_id=generation_hint,
+                build=lambda: _build_graph_health_snapshot(
+                    board_id,
+                    generation_hint,
+                ),
+                fallback=_graph_health_snapshot_fallback("probe_budget_exceeded"),
+            )
+        )
+    if not confirmed_empty_evidence:
+        probe_requests.append(
+            _HealthProbeRequest(
+                name=_ARTIFACT_HEALTH_PROBE,
+                board_id=board_id,
+                generation_id=None,
+                build=lambda: _build_artifact_health_snapshot(board_id),
+                fallback=_artifact_health_snapshot_fallback("probe_budget_exceeded"),
+            )
+        )
+    if materialization_evidence is None and not materialization_port_configured:
+        # Backward-compatible Core-only mode: without an edition evidence
+        # adapter, retain the pre-1.1 diagnostics. The result is still forced
+        # fail-closed below and can never become ``not_materialized``.
+        probe_requests.append(
+            _HealthProbeRequest(
+                name=_DISCOVERY_HEALTH_PROBE,
+                board_id=board_id,
+                generation_id=generation_hint,
+                build=_probe_global_discovery_telemetry,
+                fallback=_telemetry_unavailable("discovery"),
+            )
+        )
+    probe_results = await _resolve_health_probe_batch(tuple(probe_requests))
 
-    default_score_count = kuzu_metrics["default_score_count"]
-    total_nodes = kuzu_metrics["total_nodes"]
-    default_score_ratio = (
-        default_score_count / total_nodes if total_nodes > 0 else 0.0
+    if skip_board_graph_reads:
+        graph_reason = (
+            materialization_evidence.board_store.reason_code
+            if materialization_evidence is not None
+            else materialization_probe_reason
+        ) or _MATERIALIZATION_EVIDENCE_UNAVAILABLE
+        graph_status = (
+            "unavailable"
+            if materialization_observation
+            is GraphRuntimeObservationState.PROVIDER_UNAVAILABLE
+            else "available"
+        )
+        graph_fallback = _graph_health_snapshot_fallback(graph_reason)
+        if materialization_observation is not None:
+            graph_fallback["graph_telemetry"] = (
+                _telemetry_from_materialization_observation(
+                    materialization_observation,
+                    graph_type="board",
+                )
+            )
+        graph_probe = _HealthProbeResult(
+            value=graph_fallback,
+            status=graph_status,
+            reason=graph_reason,
+            age_seconds=0.0,
+            refresh_in_progress=False,
+        )
+    else:
+        graph_probe = probe_results[_GRAPH_HEALTH_PROBE]
+
+    if confirmed_empty_evidence:
+        artifact_probe = _HealthProbeResult(
+            value=_not_materialized_artifact_snapshot(),
+            status="available",
+            reason="board_not_materialized",
+            age_seconds=0.0,
+            refresh_in_progress=False,
+        )
+    else:
+        artifact_probe = probe_results[_ARTIFACT_HEALTH_PROBE]
+
+    if materialization_evidence is not None:
+        discovery_observation = (
+            materialization_evidence.discovery_store.normalized_state
+        )
+        discovery_reason = (
+            materialization_evidence.discovery_store.reason_code
+            or materialization_evidence.discovery_store.unavailable_reason
+            or "global_discovery_observation_unclassified"
+        )
+        discovery_probe = _HealthProbeResult(
+            value=_telemetry_from_materialization_observation(
+                discovery_observation,
+                graph_type="discovery",
+            ),
+            status=(
+                "unavailable"
+                if discovery_observation
+                is GraphRuntimeObservationState.PROVIDER_UNAVAILABLE
+                else "available"
+            ),
+            reason=discovery_reason,
+            age_seconds=0.0,
+            refresh_in_progress=False,
+        )
+    elif not materialization_port_configured:
+        discovery_probe = probe_results[_DISCOVERY_HEALTH_PROBE]
+    else:
+        discovery_probe = _HealthProbeResult(
+            value=_telemetry_unavailable("discovery"),
+            status="unavailable",
+            reason=materialization_probe_reason,
+            age_seconds=0.0,
+            refresh_in_progress=False,
+        )
+    graph_snapshot = dict(graph_probe.value)
+    graph_partial: dict[str, Any] = {}
+    if graph_probe.status == "unavailable":
+        graph_partial = _read_health_probe_partial(
+            probe_name=_GRAPH_HEALTH_PROBE,
+            board_id=board_id,
+            generation_id=generation_hint,
+        )
+        graph_snapshot.update(graph_partial)
+    graph_metrics_available = confirmed_empty_evidence or (
+        not skip_board_graph_reads
+        and (graph_probe.status != "unavailable" or "graph_metrics" in graph_partial)
     )
+    artifact_snapshot = dict(artifact_probe.value)
+    if artifact_probe.status == "unavailable":
+        artifact_snapshot.update(
+            _read_health_probe_partial(
+                probe_name=_ARTIFACT_HEALTH_PROBE,
+                board_id=board_id,
+                generation_id=None,
+            )
+        )
+    graph_metrics = graph_snapshot["graph_metrics"]
+    graph_schema_version = graph_snapshot["graph_schema_version"]
+    current_kg_generation_id = artifact_snapshot["current_kg_generation_id"]
+    if artifact_snapshot.get("generation_status") == "available":
+        _HEALTH_PROBE_GENERATION_HINTS[board_id] = current_kg_generation_id
+
+    if skip_board_graph_reads:
+        parity_probe = _HealthProbeResult(
+            value=(
+                {
+                    "stale_board_items": [],
+                    "stale_board_status": "available",
+                    "digest_inputs": {
+                        "status": "available",
+                        "reason": "board_not_materialized",
+                        "digests": [],
+                        "board_meta": {},
+                        "needs_overlay": False,
+                    },
+                }
+                if confirmed_empty_evidence
+                else _parity_health_snapshot_fallback("board_graph_not_opened")
+            ),
+            status="available" if confirmed_empty_evidence else "unavailable",
+            reason="board_graph_not_opened",
+            age_seconds=0.0,
+            refresh_in_progress=False,
+        )
+    else:
+        parity_results = await _resolve_health_probe_batch(
+            (
+                _HealthProbeRequest(
+                    name=_PARITY_HEALTH_PROBE,
+                    board_id=board_id,
+                    generation_id=current_kg_generation_id,
+                    build=lambda: _build_parity_health_snapshot(
+                        board_id,
+                        current_kg_generation_id,
+                    ),
+                    fallback=_parity_health_snapshot_fallback("probe_budget_exceeded"),
+                    ttl_s=0.0,
+                    prefer_fresh_within_budget=True,
+                ),
+            ),
+            budget_s=_HEALTH_PARITY_PROBE_BUDGET_S,
+        )
+        parity_probe = parity_results[_PARITY_HEALTH_PROBE]
+    parity_snapshot = dict(parity_probe.value)
+    if parity_probe.status == "unavailable":
+        parity_snapshot.update(
+            _read_health_probe_partial(
+                probe_name=_PARITY_HEALTH_PROBE,
+                board_id=board_id,
+                generation_id=current_kg_generation_id,
+            )
+        )
+
+    # A present discovery artifact is initially classified from metadata only.
+    # The parity probe above may be the first native open after process start;
+    # Community feeds a proven corruption back into the same runtime instance.
+    # Re-read only that semantic state after the bounded native probe so the
+    # first health response cannot overwrite a real open failure with a false
+    # healthy. This remains a non-opening state read and never resolves storage
+    # paths in Core.
+    if (
+        materialization_evidence is not None
+        and materialization_evidence.discovery_store.normalized_state
+        is GraphRuntimeObservationState.PRESENT_READABLE_CANDIDATE
+    ):
+        try:
+            refreshed_discovery = (
+                get_kg_registry()
+                .require_global_discovery_runtime()
+                .state(generation=materialization_evidence.discovery_store.generation)
+            )
+        except Exception:
+            refreshed_discovery = None
+        if (
+            refreshed_discovery is not None
+            and refreshed_discovery.normalized_state
+            is GraphRuntimeObservationState.PRESENT_UNREADABLE_OR_ERROR
+        ):
+            materialization_evidence = replace(
+                materialization_evidence,
+                discovery_store=refreshed_discovery,
+            )
+            discovery_probe = _HealthProbeResult(
+                value=_telemetry_from_materialization_observation(
+                    refreshed_discovery.normalized_state,
+                    graph_type="discovery",
+                ),
+                status="available",
+                reason=(
+                    refreshed_discovery.reason_code
+                    or refreshed_discovery.unavailable_reason
+                    or "global_discovery_observation_unclassified"
+                ),
+                age_seconds=0.0,
+                refresh_in_progress=False,
+            )
+
+    probe_diagnostics = {
+        _GRAPH_HEALTH_PROBE: graph_probe.diagnostic(),
+        _ARTIFACT_HEALTH_PROBE: artifact_probe.diagnostic(),
+        _PARITY_HEALTH_PROBE: parity_probe.diagnostic(),
+        _DISCOVERY_HEALTH_PROBE: discovery_probe.diagnostic(),
+        "graph_metrics": {
+            "status": ("available" if graph_metrics_available else "unavailable"),
+            "reason": "ok" if graph_metrics_available else graph_probe.reason,
+        },
+        "schema_version": {
+            "status": (
+                "available" if graph_schema_version is not None else "unavailable"
+            ),
+            "reason": (
+                "ok" if graph_schema_version is not None else graph_probe.reason
+            ),
+        },
+        "discovery_telemetry": {
+            "status": discovery_probe.status,
+            "reason": discovery_probe.reason,
+        },
+        "current_generation": _snapshot_derived_diagnostic(
+            source_status=artifact_snapshot.get("generation_status", "unavailable"),
+            source_reason=artifact_snapshot.get(
+                "generation_reason", artifact_probe.reason
+            ),
+            snapshot=artifact_probe,
+        ),
+        "storage_footprint": {
+            "status": graph_snapshot["storage_footprint_proxy"].get(
+                "status", "unavailable"
+            ),
+            "reason": graph_snapshot["storage_footprint_proxy"].get(
+                "unavailable_reason"
+            ),
+        },
+        "layer_counts": {
+            "status": graph_snapshot["kg_layer_counts"].get("status", "unavailable"),
+            "reason": graph_snapshot["kg_layer_counts"].get("reason"),
+        },
+        "cognitive_items": _snapshot_derived_diagnostic(
+            source_status=artifact_snapshot.get("cognitive_status", "unavailable"),
+            source_reason=(
+                "ok"
+                if artifact_snapshot.get("cognitive_status") == "available"
+                else artifact_probe.reason
+            ),
+            snapshot=artifact_probe,
+        ),
+        "rebuild_source_diagnostics": _snapshot_derived_diagnostic(
+            source_status=(
+                "unavailable"
+                if artifact_snapshot["source_diag"].get("enumeration_failure")
+                else "available"
+            ),
+            source_reason=artifact_snapshot["source_diag"].get("error") or "ok",
+            snapshot=artifact_probe,
+        ),
+    }
+
+    default_score_count = graph_metrics["default_score_count"]
+    total_nodes = graph_metrics["total_nodes"]
+    default_score_ratio = default_score_count / total_nodes if total_nodes > 0 else 0.0
 
     if default_score_ratio > DEFAULT_SCORE_RATIO_ALARM_THRESHOLD:
         logger.warning(
             "kg.health.default_score_skew_high board=%s ratio=%.3f "
             "count=%d total=%d threshold=%.2f",
-            board_id, default_score_ratio, default_score_count, total_nodes,
+            board_id,
+            default_score_ratio,
+            default_score_count,
+            total_nodes,
             DEFAULT_SCORE_RATIO_ALARM_THRESHOLD,
             extra={
                 "event": "kg.health.default_score_skew_high",
@@ -992,23 +2561,30 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     # Bug fix (Playwright E2E reproduzido): se o usuário fechar o modal
     # enquanto o tick roda e voltar, o frontend perde o state local de
     # "running" e re-habilita o botão. Para o frontend conseguir desabilitar
-    # através de remount, expomos o estado real do advisory lock global
-    # ``("kg_daily_tick", "global")``. Reuso do lock que kg_tick.py e o
-    # cron já consultam — single source of truth.
-    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
-    tick_lock = get_async_lock("kg_daily_tick", "global")
-    tick_in_progress = tick_lock.locked()
+    # através de remount, expomos o estado real da lease ``kg_daily_tick``.
+    # Reuso da LeaseProvider que kg_tick.py e o cron consultam — single source
+    # of truth, sem primitiva concreta no core.
+    from okto_pulse.core.ports.coordination import (
+        CoordinationProviderMissing,
+        get_lease_provider,
+    )
+
+    try:
+        tick_in_progress = get_lease_provider().is_held("kg_daily_tick")
+    except CoordinationProviderMissing:
+        tick_in_progress = False
     if tick_in_progress or tick_evidence.get("running_row") is not None:
         last_tick_status = "running"
-    decay_scheduler_diagnostics = _build_decay_scheduler_diagnostics(
+    decay_scheduler_diagnostics = await _build_decay_scheduler_diagnostics(
         tick_evidence=tick_evidence,
         tick_in_progress=tick_in_progress,
         now=now,
+        scheduler_control=scheduler_control,
     )
 
     # KG-01 FR1+FR2+FR3 (contract api_3ed9037f): per-graph classification
     # for board_graph and global_discovery, deterministic memory-pressure
-    # correlator, and contract-shaped REST payload. Low-level Ladybug buffer
+    # correlator, and contract-shaped REST payload. Low-level embedded graph backend buffer
     # high-water metrics are not exposed by the current Python API, but the
     # Health surface must still distinguish "telemetry missing" from "current
     # graph opens and is readable" and from "existing graph failed to open".
@@ -1021,37 +2597,55 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     null_lock = LockState(is_held=False, is_admin_lane=False, owner_token=None)
     correlation_id = uuid.uuid4().hex
 
-    def _evaluate_graph(telemetry: GraphTelemetry):
+    def _evaluate_graph(
+        telemetry: GraphTelemetry,
+        *,
+        quarantine_present: bool = False,
+    ):
         return classifier.evaluate(
             telemetries=[telemetry],
             lock_state=null_lock,
-            quarantine_present=False,
+            quarantine_present=quarantine_present,
             backpressure_rejecting=False,
             correlation_id=correlation_id,
         )
 
     empty_after_materialized_history = (
-        total_nodes == 0
+        not confirmed_empty_evidence
+        and graph_metrics_available
+        and total_nodes == 0
         and await _has_materialized_kg_history(db, board_id)
     )
-    graph_telemetry = _probe_board_graph_telemetry(
-        board_id=board_id,
-        total_nodes=total_nodes,
-        graph_schema_version=graph_schema_version,
-        empty_after_materialized_history=empty_after_materialized_history,
+    graph_telemetry = (
+        _telemetry_wal_or_open_error("board")
+        if empty_after_materialized_history
+        else graph_snapshot["graph_telemetry"]
     )
-    discovery_telemetry = _probe_global_discovery_telemetry()
+    discovery_telemetry = discovery_probe.value
 
-    graph_classification = _evaluate_graph(graph_telemetry)
-    discovery_classification = _evaluate_graph(discovery_telemetry)
+    graph_classification = _evaluate_graph(
+        graph_telemetry,
+        quarantine_present=bool(
+            materialization_evidence
+            and materialization_evidence.board_store.quarantined
+        ),
+    )
+    discovery_classification = _evaluate_graph(
+        discovery_telemetry,
+        quarantine_present=bool(
+            materialization_evidence
+            and materialization_evidence.discovery_store.quarantined
+        ),
+    )
 
     graph_state = graph_classification.state
+    effective_discovery_state = discovery_classification.state
     if empty_after_materialized_history:
         graph_state = HealthState.RECOVERY_NEEDED
 
     overall_state = max(
         graph_state,
-        discovery_classification.state,
+        effective_discovery_state,
         key=lambda s: _STATE_SEVERITY[s],
     )
 
@@ -1083,6 +2677,133 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             rest_metric_status = "unavailable"
             break
 
+    materialization_state = "unknown"
+    materialization_generation: str | None = None
+    probe_reason_codes = _materialization_reason_codes(materialization_probe_reason)
+    if materialization_evidence is not None:
+        materialization_snapshot = MaterializationHealthPolicy().evaluate(
+            board_store=materialization_evidence.board_store,
+            census=materialization_evidence.census,
+            discovery_store=materialization_evidence.discovery_store,
+            baseline=MaterializationHealthBaseline(
+                graph_state=graph_state,
+                discovery_state=effective_discovery_state,
+                overall_state=overall_state,
+                metric_status=(
+                    MetricStatus.AVAILABLE
+                    if rest_metric_status == "available"
+                    else MetricStatus.UNAVAILABLE
+                ),
+                classification_reasons=tuple(combined_reasons),
+            ),
+        )
+        materialization_state = materialization_snapshot.materialization_state.value
+        materialization_generation = materialization_snapshot.materialization_generation
+        probe_reason_codes = dict(materialization_snapshot.probe_reason_codes)
+        graph_state = materialization_snapshot.graph_state
+        effective_discovery_state = materialization_snapshot.discovery_state
+        overall_state = materialization_snapshot.overall_state
+        rest_metric_status = _REST_METRIC_STATUS_MAP[
+            materialization_snapshot.metric_status
+        ]
+        classification_reason = materialization_snapshot.classification_reason
+        combined_reasons = list(materialization_snapshot.classification_reasons)
+
+        if materialization_snapshot.known_empty_metrics is not None:
+            known_empty = materialization_snapshot.known_empty_metrics
+            queue_depth = known_empty.queue_depth
+            oldest_pending_age_s = known_empty.oldest_pending_age_s
+            dead_letter_count = known_empty.dead_letter_count
+            global_outbox_dead_letter_count = (
+                known_empty.global_outbox_dead_letter_count
+            )
+            total_nodes = known_empty.total_nodes
+            default_score_count = known_empty.default_score_count
+            default_score_ratio = known_empty.default_score_ratio
+            graph_metrics.update(
+                {
+                    "total_nodes": known_empty.total_nodes,
+                    "default_score_count": known_empty.default_score_count,
+                    "avg_relevance": known_empty.avg_relevance,
+                }
+            )
+            graph_schema_version = known_empty.graph_schema_version
+            last_decay_tick_at = known_empty.last_decay_tick_at
+            active_queue = {
+                **active_queue,
+                "total_active_depth": known_empty.active_queue_count,
+                "classification": "empty",
+                "sources": [
+                    {**source, "queue_depth": 0}
+                    for source in active_queue.get("sources", [])
+                ],
+            }
+            global_outbox_dead_letter = {
+                **global_outbox_dead_letter,
+                "total_count": known_empty.global_outbox_dead_letter_count,
+                "oldest_age_seconds": known_empty.oldest_dead_letter_age_s,
+            }
+            graph_snapshot["storage_footprint_proxy"] = {
+                **graph_snapshot["storage_footprint_proxy"],
+                "status": "available",
+                "percentage": None,
+                "high_water_mark_pct": known_empty.high_water_mark_pct,
+                "graph_primary_bytes": 0,
+                "primary_bytes": 0,
+                "sidecar_bytes": 0,
+                "total_bytes": known_empty.board_storage_total_bytes,
+                "unavailable_reason": None,
+            }
+            graph_snapshot["kg_layer_counts"] = {
+                "status": "ok",
+                "by_layer": {
+                    "canonical": known_empty.canonical_layer_count,
+                    "working": known_empty.working_layer_count,
+                    "none": 0,
+                    "legacy_unknown": 0,
+                    "unclassified": 0,
+                },
+                "by_maturity_status": {
+                    "canonical_eligible": 0,
+                    "working_immature": 0,
+                    "cancelled": 0,
+                },
+            }
+            probe_diagnostics.update(
+                {
+                    "graph_metrics": {
+                        "status": "available",
+                        "reason": "confirmed_empty_known_zero",
+                    },
+                    "schema_version": {
+                        "status": "not_applicable",
+                        "reason": "board_not_materialized",
+                    },
+                    "storage_footprint": {
+                        "status": "available",
+                        "reason": "confirmed_empty_known_zero",
+                    },
+                    "layer_counts": {
+                        "status": "available",
+                        "reason": "confirmed_empty_known_zero",
+                    },
+                }
+            )
+    else:
+        # Missing edition evidence is not confirmed absence. Preserve the
+        # legacy diagnostics, but make the new diagnosis explicitly fail closed.
+        rest_metric_status = "unavailable"
+        if _STATE_SEVERITY[graph_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
+            graph_state = HealthState.AT_RISK
+        overall_state = max(
+            graph_state,
+            effective_discovery_state,
+            key=lambda state: _STATE_SEVERITY[state],
+        )
+        if materialization_probe_reason not in combined_reasons:
+            combined_reasons.append(materialization_probe_reason)
+        classification_reason = ";".join(combined_reasons)
+
     # FR1/TR1 (spec R2c): feed real ring-buffer observations to the
     # correlator instead of empty-list stubs.  The collector module keeps
     # per-board deques (maxlen 200 / 50) that telemetry writers populate
@@ -1097,57 +2818,81 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         total_nodes=total_nodes,
         graph_schema_version=graph_schema_version,
         empty_after_materialized_history=empty_after_materialized_history,
-        discovery_state=discovery_classification.state,
+        discovery_state=effective_discovery_state,
         discovery_reasons=[
             f"discovery:{reason}" for reason in discovery_classification.reasons
         ],
         rest_metric_status=rest_metric_status,
         dead_letter_count=int(dead_letter_count),
     )
+    if global_outbox_dead_letter_count > 0:
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "global_outbox_dead_letter_backlog",
+                "component": "global_discovery_delivery",
+                "severity": "warning",
+                "reason": "global_outbox_dead_letter_count_gt_zero",
+                "description": (
+                    f"{global_outbox_dead_letter_count} terminal global-discovery "
+                    "delivery event(s) need read-only diagnosis. This domain is "
+                    "separate from consolidation DLQ and the active retry window."
+                ),
+                "operator_action": "inspect_global_outbox_dead_letters",
+                "drill_down_tool": (
+                    "okto_pulse_kg_global_outbox_dead_letter_list"
+                ),
+            }
+        )
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = (
+                "global_outbox_dead_letter_backlog"
+            )
+            health_diagnostics["operator_action"] = "inspect_global_outbox_dead_letters"
     if decay_scheduler_diagnostics["operational_debt"]:
-        health_diagnostics["health_issues"].append({
-            "code": f"decay_scheduler_{decay_scheduler_diagnostics['status']}",
-            "component": "decay_scheduler",
-            "severity": decay_scheduler_diagnostics["severity"],
-            "reason": f"decay_scheduler:{decay_scheduler_diagnostics['reason']}",
-            "description": (
-                "Decay scheduler has operational debt. This does not imply "
-                "board graph corruption or require KG rebuild by itself."
-            ),
-            "operator_action": decay_scheduler_diagnostics["recommended_action"],
-        })
+        health_diagnostics["health_issues"].append(
+            {
+                "code": f"decay_scheduler_{decay_scheduler_diagnostics['status']}",
+                "component": "decay_scheduler",
+                "severity": decay_scheduler_diagnostics["severity"],
+                "reason": f"decay_scheduler:{decay_scheduler_diagnostics['reason']}",
+                "description": (
+                    "Decay scheduler has operational debt. This does not imply "
+                    "board graph corruption or require KG rebuild by itself."
+                ),
+                "operator_action": decay_scheduler_diagnostics["recommended_action"],
+            }
+        )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "decay_scheduler_debt"
             health_diagnostics["operator_action"] = decay_scheduler_diagnostics[
                 "recommended_action"
             ]
 
-    # bug b4c6920c follow-up: wire `current_kg_generation_id` to the
-    # KG-02.4 `KGGenerationRepository` file-backed pointer. Previously
-    # this was hard-None, so the UI Recovery panel showed "no generation
-    # yet" even after a successful rebuild promoted a UUID v4 generation
-    # (the run audit had the id but the health endpoint didn't read it
-    # back). Defensive: any IO/import failure degrades silently to None
-    # so the health endpoint stays available (br_2a8cdfdc forbids 500s
-    # on telemetry failure).
-    current_kg_generation_id: str | None = None
-    try:
-        from pathlib import Path
-        import tempfile
-        from okto_pulse.core.kg.rebuild_generation import (
-            KGGenerationRepository,
+    # AF16: generation/file-backed evidence is part of the managed artifact
+    # snapshot. A cold timeout is explicit and never blocks the event loop.
+    if artifact_snapshot.get("generation_status") != "available":
+        rest_metric_status = "unavailable"
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "rebuild_audit_artifact_store_unavailable",
+                "component": "kg_generation_store",
+                "severity": "warning",
+                "reason": artifact_snapshot.get(
+                    "generation_reason",
+                    _CURRENT_GENERATION_STORE_UNAVAILABLE_REASON,
+                ),
+                "description": (
+                    "Current KG generation could not be read from the injected "
+                    "RebuildAuditArtifactStore."
+                ),
+                "operator_action": "inspect_runtime_provider",
+            }
         )
-
-        # Same base_dir as the REST endpoint wires (kg_rebuild.py).
-        rebuild_base = Path(tempfile.gettempdir()) / "okto_pulse_kg_rebuild"
-        current_kg_generation_id = KGGenerationRepository(
-            base_dir=rebuild_base
-        ).get_current(board_id)
-    except Exception as exc:  # pragma: no cover — defensive
-        logger.warning(
-            "kg.health.current_generation_lookup_failed board=%s err=%s",
-            board_id, exc,
-        )
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = (
+                _CURRENT_GENERATION_STORE_UNAVAILABLE_REASON
+            )
+            health_diagnostics["operator_action"] = "inspect_runtime_provider"
 
     # FR4 (spec R2c): populate recent_events with the FailureEvent that the
     # correlator used when memory_pressure is confirmed_primary_cause.  The
@@ -1160,12 +2905,14 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         and memory_pressure.failure_event is not None
     ):
         fe = memory_pressure.failure_event
-        recent_events.append({
-            "occurred_at": fe.timestamp.isoformat(),
-            "event_type": fe.event_kind,
-            "reason": memory_pressure.reason,
-            "correlation_id": fe.correlation_id,
-        })
+        recent_events.append(
+            {
+                "occurred_at": fe.timestamp.isoformat(),
+                "event_type": fe.event_kind,
+                "reason": memory_pressure.reason,
+                "correlation_id": fe.correlation_id,
+            }
+        )
         # When memory pressure is the confirmed primary cause we surface
         # the correlator's correlation_id (== FailureEvent.correlation_id)
         # as the canonical correlation_id for the entire health snapshot so
@@ -1178,24 +2925,33 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     dlq_auto_drain_last_run_at: str | None = None
     dlq_auto_drain_requeued_count: int = 0
     try:
-        from okto_pulse.core.kg.workers.consolidation import get_consolidation_worker
-        worker = get_consolidation_worker()
-        drain_stats = worker.get_dlq_drain_stats(board_id)
+        from okto_pulse.core.application.runtime_workers import (
+            runtime_worker_snapshot,
+        )
+
+        drain_stats = runtime_worker_snapshot(
+            "consolidation_worker",
+            board_id=board_id,
+        )
         dlq_auto_drain_last_run_at = drain_stats["last_run_at"]
         dlq_auto_drain_requeued_count = drain_stats["requeued_count"]
     except Exception:
         pass  # defensive: health endpoint must never 500 on telemetry failure
 
     checked_at = now.isoformat()
-    storage_footprint_proxy = _build_storage_footprint_proxy(board_id)
-    # to_thread + cache TTL: o scan de órfãos é O(nodes × rel_types) em
-    # queries Kùzu síncronas — era o bloqueador dominante do event loop.
-    orphan_integrity = await asyncio.to_thread(
-        _build_orphan_integrity_for_health,
-        board_id=board_id,
-        generation_id=current_kg_generation_id,
-    )
-    kg_layer_counts = await asyncio.to_thread(_aggregate_kg_layer_counts, board_id)
+    storage_footprint_proxy = graph_snapshot["storage_footprint_proxy"]
+    if confirmed_empty_evidence:
+        orphan_integrity = _not_materialized_orphan_projection()
+    elif skip_board_graph_reads:
+        orphan_integrity = _unavailable_orphan_projection(
+            graph_probe.reason or "board_graph_not_opened"
+        )
+    else:
+        orphan_integrity = _get_or_schedule_orphan_integrity_for_health(
+            board_id=board_id,
+            generation_id=current_kg_generation_id,
+        )
+    kg_layer_counts = graph_snapshot["kg_layer_counts"]
     try:
         from okto_pulse.core.services.canonical_debt_service import (
             summarize_canonical_debt,
@@ -1205,7 +2961,8 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     except Exception as exc:  # pragma: no cover - defensive health path
         logger.warning(
             "kg.health.canonical_debt_summary_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         canonical_debt = {
             "open_count": 0,
@@ -1217,19 +2974,21 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             "status": "unavailable",
         }
     if int(canonical_debt.get("open_count") or 0) > 0:
-        health_diagnostics["health_issues"].append({
-            "code": "canonical_debt_open",
-            "component": "canonical_graph",
-            "severity": "warning",
-            "reason": "canonical_debt_open_count_gt_zero",
-            "description": (
-                f"{int(canonical_debt.get('open_count') or 0)} artifact(s) "
-                "remain outside canonical consolidation and require retry or "
-                "cognitive promotion."
-            ),
-            "operator_action": "inspect_canonical_debt",
-            "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
-        })
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "canonical_debt_open",
+                "component": "canonical_graph",
+                "severity": "warning",
+                "reason": "canonical_debt_open_count_gt_zero",
+                "description": (
+                    f"{int(canonical_debt.get('open_count') or 0)} artifact(s) "
+                    "remain outside canonical consolidation and require retry or "
+                    "cognitive promotion."
+                ),
+                "operator_action": "inspect_canonical_debt",
+                "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
+            }
+        )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "canonical_debt_open"
             health_diagnostics["operator_action"] = "inspect_canonical_debt"
@@ -1240,48 +2999,25 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     # file-backed, so it runs off the event loop and any IO failure degrades
     # to 0 — the health endpoint must never 500 on telemetry failure
     # (br_2a8cdfdc).
-    def _count_active_cognitive_pending(_board_id: str) -> int:
-        from okto_pulse.core.kg.rebuild_audit import (
-            CognitiveConsolidationItemStore,
-            compute_status_counts,
-            default_rebuild_base_dir,
-        )
-
-        store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
-        gen = store.latest_generation(_board_id)
-        if not gen:
-            return 0
-        counts = compute_status_counts(store.list_items(_board_id, gen))
-        return (
-            int(counts.get("pending", 0))
-            + int(counts.get("in_progress", 0))
-            + int(counts.get("failed", 0))
-        )
-
-    try:
-        cognitive_pending_active = await asyncio.to_thread(
-            _count_active_cognitive_pending, board_id,
-        )
-    except Exception as exc:  # pragma: no cover - defensive health path
-        logger.warning(
-            "kg.health.cognitive_pending_lookup_failed board=%s err=%s",
-            board_id, exc,
-        )
-        cognitive_pending_active = 0
+    cognitive_pending_active = int(
+        artifact_snapshot.get("cognitive_pending_active") or 0
+    )
     if cognitive_pending_active > 0:
-        health_diagnostics["health_issues"].append({
-            "code": "cognitive_consolidation_pending",
-            "component": "cognitive_consolidation",
-            "severity": "info",
-            "reason": "cognitive_pending_active_count_gt_zero",
-            "description": (
-                f"{cognitive_pending_active} cognitive consolidation item(s) "
-                "are pending/in_progress/failed and await agent action. "
-                "Distinct from the dead-letter queue and canonical debt."
-            ),
-            "operator_action": "inspect_cognitive_pending",
-            "drill_down_tool": "okto_pulse_kg_list_cognitive_pending_items",
-        })
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "cognitive_consolidation_pending",
+                "component": "cognitive_consolidation",
+                "severity": "info",
+                "reason": "cognitive_pending_active_count_gt_zero",
+                "description": (
+                    f"{cognitive_pending_active} cognitive consolidation item(s) "
+                    "are pending/in_progress/failed and await agent action. "
+                    "Distinct from the dead-letter queue and canonical debt."
+                ),
+                "operator_action": "inspect_cognitive_pending",
+                "drill_down_tool": "okto_pulse_kg_list_cognitive_pending_items",
+            }
+        )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = (
                 "cognitive_consolidation_pending"
@@ -1297,101 +3033,129 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     # artifact), so there is no internal double-count; precedence_explanation
     # documents the relationship to the broader canonical_debt_open /
     # cognitive_consolidation_pending signals.
-    def _count_r7_partition_cognitive_pending(_board_id: str) -> int:
-        from okto_pulse.core.kg.cognitive_readiness import R7_HOLD_REASON_CODES
-        from okto_pulse.core.kg.rebuild_audit import (
-            CognitiveConsolidationItemStore,
-            default_rebuild_base_dir,
-        )
-
-        store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
-        gen = store.latest_generation(_board_id)
-        if not gen:
-            return 0
-        active = {"pending", "in_progress", "failed"}
-        return sum(
-            1
-            for it in store.list_items(_board_id, gen)
-            if it.status in active
-            and str(getattr(it, "reason_code", "") or "") in R7_HOLD_REASON_CODES
-        )
-
     partition_debt_open = 0
     try:
-        from sqlalchemy import func as _func
-        from sqlalchemy import select as _select
-
         from okto_pulse.core.kg.canonical_learning_partition import (
             PARTITION_TARGET_STATUS,
         )
-        from okto_pulse.core.models.db import CanonicalDebt as _CanonicalDebt
         from okto_pulse.core.services.canonical_debt_service import (
             OPEN_STATES as _OPEN_STATES,
         )
 
-        partition_debt_open = int(
-            await db.scalar(
-                _select(_func.count())
-                .select_from(_CanonicalDebt)
-                .where(
-                    _CanonicalDebt.board_id == board_id,
-                    _CanonicalDebt.target_status == PARTITION_TARGET_STATUS,
-                    _CanonicalDebt.canonical_state.in_(tuple(_OPEN_STATES)),
-                )
-            )
-            or 0
+        partition_debt_open = await get_kg_health_read_port().count_partition_debt(
+            db,
+            board_id=board_id,
+            target_status=PARTITION_TARGET_STATUS,
+            open_states=tuple(_OPEN_STATES),
         )
     except Exception as exc:  # pragma: no cover - defensive health path
         logger.warning(
             "kg.health.partition_integrity_debt_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         partition_debt_open = 0
-    try:
-        partition_cognitive_pending = await asyncio.to_thread(
-            _count_r7_partition_cognitive_pending, board_id,
-        )
-    except Exception as exc:  # pragma: no cover - defensive health path
-        logger.warning(
-            "kg.health.partition_integrity_cognitive_failed board=%s err=%s",
-            board_id, exc,
-        )
-        partition_cognitive_pending = 0
+    partition_cognitive_pending = int(
+        artifact_snapshot.get("partition_cognitive_pending") or 0
+    )
     partition_blocking = partition_debt_open + partition_cognitive_pending
     if partition_blocking > 0:
-        health_diagnostics["health_issues"].append({
-            "code": "canonical_partition_integrity",
-            "component": "canonical_graph",
-            "severity": "warning",
-            "reason": "canonical_partition_integrity_open_gt_zero",
-            "description": (
-                f"{partition_blocking} canonical Learning partition-integrity "
-                "signal(s): bug-derived canonical Learning lacking canonical Bug "
-                "evidence (go-forward holds + historical remediation debt). "
-                "Per-node detail is in the drilldown."
-            ),
-            "operator_action": "inspect_canonical_partition_integrity",
-            "drill_down_tool": "okto_pulse_kg_canonical_partition_integrity_list",
-            "counts": {
-                "cognitive_pending": partition_cognitive_pending,
-                "canonical_debt": partition_debt_open,
-            },
-            "precedence_explanation": (
-                "Aggregate of R7 go-forward cognitive_pending (IMP1) + historical "
-                "canonical_debt (IMP2), which are mutually exclusive per artifact "
-                "(no internal double-count). These items are also reflected in the "
-                "broader cognitive_consolidation_pending / canonical_debt_open "
-                "signals; this entry is the partition-integrity (R7) lens, not an "
-                "additional blocker. DLQ is counted separately."
-            ),
-        })
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "canonical_partition_integrity",
+                "component": "canonical_graph",
+                "severity": "warning",
+                "reason": "canonical_partition_integrity_open_gt_zero",
+                "description": (
+                    f"{partition_blocking} canonical Learning partition-integrity "
+                    "signal(s): bug-derived canonical Learning lacking canonical Bug "
+                    "evidence (go-forward holds + historical remediation debt). "
+                    "Per-node detail is in the drilldown."
+                ),
+                "operator_action": "inspect_canonical_partition_integrity",
+                "drill_down_tool": "okto_pulse_kg_canonical_partition_integrity_list",
+                "counts": {
+                    "cognitive_pending": partition_cognitive_pending,
+                    "canonical_debt": partition_debt_open,
+                },
+                "precedence_explanation": (
+                    "Aggregate of R7 go-forward cognitive_pending (IMP1) + historical "
+                    "canonical_debt (IMP2), which are mutually exclusive per artifact "
+                    "(no internal double-count). These items are also reflected in the "
+                    "broader cognitive_consolidation_pending / canonical_debt_open "
+                    "signals; this entry is the partition-integrity (R7) lens, not an "
+                    "additional blocker. DLQ is counted separately."
+                ),
+            }
+        )
         if health_diagnostics["primary_health_cause"] == "none":
-            health_diagnostics["primary_health_cause"] = (
-                "canonical_partition_integrity"
-            )
+            health_diagnostics["primary_health_cause"] = "canonical_partition_integrity"
             health_diagnostics["operator_action"] = (
                 "inspect_canonical_partition_integrity"
             )
+
+    digest_inputs = parity_snapshot["digest_inputs"]
+    digest_layer_mismatches: list[dict[str, Any]] = []
+    digest_probe_status = str(digest_inputs.get("status") or "unavailable")
+    digest_probe_reason = str(digest_inputs.get("reason") or graph_probe.reason)
+    if graph_probe.status != "unavailable" and digest_probe_status == "available":
+        overlay: dict[str, str] = {}
+        if digest_inputs.get("needs_overlay"):
+            try:
+                overlay = await _load_digest_partition_overlay(
+                    board_id=board_id,
+                )
+            except Exception as exc:
+                digest_probe_status = "unavailable"
+                digest_probe_reason = type(exc).__name__
+        if digest_probe_status == "available":
+            from okto_pulse.core.kg.global_discovery.layer_parity import (
+                evaluate_digest_layer_mismatch_inputs,
+            )
+
+            digest_evaluation = evaluate_digest_layer_mismatch_inputs(
+                digest_inputs,
+                overlay=overlay,
+            )
+            if (
+                digest_evaluation.get("status") == "available"
+                and digest_evaluation.get("evaluation") == "evaluated"
+                and isinstance(digest_evaluation.get("items"), list)
+            ):
+                digest_layer_mismatches = list(digest_evaluation["items"])
+            else:
+                digest_probe_status = "unavailable"
+                digest_probe_reason = str(
+                    digest_evaluation.get("reason")
+                    or "digest_layer_parity_not_evaluated"
+                )
+
+    stale_items = list(parity_snapshot.get("stale_board_items") or [])
+    stale_probe_status = str(parity_snapshot.get("stale_board_status") or "unavailable")
+    stale_digest_node_ids = {
+        str(item.get("original_node_id") or "") for item in digest_layer_mismatches
+    }
+    for item in stale_items:
+        item["global_discovery_stale_digest"] = (
+            str(item.get("node_id") or "") in stale_digest_node_ids
+            if digest_probe_status == "available"
+            else None
+        )
+    stale_parity = {
+        "count": len(stale_items),
+        "items": stale_items,
+        "global_discovery_evaluation": (
+            "evaluated" if digest_probe_status == "available" else "not_evaluated"
+        ),
+    }
+    probe_diagnostics["stale_canonical_parity"] = {
+        "status": stale_probe_status,
+        "reason": "ok" if stale_probe_status == "available" else parity_probe.reason,
+    }
+    probe_diagnostics["digest_layer_parity"] = {
+        "status": digest_probe_status,
+        "reason": digest_probe_reason,
+    }
 
     # R2-IMP4 — stale_canonical_parity: canonical DETERMINISTIC board-graph nodes
     # whose SQL source regressed below canonical eligibility (read-only diagnostic;
@@ -1401,61 +3165,52 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     # masks an R7/debt/cognitive blocker, and ABOVE digest_vs_board_layer_mismatch
     # (the source regression is the more specific cause; the digest mismatch is its
     # R1 consequence).
-    try:
-        from okto_pulse.core.kg.stale_canonical_parity import (
-            list_stale_canonical_parity,
-        )
-        stale_parity = await list_stale_canonical_parity(db, board_id=board_id)
-    except Exception as exc:  # pragma: no cover - defensive; never crash the tick
-        logger.warning(
-            "kg.health.stale_canonical_parity_lookup_failed board=%s err=%s",
-            board_id, exc,
-        )
-        stale_parity = {
-            "count": 0, "items": [], "global_discovery_evaluation": "not_evaluated",
-        }
     if stale_parity.get("count"):
         _scp_sample = stale_parity["items"][0]
-        health_diagnostics["health_issues"].append({
-            "code": "stale_canonical_parity",
-            "component": "board_graph",
-            "severity": "warning",
-            "reason": "stale_canonical_parity_count_gt_zero",
-            "description": (
-                f"{stale_parity['count']} canonical deterministic node(s) are stale "
-                "because their SQL source regressed below canonical eligibility. "
-                "Read-only diagnostic; the R2 reconciler demotes them on the next "
-                "maturity/status event or sweep."
-            ),
-            "count": stale_parity["count"],
-            "operator_action": "inspect_stale_canonical_parity",
-            "drill_down_tool": "okto_pulse_kg_stale_canonical_parity_list",
-            # AC5/AC13: read-only diagnostic — the literal contract flag makes the
-            # no-mutation guarantee explicit (no agent-facing mutation tool clears
-            # this; the R2 reconciler is the only internal demotion path).
-            "mutation_allowed": False,
-            "global_discovery_evaluation": stale_parity.get(
-                "global_discovery_evaluation"
-            ),
-            "sample": {
-                "node_id": _scp_sample.get("node_id"),
-                "source_artifact_ref": _scp_sample.get("source_artifact_ref"),
-                "board_graph_stale": _scp_sample.get("board_graph_stale"),
-                "global_discovery_stale_digest": _scp_sample.get(
-                    "global_discovery_stale_digest"
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "stale_canonical_parity",
+                "component": "board_graph",
+                "severity": "warning",
+                "reason": "stale_canonical_parity_count_gt_zero",
+                "description": (
+                    f"{stale_parity['count']} canonical deterministic node(s) are stale "
+                    "because their SQL source regressed below canonical eligibility. "
+                    "Read-only diagnostic; the R2 reconciler demotes them on the next "
+                    "maturity/status event or sweep."
                 ),
-                "expected_graph_layer": _scp_sample.get("expected_graph_layer"),
-                "expected_maturity_status": _scp_sample.get("expected_maturity_status"),
-                "current_source_status": _scp_sample.get("current_source_status"),
-                "recommended_action": _scp_sample.get("recommended_action"),
-            },
-            "precedence_explanation": (
-                "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending, "
-                "canonical_partition_integrity and DLQ/operational failures (never "
-                "masks them) and ABOVE digest_vs_board_layer_mismatch; a distinct "
-                "stale-source category (no double-count)."
-            ),
-        })
+                "count": stale_parity["count"],
+                "operator_action": "inspect_stale_canonical_parity",
+                "drill_down_tool": "okto_pulse_kg_stale_canonical_parity_list",
+                # AC5/AC13: read-only diagnostic — the literal contract flag makes the
+                # no-mutation guarantee explicit (no agent-facing mutation tool clears
+                # this; the R2 reconciler is the only internal demotion path).
+                "mutation_allowed": False,
+                "global_discovery_evaluation": stale_parity.get(
+                    "global_discovery_evaluation"
+                ),
+                "sample": {
+                    "node_id": _scp_sample.get("node_id"),
+                    "source_artifact_ref": _scp_sample.get("source_artifact_ref"),
+                    "board_graph_stale": _scp_sample.get("board_graph_stale"),
+                    "global_discovery_stale_digest": _scp_sample.get(
+                        "global_discovery_stale_digest"
+                    ),
+                    "expected_graph_layer": _scp_sample.get("expected_graph_layer"),
+                    "expected_maturity_status": _scp_sample.get(
+                        "expected_maturity_status"
+                    ),
+                    "current_source_status": _scp_sample.get("current_source_status"),
+                    "recommended_action": _scp_sample.get("recommended_action"),
+                },
+                "precedence_explanation": (
+                    "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending, "
+                    "canonical_partition_integrity and DLQ/operational failures (never "
+                    "masks them) and ABOVE digest_vs_board_layer_mismatch; a distinct "
+                    "stale-source category (no double-count)."
+                ),
+            }
+        )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "stale_canonical_parity"
             health_diagnostics["operator_action"] = "inspect_stale_canonical_parity"
@@ -1466,78 +3221,108 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     # Precedence: BELOW canonical_debt_open / cognitive_consolidation_pending /
     # canonical_partition_integrity (only claims primary if still "none"), ABOVE
     # orphan_integrity_warning. Distinct cause -> no double-count with those.
-    try:
-        from okto_pulse.core.kg.global_discovery.layer_parity import (
-            detect_digest_layer_mismatches,
-        )
-        digest_layer_mismatches = await detect_digest_layer_mismatches(
-            db, board_id=board_id
-        )
-    except Exception as exc:  # pragma: no cover - defensive; never crash the tick
-        logger.warning(
-            "kg.health.digest_layer_mismatch_lookup_failed board=%s err=%s",
-            board_id, exc,
-        )
-        digest_layer_mismatches = []
     if digest_layer_mismatches:
         _ddm_sample = digest_layer_mismatches[0]
-        health_diagnostics["health_issues"].append({
-            "code": "digest_vs_board_layer_mismatch",
-            "component": "global_discovery",
-            "severity": "warning",
-            "reason": "digest_vs_board_layer_mismatch_count_gt_zero",
-            "description": (
-                f"{len(digest_layer_mismatches)} Global Discovery DecisionDigest(s) "
-                "publish a graph_layer that diverges from the expected layer "
-                "computed from the board graph; the parity reconciler corrects "
-                "these on the next drain."
-            ),
-            "count": len(digest_layer_mismatches),
-            "operator_action": "inspect_digest_layer_mismatch",
-            "drill_down_tool": "okto_pulse_kg_digest_layer_mismatch_list",
-            "sample": {
-                "board_id": _ddm_sample["board_id"],
-                "digest_id": _ddm_sample["digest_id"],
-                "original_node_id": _ddm_sample["original_node_id"],
-                "expected_layer": _ddm_sample["expected_layer"],
-                "actual_layer": _ddm_sample["actual_layer"],
-            },
-            "precedence_explanation": (
-                "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending "
-                "and canonical_partition_integrity (never overrides them) and ABOVE "
-                "orphan_integrity_warning; digest publication-layer parity debt, "
-                "distinct from those causes (no double-count)."
-            ),
-        })
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "digest_vs_board_layer_mismatch",
+                "component": "global_discovery",
+                "severity": "warning",
+                "reason": "digest_vs_board_layer_mismatch_count_gt_zero",
+                "description": (
+                    f"{len(digest_layer_mismatches)} Global Discovery DecisionDigest(s) "
+                    "publish a graph_layer that diverges from the expected layer "
+                    "computed from the board graph; the parity reconciler corrects "
+                    "these on the next drain."
+                ),
+                "count": len(digest_layer_mismatches),
+                "operator_action": "inspect_digest_layer_mismatch",
+                "drill_down_tool": "okto_pulse_kg_digest_layer_mismatch_list",
+                "sample": {
+                    "board_id": _ddm_sample["board_id"],
+                    "digest_id": _ddm_sample["digest_id"],
+                    "original_node_id": _ddm_sample["original_node_id"],
+                    "expected_layer": _ddm_sample["expected_layer"],
+                    "actual_layer": _ddm_sample["actual_layer"],
+                },
+                "precedence_explanation": (
+                    "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending "
+                    "and canonical_partition_integrity (never overrides them) and ABOVE "
+                    "orphan_integrity_warning; digest publication-layer parity debt, "
+                    "distinct from those causes (no double-count)."
+                ),
+            }
+        )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = (
                 "digest_vs_board_layer_mismatch"
             )
             health_diagnostics["operator_action"] = "inspect_digest_layer_mismatch"
 
+    unavailable_hot_probes = sorted(
+        name
+        for name in (
+            _GRAPH_HEALTH_PROBE,
+            _ARTIFACT_HEALTH_PROBE,
+            _PARITY_HEALTH_PROBE,
+            _DISCOVERY_HEALTH_PROBE,
+            "cognitive_items",
+            "stale_canonical_parity",
+            "digest_layer_parity",
+        )
+        if probe_diagnostics.get(name, {}).get("status") == "unavailable"
+    )
+    if unavailable_hot_probes:
+        rest_metric_status = "unavailable"
+        reason = "health_probe_unavailable:" + ",".join(unavailable_hot_probes)
+        if reason not in combined_reasons:
+            combined_reasons.append(reason)
+        classification_reason = ";".join(combined_reasons)
+        if _STATE_SEVERITY[overall_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
+            overall_state = HealthState.AT_RISK
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "health_probe_unavailable",
+                "component": "kg_health",
+                "severity": "warning",
+                "reason": reason,
+                "description": (
+                    "One or more bounded KG Health probes did not complete within "
+                    "the read budget; the endpoint returned fail-safe projections."
+                ),
+                "operator_action": "inspect_probe_diagnostics",
+                "probes": unavailable_hot_probes,
+            }
+        )
+        if health_diagnostics["primary_health_cause"] == "none":
+            health_diagnostics["primary_health_cause"] = "health_probe_unavailable"
+            health_diagnostics["operator_action"] = "inspect_probe_diagnostics"
+
     if orphan_integrity.get("integrity_warning"):
         if _STATE_SEVERITY[graph_state] < _STATE_SEVERITY[HealthState.AT_RISK]:
             graph_state = HealthState.AT_RISK
         overall_state = max(
             graph_state,
-            discovery_classification.state,
+            effective_discovery_state,
             key=lambda s: _STATE_SEVERITY[s],
         )
         if "graph:orphan_integrity_warning" not in combined_reasons:
             combined_reasons.append("graph:orphan_integrity_warning")
         classification_reason = ";".join(combined_reasons)
-        health_diagnostics["health_issues"].append({
-            "code": "orphan_integrity_warning",
-            "component": "board_graph",
-            "severity": "warning",
-            "reason": "orphan_count_gt_zero",
-            "description": (
-                f"{int(orphan_integrity.get('orphan_count') or 0)} "
-                "non-allowlisted orphan KG node(s) remain. This is graph "
-                "integrity debt, not by itself a LadybugDB recovery signal."
-            ),
-            "operator_action": "inspect_orphan_integrity_report",
-        })
+        health_diagnostics["health_issues"].append(
+            {
+                "code": "orphan_integrity_warning",
+                "component": "board_graph",
+                "severity": "warning",
+                "reason": "orphan_count_gt_zero",
+                "description": (
+                    f"{int(orphan_integrity.get('orphan_count') or 0)} "
+                    "non-allowlisted orphan KG node(s) remain. This is graph "
+                    "integrity debt, not by itself a graph recovery signal."
+                ),
+                "operator_action": "inspect_orphan_integrity_report",
+            }
+        )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "orphan_integrity_warning"
             health_diagnostics["operator_action"] = "inspect_orphan_integrity_report"
@@ -1548,20 +3333,26 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
     # primary_health_cause when stuck/backpressure (transient is normal in-flight).
     if active_queue["total_active_depth"] > 0:
         _aq_class = active_queue["classification"]
-        health_diagnostics["health_issues"].append({
-            "code": f"active_queue_{_aq_class}",
-            "component": "operational_queue",
-            "severity": "warning" if _aq_class in ("stuck", "backpressure") else "info",
-            "reason": f"active_queue:{_aq_class}",
-            "description": (
-                f"{active_queue['total_active_depth']} active operational-queue "
-                f"item(s) ({_aq_class}) across consolidation_queue + "
-                "global_update_outbox. Distinct from dead-letter and canonical debt."
-            ),
-            "operator_action": "inspect_active_queue",
-            "drill_down_tool": "okto_pulse_kg_queue_drilldown",
-            "counts": {s["source"]: s["queue_depth"] for s in active_queue["sources"]},
-        })
+        health_diagnostics["health_issues"].append(
+            {
+                "code": f"active_queue_{_aq_class}",
+                "component": "operational_queue",
+                "severity": "warning"
+                if _aq_class in ("stuck", "backpressure")
+                else "info",
+                "reason": f"active_queue:{_aq_class}",
+                "description": (
+                    f"{active_queue['total_active_depth']} active operational-queue "
+                    f"item(s) ({_aq_class}) across consolidation_queue + "
+                    "global_update_outbox. Distinct from dead-letter and canonical debt."
+                ),
+                "operator_action": "inspect_active_queue",
+                "drill_down_tool": "okto_pulse_kg_queue_drilldown",
+                "counts": {
+                    s["source"]: s["queue_depth"] for s in active_queue["sources"]
+                },
+            }
+        )
         if (
             _aq_class in ("stuck", "backpressure")
             and health_diagnostics["primary_health_cause"] == "none"
@@ -1569,7 +3360,9 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             health_diagnostics["primary_health_cause"] = f"active_queue_{_aq_class}"
             health_diagnostics["operator_action"] = "inspect_active_queue"
 
-    # R6-IMP5 (FR5/AC5): explicit, deduplicated separation of the THREE operational
+    # Explicit, deduplicated separation of operational domains. Terminal global
+    # discovery delivery failures are not consolidation DLQ and never inflate
+    # the active retry-window count.
     # domains so a caller never conflates them — each is its OWN counter + drill-down:
     #   active_queue   = transient operational work (transient|stuck|backpressure),
     #   dead_letter    = TERMINAL consolidation failures (DLQ),
@@ -1589,6 +3382,16 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             "semantics": "terminal_failure",
             "count": int(dead_letter_count),
             "drill_down_tool": "okto_pulse_kg_dead_letter_list",
+        },
+        "global_outbox_dead_letter": {
+            "domain": "global_outbox_dead_letter",
+            "semantics": "terminal_global_discovery_delivery_failure",
+            "count": global_outbox_dead_letter_count,
+            "oldest_age_seconds": global_outbox_dead_letter["oldest_age_seconds"],
+            "drill_down_tool": (
+                "okto_pulse_kg_global_outbox_dead_letter_list"
+            ),
+            "drill_down_signal": "global_outbox_dead_letter",
         },
         "canonical_debt": {
             "domain": "canonical_debt",
@@ -1610,7 +3413,7 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         or overall_state != HealthState.HEALTHY
     )
     source_diag = (
-        _probe_rebuild_source_diagnostics(board_id)
+        artifact_snapshot["source_diag"]
         if _needs_source_probe
         else {
             "source_count": None,
@@ -1621,6 +3424,22 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
             "skipped": "board_healthy",
         }
     )
+    recovery_states = {
+        HealthState.RECOVERY_NEEDED,
+        HealthState.QUARANTINED,
+    }
+    if (
+        effective_discovery_state in recovery_states
+        and graph_state not in recovery_states
+    ):
+        root_cause_scope = "discovery"
+    elif graph_state in recovery_states:
+        root_cause_scope = "graph"
+    elif _STATE_SEVERITY[effective_discovery_state] > _STATE_SEVERITY[graph_state]:
+        root_cause_scope = "discovery"
+    else:
+        root_cause_scope = "graph"
+
     root_cause = _build_kg_root_cause(
         total_nodes=total_nodes,
         queue_depth=queue_depth,
@@ -1630,29 +3449,39 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         combined_reasons=combined_reasons,
         source_diag=source_diag,
         safe_write_diag=safe_write_diag,
+        scope=root_cause_scope,
     )
     # Card detail #4: an unavailable recovery drill-down must NOT read as healthy.
-    if overall_state == HealthState.HEALTHY and root_cause["drilldown_unavailable"]:
-        overall_state = HealthState.AT_RISK
-        combined_reasons.append("drilldown.source_enumeration.unavailable")
+    if root_cause["drilldown_unavailable"]:
+        if overall_state == HealthState.HEALTHY:
+            overall_state = HealthState.AT_RISK
+        if "drilldown.source_enumeration.unavailable" not in combined_reasons:
+            combined_reasons.append("drilldown.source_enumeration.unavailable")
         classification_reason = ";".join(combined_reasons)
 
-    return {
+    payload = {
         # --- KG-01 REST contract api_3ed9037f ---
         "board_id": board_id,
         "graph_state": graph_state.value,
-        "discovery_state": discovery_classification.state.value,
+        "discovery_state": effective_discovery_state.value,
         "overall_state": overall_state.value,
         "current_kg_generation_id": current_kg_generation_id,
         "metric_status": rest_metric_status,
         "classification_reason": classification_reason,
+        "materialization_state": materialization_state,
+        "materialization_generation": materialization_generation,
+        "probe_reason_codes": probe_reason_codes,
         "correlation_id": correlation_id,
         "recent_events": recent_events,
         "checked_at": checked_at,
+        "probe_diagnostics": probe_diagnostics,
         # --- Legacy / dashboard surface (backward compat) ---
         "queue_depth": int(queue_depth),
-        "oldest_pending_age_s": round(oldest_pending_age_s, 3),
+        "oldest_pending_age_s": (
+            round(oldest_pending_age_s, 3) if oldest_pending_age_s is not None else None
+        ),
         "dead_letter_count": int(dead_letter_count),
+        "global_outbox_dead_letter_count": int(global_outbox_dead_letter_count),
         # R6-IMP2: active operational-queue drill-down (sources/worker_mode/
         # classification). Read-only; DLQ/canonical debt excluded.
         "active_queue": active_queue,
@@ -1667,8 +3496,13 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         "total_nodes": total_nodes,
         "default_score_count": default_score_count,
         "default_score_ratio": round(default_score_ratio, 4),
-        "avg_relevance": kuzu_metrics["avg_relevance"],
-        "schema_version": HEALTH_SCHEMA_VERSION,
+        "avg_relevance": graph_metrics["avg_relevance"],
+        "source_count": (
+            int(source_diag["source_count"])
+            if source_diag.get("source_count") is not None
+            else None
+        ),
+        "schema_version": LEGACY_HEALTH_SCHEMA_VERSION,
         "health_schema_version": HEALTH_SCHEMA_VERSION,
         "graph_schema_version": graph_schema_version,
         "contradict_warn_count": get_contradict_warn_count(board_id),
@@ -1710,6 +3544,31 @@ async def get_kg_health(board_id: str, db: AsyncSession) -> dict[str, Any]:
         # --- UI diagnosis surface (additive, does not weaken canonical state) ---
         **health_diagnostics,
     }
+    try:
+        from okto_pulse.core.observability.materialization_health import (
+            record_materialization_classification,
+        )
+
+        record_materialization_classification(
+            board_id=board_id,
+            materialization_state=materialization_state,
+            metric_status=rest_metric_status,
+            classification_reason=classification_reason,
+            materialization_generation=materialization_generation,
+            probe_reason_codes=probe_reason_codes,
+        )
+    except Exception as exc:  # observability must never break health availability
+        logger.warning(
+            "kg.health.materialization_observability_failed board=%s error=%s",
+            board_id,
+            type(exc).__name__,
+            extra={
+                "event": "kg.health.materialization_observability_failed",
+                "board_id": board_id,
+                "error_type": type(exc).__name__,
+            },
+        )
+    return payload
 
 
 def _get_graph_schema_version(board_id: str) -> str | None:
@@ -1720,41 +3579,30 @@ def _get_graph_schema_version(board_id: str) -> str | None:
     except Exception as exc:
         logger.debug(
             "kg.health.graph_schema_lookup_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         return None
 
 
-async def _has_materialized_kg_history(db: AsyncSession, board_id: str) -> bool:
+async def _has_materialized_kg_history(db: Any, board_id: str) -> bool:
     """Return True when SQLite says the board had materialized KG content.
 
-    If LadybugDB reports zero nodes while KuzuNodeRef/audit rows still show
+    If embedded graph backend reports zero nodes while graph reference/audit rows still show
     previous commits, the graph is not merely "empty"; it has lost visibility
     into previously materialized content and should be classified as recovery
     needed.
     """
     try:
-        ref_count = await db.scalar(
-            select(func.count()).where(KuzuNodeRef.board_id == board_id)
-        ) or 0
-        if int(ref_count) > 0:
-            return True
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug(
-            "kg.health.materialized_ref_probe_failed board=%s err=%s",
-            board_id, exc,
+        return await get_kg_health_read_port().has_materialized_history(
+            db,
+            board_id=board_id,
         )
-
-    try:
-        nodes_added = await db.scalar(
-            select(func.coalesce(func.sum(ConsolidationAudit.nodes_added), 0))
-            .where(ConsolidationAudit.board_id == board_id)
-        ) or 0
-        return int(nodes_added) > 0
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug(
             "kg.health.materialized_audit_probe_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         return False
 
@@ -1789,37 +3637,22 @@ def _bounded_probe_error(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__
 
 
-def _health_pulse_db_path():
-    """Resolve the SQLite file the async engine targets (read-only). Mirrors
-    api.kg_rebuild._resolve_pulse_db_path without the api dependency."""
-    from pathlib import Path
-
-    try:
-        from okto_pulse.core.infra.database import get_engine
-
-        url = str(get_engine().url)
-    except Exception:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    idx = url.rfind(":///")
-    if idx < 0:
-        return Path.home() / ".okto-pulse" / "data" / "pulse.db"
-    return Path(url[idx + 4 :])
-
-
 def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
     """Read-only probe of the deterministic rebuild source enumeration (D1/D3).
 
     Returns bounded source counts + an ``enumeration_failure`` flag. Reuses the
     SAME ``RebuildSourceEnumerator`` the formal preflight uses, so the count is
-    the reexecutable source set (NOT the materialized KuzuNodeRef count). Never
+    the reexecutable source set (NOT the materialized graph reference count). Never
     raises, never rebuilds.
     """
     try:
-        from okto_pulse.core.kg.board_source_store import BoardSourceStore
         from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
 
-        store = BoardSourceStore(db_path=_health_pulse_db_path())
-        source_set = RebuildSourceEnumerator(source_store=store.fetch).enumerate(
+        from okto_pulse.core.application.kg_rebuild import build_source_store
+
+        source_set = RebuildSourceEnumerator(
+            source_store=build_source_store()
+        ).enumerate(
             board_id=board_id
         )
         canonical = int(source_set.canonical_source_count)
@@ -1834,7 +3667,8 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
     except Exception as exc:  # bounded — source store unavailable / schema drift
         logger.warning(
             "kg.health.source_enumeration_probe_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         return {
             "source_count": None,
@@ -1873,9 +3707,7 @@ def _probe_safe_write_diagnostics(board_id: str) -> dict[str, Any]:
                 "drain_failure": False,
                 "outcomes": {},
             }
-        worst = max(
-            outcomes, key=lambda o: _SAFE_WRITE_OUTCOME_SEVERITY.get(o, 0)
-        )
+        worst = max(outcomes, key=lambda o: _SAFE_WRITE_OUTCOME_SEVERITY.get(o, 0))
         drain_failure = any(o in _SAFE_WRITE_FAILURE_OUTCOMES for o in outcomes)
         return {
             "last_safe_write_outcome": worst,
@@ -1884,7 +3716,9 @@ def _probe_safe_write_diagnostics(board_id: str) -> dict[str, Any]:
         }
     except Exception as exc:  # bounded — counter unreadable
         logger.warning(
-            "kg.health.safe_write_probe_failed board=%s err=%s", board_id, exc,
+            "kg.health.safe_write_probe_failed board=%s err=%s",
+            board_id,
+            exc,
         )
         return {
             "last_safe_write_outcome": "unknown",
@@ -1904,6 +3738,7 @@ def _build_kg_root_cause(
     combined_reasons: list[str],
     source_diag: dict[str, Any],
     safe_write_diag: dict[str, Any],
+    scope: str = "graph",
 ) -> dict[str, Any]:
     """Assemble the structured, bounded recovery root-cause block (FR fr_66eeff50,
     TR tr_be1dc85d).
@@ -1914,28 +3749,51 @@ def _build_kg_root_cause(
     bounded fields (materialized node count, source count, queue state, last
     safe-write outcome). Additive: never replaces ``classification_reason``.
     """
-    wal_or_commit_present = any(
-        r == "graph:wal_or_commit_errors.present" for r in combined_reasons
+    if scope not in {"graph", "discovery"}:
+        raise ValueError("scope must be 'graph' or 'discovery'")
+
+    wal_present_scopes = sorted(
+        reason_scope
+        for reason_scope in ("graph", "discovery")
+        if f"{reason_scope}:wal_or_commit_errors.present" in combined_reasons
     )
-    source_enum_failure = bool(source_diag.get("enumeration_failure"))
-    safe_write_drain_failure = bool(safe_write_diag.get("drain_failure"))
+    wal_or_commit_present = scope in wal_present_scopes
+    graph_scope = scope == "graph"
+    source_enum_failure = graph_scope and bool(source_diag.get("enumeration_failure"))
+    safe_write_drain_failure = graph_scope and bool(
+        safe_write_diag.get("drain_failure")
+    )
     categories = {
-        "wal_or_commit_errors": {"present": wal_or_commit_present},
+        "wal_or_commit_errors": {
+            "present": wal_or_commit_present,
+            "scope": scope,
+            "present_scopes": wal_present_scopes,
+        },
         "empty_after_materialized_history": {
-            "present": bool(empty_after_materialized_history),
+            "present": graph_scope and bool(empty_after_materialized_history),
+            "scope": "graph",
+            "applicable": graph_scope,
             "materialized_node_count": int(total_nodes),
             "source_count": source_diag.get("source_count"),
         },
         "source_enumeration_failure": {
             "present": source_enum_failure,
+            "scope": "graph",
+            "applicable": graph_scope,
             "error": source_diag.get("error"),
         },
         "safe_write_drain_failure": {
             "present": safe_write_drain_failure,
+            "scope": "graph",
+            "applicable": graph_scope,
             "outcomes": safe_write_diag.get("outcomes", {}),
         },
     }
     return {
+        "scope": scope,
+        "classification_reasons": [
+            reason for reason in combined_reasons if reason.startswith(f"{scope}:")
+        ],
         "materialized_node_count": int(total_nodes),
         "source_count": source_diag.get("source_count"),
         "queue_state": {
@@ -1957,21 +3815,23 @@ def _build_kg_root_cause(
     }
 
 
-def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
-    """Pull node-level aggregates from Kùzu for ``board_id``.
+def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
+    """Pull node-level aggregates from graph backend for ``board_id``.
 
     Returns a dict with total_nodes, default_score_count and avg_relevance.
-    On any Kùzu error (board not bootstrapped, schema drift, lock contention)
+    On any graph backend error (board not bootstrapped, schema drift, lock contention)
     returns zeroed defaults so the health endpoint stays available.
     """
     try:
-        from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
     except Exception as exc:
         logger.warning(
-            "kg.health.kuzu_import_failed board=%s err=%s",
-            board_id, exc,
+            "kg.health.graph_import_failed board=%s err=%s",
+            board_id,
+            exc,
         )
-        return _zero_kuzu_metrics()
+        return _zero_graph_metrics()
 
     total_nodes = 0
     default_score_count = 0
@@ -1979,39 +3839,41 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
     relevance_n = 0
 
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            for node_type in NODE_TYPES:
-                try:
-                    res = conn.execute(
-                        f"MATCH (n:{node_type}) RETURN n.relevance_score",
-                        {},
-                    )
-                except Exception as exc:
-                    logger.debug(
-                        "kg.health.kuzu_query_failed board=%s type=%s err=%s",
-                        board_id, node_type, exc,
-                    )
-                    continue
-                while res.has_next():
-                    row = res.get_next()
-                    rel = row[0]
-                    total_nodes += 1
-                    if rel is not None:
-                        rel_f = float(rel)
-                        relevance_sum += rel_f
-                        relevance_n += 1
-                        if DEFAULT_SCORE_BAND_LOW <= rel_f <= DEFAULT_SCORE_BAND_HIGH:
-                            default_score_count += 1
+        cypher = get_kg_registry().cypher_executor
+        for node_type in NODE_TYPES:
+            try:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) RETURN n.relevance_score",
+                    {},
+                    max_rows=10000,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "kg.health.graph_query_failed board=%s type=%s err=%s",
+                    board_id,
+                    node_type,
+                    exc,
+                )
+                continue
+            for row in result.get("rows", []):
+                rel = row[0]
+                total_nodes += 1
+                if rel is not None:
+                    rel_f = float(rel)
+                    relevance_sum += rel_f
+                    relevance_n += 1
+                    if DEFAULT_SCORE_BAND_LOW <= rel_f <= DEFAULT_SCORE_BAND_HIGH:
+                        default_score_count += 1
     except Exception as exc:
         logger.warning(
-            "kg.health.kuzu_open_failed board=%s err=%s",
-            board_id, exc,
+            "kg.health.graph_open_failed board=%s err=%s",
+            board_id,
+            exc,
         )
-        return _zero_kuzu_metrics()
+        return _zero_graph_metrics()
 
-    avg_relevance = (
-        round(relevance_sum / relevance_n, 4) if relevance_n > 0 else 0.0
-    )
+    avg_relevance = round(relevance_sum / relevance_n, 4) if relevance_n > 0 else 0.0
 
     return {
         "total_nodes": total_nodes,
@@ -2020,7 +3882,7 @@ def _aggregate_kuzu_metrics(board_id: str) -> dict[str, Any]:
     }
 
 
-def _zero_kuzu_metrics() -> dict[str, Any]:
+def _zero_graph_metrics() -> dict[str, Any]:
     return {
         "total_nodes": 0,
         "default_score_count": 0,
@@ -2031,7 +3893,7 @@ def _zero_kuzu_metrics() -> dict[str, Any]:
 def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
     """Count nodes by graph_layer and maturity_status.
 
-    This is additive diagnostic telemetry. Any Kuzu/schema error degrades to an
+    This is additive diagnostic telemetry. Any graph backend/schema error degrades to an
     unavailable projection and must not affect the health state machine.
     """
 
@@ -2044,11 +3906,13 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
     }
     maturity_counts: dict[str, int] = {}
     try:
-        from okto_pulse.core.kg.schema import NODE_TYPES, open_board_connection
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+        from okto_pulse.core.kg.schema_contract import NODE_TYPES
     except Exception as exc:
         logger.warning(
             "kg.health.layer_counts_import_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         return {
             "status": "unavailable",
@@ -2058,45 +3922,38 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
         }
 
     try:
-        with open_board_connection(board_id) as (_db, conn):
-            successful_node_types = 0
-            failed_node_types = 0
-            for node_type in NODE_TYPES:
-                result = None
-                try:
-                    result = conn.execute(
-                        f"MATCH (n:{node_type}) "
-                        f"RETURN n.graph_layer, n.maturity_status, count(n)"
-                    )
-                    while result.has_next():
-                        row = result.get_next()
-                        layer = str(row[0] or "unclassified")
-                        maturity = str(row[1] or "unclassified")
-                        count = int(row[2] or 0)
-                        counts[layer] = counts.get(layer, 0) + count
-                        maturity_counts[maturity] = (
-                            maturity_counts.get(maturity, 0) + count
-                        )
-                    successful_node_types += 1
-                except Exception:
-                    failed_node_types += 1
-                    continue
-                finally:
-                    if result is not None:
-                        try:
-                            result.close()
-                        except Exception:
-                            pass
+        cypher = get_kg_registry().cypher_executor
+        successful_node_types = 0
+        failed_node_types = 0
+        for node_type in NODE_TYPES:
+            try:
+                result = cypher.execute_read_only(
+                    board_id,
+                    f"MATCH (n:{node_type}) "
+                    f"RETURN n.graph_layer, n.maturity_status, count(n)",
+                    max_rows=10000,
+                )
+                for row in result.get("rows", []):
+                    layer = str(row[0] or "unclassified")
+                    maturity = str(row[1] or "unclassified")
+                    count = int(row[2] or 0)
+                    counts[layer] = counts.get(layer, 0) + count
+                    maturity_counts[maturity] = maturity_counts.get(maturity, 0) + count
+                successful_node_types += 1
+            except Exception:
+                failed_node_types += 1
+                continue
     except Exception as exc:
         logger.warning(
             "kg.health.layer_counts_failed board=%s err=%s",
-            board_id, exc,
+            board_id,
+            exc,
         )
         return {
             "status": "unavailable",
             "by_layer": counts,
             "by_maturity_status": maturity_counts,
-            "reason": "kuzu_open_failed",
+            "reason": "graph_open_failed",
         }
     if successful_node_types == 0 and failed_node_types > 0:
         return {

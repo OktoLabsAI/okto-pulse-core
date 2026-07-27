@@ -20,6 +20,8 @@ UNCHANGED after a block. R4 does not change the state machine.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -27,7 +29,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -53,7 +55,7 @@ class _Ctx:
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -139,13 +141,20 @@ async def test_ts_154b86fb_gate_releases_once_scenarios_passed(db_factory):
                           status="done")
     assert blocked.get("code") == "test_card_completion_blocked"
 
-    # Remediate: mark both linked scenarios passed (the authoritative state the gate
-    # reads). Done at the spec level to keep this test focused on the move_card gate.
+    # Remediate: mark both linked scenarios passed with persisted run evidence
+    # (the authoritative state the gate reads). Done at the spec level to keep
+    # this test focused on the move_card gate.
     async with db_factory() as db:
         spec = await db.get(Spec, spec_id)
         spec.test_scenarios = [
-            {**s, "status": "passed", "last_run_at": "2026-06-18T00:00:00Z",
-             "test_run_id": "r4-test2"}
+            {
+                **s,
+                "status": "passed",
+                "evidence": {
+                    "last_run_at": "2026-06-18T00:00:00Z",
+                    "test_run_id": "r4-test2",
+                },
+            }
             for s in spec.test_scenarios
         ]
         await db.commit()

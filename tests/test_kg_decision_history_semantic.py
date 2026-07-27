@@ -11,6 +11,7 @@ Validates:
 import inspect
 import os
 import sys
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -33,12 +34,15 @@ class TestSignatureContract:
 
 
 class TestStoreFindByTopicSemantic:
-    """The new store method is part of the embedded provider surface."""
+    """The semantic store method is part of the core test provider surface."""
 
-    def test_kuzu_store_exposes_method(self):
-        from okto_pulse.core.kg.providers.embedded.kuzu_graph_store import KuzuGraphStore
-        assert hasattr(KuzuGraphStore, "find_by_topic_semantic")
-        sig = inspect.signature(KuzuGraphStore.find_by_topic_semantic)
+    def test_memory_store_exposes_method(self):
+        from okto_pulse.core.kg.providers.testing.memory_graph_store import (
+            InMemoryGraphStore,
+        )
+
+        assert hasattr(InMemoryGraphStore, "find_by_topic_semantic")
+        sig = inspect.signature(InMemoryGraphStore.find_by_topic_semantic)
         assert set(sig.parameters) >= {
             "self", "board_id", "node_type", "query_vec", "filters", "min_similarity"
         }
@@ -125,6 +129,25 @@ class TestUseSemanticFalseDisablesPath:
             svc.get_decision_history("bid", "foo", use_semantic=False)
             assert calls["text"] == 1
             assert calls["semantic"] == 0
+        finally:
+            kg_service_mod._get_graph_store = original
+
+    def test_text_path_normalizes_backend_datetime(self):
+        created_at = datetime(2026, 7, 13, 23, 22, 15, tzinfo=timezone.utc)
+
+        class FakeStore:
+            def find_by_topic(self, *a, **kw):
+                return [["dec-1", "Retry", "Content", created_at, 0.9, 0.8, None]]
+
+        import okto_pulse.core.kg.kg_service as kg_service_mod
+
+        original = kg_service_mod._get_graph_store
+        kg_service_mod._get_graph_store = lambda: FakeStore()
+        try:
+            out = KGService().get_decision_history(
+                "bid", "retry", use_semantic=False
+            )
+            assert out[0]["created_at"] == "2026-07-13T23:22:15+00:00"
         finally:
             kg_service_mod._get_graph_store = original
 

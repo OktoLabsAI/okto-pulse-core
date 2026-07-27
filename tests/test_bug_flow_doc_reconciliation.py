@@ -216,28 +216,43 @@ def test_ac5_error_guidance_routes_semantic_gap_without_spec_editing() -> None:
 
 def test_ac6_edited_files_valid_registered_resources() -> None:
     edited = {
-        "okto-pulse://workflows/cards": (CARDS_MD, "workflows/cards.md"),
-        "okto-pulse://reference/card_types": (CARD_TYPES_MD, "reference/card_types.md"),
-        "okto-pulse://reference/errors": (ERRORS_MD, "reference/errors.md"),
+        "okto-pulse://workflows/cards": (
+            CARDS_MD,
+            "workflows/cards.md",
+            "1.1",
+        ),
+        "okto-pulse://reference/card_types": (
+            CARD_TYPES_MD,
+            "reference/card_types.md",
+            "1.0",
+        ),
+        "okto-pulse://reference/errors": (
+            ERRORS_MD,
+            "reference/errors.md",
+            "1.0",
+        ),
         "okto-pulse://reference/tool-docs/card": (
             CANONICAL_CARD_DOC,
             "reference/tool-docs/card.md",
+            "1.0",
         ),
     }
 
     # Frontmatter intact on every edited file.
-    for uri, (path, _rel) in edited.items():
+    for uri, (path, _rel, version) in edited.items():
         content = _read(path)
         assert content.startswith("---"), f"{path.name}: missing leading frontmatter block."
         match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
         assert match is not None, f"{path.name}: frontmatter block not closed."
-        assert 'version: "1.0"' in match.group(1), f"{path.name}: frontmatter missing version."
+        assert f'version: "{version}"' in match.group(1), (
+            f"{path.name}: frontmatter missing version {version}."
+        )
 
     # URIs still resolve to the edited files in the live registry.
     from okto_pulse.core.mcp import server as _srv
 
     registered = {entry[0]: entry[1] for entry in _srv._RESOURCE_REGISTRY}
-    for uri, (_path, rel) in edited.items():
+    for uri, (_path, rel, _version) in edited.items():
         assert registered.get(uri) == rel, (
             f"Registry entry for {uri!r} is {registered.get(uri)!r}, expected {rel!r}."
         )
@@ -319,9 +334,9 @@ def test_ac8_every_registered_resource_serves_nonempty_content() -> None:
     from okto_pulse.core.mcp import server as _srv
 
     empty = [
-        (uri, rel)
-        for uri, rel, _desc in _srv._RESOURCE_REGISTRY
-        if not _srv._load_resource_file(rel).strip()
+        spec.uri
+        for spec in _srv.effective_resource_catalog().specs()
+        if not spec.read().strip()
     ]
     assert not empty, f"Registered resources served EMPTY (missing from package?): {empty}"
 
@@ -400,3 +415,99 @@ def test_ac9_historical_closure_checklist_enforces_path_b_without_bypass() -> No
     assert any(p in synthetic_bypass.lower() for p in _CHECKLIST_FORBIDDEN_PERMISSIVE)
     allowed_prohibition = "There is no skip/override/force path; never close without coverage."
     assert not any(p in allowed_prohibition.lower() for p in _CHECKLIST_FORBIDDEN_PERMISSIVE)
+
+
+# ---------------------------------------------------------------------------
+# BUG-03 (spec e5f61c7f) — the confirm_amendment_coverage CONTRACT served via the
+# okto-pulse:// docs must carry the gate-consumability preflight: binding +
+# validator authorization + reexecutable evidence are necessary but NOT
+# sufficient, the tool takes `amendment_id` (NOT `bug_id`), an inert tuple fails
+# `coverage_not_gate_consumable` (distinct from `coverage_pending`), and there is
+# no bypass. There is NO REST twin of confirm to reconcile — MCP/tool-docs are the
+# canonical surface (TS-BUG03-4).
+# ---------------------------------------------------------------------------
+
+MISC_CARD_DOC = RESOURCES_DIR / "reference" / "tool-docs" / "misc.md"
+
+_CONFIRM_HEADING = "## `okto_pulse_confirm_amendment_coverage`"
+
+
+def _confirm_section(doc: str) -> str:
+    start = doc.find(_CONFIRM_HEADING)
+    if start == -1:
+        return ""
+    rest = doc[start + len(_CONFIRM_HEADING):]
+    end = rest.find("\n## ")
+    return _CONFIRM_HEADING + (rest if end == -1 else rest[:end])
+
+
+def _confirm_contract_reconciled(section: str) -> bool:
+    """True iff a confirm_amendment_coverage doc section carries the BUG-03
+    gate-consumability contract and drops the stale `bug_id` arg. Whitespace is
+    collapsed so markdown line-wraps (e.g. "NOT\\nsufficient") still match."""
+    low = " ".join(section.lower().split())
+    return (
+        "amendment_id" in low
+        and "consumab" in low                       # the preflight is described
+        and "not sufficient" in low                 # binding+evidence not enough
+        and "coverage_not_gate_consumable" in low
+        and "path a" in low and "path b" in low
+        and "`board_id`, `bug_id`," not in low      # stale card.md arg list
+        and "bug_id: bug card id" not in low        # stale misc.md arg line
+    )
+
+
+def test_bug03_confirm_contract_served_carries_consumability_preflight() -> None:
+    from okto_pulse.core.mcp import server as _srv
+
+    registry = {uri: rel for uri, rel, _ in _srv._RESOURCE_REGISTRY}
+
+    # The served card tool-doc confirm section carries the full contract.
+    card_served = _srv._load_resource_file(registry["okto-pulse://reference/tool-docs/card"])
+    card_confirm = _confirm_section(card_served)
+    assert card_confirm, "served card.md missing confirm_amendment_coverage section"
+    assert _confirm_contract_reconciled(card_confirm)
+
+    # misc.md intentionally points to the canonical card tool-doc instead of
+    # duplicating the amendment contract.
+    misc_rel = registry.get("okto-pulse://reference/tool-docs/misc")
+    if misc_rel:
+        misc_served = _srv._load_resource_file(misc_rel)
+        assert not _confirm_section(misc_served)
+        assert "okto-pulse://reference/tool-docs/card" in misc_served
+
+    # The served errors + workflow surfaces mention the new error and the preflight.
+    errors_low = _srv._load_resource_file(registry["okto-pulse://reference/errors"]).lower()
+    assert "coverage_not_gate_consumable" in errors_low
+    assert "coverage_pending" in errors_low  # distinguished, both present
+    cards_low = _srv._load_resource_file(registry["okto-pulse://workflows/cards"]).lower()
+    assert "coverage_not_gate_consumable" in cards_low
+    assert "consumab" in cards_low
+
+    # Negative-wiring: a synthetic STALE confirm section (says binding+evidence
+    # SUFFICES, documents bug_id, no preflight) must FAIL the predicate — the
+    # guard is not a vacuous pass.
+    synthetic_stale = (
+        _CONFIRM_HEADING + "\nArgs: `board_id`, `bug_id`, `regression_test_task_id`.\n"
+        "Binding + reexecutable evidence are sufficient to confirm coverage.\n"
+    )
+    assert not _confirm_contract_reconciled(synthetic_stale)
+
+
+def test_bug03_no_rest_twin_of_confirm_coverage() -> None:
+    # TS-BUG03-4: api/amendment_revisions.py exposes create/list/get/associate/
+    # lifecycle ONLY — there is NO REST endpoint for coverage confirmation, so
+    # MCP/tool-docs are the canonical (and only) surface. A future REST twin would
+    # add a route whose path contains "coverage" or "confirm"; assert none exists.
+    import okto_pulse.community.api.amendment_revisions as amendment_api
+
+    api = _read(Path(amendment_api.__file__))
+    route_lines = [ln for ln in api.splitlines() if "@router." in ln]
+    assert route_lines, "expected FastAPI routes in api/amendment_revisions.py"
+    for ln in route_lines:
+        low = ln.lower()
+        assert "coverage" not in low and "confirm" not in low, (
+            f"unexpected REST coverage/confirm twin route: {ln.strip()!r}"
+        )
+    # And the module documents that coverage stays validator-only (MCP).
+    assert "confirm_amendment_coverage" in api

@@ -1,4 +1,4 @@
-"""Write-time barrier that enforces "no LadybugDB mutation without lifecycle".
+"""Write-time barrier that enforces "no embedded graph backend mutation without lifecycle".
 
 KG-01 FR5/FR6 require every write path (commit_consolidation,
 kg_tick force_full_rebuild, discovery writes, KG-02 rebuild) to go
@@ -40,19 +40,15 @@ impossivel/flagged".
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Iterator
 
+from okto_pulse.core.runtime_context import register_runtime_value, resolve_runtime_value
+
 logger = logging.getLogger("okto_pulse.kg.write_barrier")
-
-
-# Env knob to switch the default mode in production. Tests use
-# `set_barrier_mode("strict")` directly.
-_BARRIER_MODE_ENV_VAR = "OKTO_PULSE_KG_WRITE_BARRIER_MODE"
 
 
 class BarrierMode:
@@ -61,23 +57,14 @@ class BarrierMode:
 
 
 # Pseudo-board sentinel used by writes that target the global discovery
-# graph (`discovery.lbug` at `~/.okto-pulse/global/`). Per-board writers
+# graph (`global graph` at `~/.okto-pulse/global/`). Per-board writers
 # pass their real board_id; the global graph has no real board, so we
 # canonicalise this sentinel so that the barrier surface stays uniform
 # and the counter labels remain explicit. KG-01.3.1 rework.
 GLOBAL_DISCOVERY_BOARD_SENTINEL = "_global_discovery"
 
 
-_DEFAULT_MODE = (
-    os.environ.get(_BARRIER_MODE_ENV_VAR, BarrierMode.SOFT).strip().lower()
-    or BarrierMode.SOFT
-)
-_mode_lock = threading.Lock()
-_current_mode = (
-    BarrierMode.STRICT
-    if _DEFAULT_MODE == BarrierMode.STRICT
-    else BarrierMode.SOFT
-)
+_MODE_KEY = "kg.write_barrier.mode"
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,34 +96,71 @@ class WriteLifecycleViolation(Exception):
 # --- Counter (paired with kg_unguarded_write_total observability slice) ------
 
 _UNGUARDED_LABELS = ("board_id", "mode")
-_unguarded_counter: dict[tuple[str, str], int] = {}
-_unguarded_counter_lock = threading.Lock()
+class WriteBarrierRuntime:
+    """Instance-owned barrier policy and observability state."""
+
+    def __init__(self, mode: str = BarrierMode.SOFT) -> None:
+        self.set_mode(mode)
+        self._counter: dict[tuple[str, str], int] = {}
+        self._lock = threading.Lock()
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def set_mode(self, mode: str) -> None:
+        if mode not in (BarrierMode.SOFT, BarrierMode.STRICT):
+            raise ValueError(f"unknown barrier mode: {mode}")
+        self._mode = mode
+
+    def bump(self, board_id: str, mode: str) -> None:
+        with self._lock:
+            key = (board_id, mode)
+            self._counter[key] = self._counter.get(key, 0) + 1
+
+    def count(self, board_id: str, mode: str | None = None) -> int:
+        with self._lock:
+            return sum(
+                value
+                for (candidate_board, candidate_mode), value in self._counter.items()
+                if candidate_board == board_id
+                and (mode is None or candidate_mode == mode)
+            )
+
+    def samples(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [
+                {"board_id": board, "mode": mode, "count": value}
+                for (board, mode), value in self._counter.items()
+            ]
+
+    def reset_counter(self) -> None:
+        with self._lock:
+            self._counter.clear()
+
+
+def configure_write_barrier_runtime(runtime: WriteBarrierRuntime) -> None:
+    register_runtime_value(_MODE_KEY, runtime)
+
+
+def _runtime() -> WriteBarrierRuntime:
+    runtime = resolve_runtime_value(_MODE_KEY)
+    if runtime is None:
+        runtime = WriteBarrierRuntime()
+        configure_write_barrier_runtime(runtime)
+    return runtime
 
 
 def _bump_unguarded(board_id: str, mode: str) -> None:
-    with _unguarded_counter_lock:
-        key = (board_id, mode)
-        _unguarded_counter[key] = _unguarded_counter.get(key, 0) + 1
+    _runtime().bump(board_id, mode)
 
 
 def get_unguarded_count(board_id: str, *, mode: str | None = None) -> int:
-    with _unguarded_counter_lock:
-        total = 0
-        for (b, m), value in _unguarded_counter.items():
-            if b != board_id:
-                continue
-            if mode is not None and m != mode:
-                continue
-            total += value
-        return total
+    return _runtime().count(board_id, mode)
 
 
 def get_unguarded_samples() -> list[dict[str, Any]]:
-    with _unguarded_counter_lock:
-        return [
-            {"board_id": b, "mode": m, "count": v}
-            for (b, m), v in _unguarded_counter.items()
-        ]
+    return _runtime().samples()
 
 
 def get_unguarded_counter_labels() -> tuple[str, ...]:
@@ -144,25 +168,19 @@ def get_unguarded_counter_labels() -> tuple[str, ...]:
 
 
 def reset_unguarded_counter() -> None:
-    with _unguarded_counter_lock:
-        _unguarded_counter.clear()
+    _runtime().reset_counter()
 
 
 # --- Mode control --------------------------------------------------------------
 
 
 def set_barrier_mode(mode: str) -> None:
-    """Switch the global barrier mode. Tests call this with 'strict'."""
-    global _current_mode
-    if mode not in (BarrierMode.SOFT, BarrierMode.STRICT):
-        raise ValueError(f"unknown barrier mode: {mode}")
-    with _mode_lock:
-        _current_mode = mode
+    """Switch the active composed barrier runtime mode."""
+    _runtime().set_mode(mode)
 
 
 def get_barrier_mode() -> str:
-    with _mode_lock:
-        return _current_mode
+    return _runtime().mode
 
 
 # --- Public API ----------------------------------------------------------------
@@ -255,7 +273,7 @@ def has_active_guard(board_id: str) -> bool:
 # --- Global discovery helpers (KG-01.3.1 rework: val_441ad311) ---------------
 #
 # Global discovery writers (bootstrap_global_discovery, gc_orphans, …)
-# operate on `discovery.lbug` with no per-board scope. They piggyback on
+# operate on `global graph` with no per-board scope. They piggyback on
 # the same barrier infrastructure via the GLOBAL_DISCOVERY_BOARD_SENTINEL.
 
 
@@ -295,7 +313,9 @@ __all__ = [
     "BarrierMode",
     "GLOBAL_DISCOVERY_BOARD_SENTINEL",
     "WriteGuard",
+    "WriteBarrierRuntime",
     "WriteLifecycleViolation",
+    "configure_write_barrier_runtime",
     "get_barrier_mode",
     "get_unguarded_count",
     "get_unguarded_counter_labels",

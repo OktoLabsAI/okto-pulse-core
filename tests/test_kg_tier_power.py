@@ -21,12 +21,17 @@ from okto_pulse.core.kg.tier_power import (
     reset_rate_limiter_for_tests,
     validate_cypher_read_only,
 )
-from okto_pulse.core.kg.interfaces.registry import configure_kg_registry
+from kg_registry_testing import RealBoardCypherExecutorForTests, configure_test_kg_registry
 
 
 @pytest.fixture(autouse=True)
 def _reset_rate():
+    # reset_rate_limiter_for_tests() resets the whole KG registry; R-P2-03 no
+    # longer lazy-builds defaults, so re-configure the embedded fakes explicitly
+    # (this autouse fixture runs after the conftest one, so it must restore a
+    # configured registry for the tests that read get_kg_registry()).
     reset_rate_limiter_for_tests()
+    configure_test_kg_registry(cypher_executor=RealBoardCypherExecutorForTests())
 
 
 class TestCypherSafety:
@@ -132,11 +137,131 @@ class TestSafetyRails:
 
     def test_canonical_projection_can_include_working_explicitly(self):
         result = _apply_canonical_projection(
-            {"rows": [{"id": "w1", "graph_layer": "working"}], "row_count": 1},
+            {
+                "rows": [["w1", "working"]],
+                "columns": ["id", "layer"],
+                "row_count": 1,
+            },
             include_working=True,
         )
         assert result["row_count"] == 1
         assert result["query_state"] == "canonical_and_working"
+        assert result["layer_counts"] == {"working": 1}
+        assert result["working_row_count"] == 1
+        assert result["working_omitted_count"] == 0
+        assert result["working_omitted_count_exact"] is True
+
+    def test_paired_projection_derives_omissions_and_layer_counts(self):
+        result = _apply_canonical_projection(
+            {
+                "rows": [
+                    ["c1", "canonical"],
+                    ["c2", "canonical"],
+                    ["c3", "canonical"],
+                ],
+                "columns": ["id", "layer"],
+                "row_count": 3,
+                "truncated": False,
+            },
+            include_working=False,
+            canonical_filter_mode="cypher_rewrite",
+            comparison_result={
+                "rows": [
+                    ["null-layer", None],
+                    ["c1", "canonical"],
+                    ["w1", "working"],
+                    ["c2", "canonical"],
+                    ["w2", "working"],
+                    ["c3", "canonical"],
+                    ["w3", "working"],
+                ],
+                "columns": ["id", "layer"],
+                "row_count": 7,
+                "truncated": False,
+            },
+        )
+
+        assert result["working_omitted_count"] == 4
+        assert result["working_omitted_count_exact"] is True
+        assert result["working_omitted_count_source"] == "paired_query"
+        assert result["working_row_count"] == 3
+        assert result["layer_counts"] == {
+            "unknown": 1,
+            "canonical": 3,
+            "working": 3,
+        }
+        assert result["omitted_layer_counts"] == {
+            "unknown": 1,
+            "working": 3,
+        }
+
+    def test_rewritten_projection_without_pair_reports_unknown_not_zero(self):
+        result = _apply_canonical_projection(
+            {
+                "rows": [["c1"]],
+                "columns": ["id"],
+                "row_count": 1,
+            },
+            include_working=False,
+            canonical_filter_mode="cypher_rewrite",
+        )
+
+        assert result["working_omitted_count"] is None
+        assert result["working_omitted_count_exact"] is False
+        assert result["working_omitted_count_source"] == "not_observable"
+
+    def test_runtime_pair_is_used_for_canonical_omission_metrics(self):
+        from okto_pulse.core.kg.tier_power import execute_cypher_read_only
+
+        class PairExecutor:
+            primary = ""
+            comparison = ""
+
+            def execute_read_only_pair(
+                self,
+                board_id,
+                primary_cypher,
+                comparison_cypher,
+                params=None,
+                *,
+                max_rows=1000,
+            ):
+                assert board_id == "board-x"
+                assert max_rows == 50
+                self.primary = primary_cypher
+                self.comparison = comparison_cypher
+                return {
+                    "primary": {
+                        "rows": [["c1", "canonical"]],
+                        "columns": ["id", "layer"],
+                        "row_count": 1,
+                    },
+                    "comparison": {
+                        "rows": [
+                            ["c1", "canonical"],
+                            ["w1", "working"],
+                        ],
+                        "columns": ["id", "layer"],
+                        "row_count": 2,
+                    },
+                }
+
+            def execute_read_only(self, *_args, **_kwargs):
+                raise AssertionError("paired execution should be used")
+
+        pair = PairExecutor()
+        configure_test_kg_registry(cypher_executor=pair)
+
+        result = execute_cypher_read_only(
+            "board-x",
+            "MATCH (n:Decision) RETURN n.id AS id, n.graph_layer AS layer",
+            max_rows=50,
+        )
+
+        assert "n.graph_layer = 'canonical'" in pair.primary
+        assert "n.graph_layer = 'canonical'" not in pair.comparison
+        assert result["working_omitted_count"] == 1
+        assert result["omitted_layer_counts"] == {"working": 1}
 
     def test_cypher_rewrite_filters_named_nodes_before_executor(self):
         from okto_pulse.core.kg.tier_power import execute_cypher_read_only
@@ -149,7 +274,7 @@ class TestSafetyRails:
                 return {"rows": [[{"id": "n1"}]], "row_count": 1}
 
         fake = FakeExecutor()
-        configure_kg_registry(cypher_executor=fake)
+        configure_test_kg_registry(cypher_executor=fake)
 
         result = execute_cypher_read_only("board-x", "MATCH (n) RETURN n")
 
@@ -170,7 +295,7 @@ class TestSafetyRails:
                 return {"rows": [], "row_count": 0}
 
         fake = FakeExecutor()
-        configure_kg_registry(cypher_executor=fake)
+        configure_test_kg_registry(cypher_executor=fake)
 
         execute_cypher_read_only(
             "board-x",
@@ -193,7 +318,7 @@ class TestSafetyRails:
                 return {"rows": [], "row_count": 0}
 
         fake = FakeExecutor()
-        configure_kg_registry(cypher_executor=fake)
+        configure_test_kg_registry(cypher_executor=fake)
 
         execute_cypher_read_only(
             "board-x",
@@ -235,7 +360,7 @@ class TestSafetyRails:
                 }
 
         fake = FakeExecutor()
-        configure_kg_registry(cypher_executor=fake)
+        configure_test_kg_registry(cypher_executor=fake)
 
         result = execute_cypher_read_only(
             "board-x",
@@ -278,7 +403,12 @@ class TestSchemaInfo:
     def test_stable_types_count(self):
         info = get_schema_info("board-x")
         assert len(info["stable_node_types"]) == 11
-        assert len(info["stable_rel_types"]) == 13
+        # 10 REL_TYPES single-pair entries + 6 MULTI_REL_TYPES names (implements,
+        # relates_to, belongs_to, originates_from, covered_by, supersedes).
+        # S-KG-01 added the additive `relates_to` Learning taxonomy entry;
+        # spec MKG-D-S1 promoted `supersedes` to a universal multi-pair edge
+        # (walkable chain for all node types, +1).
+        assert len(info["stable_rel_types"]) == 16
         rel_names = {rel["name"] for rel in info["stable_rel_types"]}
         assert {"belongs_to", "originates_from", "covered_by"} <= rel_names
 
@@ -300,7 +430,7 @@ class TestNLQuery:
     def test_query_returns_dict(self):
         import tempfile
         os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_tp_"))
-        from okto_pulse.core.kg.schema import bootstrap_board_graph
+        from kg_schema_testing import bootstrap_board_graph
         bootstrap_board_graph("board-nl-test")
         result = execute_natural_query("board-nl-test", "test query")
         assert "nodes" in result
@@ -309,7 +439,7 @@ class TestNLQuery:
     def test_query_exact_fallback_finds_bug_without_vector_index_hit(self):
         import tempfile
         os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_tp_"))
-        from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+        from kg_schema_testing import bootstrap_board_graph, open_board_connection
 
         board_id = "board-nl-bug-test"
         bootstrap_board_graph(board_id)
@@ -343,4 +473,5 @@ class TestMCPRegistration:
         import inspect
         from okto_pulse.core.mcp import kg_power_tools
         src = inspect.getsource(kg_power_tools.register_kg_power_tools)
-        assert src.count("@mcp.tool()") == 5
+        # 5 originais + okto_pulse_kg_provenance_drift (spec MKG-B-S1 FR7).
+        assert src.count("@mcp.tool()") == 6

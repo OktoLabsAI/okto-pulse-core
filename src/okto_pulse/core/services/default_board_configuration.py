@@ -11,7 +11,8 @@ Design invariants:
 * ``BoardCreate.settings`` is a PARTIAL override merged over the template via
   ``BoardGovernanceService.merge_settings_patch`` (TR3);
 * no active template → effective settings fall back to the supplied override (or
-  ``BoardSettings()`` default), with NO snapshot and NO error (AC11);
+  forward-safe new-board defaults, including reviewer separation ``enforce``),
+  with NO snapshot and NO error (AC11);
 * there is at most ONE active template per scope, enforced inside the caller's
   transaction (AC-single-active);
 * Guidelines (card #3) and Design System (card #4) consume this provider as
@@ -25,20 +26,25 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+import uuid
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from okto_pulse.core.models.db import (
-    BoardGuideline,
-    DefaultBoardConfiguration,
-    DefaultBoardConfigurationAudit,
-    DesignSystem,
-    Guideline,
+from okto_pulse.core.application.scope import QueryScope
+from okto_pulse.core.domain.configuration_presence import (
+    CONFIGURATION_ABSENT,
+    classify_configuration_presence,
 )
 from okto_pulse.core.models.schemas import BoardSettings
-from okto_pulse.core.services.board_governance import BoardGovernanceService
+from okto_pulse.core.ports.default_board_configuration import (
+    DefaultBoardTemplateAudit,
+    DefaultBoardTemplateRecord,
+    get_default_board_configuration_store,
+)
+from okto_pulse.core.services.board_governance import (
+    LEGACY_ABSENT_SETTING_KEYS,
+    BoardGovernanceService,
+)
 
 # Stable global template audit event types (FR9).
 EVENT_CREATED = "default_board_configuration_created"
@@ -69,6 +75,21 @@ _DEFAULT_SCOPE = "global"
 _ALLOWED_STATUSES = ("draft", "active", "inactive")
 
 logger = logging.getLogger(__name__)
+
+
+def _scoped_guideline_owner_id(
+    actor: str | None,
+    query_scope: QueryScope | None,
+) -> str | None:
+    """Return the effective catalog owner only when a transport supplied scope.
+
+    ``query_scope=None`` intentionally preserves the legacy administrative behavior
+    of default-board-config operations. REST/MCP pass a scope so SaaS-ready
+    surfaces only see guideline defaults owned by the authorized actor.
+    """
+    if query_scope is not None:
+        return query_scope.actor_id
+    return None
 
 
 @dataclass  # NOT frozen: an Exception must stay mutable (Python sets __traceback__ on
@@ -131,22 +152,19 @@ def _diff_guideline_refs(
 class DefaultBoardConfigurationService:
     """Single provider + lifecycle owner for default board configuration templates."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: Any) -> None:
         self.db = db
 
     # -- read / apply ------------------------------------------------------
 
-    async def resolve_active(self, scope: str = _DEFAULT_SCOPE) -> DefaultBoardConfiguration | None:
+    async def resolve_active(
+        self, scope: str = _DEFAULT_SCOPE
+    ) -> DefaultBoardTemplateRecord | None:
         """The single active template for ``scope`` (None if none is active)."""
-        result = await self.db.execute(
-            select(DefaultBoardConfiguration)
-            .where(
-                DefaultBoardConfiguration.scope == scope,
-                DefaultBoardConfiguration.is_active.is_(True),
-            )
-            .order_by(DefaultBoardConfiguration.version.desc())
+        return await get_default_board_configuration_store().resolve_active(
+            self.db,
+            scope=scope,
         )
-        return result.scalars().first()
 
     async def build_snapshot_for_create(
         self,
@@ -159,15 +177,31 @@ class DefaultBoardConfigurationService:
 
         With an active template: effective = template payload + partial override;
         snapshot_meta records the applied template + override summary.
-        Without one: effective = normalized override (or BoardSettings() default)
-        and snapshot_meta is ``None`` (graceful fallback, AC11)."""
+        Without one: effective = normalized override (or the forward-safe new
+        board defaults) and snapshot_meta is ``None`` (graceful fallback,
+        AC11). New boards default reviewer separation to ``enforce`` even when
+        no template has been configured; an explicit ``off``/``warn`` override
+        is preserved. Persisted legacy boards are not touched by this path.
+        """
         template = await self.resolve_active(scope)
         if template is None:
-            return BoardGovernanceService.normalize_settings(settings_override), None
+            if isinstance(settings_override, BoardSettings):
+                supplied_settings = settings_override.model_dump(
+                    mode="json", exclude_unset=True
+                )
+            else:
+                supplied_settings = dict(settings_override or {})
+            supplied_settings.setdefault("reviewer_separation_mode", "enforce")
+            return BoardGovernanceService.normalize_settings(supplied_settings), None
 
         effective = BoardGovernanceService.merge_settings_patch(
             template.settings_payload, settings_override
         )
+        # Creating a board is forward-only. A historical template may itself
+        # predate reviewer_separation_mode; do not mutate that template, but do
+        # materialize the current safe default on the new board unless the
+        # template/override explicitly selected another mode.
+        effective.setdefault("reviewer_separation_mode", "enforce")
         snapshot_meta = {
             "template_id": template.id,
             "template_version": template.version,
@@ -203,16 +237,51 @@ class DefaultBoardConfigurationService:
           alongside the currently active one, so template changes stay
           forward-only (no live inheritance).
         """
-        snapshot = board.default_config_snapshot
+        snapshot = getattr(board, "default_config_snapshot", CONFIGURATION_ABSENT)
+        if snapshot is CONFIGURATION_ABSENT:
+            return {
+                "state": "absent_snapshot",
+                "board_id": board.id,
+                "configuration_presence": "absent",
+                "baseline_available": False,
+                "comparable": False,
+            }
+        if snapshot is None:
+            return {
+                "state": "legacy_no_snapshot",
+                "board_id": board.id,
+                "configuration_presence": "null",
+                "baseline_available": False,
+                "comparable": False,
+            }
         if not snapshot:
-            return {"state": "legacy_no_snapshot", "board_id": board.id}
+            return {
+                "state": "empty_snapshot",
+                "board_id": board.id,
+                "configuration_presence": "empty",
+                "baseline_available": False,
+                "comparable": False,
+            }
         scope = snapshot.get("scope", _DEFAULT_SCOPE)
         active = await self.resolve_active(scope)
+        applied_template = await get_default_board_configuration_store().get_template(
+            self.db,
+            template_id=str(snapshot.get("template_id") or ""),
+        )
         applied_version = snapshot.get("template_version")
         active_version = active.version if active is not None else None
+        baseline_available = applied_template is not None
         return {
             "state": "applied",
             "board_id": board.id,
+            "configuration_presence": "configured",
+            "baseline_available": baseline_available,
+            "comparable": baseline_available,
+            "template_settings_presence": (
+                classify_configuration_presence(applied_template.settings_payload)
+                if applied_template is not None
+                else "absent"
+            ),
             "scope": scope,
             "applied_template_id": snapshot.get("template_id"),
             "applied_template_version": applied_version,
@@ -229,11 +298,42 @@ class DefaultBoardConfigurationService:
         so the applied version is recoverable by id) — NOT the currently active
         template. Reports ``snapshot_state`` plus applied-vs-active version metadata
         in separate fields. Never mutates the board / never backfills (TR4/TR5)."""
-        snapshot = board.default_config_snapshot
-        if not snapshot:
+        snapshot = getattr(board, "default_config_snapshot", CONFIGURATION_ABSENT)
+        if snapshot is CONFIGURATION_ABSENT:
+            return {
+                "board_id": board.id,
+                "snapshot_state": "absent_snapshot",
+                "configuration_presence": "absent",
+                "baseline_available": False,
+                "comparable": False,
+                "applied_template_id": None,
+                "applied_template_version": None,
+                "active_template_id": None,
+                "active_template_version": None,
+                "is_outdated": False,
+                "fields": [],
+            }
+        if snapshot is None:
             return {
                 "board_id": board.id,
                 "snapshot_state": "legacy_no_snapshot",
+                "configuration_presence": "null",
+                "baseline_available": False,
+                "comparable": False,
+                "applied_template_id": None,
+                "applied_template_version": None,
+                "active_template_id": None,
+                "active_template_version": None,
+                "is_outdated": False,
+                "fields": [],
+            }
+        if not snapshot:
+            return {
+                "board_id": board.id,
+                "snapshot_state": "empty_snapshot",
+                "configuration_presence": "empty",
+                "baseline_available": False,
+                "comparable": False,
                 "applied_template_id": None,
                 "applied_template_version": None,
                 "active_template_id": None,
@@ -243,15 +343,28 @@ class DefaultBoardConfigurationService:
             }
         scope = snapshot.get("scope", _DEFAULT_SCOPE)
         active = await self.resolve_active(scope)
-        applied_template = await self.db.get(
-            DefaultBoardConfiguration, snapshot.get("template_id")
+        applied_template = await get_default_board_configuration_store().get_template(
+            self.db,
+            template_id=str(snapshot.get("template_id") or ""),
         )
         template_settings = dict(applied_template.settings_payload or {}) if applied_template else {}
         current_settings = dict(board.settings or {})
         applied_version = snapshot.get("template_version")
         active_version = active.version if active is not None else None
+        baseline_available = applied_template is not None
         fields = []
-        for field in sorted(set(template_settings) | set(current_settings)):
+        override_summary = snapshot.get("override_summary")
+        explicit_override_fields = (
+            set(override_summary)
+            if isinstance(override_summary, dict)
+            else set()
+        )
+        # ``board.settings`` is normalized and therefore contains every default
+        # field.  Comparing that complete payload to an intentionally empty
+        # template fabricated dozens of ``template_value: null`` overrides.  Only
+        # template-owned fields and explicitly recorded overrides are comparable.
+        comparable_fields = set(template_settings) | explicit_override_fields
+        for field in sorted(comparable_fields):
             template_value = template_settings.get(field)
             current_value = current_settings.get(field)
             if template_value != current_value:
@@ -264,6 +377,14 @@ class DefaultBoardConfigurationService:
         return {
             "board_id": board.id,
             "snapshot_state": "applied",
+            "configuration_presence": "configured",
+            "baseline_available": baseline_available,
+            "comparable": baseline_available,
+            "template_settings_presence": (
+                classify_configuration_presence(applied_template.settings_payload)
+                if applied_template is not None
+                else "absent"
+            ),
             "applied_template_id": snapshot.get("template_id"),
             "applied_template_version": applied_version,
             "active_template_id": active.id if active is not None else None,
@@ -274,7 +395,7 @@ class DefaultBoardConfigurationService:
 
     async def materialize_default_guidelines(
         self, board_id: str, *, scope: str = _DEFAULT_SCOPE, actor: str = "system"
-    ) -> list[BoardGuideline]:
+    ) -> list[Any]:
         """Adapter (FR3): resolve the ACTIVE template's GLOBAL guideline defaults and
         DELEGATE link creation to ``GuidelineService.apply_default_guidelines`` (the
         guideline-domain writer — and the ts_a48e70ee failure-injection point), in the
@@ -407,17 +528,43 @@ class DefaultBoardConfigurationService:
         guideline_default_refs: list[Any] | None = None,
         design_system_default_ref: dict[str, Any] | None = None,
         activate: bool = False,
-    ) -> DefaultBoardConfiguration:
+        query_scope: QueryScope | None = None,
+    ) -> DefaultBoardTemplateRecord:
         """Create a new draft template version (validated as BoardSettings, TR1).
-        ``activate=True`` immediately activates it (single-active enforced)."""
-        validated_payload = self._validate_settings(settings_payload)
-        result = await self.db.execute(
-            select(func.max(DefaultBoardConfiguration.version)).where(
-                DefaultBoardConfiguration.scope == scope
+        ``activate=True`` immediately activates it (single-active enforced).
+
+        New template versions default reviewer separation to ``enforce``. This
+        is forward-only: legacy templates/boards are never backfilled and their
+        absent value resolves explicitly to compatibility mode ``off``.
+        """
+        if isinstance(settings_payload, BoardSettings):
+            supplied_settings = settings_payload.model_dump(
+                mode="json", exclude_unset=True
             )
+        else:
+            supplied_settings = dict(settings_payload or {})
+        supplied_settings.setdefault("reviewer_separation_mode", "enforce")
+        validated_payload = self._validate_settings(supplied_settings)
+        await self._validate_guideline_default_refs(
+            guideline_default_refs,
+            actor=actor,
+            query_scope=query_scope,
         )
-        next_version = int(result.scalar() or 0) + 1
-        template = DefaultBoardConfiguration(
+        active = await self.resolve_active(scope)
+        if isinstance(settings_payload, dict) and active is not None:
+            active_payload = active.settings_payload or {}
+            for key in LEGACY_ABSENT_SETTING_KEYS:
+                if key == "reviewer_separation_mode":
+                    # Forward-only default for every newly-created template
+                    # version, including one derived from a historical template.
+                    continue
+                if key not in settings_payload and key not in active_payload:
+                    validated_payload.pop(key, None)
+        store = get_default_board_configuration_store()
+        next_version = await store.next_version(self.db, scope=scope)
+        now = datetime.now(timezone.utc)
+        template = DefaultBoardTemplateRecord(
+            id=str(uuid.uuid4()),
             version=next_version,
             status="draft",
             is_active=False,
@@ -426,65 +573,92 @@ class DefaultBoardConfigurationService:
             guideline_default_refs=list(guideline_default_refs) if guideline_default_refs else None,
             design_system_default_ref=design_system_default_ref,
             created_by=actor,
+            created_at=now,
+            updated_at=now,
         )
-        self.db.add(template)
-        await self.db.flush()
+        template = await store.create_template(self.db, template)
         self._audit(template, EVENT_CREATED, actor)
         if activate:
-            template = await self.activate_version(template.id, actor)
+            template = await self.activate_version(
+                template.id,
+                actor,
+                query_scope=query_scope,
+            )
         return template
 
-    async def activate_version(self, template_id: str, actor: str) -> DefaultBoardConfiguration:
+    async def activate_version(
+        self,
+        template_id: str,
+        actor: str,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> DefaultBoardTemplateRecord:
         """Activate a template; deactivate every other active template in the same
         scope IN THE SAME TRANSACTION so there is never more than one active."""
         template = await self._require(template_id)
         # FR5/TR6: a template whose guideline defaults are inline / non-global /
         # missing MUST NOT activate (fail-closed before it can reach any board).
-        await self._validate_guideline_default_refs(template.guideline_default_refs)
+        await self._validate_guideline_default_refs(
+            template.guideline_default_refs,
+            actor=actor,
+            query_scope=query_scope,
+        )
         # FR6: the Design System default ref (if any) must satisfy the minimal contract.
         await self._validate_design_system_default_ref(template.design_system_default_ref)
-        result = await self.db.execute(
-            select(DefaultBoardConfiguration).where(
-                DefaultBoardConfiguration.scope == template.scope,
-                DefaultBoardConfiguration.is_active.is_(True),
-                DefaultBoardConfiguration.id != template.id,
-            )
+        store = get_default_board_configuration_store()
+        others = await store.list_active_others(
+            self.db,
+            scope=template.scope,
+            exclude_template_id=template.id,
         )
-        for other in result.scalars():
+        for other in others:
             other.is_active = False
             other.status = "inactive"
+            await store.save_template(self.db, other)
             self._audit(
                 other, EVENT_DEACTIVATED, actor,
                 {"reason": "superseded", "superseded_by": template.id},
             )
         template.is_active = True
         template.status = "active"
-        await self.db.flush()
+        template = await store.save_template(self.db, template)
         self._audit(template, EVENT_ACTIVATED, actor)
         return template
 
-    async def deactivate_version(self, template_id: str, actor: str) -> DefaultBoardConfiguration:
+    async def deactivate_version(
+        self, template_id: str, actor: str
+    ) -> DefaultBoardTemplateRecord:
         """Deactivate a template (no active template remains unless another exists)."""
         template = await self._require(template_id)
         template.is_active = False
         template.status = "inactive"
-        await self.db.flush()
+        template = await get_default_board_configuration_store().save_template(
+            self.db,
+            template,
+        )
         self._audit(template, EVENT_DEACTIVATED, actor)
         return template
 
-    async def list_versions(self, scope: str = _DEFAULT_SCOPE) -> list[DefaultBoardConfiguration]:
-        result = await self.db.execute(
-            select(DefaultBoardConfiguration)
-            .where(DefaultBoardConfiguration.scope == scope)
-            .order_by(DefaultBoardConfiguration.version.desc())
+    async def list_versions(
+        self, scope: str = _DEFAULT_SCOPE
+    ) -> list[DefaultBoardTemplateRecord]:
+        return list(
+            await get_default_board_configuration_store().list_templates(
+                self.db,
+                scope=scope,
+            )
         )
-        return list(result.scalars())
 
     # -- guideline-default administration (spec 8a2fad91) ------------------
 
     async def update_guideline_default_refs(
-        self, template_id: str, refs: list[Any] | None, actor: str
-    ) -> DefaultBoardConfiguration:
+        self,
+        template_id: str,
+        refs: list[Any] | None,
+        actor: str,
+        *,
+        query_scope: QueryScope | None = None,
+    ) -> DefaultBoardTemplateRecord:
         """Admin mutation of a template's guideline_default_refs (FR1; single owner
         TR1 — never a ``Guideline.is_default`` flag). Rejects inline/missing/non-global
         refs fail-closed BEFORE any persistence (FR2/TR6). A DRAFT template mutates
@@ -498,7 +672,11 @@ class DefaultBoardConfigurationService:
         # caller's transaction, so it is recorded as a structured log, not a doomed
         # audit row; the structured error is the API-level rejection signal.
         try:
-            await self._validate_guideline_default_refs(refs)
+            await self._validate_guideline_default_refs(
+                refs,
+                actor=actor,
+                query_scope=query_scope,
+            )
         except DefaultBoardConfigurationError as exc:
             logger.warning(
                 "default_guideline_rejected template_id=%s reason=%s actor=%s",
@@ -520,6 +698,7 @@ class DefaultBoardConfigurationService:
                 guideline_default_refs=normalized,
                 design_system_default_ref=template.design_system_default_ref,
                 activate=True,
+                query_scope=query_scope,
             )
             self._audit_guideline_diff(
                 new_template, actor, diff, {"source_version": template.version}
@@ -528,12 +707,20 @@ class DefaultBoardConfigurationService:
 
         # Draft (or inactive) template: mutate refs in place.
         template.guideline_default_refs = normalized or None
-        await self.db.flush()
+        template = await get_default_board_configuration_store().save_template(
+            self.db,
+            template,
+        )
         self._audit_guideline_diff(template, actor, diff, None)
         return template
 
     async def list_default_candidates(
-        self, *, scope: str = _DEFAULT_SCOPE, template_id: str | None = None
+        self,
+        *,
+        scope: str = _DEFAULT_SCOPE,
+        template_id: str | None = None,
+        actor: str | None = None,
+        query_scope: QueryScope | None = None,
     ) -> dict[str, Any]:
         """List GLOBAL catalog guidelines with derived eligibility + current default
         status (FR1/AC7/BR br_8f801aa4 — state is resolved FROM the umbrella template,
@@ -545,13 +732,13 @@ class DefaultBoardConfigurationService:
             template = await self.resolve_active(scope)
         refs = (template.guideline_default_refs or []) if template else []
         ref_by_id = {_ref_id(r): r for r in refs if _ref_id(r)}
-        result = await self.db.execute(
-            select(Guideline)
-            .where(Guideline.scope == _DEFAULT_SCOPE, Guideline.board_id.is_(None))
-            .order_by(Guideline.title)
+        owner_id = _scoped_guideline_owner_id(actor, query_scope)
+        guidelines = await get_default_board_configuration_store().list_global_guidelines(
+            self.db,
+            owner_id=owner_id,
         )
         candidates: list[dict[str, Any]] = []
-        for g in result.scalars():
+        for g in guidelines:
             ref = ref_by_id.get(g.id)
             candidates.append(
                 {
@@ -580,7 +767,10 @@ class DefaultBoardConfigurationService:
         normalized: list[dict[str, Any]] = []
         for ref in refs or []:
             guideline_id = ref["guideline_id"]
-            guideline = await self.db.get(Guideline, guideline_id)
+            guideline = await get_default_board_configuration_store().get_guideline(
+                self.db,
+                guideline_id=guideline_id,
+            )
             normalized.append(
                 {
                     "guideline_id": guideline_id,
@@ -592,7 +782,7 @@ class DefaultBoardConfigurationService:
 
     def _audit_guideline_diff(
         self,
-        template: DefaultBoardConfiguration,
+        template: DefaultBoardTemplateRecord,
         actor: str,
         diff: dict[str, list[str]],
         extra: dict[str, Any] | None,
@@ -618,7 +808,7 @@ class DefaultBoardConfigurationService:
         version: int | None = None,
         snapshot: dict[str, Any] | None = None,
         gate_mode: str = "off",
-    ) -> DefaultBoardConfiguration:
+    ) -> DefaultBoardTemplateRecord:
         """Set the Design System default on a template (FR3): the IDENTITY goes to
         ``design_system_default_ref`` and the CANONICAL gate mode to
         ``settings_payload.design_system_gate_mode`` in the SAME mutation (Q1=B — the
@@ -673,7 +863,10 @@ class DefaultBoardConfigurationService:
         # Draft (or inactive) template: mutate in place.
         template.design_system_default_ref = ref
         template.settings_payload = merged_settings
-        await self.db.flush()
+        template = await get_default_board_configuration_store().save_template(
+            self.db,
+            template,
+        )
         self._audit(
             template, EVENT_DESIGN_SYSTEM_DEFAULT_SET, actor,
             {"design_system_id": design_system_id, "gate_mode": gate_mode},
@@ -695,7 +888,13 @@ class DefaultBoardConfigurationService:
                 {"errors": exc.errors(include_url=False)},
             ) from exc
 
-    async def _validate_guideline_default_refs(self, refs: list[Any] | None) -> None:
+    async def _validate_guideline_default_refs(
+        self,
+        refs: list[Any] | None,
+        *,
+        actor: str | None = None,
+        query_scope: QueryScope | None = None,
+    ) -> None:
         """FR5/TR6/BR br_512d374b: every guideline default MUST reference an EXISTING
         GLOBAL catalog guideline. Inline (no guideline_id), missing, or
         board-scoped/non-global refs are rejected fail-closed BEFORE activate/apply."""
@@ -709,11 +908,17 @@ class DefaultBoardConfigurationService:
                     422,
                     {"ref": ref},
                 )
-            guideline = await self.db.get(Guideline, guideline_id)
-            if guideline is None:
+            guideline = await get_default_board_configuration_store().get_guideline(
+                self.db,
+                guideline_id=guideline_id,
+            )
+            owner_id = _scoped_guideline_owner_id(actor, query_scope)
+            if guideline is None or (
+                owner_id is not None and guideline.owner_id != owner_id
+            ):
                 raise DefaultBoardConfigurationError(
                     "default_guideline_not_found",
-                    f"Guideline '{guideline_id}' was not found.",
+                    f"Guideline '{guideline_id}' was not found or is not accessible.",
                     422,
                     {"guideline_id": guideline_id},
                 )
@@ -762,7 +967,10 @@ class DefaultBoardConfigurationService:
             )
         # Entity check: the default MUST reference a real, GLOBAL, ACTIVE DesignSystem.
         design_system_id = ref["design_system_id"]
-        design_system = await self.db.get(DesignSystem, design_system_id)
+        design_system = await get_default_board_configuration_store().get_design_system(
+            self.db,
+            design_system_id=design_system_id,
+        )
         if design_system is None:
             raise DefaultBoardConfigurationError(
                 "design_system_not_found",
@@ -787,8 +995,11 @@ class DefaultBoardConfigurationService:
                 {"design_system_id": design_system_id, "status": design_system.status},
             )
 
-    async def _require(self, template_id: str) -> DefaultBoardConfiguration:
-        template = await self.db.get(DefaultBoardConfiguration, template_id)
+    async def _require(self, template_id: str) -> DefaultBoardTemplateRecord:
+        template = await get_default_board_configuration_store().get_template(
+            self.db,
+            template_id=template_id,
+        )
         if template is None:
             raise DefaultBoardConfigurationError(
                 "template_not_found",
@@ -799,21 +1010,22 @@ class DefaultBoardConfigurationService:
 
     def _audit(
         self,
-        template: DefaultBoardConfiguration,
+        template: DefaultBoardTemplateRecord,
         event_type: str,
         actor: str,
         payload: dict[str, Any] | None = None,
     ) -> None:
         """Append a GLOBAL template audit row (FR9) — reconstituible by query."""
-        self.db.add(
-            DefaultBoardConfigurationAudit(
+        get_default_board_configuration_store().add_audit(
+            self.db,
+            DefaultBoardTemplateAudit(
                 template_id=template.id,
                 template_version=template.version,
                 event_type=event_type,
                 actor_id=actor,
                 scope=template.scope,
                 payload=payload,
-            )
+            ),
         )
 
 

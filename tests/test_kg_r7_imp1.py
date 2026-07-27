@@ -23,14 +23,16 @@ from __future__ import annotations
 import uuid
 
 import pytest
+import pytest_asyncio
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.connectivity_guard import (
     CANONICAL_LEARNING_MIXED_DEFERRED_REASON,
     CANONICAL_LEARNING_WORKING_ONLY_REASON,
 )
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_edge_candidate,
     add_node_candidate,
     begin_consolidation,
@@ -60,14 +62,24 @@ from okto_pulse.core.kg.source_maturity import (
 )
 
 
-@pytest.fixture
-def board_id():
+@pytest_asyncio.fixture
+async def board_id(db_factory):
     """Per-test isolated board graph (overrides the shared conftest board) so
     accumulated nodes from one R7 test never leak the layer verdict of another."""
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
+    from sqlalchemy_test_models import Board
 
     bid = f"r7board-{uuid.uuid4().hex[:12]}"
     bootstrap_board_graph(bid)
+    async with db_factory() as db:
+        db.add(
+            Board(
+                id=bid,
+                name=f"R7 board {bid}",
+                owner_id="r7-test",
+            )
+        )
+        await db.commit()
     return bid
 
 
@@ -106,11 +118,11 @@ def _seed_node(
         attrs["graph_layer"] = graph_layer
     if maturity_status is not None:
         attrs["maturity_status"] = maturity_status
-    _apply_kuzu_node_create_with_timestamp(orch, node_type, node_id, attrs)
+    _apply_graph_node_create(orch, node_type, node_id, attrs)
 
 
 def _seed_bug(board_id: str, *, graph_layer: str) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     bug_id = f"r7bug_{uuid.uuid4().hex[:12]}"
@@ -121,8 +133,8 @@ def _seed_bug(board_id: str, *, graph_layer: str) -> str:
     )
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -146,15 +158,15 @@ def _seed_connected_learning(board_id: str, source_ref: str) -> None:
     it via add_edge_candidate (Layer Ownership Isolation). The realistic shape
     for a provenance-only Learning is therefore an existing connected node that
     a later consolidation dedups onto."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     learning_id = f"r7learn_{uuid.uuid4().hex[:12]}"
     entity_id = f"r7ent_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"r7seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
@@ -187,7 +199,7 @@ def _seed_connected_learning(board_id: str, source_ref: str) -> None:
 
 
 def _count_nodes(board_id: str, node_type: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -207,7 +219,7 @@ def _count_nodes(board_id: str, node_type: str, source_ref: str) -> int:
 
 
 def _count_canonical_bugs(board_id: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -228,7 +240,7 @@ def _count_canonical_bugs(board_id: str) -> int:
 def _count_validates(
     board_id: str, learning_source_ref: str, *, bug_id: str | None = None
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     cypher = (
         "MATCH (n:Learning)-[r:validates]->(b:Bug) "
@@ -250,6 +262,13 @@ def _count_validates(
             except Exception:
                 pass
     return 0
+
+
+async def _run_test_graph_io(operation, *, task_name: str):
+    return await run_blocking_graph_io(
+        operation,
+        task_name=f"tests.r7_imp1.{task_name}",
+    )
 
 
 async def _begin_bug_derived_learning(
@@ -317,7 +336,10 @@ async def _attempt_working_only_commit(
 ):
     """Seed a WORKING Bug, build a bug-derived canonical Learning that validates
     it, attempt commit, and return ``(error, source_ref, bug_id)``."""
-    bug_id = _seed_bug(board_id, graph_layer=GRAPH_LAYER_WORKING)
+    bug_id = await _run_test_graph_io(
+        lambda: _seed_bug(board_id, graph_layer=GRAPH_LAYER_WORKING),
+        task_name="seed-working-bug",
+    )
     source_ref = f"card:bug:{bug_id}:learning:{uuid.uuid4()}"
     begin = await _begin_bug_derived_learning(
         board_id,
@@ -369,7 +391,10 @@ async def test_ts1_working_only_bug_holds_learning_before_mutation(
     assert any(GRAPH_LAYER_WORKING in ep for ep in hold["observed_endpoints"])
 
     # No mutation: no canonical Learning node materialized.
-    assert _count_nodes(board_id, "Learning", source_ref) == 0
+    assert await _run_test_graph_io(
+        lambda: _count_nodes(board_id, "Learning", source_ref),
+        task_name="count-held-learning",
+    ) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -381,8 +406,14 @@ async def test_ts1_working_only_bug_holds_learning_before_mutation(
 async def test_ts2_mixed_evidence_accepts_canonical_defers_working(
     board_id, agent_id, db_factory
 ):
-    canonical_bug = _seed_bug(board_id, graph_layer=GRAPH_LAYER_CANONICAL)
-    working_bug = _seed_bug(board_id, graph_layer=GRAPH_LAYER_WORKING)
+    canonical_bug = await _run_test_graph_io(
+        lambda: _seed_bug(board_id, graph_layer=GRAPH_LAYER_CANONICAL),
+        task_name="seed-canonical-bug",
+    )
+    working_bug = await _run_test_graph_io(
+        lambda: _seed_bug(board_id, graph_layer=GRAPH_LAYER_WORKING),
+        task_name="seed-mixed-working-bug",
+    )
     source_ref = f"card:bug:{canonical_bug}:learning:{uuid.uuid4()}"
     begin = await _begin_bug_derived_learning(
         board_id,
@@ -402,9 +433,15 @@ async def test_ts2_mixed_evidence_accepts_canonical_defers_working(
 
     # Accepted because >=1 canonical Bug validates edge exists.
     assert commit.connectivity["passed"] is True
-    assert _count_nodes(board_id, "Learning", source_ref) == 1
+    assert await _run_test_graph_io(
+        lambda: _count_nodes(board_id, "Learning", source_ref),
+        task_name="count-mixed-learning",
+    ) == 1
     # Completeness is satisfied by the CANONICAL Bug.
-    assert _count_validates(board_id, source_ref, bug_id=canonical_bug) == 1
+    assert await _run_test_graph_io(
+        lambda: _count_validates(board_id, source_ref, bug_id=canonical_bug),
+        task_name="count-canonical-validates",
+    ) == 1
     # The working Bug edge is DEFERRED (surfaced as a non-blocking advisory),
     # never counted as canonical completeness.
     advisories = commit.connectivity.get("advisories", [])
@@ -430,7 +467,10 @@ async def test_ts4_provenance_only_learning_not_bug_derived_passes(
     board_id, agent_id, db_factory
 ):
     source_ref = f"learning:provenance:{uuid.uuid4()}"  # NOT bug-derived
-    _seed_connected_learning(board_id, source_ref)
+    await _run_test_graph_io(
+        lambda: _seed_connected_learning(board_id, source_ref),
+        task_name="seed-connected-learning",
+    )
 
     async with db_factory() as db:
         begin = await begin_consolidation(
@@ -449,7 +489,9 @@ async def test_ts4_provenance_only_learning_not_bug_derived_passes(
             candidate=NodeCandidate(
                 candidate_id="r7_ts4_learning",
                 node_type=KGNodeType.LEARNING,
-                title="R7 provenance learning",
+                # Keep identity stable so this R7 test does not also trigger the
+                # MKG-D identity-change supersedence trail.
+                title="R7 seed Learning",
                 source_artifact_ref=source_ref,
                 source_confidence=0.95,
             ),
@@ -473,7 +515,10 @@ async def test_ts4_provenance_only_learning_not_bug_derived_passes(
     # R7 left the non-bug-derived provenance path untouched: the existing
     # belongs_to -> Entity satisfies completeness; no canonical Bug required.
     assert commit.connectivity["passed"] is True
-    assert _count_nodes(board_id, "Learning", source_ref) == 1
+    assert await _run_test_graph_io(
+        lambda: _count_nodes(board_id, "Learning", source_ref),
+        task_name="count-provenance-learning",
+    ) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +530,10 @@ async def test_ts4_provenance_only_learning_not_bug_derived_passes(
 async def test_ts10_working_only_path_fabricates_nothing(
     board_id, agent_id, db_factory
 ):
-    canonical_bugs_before = _count_canonical_bugs(board_id)
+    canonical_bugs_before = await _run_test_graph_io(
+        lambda: _count_canonical_bugs(board_id),
+        task_name="count-canonical-bugs-before",
+    )
 
     error, source_ref, bug_id = await _attempt_working_only_commit(
         board_id, agent_id, db_factory, candidate_id="r7_ts10_learning"
@@ -496,11 +544,20 @@ async def test_ts10_working_only_path_fabricates_nothing(
     )
 
     # No canonical Bug fabricated to satisfy the guard.
-    assert _count_canonical_bugs(board_id) == canonical_bugs_before
+    assert await _run_test_graph_io(
+        lambda: _count_canonical_bugs(board_id),
+        task_name="count-canonical-bugs-after",
+    ) == canonical_bugs_before
     # No validates edge fabricated from the (uncommitted) Learning.
-    assert _count_validates(board_id, source_ref) == 0
+    assert await _run_test_graph_io(
+        lambda: _count_validates(board_id, source_ref),
+        task_name="count-fabricated-validates",
+    ) == 0
     # The seeded Bug stayed working — never promoted to canonical.
-    assert _count_canonical_bugs(board_id) == canonical_bugs_before
+    assert await _run_test_graph_io(
+        lambda: _count_canonical_bugs(board_id),
+        task_name="count-canonical-bugs-final",
+    ) == canonical_bugs_before
 
 
 # ---------------------------------------------------------------------------
@@ -535,12 +592,17 @@ async def test_working_only_hold_persists_real_payload_to_store(
     assert item.artifact_type == "bug"
 
 
-def test_mcp_commit_dispatch_persists_hold(monkeypatch, tmp_path):
+def test_mcp_commit_dispatch_persists_hold(tmp_path):
     """The MCP commit tool's catch hook routes an R7 hold KGPrimitiveError into
     the cognitive pending ledger (never CanonicalDebt/DLQ)."""
     from okto_pulse.core.mcp import kg_tools
+    from kg_registry_testing import configure_test_kg_registry
+    from okto_pulse.community.adapters.rebuild_audit_storage import (
+        CommunityFileSystemRebuildAuditArtifactStore,
+    )
 
-    monkeypatch.setenv("OKTO_PULSE_REBUILD_BASE_DIR", str(tmp_path))
+    artifact_store = CommunityFileSystemRebuildAuditArtifactStore(tmp_path)
+    configure_test_kg_registry(rebuild_audit_artifact_store=artifact_store)
     source_ref = f"card:bug:{uuid.uuid4().hex[:10]}:learning:{uuid.uuid4()}"
     error = KGPrimitiveError(
         "kg_node_connectivity_violation",
@@ -564,7 +626,7 @@ def test_mcp_commit_dispatch_persists_hold(monkeypatch, tmp_path):
         board_id="board-r7", error=error, actor_id="claude-coder"
     )
 
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(artifact_store=artifact_store)
     gen = store.latest_generation("board-r7")
     assert gen is not None
     items = store.list_items("board-r7", gen)

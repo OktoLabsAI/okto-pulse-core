@@ -14,8 +14,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from okto_pulse.core.api.analytics import _spec_detail, board_spec_analytics
-from okto_pulse.core.models.db import Board, Card, CardStatus, CardType, Spec, SpecStatus
+from okto_pulse.core.services.analytics_service import _spec_detail
+from okto_pulse.core.services.analytics_service import compute_spec_analytics
+from sqlalchemy_test_models import Board, Card, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.services.analytics_service import (
     _coverage_row_for_spec,
     spec_coverage_summary,
@@ -82,7 +83,7 @@ async def test_spec_detail_and_modern_expose_decisions_full_coverage(db_factory)
     )
     async with db_factory() as db:
         legacy = await _spec_detail(db, board_id, spec_id)
-        modern = await board_spec_analytics(board_id, spec_id, user_id=OWNER_ID, db=db)
+        modern = await compute_spec_analytics(db, board_id, spec_id)
 
     for payload in (legacy, modern):
         assert len(payload["decisions"]) == 2
@@ -106,7 +107,7 @@ async def test_spec_detail_and_modern_list_uncovered_decision(db_factory):
     )
     async with db_factory() as db:
         legacy = await _spec_detail(db, board_id, spec_id)
-        modern = await board_spec_analytics(board_id, spec_id, user_id=OWNER_ID, db=db)
+        modern = await compute_spec_analytics(db, board_id, spec_id)
 
     for payload in (legacy, modern):
         assert len(payload["decisions"]) == 2

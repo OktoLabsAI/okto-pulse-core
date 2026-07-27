@@ -12,15 +12,63 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from okto_pulse.core.infra.config import CoreSettings
 from okto_pulse.core.telemetry import failure_state as fs
 from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION
 from okto_pulse.core.telemetry.service import TelemetryService
 from okto_pulse.core.telemetry.settings import save_state
 
+
+class _NullStore:
+    """Minimal in-test TelemetryEventStore (R10-E Pass 2: the concrete core store
+    was removed; ``summary()`` reads failure_state from state, not the store)."""
+
+    def append_event(self, e): ...
+    def append_sent(self, r, *, failed=False): ...
+    def append_snapshot(self, r): ...
+    def confirmed_event_ids(self):
+        return set()
+
+    def iter_events(self, *, since=None):
+        return ()
+
+    def summarize(self, *, window_days=30):
+        return {}
+
+    def prune_old(self, *, now=None):
+        return {}
+
+    def export_events(self, output_path=None): ...
+    def purge_events(self):
+        return {}
+
+
+@pytest.fixture(autouse=True)
+def _register_fake_store():
+    """R10-E Pass 2: the core registries are fail-closed (no concrete fallback), so
+    a TelemetryService round-trip needs a registered store factory."""
+    from okto_pulse.core.telemetry.event_store_registry import (
+        register_telemetry_event_store_factory,
+        reset_telemetry_event_store_factory_for_tests,
+    )
+
+    reset_telemetry_event_store_factory_for_tests()
+    register_telemetry_event_store_factory(lambda base, ret: _NullStore())
+    yield
+    reset_telemetry_event_store_factory_for_tests()
+
+
 _SECRET_TOKEN = "SECRET-INSTALL-TOKEN"
 _SECRET_HASH = "SECRET-TOKEN-HASH"
-_AC_FIELDS = ("status", "reason_code", "last_success_at", "last_failure_at", "next_retry_at")
+_AC_FIELDS = (
+    "status",
+    "reason_code",
+    "last_success_at",
+    "last_failure_at",
+    "next_retry_at",
+)
 
 
 def _settings(tmp_path: Path) -> CoreSettings:

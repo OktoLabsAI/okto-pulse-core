@@ -37,6 +37,22 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     LockOwnerProbe,
 )
 from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
+from coordination_fakes import FakeWriteLockPort
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    RealBoardGraphLifecycleForTests,
+    RealBoardGraphTransactionForTests,
+    configure_test_kg_registry,
+)
+
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes):
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+        graph_lifecycle=RealBoardGraphLifecycleForTests(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +68,7 @@ from okto_pulse.core.kg.single_writer_lock import KGSingleWriterLock
 #   app.dependency_overrides[require_user] = _fake_user
 # ---------------------------------------------------------------------------
 
+
 def _make_rebuild_test_app(board_id: str = "b-test"):
     """Return a FastAPI app with get_db overridden to satisfy FR10/FR9 gates.
 
@@ -62,43 +79,28 @@ def _make_rebuild_test_app(board_id: str = "b-test"):
 
     from fastapi import FastAPI
 
-    from okto_pulse.core.api.router import api_router
-    from okto_pulse.core.infra.database import get_db
+    from okto_pulse.community.api.deps import get_unit_of_work
+    from okto_pulse.community.api.router import api_router
 
     _fake_board = SimpleNamespace(id=board_id, owner_id="user-test")
 
-    class _FakeResult:
-        def scalar_one_or_none(self):
-            # ShareService.get_user_permission queries BoardShare rows;
-            # return a fake share with "owner" permission so the 403 gate passes.
-            return SimpleNamespace(permission="owner")
+    class _Boards:
+        async def get(self, candidate_board_id):
+            return _fake_board if candidate_board_id == board_id else None
 
-    class _FakeSession:
-        async def __aenter__(self):
-            return self
+    class _Shares:
+        async def get_user_permission(self, candidate_board_id, _user_id):
+            return "editor" if candidate_board_id == board_id else None
 
-        async def __aexit__(self, *args):
-            pass
-
-        async def execute(self, stmt):
-            return _FakeResult()
-
-        async def get(self, model_class, pk):
-            # _require_board_access + ShareService._get_board call db.get(Board, id).
-            return _fake_board
-
-        async def commit(self):
-            pass
-
-        async def rollback(self):
-            pass
-
-    async def _fake_db():
-        yield _FakeSession()
+    async def _fake_uow():
+        yield SimpleNamespace(
+            boards=_Boards(),
+            services=SimpleNamespace(shares=_Shares()),
+        )
 
     app = FastAPI()
     app.include_router(api_router)
-    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return app
 
 
@@ -128,10 +130,18 @@ def _build_service(
     source_rows=None,
     lifecycle_step_ok=True,
     lifecycle_step_failed_step="flush",
-) -> tuple[KGRebuildService, KGRebuildSourceManifest, RebuildConfirmationStore, KGSingleWriterLock]:
+) -> tuple[
+    KGRebuildService,
+    KGRebuildSourceManifest,
+    RebuildConfirmationStore,
+    KGSingleWriterLock,
+]:
     """Wire a fully-functional rebuild service against tmp storage."""
     rows = source_rows if source_rows is not None else [_row()]
-    lock = KGSingleWriterLock(base_dir=tmp_path / "locks")
+    lock = KGSingleWriterLock(
+        base_dir=tmp_path / "locks",
+        write_lock_port=FakeWriteLockPort(),
+    )
     enumerator = RebuildSourceEnumerator(source_store=lambda _b: list(rows))
     manifest_store = KGRebuildSourceManifest(base_dir=tmp_path)
     confirmation_store = RebuildConfirmationStore(base_dir=tmp_path)
@@ -150,9 +160,7 @@ def _build_service(
     safe_lifecycle = KGSafeWriteLifecycle(
         step_adapter=_step,
         owner_probe=LockOwnerProbe(is_active_owner=_owner_probe),
-        health_probe=HealthProbe(
-            classify=lambda b, g, status, step: "at_risk"
-        ),
+        health_probe=HealthProbe(classify=lambda b, g, status, step: "at_risk"),
     )
 
     service = KGRebuildService(
@@ -181,7 +189,9 @@ def _issue_confirmation(
     """Mint a fresh manifest + confirmation; returns the args /run needs."""
     source_set = enumerator.enumerate(board_id=board_id)
     preflight_hash = "a" * 64
-    manifest = manifest_store.build(source_set=source_set, preflight_hash=preflight_hash)
+    manifest = manifest_store.build(
+        source_set=source_set, preflight_hash=preflight_hash
+    )
     token = confirmation_store.issue(
         board_id=board_id,
         actor_id=actor_id,
@@ -240,10 +250,20 @@ def test_audit_trail_has_TR12_required_fields(tmp_path: Path):
     # NOT be persisted raw — replaced by confirmation_ref (SHA256
     # fingerprint).
     for field in (
-        "run_id", "outcome", "reason", "board_id", "actor_id", "operation",
-        "confirmation_ref", "manifest_ref", "user_reason",
-        "started_at", "finished_at", "affected_files",
-        "previous_kg_generation_id", "current_kg_generation_id",
+        "run_id",
+        "outcome",
+        "reason",
+        "board_id",
+        "actor_id",
+        "operation",
+        "confirmation_ref",
+        "manifest_ref",
+        "user_reason",
+        "started_at",
+        "finished_at",
+        "affected_files",
+        "previous_kg_generation_id",
+        "current_kg_generation_id",
     ):
         assert field in body, f"audit missing TR12 field {field}"
     assert "confirmation_id" not in body, (
@@ -312,22 +332,25 @@ def test_run_aborts_on_manifest_drift(tmp_path: Path):
     """Source set changed between preflight and run → MANIFEST_DRIFT."""
     initial_rows = [_row()]
     service, manifest_store, confirmation_store, lock = _build_service(
-        tmp_path, source_rows=initial_rows,
+        tmp_path,
+        source_rows=initial_rows,
     )
     enumerator = service.source_enumerator
     confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
         confirmation_store, manifest_store, enumerator
     )
     # Mutate the source store — simulates spec added between preflight and run.
-    initial_rows.append({
-        "artifact_type": "spec",
-        "id": "id-2",
-        "source_ref": "ref:id-2",
-        "source_version": "v1",
-        "content_hash": "h2",
-        "created_at": "2026-05-02T00:00:00Z",
-        "status": "validated",
-    })
+    initial_rows.append(
+        {
+            "artifact_type": "spec",
+            "id": "id-2",
+            "source_ref": "ref:id-2",
+            "source_version": "v1",
+            "content_hash": "h2",
+            "created_at": "2026-05-02T00:00:00Z",
+            "status": "validated",
+        }
+    )
     result = service.run(
         confirmation_id=confirmation_id,
         board_id="b1",
@@ -351,7 +374,9 @@ def test_run_returns_lock_contention_when_admin_lane_blocked(tmp_path: Path):
     enumerator = service.source_enumerator
     # Acquire the lock with another owner first.
     pre = lock.acquire(
-        board_id="b1", operation="other", owner_id="other-actor",
+        board_id="b1",
+        operation="other",
+        owner_id="other-actor",
         ttl_seconds=60,
     )
     assert pre.acquired is True
@@ -384,7 +409,8 @@ def test_run_returns_rebuild_failed_when_step_raises(tmp_path: Path):
         raise RuntimeError("structural rebuild blew up")
 
     service, manifest_store, confirmation_store, lock = _build_service(
-        tmp_path, step_adapter=boom,
+        tmp_path,
+        step_adapter=boom,
     )
     enumerator = service.source_enumerator
     confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
@@ -410,7 +436,8 @@ def test_run_returns_failed_when_step_returns_ok_false(tmp_path: Path):
         return RebuildStepResult(ok=False, detail="step refused")
 
     service, manifest_store, confirmation_store, lock = _build_service(
-        tmp_path, step_adapter=fail,
+        tmp_path,
+        step_adapter=fail,
     )
     enumerator = service.source_enumerator
     confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
@@ -434,7 +461,8 @@ def test_run_returns_failed_when_safe_lifecycle_step_fails(tmp_path: Path):
     """Step OK but the lifecycle's flush step returns False → FAILED.
     Lock still released; lifecycle is the boundary KG-01.3 enforces."""
     service, manifest_store, confirmation_store, lock = _build_service(
-        tmp_path, lifecycle_step_ok=False,
+        tmp_path,
+        lifecycle_step_ok=False,
     )
     enumerator = service.source_enumerator
     confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
@@ -464,13 +492,15 @@ def test_run_acquires_lock_with_admin_lane_true(tmp_path: Path):
     def step(req: RebuildStepInput) -> RebuildStepResult:
         # Snapshot lock state during the step.
         from okto_pulse.core.kg.rebuild_service import logger  # noqa
+
         observed["manifest_during_step"] = service.single_writer_lock.inspect(
             board_id=req.board_id
         )
         return RebuildStepResult(ok=True)
 
     service, manifest_store, confirmation_store, lock = _build_service(
-        tmp_path, step_adapter=step,
+        tmp_path,
+        step_adapter=step,
     )
     enumerator = service.source_enumerator
     confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
@@ -491,6 +521,96 @@ def test_run_acquires_lock_with_admin_lane_true(tmp_path: Path):
     assert captured.operation == "kg02_rebuild:rebuild"
 
 
+def test_run_forwards_cancellation_probe_and_lease_renewal(tmp_path: Path):
+    observed = {}
+
+    def cancel_requested() -> bool:
+        return False
+
+    def step(req: RebuildStepInput) -> RebuildStepResult:
+        observed["cancel_requested"] = req.cancel_requested
+        observed["lease_renewed"] = req.lease_renew()
+        return RebuildStepResult(ok=True)
+
+    service, manifest_store, confirmation_store, lock = _build_service(
+        tmp_path,
+        step_adapter=step,
+    )
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="cooperative controls",
+        cancel_requested=cancel_requested,
+    )
+
+    assert result.outcome == RebuildOutcome.COMPLETED.value
+    assert observed["cancel_requested"] is cancel_requested
+    assert observed["lease_renewed"] is True
+    assert lock.inspect(board_id="b1") is None
+
+
+def test_run_renews_lease_while_blocking_step_executes(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from dataclasses import replace
+    from threading import Event, Lock
+
+    heartbeat_observed = Event()
+    count_lock = Lock()
+    renew_count = 0
+
+    def step(_req: RebuildStepInput) -> RebuildStepResult:
+        assert heartbeat_observed.wait(1.0)
+        return RebuildStepResult(ok=True)
+
+    service, manifest_store, confirmation_store, lock = _build_service(
+        tmp_path,
+        step_adapter=step,
+    )
+    original_renew = lock.renew
+
+    def renew_spy(**kwargs) -> bool:  # noqa: ANN003
+        nonlocal renew_count
+        renewed = original_renew(**kwargs)
+        with count_lock:
+            renew_count += 1
+            heartbeat_observed.set()
+        return renewed
+
+    monkeypatch.setattr(lock, "renew", renew_spy)
+    service = replace(service, lease_heartbeat_interval_seconds=0.01)
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="heartbeat during blocking step",
+    )
+
+    assert result.outcome == RebuildOutcome.COMPLETED.value
+    assert renew_count >= 1
+    assert lock.inspect(board_id="b1") is None
+
+
 # --- OR or_37cebd03 counter labels ------------------------------------------
 
 
@@ -507,15 +627,21 @@ def test_counter_bumps_per_outcome(tmp_path: Path):
     )
     service.run(
         confirmation_id=confirmation_id,
-        board_id="b1", actor_id="user-1", operation="rebuild",
-        preflight_hash=preflight_hash, manifest_ref=manifest_ref,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
         reason="r",
     )
     # Invalid confirmation.
     service.run(
         confirmation_id="conf_nope",
-        board_id="b1", actor_id="user-1", operation="rebuild",
-        preflight_hash="a" * 64, manifest_ref="rebuild_manifest_x",
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash="a" * 64,
+        manifest_ref="rebuild_manifest_x",
         reason="r",
     )
     samples = get_rebuild_run_samples()
@@ -571,8 +697,11 @@ def test_run_unsupported_operation_does_not_consume_confirmation(tmp_path: Path)
     # Try with wrong operation first.
     bad = service.run(
         confirmation_id=confirmation_id,
-        board_id="b1", actor_id="user-1", operation="quarantine",
-        preflight_hash=preflight_hash, manifest_ref=manifest_ref,
+        board_id="b1",
+        actor_id="user-1",
+        operation="quarantine",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
         reason="bad-op",
     )
     assert bad.outcome == RebuildOutcome.UNSUPPORTED_OPERATION.value
@@ -580,8 +709,11 @@ def test_run_unsupported_operation_does_not_consume_confirmation(tmp_path: Path)
     # Token still usable for the supported operation.
     ok = service.run(
         confirmation_id=confirmation_id,
-        board_id="b1", actor_id="user-1", operation="rebuild",
-        preflight_hash=preflight_hash, manifest_ref=manifest_ref,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
         reason="retry-correct",
     )
     assert ok.outcome == RebuildOutcome.COMPLETED.value
@@ -597,16 +729,24 @@ def test_confirm_endpoint_rejects_non_rebuild_operations(
     """val_dfdff0b8: /confirm refuses to issue a token for any
     canonical operation other than 'rebuild' until KG-02.4 wires the
     full reset/quarantine/promote/rollback/reindex paths."""
-    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
+    import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.auth_deps import require_user
 
-    async def _fake_health(board_id, db):
-        return {"graph_state": "healthy", "metric_status": "available",
-                "current_kg_generation_id": None}
+    async def _fake_health(board_id, db, scheduler_control=None):
+        return {
+            "graph_state": "healthy",
+            "metric_status": "available",
+            "current_kg_generation_id": None,
+        }
 
     monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
+    monkeypatch.setattr(
+        kg_rebuild_mod,
+        "_build_source_store",
+        lambda: lambda _board_id: [_row()],
+    )
 
     app = _make_rebuild_test_app(board_id="b-reset")
 
@@ -639,62 +779,84 @@ def test_confirm_endpoint_rejects_non_rebuild_operations(
     assert operation in detail["reason"]
 
 
-def test_post_rebuild_run_endpoint_is_registered_and_callable(tmp_path: Path, monkeypatch):
-    import okto_pulse.core.api.kg_rebuild as kg_rebuild_mod
+def test_post_rebuild_run_endpoint_is_registered_and_callable(
+    tmp_path: Path, monkeypatch
+):
+    import okto_pulse.community.api.kg_rebuild as kg_rebuild_mod
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.router import api_router
-    from okto_pulse.core.infra.auth import require_user
+    from okto_pulse.community.api.auth_deps import require_user
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
-    paths = {route.path for route in api_router.routes}
-    assert "/api/v1/kg/rebuild/run" in paths
-
-    async def _fake_health(board_id, db):
-        return {"graph_state": "healthy", "metric_status": "available",
-                "current_kg_generation_id": None}
+    async def _fake_health(board_id, db, scheduler_control=None):
+        return {
+            "graph_state": "healthy",
+            "metric_status": "available",
+            "current_kg_generation_id": None,
+        }
 
     monkeypatch.setattr(kg_rebuild_mod, "get_kg_health", _fake_health)
+    monkeypatch.setattr(
+        kg_rebuild_mod,
+        "_build_source_store",
+        lambda: lambda _board_id: [_row()],
+    )
 
     app = _make_rebuild_test_app(board_id="b-endpoint")
+    paths = set(app.openapi()["paths"])
+    assert "/api/v1/kg/rebuild/run" in paths
 
     async def _fake_user():
         return "user-run-test"
 
     app.dependency_overrides[require_user] = _fake_user
 
+    registry = get_kg_registry()
+    original_step_adapter = registry.graph_lifecycle.apply_step
+
+    def _missing_real_lifecycle_adapter(board_id: str, graph_type: str, step: str):
+        return LifecycleStepResult(
+            ok=False, detail="real lifecycle adapter unavailable"
+        )
+
+    registry.graph_lifecycle.apply_step = _missing_real_lifecycle_adapter
+
     # Full lifecycle via the real endpoints: preflight → confirm → run.
-    with TestClient(app) as client:
-        pre = client.post(
-            "/api/v1/kg/rebuild/preflight",
-            params={"board_id": "b-endpoint"},
-        )
-        assert pre.status_code == 200
-        manifest_ref = pre.json()["manifest_ref"]
-        preflight_hash = pre.json()["preflight_hash"]
+    try:
+        with TestClient(app) as client:
+            pre = client.post(
+                "/api/v1/kg/rebuild/preflight",
+                params={"board_id": "b-endpoint"},
+            )
+            assert pre.status_code == 200
+            manifest_ref = pre.json()["manifest_ref"]
+            preflight_hash = pre.json()["preflight_hash"]
 
-        conf = client.post(
-            "/api/v1/kg/rebuild/confirm",
-            json={
-                "board_id": "b-endpoint",
-                "operation": "rebuild",
-                "preflight_hash": preflight_hash,
-                "manifest_ref": manifest_ref,
-            },
-        )
-        assert conf.status_code == 200
-        confirmation_id = conf.json()["confirmation_id"]
+            conf = client.post(
+                "/api/v1/kg/rebuild/confirm",
+                json={
+                    "board_id": "b-endpoint",
+                    "operation": "rebuild",
+                    "preflight_hash": preflight_hash,
+                    "manifest_ref": manifest_ref,
+                },
+            )
+            assert conf.status_code == 200
+            confirmation_id = conf.json()["confirmation_id"]
 
-        run = client.post(
-            "/api/v1/kg/rebuild/run",
-            json={
-                "confirmation_id": confirmation_id,
-                "board_id": "b-endpoint",
-                "operation": "rebuild",
-                "preflight_hash": preflight_hash,
-                "manifest_ref": manifest_ref,
-                "reason": "endpoint integration smoke",
-            },
-        )
+            run = client.post(
+                "/api/v1/kg/rebuild/run",
+                json={
+                    "confirmation_id": confirmation_id,
+                    "board_id": "b-endpoint",
+                    "operation": "rebuild",
+                    "preflight_hash": preflight_hash,
+                    "manifest_ref": manifest_ref,
+                    "reason": "endpoint integration smoke",
+                },
+            )
+    finally:
+        registry.graph_lifecycle.apply_step = original_step_adapter
     assert run.status_code == 200, run.text
     body = run.json()
     # The endpoint smoke test does not start the consolidation worker nor seed
@@ -757,7 +919,15 @@ def _build_service_with_kg024(
         event_emitter=_emit,
         orphan_scan_provider=orphan_scan_provider,
     )
-    return enriched, manifest_store, confirmation_store, lock, generation_repo, rep_store, event_log
+    return (
+        enriched,
+        manifest_store,
+        confirmation_store,
+        lock,
+        generation_repo,
+        rep_store,
+        event_log,
+    )
 
 
 def test_completed_run_persists_report_and_promotes_generation(tmp_path: Path):
@@ -812,12 +982,7 @@ def test_completed_run_persists_report_and_promotes_generation(tmp_path: Path):
     # Pointer advanced.
     assert gen_repo.get_current("b1") == result.current_kg_generation_id
     # Counters bumped.
-    assert (
-        get_persist_count(
-            "b1", outcome=ReportPersistOutcome.STORED.value
-        )
-        == 1
-    )
+    assert get_persist_count("b1", outcome=ReportPersistOutcome.STORED.value) == 1
     assert get_report_count("b1", event="created") == 1
     assert (
         get_terminal_count(
@@ -843,6 +1008,72 @@ def test_completed_run_persists_report_and_promotes_generation(tmp_path: Path):
     assert event["report_ref"] == result.report_ref
     assert event["status"] == "completed"
     assert event["triggered_by"] == "user-1"
+
+
+def test_terminal_rebuild_effects_remain_under_board_writer_fence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    def _step(req):
+        return RebuildStepResult(
+            ok=True,
+            current_kg_generation_id=req.candidate_kg_generation_id,
+            structural_hash="c" * 64,
+            source_hash="d" * 64,
+            counts={"nodes": 1},
+        )
+
+    (
+        service,
+        manifest_store,
+        confirmation_store,
+        lock,
+        _generation_repo,
+        _report_store,
+        _events,
+    ) = _build_service_with_kg024(tmp_path, step_adapter=_step)
+    observed: list[str] = []
+
+    def _assert_fenced(label: str) -> None:
+        assert lock.inspect(board_id="b1") is not None
+        observed.append(label)
+
+    service = replace(
+        service,
+        event_emitter=lambda _payload: _assert_fenced("event"),
+    )
+    original_emit = KGRebuildService._emit_audit_and_counter
+
+    def _guarded_emit(self, **kwargs):
+        _assert_fenced("audit")
+        return original_emit(self, **kwargs)
+
+    monkeypatch.setattr(
+        KGRebuildService,
+        "_emit_audit_and_counter",
+        _guarded_emit,
+    )
+    confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
+        confirmation_store,
+        manifest_store,
+        service.source_enumerator,
+    )
+
+    result = service.run(
+        confirmation_id=confirmation_id,
+        board_id="b1",
+        actor_id="user-1",
+        operation="rebuild",
+        preflight_hash=preflight_hash,
+        manifest_ref=manifest_ref,
+        reason="fence terminal effects",
+    )
+
+    assert result.event_emitted is True
+    assert observed == ["event", "audit"]
+    assert lock.inspect(board_id="b1") is None
 
 
 def test_completed_run_with_remaining_orphans_blocks_clean_success(tmp_path: Path):
@@ -956,9 +1187,9 @@ def test_completed_run_after_backfill_publishes_zero_orphan_validation(
         OrphanBackfillReconciler,
         OrphanNodeScanner,
     )
-    from okto_pulse.core.kg.primitives import _apply_kuzu_node_create_with_timestamp
+    from okto_pulse.core.kg.primitives import _apply_graph_node_create
     from okto_pulse.core.kg.rebuild_report import get_terminal_count
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     board_id = f"zo02e2e{uuid.uuid4().hex[:12]}"
@@ -970,7 +1201,7 @@ def test_completed_run_after_backfill_publishes_zero_orphan_validation(
     learning_id = "learning_zero_orphan"
 
     def _seed_node(kconn, orch, node_type: str, node_id: str, source_ref: str) -> None:
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch,
             node_type,
             node_id,
@@ -998,8 +1229,7 @@ def test_completed_run_after_backfill_publishes_zero_orphan_validation(
 
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
             session_id="seed_zero_orphan_e2e",
             board_id=board_id,
         )
@@ -1154,9 +1384,7 @@ def test_report_persist_failure_blocks_promotion_and_preserves_previous(
         gen_repo,
         _rep,
         events,
-    ) = _build_service_with_kg024(
-        tmp_path, step_adapter=_step, report_store=broken
-    )
+    ) = _build_service_with_kg024(tmp_path, step_adapter=_step, report_store=broken)
 
     confirmation_id, manifest_ref, preflight_hash = _issue_confirmation(
         confirmation_store, manifest_store, service.source_enumerator
@@ -1221,10 +1449,7 @@ def test_sensitive_payload_rejection_blocks_promotion(tmp_path: Path):
     )
 
     assert result.outcome == RebuildOutcome.REPORT_PERSIST_FAILED.value
-    assert (
-        result.reason
-        == RebuildBlockReason.REPORT_PERSIST_SENSITIVE_REJECTED.value
-    )
+    assert result.reason == RebuildBlockReason.REPORT_PERSIST_SENSITIVE_REJECTED.value
     assert result.publishable_status == "report_persist_failed"
     assert result.operator_action == "redact_payload_and_retry"
     assert gen_repo.get_current("b1") is None

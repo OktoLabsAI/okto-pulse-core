@@ -13,10 +13,45 @@ Test scenarios mapeados:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
+
+from coordination_fakes import FakeLeaseProvider, FakeWriteLockPort
+from okto_pulse.core.ports.coordination import (
+    get_lease_provider,
+    register_coordination_providers,
+    reset_coordination_providers_for_tests,
+)
 
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _coordination_ports():
+    reset_coordination_providers_for_tests()
+    register_coordination_providers(
+        lease_provider=FakeLeaseProvider(),
+        write_lock_port=FakeWriteLockPort(),
+    )
+    yield
+    reset_coordination_providers_for_tests()
+
+
+def _request_without_scheduler():
+    from starlette.requests import Request
+
+    app = SimpleNamespace(state=SimpleNamespace(runtime_composition=None))
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/kg/tick/run-now",
+            "headers": [],
+            "app": app,
+        }
+    )
 
 
 async def test_ts1_get_settings_returns_three_new_defaults():
@@ -105,7 +140,7 @@ async def test_ts3_put_outside_range_rejected_by_pydantic():
     no service. Verificamos diretamente via Pydantic ValidationError.
     """
     from pydantic import ValidationError
-    from okto_pulse.core.api.settings import RuntimeSettingsPayload
+    from okto_pulse.community.api.settings import RuntimeSettingsPayload
 
     with pytest.raises(ValidationError) as exc_info:
         RuntimeSettingsPayload(kg_decay_tick_interval_minutes=4)
@@ -117,7 +152,7 @@ async def test_ts3_put_outside_range_rejected_by_pydantic():
 
 
 async def test_ts6_reset_last_recomputed_at_handles_empty_scope():
-    """TS6 — `_reset_last_recomputed_at` não quebra quando o board-alvo não
+    """TS6 — `reset_last_recomputed_at` não quebra quando o board-alvo não
     tem grafo local. Exercita o caminho de iteração + try/except por board
     sem depender do estado global acumulado pela suíte monolítica.
 
@@ -125,21 +160,21 @@ async def test_ts6_reset_last_recomputed_at_handles_empty_scope():
     Kuzu fixture com nodes pré-existentes — deferred para integration
     test em sessão futura.
     """
-    from okto_pulse.core.api.kg_tick import _reset_last_recomputed_at
+    from okto_pulse.core.application.kg_tick import reset_last_recomputed_at
 
-    # Per-board scope com board inexistente → tenta open_board_connection
-    # que vai falhar gracefully (try/except interno).
-    await _reset_last_recomputed_at(board_id="board-does-not-exist-uuid")
+    # Per-board scope com board inexistente tenta o GraphTransaction composto,
+    # que falha de forma best-effort no bloco interno.
+    await reset_last_recomputed_at(board_id="board-does-not-exist-uuid")
 
 
 async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior(monkeypatch):
     """TS5 — MCP tool gemellar `okto_pulse_kg_tick_run_now` reusa o
-    mesmo `_dispatch_manual_tick` do endpoint REST. Não temos harness
+    mesmo `dispatch_manual_tick` da aplicação usado pelo endpoint REST. Não temos harness
     FastMCP completa em pytest, então validamos a sub-função compartilhada
     diretamente: ela deve aceitar tick_id + board_id + force_full_rebuild
     e completar sem exception (best-effort background).
     """
-    from okto_pulse.core.api import kg_tick
+    from okto_pulse.core.application import kg_tick
     from okto_pulse.core.events.handlers import kg_decay_tick
 
     published: list[dict] = []
@@ -153,68 +188,81 @@ async def test_ts5_mcp_dispatch_helper_replicates_endpoint_behavior(monkeypatch)
         kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
     )
 
-    await kg_tick._dispatch_manual_tick(
+    await kg_tick.dispatch_manual_tick(
         tick_id="ts5-test-uuid",
         board_id="board-does-not-exist-uuid",
         force_full_rebuild=False,
-        session=object(),
+        relational_context=object(),
     )
     assert len(published) == 1
     assert published[0]["board_id"] == "board-does-not-exist-uuid"
 
 
-async def test_ts5_mcp_dispatch_opens_session_when_omitted(monkeypatch):
-    """Regression for #27: MCP callers omit the request DB session.
-
-    _dispatch_manual_tick must create and commit a short-lived session instead
-    of passing None into event_publish.
-    """
-    from okto_pulse.core.api import kg_tick
+async def test_ts5_dispatch_requires_explicit_relational_context(monkeypatch):
+    """The Core helper must not open a concrete relational scope implicitly."""
+    from okto_pulse.core.application import kg_tick
     from okto_pulse.core.events.handlers import kg_decay_tick
-    from okto_pulse.core.infra import database as database_module
 
-    class _OwnedSession:
-        def __init__(self) -> None:
-            self.committed = False
-
-        async def commit(self) -> None:
-            self.committed = True
-
-    class _SessionContext:
-        def __init__(self, session: _OwnedSession) -> None:
-            self.session = session
-
-        async def __aenter__(self) -> _OwnedSession:
-            return self.session
-
-        async def __aexit__(self, *_args) -> None:
-            return None
-
-    owned = _OwnedSession()
     published: list[dict] = []
 
     async def _fake_publish_tick_events(session, *, board_id=None, **kwargs):
-        assert session is owned
         published.append({"board_id": board_id, **kwargs})
         return ["fanout-tick-uuid"]
-
-    def _factory():
-        return _SessionContext(owned)
 
     monkeypatch.setattr(
         kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
     )
-    monkeypatch.setattr(database_module, "get_session_factory", lambda: _factory)
+    with pytest.raises(TypeError, match="relational_context"):
+        await kg_tick.dispatch_manual_tick(
+            tick_id="ts5-missing-context",
+            board_id="board-does-not-exist-uuid",
+            force_full_rebuild=False,
+        )
+    assert published == []
 
-    await kg_tick._dispatch_manual_tick(
-        tick_id="ts5-owned-session",
+
+async def test_ts5_dispatch_explicit_session_is_caller_owned(monkeypatch):
+    """Explicit sessions are owned by the caller.
+
+    The helper must publish with exactly that session and must not open an
+    injected scope or assume commit/rollback.
+    """
+    from okto_pulse.core.application import kg_tick
+    from okto_pulse.core.events.handlers import kg_decay_tick
+
+    class _ExplicitSession:
+        def __init__(self) -> None:
+            self.committed = False
+            self.rolled_back = False
+
+        async def commit(self) -> None:
+            self.committed = True
+
+        async def rollback(self) -> None:
+            self.rolled_back = True
+
+    explicit = _ExplicitSession()
+    published: list[dict] = []
+
+    async def _fake_publish_tick_events(session, *, board_id=None, **kwargs):
+        assert session is explicit
+        published.append({"board_id": board_id, **kwargs})
+        return ["fanout-tick-uuid"]
+
+    monkeypatch.setattr(
+        kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
+    )
+    await kg_tick.dispatch_manual_tick(
+        tick_id="ts5-explicit-session",
         board_id="board-does-not-exist-uuid",
         force_full_rebuild=False,
+        relational_context=explicit,
     )
 
     assert len(published) == 1
     assert published[0]["board_id"] == "board-does-not-exist-uuid"
-    assert owned.committed is True
+    assert explicit.committed is False
+    assert explicit.rolled_back is False
 
 
 async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
@@ -225,17 +273,15 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     Usa o módulo diretamente (sem TestClient) para evitar setup ASGI.
     Captura o lock manualmente para simular "já em execução".
     """
-    from okto_pulse.core.api import kg_tick
-    from okto_pulse.core.api.kg_tick import (
+    from okto_pulse.community.api import kg_tick
+    from okto_pulse.community.api.kg_tick import (
         TickRunNowRequest,
         TickRunNowResponse,
         run_tick_now,
     )
-    from okto_pulse.core.kg.workers.advisory_lock import get_async_lock
     from fastapi import HTTPException
-
-    # Garante lock livre antes do teste.
-    lock = get_async_lock("kg_daily_tick", "global")
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+    from okto_pulse.core.ports.authentication import Principal
 
     payload = TickRunNowRequest(
         board_id="board-does-not-exist-uuid",
@@ -246,6 +292,21 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
         def __init__(self) -> None:
             self.committed = False
             self.rolled_back = False
+            self.boards = SimpleNamespace(get=self._get_board)
+            self.services = SimpleNamespace(
+                kg=SimpleNamespace(dispatch_manual_tick=self._dispatch_manual_tick)
+            )
+
+        async def _get_board(self, board_id: str):
+            return SimpleNamespace(id=board_id, owner_id="test-user")
+
+        async def _dispatch_manual_tick(self, **kwargs) -> list[str]:
+            from okto_pulse.core.application.kg_tick import dispatch_manual_tick
+
+            return await dispatch_manual_tick(
+                relational_context=self,
+                **kwargs,
+            )
 
         async def commit(self) -> None:
             self.committed = True
@@ -260,7 +321,7 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     async def _fake_publish_tick_events(session, *, board_id=None, **kwargs):
         assert isinstance(session, _FakeSession)
         published.append({"board_id": board_id, **kwargs})
-        return ["fanout-tick-uuid"]
+        return [str(kwargs["tick_id"])]
 
     monkeypatch.setattr(
         kg_decay_tick, "publish_tick_events", _fake_publish_tick_events
@@ -270,14 +331,24 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     # it healthy so this 202 path proceeds (a concrete board that is NOT degraded
     # is admitted); the advisory-lock 409 path below short-circuits before the
     # probe is reached.
-    async def _healthy_health(board_id, db):
+    async def _healthy_health(board_id, db, scheduler_control=None):
         return {"graph_state": "healthy"}
 
     monkeypatch.setattr(kg_tick, "get_kg_health", _healthy_health)
     fake_db = _FakeSession()
+    principal = Principal(
+        "test-user",
+        realm_id=LOCAL_REALM_ID,
+        claims={"roles": ["admin"]},
+    )
 
     # First call: 202 success.
-    response = await run_tick_now(payload, user="test-user", db=fake_db)
+    response = await run_tick_now(
+        payload,
+        _request_without_scheduler(),
+        principal=principal,
+        db=fake_db,
+    )
     assert isinstance(response, TickRunNowResponse)
     assert response.status == "running"
     assert response.tick_id  # non-empty uuid
@@ -286,11 +357,21 @@ async def test_ts4_endpoint_run_now_returns_202_and_409_on_retry(monkeypatch):
     assert fake_db.rolled_back is False
     assert len(published) == 1
 
-    # Capture lock to simulate in-flight tick — second call must 409.
-    async with lock:
+    # Capture lease to simulate in-flight tick — second call must 409.
+    lease_provider = get_lease_provider()
+    lease = await lease_provider.try_acquire("kg_daily_tick", ttl_seconds=300)
+    assert lease is not None
+    try:
         with pytest.raises(HTTPException) as exc_info:
-            await run_tick_now(payload, user="test-user-2", db=_FakeSession())
+            await run_tick_now(
+                payload,
+                _request_without_scheduler(),
+                principal=principal,
+                db=_FakeSession(),
+            )
         assert exc_info.value.status_code == 409
         detail = exc_info.value.detail
         assert isinstance(detail, dict)
         assert detail.get("error") == "tick_already_running"
+    finally:
+        await lease_provider.release(lease)

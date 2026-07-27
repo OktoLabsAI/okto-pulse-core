@@ -20,7 +20,6 @@ recomputado (carry-forward do validador de S3.1).
 
 from __future__ import annotations
 
-import contextlib
 import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -30,10 +29,11 @@ import pytest
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
-    CognitivePendingOutcomeType,
     compute_cognitive_item_id,
+    require_rebuild_audit_artifact_store,
 )
-from okto_pulse.core.models.db import Board, ConsolidationDeadLetter
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
+from sqlalchemy_test_models import Board, ConsolidationDeadLetter
 from okto_pulse.core.services.canonical_debt_service import upsert_canonical_debt
 
 NOW = datetime(2026, 6, 17, 12, 0, 0, tzinfo=timezone.utc)
@@ -46,8 +46,6 @@ PAST = (NOW - timedelta(hours=1)).isoformat()
 
 
 def _seed_items(store, board, gen, specs):
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
     items, pending_refs = [], []
     for spec in specs:
         src = spec["source_ref"]
@@ -66,12 +64,20 @@ def _seed_items(store, board, gen, specs):
         if spec["status"] == CognitiveItemStatus.PENDING.value:
             pending_refs.append(src)
     record = {
+        "board_id": board,
+        "kg_generation_id": gen,
         "pending_count": len(pending_refs), "pending_refs": pending_refs,
         "status": "pending" if pending_refs else "consolidated",
         "recorded_at": "2026-06-17T00:00:00+00:00", "items": items,
     }
-    with path.open("w", encoding="utf-8") as fh:
-        json.dump(record, fh)
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=gen,
+        ),
+        record,
+    )
 
 
 async def _board(db_factory, board_id, settings=None):
@@ -85,20 +91,14 @@ async def _board(db_factory, board_id, settings=None):
 
 
 def _wire(monkeypatch, tmp_path, db_factory):
-    """Set the store base_dir env + fake auth/db; return the mcp server module."""
+    """Set the store base_dir and fake auth; use the composed MCP UoW."""
     monkeypatch.setenv("OKTO_PULSE_REBUILD_BASE_DIR", str(tmp_path))
     import okto_pulse.core.mcp.server as mcp_server
 
     async def _fake_ctx(board_id):
         return SimpleNamespace(agent_id="mcp-agent")
 
-    @contextlib.asynccontextmanager
-    async def _fake_db():
-        async with db_factory() as db:
-            yield db
-
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", _fake_db)
     return mcp_server
 
 
@@ -131,7 +131,9 @@ def _by_artifact(items):
 async def test_ts_9862838e_list_all_signals(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-list", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"card:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
         {"source_ref": f"card:{UUID_B}", "status": CognitiveItemStatus.CONSOLIDATED.value},
@@ -178,7 +180,9 @@ async def test_ts_9862838e_list_all_signals(tmp_path, db_factory, monkeypatch):
 async def test_ts_e1b66ffa_skip_blocked_by_dlq_409_no_write(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-skip-dlq", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
     ])
@@ -209,7 +213,9 @@ async def test_ts_e1b66ffa_skip_blocked_by_dlq_409_no_write(tmp_path, db_factory
 async def test_skip_blocked_by_open_debt_409(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-skip-debt", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
     ])
@@ -240,7 +246,9 @@ async def test_skip_blocked_by_open_debt_409(tmp_path, db_factory, monkeypatch):
 async def test_ts_87b584b4_reason_code_registry_closed(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-registry", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
     ])
@@ -280,7 +288,9 @@ async def test_ts_87b584b4_reason_code_registry_closed(tmp_path, db_factory, mon
 async def test_revisit_required_needs_future_revisit_at(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-revisit", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
     ])
@@ -316,7 +326,9 @@ async def test_revisit_required_needs_future_revisit_at(tmp_path, db_factory, mo
 async def test_record_then_clear_reopen_central(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-clear", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
     ])
@@ -349,7 +361,9 @@ async def test_record_then_clear_reopen_central(tmp_path, db_factory, monkeypatc
 async def test_clear_non_skipped_409(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-clear-409", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value},
     ])
@@ -371,7 +385,9 @@ async def test_clear_non_skipped_409(tmp_path, db_factory, monkeypatch):
 async def test_evaluate_tool_mirrors_service(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-eval", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"task:{UUID_T}", "status": CognitiveItemStatus.PENDING.value,
          "artifact_type": "task"},
@@ -410,7 +426,9 @@ async def test_would_block_done_enforcement(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-enforce", "gen-1"
     await _board(db_factory, board, settings={"cognitive_readiness_policy": "blocking"})
     _enable_global_flag(monkeypatch)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"card:{UUID_B}", "status": CognitiveItemStatus.PENDING.value},
         {"source_ref": f"task:{UUID_T}", "status": CognitiveItemStatus.PENDING.value,
@@ -449,7 +467,9 @@ async def test_would_block_done_enforcement(tmp_path, db_factory, monkeypatch):
 async def test_ts_ee91c90f_mcp_aliases_one_precedence(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-alias", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.SKIPPED.value,
          "reason_code": "trivial_fix"},
@@ -481,7 +501,9 @@ async def test_ts_ee91c90f_mcp_aliases_one_precedence(tmp_path, db_factory, monk
 async def test_ts_d3ae61b3_mcp_all_tiers_task_advisory(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-tiers", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"card:{UUID_A}", "status": CognitiveItemStatus.SKIPPED.value,
          "reason_code": "evidence_insufficient", "revisit_at": PAST},  # vencido
@@ -512,7 +534,9 @@ async def test_ts_d3ae61b3_mcp_all_tiers_task_advisory(tmp_path, db_factory, mon
 async def test_ts_d5d8b99e_bug_twin_in_catalog(tmp_path, db_factory, monkeypatch):
     board, gen = "mcp-bugtwin", "gen-1"
     await _board(db_factory, board)
-    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     _seed_items(store, board, gen, [
         {"source_ref": f"bug:{UUID_A}", "status": CognitiveItemStatus.PENDING.value,
          "artifact_type": "bug"},

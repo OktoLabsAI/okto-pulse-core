@@ -20,10 +20,11 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.cypher_templates import layer_filter_clause
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
-from okto_pulse.core.kg.workers.consolidation import _process_queue_entry
-from okto_pulse.core.models.db import Board, ConsolidationQueue, Spec
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
+from okto_pulse.core.application.processors.consolidation import _process_queue_entry
+from sqlalchemy_test_models import Board, ConsolidationQueue, Spec
 
 
 # Estados não-finais: por CANONICAL_STATUS_BY_ARTIFACT_TYPE["spec"] == {"done"},
@@ -66,7 +67,10 @@ async def _materialize_spec(db_factory, status: str) -> tuple[str, str]:
     """
     board_id = f"canonleak-{uuid.uuid4().hex[:10]}"
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
-    bootstrap_board_graph(board_id)
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name=f"test-canonical-leak-bootstrap-{board_id}",
+    )
     async with db_factory() as session:
         session.add(Board(id=board_id, name="canon-leak", owner_id="owner-regression"))
         session.add(Spec(**_spec_payload(spec_id, board_id, status)))
@@ -94,7 +98,12 @@ async def _materialize_spec(db_factory, status: str) -> tuple[str, str]:
     return board_id, spec_id
 
 
-def _count_spec_nodes(board_id: str, spec_id: str, *, canonical_only: bool) -> int:
+async def _count_spec_nodes(
+    board_id: str,
+    spec_id: str,
+    *,
+    canonical_only: bool,
+) -> int:
     """Conta nodes do grafo cujo source_artifact_ref pertence à spec.
 
     Quando ``canonical_only`` aplica o MESMO predicado FAIL-CLOSED de produção
@@ -102,22 +111,29 @@ def _count_spec_nodes(board_id: str, spec_id: str, *, canonical_only: bool) -> i
     07bdf670: ``graph_layer = $graph_layer`` estrito, NULL/ausente NÃO é
     canonical) — idêntico a GET_ALL_NODES / get_related_context / query_global.
     """
-    ref_prefix = f"spec:{spec_id}"
-    cypher = "MATCH (n) WHERE n.source_artifact_ref STARTS WITH $ref "
-    params: dict = {"ref": ref_prefix}
-    if canonical_only:
-        cypher += f"AND {layer_filter_clause('n')} "
-        params["graph_layer"] = "canonical"
-    cypher += "RETURN count(n)"
-    with open_board_connection(board_id) as (_db, conn):
-        res = conn.execute(cypher, params)
-        try:
-            return int(res.get_next()[0]) if res.has_next() else 0
-        finally:
+    def _read() -> int:
+        ref_prefix = f"spec:{spec_id}"
+        cypher = "MATCH (n) WHERE n.source_artifact_ref STARTS WITH $ref "
+        params: dict = {"ref": ref_prefix}
+        if canonical_only:
+            cypher += f"AND {layer_filter_clause('n')} "
+            params["graph_layer"] = "canonical"
+        cypher += "RETURN count(n)"
+        with open_board_connection(board_id) as (_db, conn):
+            res = conn.execute(cypher, params)
             try:
-                res.close()
-            except Exception:
-                pass
+                return int(res.get_next()[0]) if res.has_next() else 0
+            finally:
+                try:
+                    res.close()
+                except Exception:
+                    pass
+
+    layer = "canonical" if canonical_only else "all"
+    return await run_blocking_graph_io(
+        _read,
+        task_name=f"test-canonical-leak-count-{board_id}-{spec_id}-{layer}",
+    )
 
 
 @pytest.mark.asyncio
@@ -126,8 +142,8 @@ async def test_non_final_spec_never_materializes_canonical(db_factory, status):
     """ts_754aba25 — spec em draft/review/approved/validated: canonical-only = 0."""
     board_id, spec_id = await _materialize_spec(db_factory, status)
 
-    total = _count_spec_nodes(board_id, spec_id, canonical_only=False)
-    canonical = _count_spec_nodes(board_id, spec_id, canonical_only=True)
+    total = await _count_spec_nodes(board_id, spec_id, canonical_only=False)
+    canonical = await _count_spec_nodes(board_id, spec_id, canonical_only=True)
 
     # A spec MATERIALIZA (no layer working): garante que o zero canonical abaixo
     # não é vacuoso (zero por nada ter sido escrito).
@@ -148,8 +164,8 @@ async def test_done_spec_materializes_canonical_positive_control(db_factory):
     verde (filtro errado retornando zero para tudo)."""
     board_id, spec_id = await _materialize_spec(db_factory, "done")
 
-    total = _count_spec_nodes(board_id, spec_id, canonical_only=False)
-    canonical = _count_spec_nodes(board_id, spec_id, canonical_only=True)
+    total = await _count_spec_nodes(board_id, spec_id, canonical_only=False)
+    canonical = await _count_spec_nodes(board_id, spec_id, canonical_only=True)
 
     assert total > 0, "spec done não materializou nenhum node"
     assert canonical > 0, (

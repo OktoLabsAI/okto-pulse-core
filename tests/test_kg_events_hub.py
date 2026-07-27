@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from okto_pulse.core.api.kg_events_hub import (
+from okto_pulse.community.api.kg_events_hub import (
     SUBSCRIBER_QUEUE_MAXSIZE,
     KgEventsHub,
     _BoardStream,
@@ -24,9 +24,10 @@ from okto_pulse.core.api.kg_events_hub import (
     shutdown_kg_events_hub,
 )
 from okto_pulse.core.infra.database import get_engine, get_session_factory
-from okto_pulse.core.models.db import GlobalUpdateOutbox
+from sqlalchemy_test_models import GlobalUpdateOutbox
+from okto_pulse.core.ports.kg_events import KGEventsPoll
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")
+pytestmark = pytest.mark.asyncio(loop_scope="function")
 
 
 async def _insert_outbox_event(board_id: str, event_type: str = "kg.session.committed") -> str:
@@ -58,8 +59,11 @@ async def _drain_until(queue: asyncio.Queue, predicate, timeout: float = 6.0) ->
             return chunk
 
 
-async def test_fanout_outbox_event_to_multiple_subscribers():
-    hub = KgEventsHub(poll_interval=0.1)
+async def test_fanout_outbox_event_to_multiple_subscribers(kg_events_reader):
+    hub = KgEventsHub(
+        kg_events_reader,
+        poll_interval=0.1,
+    )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub_a = hub.subscribe(board_id)
     sub_b = hub.subscribe(board_id)
@@ -75,8 +79,11 @@ async def test_fanout_outbox_event_to_multiple_subscribers():
         await hub.aclose()
 
 
-async def test_progress_snapshot_broadcast_on_first_cycle():
-    hub = KgEventsHub(poll_interval=0.1)
+async def test_progress_snapshot_broadcast_on_first_cycle(kg_events_reader):
+    hub = KgEventsHub(
+        kg_events_reader,
+        poll_interval=0.1,
+    )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub = hub.subscribe(board_id)
     try:
@@ -89,8 +96,11 @@ async def test_progress_snapshot_broadcast_on_first_cycle():
         await hub.aclose()
 
 
-async def test_poller_stops_when_last_subscriber_leaves():
-    hub = KgEventsHub(poll_interval=0.1)
+async def test_poller_stops_when_last_subscriber_leaves(kg_events_reader):
+    hub = KgEventsHub(
+        kg_events_reader,
+        poll_interval=0.1,
+    )
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     sub = hub.subscribe(board_id)
     stream_task = hub._streams[board_id].task
@@ -117,16 +127,72 @@ async def test_subscriber_queue_is_bounded_and_keeps_newest():
     assert items[0] == "chunk-100"
 
 
+async def test_hub_poller_uses_injected_reader():
+    class _Reader:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def poll(self, *, board_id, after, limit):
+            self.calls += 1
+            return KGEventsPoll(
+                events=[],
+                progress={"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0},
+            )
+
+        async def replay(self, *, board_id, after, limit):
+            return []
+
+    reader = _Reader()
+    hub = KgEventsHub(reader, poll_interval=0.01)
+    sub = hub.subscribe("board-injected")
+    try:
+        await _drain_until(sub.queue, lambda c: "kg.queue.progress" in c, timeout=2.0)
+    finally:
+        hub.unsubscribe(sub)
+        await hub.aclose()
+
+    assert reader.calls >= 1
+
+
+async def test_hub_unsubscribe_cancels_an_inflight_reader_poll():
+    poll_started = asyncio.Event()
+    poll_cancelled = asyncio.Event()
+
+    class _Reader:
+        async def poll(self, *, board_id, after, limit):
+            poll_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                poll_cancelled.set()
+                raise
+
+        async def replay(self, *, board_id, after, limit):
+            return []
+
+    hub = KgEventsHub(_Reader(), poll_interval=30.0)
+    sub = hub.subscribe("board-cancel-exit")
+    stream_task = hub._streams["board-cancel-exit"].task
+    assert stream_task is not None
+
+    await asyncio.wait_for(poll_started.wait(), timeout=2.0)
+    hub.unsubscribe(sub)
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(stream_task, timeout=2.0)
+    assert poll_cancelled.is_set()
+    await hub.aclose()
+
+
 async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
     """O cenário de produção: cliente SSE desconecta → task da request é
     hard-cancelada. O contrato do fix: nenhuma conexão do pool fica
     checked-out e o hub remove o assinante."""
-    from okto_pulse.core.api.kg_routes import stream_kg_events
+    from okto_pulse.community.api.kg_routes import stream_kg_events
 
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     response = await stream_kg_events(board_id, since=None)
     hub = get_kg_events_hub()
-    assert board_id in hub._streams
 
     consumed: list[str] = []
 
@@ -141,6 +207,7 @@ async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
     while len(consumed) < 2 and asyncio.get_running_loop().time() < deadline:
         await asyncio.sleep(0.05)
     assert consumed, "stream nunca emitiu o hello"
+    assert board_id in hub._streams
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -156,7 +223,7 @@ async def test_sse_route_hard_cancel_does_not_leak_pool_connections():
 
 async def test_sse_route_replays_backlog_since_cursor():
     """Reconexão com `since` re-entrega eventos perdidos via cancel_safe_session."""
-    from okto_pulse.core.api.kg_routes import stream_kg_events
+    from okto_pulse.community.api.kg_routes import stream_kg_events
 
     board_id = f"board-hub-{uuid.uuid4().hex[:8]}"
     event_id = await _insert_outbox_event(board_id)

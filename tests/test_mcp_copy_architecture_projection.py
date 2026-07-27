@@ -13,6 +13,8 @@ The copy tools support a 3-value profile set (``summary``/``full``/``legacy``) â
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import logging
 import uuid
@@ -32,7 +34,7 @@ from okto_pulse.core.mcp.projection_envelope import (
     ENVELOPE_METADATA_KEYS,
     _stable_payload_bytes,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -74,10 +76,9 @@ def test_summary_returns_metadata_and_ids_without_bodies():
     assert out["copied"] == 2
     assert out["design_ids"] == ["ad1", "ad2"]
     assert out["total_on_card"] == 2
+    assert out["success"] is True
     # No architecture bodies echoed under summary.
     assert "architecture_designs" not in out
-    # summary relies on outcome, not a positive success flag.
-    assert "success" not in out
 
     meta = out["projection"]
     for key in ENVELOPE_METADATA_KEYS:
@@ -192,7 +193,7 @@ def _stub_ctx(board_id: str):
 
 
 async def _call(name: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     return json.loads(await tool.fn(**kwargs))
 

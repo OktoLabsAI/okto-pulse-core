@@ -42,6 +42,10 @@ from okto_pulse.core.services.board_governance import (
     SELF_ANSWERING_NOT_ALLOWED_REASON,
     build_qa_self_answer_denied_details,
 )
+from okto_pulse.core.services.qa_selection import (
+    QASelectionError,
+    validate_choice_selection,
+)
 from okto_pulse.core.services.critical_context_guard import (
     CONTEXT_FINGERPRINT_ALG,
     CRITICAL_ACTION_REGISTRY,
@@ -67,6 +71,10 @@ from okto_pulse.core.services.critical_context_guard import (
     coerce_critical_action,
     critical_actions_for_entity,
     get_critical_action_definition,
+)
+from okto_pulse.core.services.cancellation import (
+    CancellationReasonRequiredError,
+    apply_cancellation_policy,
 )
 from okto_pulse.core.services.governance_observability import (
     GovernanceAuditPayloadError,
@@ -106,6 +114,7 @@ from okto_pulse.core.services.main import (
     SpecQAService,
     SpecService,
     StoryService,
+    TopicOperationError,
 )
 from okto_pulse.core.services.resource_gate import (
     ResourceGateError,
@@ -115,10 +124,37 @@ from okto_pulse.core.services.resource_gate import (
     ResourceGateViolation,
 )
 from okto_pulse.core.services.resource_lineage import (
+    ResourceRevisionStamp,
     ResolvedResourceLineageProjection,
     ResolvedResourceLineageService,
     get_resource_lineage_metric_samples,
     reset_resource_lineage_observability_for_tests,
+)
+from okto_pulse.core.domain.knowledge_fingerprint import (
+    KNOWLEDGE_CONTENT_HASH_FIELDS,
+    compute_knowledge_content_sha256,
+    knowledge_content_bytes,
+    knowledge_content_sha256,
+    resolve_knowledge_content_sha256,
+)
+from okto_pulse.core.services.knowledge_propagation import (
+    KnowledgeCreationPreflightCommand,
+    KnowledgeGrandfatherAttachment,
+    KnowledgeGrandfatherCommand,
+    KnowledgeGrandfatherEvidence,
+    KnowledgeMutationCommand,
+    KnowledgeMutationPreparation,
+    KnowledgeMutationResultV2,
+    KnowledgeMutationResultV2Projector,
+    KnowledgePropagationReadResult,
+    KnowledgePropagationService,
+    KnowledgePropagationServiceError,
+    KnowledgeRelinkResetCommand,
+    KnowledgeRefreshCommand,
+    KnowledgeRefreshByKnowledgeIdsCommand,
+    ResolvedKnowledgeAssignment,
+    classify_legacy_origin,
+    deterministic_knowledge_target_id,
 )
 from okto_pulse.core.services.spec_resource_propagation import (
     SpecResourcePropagationService,
@@ -168,6 +204,8 @@ __all__ = [
     "QASelfAnsweringNotAllowedError",
     "SELF_ANSWERING_NOT_ALLOWED_REASON",
     "build_qa_self_answer_denied_details",
+    "QASelectionError",
+    "validate_choice_selection",
     "CONTEXT_FINGERPRINT_ALG",
     "CRITICAL_ACTION_REGISTRY",
     "CRITICAL_CONTEXT_DECISION_ACTION",
@@ -209,6 +247,8 @@ __all__ = [
     "ArchiveService",
     "AttachmentService",
     "BoardService",
+    "CancellationReasonRequiredError",
+    "apply_cancellation_policy",
     "CardOperationError",
     "CardResourceReadOnlyError",
     "CardService",
@@ -227,15 +267,39 @@ __all__ = [
     "SpecQAService",
     "SpecService",
     "StoryService",
+    "TopicOperationError",
     "ResourceGateError",
     "ResourceGateJustificationRequired",
     "ResourceGateNotFound",
     "ResourceGateService",
     "ResourceGateViolation",
+    "ResourceRevisionStamp",
     "ResolvedResourceLineageProjection",
     "ResolvedResourceLineageService",
     "get_resource_lineage_metric_samples",
     "reset_resource_lineage_observability_for_tests",
+    "KNOWLEDGE_CONTENT_HASH_FIELDS",
+    "compute_knowledge_content_sha256",
+    "knowledge_content_bytes",
+    "knowledge_content_sha256",
+    "resolve_knowledge_content_sha256",
+    "KnowledgeCreationPreflightCommand",
+    "KnowledgeGrandfatherAttachment",
+    "KnowledgeGrandfatherCommand",
+    "KnowledgeGrandfatherEvidence",
+    "KnowledgeMutationCommand",
+    "KnowledgeMutationPreparation",
+    "KnowledgeMutationResultV2",
+    "KnowledgeMutationResultV2Projector",
+    "KnowledgePropagationReadResult",
+    "KnowledgePropagationService",
+    "KnowledgePropagationServiceError",
+    "KnowledgeRelinkResetCommand",
+    "KnowledgeRefreshCommand",
+    "KnowledgeRefreshByKnowledgeIdsCommand",
+    "ResolvedKnowledgeAssignment",
+    "classify_legacy_origin",
+    "deterministic_knowledge_target_id",
     "SpecResourcePropagationService",
     "InMemoryStructuredSpecEntityMetricsSink",
     "StructuredSpecEntityCommand",

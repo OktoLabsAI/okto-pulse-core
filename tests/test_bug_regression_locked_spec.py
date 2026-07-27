@@ -13,7 +13,7 @@ from okto_pulse.core.domain.amendment_eligibility import (
     AmendmentLineageState,
     AmendmentRevisionStatus,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     AmendmentHotfixRevision,
     Board,
     BugSeverity,
@@ -301,15 +301,17 @@ async def test_active_hotfix_lane_does_not_bypass_missing_bug_test_task():
             )
 
     message = str(exc.value)
-    assert "requires at least 1 new test task" in message
+    assert "zero eligible" in message
+    assert "Path B" in message
     assert "assign_hotfix_lane" not in message
     assert "activate_hotfix_lane" not in message
     assert "sprint_not_active" not in message
     payload = exc.value.to_dict()
     assert payload["code"] == "missing_regression_test_task"
-    assert payload["next_action"] == "create_regression_test_card"
-    assert payload["remediation_path"] == "path_a_reuse_existing_scenario"
-    assert payload["semantic_gap_required"] is False
+    assert payload["next_action"] == "escalate_semantic_gap"
+    assert payload["remediation_path"] == "path_b_semantic_gap"
+    assert payload["semantic_gap_required"] is True
+    assert payload["eligible_scenarios_count"] == 0
     assert payload["hotfix_lane_status"] == "not_applicable"
     assert payload["actions"][0]["primary"] is True
 
@@ -1083,6 +1085,10 @@ async def _seed_path_b_board(db, *, amendment_kwargs):
         card_type=CardType.TEST, test_scenario_ids=[ids["foreign_scenario"]],
         created_by=USER_ID, created_at=now + timedelta(seconds=1),
     ))
+    # The amendment model has a board FK but no ORM relationship that orders
+    # its insert after these parents.  Persist the actual board/spec/card graph
+    # before adding the amendment lineage row.
+    await db.flush()
     base_amendment = dict(
         id=ids["amendment"], board_id=ids["board"],
         original_spec_id=ids["spec"], origin_bug_id=ids["bug"],
@@ -1202,11 +1208,10 @@ async def test_confirm_amendment_coverage_enables_gate_allow():
         assert confirmation["evidence_ref"] == "tests/test_reg.py::test_reg_case"
 
         # gate now ALLOWS the bug move (path_b_ready).
-        await CardService(db).move_card(
+        moved = await CardService(db).move_card(
             ids["bug"], USER_ID, CardMove(status=CardStatus.IN_PROGRESS)
         )
-        bug = await db.get(Card, ids["bug"])
-        assert bug.status == CardStatus.IN_PROGRESS
+        assert moved.status == CardStatus.IN_PROGRESS
 
         preview = await BugRegressionScenarioPreviewService(db).resolve(
             board_id=ids["board"],
@@ -1283,6 +1288,8 @@ async def test_create_strips_reserved_coverage_confirmation_key():
         "evidence_ref": "x::y",
     }
     async with factory() as db:
+        db.add(Board(id="pb-forge-board", name="Path B Forge Board", owner_id=USER_ID))
+        await db.flush()
         amendment = await AmendmentRevisionService(db).create(
             board_id="pb-forge-board",
             original_spec_id="pb-forge-spec",

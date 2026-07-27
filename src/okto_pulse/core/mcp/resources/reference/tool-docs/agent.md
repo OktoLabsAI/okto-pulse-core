@@ -26,12 +26,12 @@ Returns:
 
 ## `okto_pulse_update_my_profile`
 
-Update the authenticated agent's own description and/or objective.
+Update or clear the authenticated agent's own description and/or objective.
 No board_id needed — this updates the global agent profile.
 
 Args:
-    description: New description (optional, empty = no change)
-    objective: New objective (optional, empty = no change)
+    description: New description (optional; null/omitted = no change, empty = clear)
+    objective: New objective (optional; null/omitted = no change, empty = clear)
 
 Returns:
     JSON with updated profile

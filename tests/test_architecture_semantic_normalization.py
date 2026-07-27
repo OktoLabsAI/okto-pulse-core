@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from okto_pulse.core.models.db import Board, Ideation
+from sqlalchemy_test_models import Board, Ideation
 from okto_pulse.core.services.architecture import (
     ALLOWED_NODE_ICON_NAMES,
     REQUIRED_LINKED_NODE_FIELDS,

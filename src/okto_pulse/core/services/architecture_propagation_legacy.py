@@ -14,10 +14,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.models.db import ArchitectureDesign
+from okto_pulse.core.ports.application_persistence import bounded_page_offset
+from okto_pulse.core.ports.architecture_legacy import (
+    get_architecture_legacy_snapshot_read_port,
+)
 from okto_pulse.core.services.architecture import (
     PROPAGATION_REVALIDATION_MISSING_RUN,
     PROPAGATION_VERDICT_UNAVAILABLE,
@@ -28,9 +28,11 @@ from okto_pulse.core.services.architecture_observability import (
 )
 
 # legacy_status taxonomy (locked by Spec C).
-LEGACY_STATUS_SOURCE_BLOCKED = "source_blocked"        # source exists with active findings
-LEGACY_STATUS_VERDICT_MISSING = "verdict_missing"      # no current run / had to revalidate
-LEGACY_STATUS_SOURCE_UNAVAILABLE = "source_unavailable"  # source gone / verdict unloadable
+LEGACY_STATUS_SOURCE_BLOCKED = "source_blocked"  # source exists with active findings
+LEGACY_STATUS_VERDICT_MISSING = "verdict_missing"  # no current run / had to revalidate
+LEGACY_STATUS_SOURCE_UNAVAILABLE = (
+    "source_unavailable"  # source gone / verdict unloadable
+)
 
 LEGACY_STATUS_VALUES = (
     LEGACY_STATUS_SOURCE_BLOCKED,
@@ -54,7 +56,7 @@ def _classify_legacy_status(eligibility: Any) -> str | None:
 
 
 async def build_propagation_legacy_report(
-    db: AsyncSession,
+    db: Any,
     *,
     board_id: str,
     limit: int = 100,
@@ -70,32 +72,23 @@ async def build_propagation_legacy_report(
     items unless ``include_clean`` is true. Never mutates anything.
     """
     limit = max(1, min(int(limit), _MAX_LIMIT))
-    offset = max(0, int(offset))
+    # Backstop: reject an offset above int64 before it reaches the read port's
+    # SQL OFFSET binding (which would raise a raw OverflowError). Boundaries
+    # (REST le=PAGE_OFFSET_MAX / MCP invalid_pagination) reject earlier; this
+    # keeps a direct/service-level call fail-closed with a typed ValueError.
+    offset = bounded_page_offset(offset)
 
-    base = select(ArchitectureDesign).where(
-        ArchitectureDesign.board_id == board_id,
-        ArchitectureDesign.source_design_id.is_not(None),
+    page = await get_architecture_legacy_snapshot_read_port().list_page(
+        db,
+        board_id=board_id,
+        parent_type_filter=parent_type_filter,
+        limit=limit,
+        offset=offset,
     )
-    if parent_type_filter:
-        base = base.where(ArchitectureDesign.parent_type == parent_type_filter)
-
-    scanned_total = (
-        await db.execute(
-            select(func.count()).select_from(base.order_by(None).subquery())
-        )
-    ).scalar_one()
-
-    page = (
-        await db.execute(
-            base.order_by(ArchitectureDesign.created_at.asc(), ArchitectureDesign.id.asc())
-            .limit(limit)
-            .offset(offset)
-        )
-    ).scalars().all()
 
     policy = ArchitecturePropagationEligibilityPolicy(db)
     items: list[dict[str, Any]] = []
-    for target in page:
+    for target in page.items:
         eligibility = await policy.evaluate(str(target.source_design_id))
         legacy_status = _classify_legacy_status(eligibility)
         if legacy_status is None and not include_clean:
@@ -117,7 +110,7 @@ async def build_propagation_legacy_report(
 
     observe_architecture_propagation_legacy_report(
         board_id=board_id,
-        scanned_count=int(scanned_total),
+        scanned_count=page.total,
         legacy_count=len(items),
         surface=surface,
     )
@@ -125,7 +118,7 @@ async def build_propagation_legacy_report(
     return {
         "board_id": board_id,
         "items": items,
-        "scanned_total": int(scanned_total),
+        "scanned_total": page.total,
         "limit": limit,
         "offset": offset,
         "mutation_performed": False,

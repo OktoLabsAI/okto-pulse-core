@@ -15,22 +15,23 @@ the ``DefaultBoardConfiguration`` template ref.
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime, timezone
+import json
+from typing import Any, NoReturn
+import uuid
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import flag_modified
-
-from okto_pulse.core.models.db import (
-    Board,
-    BoardDesignSystem,
-    DesignSystem,
-    DesignSystemGateAudit,
+from okto_pulse.core.ports.design_system import (
+    BoardDesignSystemRecord,
+    DesignSystemGateAuditRecord,
+    DesignSystemRecord,
+    get_design_system_store,
 )
 
 _VALID_STATUSES = ("active", "draft", "archived")
 _VALID_SCOPES = ("global", "inline")
+_VALID_GET_PROFILES = ("summary", "detail", "full", "legacy")
 
 # MockupDesignSystemGate reason codes (spec 3a006f65 / card 0192f58d, FR8).
 GATE_REQUIRED = "design_system_required"
@@ -89,25 +90,127 @@ def _iso(value: Any) -> str | None:
     return iso() if callable(iso) else str(value)
 
 
-def serialize_design_system(ds: DesignSystem) -> dict[str, Any]:
-    return {
+def serialize_design_system(
+    ds: DesignSystemRecord, *, include_payload: bool = True
+) -> dict[str, Any]:
+    result = {
         "id": ds.id,
         "scope": ds.scope,
         "board_id": ds.board_id,
         "title": ds.title,
-        "payload": dict(ds.payload) if isinstance(ds.payload, dict) else ds.payload,
         "version": ds.version,
         "status": ds.status,
         "owner_id": ds.owner_id,
         "created_at": _iso(getattr(ds, "created_at", None)),
         "updated_at": _iso(getattr(ds, "updated_at", None)),
     }
+    if include_payload:
+        result["payload"] = (
+            dict(ds.payload) if isinstance(ds.payload, dict) else ds.payload
+        )
+    else:
+        result["payload_available"] = ds.payload is not None
+    return result
+
+
+def serialize_design_system_profile(
+    ds: DesignSystemRecord, *, profile: str = "full"
+) -> dict[str, Any]:
+    """Serialize one catalog item under the canonical projection profiles.
+
+    ``legacy`` retains the historical full-payload contract.  Catalog list
+    operations never call this helper with a payload-bearing profile.
+    """
+
+    normalized = (profile or "full").strip().lower()
+    if normalized not in _VALID_GET_PROFILES:
+        raise DesignSystemError(
+            "design_system_invalid_profile",
+            "profile must be one of: summary, detail, full, legacy.",
+            422,
+            {"profile": profile},
+        )
+    result = serialize_design_system(
+        ds,
+        include_payload=normalized in {"detail", "full", "legacy"},
+    )
+    result["profile"] = normalized
+    return result
+
+
+def project_effective_design_system(
+    effective: dict[str, Any] | None,
+    *,
+    gate_mode: str | None = None,
+) -> dict[str, Any]:
+    """Return the unique effective-Design-System DTO.
+
+    ``configured`` means a link/snapshot ref exists, ``resolvable`` means the
+    referenced catalog row exists, and ``mandate`` means blocking governance is
+    configured.  A dangling blocking link is therefore configured and mandated
+    but not resolvable; these axes must never be collapsed into truthiness.
+    ``version`` remains the backward-compatible effective pin, while
+    ``pinned_version``, ``catalog_version`` and ``version_is_current`` make any
+    drift from the mutable catalog row explicit.
+    """
+
+    canonical_gate_mode = (
+        gate_mode
+        or (effective or {}).get("gate_mode")
+        or "off"
+    )
+    configured = effective is not None
+    resolvable = bool(effective and effective.get("exists"))
+    mandate = configured and canonical_gate_mode == "blocking"
+    normalized_effective = None
+    if effective is not None:
+        normalized_effective = dict(effective)
+        normalized_effective.update(
+            {
+                "configured": configured,
+                "resolvable": resolvable,
+                "mandate": mandate,
+                "gate_mode": canonical_gate_mode,
+            }
+        )
+    return {
+        "effective": normalized_effective,
+        "configured": configured,
+        "resolvable": resolvable,
+        "mandate": mandate,
+        "gate_mode": canonical_gate_mode,
+    }
+
+
+def _encode_catalog_cursor(offset: int) -> str:
+    raw = json.dumps({"v": 1, "offset": offset}, separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_catalog_cursor(cursor: str | None) -> int:
+    if not cursor:
+        return 0
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded).decode())
+        if payload.get("v") != 1:
+            raise ValueError("unsupported cursor version")
+        offset = int(payload["offset"])
+        if offset < 0:
+            raise ValueError("negative cursor offset")
+        return offset
+    except Exception as exc:
+        raise DesignSystemError(
+            "design_system_invalid_cursor",
+            "The Design System catalog cursor is invalid or expired.",
+            422,
+        ) from exc
 
 
 class DesignSystemService:
     """Catalog + board-link service for Design Systems."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: Any) -> None:
         self.db = db
 
     # -- catalog lifecycle -------------------------------------------------
@@ -121,7 +224,7 @@ class DesignSystemService:
         board_id: str | None = None,
         payload: dict[str, Any] | None = None,
         status: str = "active",
-    ) -> DesignSystem:
+    ) -> DesignSystemRecord:
         """Create a global catalog entry or a board-inline Design System (FR1). Inline
         REQUIRES board_id (AC2); a global one is never board-scoped. version starts 1."""
         scope = scope or "global"
@@ -152,7 +255,9 @@ class DesignSystemService:
             raise DesignSystemError(
                 "design_system_invalid_title", "A Design System title is required.", 422
             )
-        ds = DesignSystem(
+        now = datetime.now(timezone.utc)
+        ds = DesignSystemRecord(
+            id=str(uuid.uuid4()),
             scope=scope,
             board_id=board_id,
             title=title,
@@ -160,40 +265,171 @@ class DesignSystemService:
             version=1,
             status=status,
             owner_id=owner_id,
+            created_at=now,
+            updated_at=now,
         )
-        self.db.add(ds)
-        await self.db.flush()
-        await self.db.refresh(ds)  # load server_default version/timestamps (no MissingGreenlet)
-        return ds
+        return await get_design_system_store().create(self.db, ds)
 
     async def list_catalog(
-        self, *, scope: str = "global", board_id: str | None = None
-    ) -> list[DesignSystem]:
+        self,
+        *,
+        scope: str = "global",
+        board_id: str | None = None,
+        owner_id: str | None = None,
+    ) -> list[DesignSystemRecord]:
         """List the GLOBAL catalog (default) or the inline systems of a board."""
-        query = select(DesignSystem)
-        if scope == "inline":
-            query = query.where(
-                DesignSystem.scope == "inline", DesignSystem.board_id == board_id
+        rows = list(
+            await get_design_system_store().list_catalog(
+                self.db,
+                scope=scope,
+                board_id=board_id,
+            )
+        )
+        if owner_id is not None:
+            rows = [item for item in rows if item.owner_id == owner_id]
+        return rows
+
+    async def list_catalog_page(
+        self,
+        *,
+        scope: str = "global",
+        board_id: str | None = None,
+        owner_id: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a bounded, stable summary page; catalog lists never emit payloads."""
+
+        if scope not in _VALID_SCOPES:
+            raise DesignSystemError(
+                "design_system_invalid_scope",
+                f"scope '{scope}' is invalid (allowed: global, inline).",
+                422,
+                {"scope": scope},
+            )
+        try:
+            bounded_limit = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise DesignSystemError(
+                "design_system_invalid_limit", "limit must be an integer.", 422
+            ) from exc
+        if bounded_limit < 1 or bounded_limit > 100:
+            raise DesignSystemError(
+                "design_system_invalid_limit",
+                "limit must be between 1 and 100.",
+                422,
+            )
+        offset = _decode_catalog_cursor(cursor)
+        store = get_design_system_store()
+        if owner_id is None:
+            page_with_sentinel = list(
+                await store.list_catalog(
+                    self.db,
+                    scope=scope,
+                    board_id=board_id,
+                    limit=bounded_limit + 1,
+                    offset=offset,
+                )
             )
         else:
-            query = query.where(
-                DesignSystem.scope == "global", DesignSystem.board_id.is_(None)
+            rows = list(
+                await store.list_catalog(
+                    self.db,
+                    scope=scope,
+                    board_id=board_id,
+                )
             )
-        query = query.order_by(DesignSystem.title)
-        return list((await self.db.execute(query)).scalars().all())
+            owned_rows = [item for item in rows if item.owner_id == owner_id]
+            page_with_sentinel = owned_rows[
+                offset : offset + bounded_limit + 1
+            ]
+        has_more = len(page_with_sentinel) > bounded_limit
+        page = page_with_sentinel[:bounded_limit]
+        return {
+            "items": [
+                serialize_design_system(item, include_payload=False) for item in page
+            ],
+            "count": len(page),
+            "next_cursor": (
+                _encode_catalog_cursor(offset + len(page)) if has_more else None
+            ),
+            "profile": "summary",
+        }
 
-    async def get_design_system(self, design_system_id: str) -> DesignSystem | None:
-        return await self.db.get(DesignSystem, design_system_id)
+    async def get_design_system(
+        self, design_system_id: str
+    ) -> DesignSystemRecord | None:
+        return await get_design_system_store().get(
+            self.db,
+            design_system_id=design_system_id,
+        )
 
-    async def require_design_system(self, design_system_id: str) -> DesignSystem:
-        ds = await self.db.get(DesignSystem, design_system_id)
+    async def require_design_system(self, design_system_id: str) -> DesignSystemRecord:
+        ds = await self.get_design_system(design_system_id)
         if ds is None:
-            raise DesignSystemError(
-                "design_system_not_found",
-                f"Design System '{design_system_id}' was not found.",
-                404,
-                {"design_system_id": design_system_id},
+            self._raise_not_found(design_system_id)
+        return ds
+
+    @staticmethod
+    def _raise_not_found(design_system_id: str) -> NoReturn:
+        """Use one indistinguishable response for missing and unauthorized rows."""
+
+        raise DesignSystemError(
+            "design_system_not_found",
+            f"Design System '{design_system_id}' was not found.",
+            404,
+            {"design_system_id": design_system_id},
+        )
+
+    async def require_authorized_design_system(
+        self,
+        design_system_id: str,
+        owner_id: str,
+        *,
+        board_id: str | None = None,
+        board_access_authorized: bool = False,
+        allow_owned_global_without_link: bool = False,
+    ) -> DesignSystemRecord:
+        """Resolve a catalog row without exposing another owner's artifact.
+
+        Owner identity is always required. A caller may explicitly allow an
+        owner's global catalog artifact even when the transport must also supply
+        a board context (the MCP catalog surfaces require one); otherwise
+        list(global) could reveal an owned item that detail operations could
+        never address. Mutating wrappers additionally enforce global ownership,
+        so a foreign effective link never grants catalog write authority. For
+        another owner's global read, the board must still carry the explicit
+        effective link. Inline artifacts must belong to the supplied board.
+        Every remaining scope/ownership mismatch is reported exactly like an
+        unknown id.
+        """
+
+        ds = await self.get_design_system(design_system_id)
+        if ds is None or (
+            ds.owner_id != owner_id and not (board_id and board_access_authorized)
+        ):
+            self._raise_not_found(design_system_id)
+
+        if board_id is None:
+            return ds
+
+        if ds.scope == "inline":
+            authorized_for_board = ds.board_id == board_id
+        elif ds.scope == "global":
+            if allow_owned_global_without_link and ds.owner_id == owner_id:
+                return ds
+            link = await get_design_system_store().get_board_link(
+                self.db,
+                board_id=board_id,
             )
+            authorized_for_board = (
+                link is not None and link.design_system_id == design_system_id
+            )
+        else:
+            authorized_for_board = False
+
+        if not authorized_for_board:
+            self._raise_not_found(design_system_id)
         return ds
 
     async def update_design_system(
@@ -201,13 +437,28 @@ class DesignSystemService:
         design_system_id: str,
         owner_id: str,
         *,
+        board_id: str | None = None,
+        board_access_authorized: bool = False,
+        allow_owned_global_without_link: bool = False,
         title: str | None = None,
         payload: dict[str, Any] | None = None,
         status: str | None = None,
-    ) -> DesignSystem:
+    ) -> DesignSystemRecord:
         """Update title/payload/status. A title or payload change bumps ``version``
         (including inline, so the mockup gate has a stable version to compare)."""
-        ds = await self.require_design_system(design_system_id)
+        ds = await self.require_authorized_design_system(
+            design_system_id,
+            owner_id,
+            board_id=board_id,
+            board_access_authorized=board_access_authorized,
+            allow_owned_global_without_link=allow_owned_global_without_link,
+        )
+        # A board role can authorize collaborative writes to an inline artifact,
+        # but a global catalog row remains owned by its creator.  In particular,
+        # a legacy/shared board link must never turn into cross-owner catalog
+        # mutation authority.
+        if ds.scope == "global" and ds.owner_id != owner_id:
+            self._raise_not_found(design_system_id)
         bump = False
         if title is not None and title != ds.title:
             if not title.strip():
@@ -218,7 +469,6 @@ class DesignSystemService:
             bump = True
         if payload is not None and payload != ds.payload:
             ds.payload = payload
-            flag_modified(ds, "payload")
             bump = True
         if status is not None:
             if status not in _VALID_STATUSES:
@@ -231,27 +481,55 @@ class DesignSystemService:
             ds.status = status
         if bump:
             ds.version = (ds.version or 1) + 1
-        await self.db.flush()
-        await self.db.refresh(ds)
-        return ds
+        return await get_design_system_store().save(self.db, ds)
 
-    async def delete_design_system(self, design_system_id: str, owner_id: str) -> bool:
-        ds = await self.db.get(DesignSystem, design_system_id)
-        if ds is None:
-            return False
-        await self.db.delete(ds)
-        await self.db.flush()
-        return True
+    async def delete_design_system(
+        self,
+        design_system_id: str,
+        owner_id: str,
+        *,
+        board_id: str | None = None,
+        board_access_authorized: bool = False,
+        allow_owned_global_without_link: bool = False,
+    ) -> bool:
+        ds = await self.require_authorized_design_system(
+            design_system_id,
+            owner_id,
+            board_id=board_id,
+            board_access_authorized=board_access_authorized,
+            allow_owned_global_without_link=allow_owned_global_without_link,
+        )
+        if ds.scope == "global" and ds.owner_id != owner_id:
+            self._raise_not_found(design_system_id)
+        return await get_design_system_store().delete(
+            self.db,
+            design_system_id=design_system_id,
+        )
 
     # -- board link (singular effective per board) -------------------------
 
     async def link_design_system_to_board(
-        self, board_id: str, design_system_id: str
-    ) -> BoardDesignSystem:
+        self,
+        board_id: str,
+        design_system_id: str,
+        *,
+        owner_id: str | None = None,
+        board_access_authorized: bool = False,
+    ) -> BoardDesignSystemRecord:
         """Set the board's single effective Design System (FR2). Upserts the singular
-        ``BoardDesignSystem`` row and captures the current design_system_version. An
-        inline Design System can only be linked to its OWN board."""
+        ``BoardDesignSystem`` row and captures the current design_system_version. Only
+        active artifacts are linkable, and an inline Design System can only be linked
+        to its OWN board."""
         ds = await self.require_design_system(design_system_id)
+        if ds.scope == "global" and owner_id is not None and ds.owner_id != owner_id:
+            self._raise_not_found(design_system_id)
+        if (
+            ds.scope == "inline"
+            and owner_id is not None
+            and ds.owner_id != owner_id
+            and not board_access_authorized
+        ):
+            self._raise_not_found(design_system_id)
         if ds.scope == "inline" and ds.board_id != board_id:
             raise DesignSystemError(
                 "design_system_inline_other_board",
@@ -259,68 +537,91 @@ class DesignSystemService:
                 422,
                 {"design_system_id": design_system_id, "board_id": board_id},
             )
-        existing = (
-            await self.db.execute(
-                select(BoardDesignSystem).where(BoardDesignSystem.board_id == board_id)
+        if ds.status != "active":
+            raise DesignSystemError(
+                "design_system_not_active",
+                "Only an active Design System can be linked to a board.",
+                422,
+                {
+                    "design_system_id": design_system_id,
+                    "status": ds.status,
+                    "required_status": "active",
+                },
             )
-        ).scalar_one_or_none()
-        if existing is not None:
-            existing.design_system_id = design_system_id
-            existing.design_system_version = ds.version
-            link = existing
-        else:
-            link = BoardDesignSystem(
-                board_id=board_id,
-                design_system_id=design_system_id,
-                design_system_version=ds.version,
-            )
-            self.db.add(link)
-        await self.db.flush()
-        await self.db.refresh(link)
-        return link
+        return await get_design_system_store().upsert_board_link(
+            self.db,
+            board_id=board_id,
+            design_system_id=design_system_id,
+            design_system_version=ds.version,
+        )
 
     async def unlink_design_system_from_board(self, board_id: str) -> bool:
-        existing = (
-            await self.db.execute(
-                select(BoardDesignSystem).where(BoardDesignSystem.board_id == board_id)
-            )
-        ).scalar_one_or_none()
-        if existing is None:
-            return False
-        await self.db.delete(existing)
-        await self.db.flush()
-        return True
+        return await get_design_system_store().delete_board_link(
+            self.db,
+            board_id=board_id,
+        )
 
     async def get_board_effective_design_system(self, board_id: str) -> dict[str, Any] | None:
         """Resolve the board's EFFECTIVE Design System from real persisted state: an
         explicit ``BoardDesignSystem`` link takes precedence, else the umbrella default
         snapshot on ``Board.default_config_snapshot['design_system']``. Returns ``None``
         when the board has no effective Design System. Never fabricates a ref."""
-        link = (
-            await self.db.execute(
-                select(BoardDesignSystem).where(BoardDesignSystem.board_id == board_id)
-            )
-        ).scalar_one_or_none()
+        store = get_design_system_store()
+        settings = await store.get_board_settings(self.db, board_id=board_id)
+        gate_mode = settings.get("design_system_gate_mode", "off") or "off"
+        link = await store.get_board_link(self.db, board_id=board_id)
         if link is not None:
-            ds = await self.db.get(DesignSystem, link.design_system_id)
-            return {
+            ds = await store.get(
+                self.db,
+                design_system_id=link.design_system_id,
+            )
+            catalog_version = ds.version if ds else None
+            effective = {
                 "source": "board_link",
                 "design_system_id": link.design_system_id,
                 "version": link.design_system_version,
+                "pinned_version": link.design_system_version,
+                "catalog_version": catalog_version,
+                "version_is_current": (
+                    catalog_version == link.design_system_version
+                    if catalog_version is not None
+                    else False
+                ),
                 "title": ds.title if ds else None,
                 "status": ds.status if ds else None,
                 "scope": ds.scope if ds else None,
                 "exists": ds is not None,
+                "gate_mode": gate_mode,
             }
-        board = await self.db.get(Board, board_id)
-        snapshot = (board.default_config_snapshot or {}).get("design_system") if board else None
+            return project_effective_design_system(effective)["effective"]
+        snapshot = await store.get_board_snapshot(self.db, board_id=board_id)
         if snapshot:
-            return {
+            design_system_id = snapshot.get("design_system_id")
+            ds = (
+                await store.get(self.db, design_system_id=str(design_system_id))
+                if design_system_id
+                else None
+            )
+            pinned_version = snapshot.get("version")
+            catalog_version = ds.version if ds else None
+            effective = {
                 "source": "default_snapshot",
-                "design_system_id": snapshot.get("design_system_id"),
-                "version": snapshot.get("version"),
-                "gate_mode": snapshot.get("gate_mode"),
+                "design_system_id": design_system_id,
+                "version": pinned_version,
+                "pinned_version": pinned_version,
+                "catalog_version": catalog_version,
+                "version_is_current": (
+                    catalog_version == pinned_version
+                    if catalog_version is not None
+                    else False
+                ),
+                "title": ds.title if ds else None,
+                "status": ds.status if ds else None,
+                "scope": ds.scope if ds else None,
+                "exists": ds is not None,
+                "gate_mode": gate_mode,
             }
+            return project_effective_design_system(effective)["effective"]
         return None
 
 
@@ -379,15 +680,17 @@ class MockupDesignSystemGate:
     already gated in the same transaction (db.info marker) is skipped to avoid
     double-gating across the MCP tool + the service-layer guard."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: Any) -> None:
         self.db = db
         self._svc = DesignSystemService(db)
 
     # -- resolution --------------------------------------------------------
 
     async def _gate_mode(self, board_id: str) -> str:
-        board = await self.db.get(Board, board_id)
-        settings = (board.settings or {}) if board else {}
+        settings = await get_design_system_store().get_board_settings(
+            self.db,
+            board_id=board_id,
+        )
         return settings.get("design_system_gate_mode", "off") or "off"
 
     async def _effective(self, board_id: str) -> tuple[str, dict[str, Any] | None]:
@@ -402,13 +705,18 @@ class MockupDesignSystemGate:
         if effective.get("source") == "board_link":
             real = bool(effective.get("exists"))
         else:  # default_snapshot — confirm the snapshot id resolves to a real row.
-            real = (await self.db.get(DesignSystem, ds_id)) is not None
+            real = (
+                await get_design_system_store().get(
+                    self.db,
+                    design_system_id=str(ds_id),
+                )
+            ) is not None
         return ("real" if real else "dangling"), effective
 
     # -- marking (anti double-gate within a transaction) -------------------
 
     def _marked_ids(self) -> set:
-        return self.db.info.setdefault("_ds_gated_screen_ids", set())
+        return get_design_system_store().marked_screen_ids(self.db)
 
     def _mark(self, screen: dict[str, Any]) -> None:
         sid = screen.get("id")
@@ -469,8 +777,9 @@ class MockupDesignSystemGate:
             })
 
         # advisory: persist the mockup, record a queryable warning audit row.
-        self.db.add(
-            DesignSystemGateAudit(
+        get_design_system_store().add_gate_audit(
+            self.db,
+            DesignSystemGateAuditRecord(
                 board_id=board_id,
                 entity_type=entity_type,
                 entity_id=entity_id,
@@ -511,7 +820,10 @@ class MockupDesignSystemGate:
         provided_version = ref.get("version") if isinstance(ref, dict) else None
         if not ref or not provided_id:
             return GATE_REQUIRED
-        provided_ds = await self.db.get(DesignSystem, provided_id)
+        provided_ds = await get_design_system_store().get(
+            self.db,
+            design_system_id=str(provided_id),
+        )
         if provided_ds is None or provided_id != expected_id:
             # synthetic / non-existent / not the board's real effective identity.
             return GATE_NOT_FOUND
@@ -574,7 +886,7 @@ _GATE_MESSAGES = {
 
 
 async def gate_entity_screen_mockups(
-    db: AsyncSession,
+    db: Any,
     entity: Any,
     new_screens: list[Any] | None,
     *,

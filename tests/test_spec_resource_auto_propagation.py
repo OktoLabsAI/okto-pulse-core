@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     ArchitectureDesign,
     Board,
@@ -29,6 +29,11 @@ from okto_pulse.core.models.schemas import (
     SpecKnowledgeUpdate,
     SpecUpdate,
 )
+from okto_pulse.core.ports.knowledge_propagation import (
+    KnowledgePropagationScope,
+    register_knowledge_propagation_port,
+    reset_knowledge_propagation_port_for_tests,
+)
 from okto_pulse.core.services.architecture import ArchitectureDesignRepository
 from okto_pulse.core.services.main import (
     BoardService,
@@ -39,6 +44,25 @@ from okto_pulse.core.services.main import (
 from okto_pulse.core.services.spec_resource_propagation import SpecResourcePropagationService
 
 
+class _LegacyKnowledgeScopePort:
+    async def load_scope(self, _context, request):
+        return KnowledgePropagationScope(
+            target=request.target,
+            scope_revision=0,
+            v2_active=False,
+            selection_state=None,
+        )
+
+
+@pytest.fixture(autouse=True)
+def _register_legacy_knowledge_scope_port():
+    register_knowledge_propagation_port(_LegacyKnowledgeScopePort())
+    try:
+        yield
+    finally:
+        reset_knowledge_propagation_port_for_tests()
+
+
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
 
@@ -47,6 +71,29 @@ def _settings(*resource_types: str) -> dict:
     return {
         "auto_derive_spec_resources_enabled": True,
         "auto_derive_spec_resource_types": list(resource_types),
+    }
+
+
+def _governance_metadata(*, purpose: str = "Explain the source contract") -> dict:
+    return {
+        "contract_version": 1,
+        "authority": "advisory",
+        "classification": "technical_reference",
+        "purpose": purpose,
+        "audience": ["agent"],
+        "relevance_reason": "Required by the linked implementation",
+        "provenance": [{"kind": "code", "reference": "repo:core@abc123"}],
+        "as_of": "2026-07-22T20:00:00-03:00",
+        "version_ref": "commit:abc123",
+        "version_not_applicable_reason": None,
+        "scope": "Knowledge Base propagation",
+        "limitations": "Advisory evidence only",
+        "stable_references": [],
+        "lifecycle_state": "current",
+        "superseded_by": None,
+        "superseded_reason": None,
+        "exclusive_authority_check": "passed",
+        "normative_destinations": [],
     }
 
 
@@ -181,6 +228,7 @@ async def test_create_card_auto_propagates_selected_spec_resources_idempotently(
         assert card is not None
 
         assert [item["id"] for item in card.knowledge_bases or []] == [f"cardkb_{ids['knowledge_id']}"]
+        assert "governance_metadata" not in card.knowledge_bases[0]
         assert [item["id"] for item in card.screen_mockups or []] == [ids["mockup_id"]]
 
         arch_count = (
@@ -419,6 +467,88 @@ async def test_spec_resource_changes_backfill_existing_linked_cards(db_factory):
         assert [item["id"] for item in refreshed.screen_mockups or []] == [
             "late-mockup"
         ]
+
+
+@pytest.mark.asyncio
+async def test_governance_metadata_refreshes_once_without_changing_card_identity(
+    db_factory,
+):
+    board_id = _id("board-governance-refresh")
+    actor_id = _id("agent-governance-refresh")
+    spec_id = _id("spec-governance-refresh")
+
+    async with db_factory() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name="Governance refresh board",
+                owner_id=actor_id,
+                settings=_settings("knowledge_base"),
+            )
+        )
+        db.add(
+            Spec(
+                id=spec_id,
+                board_id=board_id,
+                title="Governed source spec",
+                status=SpecStatus.APPROVED,
+                created_by=actor_id,
+                functional_requirements=[],
+                acceptance_criteria=[],
+                test_scenarios=[],
+                business_rules=[],
+                api_contracts=[],
+            )
+        )
+        await db.flush()
+        card = await CardService(db).create_card(
+            board_id,
+            actor_id,
+            CardCreate(title="Governed target", spec_id=spec_id),
+        )
+        assert card is not None
+
+        service = SpecKnowledgeService(db)
+        kb = await service.create_knowledge(
+            spec_id,
+            actor_id,
+            SpecKnowledgeCreate(
+                title="Governed KB",
+                content="Reference content",
+                governance_metadata=_governance_metadata(),
+            ),
+        )
+        assert kb is not None
+
+        loaded = await db.get(Card, card.id)
+        first_snapshot = loaded.knowledge_bases[0]
+        original_id = first_snapshot["id"]
+        original_source = first_snapshot["source"]
+        assert first_snapshot["governance_metadata"]["purpose"] == (
+            "Explain the source contract"
+        )
+
+        changed = _governance_metadata(purpose="Explain the revised contract")
+        await service.update_knowledge(
+            kb.id,
+            SpecKnowledgeUpdate(governance_metadata=changed),
+        )
+        await db.refresh(loaded)
+        refreshed = loaded.knowledge_bases[0]
+        assert len(loaded.knowledge_bases) == 1
+        assert refreshed["id"] == original_id
+        assert refreshed["source"] == original_source
+        assert refreshed["governance_metadata"]["purpose"] == (
+            "Explain the revised contract"
+        )
+
+        reordered = {key: changed[key] for key in reversed(tuple(changed))}
+        await service.update_knowledge(
+            kb.id,
+            SpecKnowledgeUpdate(governance_metadata=reordered),
+        )
+        await db.refresh(loaded)
+        assert loaded.knowledge_bases == [refreshed]
 
 
 @pytest.mark.asyncio

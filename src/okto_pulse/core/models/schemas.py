@@ -2,13 +2,15 @@
 
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Any, Literal
+from typing import Any, Generic, Literal, TypeAlias, TypeVar
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    RootModel,
     ValidationInfo,
+    computed_field,
     field_validator,
     model_validator,
 )
@@ -17,18 +19,27 @@ from okto_pulse.core.discovery_params_schema import (
     DiscoveryParamsSchema,
     normalize_discovery_params_schema,
 )
-from okto_pulse.core.models.db import (
+from okto_pulse.core.domain.enums import (
+    BugSeverity,
     CardPriority,
     CardStatus,
+    CardType,
     IdeationComplexity,
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    StoryStatus,
     SprintLaneType,
     SprintStatus,
+    StoryStatus,
 )
-
+from okto_pulse.core.domain.knowledge_governance import (
+    project_knowledge_governance,
+)
+from okto_pulse.core.models.knowledge_propagation import (
+    CardCreateKnowledgeMutationResponse,
+    DeriveSpecKnowledgeMutationResponse,
+    KnowledgePropagationEnvelopeV2,
+)
 
 # ============================================================================
 # Base Schemas
@@ -46,6 +57,17 @@ class BaseSchema(BaseModel):
     """
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class KnowledgeGovernanceResponseSchema(BaseSchema):
+    """Shared additive read projection for every Knowledge Base surface."""
+
+    governance_metadata: Any | None = None
+
+    @computed_field(return_type=dict[str, Any])
+    @property
+    def governance(self) -> dict[str, Any]:
+        return project_knowledge_governance(self.governance_metadata).as_dict()
 
 
 # ============================================================================
@@ -84,13 +106,12 @@ class AgentSelfUpdate(BaseModel):
 
 
 class AgentResponse(BaseSchema):
-    """Schema for agent response (global, always includes api_key)."""
+    """Schema for agent response without recoverable credentials."""
 
     id: str
     name: str
     description: str | None
     objective: str | None = None
-    api_key: str
     is_active: bool
     permissions: list[str] | None
     preset_id: str | None = None
@@ -112,6 +133,14 @@ class AgentSummary(BaseSchema):
     permission_flags: dict[str, Any] | None = None
     created_at: datetime
     last_used_at: datetime | None
+
+
+class AgentRevealResponse(BaseSchema):
+    """Create/rotate response that exposes the raw credential exactly once."""
+
+    agent: AgentResponse
+    reveal_once_secret: str
+    message: str | None = None
 
 
 class AgentBoardResponse(BaseSchema):
@@ -253,15 +282,65 @@ class CommentResponse(BaseSchema):
 # ============================================================================
 
 
+class TestEvidenceAssertionV2(BaseModel):
+    """One machine-checkable assertion observed during a product execution."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1)
+    expected: Any
+    observed: Any
+    status: Literal["passed", "failed"]
+    message: str | None = None
+
+
+class TestEvidenceProvenanceV2(BaseModel):
+    """Identity of the Community adapter that produced an attestation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    producer: str = Field(..., min_length=1)
+    producer_version: str = Field(..., min_length=1)
+    adapter: str = Field(..., min_length=1)
+    environment: str = Field(..., min_length=1)
+
+
+class TestExecutionAttestationV2(BaseModel):
+    """Evidence V2 result emitted after exercising the real product runtime.
+
+    The CORE owns this transport-neutral contract and its pure verification
+    rules.  Reading/running the manifest belongs to a concrete Community
+    adapter; the adapter binds that execution to this payload with the manifest
+    digest and the deterministic ``attestation_sha256``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[2] = 2
+    run_id: str = Field(..., min_length=1)
+    executed_at: str = Field(..., min_length=1)
+    scenario_id: str = Field(..., min_length=1)
+    # Optional only for lossless reads of pre-hardening V2 rows. Every new
+    # gated write requires a valid digest in the semantic verifier.
+    scenario_sha256: str | None = None
+    outcome: Literal["passed", "failed"]
+    product_runtime_exercised: bool
+    manifest_sha256: str = Field(..., min_length=1)
+    assertions: list[TestEvidenceAssertionV2] = Field(..., min_length=1)
+    provenance: TestEvidenceProvenanceV2
+    attestation_sha256: str = Field(..., min_length=1)
+
+
 class TestScenarioEvidence(BaseModel):
     """Structured proof that a test scenario exists or was executed.
 
     Spec 9e0bf979 — re-executable validation evidence contract. ``evidence_class``
     classifies the KIND of proof (see ``test_scenario_lifecycle.EVIDENCE_CLASSES``)
     so a validator can rerun or inspect the artifact instead of trusting a raw
-    run log. All new fields are additive and optional; legacy evidence that only
-    carries the minimal automated/passed fields stays valid and readable
-    (backward compatibility, fr_a245e2c7).
+    run log. All new fields are additive and optional. Legacy evidence stays
+    readable for backward compatibility; specifically, historical free-form
+    MCP manifests are reader-only/unverified until a V2 execution attestation
+    is produced.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -275,7 +354,18 @@ class TestScenarioEvidence(BaseModel):
     # Re-executable evidence contract (spec 9e0bf979, tr_61dabab8).
     evidence_class: str | None = None
     replay_command: str | None = None
-    mcp_replay_manifest: str | None = None
+    # Deprecated reader-only alias. Historical rows may contain either a string
+    # or the free-form object accepted by the old status endpoint. Both remain
+    # serializable so a GET -> SpecUpdate round-trip never loses data, but the
+    # Evidence V2 gate treats them as ``legacy_unverified``.
+    mcp_replay_manifest: str | dict[str, Any] | None = None
+    # Evidence V2 canonical contract. New MCP replay writes use these two
+    # fields; ``manifest_ref`` is always a reference, never an embedded object.
+    manifest_ref: str | None = None
+    execution_attestation: TestExecutionAttestationV2 | None = None
+    # Opaque installation-issued receipt. CORE never derives or trusts this
+    # value itself; the concrete edition authenticates it at every write.
+    execution_receipt: str | None = None
     manual_checklist_ref: str | None = None
     expected_output_snapshot: str | None = None
     replay_should_exist: bool | None = None
@@ -462,6 +552,156 @@ class StoryConversionRequest(BaseModel):
     proposed_approach: str | None = None
     mockup_ids: list[str] | None = None
     mark_converted: bool = True
+
+
+_PageItemT = TypeVar("_PageItemT")
+
+
+class PageEnvelope(BaseSchema, Generic[_PageItemT]):
+    """Paginated list envelope (spec 8b33f9a8, FR1/DR9).
+
+    Returned by the list routes ONLY when the caller opts in with
+    ``offset``/``limit``; without them the legacy shapes stay byte-identical.
+    Both totals are ALWAYS server-computed, window-independent (KG
+    dec-s05-01): ``total_filtered`` counts the filtered scope that produced
+    ``items``; ``total_overall`` counts the base scope (board + archived
+    policy) regardless of discretionary filters.
+    """
+
+    items: list[_PageItemT]
+    total_filtered: int
+    total_overall: int
+    offset: int
+    limit: int
+
+
+class LookupItem(BaseSchema):
+    """Lean entity identity returned by the board lookup endpoints."""
+
+    id: str
+    title: str
+    status: str
+
+
+class LookupResponse(BaseSchema):
+    """Bounded response shared by spec and ideation lookups."""
+
+    items: list[LookupItem]
+    total: int = Field(..., ge=0)
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1, le=50)
+
+
+class StoryPageItem(BaseSchema):
+    """Lean Story projection for paginated lists (FR4/br_0ec07efd).
+
+    The heavy ``screen_mockups`` HTML array is REPLACED by
+    ``screen_mockups_count`` (badge-sufficient, derived from the loaded row
+    without extra queries); ``ideation_links`` is likewise omitted from the
+    paginated projection.
+    """
+
+    id: str
+    board_id: str
+    topic_id: str
+    title: str
+    description: str
+    actor: str | None = None
+    goal: str | None = None
+    benefit: str | None = None
+    labels: list[str] | None = None
+    status: StoryStatus
+    assignee_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    archived: bool = False
+    screen_mockups_count: int = 0
+
+
+class IdeationPageItem(BaseSchema):
+    """Lean Ideation projection for paginated lists (FR4).
+
+    Row-derivable fields only — relationship collections
+    (``architecture_designs``) and join-derived badge counts stay off the
+    paginated projection; ``scope_assessment`` rides the ORM column.
+    """
+
+    id: str
+    board_id: str
+    title: str
+    description: str | None = None
+    problem_statement: str | None = None
+    complexity: IdeationComplexity | None = None
+    status: IdeationStatus
+    version: int
+    assignee_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    labels: list[str] | None = None
+    archived: bool = False
+    scope_assessment: dict | None = None
+
+
+class RefinementPageItem(BaseSchema):
+    """Lean Refinement projection for paginated lists (FR4)."""
+
+    id: str
+    ideation_id: str
+    board_id: str
+    title: str
+    description: str | None = None
+    status: RefinementStatus
+    version: int
+    assignee_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    labels: list[str] | None = None
+    archived: bool = False
+
+
+class BoardRefinementPageItem(RefinementPageItem):
+    """Board-wide refinement row with its parent title projected in SQL."""
+
+    ideation_title: str
+
+
+class SpecPageItem(BaseSchema):
+    """Lean Spec projection for paginated lists (FR4)."""
+
+    id: str
+    board_id: str
+    ideation_id: str | None = None
+    refinement_id: str | None = None
+    title: str
+    description: str | None = None
+    status: SpecStatus
+    version: int
+    assignee_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    labels: list[str] | None = None
+    archived: bool = False
+
+
+class SprintPageItem(BaseSchema):
+    """Lean Sprint projection for paginated lists (FR4)."""
+
+    id: str
+    spec_id: str
+    board_id: str
+    title: str
+    description: str | None = None
+    objective: str | None = None
+    expected_outcome: str | None = None
+    status: SprintStatus
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    archived: bool = False
 
 
 class StorySummary(BaseSchema):
@@ -878,6 +1118,7 @@ class ArchitectureDesignSummary(BaseSchema):
     title: str
     version: int
     source_ref: str | None = None
+    source_design_id: str | None = None
     source_version: int | None = None
     stale: bool = False
     breaking_change_flag: bool = False
@@ -988,6 +1229,10 @@ class IdeationMove(BaseModel):
     """Schema for changing ideation status."""
 
     status: IdeationStatus
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
 
 
 class IdeationAmbiguityGateSkipUpdate(BaseModel):
@@ -1013,6 +1258,12 @@ class IdeationSummary(BaseSchema):
     scope_assessment: dict | None = None
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
     open_qa_count: int = 0
+    # Count of non-archived, non-cancelled child refinements — drives the
+    # "No refinement" derivation-pending badge.
+    active_refinement_count: int = 0
+    # Count of non-archived, non-cancelled direct specs (no refinement) — drives
+    # the "No spec" derivation-pending badge for done small ideations.
+    active_spec_count: int = 0
     id: str
     board_id: str
     title: str
@@ -1154,6 +1405,13 @@ class IdeationKnowledgeCreate(BaseModel):
     description: str | None = Field(None, description="Descricao resumida do KB item da ideacao.")
     content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
     mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Envelope opcional e versionado de governanca semantica. "
+            "A validacao canonica ocorre no servico de aplicacao."
+        ),
+    )
 
 
 class IdeationKnowledgeUpdate(BaseModel):
@@ -1163,9 +1421,16 @@ class IdeationKnowledgeUpdate(BaseModel):
     description: str | None = Field(None, description="Nova descricao resumida (opcional).")
     content: str | None = Field(None, min_length=1, description="Novo conteudo do KB item (opcional).")
     mime_type: str | None = Field(None, description="Novo MIME type do conteudo (opcional).")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Novo envelope de governanca; omitido preserva o valor atual e "
+            "null remove o envelope."
+        ),
+    )
 
 
-class IdeationKnowledgeResponse(BaseSchema):
+class IdeationKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     """Full ideation knowledge base item response."""
 
     id: str
@@ -1179,12 +1444,16 @@ class IdeationKnowledgeResponse(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
+    governance_metadata: Any | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
 
 
-class IdeationKnowledgeSummary(BaseSchema):
+class IdeationKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     """Lightweight ideation KB summary (without content)."""
 
     id: str
@@ -1197,6 +1466,10 @@ class IdeationKnowledgeSummary(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
+    governance_metadata: Any | None = None
     created_at: datetime
 
 
@@ -1289,6 +1562,10 @@ class RefinementMove(BaseModel):
     """Schema for changing refinement status."""
 
     status: RefinementStatus
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
 
 
 class RefinementSummary(BaseSchema):
@@ -1296,6 +1573,9 @@ class RefinementSummary(BaseSchema):
 
     # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
     open_qa_count: int = 0
+    # Count of non-archived, non-cancelled child specs — drives the
+    # "Sem spec" derivation-pending badge.
+    active_spec_count: int = 0
     id: str
     ideation_id: str
     board_id: str
@@ -1432,9 +1712,43 @@ class RefinementKnowledgeCreate(BaseModel):
     description: str | None = Field(None, description="Descricao resumida do KB item do refinement.")
     content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
     mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Envelope opcional e versionado de governanca semantica. "
+            "A validacao canonica ocorre no servico de aplicacao."
+        ),
+    )
 
 
-class RefinementKnowledgeResponse(BaseSchema):
+class RefinementKnowledgeUpdate(BaseModel):
+    """Schema for updating a refinement knowledge base item."""
+
+    title: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Novo titulo do KB item (opcional).",
+    )
+    description: str | None = Field(
+        None, description="Nova descricao resumida (opcional)."
+    )
+    content: str | None = Field(
+        None, min_length=1, description="Novo conteudo do KB item (opcional)."
+    )
+    mime_type: str | None = Field(
+        None, description="Novo MIME type do conteudo (opcional)."
+    )
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Novo envelope de governanca; omitido preserva o valor atual e "
+            "null remove o envelope."
+        ),
+    )
+
+
+class RefinementKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     """Full refinement knowledge base item response."""
 
     id: str
@@ -1448,12 +1762,16 @@ class RefinementKnowledgeResponse(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
+    governance_metadata: Any | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime
 
 
-class RefinementKnowledgeSummary(BaseSchema):
+class RefinementKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     """Lightweight refinement KB summary (without content)."""
 
     id: str
@@ -1466,6 +1784,10 @@ class RefinementKnowledgeSummary(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
+    governance_metadata: Any | None = None
     created_at: datetime
 
 
@@ -1530,6 +1852,10 @@ class SpecMove(BaseModel):
     """Schema for changing spec status."""
 
     status: SpecStatus
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
 
 
 class SpecSummary(BaseSchema):
@@ -1578,6 +1904,10 @@ class IdeationResponse(BaseSchema):
     pre_archive_status: str | None = None
     # Per-ideation opt-out of the board Max ambiguity gate (spec 2485780b).
     skip_ambiguity_gate: bool = False
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
     refinements: list[RefinementSummary] = []
     stories: list[StorySummary] = []
     specs: list[SpecSummary] = []
@@ -1608,6 +1938,10 @@ class RefinementResponse(BaseSchema):
     labels: list[str] | None
     archived: bool = False
     pre_archive_status: str | None = None
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
     specs: list[SpecSummary] = []
     knowledge_bases: list[RefinementKnowledgeSummary] = []
     architecture_designs: list[ArchitectureDesignSummary] = []
@@ -1709,6 +2043,13 @@ class SpecKnowledgeCreate(BaseModel):
     description: str | None = Field(None, description="Descricao resumida do conteudo do KB item.")
     content: str = Field(..., min_length=1, description="Conteudo do KB item (markdown por padrao).")
     mime_type: str = Field("text/markdown", description="MIME type do conteudo: 'text/markdown', 'text/plain', etc.")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Envelope opcional e versionado de governanca semantica. "
+            "A validacao canonica ocorre no servico de aplicacao."
+        ),
+    )
 
 
 class SpecKnowledgeUpdate(BaseModel):
@@ -1718,9 +2059,16 @@ class SpecKnowledgeUpdate(BaseModel):
     description: str | None = Field(None, description="Nova descricao resumida (opcional).")
     content: str | None = Field(None, description="Novo conteudo do KB item (opcional).")
     mime_type: str | None = Field(None, description="Novo MIME type do conteudo (opcional).")
+    governance_metadata: Any | None = Field(
+        None,
+        description=(
+            "Novo envelope de governanca; omitido preserva o valor atual e "
+            "null remove o envelope."
+        ),
+    )
 
 
-class SpecKnowledgeResponse(BaseSchema):
+class SpecKnowledgeResponse(KnowledgeGovernanceResponseSchema):
     """Full knowledge base item response."""
 
     id: str
@@ -1734,12 +2082,16 @@ class SpecKnowledgeResponse(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
+    governance_metadata: Any | None = None
+    created_by: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
-class SpecKnowledgeSummary(BaseSchema):
+class SpecKnowledgeSummary(KnowledgeGovernanceResponseSchema):
     """Lightweight KB summary (without content)."""
 
     id: str
@@ -1752,7 +2104,11 @@ class SpecKnowledgeSummary(BaseSchema):
     source_title: str | None = None
     source_version: int | None = None
     source_kb_id: str | None = None
-    created_at: datetime
+    root_source_kb_id: str | None = None
+    immediate_parent_kb_id: str | None = None
+    content_hash: str | None = None
+    governance_metadata: Any | None = None
+    created_at: datetime | None = None
 
 
 class CardSummaryForSpec(BaseSchema):
@@ -1794,6 +2150,10 @@ class SpecResponse(BaseSchema):
     skip_or_coverage: bool = False
     archived: bool = False
     pre_archive_status: str | None = None
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
     status: SpecStatus
     version: int
     assignee_id: str | None
@@ -1809,6 +2169,11 @@ class SpecResponse(BaseSchema):
     qa_items: list[SpecQAResponse] = []
 
 
+# Keep the legacy response model untouched while allowing the refinement
+# derive route to declare its authoritative v2 receipt projection.
+DeriveSpecResponse: TypeAlias = SpecResponse | DeriveSpecKnowledgeMutationResponse
+
+
 # ============================================================================
 # Card Schemas
 # ============================================================================
@@ -1820,7 +2185,13 @@ class CardCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500, description="Titulo conciso do card (1-500 chars).")
     description: str | None = Field(None, description="Resumo do objetivo ou contexto do card.")
     details: str | None = Field(None, description="Descricao tecnica detalhada, markdown suportado.")
-    status: CardStatus = Field(CardStatus.NOT_STARTED, description="Status inicial do card no board.")
+    status: CardStatus = Field(
+        CardStatus.NOT_STARTED,
+        description=(
+            "Status inicial do card no board: somente not_started ou started. "
+            "Use move_card para avancar o ciclo de vida."
+        ),
+    )
     priority: CardPriority = Field(CardPriority.NONE, description="Prioridade do card: none, low, medium, high, very_high, critical.")
     assignee_id: str | None = Field(None, description="ID do agente ou usuario responsavel pelo card.")
     due_date: datetime | None = Field(None, description="Data limite para conclusao do card (ISO 8601).")
@@ -1835,6 +2206,14 @@ class CardCreate(BaseModel):
             "(default 3; boards podem configurar 2 ou outro valor)."
         ),
     )
+    functional_requirement_ids: list[str] | None = Field(
+        None,
+        description="FR IDs to backlink atomically during card creation.",
+    )
+    business_rule_ids: list[str] | None = Field(
+        None,
+        description="Business-rule IDs to backlink atomically during card creation.",
+    )
     screen_mockups: list[ScreenMockup] | None = Field(None, description="Mockups de tela vinculados ao card.")
     # Card type: "normal", "test", or "bug".
     card_type: str = Field("normal", description="Tipo do card: 'normal', 'test' ou 'bug'.")
@@ -1844,7 +2223,14 @@ class CardCreate(BaseModel):
     observed_behavior: str | None = Field(None, description="Comportamento observado/incorreto (apenas bug cards).")
     steps_to_reproduce: str | None = Field(None, description="Passos para reproduzir o bug (apenas bug cards).")
     action_plan: str | None = Field(None, description="Plano de acao para correcao do bug (apenas bug cards).")
-
+    knowledge_propagation: KnowledgePropagationEnvelopeV2 | None = Field(
+        None,
+        description=(
+            "Selective Knowledge propagation v2. Omitted keeps the complete "
+            "legacy card-create behavior; when supplied this envelope is "
+            "authoritative and v1 Knowledge snapshot writes are disabled."
+        ),
+    )
 
 class CardUpdate(BaseModel):
     """Schema for updating a card."""
@@ -1852,7 +2238,13 @@ class CardUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=500, description="Novo titulo do card (opcional, vazio = sem mudanca).")
     description: str | None = Field(None, description="Nova descricao do card (opcional).")
     details: str | None = Field(None, description="Novos detalhes tecnicos do card (opcional).")
-    status: CardStatus | None = Field(None, description="Novo status do card (use move_card para transicoes com conclusao).")
+    status: CardStatus | None = Field(
+        None,
+        description=(
+            "Reservado para compatibilidade de leitura; update_card rejeita "
+            "alteracoes de status. Use move_card para toda transicao."
+        ),
+    )
     priority: CardPriority | None = Field(None, description="Nova prioridade: none, low, medium, high, very_high, critical.")
     position: int | None = Field(None, description="Nova posicao do card dentro da coluna (zero-indexed).")
     assignee_id: str | None = Field(None, description="Novo ID do responsavel pelo card.")
@@ -1876,6 +2268,13 @@ class CardUpdate(BaseModel):
     steps_to_reproduce: str | None = Field(None, description="Passos para reproducao atualizados (apenas bug cards).")
     action_plan: str | None = Field(None, description="Plano de acao atualizado para correcao do bug (apenas bug cards).")
     linked_test_task_ids: list[str] | None = Field(None, description="IDs dos cards de teste vinculados a este bug (apenas bug cards).")
+    skip_task_requirement_link_gate: bool | None = Field(
+        None,
+        description=(
+            "Bypass humano do gate que exige vinculo direto do task card a "
+            "FR/TR/BR/IR/OR. Agentes MCP nao podem alterar este campo."
+        ),
+    )
 
 
 class ConclusionEntry(BaseModel):
@@ -1925,15 +2324,160 @@ class ConclusionEntry(BaseModel):
 
 
 class CardMove(BaseModel):
-    """Schema for moving a card between columns."""
+    """Schema for moving a card between columns.
+
+    Placement selectors (spec 8b33f9a8, matriz v13): ``position`` (legacy
+    positional; None/-1 = fim; < -1 rejeitado — estreitamento autorizado QA
+    6afdc547), ``before_id``/``after_id`` (relativo a um card ATIVO da coluna
+    destino) e ``placement`` (start|end). Mutuamente exclusivos.
+
+    The published ``oneOf`` (below) is NULL-TOLERANT: excluded fields accept
+    ABSENT or EXPLICIT NULL via ``{"type": "null"}`` — never
+    ``{"const": null}``, which Pydantic's serializer DROPS (it becomes ``{}``
+    and accepts anything). Every raw payload matches EXACTLY one variant or
+    zero (422), and the runtime agrees case by case: ``position`` is a
+    STRICT int (no ``"0"``/``true`` coercion) and anchors require a
+    non-blank character (``pattern \\S``) exactly like the runtime strip
+    check. TR4's ``dependentRequired`` is FORMALLY SUBSTITUTED by this
+    oneOf: the selectors' co-occurrence rules are exclusions, which
+    ``dependentRequired`` cannot express — publishing a vacuous or
+    runtime-unenforced coupling would reintroduce schema/runtime divergence
+    (substitution recorded on card c8218da8).
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "oneOf": [
+                {
+                    "title": "positional",
+                    "properties": {
+                        "position": {
+                            "anyOf": [
+                                {"type": "null"},
+                                {"type": "integer", "minimum": -1},
+                            ]
+                        },
+                        "before_id": {"type": "null"},
+                        "after_id": {"type": "null"},
+                        "placement": {"type": "null"},
+                    },
+                },
+                {
+                    "title": "relative",
+                    "properties": {
+                        "position": {"type": "null"},
+                        "placement": {"type": "null"},
+                    },
+                    "oneOf": [
+                        {
+                            "required": ["before_id"],
+                            "properties": {
+                                "before_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                },
+                                "after_id": {"type": "null"},
+                            },
+                        },
+                        {
+                            "required": ["after_id"],
+                            "properties": {
+                                "after_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "pattern": "\\S",
+                                },
+                                "before_id": {"type": "null"},
+                            },
+                        },
+                    ],
+                },
+                {
+                    "title": "global",
+                    "required": ["placement"],
+                    "properties": {
+                        "placement": {"enum": ["start", "end"]},
+                        "position": {"type": "null"},
+                        "before_id": {"type": "null"},
+                        "after_id": {"type": "null"},
+                    },
+                },
+            ]
+        }
+    )
 
     status: CardStatus = Field(..., description="Novo status do card: not_started, started, in_progress, validation, on_hold, done, cancelled.")
-    position: int | None = Field(None, description="Nova posicao na coluna de destino (-1 ou None = fim da coluna).")
+    position: int | None = Field(None, description="Nova posicao na coluna de destino (-1 ou None = fim da coluna; < -1 = 422). bool/str sao rejeitados sem coercao; floats matematicamente integrais (1.0/-1.0/-0.0) normalizam para int — exatamente o conjunto que o schema draft 2020-12 aceita como 'integer'.")
+
+    @field_validator("position", mode="before")
+    @classmethod
+    def _position_integer_kinds(cls, value: object) -> object:
+        """Agree with the published Draft 2020-12 ``integer`` semantics.
+
+        ``"0"``/``true`` are rejected WITHOUT coercion (the schema matches
+        zero variants for them), while mathematically integral floats
+        (``1.0``, ``-1.0``, ``-0.0``) ARE ``integer`` in Draft 2020-12 and
+        normalize to ``int``; fractional floats stay invalid.
+        """
+        if value is None or (isinstance(value, int) and not isinstance(value, bool)):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        raise ValueError(
+            "position must be an integer (bool/str rejected; integral floats "
+            "normalize; fractional floats invalid)"
+        )
+    before_id: str | None = Field(None, description="Ancora relativa: insere IMEDIATAMENTE ANTES deste card ativo da coluna destino. Exclui after_id/position/placement.")
+    after_id: str | None = Field(None, description="Ancora relativa: insere IMEDIATAMENTE DEPOIS deste card ativo da coluna destino. Exclui before_id/position/placement.")
+    placement: str | None = Field(None, description="Posicionamento global na coluna destino: 'start' ou 'end'. Exclui position/anchors.")
+
+    @model_validator(mode="after")
+    def _validate_placement_selectors(self) -> "CardMove":
+        """Preflight the placement contract at PARSE time — before any service
+        read, mutation, policy or event runs (matriz v13; QA 6afdc547).
+
+        ``position`` counts as a selector whenever it is an INT — including
+        ``-1`` (explicit positional intent), so ``position=-1 + before_id`` is
+        a conflict. An explicit ``position: null`` stays null-tolerant and
+        combines freely with anchors/placement. ``position < -1`` is rejected
+        here (422 at the REST boundary); anchors must be non-blank;
+        ``placement`` only accepts ``start``/``end``.
+        """
+        if self.position is not None and self.position < -1:
+            raise ValueError(
+                "position_out_of_range: position must be None, -1 (end of column) or >= 0"
+            )
+        selectors = [
+            name
+            for name, value in (
+                ("position", self.position),
+                ("before_id", self.before_id),
+                ("after_id", self.after_id),
+                ("placement", self.placement),
+            )
+            if value is not None
+        ]
+        if len(selectors) > 1:
+            raise ValueError(
+                f"card_move_conflicting_placement: {'+'.join(selectors)} — "
+                "position/before_id/after_id/placement are mutually exclusive"
+            )
+        if self.placement is not None and self.placement not in ("start", "end"):
+            raise ValueError(
+                "card_move_invalid_placement: placement must be 'start' or 'end'"
+            )
+        for name in ("before_id", "after_id"):
+            value = getattr(self, name)
+            if value is not None and not value.strip():
+                raise ValueError(f"card_move_empty_anchor: {name} must be non-blank")
+        return self
     conclusion: str | None = Field(None, description="Resumo obrigatorio ao mover para 'validation' ou 'done': o que foi feito, arquivos, decisoes e testes.")
     completeness: int | None = Field(None, description="0-100: quanto do trabalho planejado foi implementado (obrigatorio em validation/done).")
     completeness_justification: str | None = Field(None, description="Justificativa para o score de completeness (obrigatorio em validation/done).")
     drift: int | None = Field(None, description="0-100: o quanto a implementacao desviou do plano (0=exato, 100=completamente diferente).")
     drift_justification: str | None = Field(None, description="Justificativa para o score de drift — explica desvios do plano original.")
+    cancellation_reason: str | None = Field(None, description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.")
 
 
 class CardResponse(BaseSchema):
@@ -1972,39 +2516,108 @@ class CardResponse(BaseSchema):
     steps_to_reproduce: str | None = None
     action_plan: str | None = None
     linked_test_task_ids: list[str] | None = None
+    skip_task_requirement_link_gate: bool = False
     validations: list[dict] | None = None
     archived: bool = False
     pre_archive_status: str | None = None
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
+
+    @field_validator("knowledge_bases", mode="before")
+    @classmethod
+    def project_knowledge_base_governance(
+        cls, value: list[dict] | None
+    ) -> list[dict] | None:
+        if value is None:
+            return None
+        return [
+            {
+                **item,
+                "governance": project_knowledge_governance(
+                    item.get("governance_metadata")
+                ).as_dict(),
+            }
+            for item in value
+        ]
+
+
+CardCreateResponse: TypeAlias = CardResponse | CardCreateKnowledgeMutationResponse
 
 
 class CardSummary(BaseSchema):
-    """Schema for card summary (without nested items)."""
+    """Canonical lean card projection used by all three columns shapes.
 
-    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int = 0
+    Every field is required at the transport boundary, including nullable
+    fields.  That keeps the opt-in projection explicit and prevents response
+    serialization from silently manufacturing defaults that were not read
+    from persistence.
+    """
+
     id: str
     board_id: str
-    spec_id: str | None = None
-    sprint_id: str | None = None
+    spec_id: str | None
     title: str
     description: str | None
     status: CardStatus
     priority: CardPriority
     position: int
     assignee_id: str | None
+    created_by: str | None
     created_at: datetime
     updated_at: datetime
     due_date: datetime | None
+    labels: list[str]
+    test_scenario_ids: list[str] | None
+    conclusions: list[ConclusionEntry] | None
+    card_type: CardType
+    origin_task_id: str | None
+    severity: str | None
+    linked_test_task_ids: list[str] | None
+    archived: bool
+    # Count of unanswered Q&A (answered_at IS NULL) — drives the badge.
+    open_qa_count: int = Field(..., ge=0)
+
+
+class CardPageItem(BaseSchema):
+    """Authoritative lightweight DTO for the paginated board card list.
+
+    All fields are required in the projection, while nullable ORM columns and
+    metrics that do not exist until a validation/conclusion occurs remain
+    explicitly nullable.
+    """
+
+    id: str
+    board_id: str
+    spec_id: str | None
+    sprint_id: str | None
+    title: str
+    description: str | None
+    status: CardStatus
+    priority: CardPriority
+    card_type: CardType
+    position: int
+    assignee_id: str | None
     labels: list[str] | None
-    test_scenario_ids: list[str] | None = None
-    architecture_designs: list[ArchitectureDesignSummary] = []
-    # Bug card fields (for kanban display)
-    card_type: str = "normal"
-    origin_task_id: str | None = None
-    severity: str | None = None
-    linked_test_task_ids: list[str] | None = None
-    archived: bool = False
-    pre_archive_status: str | None = None
+    archived: bool
+    created_by: str
+    due_date: datetime | None
+    severity: BugSeverity | None
+    test_scenario_ids: list[str] | None
+    linked_test_task_ids: list[str] | None
+    validations_count: int = Field(..., ge=0)
+    validations_fail_count: int = Field(..., ge=0)
+    validations_has_pass: bool
+    first_pass_confidence: int | None = Field(..., ge=0, le=100)
+    first_pass_completeness: int | None = Field(..., ge=0, le=100)
+    first_pass_drift: int | None = Field(..., ge=0, le=100)
+    conclusions_count: int = Field(..., ge=0)
+    last_conclusion_completeness: int | None = Field(..., ge=0, le=100)
+    last_conclusion_drift: int | None = Field(..., ge=0, le=100)
+    created_at: datetime
+    updated_at: datetime
+    open_qa_count: int = Field(..., ge=0)
 
 
 # ============================================================================
@@ -2193,11 +2806,17 @@ class BoardSettings(BaseModel):
     skip_contract_coverage_global: bool = False  # if True, all specs bypass API contract coverage checks
     skip_ir_coverage_global: bool = False  # if True, all specs bypass IR→Task coverage checks
     skip_or_coverage_global: bool = False  # if True, all specs bypass OR→Task coverage checks
+    skip_task_requirement_link_gate_global: bool = False  # if True, task cards may start without direct FR/TR/BR/IR/OR links
     skip_decisions_coverage_global: bool = False  # if True, all specs bypass active-Decision→Task coverage checks (ideação #10 Fase 1)
     skip_cognitive_consolidation: bool = False  # if True, done closeout bypasses active cognitive pending blockers
     allow_agent_self_answering: bool = False  # explicit opt-in that permits same-principal Q&A answers
     require_full_context_for_critical_actions: bool = True  # if True, critical mutations must resolve full entity context
     qa_require_role_separation: bool = False  # if True, a Q&A question cannot be answered by the same principal who asked it
+    # Task-validation and sprint reviewer/executor separation. Missing on legacy
+    # persisted boards is resolved explicitly as ``off``; new boards and new
+    # default-board template versions inject ``enforce`` unless the administrator
+    # chooses another mode.
+    reviewer_separation_mode: Literal["off", "warn", "enforce"] = "off"
     # Design System mockup gate mode (spec 3a006f65 / card 96f76a5f). CANONICAL source
     # of the board's Design System gate mode (the design_system_default_ref only carries
     # the DS identity; any gate_mode inside it is a derived mirror). off = no gate;
@@ -2336,6 +2955,193 @@ class BoardListResponse(BaseSchema):
     columns: dict[str, list[CardSummary]]
 
 
+class ColumnFacets(BaseSchema):
+    """Self-excluding facet counts for one kanban column."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    card_type: dict[str, int]
+
+
+class ColumnMeta(BaseSchema):
+    """Counts and facets accompanying a column's bounded card window."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    total_filtered: int = Field(..., ge=0)
+    total_overall: int = Field(..., ge=0)
+    has_more: bool
+    facets: ColumnFacets
+
+
+class ColumnsFacets(BaseSchema):
+    """Board-wide facets shared by all columns in the batch response."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    # The established facet wire is a stable list of {value,count} entries;
+    # ``value`` may be null for unassigned cards.
+    assignee: list[dict[str, Any]]
+
+
+class ColumnsMeta(BaseSchema):
+    """Per-column metadata plus board-wide facets."""
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    columns: dict[str, ColumnMeta]
+    facets: ColumnsFacets
+
+
+def _forbid_shape_fields(
+    value: object,
+    *,
+    forbidden: tuple[str, ...],
+    shape: str,
+) -> object:
+    """Reject only reserved fields from competing shapes.
+
+    Responses remain open to unrelated forward-compatible fields while the
+    reserved shape fields make the published ``oneOf`` truly exclusive.
+    """
+
+    if isinstance(value, dict):
+        present = sorted(set(value).intersection(forbidden))
+        if present:
+            raise ValueError(
+                f"{shape} response cannot contain fields from another shape: "
+                f"{', '.join(present)}"
+            )
+    return value
+
+
+class ColumnsLegacyResponse(BaseSchema):
+    """Literal legacy columns response (no pagination metadata)."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "not": {
+                        "anyOf": [
+                            {"required": [field]}
+                            for field in (
+                                "columns_meta",
+                                "column",
+                                "items",
+                                "meta",
+                                "next_offset",
+                            )
+                        ]
+                    }
+                }
+            ]
+        },
+    )
+
+    board_id: str
+    columns: dict[str, list[CardSummary]]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exclude_other_shapes(cls, value: object) -> object:
+        return _forbid_shape_fields(
+            value,
+            forbidden=("columns_meta", "column", "items", "meta", "next_offset"),
+            shape="legacy",
+        )
+
+
+class ColumnsOptInResponse(BaseSchema):
+    """Bounded windows for every column, with batch metadata and facets."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "not": {
+                        "anyOf": [
+                            {"required": [field]}
+                            for field in ("column", "items", "next_offset")
+                        ]
+                    }
+                }
+            ]
+        },
+    )
+
+    board_id: str
+    columns: dict[str, list[CardSummary]]
+    columns_meta: ColumnsMeta
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exclude_other_shapes(cls, value: object) -> object:
+        return _forbid_shape_fields(
+            value,
+            forbidden=("column", "items", "next_offset"),
+            shape="opt-in",
+        )
+
+
+class ColumnPageResponse(BaseSchema):
+    """One independently paged kanban column."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow",
+        json_schema_extra={
+            "allOf": [
+                {
+                    "not": {
+                        "anyOf": [
+                            {"required": ["columns"]},
+                            {"required": ["columns_meta"]},
+                        ]
+                    }
+                }
+            ]
+        },
+    )
+
+    board_id: str
+    column: CardStatus
+    items: list[CardSummary]
+    meta: ColumnMeta
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1, le=100)
+    next_offset: int | None = Field(..., ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exclude_other_shapes(cls, value: object) -> object:
+        return _forbid_shape_fields(
+            value,
+            forbidden=("columns", "columns_meta"),
+            shape="column page",
+        )
+
+
+def _publish_columns_one_of(schema: dict[str, Any]) -> None:
+    """Publish the response union as JSON Schema ``oneOf``, not ``anyOf``."""
+
+    variants = schema.pop("anyOf", None)
+    if variants is not None:
+        schema["oneOf"] = variants
+
+
+class ColumnsResponseUnion(
+    RootModel[ColumnsLegacyResponse | ColumnsOptInResponse | ColumnPageResponse]
+):
+    """OpenAPI-only union for the three mutually exclusive columns shapes."""
+
+    model_config = ConfigDict(json_schema_extra=_publish_columns_one_of)
+
+
 # ============================================================================
 # Activity Log Schemas
 # ============================================================================
@@ -2399,12 +3205,26 @@ class SprintUpdate(BaseModel):
     skip_rules_coverage: bool | None = None
     skip_qualitative_validation: bool | None = None
     validation_threshold: int | None = None
+    expected_version: int | None = Field(
+        None,
+        ge=1,
+        description="Optimistic-lock version read by the caller.",
+    )
 
 
 class SprintMove(BaseModel):
     """Schema for changing sprint status."""
 
     status: SprintStatus
+    cancellation_reason: str | None = Field(
+        None,
+        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
+    )
+    expected_version: int | None = Field(
+        None,
+        ge=1,
+        description="Optimistic-lock version read by the caller.",
+    )
 
 
 class SprintEvaluationCreate(BaseModel):
@@ -2499,6 +3319,9 @@ class SprintSummary(BaseSchema):
     created_at: datetime
     updated_at: datetime
     archived: bool = False
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
 
 
 class SprintResponse(BaseSchema):
@@ -2530,6 +3353,10 @@ class SprintResponse(BaseSchema):
     labels: list[str] | None = None
     archived: bool = False
     pre_archive_status: str | None = None
+    # Cancellation justification (ITEM 17) — set only while status == cancelled.
+    cancellation_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
     created_by: str
     created_at: datetime
     updated_at: datetime

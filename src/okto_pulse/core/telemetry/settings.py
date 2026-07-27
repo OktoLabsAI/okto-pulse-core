@@ -1,17 +1,22 @@
-"""Telemetry mode resolution and persisted local consent state."""
+"""Telemetry mode, consent and privacy policy over edition-neutral state refs."""
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Literal
 
-from okto_pulse.core.infra.config import CoreSettings, DEFAULT_METRICS_BEACON_URL
+from okto_pulse.core.infra.config import CoreSettings
+from okto_pulse.core.telemetry.effect_config_registry import (
+    delivery_target_from_effect_config,
+    state_ref_from_effect_config,
+)
 from okto_pulse.core.telemetry.schema import CURRENT_SCHEMA_VERSION
+from okto_pulse.core.telemetry.telemetry_state_registry import (
+    load_telemetry_state,
+    save_telemetry_state,
+)
 
 TelemetryMode = Literal["disabled", "local_only", "anonymous_beacon"]
 EffectiveTelemetryMode = Literal["disabled", "anonymous_beacon"]
@@ -28,9 +33,9 @@ class ResolvedTelemetryConfig:
     ui_mode: Literal["off", "on"]
     normalized_from: TelemetryMode | None
     migration_notice: dict[str, Any] | None
-    metrics_dir: Path
+    state_ref: str
     retention_days: int
-    beacon_url: str
+    delivery_target: str
     policy_version: str
     schema_version: str
     source: str
@@ -62,8 +67,14 @@ def _ui_mode(mode: EffectiveTelemetryMode) -> Literal["off", "on"]:
 
 
 def _migration_notice(state: dict[str, Any]) -> dict[str, Any]:
-    notices = state.get("migration_notices") if isinstance(state.get("migration_notices"), dict) else {}
-    notice_state = notices.get(LOCAL_ONLY_MIGRATION_NOTICE) if isinstance(notices, dict) else {}
+    notices = (
+        state.get("migration_notices")
+        if isinstance(state.get("migration_notices"), dict)
+        else {}
+    )
+    notice_state = (
+        notices.get(LOCAL_ONLY_MIGRATION_NOTICE) if isinstance(notices, dict) else {}
+    )
     if not isinstance(notice_state, dict):
         notice_state = {}
     seen_at = notice_state.get("seen_at")
@@ -98,34 +109,18 @@ def _normalize_effective_mode(
     return "disabled", "local_only"
 
 
-def metrics_dir_for(settings: CoreSettings) -> Path:
-    raw = (getattr(settings, "metrics_dir", "") or "").strip()
-    if raw:
-        return Path(raw).expanduser().resolve()
-    data_dir = getattr(settings, "data_dir", "") or ""
-    if data_dir:
-        return (Path(data_dir).expanduser() / "metrics").resolve()
-    return (Path.home() / ".okto-pulse" / "metrics").resolve()
+def state_ref_for(settings: CoreSettings) -> str:
+    return state_ref_from_effect_config(settings)
 
 
-def state_path(metrics_dir: Path) -> Path:
-    return metrics_dir / "state.json"
+def load_state(state_ref: str) -> dict[str, Any]:
+    """Compatibility wrapper over the registered full-dict carrier."""
+    return load_telemetry_state(state_ref)
 
 
-def load_state(metrics_dir: Path) -> dict[str, Any]:
-    path = state_path(metrics_dir)
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def save_state(metrics_dir: Path, state: dict[str, Any]) -> None:
-    metrics_dir.mkdir(parents=True, exist_ok=True)
-    tmp = state_path(metrics_dir).with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
-    tmp.replace(state_path(metrics_dir))
+def save_state(state_ref: str, state: dict[str, Any]) -> None:
+    """Compatibility wrapper over the registered full-dict carrier."""
+    save_telemetry_state(state_ref, state)
 
 
 def record_consent(
@@ -137,20 +132,26 @@ def record_consent(
     schema_version: str | None = None,
     acknowledged_items: list[str] | None = None,
 ) -> dict[str, Any]:
-    metrics_dir = metrics_dir_for(settings)
-    current = load_state(metrics_dir)
+    state_ref = state_ref_for(settings)
+    current = load_state(state_ref)
     changed_at = iso_now()
     original_mode = mode
     mode, normalized_from = _normalize_effective_mode(mode, source=source)
     policy = policy_version or getattr(settings, "metrics_policy_version", "2026-05-11")
-    schema = schema_version or getattr(settings, "metrics_schema_version", CURRENT_SCHEMA_VERSION)
+    schema = schema_version or getattr(
+        settings, "metrics_schema_version", CURRENT_SCHEMA_VERSION
+    )
     if mode == "anonymous_beacon" and schema != CURRENT_SCHEMA_VERSION:
         raise ValueError("UNSUPPORTED_METRICS_SCHEMA")
     next_prompt = None
     if mode != "anonymous_beacon":
         interval = int(getattr(settings, "metrics_opt_in_prompt_interval_days", 30))
-        next_prompt = (utc_now() + timedelta(days=interval)).isoformat().replace("+00:00", "Z")
-    acknowledgements = list(dict.fromkeys(item for item in acknowledged_items or [] if item))
+        next_prompt = (
+            (utc_now() + timedelta(days=interval)).isoformat().replace("+00:00", "Z")
+        )
+    acknowledgements = list(
+        dict.fromkeys(item for item in acknowledged_items or [] if item)
+    )
     history = list(current.get("history") or [])
     history.append(
         {
@@ -177,7 +178,7 @@ def record_consent(
     }
     if normalized_from:
         state["normalized_from"] = normalized_from
-    save_state(metrics_dir, state)
+    save_state(state_ref, state)
     return state
 
 
@@ -188,12 +189,20 @@ def mark_migration_notice_seen(
 ) -> dict[str, Any]:
     if notice_key != LOCAL_ONLY_MIGRATION_NOTICE:
         raise ValueError("invalid_notice_key")
-    metrics_dir = metrics_dir_for(settings)
-    current = load_state(metrics_dir)
-    notices = current.get("migration_notices") if isinstance(current.get("migration_notices"), dict) else {}
+    state_ref = state_ref_for(settings)
+    current = load_state(state_ref)
+    notices = (
+        current.get("migration_notices")
+        if isinstance(current.get("migration_notices"), dict)
+        else {}
+    )
     existing = notices.get(notice_key) if isinstance(notices, dict) else None
     if isinstance(existing, dict) and existing.get("seen"):
-        seen_at = existing.get("seen_at") if isinstance(existing.get("seen_at"), str) else None
+        seen_at = (
+            existing.get("seen_at")
+            if isinstance(existing.get("seen_at"), str)
+            else None
+        )
         return {
             "notice_key": notice_key,
             "pending": False,
@@ -204,7 +213,7 @@ def mark_migration_notice_seen(
     seen_at = iso_now()
     next_notices = dict(notices or {})
     next_notices[notice_key] = {"seen": True, "seen_at": seen_at}
-    save_state(metrics_dir, {**current, "migration_notices": next_notices})
+    save_state(state_ref, {**current, "migration_notices": next_notices})
     return {
         "notice_key": notice_key,
         "pending": False,
@@ -217,9 +226,12 @@ def resolve_telemetry_config(
     settings: CoreSettings,
     *,
     cli_mode: str | None = None,
+    state_snapshot: dict[str, Any] | None = None,
 ) -> ResolvedTelemetryConfig:
-    metrics_dir = metrics_dir_for(settings)
-    state = load_state(metrics_dir)
+    state_ref = state_ref_for(settings)
+    state = (
+        dict(state_snapshot) if state_snapshot is not None else load_state(state_ref)
+    )
     precedence = (
         "cli_flag",
         "env",
@@ -236,14 +248,11 @@ def resolve_telemetry_config(
         mode, normalized_from = _normalize_effective_mode(raw_mode, source="cli_flag")
         source = "cli_flag"
     if mode is None:
-        raw_mode = coerce_mode(os.environ.get("OKTO_PULSE_METRICS_MODE"))
-        if raw_mode is not None:
-            mode, normalized_from = _normalize_effective_mode(raw_mode, source="env")
-            source = "env"
-    if mode is None:
         raw_mode = coerce_mode(getattr(settings, "metrics_mode", ""))
         if raw_mode is not None:
-            mode, normalized_from = _normalize_effective_mode(raw_mode, source="community_settings")
+            mode, normalized_from = _normalize_effective_mode(
+                raw_mode, source="community_settings"
+            )
             source = "community_settings"
     stale_persisted_consent = False
     legacy_persisted_local_only = False
@@ -273,11 +282,13 @@ def resolve_telemetry_config(
         ui_mode=_ui_mode(mode),
         normalized_from=normalized_from,
         migration_notice=migration_notice,
-        metrics_dir=metrics_dir,
+        state_ref=state_ref,
         retention_days=int(getattr(settings, "metrics_retention_days", 30)),
-        beacon_url=str(getattr(settings, "metrics_beacon_url", DEFAULT_METRICS_BEACON_URL)).rstrip("/"),
+        delivery_target=delivery_target_from_effect_config(settings),
         policy_version=str(getattr(settings, "metrics_policy_version", "2026-05-11")),
-        schema_version=str(getattr(settings, "metrics_schema_version", CURRENT_SCHEMA_VERSION)),
+        schema_version=str(
+            getattr(settings, "metrics_schema_version", CURRENT_SCHEMA_VERSION)
+        ),
         source=source,
         resolved_precedence=precedence,
         state=state,

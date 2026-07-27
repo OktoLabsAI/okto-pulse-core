@@ -15,9 +15,10 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import select
+import pytest_asyncio
+from sqlalchemy import delete, select
 
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     BoardGuideline,
@@ -41,6 +42,22 @@ from okto_pulse.core.services.main import BoardService
 pytestmark = pytest.mark.asyncio
 
 USER_ID = "dbc-test-user"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolate_global_templates(db_factory):
+    async with db_factory() as db:
+        await db.execute(
+            delete(DefaultBoardConfigurationAudit).where(
+                DefaultBoardConfigurationAudit.scope == "global"
+            )
+        )
+        await db.execute(
+            delete(DefaultBoardConfiguration).where(
+                DefaultBoardConfiguration.scope == "global"
+            )
+        )
+        await db.commit()
 
 
 async def _activity_actions(db, board_id: str) -> list[str]:
@@ -71,8 +88,10 @@ async def test_create_board_without_template_uses_defaults_no_snapshot():
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
-        # Effective settings = BoardSettings() default; NO snapshot; no error.
-        assert board.settings == BoardSettings().model_dump(mode="json")
+        # Forward-safe new-board default; NO snapshot and no error.
+        expected = BoardSettings().model_dump(mode="json")
+        expected["reviewer_separation_mode"] = "enforce"
+        assert board.settings == expected
         assert board.default_config_snapshot is None
         # board-scoped fallback audit recorded.
         assert BOARD_EVENT_FALLBACK in await _activity_actions(db, board.id)
@@ -160,7 +179,7 @@ async def test_template_change_after_creation_does_not_mutate_existing_board():
             settings_payload=BoardSettings(max_scenarios_per_card=12),
             actor=USER_ID, activate=True,
         )
-        await db.refresh(board)
+        board = await BoardService(db).get_board(board.id)
         assert board.settings == before_settings
         assert board.default_config_snapshot == before_snapshot
 
@@ -178,8 +197,9 @@ async def test_single_active_per_scope_enforced():
         a = await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID, activate=True)
         b = await svc.create_version(settings_payload=BoardSettings(), actor=USER_ID, activate=True)
 
-        await db.refresh(a)
-        await db.refresh(b)
+        versions = {template.id: template for template in await svc.list_versions()}
+        a = versions[a.id]
+        b = versions[b.id]
         assert a.is_active is False and a.status == "inactive"
         assert b.is_active is True and b.status == "active"
 
@@ -322,7 +342,7 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
         await svc.create_version(
             settings_payload=BoardSettings(max_scenarios_per_card=11), actor=USER_ID, activate=True
         )
-        await db.refresh(board_a)
+        board_a = await BoardService(db).get_board(board_a.id)
         await db.refresh(board_b)
 
         # Forward-only: neither existing board was mutated, no backfill.
@@ -339,12 +359,18 @@ async def test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compa
         assert desc_a["is_outdated"] is True
 
         desc_b = await svc.describe_board_config(board_b)
-        assert desc_b == {"state": "legacy_no_snapshot", "board_id": board_b.id}
+        assert desc_b == {
+            "state": "legacy_no_snapshot",
+            "board_id": board_b.id,
+            "configuration_presence": "null",
+            "baseline_available": False,
+            "comparable": False,
+        }
 
 
 async def test_ts_3312f7bd_bootstrap_fallback_no_template_no_error():
     """ts_3312f7bd (TR11/AC11): with NO template ever created (bootstrap), creating
-    a board without explicit settings succeeds with BoardSettings() defaults, no
+    a board without explicit settings succeeds with forward-safe defaults, no
     snapshot, and a non-error fallback audit signal."""
     from okto_pulse.core.infra.database import get_session_factory
 
@@ -354,7 +380,9 @@ async def test_ts_3312f7bd_bootstrap_fallback_no_template_no_error():
         board = await BoardService(db).create_board(
             USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
         )
-        assert board.settings == BoardSettings().model_dump(mode="json")
+        expected = BoardSettings().model_dump(mode="json")
+        expected["reviewer_separation_mode"] = "enforce"
+        assert board.settings == expected
         assert board.default_config_snapshot is None
         assert BOARD_EVENT_FALLBACK in await _activity_actions(db, board.id)
 
@@ -371,7 +399,7 @@ async def test_tr11_board_response_contract_exposes_default_config_snapshot():
         # Fallback board -> response exposes default_config_snapshot = None.
         fb = await bs.create_board(USER_ID, BoardCreate(name=f"fb-{uuid.uuid4().hex[:8]}"))
         fetched = await bs.get_board(fb.id)
-        fetched.__dict__["agents"] = []
+        fetched.attach("agents", [])
         fb_resp = BoardResponse.model_validate(fetched)
         assert "default_config_snapshot" in fb_resp.model_dump()
         assert fb_resp.default_config_snapshot is None
@@ -382,7 +410,7 @@ async def test_tr11_board_response_contract_exposes_default_config_snapshot():
         )
         tb = await bs.create_board(USER_ID, BoardCreate(name=f"tb-{uuid.uuid4().hex[:8]}"))
         fetched_tb = await bs.get_board(tb.id)
-        fetched_tb.__dict__["agents"] = []
+        fetched_tb.attach("agents", [])
         tb_resp = BoardResponse.model_validate(fetched_tb)
         assert tb_resp.default_config_snapshot is not None
         assert tb_resp.default_config_snapshot["template_id"]
@@ -524,11 +552,15 @@ async def test_no_active_template_materializes_no_guidelines():
 async def test_ts_d3363274_adapter_failure_rolls_back_board_creation():
     """ts_d3363274 (TR2/TR7): an adapter failure during materialization aborts with
     default_materialization_failed and leaves NO partially-created board/link/
-    snapshot — proven from a CLEAN session the caller would use."""
+    snapshot — proven from a fresh session the caller would use."""
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
     board_name = f"rb-{uuid.uuid4().hex[:8]}"
+    async with factory() as baseline_db:
+        existing_link_ids = set(
+            (await baseline_db.execute(select(BoardGuideline.id))).scalars()
+        )
     async with factory() as db:
         svc = DefaultBoardConfigurationService(db)
         g = await _make_global_guideline(db)
@@ -545,14 +577,14 @@ async def test_ts_d3363274_adapter_failure_rolls_back_board_creation():
         assert exc.value.code == "default_materialization_failed"
         await db.rollback()
 
-    # Clean session: a partially-persisted board/link must NOT be observable.
+    # Fresh session: neither the board nor any additional link is observable.
     async with factory() as db2:
         board = (
             await db2.execute(select(Board).where(Board.name == board_name))
         ).scalar_one_or_none()
         assert board is None
-        links = (await db2.execute(select(BoardGuideline))).scalars().all()
-        assert list(links) == []
+        link_ids = set((await db2.execute(select(BoardGuideline.id))).scalars())
+        assert link_ids == existing_link_ids
 
 
 async def test_ts_d45c1602_umbrella_applies_both_defaults_without_parallel_store():

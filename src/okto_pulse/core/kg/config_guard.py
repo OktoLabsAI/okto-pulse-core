@@ -1,8 +1,7 @@
-"""LadybugDB runtime config-change guard (KG-01 FR10, contract api_4e07374f).
+"""Backend-neutral graph runtime config-change guard.
 
-Any change to LadybugDB-relevant runtime settings (buffer pool size,
-max DB size, WAL behaviour, cache thresholds, …) MUST flow through
-``KGConfigChangeGuard.validate`` before being applied or persisted.
+An edition supplies the setting taxonomy; the Core owns the policy that
+decides whether a change needs a migration plan, restart or capacity check.
 The spec rejects "hot config changes that could silently invalidate
 graph storage": resizing the buffer pool while writes are in flight,
 toggling WAL mode without checkpoint, shrinking max_db_size below the
@@ -19,8 +18,8 @@ The guard is the canonical decision point:
 
 Two typed errors short-circuit the decision:
 
-* ``unsupported_ladybug_setting`` (non-retryable) — caller asked for
-  a key the guard does not know how to validate. Reject loudly.
+* ``unsupported_graph_setting`` (non-retryable) — caller asked for a
+  governed key the supplied taxonomy does not classify. Reject loudly.
 * ``atomic_validation_unavailable`` (retryable) — the supporting
   infrastructure (lock / DB probe) is temporarily not available.
 
@@ -35,43 +34,26 @@ cardinality bounded.
 from __future__ import annotations
 
 import logging
-import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
 logger = logging.getLogger("okto_pulse.kg.config_guard")
 
 
 # --- Setting taxonomy ---------------------------------------------------------
 #
-# KG-01 TR14 calls out kg_kuzu_buffer_pool_mb, kg_kuzu_max_db_size_gb
-# and "related LadybugDB parameters". The guard maintains an explicit
-# allow-list per setting_group; unknown LadybugDB settings raise
-# ``unsupported_ladybug_setting`` so callers can't sneak invalid keys
-# past the guard.
+# The groups are domain policy. Concrete setting names and prefixes belong to
+# the edition adapter and arrive through GraphSettingPolicy.
 
 SETTING_GROUP_BUFFER = "buffer"
 SETTING_GROUP_STORAGE = "storage"
 SETTING_GROUP_WAL = "wal"
 SETTING_GROUP_CACHE = "cache"
 SETTING_GROUP_INDEX = "index"
+SETTING_GROUP_CONNECTION_POOL = "connection_pool"
 SETTING_GROUP_UNRELATED = "unrelated"
-
-# Map setting name -> setting_group. Anything not in this map and that
-# matches one of the KG-relevant prefixes (kg_*, ladybug_*) raises
-# unsupported_ladybug_setting. Keys outside the KG namespace are
-# silently ignored — the guard only governs LadybugDB-relevant changes.
-_KG_SETTING_GROUPS: dict[str, str] = {
-    "kg_kuzu_buffer_pool_mb": SETTING_GROUP_BUFFER,
-    "kg_kuzu_max_db_size_gb": SETTING_GROUP_STORAGE,
-    "kg_kuzu_wal_mode": SETTING_GROUP_WAL,
-    "kg_kuzu_cache_threshold_pct": SETTING_GROUP_CACHE,
-    "kg_kuzu_index_rebuild_on_open": SETTING_GROUP_INDEX,
-    "ladybug_buffer_pool_mb": SETTING_GROUP_BUFFER,
-    "ladybug_max_db_size_gb": SETTING_GROUP_STORAGE,
-    "ladybug_wal_mode": SETTING_GROUP_WAL,
-}
 
 # Setting groups that MUST have a migration_plan_ref to mutate.
 _GROUPS_REQUIRING_MIGRATION: frozenset[str] = frozenset({
@@ -85,12 +67,17 @@ _GROUPS_REQUIRING_RESTART: frozenset[str] = frozenset({
     SETTING_GROUP_BUFFER,
     SETTING_GROUP_STORAGE,
     SETTING_GROUP_WAL,
+    SETTING_GROUP_CONNECTION_POOL,
 })
 
-# Prefixes considered LadybugDB-relevant. A setting starting with one of
-# these prefixes but not in ``_KG_SETTING_GROUPS`` raises
-# ``unsupported_ladybug_setting``. This forces explicit allow-listing.
-_KG_PREFIXES = ("kg_kuzu_", "kg_ladybug_", "ladybug_")
+@dataclass(frozen=True, slots=True)
+class GraphSettingPolicy:
+    """Edition-owned vocabulary consumed by the Core policy engine."""
+
+    setting_groups: Mapping[str, str]
+    governed_prefixes: tuple[str, ...] = ()
+    owner: str = "graph_runtime_capability"
+    public_contract: str = "edition_runtime_settings"
 
 
 # --- Reason codes (bounded for OR or_731d308e label cardinality) -------------
@@ -110,7 +97,7 @@ class ConfigBlockReason(str, Enum):
 class ConfigGuardErrorCode(str, Enum):
     """Typed errors per contract api_4e07374f response_errors."""
 
-    UNSUPPORTED_LADYBUG_SETTING = "unsupported_ladybug_setting"
+    UNSUPPORTED_GRAPH_SETTING = "unsupported_graph_setting"
     ATOMIC_VALIDATION_UNAVAILABLE = "atomic_validation_unavailable"
 
 
@@ -162,8 +149,8 @@ class ConfigChangeDecision:
 _GUARD_COUNTER_LABELS = ("setting_group", "reason")
 
 _GuardCounterKey = tuple[str, str]
-_guard_counter: dict[_GuardCounterKey, int] = {}
-_guard_counter_lock = threading.Lock()
+_guard_counter = runtime_state("kg.config_guard.counter", dict)
+_guard_counter_lock = runtime_lock("kg.config_guard.counter")
 
 
 def _bump_guard_counter(*, setting_group: str, reason: str) -> None:
@@ -206,21 +193,19 @@ def reset_config_block_counter() -> None:
 # --- The guard ---------------------------------------------------------------
 
 
-def _classify_setting(name: str) -> str:
+def _classify_setting(policy: GraphSettingPolicy, name: str) -> str:
     """Return the setting_group bucket for ``name``.
 
-    Returns SETTING_GROUP_UNRELATED for settings outside the KG/ladybug
-    namespace — the guard does NOT govern those, the caller should not
-    have asked. Raises ``ConfigGuardError(UNSUPPORTED_LADYBUG_SETTING)``
-    when the setting matches a KG prefix but isn't on the allow-list.
+    Returns SETTING_GROUP_UNRELATED for settings outside the governed
+    namespaces. A governed but unclassified name is rejected fail-closed.
     """
-    group = _KG_SETTING_GROUPS.get(name)
+    group = policy.setting_groups.get(name)
     if group is not None:
         return group
     lowered = name.lower()
-    if any(lowered.startswith(p) for p in _KG_PREFIXES):
+    if any(lowered.startswith(prefix.lower()) for prefix in policy.governed_prefixes):
         raise ConfigGuardError(
-            ConfigGuardErrorCode.UNSUPPORTED_LADYBUG_SETTING,
+            ConfigGuardErrorCode.UNSUPPORTED_GRAPH_SETTING,
             retryable=False,
             reason=f"setting {name} is not in the KG allow-list",
         )
@@ -251,6 +236,7 @@ class KGConfigChangeGuard:
     available).
     """
 
+    policy: GraphSettingPolicy
     current_footprint_probe: Any = None
     atomic_validation_available: Any = None
 
@@ -295,15 +281,15 @@ class KGConfigChangeGuard:
             RestartPolicy.SCHEDULED.value,
         ):
             raise ConfigGuardError(
-                ConfigGuardErrorCode.UNSUPPORTED_LADYBUG_SETTING,
+                ConfigGuardErrorCode.UNSUPPORTED_GRAPH_SETTING,
                 retryable=False,
                 reason=f"invalid restart_policy: {restart_policy}",
             )
 
-        # Identify changed KG/Ladybug settings (others are out-of-scope).
+        # Identify changed graph-runtime settings (others are out-of-scope).
         changed: list[tuple[str, str, Any, Any]] = []
         for name, requested_value in requested_settings.items():
-            group = _classify_setting(name)
+            group = _classify_setting(self.policy, name)
             if group == SETTING_GROUP_UNRELATED:
                 continue
             current_value = current_settings.get(name)
@@ -312,7 +298,7 @@ class KGConfigChangeGuard:
             changed.append((name, group, current_value, requested_value))
 
         if not changed:
-            # Nothing actually changes in the KG/Ladybug namespace.
+            # Nothing actually changes in the graph-runtime namespace.
             return ConfigChangeDecision(
                 allowed=True,
                 reason=ConfigBlockReason.VALUE_NOT_CHANGED.value,
@@ -481,13 +467,27 @@ class KGConfigChangeGuard:
         return False
 
 
-def get_setting_groups() -> dict[str, str]:
+def get_setting_groups(policy: GraphSettingPolicy) -> dict[str, str]:
     """Public read-only view of the setting -> group allow-list.
 
     Useful for documentation, dashboard tooltips and tests. Returns a
     copy so callers can't mutate the table.
     """
-    return dict(_KG_SETTING_GROUPS)
+    return dict(policy.setting_groups)
+
+
+def get_graph_runtime_setting_metadata(
+    policy: GraphSettingPolicy,
+) -> dict[str, dict[str, str]]:
+    """Return ownership metadata for an edition-supplied taxonomy."""
+    return {
+        setting: {
+            "setting_group": setting_group,
+            "owner": policy.owner,
+            "public_contract": policy.public_contract,
+        }
+        for setting, setting_group in policy.setting_groups.items()
+    }
 
 
 __all__ = [
@@ -495,10 +495,12 @@ __all__ = [
     "ConfigChangeDecision",
     "ConfigGuardError",
     "ConfigGuardErrorCode",
+    "GraphSettingPolicy",
     "KGConfigChangeGuard",
     "RestartPolicy",
     "SETTING_GROUP_BUFFER",
     "SETTING_GROUP_CACHE",
+    "SETTING_GROUP_CONNECTION_POOL",
     "SETTING_GROUP_INDEX",
     "SETTING_GROUP_STORAGE",
     "SETTING_GROUP_UNRELATED",
@@ -506,6 +508,7 @@ __all__ = [
     "get_config_block_count",
     "get_config_block_counter_labels",
     "get_config_block_samples",
+    "get_graph_runtime_setting_metadata",
     "get_setting_groups",
     "reset_config_block_counter",
 ]

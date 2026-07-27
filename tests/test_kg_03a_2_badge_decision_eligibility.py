@@ -19,16 +19,18 @@ Scope (no parallel routes; extend existing handlers):
 
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.router import api_router
-from okto_pulse.core.infra.auth import require_user
+from okto_pulse.community.api.router import api_router
+from okto_pulse.community.api.auth_deps import require_user
+from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.community.api.kg_cognitive_badges import router as badges_router
 from okto_pulse.core.kg.cognitive_badge_resolver import (
     CognitiveBadgeReason,
     ELIGIBLE_ENTITY_TYPES,
@@ -66,7 +68,19 @@ def client() -> TestClient:
     async def _fake_user() -> str:
         return "user-kg03a-2-test"
 
+    async def _fake_uow():
+        async def _get_board(board_id: str):
+            return SimpleNamespace(
+                id=board_id,
+                owner_id="user-kg03a-2-test",
+            )
+
+        yield SimpleNamespace(
+            boards=SimpleNamespace(get=_get_board),
+        )
+
     app.dependency_overrides[require_user] = _fake_user
+    app.dependency_overrides[get_unit_of_work] = _fake_uow
     return TestClient(app)
 
 
@@ -202,8 +216,8 @@ def test_only_one_badges_endpoint_registered() -> None:
     GET only."""
 
     matching = [
-        route for route in api_router.routes
-        if getattr(route, "path", None) == "/api/v1/kg/cognitive-pending/badges"
+        route for route in badges_router.routes
+        if getattr(route, "path", None) == "/kg/cognitive-pending/badges"
     ]
     assert len(matching) == 1, (
         f"expected exactly one /badges route registered; found "
@@ -212,6 +226,10 @@ def test_only_one_badges_endpoint_registered() -> None:
     methods = matching[0].methods or set()
     assert "GET" in methods
     assert not {"POST", "PUT", "PATCH", "DELETE"}.intersection(methods)
+
+    app = FastAPI()
+    app.include_router(api_router)
+    assert "/api/v1/kg/cognitive-pending/badges" in app.openapi()["paths"]
 
 
 def test_endpoint_advertises_decision_in_eligible_entity_types(

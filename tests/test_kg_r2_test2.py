@@ -43,15 +43,45 @@ from r2_scenario_helpers import (
 )
 
 from okto_pulse.core.kg import canonical_cognitive_preservation as ccp
-from okto_pulse.core.kg.board_rebuild_adapter import BoardRebuildIngestionAdapter
 from okto_pulse.core.kg.canonical_cognitive_preservation import (
     restore_canonical_cognitive,
     snapshot_canonical_cognitive,
 )
-from okto_pulse.core.kg.canonical_debt_replay import _pulse_db_path
 from okto_pulse.core.kg.rebuild_service import RebuildStepInput
-from okto_pulse.core.kg.schema import bootstrap_board_graph
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
+from kg_schema_testing import bootstrap_board_graph
 from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_WORKING
+from kg_registry_testing import (
+    RealBoardCypherExecutorForTests,
+    RealBoardGraphLifecycleForTests,
+    RealBoardGraphTransactionForTests,
+    configure_test_kg_registry,
+)
+
+_board_rebuild_ingestion = pytest.importorskip(
+    "okto_pulse.community.adapters.board_rebuild_ingestion",
+    reason="AF-04 Community integration test requires the Community rebuild ingestion adapter.",
+)
+BoardRebuildIngestionAdapter = _board_rebuild_ingestion.BoardRebuildIngestionAdapter
+
+@pytest.fixture(autouse=True)
+def _real_board_graph_registry(_kg_registry_test_fakes, _tmp_rebuild_dir):
+    from okto_pulse.community.adapters.rebuild_audit_storage import (
+        CommunityFileSystemRebuildAuditArtifactStore,
+    )
+    from okto_pulse.community.adapters.quarantine_restore import (
+        CommunityQuarantineRestore,
+    )
+
+    configure_test_kg_registry(
+        cypher_executor=RealBoardCypherExecutorForTests(),
+        graph_transaction=RealBoardGraphTransactionForTests(),
+        graph_lifecycle=RealBoardGraphLifecycleForTests(),
+        rebuild_audit_artifact_store=(
+            CommunityFileSystemRebuildAuditArtifactStore(_tmp_rebuild_dir)
+        ),
+        quarantine_restore=CommunityQuarantineRestore(),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -72,8 +102,12 @@ def _rebuild_req(board_id):
 def _empty_source_adapter():
     """Real adapter wired with an empty-source resolver (the validator-approved
     deterministic rebuild path). drain is instant because nothing is enqueued."""
+    from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
+
+    db_path = resolve_database_runtime().local_database_path()
+    assert db_path is not None
     adapter = BoardRebuildIngestionAdapter(
-        db_path=_pulse_db_path(),
+        db_path=db_path,
         drain_timeout_seconds=5.0,
         drain_poll_interval_seconds=0.02,
         drain_final_grace_seconds=0.0,
@@ -95,9 +129,11 @@ async def test_rebuild_respects_done_vs_immature_sources(db_factory):
         db_factory, board_id, status="done",
         frs=["FR done canonical alpha", "FR done canonical beta"],
     )
-    canonical_after_done = count_canonical(board_id, "Requirement")
+    canonical_after_done = await count_canonical(board_id, "Requirement")
     assert canonical_after_done >= 1
-    assert count_layer(board_id, "Requirement", GRAPH_LAYER_WORKING) == 0
+    assert await count_layer(
+        board_id, "Requirement", GRAPH_LAYER_WORKING
+    ) == 0
 
     # ... while an IMMATURE (draft) source materializes WORKING children only.
     await materialize_spec(
@@ -106,9 +142,13 @@ async def test_rebuild_respects_done_vs_immature_sources(db_factory):
     )
     # TEETH: a maturity-blind rebuild would stamp the draft children canonical,
     # leaving working count at 0 — this asserts the layer split is real.
-    assert count_layer(board_id, "Requirement", GRAPH_LAYER_WORKING) >= 1
+    assert await count_layer(
+        board_id, "Requirement", GRAPH_LAYER_WORKING
+    ) >= 1
     # The done source's canonical children are untouched by the immature add.
-    assert count_canonical(board_id, "Requirement") == canonical_after_done
+    assert await count_canonical(
+        board_id, "Requirement"
+    ) == canonical_after_done
 
 
 # ===========================================================================
@@ -119,14 +159,17 @@ async def test_rebuild_respects_done_vs_immature_sources(db_factory):
 @pytest.mark.asyncio
 async def test_cognitive_canonical_preserved_across_real_rebuild_clean(db_factory):
     board_id = await new_board(db_factory, "r2t2")
-    learning_id = seed_canonical_cognitive(
+    learning_id = await seed_canonical_cognitive(
         board_id, "Learning",
         source_ref=f"card:bug:{uuid.uuid4().hex}:learning:{uuid.uuid4().hex}",
     )
-    assert count_canonical(board_id, "Learning") == 1
+    assert await count_canonical(board_id, "Learning") == 1
 
     # Drive the REAL rebuild step adapter end-to-end.
-    result = _empty_source_adapter()(_rebuild_req(board_id))
+    result = await run_blocking_graph_io(
+        lambda: _empty_source_adapter()(_rebuild_req(board_id)),
+        task_name="tests.r2.rebuild_clean",
+    )
 
     assert result.ok is True, result.detail
     preservation = result.drilldown["cognitive_preservation"]
@@ -134,7 +177,7 @@ async def test_cognitive_canonical_preserved_across_real_rebuild_clean(db_factor
     assert preservation["restored_nodes"] >= 1
     # TEETH: the canonical Learning is actually back. A no-op restore would report
     # clean (no unrestorable) yet leave count 0 — this conjunction is the teeth.
-    assert count_canonical(board_id, "Learning") == 1
+    assert await count_canonical(board_id, "Learning") == 1
     assert learning_id  # node identity preserved through snapshot/restore
 
 
@@ -147,14 +190,17 @@ async def test_cognitive_canonical_preserved_across_real_rebuild_clean(db_factor
 async def test_cognitive_preservation_degraded_records_fallback(db_factory, _tmp_rebuild_dir):
     board_id = await new_board(db_factory, "r2t2")
     learning_ref = f"card:bug:{uuid.uuid4().hex}:learning:{uuid.uuid4().hex}"
-    learning_id, _bug_id = seed_learning_with_canonical_bug(
+    learning_id, _bug_id = await seed_learning_with_canonical_bug(
         board_id, learning_ref=learning_ref,
     )
-    assert count_canonical(board_id, "Learning") == 1
+    assert await count_canonical(board_id, "Learning") == 1
 
     # The empty-source rebuild does NOT re-materialize the deterministic Bug
     # endpoint, so the validates edge is unrestorable -> degraded + fallback.
-    result = _empty_source_adapter()(_rebuild_req(board_id))
+    result = await run_blocking_graph_io(
+        lambda: _empty_source_adapter()(_rebuild_req(board_id)),
+        task_name="tests.r2.rebuild_degraded",
+    )
 
     assert result.ok is True, result.detail
     preservation = result.drilldown["cognitive_preservation"]
@@ -164,7 +210,7 @@ async def test_cognitive_preservation_degraded_records_fallback(db_factory, _tmp
     # silent clean. TEETH: a degraded rebuild that skipped the fallback reports 0.
     assert preservation.get("fallback_holds_recorded", 0) >= 1
     # The Learning node itself is restored canonical (only the edge was lost).
-    assert count_canonical(board_id, "Learning") == 1
+    assert await count_canonical(board_id, "Learning") == 1
 
     # The hold is operator-visible in the cognitive readiness store (the same
     # source the R7 canonical_partition_integrity drilldown reads).
@@ -191,7 +237,7 @@ async def test_cognitive_preservation_degraded_records_fallback(db_factory, _tmp
 @pytest.mark.asyncio
 async def test_rebuild_fails_closed_on_preservation_integrity_error(db_factory, monkeypatch):
     board_id = await new_board(db_factory, "r2t2")
-    seed_canonical_cognitive(
+    await seed_canonical_cognitive(
         board_id, "Learning",
         source_ref=f"card:bug:{uuid.uuid4().hex}:learning:{uuid.uuid4().hex}",
     )
@@ -203,7 +249,10 @@ async def test_rebuild_fails_closed_on_preservation_integrity_error(db_factory, 
     # time, so patching the module attribute exercises the real fail-closed wiring.
     monkeypatch.setattr(ccp, "restore_canonical_cognitive", _broken_restore)
 
-    result = _empty_source_adapter()(_rebuild_req(board_id))
+    result = await run_blocking_graph_io(
+        lambda: _empty_source_adapter()(_rebuild_req(board_id)),
+        task_name="tests.r2.rebuild_integrity_error",
+    )
 
     # TEETH: the preservation mechanism could not produce a trace -> the rebuild
     # must NOT report success. An adapter that ignored integrity_error returns ok.
@@ -220,26 +269,49 @@ async def test_rebuild_fails_closed_on_preservation_integrity_error(db_factory, 
 # ===========================================================================
 
 
-def test_without_preservation_cognitive_node_is_lost():
+@pytest.mark.asyncio
+async def test_without_preservation_cognitive_node_is_lost():
     board_id = f"r2t2neg-{uuid.uuid4().hex[:10]}"
-    bootstrap_board_graph(board_id)
-    seed_canonical_cognitive(
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.r2.bootstrap_negative_board",
+    )
+    await seed_canonical_cognitive(
         board_id, "Learning",
         source_ref=f"card:bug:{uuid.uuid4().hex}:learning:{uuid.uuid4().hex}",
     )
-    assert count_canonical(board_id, "Learning") == 1
+    assert await count_canonical(board_id, "Learning") == 1
 
     # A rebuild purge WITHOUT snapshot/restore genuinely loses the node — this is
     # what makes the preservation tests above non-theater.
-    snap = snapshot_canonical_cognitive(board_id)  # captured but deliberately unused
-    adapter = BoardRebuildIngestionAdapter(db_path=_pulse_db_path())
-    adapter.prepare_board_graph_storage(board_id=board_id, reason="r2t2_teeth")
-    bootstrap_board_graph(board_id)  # fresh graph, as the worker would
-    assert count_canonical(board_id, "Learning") == 0, (
+    snap = await run_blocking_graph_io(
+        lambda: snapshot_canonical_cognitive(board_id),
+        task_name="tests.r2.snapshot_negative_board",
+    )
+    from okto_pulse.core.ports.relational_runtime import resolve_database_runtime
+
+    db_path = resolve_database_runtime().local_database_path()
+    assert db_path is not None
+    adapter = BoardRebuildIngestionAdapter(db_path=db_path)
+    await run_blocking_graph_io(
+        lambda: adapter.prepare_board_graph_storage(
+            board_id=board_id,
+            reason="r2t2_teeth",
+        ),
+        task_name="tests.r2.prepare_negative_board",
+    )
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.r2.rebootstrap_negative_board",
+    )
+    assert await count_canonical(board_id, "Learning") == 0, (
         "teeth: without restore the canonical cognitive node must be GONE"
     )
     # Sanity: the snapshot DID capture it (so the loss is the missing restore, not
     # an empty snapshot) — restoring now brings it back.
     assert any(n["node_type"] == "Learning" for n in snap.nodes)
-    restore_canonical_cognitive(board_id, snap)
-    assert count_canonical(board_id, "Learning") == 1
+    await run_blocking_graph_io(
+        lambda: restore_canonical_cognitive(board_id, snap),
+        task_name="tests.r2.restore_negative_board",
+    )
+    assert await count_canonical(board_id, "Learning") == 1

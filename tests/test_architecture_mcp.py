@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -11,7 +13,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     ArchitectureFindingRun,
     Board,
@@ -209,7 +211,7 @@ async def _seed_spec_card():
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     raw = await tool.fn(**kwargs)
     return json.loads(raw)
@@ -372,8 +374,8 @@ async def test_rest_and_mcp_save_acknowledgement_required_payloads_match_semanti
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.architecture import router as architecture_router
-    from okto_pulse.core.infra import auth as _auth_mod
+    from okto_pulse.community.api.architecture import router as architecture_router
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     board_id, spec_id, _ = _seed_spec_card
@@ -409,7 +411,7 @@ async def test_rest_and_mcp_save_acknowledgement_required_payloads_match_semanti
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[require_user] = lambda: USER_ID
 
     rest_response = TestClient(app).post(f"/api/v1/specs/{spec_id}/architecture", json=payload)
     assert rest_response.status_code == 409, rest_response.text
@@ -675,8 +677,8 @@ async def test_rest_and_mcp_validate_architecture_payload_return_identical_warni
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from okto_pulse.core.api.architecture import router as architecture_router
-    from okto_pulse.core.infra import auth as _auth_mod
+    from okto_pulse.community.api.architecture import router as architecture_router
+    from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db, get_session_factory
 
     board_id, spec_id, _ = _seed_spec_card
@@ -713,7 +715,7 @@ async def test_rest_and_mcp_validate_architecture_payload_return_identical_warni
             yield session
 
     app.dependency_overrides[get_db] = _override_db
-    app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[require_user] = lambda: USER_ID
 
     rest_response = TestClient(app).post("/api/v1/architecture/validate", json=payload)
     rest_response.raise_for_status()
@@ -1014,7 +1016,9 @@ async def test_mcp_task_context_projects_architecture_findings_full_and_summary(
 
 
 @pytest.mark.asyncio
-async def test_mcp_spec_lock_blocks_architecture_update(_seed_spec_card):
+async def test_mcp_spec_lock_allows_dry_run_but_blocks_architecture_writes(
+    _seed_spec_card,
+):
     from okto_pulse.core.infra.database import get_session_factory
 
     board_id, spec_id, _ = _seed_spec_card
@@ -1035,14 +1039,59 @@ async def test_mcp_spec_lock_blocks_architecture_update(_seed_spec_card):
         spec.current_validation_id = "val-success"
         await db.commit()
 
+    create_preview = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Dry-run on locked spec",
+        global_description="Critique is read-only and must remain available.",
+    )
+    update_preview = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        design_id=design_id,
+        global_description="Dry-run update must not persist.",
+    )
     updated = await _call(
         "okto_pulse_update_architecture_design",
         board_id=board_id,
         design_id=design_id,
         global_description="Should be blocked.",
     )
-    assert "error" in updated
-    assert "locked" in updated["error"]
+    committed_preview = await _call(
+        "okto_pulse_validate_architecture_design_payload",
+        board_id=board_id,
+        parent_type="spec",
+        parent_id=spec_id,
+        title="Commit on locked spec",
+        global_description="This mutation must be blocked.",
+        commit=True,
+    )
+
+    assert create_preview["success"] is True
+    assert create_preview["mode"] == "create"
+    assert update_preview["success"] is True
+    assert update_preview["mode"] == "update"
+    for blocked in (updated, committed_preview):
+        assert blocked["error"] == "spec_locked"
+        assert blocked["code"] == "spec_locked"
+        assert blocked["details"] == {
+            "spec_id": spec_id,
+            "current_validation_id": "val-success",
+            "mutation_applied": False,
+        }
+
+    async with db_factory() as db:
+        designs = (
+            await db.execute(
+                select(ArchitectureDesign).where(
+                    ArchitectureDesign.spec_id == spec_id,
+                )
+            )
+        ).scalars().all()
+        assert len(designs) == 1
+        assert designs[0].global_description == "Architecture before validation."
 
 
 @pytest.mark.asyncio

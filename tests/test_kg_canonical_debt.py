@@ -6,12 +6,25 @@ import json
 
 import pytest
 
+from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.application.use_cases.mcp_kg_crud import (
+    ListCanonicalDebtCommand,
+    ListCanonicalDebtUseCase as McpListCanonicalDebtUseCase,
+)
+from okto_pulse.core.application.use_cases.operational_rest import (
+    CanonicalDebtListCommand,
+    ListCanonicalDebtUseCase as RestListCanonicalDebtUseCase,
+)
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, CanonicalDebt
-from okto_pulse.core.models.db import ConsolidationQueue
-from okto_pulse.core.models.db import Card, CardStatus, CardType, Spec, SpecStatus
-from okto_pulse.core.kg.workers.consolidation import ConsolidationWorker
+from okto_pulse.core.kg.source_maturity import CANONICAL_ARTIFACT_TYPES
+from sqlalchemy_test_models import Board, CanonicalDebt
+from sqlalchemy_test_models import ConsolidationQueue
+from sqlalchemy_test_models import Card, CardStatus, CardType, Spec, SpecStatus
+from okto_pulse.core.application.processors.consolidation import ConsolidationProcessor
 from okto_pulse.core.services.canonical_debt_service import (
+    CANONICAL_DEBT_ARTIFACT_TYPES,
+    CANONICAL_DEBT_STATES,
+    CanonicalDebtFilterError,
     list_canonical_debt,
     mark_canonical_debt_committed_for_artifact,
     reconcile_canonical_debt_with_evidence,
@@ -108,19 +121,16 @@ async def test_mcp_canonical_debt_list_exposes_debt_drilldown(
 
     async def _fake_ctx(board_id: str):
         assert board_id == BOARD_ID
-        return object()
-
-    class _DbContext:
-        async def __aenter__(self):
-            self._session_ctx = db_factory()
-            return await self._session_ctx.__aenter__()
-
-        async def __aexit__(self, *exc):
-            return await self._session_ctx.__aexit__(*exc)
+        # MCP-FU5: the migrated tool builds the actor via MCPAdapterContract.actor
+        # (needs agent_id/agent_name/permissions) and runs over the MCP
+        # UnitOfWorkFactory — not a raw get_db_for_mcp() session.
+        return type(
+            "Ctx",
+            (),
+            {"agent_id": "mcp-agent", "agent_name": "mcp-agent", "permissions": None},
+        )()
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
-    monkeypatch.setattr(mcp_server, "get_db_for_mcp", lambda: _DbContext())
-
     tool = await mcp_server.mcp.get_tool("okto_pulse_kg_canonical_debt_list")
     raw = await tool.fn(
         board_id=BOARD_ID,
@@ -137,6 +147,207 @@ async def test_mcp_canonical_debt_list_exposes_debt_drilldown(
     assert payload["items"][0]["artifact_id"] == "s-mcp"
     assert payload["items"][0]["target_status"] == "done"
     assert payload["items"][0]["failure_reason"] == "connectivity_guard"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "supported"),
+    [
+        ("state", "bogus_state", CANONICAL_DEBT_STATES),
+        ("state", "FAILED", CANONICAL_DEBT_STATES),
+        ("state", " failed ", CANONICAL_DEBT_STATES),
+        (
+            "artifact_type",
+            "bogus_artifact",
+            CANONICAL_DEBT_ARTIFACT_TYPES,
+        ),
+        ("artifact_type", "SPEC", CANONICAL_DEBT_ARTIFACT_TYPES),
+        ("artifact_type", " spec ", CANONICAL_DEBT_ARTIFACT_TYPES),
+    ],
+)
+@pytest.mark.asyncio
+async def test_mcp_canonical_debt_rejects_noncanonical_filters_before_storage(
+    monkeypatch,
+    field: str,
+    value: str,
+    supported: frozenset[str],
+) -> None:
+    async def _fake_ctx(board_id: str):
+        assert board_id == BOARD_ID
+        return type(
+            "Ctx",
+            (),
+            {"agent_id": "mcp-agent", "agent_name": "mcp-agent", "permissions": None},
+        )()
+
+    def _storage_must_not_open():
+        raise AssertionError("invalid filter must fail before storage")
+
+    monkeypatch.setattr(mcp_server, "_get_agent_ctx", _fake_ctx)
+    monkeypatch.setattr(
+        mcp_server,
+        "get_unit_of_work_factory_for_mcp",
+        _storage_must_not_open,
+    )
+    tool = await mcp_server.mcp.get_tool("okto_pulse_kg_canonical_debt_list")
+
+    payload = json.loads(
+        await tool.fn(
+            board_id=BOARD_ID,
+            **{field: value},
+            limit=20,
+            offset=0,
+        )
+    )
+
+    assert payload["error_code"] == "invalid_filter"
+    assert value in payload["error"]
+    assert payload["invalid_keys"] == [field]
+    assert set(payload["supported"]) == supported
+
+
+@pytest.mark.parametrize(
+    ("use_case", "command"),
+    [
+        (
+            McpListCanonicalDebtUseCase(),
+            ListCanonicalDebtCommand(
+                BOARD_ID,
+                artifact_type="SPEC",
+                state="failed",
+            ),
+        ),
+        (
+            RestListCanonicalDebtUseCase(),
+            CanonicalDebtListCommand(
+                BOARD_ID,
+                "spec",
+                " FAILED ",
+                20,
+                0,
+            ),
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_both_list_use_cases_reject_before_any_uow_access(
+    use_case,
+    command,
+) -> None:
+    with pytest.raises(CanonicalDebtFilterError):
+        await use_case.execute(
+            command,
+            actor=ActorContext(USER_ID, "system", board_id=BOARD_ID),
+            uow=object(),
+        )
+
+
+@pytest.mark.parametrize(
+    "filters",
+    [
+        {"artifact_type": "unknown"},
+        {"state": "FAILED"},
+        {"artifact_type": " spec ", "state": "failed"},
+        {"artifact_type": "spec", "state": " failed "},
+    ],
+)
+@pytest.mark.asyncio
+async def test_service_rejects_invalid_filters_before_store_access(
+    monkeypatch,
+    filters: dict[str, str],
+) -> None:
+    from okto_pulse.core.services import canonical_debt_service
+
+    def _store_must_not_open():
+        raise AssertionError("invalid filters must not reach persistence")
+
+    monkeypatch.setattr(
+        canonical_debt_service,
+        "get_canonical_debt_store",
+        _store_must_not_open,
+    )
+
+    with pytest.raises(CanonicalDebtFilterError):
+        await list_canonical_debt(
+            object(),
+            board_id=BOARD_ID,
+            **filters,
+        )
+
+
+def test_filter_artifact_types_derive_from_source_maturity_contract() -> None:
+    assert CANONICAL_DEBT_ARTIFACT_TYPES == frozenset(
+        CANONICAL_ARTIFACT_TYPES
+    )
+
+
+@pytest.mark.asyncio
+async def test_valid_combined_filters_preserve_pagination_and_do_not_mutate(
+    db_factory,
+) -> None:
+    board_id = f"{BOARD_ID}-pagination"
+    async with db_factory() as session:
+        board = await session.get(Board, board_id)
+        if board is None:
+            session.add(Board(id=board_id, name="debt pages", owner_id=USER_ID))
+        await session.execute(
+            CanonicalDebt.__table__.delete().where(
+                CanonicalDebt.board_id == board_id
+            )
+        )
+        session.add_all(
+            [
+                CanonicalDebt(
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id=f"s{index}",
+                    source_ref=f"spec:s{index}",
+                    content_hash=f"h{index}",
+                    target_status="done",
+                    canonical_state="failed",
+                )
+                for index in range(3)
+            ]
+            + [
+                CanonicalDebt(
+                    board_id=board_id,
+                    artifact_type="task",
+                    artifact_id="excluded-task",
+                    source_ref="task:excluded-task",
+                    content_hash="excluded-task-hash",
+                    target_status="done",
+                    canonical_state="failed",
+                )
+            ]
+        )
+        await session.commit()
+
+        first = await list_canonical_debt(
+            session,
+            board_id=board_id,
+            artifact_type="spec",
+            state="failed",
+            limit=1,
+            offset=0,
+        )
+        second = await list_canonical_debt(
+            session,
+            board_id=board_id,
+            artifact_type="spec",
+            state="failed",
+            limit=1,
+            offset=1,
+        )
+        unchanged = await list_canonical_debt(
+            session,
+            board_id=board_id,
+            limit=20,
+            offset=0,
+        )
+
+    assert first.total == second.total == 3
+    assert len(first.items) == len(second.items) == 1
+    assert first.items[0]["artifact_id"] != second.items[0]["artifact_id"]
+    assert unchanged.total == 4
 
 
 @pytest.mark.asyncio
@@ -464,6 +675,14 @@ async def test_consolidation_failure_marks_canonical_debt(db_factory):
                 ConsolidationQueue.board_id == BOARD_ID
             )
         )
+        session.add(Spec(
+            id="spec-failed",
+            board_id=BOARD_ID,
+            title="Done spec with failed consolidation",
+            description="Canonical-ready source.",
+            status=SpecStatus.DONE,
+            created_by=USER_ID,
+        ))
         entry = ConsolidationQueue(
             board_id=BOARD_ID,
             artifact_type="spec",
@@ -474,7 +693,7 @@ async def test_consolidation_failure_marks_canonical_debt(db_factory):
         session.add(entry)
         await session.flush()
 
-        worker = ConsolidationWorker(lambda: None)
+        worker = ConsolidationProcessor(lambda: None)
         await worker._mark_failed(
             session,
             entry,
@@ -492,6 +711,151 @@ async def test_consolidation_failure_marks_canonical_debt(db_factory):
     assert debt["canonical_state"] == "failed"
     assert debt["failure_reason"] == "consolidation_failed"
     assert debt["queue_ref"] == entry.id
+
+
+@pytest.mark.asyncio
+async def test_missing_artifact_queue_entry_stays_visible_without_canonical_debt(
+    db_factory,
+):
+    """RKG-04 AC3 (ts_317b11ef): a missing source artifact is a persistent
+    failure and must stay VISIBLE — the worker returns False, so the entry is
+    failure-handled (attempts++, backoff, re-pending; DLQ only after
+    ``kg_queue_max_attempts``) instead of silently acked. A missing artifact
+    still never mints canonical debt rows.
+
+    Traceability: formerly ``test_missing_artifact_queue_entry_is_acked_
+    without_canonical_debt`` — introduced together with the ack-on-missing
+    regression later reverted (bug 99ac1fc3); rewritten to the adjudicated
+    contract (FU-1 57c3cab9, census 649abf70).
+    """
+    missing_spec_id = "spec-stale-missing"
+    async with db_factory() as session:
+        board = await session.get(Board, BOARD_ID)
+        if board is None:
+            session.add(Board(id=BOARD_ID, name="debt", owner_id=USER_ID))
+        await session.execute(
+            CanonicalDebt.__table__.delete().where(
+                CanonicalDebt.board_id == BOARD_ID
+            )
+        )
+        # Hermetic seed: process_batch's claim is board-AGNOSTIC with
+        # limit=batch_size, and the test DB is session-scoped/shared —
+        # leftover queue rows from earlier tests crowd this entry out of
+        # the batch, leaving it unclaimed (attempts stays 0). Drain the
+        # whole queue so the worker under test sees exactly one entry.
+        await session.execute(ConsolidationQueue.__table__.delete())
+        await session.execute(
+            Spec.__table__.delete().where(Spec.id == missing_spec_id)
+        )
+        entry = ConsolidationQueue(
+            board_id=BOARD_ID,
+            artifact_type="spec",
+            artifact_id=missing_spec_id,
+            status="pending",
+            worker_id=None,
+        )
+        session.add(entry)
+        await session.commit()
+        entry_id = entry.id
+
+    worker = ConsolidationProcessor(db_factory, batch_size=1)
+    processed = await worker.process_batch()
+
+    async with db_factory() as session:
+        queue_row = await session.get(ConsolidationQueue, entry_id)
+        listed = await list_canonical_debt(session, board_id=BOARD_ID)
+
+    # Not a success: False routes the entry through _mark_failed.
+    assert processed == 0
+    # The entry stays visible — re-pended with the failure recorded, bound
+    # for the DLQ only after kg_queue_max_attempts consecutive failures.
+    assert queue_row is not None
+    assert queue_row.status == "pending"
+    assert queue_row.attempts == 1
+    assert queue_row.next_retry_at is not None
+    assert queue_row.last_error == "processing returned False"
+    # A missing artifact never mints canonical debt.
+    assert listed.total == 0
+
+
+@pytest.mark.asyncio
+async def test_canonical_debt_persist_failure_rolls_back_before_queue_update(
+    db_factory,
+    monkeypatch,
+):
+    spec_id = "spec-debt-persist-rollback"
+
+    async with db_factory() as session:
+        board = await session.get(Board, BOARD_ID)
+        if board is None:
+            session.add(Board(id=BOARD_ID, name="debt", owner_id=USER_ID))
+        await session.execute(
+            CanonicalDebt.__table__.delete().where(
+                CanonicalDebt.board_id == BOARD_ID
+            )
+        )
+        await session.execute(
+            ConsolidationQueue.__table__.delete().where(
+                ConsolidationQueue.board_id == BOARD_ID
+            )
+        )
+        await session.execute(Spec.__table__.delete().where(Spec.id == spec_id))
+        spec = Spec(
+            id=spec_id,
+            board_id=BOARD_ID,
+            title="Done spec with debt persistence failure",
+            description="Canonical-ready source.",
+            status=SpecStatus.DONE,
+            created_by=USER_ID,
+        )
+        entry = ConsolidationQueue(
+            board_id=BOARD_ID,
+            artifact_type="spec",
+            artifact_id=spec_id,
+            status="claimed",
+            worker_id="worker-test",
+        )
+        session.add_all([spec, entry])
+        await session.commit()
+        entry_id = entry.id
+
+    async def broken_upsert(db, **kwargs):
+        db.add(CanonicalDebt(
+            board_id="missing-board-for-fk",
+            artifact_type=kwargs["artifact_type"],
+            artifact_id=kwargs["artifact_id"],
+            source_ref=kwargs["source_ref"],
+            content_hash=kwargs["content_hash"],
+            target_status=kwargs["target_status"],
+            canonical_state=kwargs["canonical_state"],
+        ))
+        await db.flush()
+
+    monkeypatch.setattr(
+        "okto_pulse.core.application.processors.consolidation.upsert_canonical_debt",
+        broken_upsert,
+    )
+
+    async with db_factory() as session:
+        entry = await session.get(ConsolidationQueue, entry_id)
+        worker = ConsolidationProcessor(lambda: None)
+        await worker._mark_failed(
+            session,
+            entry,
+            error_text="KG node connectivity guard rejected the commit",
+            max_attempts=3,
+        )
+        await session.commit()
+
+    async with db_factory() as session:
+        entry = await session.get(ConsolidationQueue, entry_id)
+        listed = await list_canonical_debt(session, board_id=BOARD_ID)
+
+    assert entry is not None
+    assert entry.attempts == 1
+    assert entry.status == "pending"
+    assert entry.last_error == "KG node connectivity guard rejected the commit"
+    assert listed.total == 0
 
 
 @pytest.mark.asyncio
@@ -554,7 +918,7 @@ async def test_spec_consolidation_failure_creates_canonical_debt_only_when_done(
         session.add_all(entries)
         await session.flush()
 
-        worker = ConsolidationWorker(lambda: None)
+        worker = ConsolidationProcessor(lambda: None)
         for entry in entries:
             await worker._mark_failed(
                 session,
@@ -612,7 +976,7 @@ async def test_working_bug_consolidation_failure_does_not_create_canonical_debt(
         session.add_all([bug, entry])
         await session.flush()
 
-        worker = ConsolidationWorker(lambda: None)
+        worker = ConsolidationProcessor(lambda: None)
         await worker._mark_failed(
             session,
             entry,

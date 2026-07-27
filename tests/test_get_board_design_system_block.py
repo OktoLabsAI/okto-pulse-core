@@ -22,16 +22,17 @@ Reproduce:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 
 import pytest
 from sqlalchemy import delete
-from sqlalchemy.orm.attributes import flag_modified
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, BoardDesignSystem, DesignSystem
-from okto_pulse.core.models.schemas import BoardCreate
+from sqlalchemy_test_models import Board, BoardDesignSystem, DesignSystem
+from okto_pulse.core.models.schemas import BoardCreate, BoardSettings, BoardUpdate
 from okto_pulse.core.services.design_system import DesignSystemService
 from okto_pulse.core.services.main import BoardService
 
@@ -50,7 +51,7 @@ async def _call(name: str, **kwargs) -> dict:
 
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
@@ -73,9 +74,13 @@ async def _seed_board(db, *, gate_mode: str) -> Board:
     board = await BoardService(db).create_board(
         USER_ID, BoardCreate(name=f"b-{uuid.uuid4().hex[:8]}")
     )
-    board.settings = {**(board.settings or {}), "design_system_gate_mode": gate_mode}
-    flag_modified(board, "settings")
-    return board
+    updated = await BoardService(db).update_board(
+        board.id,
+        USER_ID,
+        BoardUpdate(settings=BoardSettings(design_system_gate_mode=gate_mode)),
+    )
+    assert updated is not None
+    return updated
 
 
 async def test_ts_ff3cef78_board_link_blocking_mandate_true():
@@ -99,7 +104,10 @@ async def test_ts_ff3cef78_board_link_blocking_mandate_true():
         assert block["effective"]["design_system_id"] == ds_id
         assert block["effective"]["title"] == "Teste DS"
         assert block["effective"]["source"] == "board_link"
-        assert block["effective"]["version"] is not None
+        assert block["effective"]["version"] == 1
+        assert block["effective"]["pinned_version"] == 1
+        assert block["effective"]["catalog_version"] == 1
+        assert block["effective"]["version_is_current"] is True
         assert block["gate_mode"] == "blocking"
         assert block["mandate"] is True
     finally:
@@ -131,6 +139,69 @@ async def test_ts_0fd51a8b_board_link_off_mandate_false():
         await _cleanup([board_id] if board_id else [], [ds_id] if ds_id else [])
 
 
+async def test_effective_projection_distinguishes_pin_from_newer_catalog_row():
+    """A board pin remains stable while the mutable catalog row advances.
+
+    The projection must expose both versions instead of silently combining the
+    pinned version with live catalog metadata as if they represented one row.
+    """
+
+    from okto_pulse.core.infra.database import get_session_factory
+
+    board_id = ds_id = None
+    try:
+        async with get_session_factory()() as db:
+            board = await _seed_board(db, gate_mode="blocking")
+            board_id = board.id
+            service = DesignSystemService(db)
+            ds = await service.create_design_system(
+                USER_ID,
+                title="Pinned DS v1",
+                scope="global",
+                payload={"tokens": {"version": 1}},
+            )
+            ds_id = ds.id
+            await service.link_design_system_to_board(board_id, ds_id)
+            updated = await service.update_design_system(
+                ds_id,
+                USER_ID,
+                title="Catalog DS v2",
+                payload={"tokens": {"version": 2}},
+            )
+            assert updated.version == 2
+            await db.commit()
+
+        projected = await _call(
+            "okto_pulse_get_board_design_system",
+            board_id=board_id,
+        )
+        effective = projected["effective"]
+        assert effective["design_system_id"] == ds_id
+        assert effective["version"] == 1
+        assert effective["pinned_version"] == 1
+        assert effective["catalog_version"] == 2
+        assert effective["version_is_current"] is False
+        assert effective["title"] == "Catalog DS v2"
+
+        # Re-link is the explicit operation that refreshes the board pin.
+        async with get_session_factory()() as db:
+            await DesignSystemService(db).link_design_system_to_board(
+                board_id,
+                ds_id,
+            )
+            await db.commit()
+        refreshed = await _call(
+            "okto_pulse_get_board_design_system",
+            board_id=board_id,
+        )
+        assert refreshed["effective"]["version"] == 2
+        assert refreshed["effective"]["pinned_version"] == 2
+        assert refreshed["effective"]["catalog_version"] == 2
+        assert refreshed["effective"]["version_is_current"] is True
+    finally:
+        await _cleanup([board_id] if board_id else [], [ds_id] if ds_id else [])
+
+
 async def test_ts_18089a6a_no_effective_ds_effective_null_mandate_false():
     from okto_pulse.core.infra.database import get_session_factory
 
@@ -141,7 +212,7 @@ async def test_ts_18089a6a_no_effective_ds_effective_null_mandate_false():
             board_id = board.id
             # explicit: no board link, no design_system in default_config_snapshot.
             board.default_config_snapshot = None
-            flag_modified(board, "default_config_snapshot")
+            board.mark_dirty("default_config_snapshot")
             await db.commit()
 
         out = await _call("okto_pulse_get_board", board_id=board_id)
@@ -154,9 +225,8 @@ async def test_ts_18089a6a_no_effective_ds_effective_null_mandate_false():
 
 
 async def test_ts_4288636b_default_snapshot_normalizes_title_null_and_gate_from_settings():
-    """TEETH: source=default_snapshot carries gate_mode but NOT title; the block must
-    normalize title=None AND read gate_mode ONLY from BoardSettings (advisory), never the
-    snapshot's own gate_mode (blocking)."""
+    """TEETH: source=default_snapshot resolves the same effective DTO as a board link
+    and reads gate_mode ONLY from BoardSettings, never the snapshot mirror."""
     from okto_pulse.core.infra.database import get_session_factory
 
     board_id = ds_id = None
@@ -177,7 +247,7 @@ async def test_ts_4288636b_default_snapshot_normalizes_title_null_and_gate_from_
                     "gate_mode": "blocking",
                 }
             }
-            flag_modified(board, "default_config_snapshot")
+            board.mark_dirty("default_config_snapshot")
             await db.commit()
 
         out = await _call("okto_pulse_get_board", board_id=board_id)
@@ -185,9 +255,61 @@ async def test_ts_4288636b_default_snapshot_normalizes_title_null_and_gate_from_
         assert block["effective"] is not None
         assert block["effective"]["source"] == "default_snapshot"
         assert block["effective"]["design_system_id"] == ds_id
-        assert block["effective"]["title"] is None  # normalized (snapshot has no title)
+        assert block["effective"]["title"] == "Snapshot DS"
+        assert block["effective"]["status"] == "active"
+        assert block["effective"]["scope"] == "global"
+        assert block["effective"]["exists"] is True
+        assert block["effective"]["version"] == 1
+        assert block["effective"]["pinned_version"] == 1
+        assert block["effective"]["catalog_version"] == 1
+        assert block["effective"]["version_is_current"] is True
+        assert block["effective"]["gate_mode"] == "advisory"
         assert block["gate_mode"] == "advisory"  # from BoardSettings, NOT the snapshot mirror
         assert block["gate_mode"] != "blocking"
         assert block["mandate"] is False  # advisory is not blocking
     finally:
         await _cleanup([board_id] if board_id else [], [ds_id] if ds_id else [])
+
+
+async def test_ts_9c7f3ee0_dangling_effective_axes_are_not_collapsed(monkeypatch):
+    from types import SimpleNamespace
+
+    from okto_pulse.core.services import design_system as module
+
+    class _DanglingStore:
+        async def get_board_settings(self, context, *, board_id):
+            return {"design_system_gate_mode": "blocking"}
+
+        async def get_board_link(self, context, *, board_id):
+            return SimpleNamespace(
+                design_system_id="missing-design-system",
+                design_system_version=7,
+            )
+
+        async def get(self, context, *, design_system_id):
+            return None
+
+        async def get_board_snapshot(self, context, *, board_id):
+            return None
+
+    monkeypatch.setattr(module, "get_design_system_store", lambda: _DanglingStore())
+    effective = await DesignSystemService(object()).get_board_effective_design_system(
+        "board-dangling"
+    )
+
+    assert effective == {
+        "source": "board_link",
+        "design_system_id": "missing-design-system",
+        "version": 7,
+        "pinned_version": 7,
+        "catalog_version": None,
+        "version_is_current": False,
+        "title": None,
+        "status": None,
+        "scope": None,
+        "exists": False,
+        "gate_mode": "blocking",
+        "configured": True,
+        "resolvable": False,
+        "mandate": True,
+    }

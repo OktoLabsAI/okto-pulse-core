@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from okto_pulse.core.models.db import SpecStatus
+from sqlalchemy_test_models import SpecStatus
 from okto_pulse.core.services import discovery_executor
 
 

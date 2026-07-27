@@ -10,6 +10,7 @@ Covers the spec test scenarios at the component level:
 from __future__ import annotations
 
 import json as _json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -182,7 +183,9 @@ def _full_health_payload() -> dict:
         "classification_reason": "metric.ok",
         "correlation_id": "corr-1",
         "memory_pressure_status": "normal",
-        "recent_events": [{"event_type": "kg.tick.daily", "occurred_at": "2026-06-02T03:00:00Z"}],
+        "recent_events": [
+            {"event_type": "kg.tick.daily", "occurred_at": "2026-06-02T03:00:00Z"}
+        ],
         "checked_at": "2026-06-02T10:00:00Z",
         # small operational scalars (kept in slim)
         "queue_depth": 0,
@@ -202,18 +205,24 @@ def _full_health_payload() -> dict:
             "reason": "latest_success_too_old",
         },
         "storage_footprint_proxy": {
-            "source": "file_size_proxy",
+            "source": "runtime_capability",
             "status": "ok",
             "percentage": 12.5,
             "high_water_mark_pct": 12.5,
             "is_direct_memory_telemetry": False,
         },
-        # verbose diagnostics / aliases / dups (dropped in slim)
+        # verbose diagnostics / aliases (dropped in slim)
         "state": "healthy",  # alias of overall_state
         "classification_reasons": ["metric.ok"],  # dup of classification_reason
         "schema_version": "1.0",
-        "health_schema_version": "1.0",  # dup
-        "health_issues": [{"code": "x", "description": "long human-readable prose ..."}],
+        "health_schema_version": "1.1",
+        "materialization_state": "materialized",
+        "materialization_generation": "generation-1",
+        "probe_reason_codes": {"board_graph": "board_graph_present"},
+        "global_outbox_dead_letter_count": 0,
+        "health_issues": [
+            {"code": "x", "description": "long human-readable prose ..."}
+        ],
         "diagnostics": {"graph_read_status": "ok", "primary_health_cause": "none"},
     }
 
@@ -222,8 +231,13 @@ def test_health_slim_keeps_stop_fields_and_drops_verbose():
     out = KGHealthMCPProjection().project(_full_health_payload(), profile="summary")
     # Every operational stop-rule field survives.
     for field in (
-        "graph_state", "discovery_state", "overall_state", "metric_status",
-        "classification_reason", "correlation_id", "memory_pressure_status",
+        "graph_state",
+        "discovery_state",
+        "overall_state",
+        "metric_status",
+        "classification_reason",
+        "correlation_id",
+        "memory_pressure_status",
         "recent_events",
     ):
         assert field in out, field
@@ -234,17 +248,24 @@ def test_health_slim_keeps_stop_fields_and_drops_verbose():
     assert out["decay_scheduler_diagnostics"]["status"] == "stale"
     assert out["decay_scheduler_diagnostics"]["operational_debt"] is True
     assert out["decay_scheduler_diagnostics"]["graph_recovery_required"] is False
-    assert out["storage_footprint_proxy"]["source"] == "file_size_proxy"
+    assert out["storage_footprint_proxy"]["source"] == "runtime_capability"
     assert out["storage_footprint_proxy"]["is_direct_memory_telemetry"] is False
-    # Verbose diagnostics, aliases and dups are omitted until full is requested.
+    # Verbose diagnostics and aliases are omitted until full is requested.
     for field in (
-        "state", "classification_reasons", "health_issues", "diagnostics",
-        "health_schema_version",
+        "state",
+        "classification_reasons",
+        "health_issues",
+        "diagnostics",
     ):
         assert field not in out, field
+    assert out["health_schema_version"] == "1.1"
+    assert out["materialization_state"] == "materialized"
+    assert out["materialization_generation"] == "generation-1"
+    assert out["probe_reason_codes"] == {"board_graph": "board_graph_present"}
+    assert out["global_outbox_dead_letter_count"] == 0
     assert out["profile"] == "summary"
     assert out["full_profile_available"] is True
-    assert out["omitted_count"] >= 6
+    assert out["omitted_count"] >= 5
 
 
 def test_health_full_profile_returns_everything_untouched():
@@ -257,6 +278,21 @@ def test_health_full_profile_returns_everything_untouched():
 def test_health_legacy_profile_is_also_full():
     out = KGHealthMCPProjection().project(_full_health_payload(), profile="legacy")
     assert "diagnostics" in out and "health_issues" in out
+
+
+def test_health_projection_rejects_unknown_profile_consistently():
+    out = KGHealthMCPProjection().project(_full_health_payload(), profile="verbose")
+    assert out == {
+        "outcome": "error",
+        "error": "Unsupported projection profile: 'verbose'",
+        "error_code": "unsupported_projection",
+        "supported_profiles": ["summary", "detail", "full", "legacy"],
+    }
+
+
+def test_health_detail_keeps_its_requested_profile_metadata():
+    out = KGHealthMCPProjection().project(_full_health_payload(), profile="detail")
+    assert out["profile"] == "detail"
 
 
 # ===========================================================================
@@ -273,10 +309,14 @@ async def _stub_get_agent():
     return _StubAgent()
 
 
-def _fresh_mcp(name: str):
-    from fastmcp import FastMCP
+async def _stub_get_board_agent(_board_id: str):
+    return SimpleNamespace(agent_id=_StubAgent.id, permissions=None)
 
-    return FastMCP(name)
+
+def _fresh_mcp(name: str):
+    from okto_pulse.core.mcp.catalog import CoreMcpCatalog
+
+    return CoreMcpCatalog(name=name, version="test")
 
 
 @pytest.mark.asyncio
@@ -292,10 +332,15 @@ async def test_natural_handler_rejects_oversize_before_executor():
         return {"nodes": [], "total_matches": 0}
 
     mcp = _fresh_mcp("test-kg-safety-natural-reject")
-    with patch.object(kpt, "execute_natural_query", _spy_execute), patch.object(
-        kpt, "check_rate_limit", lambda *_a, **_k: None
+    with (
+        patch.object(kpt, "execute_natural_query", _spy_execute),
+        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent, get_db=lambda: None)
+        kpt.register_kg_power_tools(
+            mcp,
+            get_agent=_stub_get_agent,
+            get_board_agent=_stub_get_board_agent,
+        )
         tool = await mcp.get_tool("okto_pulse_kg_query_natural")
         raw = await tool.fn(board_id="b1", nl_query="x" * 5000)
 
@@ -319,10 +364,15 @@ async def test_natural_handler_runs_executor_for_normal_query():
         return {"nodes": [{"id": "n1", "similarity": 0.123456789}], "total_matches": 1}
 
     mcp = _fresh_mcp("test-kg-safety-natural-ok")
-    with patch.object(kpt, "execute_natural_query", _spy_execute), patch.object(
-        kpt, "check_rate_limit", lambda *_a, **_k: None
+    with (
+        patch.object(kpt, "execute_natural_query", _spy_execute),
+        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent, get_db=lambda: None)
+        kpt.register_kg_power_tools(
+            mcp,
+            get_agent=_stub_get_agent,
+            get_board_agent=_stub_get_board_agent,
+        )
         tool = await mcp.get_tool("okto_pulse_kg_query_natural")
         raw = await tool.fn(board_id="b1", nl_query="which decisions touch caching?")
 
@@ -340,7 +390,13 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
     seen = {"max_rows": None}
 
     def _spy_cypher(
-        board_id, cypher, params, *, max_rows, timeout_ms, include_working=False,
+        board_id,
+        cypher,
+        params,
+        *,
+        max_rows,
+        timeout_ms,
+        include_working=False,
     ):
         seen["max_rows"] = max_rows  # agent-safe default must reach the executor
         return {
@@ -350,10 +406,15 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
         }
 
     mcp = _fresh_mcp("test-kg-safety-cypher")
-    with patch.object(kpt, "execute_cypher_read_only", _spy_cypher), patch.object(
-        kpt, "check_rate_limit", lambda *_a, **_k: None
+    with (
+        patch.object(kpt, "execute_cypher_read_only", _spy_cypher),
+        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent, get_db=lambda: None)
+        kpt.register_kg_power_tools(
+            mcp,
+            get_agent=_stub_get_agent,
+            get_board_agent=_stub_get_board_agent,
+        )
         tool = await mcp.get_tool("okto_pulse_kg_query_cypher")
         raw = await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n.embedding")
 
@@ -377,10 +438,15 @@ async def test_cypher_handler_rejects_above_hard_cap():
         return {"rows": [], "row_count": 0, "truncated": False}
 
     mcp = _fresh_mcp("test-kg-safety-cypher-cap")
-    with patch.object(kpt, "execute_cypher_read_only", _spy_cypher), patch.object(
-        kpt, "check_rate_limit", lambda *_a, **_k: None
+    with (
+        patch.object(kpt, "execute_cypher_read_only", _spy_cypher),
+        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
-        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent, get_db=lambda: None)
+        kpt.register_kg_power_tools(
+            mcp,
+            get_agent=_stub_get_agent,
+            get_board_agent=_stub_get_board_agent,
+        )
         tool = await mcp.get_tool("okto_pulse_kg_query_cypher")
         raw = await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n", max_rows=5000)
 

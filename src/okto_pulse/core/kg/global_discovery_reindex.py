@@ -1,6 +1,6 @@
 """Global discovery reindex visibility (KG-02.6).
 
-KG-02.6 ships two primitives that make sure ``discovery.lbug`` is
+KG-02.6 ships two primitives that make sure ``global graph`` is
 never silently stale after a board rebuild (BR br_1dd21e39 + IR
 ir_f98042ee):
 
@@ -24,15 +24,22 @@ Counter ``kg_global_discovery_reindex_total`` (OR ``or_34a86124`` /
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
-from collections.abc import Iterable, Sequence
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable
+
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.rebuild_audit import (
+    resolve_rebuild_audit_artifact_store,
+)
 
 logger = logging.getLogger("okto_pulse.kg.global_discovery_reindex")
 
@@ -68,11 +75,13 @@ class ReindexErrorCode(str, Enum):
 # Visible-from-Health/Report mapping. ``failed`` is recorded but the
 # health surface still gates the operator: it's not the same as
 # "silently stale", because the reason + job_ref are persisted.
-VISIBLE_STATUSES: frozenset[str] = frozenset({
-    ReindexStatus.REINDEXED.value,
-    ReindexStatus.REINDEX_PENDING.value,
-    ReindexStatus.FAILED.value,
-})
+VISIBLE_STATUSES: frozenset[str] = frozenset(
+    {
+        ReindexStatus.REINDEXED.value,
+        ReindexStatus.REINDEX_PENDING.value,
+        ReindexStatus.FAILED.value,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,8 +116,8 @@ class ReindexRecordResult:
 # --- Counters ----------------------------------------------------------------
 
 _REINDEX_LABELS = ("board_id", "reason", "status")
-_reindex_counter: dict[tuple[str, str, str], int] = {}
-_reindex_counter_lock = threading.Lock()
+_reindex_counter = runtime_state("kg.global_discovery_reindex.counter", dict)
+_reindex_counter_lock = runtime_lock("kg.global_discovery_reindex.counter")
 
 
 def _bump_reindex(*, board_id: str, reason: str, status: str) -> None:
@@ -181,6 +190,7 @@ def _coerce_reason(reason: str) -> str:
 
 # --- Reindex adapter type --------------------------------------------------
 
+
 # Reindex adapter signature: receives (board_id, kg_generation_id,
 # affected_refs) and returns a tuple ``(success, indexed_generation,
 # job_ref, detail)``. ``success=False`` lands on the pending path with
@@ -203,7 +213,7 @@ def _default_reindex_adapter(
     _affected_refs: tuple[str, ...],
 ) -> ReindexAttempt:
     """Default adapter — marks the reindex as pending without touching
-    discovery.lbug. Production wires the real reindexer; until then the
+    global graph. Production wires the real reindexer; until then the
     operator sees ``reindex_pending`` and a deterministic ``job_ref``
     pointing at the manual recovery path."""
 
@@ -220,28 +230,35 @@ def _default_reindex_adapter(
 
 @dataclass(frozen=True, slots=True)
 class GlobalDiscoveryReindexStatusStore:
-    """File-backed store for the per-(board, generation) reindex status.
+    """Store for the per-(board, generation) reindex status.
 
     ``record`` is the ONLY way to publish the visible status; the
     rebuilder calls it after every reindex attempt so the KG Health view
     + the rebuild report read from the same source of truth.
     """
 
-    base_dir: Path
+    base_dir: object | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
     _lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False, compare=False
     )
 
-    def _board_dir(self, board_id: str) -> Path:
-        return (
-            self.base_dir
-            / REBUILD_DIRNAME
-            / REINDEX_DIRNAME
-            / board_id
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
         )
 
-    def _record_path(self, board_id: str, kg_generation_id: str) -> Path:
-        return self._board_dir(board_id) / f"{kg_generation_id}.json"
+    def _record_key(self, board_id: str, kg_generation_id: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="global_discovery_reindex",
+            board_id=board_id,
+            kg_generation_id=kg_generation_id,
+        )
 
     def record(
         self,
@@ -281,7 +298,6 @@ class GlobalDiscoveryReindexStatusStore:
 
         with self._lock:
             try:
-                self._board_dir(board_id).mkdir(parents=True, exist_ok=True)
                 recorded_at = datetime.now(timezone.utc).isoformat()
                 payload = {
                     "board_id": board_id,
@@ -293,15 +309,15 @@ class GlobalDiscoveryReindexStatusStore:
                     "detail": detail,
                     "recorded_at": recorded_at,
                 }
-                path = self._record_path(board_id, kg_generation_id)
-                tmp = path.with_suffix(".json.tmp")
-                with tmp.open("w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, indent=2)
-                tmp.replace(path)
+                key = self._record_key(board_id, kg_generation_id)
+                self.artifact_store.write_json_atomic(key, payload)
+                record_ref = self.artifact_store.reference(key)
             except Exception as exc:
                 logger.error(
                     "kg.global_discovery_reindex.record_failed board=%s gen=%s err=%s",
-                    board_id, kg_generation_id, exc,
+                    board_id,
+                    kg_generation_id,
+                    exc,
                 )
                 _bump_reindex(
                     board_id=board_id,
@@ -327,22 +343,20 @@ class GlobalDiscoveryReindexStatusStore:
             visible_in_health=visible,
             visible_in_report=visible,
             recorded_at=recorded_at,
-            record_ref=str(path),
+            record_ref=record_ref,
         )
 
-    def get_status(
-        self, board_id: str, kg_generation_id: str
-    ) -> dict[str, Any] | None:
-        path = self._record_path(board_id, kg_generation_id)
-        if not path.exists():
-            return None
+    def get_status(self, board_id: str, kg_generation_id: str) -> dict[str, Any] | None:
         try:
-            with path.open("r", encoding="utf-8") as fh:
-                return json.load(fh)
+            return self.artifact_store.read_json(
+                self._record_key(board_id, kg_generation_id)
+            )
         except Exception as exc:
             logger.error(
                 "kg.global_discovery_reindex.read_failed board=%s gen=%s err=%s",
-                board_id, kg_generation_id, exc,
+                board_id,
+                kg_generation_id,
+                exc,
             )
             return None
 
@@ -351,22 +365,13 @@ class GlobalDiscoveryReindexStatusStore:
         board, or ``None`` if there is no record yet. ``recorded_at``
         ISO8601 sorts lexically — same key the report drilldown shows."""
 
-        directory = self._board_dir(board_id)
-        if not directory.exists():
-            return None
-        latest_payload: dict[str, Any] | None = None
-        latest_ts = ""
-        for entry in directory.glob("*.json"):
-            try:
-                with entry.open("r", encoding="utf-8") as fh:
-                    payload = json.load(fh)
-            except Exception:
-                continue
-            ts = str(payload.get("recorded_at", ""))
-            if ts > latest_ts:
-                latest_ts = ts
-                latest_payload = payload
-        return latest_payload
+        rows = self.artifact_store.list_json(
+            RebuildAuditKey(
+                namespace="global_discovery_reindex",
+                board_id=board_id,
+            )
+        )
+        return max(rows, key=lambda row: str(row.get("recorded_at", "")), default=None)
 
 
 # --- Reindexer -------------------------------------------------------------
@@ -378,7 +383,7 @@ class GlobalDiscoveryReindexer:
 
     The reindexer is the ONLY documented path that publishes a visible
     discovery reindex outcome. Production wires a real
-    ``reindex_adapter`` that talks to discovery.lbug; until that's
+    ``reindex_adapter`` that talks to global graph; until that's
     available the default adapter marks pending so the operator sees
     the gap.
     """
@@ -438,14 +443,24 @@ class GlobalDiscoveryReindexer:
 
         refs = tuple(affected_refs) if affected_refs is not None else ()
 
-        try:
-            attempt = self.reindex_adapter(
-                board_id, kg_generation_id, refs
+        if self.reindex_adapter is not _default_reindex_adapter:
+            # An injected adapter is allowed to mutate the global graph.  It
+            # must therefore execute under the exact durable writer lease
+            # shared with outbox and physical recovery; a mere process-local
+            # callable is never sufficient authority.
+            from okto_pulse.core.kg.global_discovery_writer import (
+                assert_global_discovery_writer_fence,
             )
+
+            assert_global_discovery_writer_fence()
+        try:
+            attempt = self.reindex_adapter(board_id, kg_generation_id, refs)
         except Exception as exc:
             logger.error(
                 "kg.global_discovery_reindex.adapter_failed board=%s gen=%s err=%s",
-                board_id, kg_generation_id, exc,
+                board_id,
+                kg_generation_id,
+                exc,
             )
             attempt = ReindexAttempt(
                 success=False,
@@ -481,7 +496,10 @@ class GlobalDiscoveryReindexer:
             logger.error(
                 "kg.global_discovery_reindex.store_failure board=%s gen=%s "
                 "intended_status=%s store_error=%s",
-                board_id, kg_generation_id, status_value, record.error_code,
+                board_id,
+                kg_generation_id,
+                status_value,
+                record.error_code,
             )
             return ReindexOutcome(
                 status=ReindexStatus.FAILED.value,
@@ -495,9 +513,9 @@ class GlobalDiscoveryReindexer:
                     record.error_code
                     or ReindexErrorCode.REINDEX_STATUS_STORE_UNAVAILABLE.value
                 ),
-                detail=record.detail or attempt.detail or (
-                    f"intended_status={status_value} not visible due to store failure"
-                ),
+                detail=record.detail
+                or attempt.detail
+                or (f"intended_status={status_value} not visible due to store failure"),
             )
 
         return ReindexOutcome(

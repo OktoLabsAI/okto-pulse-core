@@ -34,12 +34,11 @@ import hashlib
 import json
 import logging
 import secrets
-import threading
+from okto_pulse.core.runtime_context import runtime_lock, runtime_state
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable, Mapping
 
 from okto_pulse.core.kg.source_maturity import (
     CANONICAL_ARTIFACT_TYPES,
@@ -54,6 +53,14 @@ from okto_pulse.core.kg.source_maturity import (
     MATURITY_CANONICAL_ELIGIBLE,
     REBUILD_ARTIFACT_TYPES,
     classify_source_for_kg,
+)
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
+    REBUILD_AUDIT_GLOBAL_BOARD_ID,
+    RebuildAuditArtifactStore,
+    RebuildAuditKey,
+)
+from okto_pulse.core.kg.rebuild_audit import (
+    resolve_rebuild_audit_artifact_store,
 )
 
 logger = logging.getLogger("okto_pulse.kg.rebuild_sources")
@@ -80,9 +87,7 @@ def validate_preflight_hash(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("preflight_hash must be a string")
     if len(value) != 64:
-        raise ValueError(
-            f"preflight_hash must be 64 chars (got {len(value)})"
-        )
+        raise ValueError(f"preflight_hash must be 64 chars (got {len(value)})")
     if any(c not in _PREFLIGHT_HASH_PATTERN for c in value):
         raise ValueError("preflight_hash must be lowercase hex")
     return value
@@ -99,16 +104,12 @@ def validate_manifest_ref(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("manifest_ref must be a string")
     if not value.startswith(MANIFEST_REF_PREFIX):
-        raise ValueError(
-            f"manifest_ref must start with {MANIFEST_REF_PREFIX!r}"
-        )
-    suffix = value[len(MANIFEST_REF_PREFIX):]
+        raise ValueError(f"manifest_ref must start with {MANIFEST_REF_PREFIX!r}")
+    suffix = value[len(MANIFEST_REF_PREFIX) :]
     if not suffix:
         raise ValueError("manifest_ref suffix is empty")
     # token_urlsafe produces only [A-Za-z0-9_-]. Allow that alphabet.
-    allowed = set(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
-    )
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
     if any(c not in allowed for c in suffix):
         raise ValueError("manifest_ref contains forbidden characters")
     return value
@@ -195,6 +196,14 @@ class RebuildSourceSet:
     skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     legacy_unknown: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
+    # Spec MKG-A-S1 (FR5/TR5): deterministic digest of the durable cognitive
+    # source class ('cognitive_durable'). {} when the store is absent or has
+    # no records for this board — in that case the source_set_hash payload is
+    # byte-identical to the pre-feature composition (no rebaseline storm).
+    # These records are replay-only: they NEVER enter sources/
+    # materializable_sources (the consolidation enqueue path), the rebuild
+    # restores them literally via replay_durable_cognitive.
+    cognitive_durable_digest: dict[str, Any] = field(default_factory=dict)
 
     @property
     def eligible_count(self) -> int:
@@ -274,6 +283,10 @@ class RebuildSourceSet:
             "legacy_unknown_count": self.legacy_unknown_count,
             "layer_counts": self.layer_counts,
             "source_partition_counts": self.source_partition_counts,
+            "cognitive_durable_digest": dict(self.cognitive_durable_digest),
+            "cognitive_durable_count": int(
+                self.cognitive_durable_digest.get("count", 0)
+            ),
         }
 
 
@@ -330,8 +343,8 @@ class RebuildSourceManifest:
 # --- Counter (OR or_2d295e26 / or_01279a1c) -----------------------------------
 
 _ENUM_LABELS = ("board_id", "outcome", "reason")
-_enum_counter: dict[tuple[str, str, str], int] = {}
-_enum_counter_lock = threading.Lock()
+_enum_counter = runtime_state("kg.rebuild_sources.enum_counter", dict)
+_enum_counter_lock = runtime_lock("kg.rebuild_sources.enum_counter")
 
 
 def _bump_enum(*, board_id: str, outcome: str, reason: str) -> None:
@@ -384,9 +397,7 @@ def _row_from_raw(
     *,
     classification,
 ) -> RebuildSourceRow:
-    source_version = str(
-        row.get("source_version") or row.get("version") or ""
-    )
+    source_version = str(row.get("source_version") or row.get("version") or "")
     return RebuildSourceRow(
         artifact_type=classification.artifact_type,
         source_ref=str(row.get("source_ref") or row.get("id") or ""),
@@ -443,6 +454,7 @@ class RebuildSourceEnumerator:
 
     source_store: SourceStore
     working_ttl_days: int = DEFAULT_WORKING_TTL_DAYS
+    cognitive_digest_provider: Callable[[str], dict[str, Any]] | None = None
 
     def enumerate(self, *, board_id: str) -> RebuildSourceSet:
         if not board_id:
@@ -457,7 +469,8 @@ class RebuildSourceEnumerator:
             )
             logger.warning(
                 "kg.rebuild_sources.store_unavailable board=%s err=%s",
-                board_id, exc,
+                board_id,
+                exc,
             )
             raise
 
@@ -498,11 +511,6 @@ class RebuildSourceEnumerator:
             row_model = _row_from_raw(row, classification=classification)
             if classification.disposition == DISPOSITION_LEGACY_UNKNOWN:
                 non_deterministic = True
-                logger.warning(
-                    "kg.rebuild_sources.legacy_unknown board=%s type=%s reason=%s",
-                    board_id, artifact_type,
-                    classification.reason_code,
-                )
                 legacy_unknown_rows.append(row_model)
                 continue
             if classification.disposition == DISPOSITION_CANONICAL:
@@ -524,6 +532,41 @@ class RebuildSourceEnumerator:
             legacy_unknown_rows,
         ):
             _sort_source_rows(bucket)
+
+        if legacy_unknown_rows:
+            # One bounded warning per enumeration.  Large legacy boards used to
+            # emit one line per row here (often hundreds of identical warnings),
+            # obscuring the actual worker failure that triggered the health
+            # enumeration.  Keep the full rows in ``RebuildSourceSet`` and retain
+            # an exact, deterministic type+reason breakdown in structured log
+            # metadata, while making log volume independent of row count.
+            grouped: dict[tuple[str, str], int] = {}
+            for legacy_row in legacy_unknown_rows:
+                key = (
+                    legacy_row.artifact_type or "unknown",
+                    legacy_row.reason_code or "unknown",
+                )
+                grouped[key] = grouped.get(key, 0) + 1
+            breakdown = [
+                {
+                    "artifact_type": artifact_type,
+                    "reason_code": reason_code,
+                    "count": count,
+                }
+                for (artifact_type, reason_code), count in sorted(grouped.items())
+            ]
+            logger.warning(
+                "kg.rebuild_sources.legacy_unknown board=%s count=%d breakdown=%s",
+                board_id,
+                len(legacy_unknown_rows),
+                json.dumps(breakdown, sort_keys=True, separators=(",", ":")),
+                extra={
+                    "event": "kg.rebuild_sources.legacy_unknown",
+                    "board_id": board_id,
+                    "legacy_unknown_count": len(legacy_unknown_rows),
+                    "legacy_unknown_breakdown": breakdown,
+                },
+            )
 
         if skipped_by_maturity_rows or skipped_expired_rows:
             logger.info(
@@ -551,7 +594,129 @@ class RebuildSourceEnumerator:
             skipped_by_maturity=tuple(skipped_by_maturity_rows),
             skipped_expired_working=tuple(skipped_expired_rows),
             legacy_unknown=tuple(legacy_unknown_rows),
+            cognitive_durable_digest=(
+                self.cognitive_digest_provider(board_id)
+                if self.cognitive_digest_provider is not None
+                else _cognitive_durable_digest(board_id)
+            ),
         )
+
+
+def cognitive_durable_digest_from_rows(
+    records: Iterable[object],
+) -> dict[str, Any]:
+    """Hash preloaded durable cognitive rows using Core's canonical policy.
+
+    Community recovery captures these rows in its one relational snapshot.
+    Accepting mappings as well as the Core DTO keeps that snapshot payload
+    edition-neutral without duplicating classification or hashing rules.
+    """
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        canonical_cognitive_source_fingerprint,
+        latest_cognitive_source_records,
+    )
+
+    def value(record: object, field: str, default: object = None) -> object:
+        if isinstance(record, Mapping):
+            return record.get(field, default)
+        return getattr(record, field, default)
+
+    normalized: list[dict[str, object]] = []
+    for record in latest_cognitive_source_records(records):
+        raw_payload = value(record, "payload")
+        if isinstance(raw_payload, str):
+            raw_payload = json.loads(raw_payload)
+        if not isinstance(raw_payload, Mapping):
+            raise ValueError("cognitive source payload must be a mapping")
+        raw_evidence_refs = value(record, "evidence_refs", ()) or ()
+        if isinstance(raw_evidence_refs, str):
+            parsed_refs = json.loads(raw_evidence_refs)
+            raw_evidence_refs = (
+                parsed_refs if isinstance(parsed_refs, list) else (parsed_refs,)
+            )
+        evidence_refs = tuple(str(ref) for ref in raw_evidence_refs)
+        source_revision = int(value(record, "source_revision", 0) or 0)
+        record_fingerprint = canonical_cognitive_source_fingerprint(
+            board_id=str(value(record, "board_id", "") or ""),
+            node_id=str(value(record, "node_id", "") or ""),
+            node_type=str(value(record, "node_type", "") or ""),
+            generation=int(value(record, "generation", 0) or 0),
+            payload=raw_payload,
+            evidence_refs=evidence_refs,
+        )
+        normalized.append(
+            {
+                "committed_at": str(value(record, "committed_at") or ""),
+                "node_id": str(value(record, "node_id") or ""),
+                "node_type": str(value(record, "node_type") or ""),
+                "generation": int(value(record, "generation") or 0),
+                "payload_hash": hashlib.sha256(
+                    json.dumps(
+                        dict(raw_payload),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "source_revision": source_revision,
+                "record_fingerprint": record_fingerprint,
+            }
+        )
+    if not normalized:
+        return {}
+    normalized.sort(
+        key=lambda row: (
+            str(row["committed_at"]),
+            str(row["node_id"]),
+            int(row["generation"]),
+        )
+    )
+    canonical: list[dict[str, object]] = []
+    for row in normalized:
+        item: dict[str, object] = {
+            "node_id": row["node_id"],
+            "node_type": row["node_type"],
+            "generation": row["generation"],
+            "payload_hash": row["payload_hash"],
+        }
+        # Base-only databases must retain the exact pre-ledger digest. Once a
+        # real append-only revision exists, bind both its ordinal and its
+        # evidence-aware semantic fingerprint into the manifest.
+        if int(row["source_revision"]) > 0:
+            item["source_revision"] = row["source_revision"]
+            item["record_fingerprint"] = row["record_fingerprint"]
+        canonical.append(item)
+    digest = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    return {"count": len(canonical), "digest": digest}
+
+
+def _cognitive_durable_digest(board_id: str) -> dict[str, Any]:
+    """Deterministic digest of the durable cognitive class (spec MKG-A-S1 TR5).
+
+    Returns ``{}`` when no CognitiveSourceStore is registered (feature
+    absent) or when the board has no durable records — the source_set_hash
+    then stays byte-identical to the pre-feature composition. A registered
+    store that FAILS to read raises (fail-closed, contract api_33539a3f):
+    the rebuild reports a structured enumeration error, never a silent
+    partial manifest.
+    """
+
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        resolve_cognitive_source_store,
+    )
+
+    store = resolve_cognitive_source_store()
+    if store is None:
+        return {}
+    from okto_pulse.core.kg.async_bridge import run_async_blocking
+
+    records = run_async_blocking(store.enumerate(board_id))
+    return cognitive_durable_digest_from_rows(records)
 
 
 # --- Manifest builder + store -----------------------------------------------
@@ -582,9 +747,7 @@ def _compose_source_set_hash_with(source_set: RebuildSourceSet, project) -> str:
     payload_dict = {
         "sources": [project(s) for s in source_set.sources],
         "working_sources": [project(s) for s in source_set.working_sources],
-        "skipped_by_maturity": [
-            project(s) for s in source_set.skipped_by_maturity
-        ],
+        "skipped_by_maturity": [project(s) for s in source_set.skipped_by_maturity],
         "skipped_expired_working": [
             project(s) for s in source_set.skipped_expired_working
         ],
@@ -592,6 +755,11 @@ def _compose_source_set_hash_with(source_set: RebuildSourceSet, project) -> str:
         "skipped_cancelled_count": source_set.skipped_cancelled_count,
         "source_partition_counts": source_set.source_partition_counts,
     }
+    # Spec MKG-A-S1 (TR5): the durable cognitive class binds into the hash
+    # ONLY when records exist — boards without durable records keep their
+    # pre-feature hash byte-for-byte (v1 reproduction contract preserved).
+    if source_set.cognitive_durable_digest.get("count"):
+        payload_dict["cognitive_durable"] = dict(source_set.cognitive_durable_digest)
     payload = json.dumps(
         payload_dict,
         sort_keys=True,
@@ -636,8 +804,8 @@ class RevalidationResult:
 # Counter OR or_b9c33b77 — kg_spec_source_manifest_rebaseline_total. Bounded
 # labels (board_id, outcome); one sample per spec-manifest rebaseline event.
 _REBASELINE_LABELS = ("board_id", "outcome")
-_rebaseline_counter: dict[tuple[str, str], int] = {}
-_rebaseline_lock = threading.Lock()
+_rebaseline_counter = runtime_state("kg.rebuild_sources.rebaseline_counter", dict)
+_rebaseline_lock = runtime_lock("kg.rebuild_sources.rebaseline_counter")
 
 
 def _bump_rebaseline(*, board_id: str, outcome: str = "rebaseline") -> None:
@@ -667,54 +835,72 @@ def reset_spec_manifest_rebaseline_counter() -> None:
 # dir. Each record carries from/to manifest schema version, the spec hash
 # fields considered, and the rebaselined source_refs.
 REBASELINE_AUDIT_DIRNAME = "rebaseline_audit"
+REBASELINE_AUDIT_ARTIFACT_ID = "records"
 
 
-def _rebaseline_audit_path(base_dir: Path, board_id: str) -> Path:
-    safe = "".join(
-        c if (c.isalnum() or c in "_.-") else "_" for c in board_id
-    ) or "board"
-    return base_dir / REBUILD_DIRNAME / REBASELINE_AUDIT_DIRNAME / f"{safe}.jsonl"
+def _rebaseline_audit_key(board_id: str) -> RebuildAuditKey:
+    return RebuildAuditKey(
+        namespace="rebaseline_audit",
+        board_id=board_id,
+        artifact_id=REBASELINE_AUDIT_ARTIFACT_ID,
+    )
 
 
 def _append_spec_manifest_rebaseline_audit(
-    base_dir: Path,
+    base_dir: object | None,
     *,
     board_id: str,
     manifest_ref: str,
     result: "RevalidationResult",
     recorded_at: str,
+    artifact_store: RebuildAuditArtifactStore | None = None,
 ) -> None:
-    path = _rebaseline_audit_path(base_dir, board_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "board_id": board_id,
         "manifest_ref": manifest_ref,
         "recorded_at": recorded_at,
         **result.to_dict(),
     }
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, sort_keys=True) + "\n")
+    resolved_store = resolve_rebuild_audit_artifact_store(
+        base_dir=base_dir,
+        artifact_store=artifact_store,
+    )
+    key = _rebaseline_audit_key(board_id)
+
+    def _append(current: dict[str, Any] | None) -> dict[str, Any]:
+        records = []
+        if current and isinstance(current.get("records"), list):
+            records = list(current["records"])
+        records.append(record)
+        return {
+            "board_id": board_id,
+            "artifact_id": REBASELINE_AUDIT_ARTIFACT_ID,
+            "updated_at": recorded_at,
+            "records": records,
+        }
+
+    resolved_store.replace_json(key, _append)
 
 
 def read_spec_manifest_rebaseline_audit(
-    base_dir: Path, board_id: str,
+    base_dir: object | None,
+    board_id: str,
+    *,
+    artifact_store: RebuildAuditArtifactStore | None = None,
 ) -> list[dict[str, Any]]:
     """Read back the persisted spec-manifest rebaseline records for a board
     (FR7 audit evidence — queryable from the rebuild artifacts)."""
-    path = _rebaseline_audit_path(base_dir, board_id)
-    if not path.exists():
+    resolved_store = resolve_rebuild_audit_artifact_store(
+        base_dir=base_dir,
+        artifact_store=artifact_store,
+    )
+    payload = resolved_store.read_json(_rebaseline_audit_key(board_id))
+    if not payload:
         return []
-    out: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except ValueError:
-                continue
-    return out
+    records = payload.get("records")
+    if not isinstance(records, list):
+        return []
+    return [dict(record) for record in records if isinstance(record, dict)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -729,7 +915,26 @@ class KGRebuildSourceManifest:
     rebuild artifacts live under ``<base>/rebuild/manifests/``.
     """
 
-    base_dir: Path
+    base_dir: object | None = None
+    artifact_store: RebuildAuditArtifactStore | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "artifact_store",
+            resolve_rebuild_audit_artifact_store(
+                base_dir=self.base_dir,
+                artifact_store=self.artifact_store,
+            ),
+        )
+
+    @staticmethod
+    def _manifest_key(manifest_ref: str) -> RebuildAuditKey:
+        return RebuildAuditKey(
+            namespace="source_manifest",
+            board_id=REBUILD_AUDIT_GLOBAL_BOARD_ID,
+            artifact_id=manifest_ref,
+        )
 
     def build(
         self,
@@ -764,16 +969,16 @@ class KGRebuildSourceManifest:
             legacy_unknown=source_set.legacy_unknown,
         )
 
-        target_dir = self.base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME
-        target_dir.mkdir(parents=True, exist_ok=True)
-        path = target_dir / f"{manifest_ref}.json"
-        with path.open("w", encoding="utf-8") as fh:
-            json.dump(manifest.to_dict(), fh, indent=2)
+        self.artifact_store.write_json_atomic(
+            self._manifest_key(manifest_ref), manifest.to_dict()
+        )
         logger.info(
             "kg.rebuild_sources.manifest_built ref=%s board=%s "
             "source_set_hash=%s preflight_hash=%s eligible=%d",
-            manifest_ref, source_set.board_id,
-            source_set_hash[:12], preflight_hash[:12],
+            manifest_ref,
+            source_set.board_id,
+            source_set_hash[:12],
+            preflight_hash[:12],
             len(source_set.sources),
         )
         return manifest
@@ -784,22 +989,11 @@ class KGRebuildSourceManifest:
             validate_manifest_ref(manifest_ref)
         except ValueError:
             return None
-        path = self.base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME / f"{manifest_ref}.json"
-        # Defence in depth: even with a validated ref, ensure the
-        # resolved path stays under the manifests dir. Path.resolve()
-        # collapses any residual ``..`` symbolic-link tricks.
-        try:
-            resolved = path.resolve(strict=False)
-            allowed_root = (self.base_dir / REBUILD_DIRNAME / MANIFEST_DIRNAME).resolve(strict=False)
-            resolved.relative_to(allowed_root)
-        except (OSError, ValueError):
+        data = self.artifact_store.read_json(self._manifest_key(manifest_ref))
+        if data is None:
             return None
         try:
-            with path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (FileNotFoundError, OSError, ValueError):
-            return None
-        try:
+
             def _rows(key: str) -> tuple[RebuildSourceRow, ...]:
                 return tuple(
                     RebuildSourceRow(
@@ -809,18 +1003,12 @@ class KGRebuildSourceManifest:
                         content_hash=str(s["content_hash"]),
                         created_at=str(s["created_at"]),
                         id=str(s["id"]),
-                        source_artifact_status=str(
-                            s.get("source_artifact_status", "")
-                        ),
-                        graph_layer=str(
-                            s.get("graph_layer", GRAPH_LAYER_CANONICAL)
-                        ),
+                        source_artifact_status=str(s.get("source_artifact_status", "")),
+                        graph_layer=str(s.get("graph_layer", GRAPH_LAYER_CANONICAL)),
                         maturity_status=str(
                             s.get("maturity_status", MATURITY_CANONICAL_ELIGIBLE)
                         ),
-                        disposition=str(
-                            s.get("disposition", DISPOSITION_CANONICAL)
-                        ),
+                        disposition=str(s.get("disposition", DISPOSITION_CANONICAL)),
                         reason_code=str(s.get("reason_code", "")),
                         expires_at=(
                             str(s["expires_at"])
@@ -839,9 +1027,7 @@ class KGRebuildSourceManifest:
                     content_hash=str(s["content_hash"]),
                     created_at=str(s["created_at"]),
                     id=str(s["id"]),
-                    source_artifact_status=str(
-                        s.get("source_artifact_status", "")
-                    ),
+                    source_artifact_status=str(s.get("source_artifact_status", "")),
                     graph_layer=str(s.get("graph_layer", GRAPH_LAYER_CANONICAL)),
                     maturity_status=str(
                         s.get("maturity_status", MATURITY_CANONICAL_ELIGIBLE)
@@ -916,8 +1102,7 @@ class KGRebuildSourceManifest:
                         current_source_set.legacy_unknown,
                     )
                     for row in partition
-                    if row.content_hash_v1
-                    and row.content_hash != row.content_hash_v1
+                    if row.content_hash_v1 and row.content_hash != row.content_hash_v1
                 )
                 from okto_pulse.core.kg.board_source_store import (
                     SPEC_CONTENT_COLUMNS_V1,
@@ -939,12 +1124,15 @@ class KGRebuildSourceManifest:
                     manifest_ref=manifest.manifest_ref,
                     result=result,
                     recorded_at=datetime.now(timezone.utc).isoformat(),
+                    artifact_store=self.artifact_store,
                 )
                 logger.info(
                     "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
                     "from_version=%d to_version=%d rebaselined=%d",
-                    manifest.board_id, manifest.manifest_schema_version,
-                    SPEC_SOURCE_MANIFEST_VERSION, len(rebaselined),
+                    manifest.board_id,
+                    manifest.manifest_schema_version,
+                    SPEC_SOURCE_MANIFEST_VERSION,
+                    len(rebaselined),
                 )
                 return result
 
@@ -971,6 +1159,7 @@ __all__ = [
     "RevalidationResult",
     "SourceSetRevalidation",
     "SourceStore",
+    "cognitive_durable_digest_from_rows",
     "get_enumeration_count",
     "get_enumeration_counter_labels",
     "get_enumeration_samples",

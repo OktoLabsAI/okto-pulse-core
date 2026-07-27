@@ -36,14 +36,14 @@ from okto_pulse.core.kg.tier_power import (
 
 def _board(name: str) -> str:
     os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_nlayer_"))
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_schema_testing import bootstrap_board_graph
 
     bootstrap_board_graph(name)
     return name
 
 
 def _seed_bug(board_id: str, node_id: str, title: str, layer: str | None) -> None:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     layer_clause = f", graph_layer: '{layer}'" if layer is not None else ""
     with open_board_connection(board_id) as (_db, conn):

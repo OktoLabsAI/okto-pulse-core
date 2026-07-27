@@ -21,6 +21,17 @@ Args:
     description: What this screen does and when it appears (optional). Supports Markdown.
     screen_type: Type of screen — one of: page, modal, drawer, popover, panel (default: page)
     html_content: HTML+Tailwind markup for the screen mockup. Script tags and on* event attributes are stripped for safety.
+    design_system_ref: Design System ID this mockup complies with (see the
+        board's effective Design System via `okto_pulse_get_board_design_system`).
+    design_system_version: Optional Design System version number.
+    design_system_evidence: Optional compliance evidence payload.
+
+Design System gate (MockupDesignSystemGate, spec 3a006f65): when the board has
+an effective Design System and `design_system_gate_mode=blocking`, an
+invalid/missing ref is rejected BEFORE persistence (`design_system_required` /
+`design_system_not_found` / `design_system_version_mismatch` /
+`design_system_evidence_missing`); `advisory` persists and returns a
+`design_system_gate` warning; `off` (or no Design System) does not block.
 
 Returns:
     JSON with created screen including its generated ID
@@ -50,9 +61,7 @@ Args:
     spec_id: Source spec ID
     card_id: Target card ID
     screen_ids: Multi-value screen IDs to copy (empty = copy ALL mockups from the
-        spec). Preferred native list (e.g. ``["scr_a", "scr_b"]``); legacy string
-        accepted as JSON array or pipe-separated. Comma-only string is REJECTED.
-        See ``okto_pulse.core.mcp.helpers.coerce_to_list_str``.
+        spec) — formats: okto-pulse://reference/multivalue.
 
 Returns:
     JSON with count of mockups copied
@@ -83,9 +92,16 @@ Args:
     screen_type: Filter by screen type (optional) — one of: page, modal, drawer, popover, panel
     offset: Skip first N screens (default 0)
     limit: Max screens to return (default 50, max 200)
+    include_content: Include full `html_content` for each screen (default false).
+        Leave false for bounded summary listings; use true only when the HTML
+        body is explicitly needed.
 
 Returns:
-    JSON with filtered/paginated screens
+    JSON with filtered/paginated screens. Summary items omit `html_content` and
+    include `has_html_content`, UTF-8 `html_content_bytes`, and deterministic
+    `html_content_sha256` metadata. `total`, `offset`, and `limit` retain their
+    pagination meanings. With `include_content=true`, each item also contains
+    the full `html_content`.
 
 ## `okto_pulse_update_screen_mockup`
 
@@ -101,6 +117,15 @@ Args:
     description: New description (empty = no change)
     html_content: New HTML+Tailwind content (empty = no change). Script tags and on* event attributes are stripped.
     screen_type: New screen type (empty = no change) — one of: page, modal, drawer, popover, panel
+    design_system_ref: New Design System ID (empty = no change).
+    design_system_version: New Design System version (optional).
+    design_system_evidence: New compliance evidence payload (optional).
+
+When a gate-relevant field changes (html_content / design_system_ref /
+design_system_evidence) the MockupDesignSystemGate re-evaluates this mockup
+BEFORE persistence (delta-only): `blocking` rejects an invalid Design System
+ref/version/evidence with an actionable error; `advisory` persists and returns
+a `design_system_gate` warning; `off` (or no Design System) does not block.
 
 Returns:
     JSON with updated screen

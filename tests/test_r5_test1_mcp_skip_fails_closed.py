@@ -14,6 +14,8 @@ BEFORE.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import os
 import sys
@@ -31,10 +33,10 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     compute_cognitive_item_id,
-    default_rebuild_base_dir,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 
 USER_ID = "r5-test1-user"
 UUID_A = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
@@ -49,7 +51,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 test1 agent"
-        self.permissions = set()
+        self.permissions = {"board:read"}
 
 
 @pytest.fixture(autouse=True)
@@ -61,7 +63,7 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -77,10 +79,8 @@ def _assert_fail_closed(out: dict) -> None:
     assert d["required_actor"] == "human"
 
 
-def _seed_item(board, source_ref, status):
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
-    path = store._record_path(board, GEN)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _seed_item(base_dir, board, source_ref, status):
+    store = CognitiveConsolidationItemStore(base_dir=base_dir)
     item = {
         "item_id": compute_cognitive_item_id(board, GEN, source_ref),
         "board_id": board, "kg_generation_id": GEN, "source_ref": source_ref,
@@ -90,9 +90,17 @@ def _seed_item(board, source_ref, status):
     if status == CognitiveItemStatus.SKIPPED.value:
         item["reason_code"] = "trivial_fix"
         item["outcome_type"] = "no_action_required"
-    record = {"pending_count": 0, "pending_refs": [], "status": "complete",
+    record = {"board_id": board, "kg_generation_id": GEN,
+              "pending_count": 0, "pending_refs": [], "status": "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=GEN,
+        ),
+        record,
+    )
     return store
 
 
@@ -137,13 +145,15 @@ async def test_ts_c9d10fb7_ambiguity_skip_mcp_fails_closed_no_state_change(db_fa
 
 
 @pytest.mark.asyncio
-async def test_ts_4eee7e88_record_cognitive_skip_mcp_fails_closed_ledger_unchanged(db_factory):
+async def test_ts_4eee7e88_record_cognitive_skip_mcp_fails_closed_ledger_unchanged(
+    db_factory, _tmp_rebuild_dir
+):
     board_id = _id("board")
     source_ref = f"bug:{UUID_A}"
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 test1", owner_id=USER_ID))
         await db.commit()
-    store = _seed_item(board_id, source_ref, CognitiveItemStatus.PENDING.value)
+    store = _seed_item(_tmp_rebuild_dir, board_id, source_ref, CognitiveItemStatus.PENDING.value)
     assert _item_status(store, board_id, source_ref) == CognitiveItemStatus.PENDING.value
 
     out = await _call("okto_pulse_kg_record_cognitive_skip",
@@ -155,13 +165,15 @@ async def test_ts_4eee7e88_record_cognitive_skip_mcp_fails_closed_ledger_unchang
 
 
 @pytest.mark.asyncio
-async def test_ts_4eee7e88_clear_cognitive_skip_mcp_fails_closed_ledger_unchanged(db_factory):
+async def test_ts_4eee7e88_clear_cognitive_skip_mcp_fails_closed_ledger_unchanged(
+    db_factory, _tmp_rebuild_dir
+):
     board_id = _id("board")
     source_ref = f"bug:{UUID_A}"
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 test1", owner_id=USER_ID))
         await db.commit()
-    store = _seed_item(board_id, source_ref, CognitiveItemStatus.SKIPPED.value)
+    store = _seed_item(_tmp_rebuild_dir, board_id, source_ref, CognitiveItemStatus.SKIPPED.value)
     assert _item_status(store, board_id, source_ref) == CognitiveItemStatus.SKIPPED.value
 
     out = await _call("okto_pulse_kg_clear_cognitive_skip",
@@ -174,14 +186,16 @@ async def test_ts_4eee7e88_clear_cognitive_skip_mcp_fails_closed_ledger_unchange
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("action", ["skip", "no_action"])
-async def test_ts_4eee7e88_evaluate_bug_skip_actions_fail_closed_ledger_unchanged(db_factory, action):
+async def test_ts_4eee7e88_evaluate_bug_skip_actions_fail_closed_ledger_unchanged(
+    db_factory, _tmp_rebuild_dir, action
+):
     board_id = _id("board")
     source_ref = bug_cognitive_source_ref(UUID_A)
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 test1", owner_id=USER_ID))
         await db.commit()
     # Seed a PENDING item the skip WOULD target — so removing the guard would mutate it.
-    store = _seed_item(board_id, source_ref, CognitiveItemStatus.PENDING.value)
+    store = _seed_item(_tmp_rebuild_dir, board_id, source_ref, CognitiveItemStatus.PENDING.value)
 
     out = await _call("okto_pulse_kg_evaluate_bug_cognitive_closure",
                       board_id=board_id, bug_id=UUID_A,
@@ -199,7 +213,9 @@ async def test_ts_4eee7e88_evaluate_bug_skip_actions_fail_closed_ledger_unchange
 
 
 @pytest.mark.asyncio
-async def test_evaluate_bug_evaluate_and_create_learning_not_refused(db_factory):
+async def test_evaluate_bug_evaluate_and_create_learning_not_refused(
+    db_factory, _tmp_rebuild_dir
+):
     board_id = _id("board")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 test1", owner_id=USER_ID))
@@ -217,5 +233,5 @@ async def test_evaluate_bug_evaluate_and_create_learning_not_refused(db_factory)
     assert cl.get("code") != "human_control_required"
     assert "status" in ev and "status" in cl
     # No ledger generation fabricated by the read-only branches.
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     assert store.latest_generation(board_id) is None

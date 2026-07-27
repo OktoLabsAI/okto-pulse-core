@@ -15,6 +15,8 @@ Anti-test-theater: every refusal is driven through the REAL MCP tool, and the
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import os
 import sys
@@ -31,10 +33,10 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     compute_cognitive_item_id,
-    default_rebuild_base_dir,
 )
+from okto_pulse.core.kg.interfaces.rebuild_audit_storage import RebuildAuditKey
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Ideation
+from sqlalchemy_test_models import Board, Ideation
 
 USER_ID = "user-r5-imp1"
 UUID_A = "11111111-1111-4111-8111-111111111111"
@@ -48,7 +50,7 @@ class _Ctx:
     def __init__(self):
         self.agent_id = "mcp-agent"
         self.agent_name = "r5 imp1 agent"
-        self.permissions = set()
+        self.permissions = {"board:read"}
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +62,7 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -69,11 +71,9 @@ async def _call(name: str, **kwargs) -> dict:
     return json.loads(raw)
 
 
-def _seed_item(board, gen, *, source_ref, status):
+def _seed_item(base_dir, board, gen, *, source_ref, status):
     """Write a generation record with one cognitive ledger item at ``status``."""
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    store = CognitiveConsolidationItemStore(base_dir=base_dir)
     item = {
         "item_id": compute_cognitive_item_id(board, gen, source_ref),
         "board_id": board, "kg_generation_id": gen, "source_ref": source_ref,
@@ -83,9 +83,17 @@ def _seed_item(board, gen, *, source_ref, status):
     if status == CognitiveItemStatus.SKIPPED.value:
         item["reason_code"] = "trivial_fix"
         item["outcome_type"] = "no_action_required"
-    record = {"pending_count": 0, "pending_refs": [], "status": "complete",
+    record = {"board_id": board, "kg_generation_id": gen,
+              "pending_count": 0, "pending_refs": [], "status": "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(
+        RebuildAuditKey(
+            namespace="cognitive_pending",
+            board_id=board,
+            kg_generation_id=gen,
+        ),
+        record,
+    )
     return store
 
 
@@ -144,7 +152,7 @@ async def test_record_cognitive_skip_mcp_is_human_only(db_factory, _tmp_rebuild_
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 imp1", owner_id=USER_ID))
         await db.commit()
-    store = _seed_item(board_id, gen, source_ref=source_ref,
+    store = _seed_item(_tmp_rebuild_dir, board_id, gen, source_ref=source_ref,
                        status=CognitiveItemStatus.PENDING.value)
 
     out = await _call("okto_pulse_kg_record_cognitive_skip",
@@ -170,7 +178,7 @@ async def test_clear_cognitive_skip_mcp_is_human_only(db_factory, _tmp_rebuild_d
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r5 imp1", owner_id=USER_ID))
         await db.commit()
-    store = _seed_item(board_id, gen, source_ref=source_ref,
+    store = _seed_item(_tmp_rebuild_dir, board_id, gen, source_ref=source_ref,
                        status=CognitiveItemStatus.SKIPPED.value)
 
     out = await _call("okto_pulse_kg_clear_cognitive_skip",
@@ -206,7 +214,7 @@ async def test_evaluate_bug_skip_actions_are_human_only(db_factory, _tmp_rebuild
     assert out["details"]["target_ref"] == f"bug:{bug_id}"
 
     # TEETH: no cognitive generation/ledger was created by the refused mutation.
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     assert store.latest_generation(board_id) is None
 
 
@@ -227,10 +235,17 @@ async def test_evaluate_bug_evaluate_branch_stays_agent_facing(db_factory, _tmp_
                       board_id=board_id, bug_id=bug_id,
                       evidence={"root_cause": "rc", "fix_narrative": "fix"},
                       requested_action="evaluate")
-    # Not refused — a pure classification response (no skip persisted).
+    # Not refused — evaluation stays agent-facing.  Without the edition-owned
+    # canonical context assembler this test harness now fails closed instead of
+    # treating caller evidence as the product record.
     assert out.get("code") != "human_control_required"
-    assert out["status"] == "evaluated"
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    assert out["status"] in {
+        "bug_cognitive_context_unavailable",
+        "bug_source_not_found",
+    }
+    assert out["blocking"] is True
+    assert out["evidence_readiness"]["context_verified"] is False
+    store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     assert store.latest_generation(board_id) is None
 
 
@@ -249,5 +264,5 @@ async def test_evaluate_bug_create_learning_branch_stays_agent_facing(db_factory
     # Not refused — create_learning never persists a skip/no_action.
     assert out.get("code") != "human_control_required"
     assert "status" in out
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
+    store = CognitiveConsolidationItemStore(base_dir=_tmp_rebuild_dir)
     assert store.latest_generation(board_id) is None

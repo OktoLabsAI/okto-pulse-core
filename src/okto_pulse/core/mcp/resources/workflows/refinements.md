@@ -2,13 +2,17 @@
 version: "1.0"
 ---
 
+Knowledge Base placement and promotion are governed by
+`okto-pulse://reference/knowledge-governance`. Put consequential findings in
+the appropriate first-class artifact and retain only supporting evidence in KB.
+
 # Refinements Workflow — Deep Investigation
 
 ## 2.2 Refinements
 
 Refinements break down a complex ideation into focused areas. Each refinement covers one specific aspect.
 
-> **MANDATORY — Query the KG before moving to `approved`.** Run the Stage 2 query set: `okto_pulse_kg_find_similar_decisions` for the refinement topic, `okto_pulse_kg_find_contradictions` on anchor decisions the refinement depends on, and `okto_pulse_kg_list_alternatives` on those anchors. Use `okto_pulse_kg_get_related_context` only for a formalized KG artifact/node that actually exists; ideations are lightweight lineage Entity nodes, not cognitive knowledge containers. Every decision referenced in the refinement body must either (a) cite an existing node_id or (b) declare explicitly that it is new knowledge. Silent reuse or silent contradiction is rejected.
+> **MANDATORY — Query the KG before moving to `approved`.** Run the Stage 2 query set: `okto_pulse_kg_find_similar_decisions` for the refinement topic, `okto_pulse_kg_find_contradictions` on anchor decisions the refinement depends on, and `okto_pulse_kg_list_alternatives` on those anchors. Use `okto_pulse_kg_get_related_context` only for an existing formalized spec/card and pass its typed reference (`spec:<uuid>` or `card:<uuid>`); raw UUIDs and ideation IDs are not valid anchors. Ideations are lightweight lineage Entity nodes, not cognitive knowledge containers. Every decision referenced in the refinement body must either (a) cite an existing node_id or (b) declare explicitly that it is new knowledge. Silent reuse or silent contradiction is rejected.
 
 - **Governance**: Refinements can only be created from a **"done" ideation** — the ideation must be fully reviewed and snapshotted first. This ensures refinements are based on a stable, agreed-upon version of the ideation.
 - **Context compilation**: When creating a refinement without a description, context is automatically compiled from the ideation (problem statement, approach, scope assessment, Q&A decisions).
@@ -21,8 +25,41 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 - **Editing only in "draft"**: `okto_pulse_update_refinement` only works when status is `draft`
 - **Use Q&A** to clarify scope and decisions with the user. If investigation reveals two or more valid interpretations, ask before inferring; refinement assumptions become expensive rework in specs, tasks, mockups, Architecture Designs, tests, and validations.
 - **Spec creation from refinement**: Only from **"done"** status — a spec draft can be created from a done refinement
+- **Triage pending derivations**: the canonical surface to find done refinements that still lack a derived spec is `okto_pulse_list_by_board(entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})` — see `okto-pulse://reference/list_tools`. `entity_type="refinement"` **REQUIRES** `filters.ideation_id` (omitting it fails with `missing_required_filter`); `entity_type="sprint"` likewise requires `filters.spec_id`.
 
-## 2.2a Mandatory Deep Investigation — Refinement is Research, Not Paraphrasing
+### 2.2a Selective Knowledge propagation when deriving a spec
+
+`okto_pulse_derive_spec_from_refinement` has two intentionally separate
+Knowledge paths:
+
+- Omit `knowledge_propagation` to preserve the legacy v1 derivation exactly.
+  Legacy `kb_ids` keeps its existing meaning on this path.
+- Supply `knowledge_propagation` to opt into contract v2. In this case,
+  `kb_ids` and `knowledge_propagation` are mutually exclusive; passing both
+  fails with `conflicting_propagation_parameters`.
+
+The v2 envelope has `contract_version=2`, a caller-stable
+`idempotency_key`, and one coherent tri-state selection:
+
+| `selection_state` | Required shape | Effect |
+|---|---|---|
+| `omitted` | no `mode`; empty `knowledge_ids`; justification optional | Records an authoritative v2 omission. It does not fall back to v1. |
+| `explicit_empty` | `mode="drop"`; empty `knowledge_ids`; non-empty `justification` | Derives the spec with an authoritative empty Knowledge selection. |
+| `explicit_ids` | non-empty `knowledge_ids`; `mode="reference"`, `"snapshot"`, or `"drop"`; non-empty `justification` | Derives the spec with only the selected stable roots, or explicitly drops the named roots. |
+
+Creation accepts `expected_revision` omitted or `0`. Preflight validates the
+done refinement, parent ownership, source IDs, and request identity before the
+spec is inserted. An exact retry with the same `idempotency_key` returns the
+original `spec_id`, operation, selection, and assignments with
+`replayed=true`; never reuse the key for changed derivation content or
+selection. A rare `knowledge_creation_race` is retryable and the MCP surface
+already performs one retry in a fresh unit of work before exposing it.
+
+Selective Knowledge v2 does not change mockup or Architecture Design
+parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
+`architecture_propagation_mode` independently.
+
+## 2.2b Mandatory Deep Investigation — Refinement is Research, Not Paraphrasing
 
 > **A refinement is NOT a copy of the ideation with prettier wording.** Its purpose is to convert a vetted idea into a concrete blueprint by gathering EVERY piece of factual evidence required to design the solution. The depth of the investigation here directly determines whether the downstream spec is implementable or speculative. Skipping this step compounds — every gap here becomes a question at spec time, every wrong assumption here becomes a bug at implementation time.
 
@@ -35,7 +72,7 @@ Refinements break down a complex ideation into focused areas. Each refinement co
 | **Project files** | Use the host agent's local file-read and file-search capabilities on the working directory; surface relevant configs, manifests, package files, IaC, env templates. | Always when a codebase is accessible — the refinement must reflect the real shape of the codebase, not a generic mental model. **When the board is not coupled to a codebase (decoupled mode — frontend out-of-repo, conceptual/doc-only board), declare this source N/A with an explicit justification** (same pattern already used for Mockups/Architecture when they do not apply). |
 | **Source code** | Open the modules, classes, functions, endpoints, schemas, migrations directly impacted. Read enough to know existing contracts, naming, patterns, error handling, and edge cases already covered. | Always when a codebase is accessible — anything the refinement claims about behaviour must be verifiable against current code. **In decoupled mode (no repository), declare this source N/A with an explicit justification** instead of fabricating code mappings. |
 | **Knowledge bases (KE)** | `okto_pulse_list_knowledge(entity_type="spec")` on related specs; `okto_pulse_add_spec_knowledge` once the knowledge is formalized in a spec. | Whenever there is documented domain knowledge — never paraphrase a KE; cite it and attach at spec/card level if missing. |
-| **Knowledge Graph** | The Stage 2 query set (`okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_find_contradictions`, `okto_pulse_kg_list_alternatives`, plus `okto_pulse_kg_get_related_context` only for existing formalized KG artifacts) — see "Query Timing — MANDATORY at every stage". | Always — institutional memory MUST be checked for prior decisions on the same topic. |
+| **Knowledge Graph** | The Stage 2 query set (`okto_pulse_kg_find_similar_decisions`, `okto_pulse_kg_find_contradictions`, `okto_pulse_kg_list_alternatives`, plus `okto_pulse_kg_get_related_context` only for existing formalized specs/cards using `spec:<uuid>`/`card:<uuid>`) — see "Query Timing — MANDATORY at every stage". | Always — institutional memory MUST be checked for prior decisions on the same topic. |
 | **Mockups & visual artifacts** | `okto_pulse_list_screen_mockups` on the parent ideation; create new mockups via `okto_pulse_add_screen_mockup` when the refinement implies a UI surface; ask Q&A first when screen, state, workflow, or visual behavior is ambiguous. | Whenever a user-facing behaviour is in scope. |
 | **Architecture Design** | `okto_pulse_list_architecture_designs` on the parent ideation/refinement/spec; create or update Architecture Design through the architecture tools; ask Q&A first when entities, boundaries, interfaces, contracts, storage, or diagrams are ambiguous. | Whenever services, data flow, integrations, persistence, runtime/deployment boundaries, or interface contracts are in scope. |
 | **Web research** | External docs of every dependency the refinement touches: framework docs, library API references, RFCs, vendor changelogs, public issue trackers. Use the host agent's web-search or web-fetch capability when available, and cite authoritative sources. | Whenever the refinement depends on third-party behaviour, version constraints, protocol details, or industry conventions. |

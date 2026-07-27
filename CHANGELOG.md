@@ -8,6 +8,87 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-14
+
+Version 0.3.0 turns `okto-pulse-core` into the edition-neutral application and
+domain package shared by Community and future hosted editions. Concrete local
+runtime concerns now live behind explicit ports, while the Core retains SDLC
+state transitions, governance gates, KG semantics and MCP application contracts.
+
+### Added
+
+- Explicit hexagonal ports and runtime registries for relational persistence,
+  schema lifecycle, storage, scheduling, coordination, authentication, graph
+  lifecycle, telemetry, rebuild artifacts and application services.
+- Executable dependency, import-boundary, composition, packaging and ownership
+  gates that fail closed when an edition adapter is missing or a concrete
+  dependency leaks back into Core.
+- Deterministic KG node identity, durable cognitive sources and generation-aware
+  replay during deterministic rebuilds.
+- Atomic node provenance, source hashes, graded attestations and provenance-drift
+  inspection for canonical graph content.
+- Reversible equivalence curation, candidate-decision governance and declarative
+  `kind_of` subtype registration, with logical JSON-LD/PROV-O export contracts.
+- Universal supersedence, canonical recall filtering, embedding compatibility
+  guards and typed graph-error contracts for edition adapters.
+- Cancellation justification, import/export contracts, derivation-pending
+  discoverability and canonical invalid-lane transition envelopes.
+- A transport-neutral MCP catalog with 265 tools and 48 resources, including the
+  mandatory pre-flight and KG operating instructions.
+
+### Changed
+
+- Removed concrete REST routing, SQLAlchemy models/repositories, local database
+  construction, filesystem implementations, scheduler ownership and MCP serving
+  from Core. Edition composition roots now provide these capabilities.
+- Application use cases now consume explicit UoW, persistence and service
+  facades instead of reaching into concrete relational or transport internals.
+- KG orchestration routes graph access, vector search, schema operations,
+  rebuild audit storage and runtime control through provider contracts.
+- Runtime composition and provider registries now fail closed; silent local
+  fallbacks and process-global edition defaults were removed or ledgered behind
+  compatibility boundaries.
+- Core runtime dependencies were reduced to `pydantic` and `PyYAML`;
+  `pydantic-settings` ownership moved to edition packages.
+- Architecture and ownership documentation now reflects zero concrete ORM models,
+  zero API route modules and a fully classified Community-to-Core import surface.
+
+### Fixed
+
+- Cross-artifact KG commits no longer overwrite parent provenance with a child
+  session hash; explicit updates correctly restamp only their owning source.
+- Provenance drift recognizes canonical card aliases and no longer reports
+  migrated task, test or bug references as missing artifacts.
+- Card and board deletion paths atomically discard related consolidation queue,
+  dead-letter and canonical-debt records.
+- Cancellation-safe scopes release runtime and graph resources during aborted MCP,
+  worker and streaming operations.
+- MCP schemas, descriptions, error envelopes and resource documentation were
+  reconciled across the full public catalog.
+
+### Removed
+
+- The broken Core-owned `okto_pulse.tools.kg_migrate_schema` command; schema
+  migration is now an edition command backed by edition adapters.
+- Test-only graph registry and rebuild-audit implementations from the production
+  package; equivalent fakes remain in test support.
+
+### Migration notes
+
+- Consumers must install an edition package, or register all required providers,
+  before invoking persistence, graph, schema, scheduler or transport operations.
+- Imports of concrete database, REST, filesystem or MCP-runtime implementations
+  from Core are no longer supported. Use the public ports and service facades.
+- Edition packages must declare their own runtime dependencies, including
+  `pydantic-settings`, SQLAlchemy, FastAPI and the MCP server runtime.
+
+### Validation
+
+- 6,696 Core tests passed with 19 skips across the 613-file configured suite.
+- Consumer-style regression covered all 265 MCP tools and all 48 resources.
+- Final KG validation completed with zero provenance drift, orphans, dead letters,
+  active queue items or canonical debt.
+
 ## [0.2.5] - 2026-06-13
 
 ### Added

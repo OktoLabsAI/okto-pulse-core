@@ -351,11 +351,14 @@ def stub_registry(monkeypatch):
 
     embedder = _TrackingEmbedder()
 
-    class _Registry:
-        embedding_provider = embedder
-        graph_store = store
+    # Since R14 the natural-query path reads the embedder through the
+    # read-time fail-closed port (registry.require_embedding_provider()).
+    # Composing the REAL KGProviderRegistry partially — the sanctioned
+    # test route — keeps this fixture aligned with whatever require_*
+    # contract the registry grows, instead of a local fake that drifts.
+    from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 
-    reg = _Registry()
+    reg = KGProviderRegistry(embedding_provider=embedder, graph_store=store)
     monkeypatch.setattr(
         registry_mod, "get_kg_registry", lambda: reg, raising=True,
     )
@@ -475,3 +478,25 @@ def test_execute_natural_query_fallback_on_llm_exception(stub_registry):
     assert resp["rewrite_strategy"] == "none"
     assert resp["rewrite_variants_count"] == 1
     assert resp["nodes"][0]["node_id"] == "n1"
+
+
+def test_execute_natural_query_missing_embedding_provider_fails_closed(monkeypatch):
+    """R14 AC4 (ts_a5bb3641) at the real point of use: a registry composed
+    without an embedding provider makes execute_natural_query fail closed
+    with the structured read-time error — never a late AttributeError nor
+    a silent stub fallback."""
+    from okto_pulse.core.composition import RuntimeProviderMissing
+    from okto_pulse.core.kg.interfaces import registry as registry_mod
+    from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
+    from okto_pulse.core.kg.tier_power import execute_natural_query
+
+    reg = KGProviderRegistry(graph_store=_StubStore({}))
+    monkeypatch.setattr(
+        registry_mod, "get_kg_registry", lambda: reg, raising=True,
+    )
+
+    with pytest.raises(RuntimeProviderMissing) as exc:
+        execute_natural_query(board_id="b1", nl_query="qualquer pergunta")
+
+    assert exc.value.code == "runtime_provider_missing"
+    assert exc.value.provider_key == "embedding_provider"

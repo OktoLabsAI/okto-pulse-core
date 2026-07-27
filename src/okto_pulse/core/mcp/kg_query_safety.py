@@ -141,9 +141,7 @@ class KGCypherResponseSanitizer:
                         if c_i in vector_col_idx:
                             new_row.append(None)
                             continue
-                        cleaned, paths = self._strip_value(
-                            cell, f"rows[{r_i}][{c_i}]"
-                        )
+                        cleaned, paths = self._strip_value(cell, f"rows[{r_i}][{c_i}]")
                         stripped.extend(paths)
                         new_row.append(cleaned)
                     new_rows.append(new_row)
@@ -275,6 +273,10 @@ def round_kg_numbers(obj: Any, *, ndigits: int = NUMERIC_ROUND_DIGITS) -> Any:
 # agent may proceed with a KG mutation, so they are never dropped.
 KG_HEALTH_STOP_FIELDS = (
     "board_id",
+    "health_schema_version",
+    "materialization_state",
+    "materialization_generation",
+    "probe_reason_codes",
     "graph_state",
     "discovery_state",
     "overall_state",
@@ -295,6 +297,7 @@ KG_HEALTH_STOP_FIELDS = (
 KG_HEALTH_SLIM_EXTRA = (
     "queue_depth",
     "dead_letter_count",
+    "global_outbox_dead_letter_count",
     "total_nodes",
     "default_score_ratio",
     "avg_relevance",
@@ -309,9 +312,20 @@ KG_HEALTH_SLIM_EXTRA = (
     "boards_failed_in_last_tick",
     "decay_scheduler_diagnostics",
     "storage_footprint_proxy",
+    "probe_diagnostics",
+    # RKG-05 (fr_3fbb564c / tr_1db056de / tr_22d4434d / br_df421357): technical
+    # signals are NON-MASKABLE. The slim view may omit prose, but the
+    # domain-separated scalar counts + drill_down_tool MUST survive so an agent
+    # can locate the items without a manual DB query (ac_2c86f666). active_queue,
+    # dead_letter and canonical_debt stay distinct operational domains; one count
+    # is never inferred from another.
+    "operational_domains",
+    "canonical_debt",
 )
 
-_KG_HEALTH_SLIM_KEEP = frozenset(KG_HEALTH_STOP_FIELDS) | frozenset(KG_HEALTH_SLIM_EXTRA)
+_KG_HEALTH_SLIM_KEEP = frozenset(KG_HEALTH_STOP_FIELDS) | frozenset(
+    KG_HEALTH_SLIM_EXTRA
+)
 
 
 class KGHealthMCPProjection:
@@ -326,11 +340,19 @@ class KGHealthMCPProjection:
     def project(self, payload: dict, *, profile: str = "summary") -> dict:
         if not isinstance(payload, dict):
             return payload
-        if profile in ("full", "legacy"):
+        from okto_pulse.core.mcp.projection_envelope import (
+            resolve_profile,
+            unsupported_projection_error,
+        )
+
+        resolved_profile = resolve_profile(profile)
+        if resolved_profile is None:
+            return unsupported_projection_error(profile)
+        if resolved_profile in ("full", "legacy"):
             return payload
         slim = {k: v for k, v in payload.items() if k in _KG_HEALTH_SLIM_KEEP}
         omitted = sorted(k for k in payload if k not in _KG_HEALTH_SLIM_KEEP)
-        slim["profile"] = "summary"
+        slim["profile"] = resolved_profile
         slim["full_profile_available"] = bool(omitted)
         slim["omitted_count"] = len(omitted)
         return slim

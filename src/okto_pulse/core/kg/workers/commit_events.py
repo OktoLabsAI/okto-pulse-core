@@ -26,9 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.models.db import GlobalUpdateOutbox
+from okto_pulse.core.ports.kg_operational import get_kg_worker_audit_port
 
 logger = logging.getLogger("okto_pulse.kg.commit_events")
 
@@ -38,7 +36,7 @@ EVENT_TYPE_BOARD_CLEARED = "kg.board.cleared"
 
 
 async def emit_session_committed(
-    session: AsyncSession,
+    context: Any,
     *,
     board_id: str,
     session_id: str,
@@ -50,7 +48,7 @@ async def emit_session_committed(
 ) -> str:
     """Insert a kg.session.committed event. Returns the event_id.
 
-    Must be called inside the same SQLAlchemy transaction as the KG commit
+    Must be called inside the same adapter-owned transaction as the KG commit
     so the outbox row lands atomically with the audit row (standard
     transactional outbox pattern).
     """
@@ -66,14 +64,14 @@ async def emit_session_committed(
         "content_hash": content_hash,
         "committed_at": datetime.now(timezone.utc).isoformat(),
     }
-    row = GlobalUpdateOutbox(
+    await get_kg_worker_audit_port().emit_outbox_event(
+        context,
         event_id=event_id,
         board_id=board_id,
         session_id=session_id,
         event_type=EVENT_TYPE_SESSION_COMMITTED,
         payload=payload,
     )
-    session.add(row)
     logger.info(
         "commit_events.session_committed board=%s session=%s nodes=%d edges=%d",
         board_id, session_id, nodes_added, edges_added,
@@ -86,7 +84,7 @@ async def emit_session_committed(
 
 
 async def emit_board_cleared(
-    session: AsyncSession,
+    context: Any,
     *,
     board_id: str,
     reason: str = "",
@@ -99,14 +97,14 @@ async def emit_board_cleared(
         "reason": reason,
         "cleared_at": datetime.now(timezone.utc).isoformat(),
     }
-    row = GlobalUpdateOutbox(
+    await get_kg_worker_audit_port().emit_outbox_event(
+        context,
         event_id=event_id,
         board_id=board_id,
         session_id="",
         event_type=EVENT_TYPE_BOARD_CLEARED,
         payload=payload,
     )
-    session.add(row)
     logger.info(
         "commit_events.board_cleared board=%s reason=%s",
         board_id, reason,

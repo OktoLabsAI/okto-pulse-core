@@ -437,5 +437,9 @@ def test_board_root_allowlist_accepts_board_source_ref_prefix_only():
 
 def test_writer_path_classifier_is_deterministic():
     assert classify_writer_path("deterministic_worker") == WriterClass.DETERMINISTIC
+    assert (
+        classify_writer_path("system:historical_consolidation")
+        == WriterClass.DETERMINISTIC
+    )
     assert classify_writer_path("commit_consolidation") == WriterClass.COGNITIVE
     assert classify_writer_path("custom") == WriterClass.UNKNOWN

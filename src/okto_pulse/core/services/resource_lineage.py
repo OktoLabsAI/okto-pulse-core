@@ -13,15 +13,22 @@ from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Iterable, Literal, Mapping, Protocol
 
+from okto_pulse.core.domain.resource_revision import ResourceRevisionStamp
+from okto_pulse.core.observability.sample_buffer import runtime_sample_buffer
+
 EntityType = Literal["ideation", "refinement", "spec", "card"]
 ResourceType = Literal["architecture", "mockup", "knowledge_base"]
 ResourceState = Literal["provided", "not_applicable", "missing"]
 CoverageState = Literal["not_required", "covered", "uncovered", "not_applicable"]
 AttachmentKind = Literal["direct", "inherited_reference", "not_applicable"]
 
+
 ENTITY_TYPES: tuple[str, ...] = ("ideation", "refinement", "spec", "card")
 RESOURCE_TYPES: tuple[str, ...] = ("architecture", "mockup", "knowledge_base")
 ORIGIN_FIELD_ORDER: tuple[str, ...] = (
+    "root_source_design_id",
+    "root_source_kb_id",
+    "root_source_mockup_id",
     "source_ref",
     "origin_ref",
     "source",
@@ -63,7 +70,7 @@ class ResourceLineageMetricSample:
         }
 
 
-_RESOURCE_LINEAGE_METRIC_SAMPLES: list[ResourceLineageMetricSample] = []
+_RESOURCE_LINEAGE_METRIC_SAMPLES = runtime_sample_buffer("services.resource_lineage")
 
 
 def reset_resource_lineage_observability_for_tests() -> None:
@@ -71,7 +78,7 @@ def reset_resource_lineage_observability_for_tests() -> None:
 
 
 def get_resource_lineage_metric_samples() -> list[dict[str, Any]]:
-    return [sample.to_dict() for sample in _RESOURCE_LINEAGE_METRIC_SAMPLES]
+    return [sample.to_dict() for sample in _RESOURCE_LINEAGE_METRIC_SAMPLES.snapshot()]
 
 
 def observe_resource_lineage_coverage_uncovered(
@@ -158,7 +165,9 @@ def _record_resource_lineage_metric(
 class ResourceLineageError(ValueError):
     """Base resolver exception with a stable machine-readable code."""
 
-    def __init__(self, code: str, message: str, *, details: dict[str, Any] | None = None):
+    def __init__(
+        self, code: str, message: str, *, details: dict[str, Any] | None = None
+    ):
         super().__init__(message)
         self.code = code
         self.details = details or {}
@@ -231,12 +240,16 @@ class ResourceAttachment:
     source_entity_title: str | None
     coverage_state: CoverageState
     origin_evidence: dict[str, Any] = field(default_factory=dict)
+    origin_class: str | None = None
     effective: bool = True
     inherited: bool = False
     raw: dict[str, Any] = field(default_factory=dict)
+    revision_stamp: ResourceRevisionStamp | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        stamp = self.revision_stamp.to_dict() if self.revision_stamp else None
         return {
+            "contract_version": 2,
             "resource_type": self.resource_type,
             "resource_id": self.resource_id,
             "id": self.resource_id,
@@ -248,9 +261,17 @@ class ResourceAttachment:
             "source_entity_title": self.source_entity_title,
             "coverage_state": self.coverage_state,
             "origin_evidence": dict(self.origin_evidence),
+            "origin_class": self.origin_class,
             "effective": self.effective,
             "inherited": self.inherited,
             "raw": dict(self.raw),
+            "root_id": stamp["root_id"] if stamp else None,
+            "immediate_parent_id": stamp["immediate_parent_id"] if stamp else None,
+            "source_revision": stamp["source_revision"] if stamp else None,
+            "source_content_sha256": (
+                stamp["source_content_sha256"] if stamp else None
+            ),
+            "revision_stamp": stamp,
         }
 
 
@@ -263,9 +284,12 @@ class UniqueResource:
     origin_evidence: dict[str, Any]
     attachment_count: int
     attachment_kinds: tuple[str, ...]
+    revision_stamps: tuple[ResourceRevisionStamp, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
+        stamps = [stamp.to_dict() for stamp in self.revision_stamps]
         return {
+            "contract_version": 2,
             "resource_type": self.resource_type,
             "unique_resource_id": self.unique_resource_id,
             "representative_resource_id": self.representative_resource_id,
@@ -273,6 +297,13 @@ class UniqueResource:
             "origin_evidence": dict(self.origin_evidence),
             "attachment_count": self.attachment_count,
             "attachment_kinds": list(self.attachment_kinds),
+            "root_id": _common_stamp_field(stamps, "root_id"),
+            "immediate_parent_id": _common_stamp_field(stamps, "immediate_parent_id"),
+            "source_revision": _common_stamp_field(stamps, "source_revision"),
+            "source_content_sha256": _common_stamp_field(
+                stamps, "source_content_sha256"
+            ),
+            "revision_stamps": stamps,
         }
 
 
@@ -315,9 +346,12 @@ class CoverageObligation:
     reason: str | None = None
     remediation: str | None = None
     origin_evidence: dict[str, Any] = field(default_factory=dict)
+    revision_stamp: ResourceRevisionStamp | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        stamp = self.revision_stamp.to_dict() if self.revision_stamp else None
         return {
+            "contract_version": 2,
             "resource_type": self.resource_type,
             "resource_id": self.resource_id,
             "id": self.resource_id,
@@ -330,6 +364,13 @@ class CoverageObligation:
             "reason": self.reason,
             "remediation": self.remediation,
             "origin_evidence": dict(self.origin_evidence),
+            "root_id": stamp["root_id"] if stamp else None,
+            "immediate_parent_id": stamp["immediate_parent_id"] if stamp else None,
+            "source_revision": stamp["source_revision"] if stamp else None,
+            "source_content_sha256": (
+                stamp["source_content_sha256"] if stamp else None
+            ),
+            "revision_stamp": stamp,
         }
 
 
@@ -345,6 +386,7 @@ class ResolvedResourceLineage:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "contract_version": 2,
             "owner": {
                 "entity_type": self.owner.entity_type,
                 "entity_id": self.owner.entity_id,
@@ -378,14 +420,13 @@ class ResolvedResourceLineageProjection:
             for item in lineage.attachments
         ]
         return {
+            "contract_version": 2,
             "owner": {
                 "entity_type": lineage.owner.entity_type,
                 "entity_id": lineage.owner.entity_id,
                 "title": lineage.owner.title,
             },
-            "unique_resources": [
-                item.to_dict() for item in lineage.unique_resources
-            ],
+            "unique_resources": [item.to_dict() for item in lineage.unique_resources],
             "attachments": attachments,
             "counts": dict(lineage.counts),
             "provenance_labels": [
@@ -413,6 +454,7 @@ class ResolvedResourceLineageProjection:
             "attachment_kind": attachment.attachment_kind,
             "source_entity_type": attachment.source_entity_type,
             "coverage_state": attachment.coverage_state,
+            "origin_class": attachment.origin_class,
             "effective": attachment.effective,
             "inherited": attachment.inherited,
         }
@@ -426,22 +468,25 @@ class ResourceLineageProvider(Protocol):
         board_id: str,
         entity_type: str,
         entity_id: str,
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
-    async def load_parent_refs(self, board_id: str, root: Any) -> list[Any]:
-        ...
+    async def load_parent_refs(self, board_id: str, root: Any) -> list[Any]: ...
 
-    async def collect_refs(self, ref: Any) -> dict[str, list[dict[str, Any]]]:
-        ...
+    async def collect_refs(self, ref: Any) -> dict[str, list[dict[str, Any]]]: ...
+
+    async def filter_inherited_refs(
+        self,
+        root: Any,
+        parent: Any,
+        refs: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, list[dict[str, Any]]]: ...
 
     async def load_active_marks(
         self,
         board_id: str,
         entity_type: str,
         entity_id: str,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def serialize_na_mark(
         self,
@@ -449,8 +494,7 @@ class ResourceLineageProvider(Protocol):
         *,
         effective: bool,
         source: Any | None = None,
-    ) -> dict[str, Any] | None:
-        ...
+    ) -> dict[str, Any] | None: ...
 
 
 class ResolvedResourceLineageService:
@@ -509,7 +553,9 @@ class ResolvedResourceLineageService:
     ) -> ResolvedResourceLineage:
         del projection_profile  # Projection formatting is handled by RG-01.4.
         self._validate_entity_type(entity_type)
-        root = await self._provider.load_entity_ref(board_id, str(entity_type), entity_id)
+        root = await self._provider.load_entity_ref(
+            board_id, str(entity_type), entity_id
+        )
         owner = self._coerce_entity_ref(root)
         parents = await self._load_checked_parents(board_id, root, owner)
         direct_refs = await self._provider.collect_refs(root)
@@ -522,6 +568,17 @@ class ResolvedResourceLineageService:
         for parent in parents:
             parent_ref = self._coerce_entity_ref(parent)
             parent_refs = await self._provider.collect_refs(parent)
+            filter_inherited = getattr(
+                self._provider,
+                "filter_inherited_refs",
+                None,
+            )
+            if callable(filter_inherited):
+                parent_refs = await filter_inherited(
+                    owner,
+                    parent_ref,
+                    parent_refs,
+                )
             for resource_type, refs in parent_refs.items():
                 inherited_refs.setdefault(resource_type, []).extend(refs)
             parent_marks = await self._provider.load_active_marks(
@@ -545,12 +602,20 @@ class ResolvedResourceLineageService:
         coverage_obligations: list[CoverageObligation] = []
 
         for resource_type in RESOURCE_TYPES:
-            direct = list(direct_refs.get(resource_type) or [])
-            inherited = list(inherited_refs.get(resource_type) or [])
+            # Keep every physical attachment in the lineage/history projection,
+            # but only refs that are explicitly effective participate in the
+            # Resource Gate state, coverage, propagation refs and effective
+            # counts.  Missing flags remain effective for legacy compatibility.
+            all_direct = list(direct_refs.get(resource_type) or [])
+            all_inherited = list(inherited_refs.get(resource_type) or [])
+            direct = [item for item in all_direct if _ref_is_effective(item)]
+            inherited = [item for item in all_inherited if _ref_is_effective(item)]
             own_mark = active_marks.get(resource_type)
             na_mark = own_mark or inherited_na_marks.get(resource_type)
             na_source = (
-                None if own_mark is not None else inherited_na_sources.get(resource_type)
+                None
+                if own_mark is not None
+                else inherited_na_sources.get(resource_type)
             )
             state = self._resolve_state(direct, inherited, na_mark)
             direct_attachments = [
@@ -560,7 +625,7 @@ class ResolvedResourceLineageService:
                     attachment_kind="direct",
                     coverage_state="not_required",
                 )
-                for item in direct
+                for item in all_direct
             ]
             inherited_attachments = [
                 self._attachment_from_ref(
@@ -570,7 +635,7 @@ class ResolvedResourceLineageService:
                     coverage_state="not_required",
                     inherited=True,
                 )
-                for item in inherited
+                for item in all_inherited
             ]
             attachments.extend(direct_attachments)
             attachments.extend(inherited_attachments)
@@ -604,7 +669,16 @@ class ResolvedResourceLineageService:
             )
 
             if include_coverage and str(entity_type) == "spec" and state == "provided":
-                coverage_source = direct_attachments or inherited_attachments
+                effective_direct_attachments = [
+                    item for item in direct_attachments if item.effective
+                ]
+                effective_inherited_attachments = [
+                    item for item in inherited_attachments if item.effective
+                ]
+                coverage_source = self._prefer_direct_per_unique_resource(
+                    effective_direct_attachments,
+                    effective_inherited_attachments,
+                )
                 coverage_obligations.extend(
                     self._coverage_obligation_from_attachment(item)
                     for item in coverage_source
@@ -625,6 +699,27 @@ class ResolvedResourceLineageService:
             resource_states=tuple(resource_states),
             coverage_obligations=tuple(coverage_obligations),
         )
+
+    @staticmethod
+    def _prefer_direct_per_unique_resource(
+        direct: Iterable[ResourceAttachment],
+        inherited: Iterable[ResourceAttachment],
+    ) -> list[ResourceAttachment]:
+        """Choose one effective attachment per logical resource.
+
+        A direct attachment shadows only an inherited attachment with the same
+        canonical identity.  It must not suppress unrelated inherited roots of
+        the same resource type.
+        """
+
+        selected: list[ResourceAttachment] = []
+        seen: set[str] = set()
+        for attachment in (*tuple(direct), *tuple(inherited)):
+            if attachment.unique_resource_id in seen:
+                continue
+            seen.add(attachment.unique_resource_id)
+            selected.append(attachment)
+        return selected
 
     async def _load_checked_parents(
         self,
@@ -694,9 +789,15 @@ class ResolvedResourceLineageService:
             source_entity_title=_optional_str(ref.get("source_entity_title")),
             coverage_state=coverage_state,
             origin_evidence=origin_evidence,
-            effective=True,
+            origin_class=_optional_enum_value(ref.get("origin_class")),
+            effective=_ref_is_effective(ref),
             inherited=inherited,
             raw=dict(ref),
+            revision_stamp=self._revision_stamp_from_ref(
+                resource_type=resource_type,
+                ref=ref,
+                unique_resource_id=unique_resource_id,
+            ),
         )
 
     def _attachment_from_na_mark(
@@ -726,6 +827,7 @@ class ResolvedResourceLineageService:
             source_entity_title=None,
             coverage_state="not_applicable",
             origin_evidence=origin_evidence,
+            origin_class=_optional_enum_value(na_payload.get("origin_class")),
             effective=effective,
             inherited=bool(na_payload.get("inherited")),
             raw=dict(na_payload),
@@ -744,6 +846,44 @@ class ResolvedResourceLineageService:
             source_entity_id=attachment.source_entity_id,
             source_entity_title=attachment.source_entity_title,
             origin_evidence=dict(attachment.origin_evidence),
+            revision_stamp=attachment.revision_stamp,
+        )
+
+    @staticmethod
+    def _revision_stamp_from_ref(
+        *,
+        resource_type: str,
+        ref: Mapping[str, Any],
+        unique_resource_id: str,
+    ) -> ResourceRevisionStamp | None:
+        # The revision stamp and dedup projection must name the same logical
+        # root, including legacy/source_ref fallbacks where no typed root id is
+        # available.  Derive it from the already-validated unique identity
+        # instead of independently selecting a physical attachment id.
+        prefix = f"{resource_type}:"
+        root_id = (
+            _optional_str(unique_resource_id[len(prefix) :])
+            if unique_resource_id.startswith(prefix)
+            else None
+        )
+        if root_id is None:
+            return None
+
+        immediate_fields: tuple[str, ...]
+        if resource_type == "knowledge_base":
+            immediate_fields = ("immediate_parent_kb_id", "source_kb_id")
+        elif resource_type == "mockup":
+            immediate_fields = ("immediate_parent_mockup_id", "source_mockup_id")
+        else:
+            immediate_fields = ("immediate_parent_design_id",)
+
+        return ResourceRevisionStamp(
+            root_id=root_id,
+            immediate_parent_id=_first_present(ref, immediate_fields),
+            source_revision=_first_present(ref, ("source_revision", "source_version")),
+            source_content_sha256=_first_present(
+                ref, ("source_content_sha256", "content_hash")
+            ),
         )
 
     @staticmethod
@@ -768,16 +908,16 @@ class ResolvedResourceLineageService:
             origin_evidence,
             ("source_ref", "origin_ref", "source"),
         )
-        source_id = _first_present(
-            origin_evidence,
-            ("source_design_id", "source_kb_id", "source_mockup_id", "origin_id"),
+        canonical_origin_ids = _canonical_origin_ids(
+            origin_evidence, resource_type=resource_type
         )
-        if source_ref and source_id and not _source_ref_contains(source_ref, source_id):
+        if len(canonical_origin_ids) > 1:
             raise AmbiguousResourceOrigin(
                 resource_type=resource_type,
                 resource_id=resource_id,
                 evidence=origin_evidence,
             )
+        source_id = canonical_origin_ids[0] if canonical_origin_ids else None
         identity = source_id or source_ref or resource_id
         if not identity:
             source_entity_type = fallback_ref.get("source_entity_type") or "unknown"
@@ -795,7 +935,10 @@ class ResolvedResourceLineageService:
     ) -> list[UniqueResource]:
         grouped: dict[str, list[ResourceAttachment]] = {}
         for attachment in attachments:
-            if attachment.attachment_kind == "not_applicable":
+            if (
+                not attachment.effective
+                or attachment.attachment_kind == "not_applicable"
+            ):
                 continue
             grouped.setdefault(attachment.unique_resource_id, []).append(attachment)
 
@@ -804,8 +947,15 @@ class ResolvedResourceLineageService:
             representative = items[0]
             kinds = tuple(sorted({item.attachment_kind for item in items}))
             evidence: dict[str, Any] = {}
+            stamps: list[ResourceRevisionStamp] = []
             for item in items:
                 evidence.update(item.origin_evidence)
+                if (
+                    item.revision_stamp is not None
+                    and item.revision_stamp not in stamps
+                ):
+                    stamps.append(item.revision_stamp)
+            stamps.sort(key=_revision_stamp_sort_key)
             unique.append(
                 UniqueResource(
                     resource_type=representative.resource_type,
@@ -815,6 +965,7 @@ class ResolvedResourceLineageService:
                     origin_evidence=evidence,
                     attachment_count=len(items),
                     attachment_kinds=kinds,
+                    revision_stamps=tuple(stamps),
                 )
             )
         return unique
@@ -837,14 +988,22 @@ class ResolvedResourceLineageService:
             # legacy keys above are preserved for back-compat.
             "unique_effective_count": len(unique_resources),
             "raw_attachment_count": len(attachments),
+            "effective_attachment_count": sum(
+                1 for item in attachments if item.effective
+            ),
+            "history_attachment_count": sum(
+                1 for item in attachments if not item.effective
+            ),
             "coverage_basis": "unique_effective",
             "direct_resources_count": sum(
-                1 for item in attachments if item.attachment_kind == "direct"
+                1
+                for item in attachments
+                if item.effective and item.attachment_kind == "direct"
             ),
             "inherited_references_count": sum(
                 1
                 for item in attachments
-                if item.attachment_kind == "inherited_reference"
+                if item.effective and item.attachment_kind == "inherited_reference"
             ),
             "not_applicable_count": sum(
                 1 for item in attachments if item.attachment_kind == "not_applicable"
@@ -885,6 +1044,38 @@ def _optional_str(value: Any) -> str | None:
     return text if text else None
 
 
+def _optional_enum_value(value: Any) -> str | None:
+    return _optional_str(getattr(value, "value", value))
+
+
+def _ref_is_effective(ref: Mapping[str, Any]) -> bool:
+    """Only an explicit boolean false suppresses a physical attachment.
+
+    Historical providers do not emit this field, so absent/NULL/malformed
+    legacy values remain effective instead of silently disappearing.
+    """
+
+    return ref.get("effective", True) is not False
+
+
+def _common_stamp_field(
+    stamps: Iterable[Mapping[str, str | None]], field_name: str
+) -> str | None:
+    """Return one common value without selecting between divergent stamps."""
+
+    values = {stamp.get(field_name) for stamp in stamps}
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _revision_stamp_sort_key(stamp: ResourceRevisionStamp) -> tuple[str, ...]:
+    return (
+        stamp.root_id,
+        stamp.immediate_parent_id or "",
+        stamp.source_revision or "",
+        stamp.source_content_sha256 or "",
+    )
+
+
 def _first_present(values: Mapping[str, Any], keys: Iterable[str]) -> str | None:
     for key in keys:
         value = values.get(key)
@@ -893,9 +1084,45 @@ def _first_present(values: Mapping[str, Any], keys: Iterable[str]) -> str | None
     return None
 
 
+def _canonical_origin_ids(
+    values: Mapping[str, Any], *, resource_type: str | None = None
+) -> list[str]:
+    root_ids: list[str] = []
+    for key in (
+        "root_source_design_id",
+        "root_source_kb_id",
+        "root_source_mockup_id",
+    ):
+        value = values.get(key)
+        if not value:
+            continue
+        text = str(value)
+        if text not in root_ids:
+            root_ids.append(text)
+    if root_ids:
+        return root_ids
+
+    # Mockup snapshots intentionally carry both the canonical ``origin_id`` and
+    # their immediate ``source_mockup_id``.  Across multiple hops those values
+    # differ by design; the former is the logical Resource Gate identity.
+    if resource_type == "mockup":
+        canonical = values.get("origin_id") or values.get("source_mockup_id")
+        return [str(canonical)] if canonical else []
+
+    ids: list[str] = []
+    for key in ("source_design_id", "source_kb_id", "source_mockup_id", "origin_id"):
+        value = values.get(key)
+        if not value:
+            continue
+        text = str(value)
+        if text not in ids:
+            ids.append(text)
+    return ids
+
+
 def _source_ref_contains(source_ref: str, source_id: str) -> bool:
     if source_ref == source_id:
         return True
-    return any(part == source_id for part in source_ref.replace("\\", "/").split("/")) or (
-        source_ref.rsplit(":", 1)[-1] == source_id
-    )
+    return any(
+        part == source_id for part in source_ref.replace("\\", "/").split("/")
+    ) or (source_ref.rsplit(":", 1)[-1] == source_id)

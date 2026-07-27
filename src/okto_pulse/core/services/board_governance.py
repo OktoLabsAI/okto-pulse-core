@@ -5,11 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from okto_pulse.core.models.db import Board
 from okto_pulse.core.models.schemas import BoardSettings
+from okto_pulse.core.ports.domain_event_delivery import (
+    get_domain_event_fact_reader,
+)
 from okto_pulse.core.services.governance_observability import (
     METRIC_QA_SELF_ANSWER_DENIED,
     build_qa_self_answer_denied_details as _build_qa_self_answer_denied_details,
@@ -19,6 +18,10 @@ from okto_pulse.core.services.governance_observability import (
 GOVERNANCE_SETTING_KEYS = (
     "allow_agent_self_answering",
     "require_full_context_for_critical_actions",
+)
+LEGACY_ABSENT_SETTING_KEYS = (
+    "skip_task_requirement_link_gate_global",
+    "reviewer_separation_mode",
 )
 QA_SELF_ANSWER_DENIED_ACTION = "qa_self_answer_denied"
 QA_SELF_ANSWER_DENIED_METRIC = METRIC_QA_SELF_ANSWER_DENIED
@@ -55,7 +58,7 @@ class BoardGovernanceService:
     but it never grants the canonical positive opt-in for self-answering.
     """
 
-    def __init__(self, db: AsyncSession | None = None):
+    def __init__(self, db: object | None = None):
         self.db = db
 
     @staticmethod
@@ -112,16 +115,26 @@ class BoardGovernanceService:
             if isinstance(patch, BoardSettings)
             else dict(patch or {})
         )
-        return cls.normalize_settings({**current_raw, **patch_raw})
+        preserve_absent = {
+            key
+            for key in LEGACY_ABSENT_SETTING_KEYS
+            if key not in current_raw and key not in patch_raw
+        }
+        normalized = cls.normalize_settings({**current_raw, **patch_raw})
+        for key in preserve_absent:
+            normalized.pop(key, None)
+        return normalized
 
     async def resolve(self, board_id: str) -> BoardGovernanceSettings:
         if self.db is None:
-            raise RuntimeError("BoardGovernanceService.resolve requires an AsyncSession")
-        result = await self.db.execute(select(Board).where(Board.id == board_id))
-        board = result.scalar_one_or_none()
-        if board is None:
+            raise RuntimeError("BoardGovernanceService.resolve requires a read context")
+        settings = await get_domain_event_fact_reader().load_board_settings(
+            self.db,
+            board_id=board_id,
+        )
+        if settings is None:
             raise ValueError("board_not_found")
-        return self.from_settings(board.settings)
+        return self.from_settings(settings)
 
     @classmethod
     def changed_governance_settings(

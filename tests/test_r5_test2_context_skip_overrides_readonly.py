@@ -17,6 +17,8 @@ Anti-test-theater: the skip state is created through the REAL human write paths
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import os
 import sys
@@ -33,10 +35,10 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItemStore,
     CognitiveItemStatus,
     compute_cognitive_item_id,
-    default_rebuild_base_dir,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Card,
     CardStatus,
@@ -73,7 +75,7 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None), \
          patch.object(mcp_server, "_mcp_check_permission", return_value=None):
@@ -83,9 +85,9 @@ async def _call(name: str, **kwargs) -> dict:
 
 def _seed_cognitive_skip(board, gen, *, source_ref, reason_code, justification,
                          evidence_refs, revisit_at=None, actor="agent:human-reviewer"):
-    store = CognitiveConsolidationItemStore(base_dir=default_rebuild_base_dir())
-    path = store._record_path(board, gen)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    store = CognitiveConsolidationItemStore(
+        artifact_store=require_rebuild_audit_artifact_store()
+    )
     item = {
         "item_id": compute_cognitive_item_id(board, gen, source_ref),
         "board_id": board, "kg_generation_id": gen, "source_ref": source_ref,
@@ -98,9 +100,10 @@ def _seed_cognitive_skip(board, gen, *, source_ref, reason_code, justification,
     }
     if revisit_at is not None:
         item["revisit_at"] = revisit_at
-    record = {"pending_count": 0, "pending_refs": [], "status": "complete",
+    record = {"board_id": board, "kg_generation_id": gen,
+              "pending_count": 0, "pending_refs": [], "status": "complete",
               "recorded_at": "2026-06-17T00:00:00+00:00", "items": [item]}
-    path.write_text(json.dumps(record), encoding="utf-8")
+    store.artifact_store.write_json_atomic(store._record_key(board, gen), record)
 
 
 # ===========================================================================

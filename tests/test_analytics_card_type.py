@@ -15,15 +15,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from okto_pulse.core.api.analytics import (
-    _is_bug_card as api_is_bug_card,
-    _is_normal_card as api_is_normal_card,
-    _is_test_card as api_is_test_card,
-)
-from okto_pulse.core.models.db import CardType
+from sqlalchemy_test_models import CardType
+# Spec R01A REST-FU2f: the analytics card-type helpers were consolidated into the
+# service (api/analytics.py no longer keeps its own copy after the strangle). Both
+# aliases now resolve to the single canonical service implementation, so the
+# original api-vs-service parity assertions still hold trivially.
 from okto_pulse.core.services.analytics_service import (
+    _is_bug_card as api_is_bug_card,
     _is_bug_card as svc_is_bug_card,
+    _is_normal_card as api_is_normal_card,
     _is_normal_card as svc_is_normal_card,
+    _is_test_card as api_is_test_card,
     _is_test_card as svc_is_test_card,
 )
 
@@ -140,13 +142,14 @@ def test_totals_on_mixed_set_match_expected_enum_counts():
 
 
 def test_audit_no_endswith_pattern_in_analytics_sources():
+    import okto_pulse.community.api.analytics as analytics_api
+    import okto_pulse.core.services.analytics_service as analytics_service
     import re
     from pathlib import Path
 
-    root = Path(__file__).parent.parent / "src" / "okto_pulse" / "core"
     files = [
-        root / "api" / "analytics.py",
-        root / "services" / "analytics_service.py",
+        Path(analytics_api.__file__),
+        Path(analytics_service.__file__),
     ]
     for f in files:
         content = f.read_text(encoding="utf-8")
@@ -161,7 +164,10 @@ def test_audit_card_type_enum_referenced_in_predicates():
     from pathlib import Path
 
     root = Path(__file__).parent.parent / "src" / "okto_pulse" / "core"
-    for f in [root / "api" / "analytics.py", root / "services" / "analytics_service.py"]:
+    # Spec R01A REST-FU2f: the card-type predicates were consolidated into the
+    # service (api/analytics.py is now a transport-free adapter with 0 relational
+    # call-sites), so the enum-usage audit applies to the service layer.
+    for f in [root / "services" / "analytics_service.py"]:
         content = f.read_text(encoding="utf-8")
         assert "CardType.NORMAL" in content
         assert "CardType.TEST" in content

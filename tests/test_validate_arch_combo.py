@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
-
 from okto_pulse.core.mcp import server
 from okto_pulse.core.mcp.server import _parse_json_arg
 

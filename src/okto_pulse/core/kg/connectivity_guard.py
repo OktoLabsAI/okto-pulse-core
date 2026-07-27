@@ -12,10 +12,24 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Literal, Protocol
 
+from okto_pulse.core.kg.cognitive_policy import (
+    FORBIDDEN_DETERMINISTIC_EDGE_REASON,
+    LEARNING_RELATES_TO_TARGETS,
+)
 from okto_pulse.core.kg.source_maturity import GRAPH_LAYER_CANONICAL
 
 
 CONNECTIVITY_ERROR_CODE = "kg_node_connectivity_violation"
+
+# S-KG-01 / BR-KG-02 — fail-closed reason for a cognitive artifact
+# (Learning/Alternative/Assumption) that resolves its source but carries no
+# allowed cognitive-taxonomy relation (validates -> canonical Bug, or relates_to
+# -> one of the seven canonical endpoints). Bounded vocabulary so it rides the
+# safe metric labels and API payloads alongside the existing reasons. The sibling
+# reason ``forbidden_deterministic_edge`` is owned by cognitive_policy (a cognitive
+# writer must never emit belongs_to); it is re-exported here so the closed
+# vocabulary lives in one import for callers of the guard.
+MISSING_COGNITIVE_PROVENANCE_REASON = "missing_cognitive_provenance"
 
 # R7 (canonical Learning layer integrity) — reason codes for the layer-aware
 # bug_learning completeness check. Closed vocabulary; the guard is the single
@@ -138,6 +152,13 @@ class KGConnectivityEdgeGroup:
     name: str
     alternatives: tuple[KGConnectivityEdgeRequirement, ...]
     remediation_hint: str
+    # S-KG-01: when set, a terminal "no satisfying edge" failure of this group
+    # reports this bounded reason instead of the generic missing_required_edge /
+    # unsupported_endpoint_type. Used by the cognitive_provenance group so a
+    # missing/off-taxonomy cognitive relation surfaces as
+    # ``missing_cognitive_provenance``. Self-loop / unresolved-endpoint failures
+    # keep their own dedicated diagnostics.
+    failure_reason: str | None = None
 
     def label(self) -> str:
         return " OR ".join(req.label() for req in self.alternatives)
@@ -297,7 +318,14 @@ class KGConnectivityValidationResult:
 
 
 def classify_writer_path(writer_path: str) -> WriterClass:
-    normalized = (writer_path or "").lower()
+    normalized = (writer_path or "").strip().lower()
+    # Historical consolidation is the deterministic Layer-1 producer used by
+    # the queue worker.  Keep this exact compatibility mapping ahead of the
+    # generic ``consolidation``/``agent`` cognitive markers: persisted graph
+    # nodes retain this producer id, so renaming only the current worker would
+    # leave existing deterministic material classified as cognitive forever.
+    if normalized == "system:historical_consolidation":
+        return WriterClass.DETERMINISTIC
     if any(
         marker in normalized
         for marker in (
@@ -382,6 +410,65 @@ def _learning_bug_group() -> KGConnectivityEdgeGroup:
     )
 
 
+def _cognitive_provenance_group() -> KGConnectivityEdgeGroup:
+    """S-KG-01 / BR-KG-02 — cognitive provenance connectivity.
+
+    Learning/Alternative/Assumption are cognitive artifacts: their provenance is
+    the resolved ``source_artifact_ref`` plus a cognitive-taxonomy relation, NOT
+    the deterministic ``belongs_to``-to-Entity backbone the operational artifacts
+    (Requirement/Constraint/APIContract/TestScenario/Criterion/Bug/Entity) use.
+    This is the group for a cognitive node that is NOT bug-derived; a bug-derived
+    Learning is routed to ``_learning_bug_group`` (validates -> canonical Bug)
+    earlier in :meth:`KGNodeConnectivityGuard.validate`. A non-bug-derived
+    cognitive node is connected when it carries ANY of:
+
+    * ``belongs_to`` -> Entity/Bug — the deterministic root the commit path
+      auto-attaches when the source ref resolves to a root entity. Kept as an
+      accepted alternative so the established provenance path never regresses
+      (it carries no layer constraint, so any-layer roots still satisfy);
+    * ``relates_to`` -> one of the seven canonical endpoints
+      (Entity|Decision|Requirement|Constraint|TestScenario|APIContract|Criterion)
+      — the additive ``relates_to`` endpoint pairs (no new edge name).
+
+    ``validates`` is deliberately NOT an alternative here: it is the exclusive
+    proof for a *bug-derived* Learning (handled by ``_learning_bug_group``), so a
+    node the resolver could not confirm as bug-derived must not pass by pointing a
+    ``validates`` edge at some canonical Bug (RKG-02 anti-aliasing invariant).
+
+    This replaces requiring ``belongs_to`` for cognitive nodes whose source ref
+    is e.g. ``spec:``/``decision:`` (which never resolves to a root Entity/Bug),
+    closing the unresolved_source_ref gap while keeping operational artifacts on
+    the strict deterministic provenance group.
+    """
+    return KGConnectivityEdgeGroup(
+        name="cognitive_provenance",
+        alternatives=(
+            KGConnectivityEdgeRequirement(
+                "belongs_to",
+                "outgoing",
+                ("Entity", "Bug"),
+                "Deterministic root auto-attached when the source ref resolves.",
+            ),
+            KGConnectivityEdgeRequirement(
+                "relates_to",
+                "outgoing",
+                tuple(LEARNING_RELATES_TO_TARGETS),
+                "Cognitive relation to a canonical taxonomy endpoint.",
+                required_target_layer=GRAPH_LAYER_CANONICAL,
+            ),
+        ),
+        remediation_hint=(
+            "Attach a cognitive-taxonomy relation: relates_to -> a canonical "
+            "Entity/Decision/Requirement/Constraint/TestScenario/APIContract/"
+            "Criterion (or validates -> canonical Bug when the learning is "
+            "bug-derived). belongs_to to a root Entity/Bug is auto-attached by "
+            "the commit path when the source_artifact_ref resolves; cognitive "
+            "writers must never emit belongs_to themselves."
+        ),
+        failure_reason=MISSING_COGNITIVE_PROVENANCE_REASON,
+    )
+
+
 class KGConnectivityRuleRegistry:
     """Registry of minimal connectivity and owner rules by node type."""
 
@@ -431,6 +518,10 @@ class KGConnectivityRuleRegistry:
     @staticmethod
     def _build_default_rules() -> dict[str, KGConnectivityRule]:
         provenance = _provenance_group()
+        # S-KG-01: cognitive artifacts (Learning/Alternative/Assumption) prove
+        # connectivity through the cognitive taxonomy, not the deterministic
+        # belongs_to backbone. Operational artifacts stay on `provenance`.
+        cognitive_provenance = _cognitive_provenance_group()
         deterministic_only = (WriterClass.DETERMINISTIC,)
         cognitive_only = (WriterClass.COGNITIVE,)
         cognitive_or_deterministic = (
@@ -499,7 +590,7 @@ class KGConnectivityRuleRegistry:
             "Learning": KGConnectivityRule(
                 node_type="Learning",
                 owner=KGConnectivityOwner.COGNITIVE,
-                required_edge_groups=(provenance,),
+                required_edge_groups=(cognitive_provenance,),
                 semantic_target_policy="bug_learning_requires_validates_when_known",
                 allowed_new_node_writers=cognitive_or_deterministic,
                 technical_root_allowed=True,
@@ -507,7 +598,7 @@ class KGConnectivityRuleRegistry:
             "Alternative": KGConnectivityRule(
                 node_type="Alternative",
                 owner=KGConnectivityOwner.COGNITIVE,
-                required_edge_groups=(provenance,),
+                required_edge_groups=(cognitive_provenance,),
                 semantic_target_policy="cognitive_per_concept_source",
                 allowed_new_node_writers=cognitive_only,
                 technical_root_allowed=True,
@@ -515,7 +606,7 @@ class KGConnectivityRuleRegistry:
             "Assumption": KGConnectivityRule(
                 node_type="Assumption",
                 owner=KGConnectivityOwner.COGNITIVE,
-                required_edge_groups=(provenance,),
+                required_edge_groups=(cognitive_provenance,),
                 semantic_target_policy="provenance_only_v1",
                 allowed_new_node_writers=cognitive_only,
                 technical_root_allowed=True,
@@ -603,6 +694,9 @@ class KGNodeConnectivityGuard:
         allowlisted_roots: list[str] = []
         advisories: list[dict[str, Any]] = []
         writer_class = classify_writer_path(writer_path)
+        # RKG-02: the shared resolver decides if a Learning is bug-derived; a
+        # plain card:<uuid> only counts when the canonical Bug probe confirms it.
+        bug_probe = _build_canonical_bug_probe(existing_refs, node_snapshots)
         for node in node_snapshots:
             try:
                 rule = self._registry.get_rule(node.node_type, writer_path)
@@ -655,7 +749,7 @@ class KGNodeConnectivityGuard:
                 )
                 continue
 
-            if node.node_type == "Learning" and _candidate_has_known_bug(node.raw):
+            if node.node_type == "Learning" and _learning_is_bug_derived(node.raw, bug_probe):
                 required_groups = [_learning_bug_group()]
             else:
                 required_groups = list(rule.required_edge_groups)
@@ -831,17 +925,21 @@ class KGNodeConnectivityGuard:
                 reason="unresolved_required_endpoint",
             )
         if touched_unsupported:
+            # S-KG-01: the cognitive_provenance group reports an off-taxonomy
+            # relation (e.g. relates_to -> a non-taxonomy type) as the bounded
+            # missing_cognitive_provenance reason; other groups keep the generic
+            # unsupported_endpoint_type diagnostic.
             return _RequirementResolution(
                 passed=False,
                 status=SourceResolutionStatus.SOURCE_TYPE_NOT_SUPPORTED,
                 missing_endpoint=group.label(),
-                reason="unsupported_endpoint_type",
+                reason=group.failure_reason or "unsupported_endpoint_type",
             )
         return _RequirementResolution(
             passed=False,
             status=SourceResolutionStatus.UNRESOLVED_SOURCE_REF,
             missing_endpoint=group.label(),
-            reason="missing_required_edge",
+            reason=group.failure_reason or "missing_required_edge",
         )
 
     def _emit_metric(
@@ -930,7 +1028,8 @@ def _snapshot_existing_ref(ref: Any) -> KGNodeRef:
     node_id = (
         _get_field(ref, "ref_id", None)
         or _get_field(ref, "node_id", None)
-        or _get_field(ref, "kuzu_node_id", None)
+        or _get_field(ref, "graph_node_id", None)
+        or _get_field(ref, "graph_node_id", None)
         or _get_field(ref, "id", "")
     )
     return KGNodeRef(
@@ -1012,6 +1111,61 @@ def _candidate_has_known_bug(raw: Any) -> bool:
     return source_ref.startswith("bug:") or source_ref.startswith("card:bug:")
 
 
+def _build_canonical_bug_probe(
+    existing_refs: tuple[KGNodeRef, ...],
+    node_snapshots: tuple[Any, ...],
+) -> Any:
+    """A type-aware probe (RKG-02 / FR2) telling whether a card uuid is backed by
+    a *canonical* Bug. Built from the canonical Bug nodes already in the graph
+    (and any canonical Bug created in the same batch), keyed by normalized
+    identity so ``card:<uuid>``/``bug:<uuid>`` reconcile. Fail-closed: only
+    canonical-layer Bugs count."""
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
+    from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
+
+    canonical_bug_keys: set[str] = set()
+
+    def _add(ref_id: Any, source_ref: Any, layer: Any) -> None:
+        if _layer_value(layer) != GRAPH_LAYER_CANONICAL:
+            return
+        cid = _canonical_ref_id(str(ref_id or ""))
+        if cid:
+            canonical_bug_keys.add(normalize_cognitive_artifact_id(f"card:{cid}"))
+        sref = _optional_str(source_ref)
+        if sref:
+            canonical_bug_keys.add(
+                normalize_cognitive_artifact_id(strip_concept_suffix(sref)))
+
+    for ref in existing_refs:
+        if ref.node_type == "Bug":
+            _add(ref.ref_id, ref.source_artifact_ref, ref.graph_layer)
+    for snap in node_snapshots:
+        if getattr(snap, "node_type", None) == "Bug":
+            _add(
+                getattr(snap, "candidate_id", None),
+                getattr(snap, "source_artifact_ref", None),
+                getattr(snap, "graph_layer", None),
+            )
+
+    def _probe(uuid: str) -> bool:
+        return normalize_cognitive_artifact_id(f"card:{uuid}") in canonical_bug_keys
+
+    return _probe
+
+
+def _learning_is_bug_derived(raw: Any, bug_probe: Any) -> bool:
+    """Type-aware bug-derived detection for a Learning node (RKG-02). Explicit
+    bug fields and bug:/card:bug: forms are always bug-derived; a plain
+    card:<uuid> is bug-derived ONLY when the probe confirms a canonical Bug."""
+    for field_name in ("bug_id", "bug_ref", "known_bug_ref", "known_bug_source_ref", "target_bug_ref"):
+        if _get_field(raw, field_name, None):
+            return True
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import resolve_cognitive_source_ref
+
+    source_ref = _optional_str(_get_field(raw, "source_artifact_ref", None)) or ""
+    return resolve_cognitive_source_ref(source_ref, canonical_bug_probe=bug_probe).is_bug_derived
+
+
 def _get_field(obj: Any, name: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
         return obj.get(name, default)
@@ -1048,6 +1202,8 @@ __all__ = [
     "CANONICAL_LEARNING_WORKING_ONLY_REASON",
     "CONNECTIVITY_ERROR_CODE",
     "DEGRADED_KG_STATES",
+    "FORBIDDEN_DETERMINISTIC_EDGE_REASON",
+    "MISSING_COGNITIVE_PROVENANCE_REASON",
     "SAFE_CONNECTIVITY_METRIC_LABELS",
     "SELF_LOOP_NOT_CONNECTIVITY_REASON",
     "InMemoryConnectivityMetricSink",

@@ -51,7 +51,7 @@ def _tmp_rebuild_dir(tmp_path, monkeypatch):
 async def test_status_regression_removes_canonical_publication(db_factory):
     board_id = await new_board(db_factory, "r2t1")
     spec_id, spec_ref = await seed_done_spec_canonical(db_factory, board_id)
-    canonical_before = count_canonical(board_id, "Requirement")
+    canonical_before = await count_canonical(board_id, "Requirement")
     assert canonical_before >= 1, "real pipeline must publish canonical Requirements"
 
     # Source regresses done -> draft (the real maturity signal an event carries).
@@ -70,7 +70,7 @@ async def test_status_regression_removes_canonical_publication(db_factory):
     assert rec["source_artifact_ref"].startswith("spec:")
     # TEETH: the canonical publication is GONE. A no-op reconciler leaves the
     # canonical count unchanged (>=1) and this assertion fails.
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0
 
 
 # ===========================================================================
@@ -85,10 +85,10 @@ async def test_sweep_detects_and_demotes_stale_and_preserves_cognitive(db_factor
     spec_id, _spec_ref = await seed_done_spec_canonical(db_factory, board_id)
     # A canonical cognitive Alternative whose (absent) source could look stale —
     # it must be PRESERVED by the carve-out, never demoted.
-    alt_id = seed_canonical_cognitive(
+    alt_id = await seed_canonical_cognitive(
         board_id, "Alternative", source_ref=f"spec:{spec_id}:alternative:1",
     )
-    assert count_canonical(board_id, "Requirement") >= 1
+    assert await count_canonical(board_id, "Requirement") >= 1
 
     await set_spec_status(db_factory, spec_id, "draft")
 
@@ -99,9 +99,11 @@ async def test_sweep_detects_and_demotes_stale_and_preserves_cognitive(db_factor
 
     # The stale deterministic canonical is demoted by the sweep ...
     assert result.demoted
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0
     # ... and the cognitive Alternative is preserved (carve-out, no auto-debt).
-    assert node_layer(board_id, "Alternative", alt_id) == GRAPH_LAYER_CANONICAL
+    assert await node_layer(
+        board_id, "Alternative", alt_id
+    ) == GRAPH_LAYER_CANONICAL
     assert any(s["node_id"] == alt_id for s in result.skipped_cognitive)
     assert all(d["node_id"] != alt_id for d in result.demoted)
     assert result.routed_to_debt == []
@@ -124,4 +126,4 @@ async def test_sweep_is_idempotent(db_factory):
         second = await reconcile_stale_canonical(db, board_id=board_id)
         await db.commit()
     assert second.demoted == []
-    assert count_canonical(board_id, "Requirement") == 0
+    assert await count_canonical(board_id, "Requirement") == 0

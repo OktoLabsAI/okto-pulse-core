@@ -5,8 +5,8 @@ Covers:
 - All 12 resource .md files exist and have frontmatter
 - Root agent_instructions.md is ≤500 lines
 - _load_resource_file() handles missing files gracefully
-- _RESOURCE_REGISTRY URIs are consistent with registered file paths
-- server.py contains okto-pulse:// URIs for all 12 resources
+- effective catalog URIs are consistent with their resolvable content
+- the effective catalog serves okto-pulse:// URIs for all resources
 """
 
 import re
@@ -24,7 +24,9 @@ RESOURCES_DIR = (
 MCP_DIR = Path(__file__).parent.parent / "src" / "okto_pulse" / "core" / "mcp"
 SERVER_PY = MCP_DIR / "server.py"
 
-EXPECTED_FILES = [
+# Core set that must ALWAYS exist (deleting one of these is a breaking change
+# to the instructions' Quick Navigation table).
+_REQUIRED_FILES = [
     "workflows/stories.md",
     "workflows/ideations.md",
     "workflows/refinements.md",
@@ -34,12 +36,26 @@ EXPECTED_FILES = [
     "workflows/kg.md",
     "workflows/preflight.md",
     "reference/errors.md",
+    "reference/knowledge-governance.md",
     "reference/multivalue.md",
     "reference/destructive_ops.md",
     "reference/card_types.md",
     "reference/spec_gates.md",
     "reference/projection_profiles.md",
 ]
+
+# 2026-07-12 (auditoria MCP, achado #34): the gate now discovers EVERY
+# bundled resource via glob, so a new .md automatically enters the
+# frontmatter/version checks instead of silently drifting outside them.
+EXPECTED_FILES = sorted(
+    str(p.relative_to(RESOURCES_DIR)).replace("\\", "/")
+    for p in RESOURCES_DIR.rglob("*.md")
+)
+
+
+def test_required_core_resources_present() -> None:
+    missing = [f for f in _REQUIRED_FILES if f not in EXPECTED_FILES]
+    assert missing == [], f"core resources missing from bundle: {missing}"
 
 EXPECTED_URIS = [
     "okto-pulse://workflows/stories",
@@ -51,6 +67,7 @@ EXPECTED_URIS = [
     "okto-pulse://workflows/kg",
     "okto-pulse://workflows/preflight",
     "okto-pulse://reference/errors",
+    "okto-pulse://reference/knowledge-governance",
     "okto-pulse://reference/multivalue",
     "okto-pulse://reference/destructive_ops",
     "okto-pulse://reference/card_types",
@@ -93,10 +110,89 @@ def test_resource_file_has_frontmatter(rel_path: str) -> None:
     match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
     assert match is not None, f"{rel_path}: could not find closing '---' of frontmatter"
     frontmatter_body = match.group(1)
-    assert 'version: "1.0"' in frontmatter_body, (
-        f"{rel_path}: frontmatter missing 'version: \"1.0\"'. "
+    # 2026-07-12 (achado #34): any versioned frontmatter is accepted — the
+    # gate guards PRESENCE of a version marker, not a pinned value (files
+    # legitimately rev, e.g. api-contract.md is at "1.1").
+    assert re.search(r'version: "\d+\.\d+"', frontmatter_body), (
+        f"{rel_path}: frontmatter missing a version marker. "
         f"Found: {frontmatter_body!r}"
     )
+
+
+def test_cards_workflow_defers_to_typed_transition_read_model() -> None:
+    content = (RESOURCES_DIR / "workflows" / "cards.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "A normal card follows `not_started → started → in_progress`" in content
+    assert "only when the transition tool advertises that edge" in content
+    assert (
+        '`okto_pulse_move_card(status="in_progress")` → begin work'
+        not in content
+    )
+
+
+def test_destructive_ops_documents_auditable_fallback_without_fake_comments() -> None:
+    content = (RESOURCES_DIR / "reference" / "destructive_ops.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "board-scoped audit card" in content
+    assert "exact target type + id" in content
+    assert "never" in content and "unsupported comment call" in content
+
+
+def test_design_system_board_docs_match_live_single_link_schema() -> None:
+    content = (
+        RESOURCES_DIR / "reference" / "tool-docs" / "board.md"
+    ).read_text(encoding="utf-8")
+    link = content.split("## `okto_pulse_link_board_design_system`", 1)[1].split(
+        "## `okto_pulse_unlink_board_design_system`", 1
+    )[0]
+    unlink = content.split("## `okto_pulse_unlink_board_design_system`", 1)[1].split(
+        "## `okto_pulse_get_board_design_system`", 1
+    )[0]
+
+    assert "no priority argument" in link
+    assert "inline Design" in link and "same board" in link
+    assert "no design_system_id argument" in unlink
+
+
+def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() -> None:
+    for filename, short_name in (
+        ("qa_ask.md", "ask"),
+        ("spec_entity_remove.md", "remove_spec_entity"),
+    ):
+        content = (
+            RESOURCES_DIR / "reference" / "tool-families" / filename
+        ).read_text(encoding="utf-8")
+        assert f"Registry-only short name: `{short_name}`" in content
+        assert "not** an MCP" in content
+        assert "does not appear in `tools/list`" in content
+
+
+@pytest.mark.parametrize(
+    ("filename", "tool_name"),
+    (
+        ("comment.md", "okto_pulse_add_choice_comment"),
+        ("ideation.md", "okto_pulse_ask_ideation_choice_question"),
+        ("refinement.md", "okto_pulse_ask_refinement_choice_question"),
+        ("spec.md", "okto_pulse_ask_spec_choice_question"),
+    ),
+)
+def test_choice_tool_docs_explain_structured_options_json(
+    filename: str,
+    tool_name: str,
+) -> None:
+    content = (
+        RESOURCES_DIR / "reference" / "tool-docs" / filename
+    ).read_text(encoding="utf-8")
+    section = content.split(f"## `{tool_name}`", 1)[1].split("\n## `", 1)[0]
+
+    assert "options_json: Preferred structured options" in section
+    assert "native array" in section
+    assert '"recommended":true' in section
+    assert "takes precedence over options" in section
 
 
 # ---------------------------------------------------------------------------
@@ -125,9 +221,9 @@ def test_load_resource_file_missing_returns_empty() -> None:
     # because we only import the helpers, not run FastMCP.
     from okto_pulse.core.mcp import server as _srv
 
-    # Ensure the cache does not contain this key from a previous run
-    _srv._resources_cache.pop("__nonexistent_test_path__.md", None)
-
+    # 2026-07-12: the old _resources_cache dict was removed in the loader
+    # refactor (_load_bundled_text reads the immutable package directly) —
+    # the contract under test is only the fail-soft return value.
     result = _srv._load_resource_file("__nonexistent_test_path__.md")
     assert result == "", (
         "_load_resource_file() should return '' for a missing file, not raise an exception."
@@ -135,51 +231,59 @@ def test_load_resource_file_missing_returns_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 5. _RESOURCE_REGISTRY in server.py contains all 12 URIs
+# 5. effective catalog contains all expected URIs
 # ---------------------------------------------------------------------------
 
 
 def test_resource_registry_contains_all_uris() -> None:
-    """_RESOURCE_REGISTRY in server.py must declare all 12 expected URIs."""
+    """The EFFECTIVE resource catalog (the authority) must declare all expected
+    URIs. R11-C: consumes ``effective_resource_catalog().specs()`` rather than
+    ``_RESOURCE_REGISTRY`` (which is only its derived, read-only projection)."""
     from okto_pulse.core.mcp import server as _srv
 
-    registered_uris = {entry[0] for entry in _srv._RESOURCE_REGISTRY}
+    catalog_uris = {s.uri for s in _srv.effective_resource_catalog().specs()}
     for expected_uri in EXPECTED_URIS:
-        assert expected_uri in registered_uris, (
-            f"URI missing from _RESOURCE_REGISTRY: {expected_uri}"
+        assert expected_uri in catalog_uris, (
+            f"URI missing from the effective resource catalog: {expected_uri}"
         )
+    # the legacy projection mirrors the catalog (same URIs) — bridge, not authority.
+    assert {entry[0] for entry in _srv._RESOURCE_REGISTRY} == catalog_uris
 
 
 # ---------------------------------------------------------------------------
-# 6. _RESOURCE_REGISTRY paths correspond to existing files
+# 6. effective catalog specs resolve to non-empty content
 # ---------------------------------------------------------------------------
 
 
 def test_resource_registry_paths_exist() -> None:
-    """Every path in _RESOURCE_REGISTRY must correspond to an existing file."""
+    """Every EFFECTIVE catalog spec resolves to non-empty content via its
+    deterministic loader. R11-C: catalog-aware ``read()`` non-empty replaces the
+    old path-exists check (it also covers content-based / overlay specs that have
+    no filesystem path)."""
     from okto_pulse.core.mcp import server as _srv
 
-    resource_dir = _srv._get_resource_dir()
-    for uri, path, _desc in _srv._RESOURCE_REGISTRY:
-        full = resource_dir / path
-        assert full.exists(), (
-            f"Registry entry for {uri!r} points to missing file: {full}"
+    for spec in _srv.effective_resource_catalog().specs():
+        assert len(spec.read()) > 0, (
+            f"resource {spec.uri!r} resolved to EMPTY content via the catalog loader"
         )
 
 
 # ---------------------------------------------------------------------------
-# 7. Smoke test — server.py source contains all okto-pulse:// URIs
+# 7. Smoke test — the EFFECTIVE catalog serves all okto-pulse:// URIs (R11-C:
+#    catalog-aware; no longer a textual scan of server.py source).
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("uri", EXPECTED_URIS)
-def test_server_py_contains_uri(uri: str) -> None:
-    """server.py source text must contain each expected okto-pulse:// URI."""
-    assert SERVER_PY.exists(), "server.py not found"
-    source = SERVER_PY.read_text(encoding="utf-8")
-    assert uri in source, (
-        f"URI {uri!r} not found in server.py. "
-        "Check _RESOURCE_REGISTRY or the resource registration loop."
+def test_uri_in_effective_catalog(uri: str) -> None:
+    """R11-C: each expected okto-pulse:// URI is SERVED by the effective resource
+    catalog (the authority), not asserted against server.py source text — the
+    catalog is the single source of truth after the R11-A/B refactor."""
+    from okto_pulse.core.mcp import server as _srv
+
+    catalog_uris = {s.uri for s in _srv.effective_resource_catalog().specs()}
+    assert uri in catalog_uris, (
+        f"URI {uri!r} is not served by the effective resource catalog"
     )
 
 
@@ -189,19 +293,56 @@ def test_server_py_contains_uri(uri: str) -> None:
 
 
 def test_load_resource_file_cache_idempotent() -> None:
-    """Calling _load_resource_file() twice for the same path returns the same object."""
+    """Repeated loads of the same immutable resource return identical content.
+
+    2026-07-12: object-identity (`is`) dropped — the loader refactor removed
+    the _resources_cache dict; resources are immutable package files, so the
+    stable contract is content equality across calls."""
     from okto_pulse.core.mcp import server as _srv
 
     path = "workflows/stories.md"
-    # Clear cache entry to force a fresh load
-    _srv._resources_cache.pop(path, None)
-
     first = _srv._load_resource_file(path)
     second = _srv._load_resource_file(path)
-    assert first is second, (
-        "_load_resource_file() should return the cached string object on second call."
+    assert first == second, (
+        "_load_resource_file() should return identical content on repeat calls."
     )
     assert len(first) > 0, "stories.md returned empty content — file may be missing."
+
+
+def test_related_context_resources_require_typed_artifact_references() -> None:
+    """Workflow examples must match the boundary's typed-anchor contract."""
+    from okto_pulse.core.mcp import server as _srv
+
+    specs = _srv._load_resource_file("workflows/specs.md")
+    refinements = _srv._load_resource_file("workflows/refinements.md")
+    kg_workflow = _srv._load_resource_file("workflows/kg.md")
+    kg_tool_docs = _srv._load_resource_file("reference/tool-docs/kg.md")
+
+    assert 'artifact_id="spec:<uuid>"' in specs
+    assert "`spec:<uuid>` or `card:<uuid>`" in refinements
+    assert 'artifact_id="spec:<uuid>"' in kg_workflow
+    assert '"card:<uuid>"' in kg_workflow
+    assert "Typed source reference: ``spec:<uuid>`` or ``card:<uuid>``" in kg_tool_docs
+
+    stale_examples = ("artifact_id=<spec_id>", "<formalized_node_or_artifact_id>")
+    for body in (specs, refinements, kg_workflow, kg_tool_docs):
+        assert not any(stale in body for stale in stale_examples)
+
+
+def test_stage3_resources_document_canonical_constraint_id_discovery() -> None:
+    """Stage 3 must not force clients to guess worker-local constraint ids."""
+    from okto_pulse.core.mcp import server as _srv
+
+    specs = _srv._load_resource_file("workflows/specs.md")
+    kg_workflow = _srv._load_resource_file("workflows/kg.md")
+    kg_tool_docs = _srv._load_resource_file("reference/tool-docs/kg.md")
+
+    for body in (specs, kg_workflow, kg_tool_docs):
+        assert "canonical graph" in body
+        assert "source_artifact_ref" in body
+        assert "include_working=true" in body
+    assert "RETURN c.id AS id" in kg_workflow
+    assert 'params={"prefix":"spec:<spec-id>:"}' in kg_workflow
 
 
 # ---------------------------------------------------------------------------
@@ -266,27 +407,29 @@ _RESOURCE_URI_PATTERN = re.compile(r"okto-pulse://[a-zA-Z0-9_/\-]+")
 
 def test_smoke_no_broken_resource_links_in_docstrings() -> None:
     """ts_d06efe7a — Every ``okto-pulse://`` URI mentioned in a tool docstring
-    must resolve to a URI registered in ``_RESOURCE_REGISTRY``.
+    must resolve to a URI served by the EFFECTIVE resource catalog (R11-C:
+    catalog-aware resolution — the catalog is the authority, not the
+    ``_RESOURCE_REGISTRY`` projection).
 
     Failure mode caught: a docstring references e.g.
-    ``okto-pulse://workflows/onboardimg`` (typo) — no resource is registered
+    ``okto-pulse://workflows/onboardimg`` (typo) — no resource is in the catalog
     under that URI, so an agent following the link gets nothing back. This
     smoke fails CI naming the offending tool and the broken URI.
     """
     from okto_pulse.core.mcp import server as _srv
 
-    registered: set[str] = {entry[0] for entry in _srv._RESOURCE_REGISTRY}
-    assert registered, "No resources registered — registry import broken."
+    catalogued: set[str] = {s.uri for s in _srv.effective_resource_catalog().specs()}
+    assert catalogued, "No resources in the effective catalog — catalog import broken."
 
     broken: list[tuple[str, str]] = []
     for tool_name, tool in _srv.mcp._tool_manager._tools.items():
         desc = getattr(tool, "description", "") or ""
         for match in _RESOURCE_URI_PATTERN.findall(desc):
-            if match not in registered:
+            if match not in catalogued:
                 broken.append((tool_name, match))
 
     assert not broken, (
-        "Tool docstrings reference unregistered okto-pulse:// URIs: "
+        "Tool docstrings reference non-catalogued okto-pulse:// URIs: "
         + ", ".join(f"{name} -> {uri}" for name, uri in broken)
     )
 
@@ -298,13 +441,13 @@ def test_smoke_detects_synthetic_broken_link() -> None:
     """
     from okto_pulse.core.mcp import server as _srv
 
-    registered = {entry[0] for entry in _srv._RESOURCE_REGISTRY}
+    catalogued = {s.uri for s in _srv.effective_resource_catalog().specs()}
     fake_uri = "okto-pulse://workflows/__definitely_missing__"
-    assert fake_uri not in registered, "Synthetic URI accidentally registered."
+    assert fake_uri not in catalogued, "Synthetic URI accidentally in the catalog."
 
     fake_doc = f"This tool references {fake_uri} for guidance."
-    found = [m for m in _RESOURCE_URI_PATTERN.findall(fake_doc) if m not in registered]
+    found = [m for m in _RESOURCE_URI_PATTERN.findall(fake_doc) if m not in catalogued]
     assert found == [fake_uri], (
-        "Pattern + registry lookup must surface the broken URI; "
+        "Pattern + effective-catalog lookup must surface the broken URI; "
         f"got {found!r}."
     )

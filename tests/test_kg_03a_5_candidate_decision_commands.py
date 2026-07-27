@@ -25,18 +25,16 @@ Coverage matrix (per spec card a438bee5):
 
 from __future__ import annotations
 
-import shutil
 import uuid
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.router import api_router
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api.router import api_router
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.kg.candidate_decision_store import (
     CandidateDecisionAction,
@@ -51,10 +49,10 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitiveItemStatus,
     CognitivePendingMarker,
     CognitivePendingOutcomeType,
-    default_rebuild_base_dir,
+    require_rebuild_audit_artifact_store,
 )
 from okto_pulse.core.kg.rebuild_generation import generate_kg_generation_id
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     Ideation,
     Spec,
@@ -76,15 +74,9 @@ def _id(prefix: str) -> str:
 
 
 @pytest_asyncio.fixture
-async def _client_and_entities(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    base_dir = tmp_path / "kg-03a-5"
-    if base_dir.exists():
-        shutil.rmtree(base_dir)
-    base_dir.mkdir(parents=True)
-    monkeypatch.setenv("OKTO_PULSE_REBUILD_BASE_DIR", str(base_dir))
+async def _client_and_entities():
     reset_candidate_counter()
+    artifact_store = require_rebuild_audit_artifact_store()
 
     db_factory = get_session_factory()
     board_id = _id("kg03a5-board")
@@ -131,15 +123,16 @@ async def _client_and_entities(
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
 
     client = TestClient(app)
-    store = CandidateDecisionStore(base_dir=base_dir)
+    store = CandidateDecisionStore(artifact_store=artifact_store)
 
     yield client, store, db_factory, {
         "board_id": board_id,
         "spec_id": spec_id,
         "existing_decision_id": existing_dec_id,
-        "base_dir": base_dir,
+        "artifact_store": artifact_store,
     }
 
     reset_candidate_counter()
@@ -764,7 +757,7 @@ async def test_promote_rejects_alternatives_considered_token_entry(
 
 def _seed_pending_item(
     *,
-    base_dir: Path,
+    artifact_store,
     board_id: str,
     generation_id: str,
     source_ref: str,
@@ -773,7 +766,7 @@ def _seed_pending_item(
     source_ref) so we can assert the command endpoint updates it.
     """
 
-    marker = CognitivePendingMarker(base_dir=base_dir)
+    marker = CognitivePendingMarker(artifact_store=artifact_store)
     marker.mark_for_generation(
         board_id=board_id,
         kg_generation_id=generation_id,
@@ -784,7 +777,7 @@ def _seed_pending_item(
         }],
         event_ref="evt_kg03a5_test",
     )
-    store = CognitiveConsolidationItemStore(base_dir=base_dir)
+    store = CognitiveConsolidationItemStore(artifact_store=artifact_store)
     items = store.list_items(board_id, generation_id, limit=10)
     assert items, "fixture must seed at least one pending item"
     return items[0]
@@ -801,7 +794,7 @@ async def test_promote_propagates_outcome_to_pending_item(
         source_generation_id=gen,
     )
     pending = _seed_pending_item(
-        base_dir=ids["base_dir"],
+        artifact_store=ids["artifact_store"],
         board_id=ids["board_id"],
         generation_id=candidate.source_generation_id,
         source_ref=candidate.source_ref,
@@ -818,7 +811,9 @@ async def test_promote_propagates_outcome_to_pending_item(
     assert resp.status_code == 200, resp.text
     formal_ref = resp.json()["formal_decision_ref"]
 
-    ledger = CognitiveConsolidationItemStore(base_dir=ids["base_dir"])
+    ledger = CognitiveConsolidationItemStore(
+        artifact_store=ids["artifact_store"]
+    )
     refreshed = ledger.list_items(
         ids["board_id"], candidate.source_generation_id, limit=10,
     )
@@ -844,7 +839,7 @@ async def test_link_existing_propagates_outcome_to_pending_item(
         source_generation_id=gen,
     )
     pending = _seed_pending_item(
-        base_dir=ids["base_dir"],
+        artifact_store=ids["artifact_store"],
         board_id=ids["board_id"],
         generation_id=candidate.source_generation_id,
         source_ref=candidate.source_ref,
@@ -860,7 +855,9 @@ async def test_link_existing_propagates_outcome_to_pending_item(
     )
     assert resp.status_code == 200, resp.text
 
-    ledger = CognitiveConsolidationItemStore(base_dir=ids["base_dir"])
+    ledger = CognitiveConsolidationItemStore(
+        artifact_store=ids["artifact_store"]
+    )
     item = next(
         it for it in ledger.list_items(
             ids["board_id"], candidate.source_generation_id, limit=10,
@@ -886,7 +883,7 @@ async def test_dismiss_propagates_outcome_to_pending_item(
         source_generation_id=gen,
     )
     pending = _seed_pending_item(
-        base_dir=ids["base_dir"],
+        artifact_store=ids["artifact_store"],
         board_id=ids["board_id"],
         generation_id=candidate.source_generation_id,
         source_ref=candidate.source_ref,
@@ -900,7 +897,9 @@ async def test_dismiss_propagates_outcome_to_pending_item(
         },
     )
     assert resp.status_code == 200, resp.text
-    ledger = CognitiveConsolidationItemStore(base_dir=ids["base_dir"])
+    ledger = CognitiveConsolidationItemStore(
+        artifact_store=ids["artifact_store"]
+    )
     item = next(
         it for it in ledger.list_items(
             ids["board_id"], candidate.source_generation_id, limit=10,
@@ -923,7 +922,7 @@ async def test_no_action_required_propagates_outcome_to_pending_item(
         source_generation_id=gen,
     )
     pending = _seed_pending_item(
-        base_dir=ids["base_dir"],
+        artifact_store=ids["artifact_store"],
         board_id=ids["board_id"],
         generation_id=candidate.source_generation_id,
         source_ref=candidate.source_ref,
@@ -937,7 +936,9 @@ async def test_no_action_required_propagates_outcome_to_pending_item(
         },
     )
     assert resp.status_code == 200, resp.text
-    ledger = CognitiveConsolidationItemStore(base_dir=ids["base_dir"])
+    ledger = CognitiveConsolidationItemStore(
+        artifact_store=ids["artifact_store"]
+    )
     item = next(
         it for it in ledger.list_items(
             ids["board_id"], candidate.source_generation_id, limit=10,

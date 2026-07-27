@@ -28,7 +28,7 @@ when relevant) are always populated.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 # gate_type vocabulary (structured contract field, NOT a persisted enum).
 GATE_SPEC_VALIDATION = "spec_validation"
@@ -190,6 +190,34 @@ def _update_test_scenario_next_action(
     }
 
 
+def _link_test_scenario_next_action(
+    *,
+    board_id: str | None,
+    spec_id: str | None,
+    card_id: str,
+) -> dict[str, Any]:
+    """Recovery action for an empty or dangling test-scenario reference set."""
+
+    return {
+        "tool": "okto_pulse_link_task",
+        "params_template": {
+            "board_id": board_id,
+            "target_type": "scenario",
+            "target_id": "<existing_scenario_id>",
+            "card_id": card_id,
+            "spec_id": spec_id,
+        },
+        "follow_up": {
+            "tool": "okto_pulse_get_task_context",
+            "params": {"board_id": board_id, "card_id": card_id},
+        },
+        "hint": (
+            "Link at least one existing scenario to the test card, then re-read "
+            "task context and execute every linked scenario before completion."
+        ),
+    }
+
+
 def task_validation_unsupported_for_test_card_error(
     *, card_id: str, board_id: str | None = None, spec_id: str | None = None,
 ) -> GateContractError:
@@ -232,32 +260,61 @@ def incomplete_test_card_completion_error(
     total = len(pending_scenarios)
     titles = [str(s.get("title") or s.get("id")) for s in pending_scenarios]
     scenario_ids = [str(s.get("id")) for s in pending_scenarios if s.get("id")]
+    missing = [
+        s for s in pending_scenarios if str(s.get("status") or "") == "missing"
+    ]
     shown = ", ".join(f'"{t}"' for t in titles[:3])
     suffix = f" and {total - 3} more" if total > 3 else ""
-    return GateContractError(
-        code="test_card_completion_blocked",
-        message=(
-            f"Cannot complete this test card: {total} linked scenario(s) still have "
-            f"status 'draft' or 'ready' ({shown}{suffix}). Update scenario statuses to "
+    if missing:
+        message = (
+            "Cannot complete this test card: its scenario linkage is empty or "
+            f"contains {len(missing)} unresolved reference(s) ({shown}{suffix}). "
+            "Link existing scenarios and execute them before completing the card."
+        )
+        required_tool = "okto_pulse_link_task"
+        operator_action = (
+            "Repair the missing/unresolved scenario linkage, execute every linked "
+            "scenario with evidence, then retry the done transition."
+        )
+        next_action = _link_test_scenario_next_action(
+            board_id=board_id,
+            spec_id=spec_id,
+            card_id=card_id,
+        )
+    else:
+        message = (
+            f"Cannot complete this test card: {total} linked scenario(s) are not "
+            f"completion-ready ({shown}{suffix}). Update scenario statuses to "
             "'automated' or 'passed' using okto_pulse_update_test_scenario_status "
             "before completing the card."
-        ),
+        )
+        required_tool = "okto_pulse_update_test_scenario_status"
+        operator_action = (
+            f"Move {total} pending scenario(s) to automated/passed with evidence, "
+            "then move the test card to done."
+        )
+        next_action = _update_test_scenario_next_action(
+            board_id=board_id,
+            spec_id=spec_id,
+            card_id=card_id,
+            pending_scenario_ids=scenario_ids,
+        )
+    return GateContractError(
+        code="test_card_completion_blocked",
+        message=message,
         gate_type=GATE_TEST_CARD_COMPLETION,
         entity_type="card",
         entity_id=card_id,
         current_status=current_status,
         blocked_transition=(f"{current_status}->done" if current_status else None),
         required_status="done",
-        required_tool="okto_pulse_update_test_scenario_status",
+        required_tool=required_tool,
         follow_up_tool="okto_pulse_move_card",
-        operator_action=(
-            f"Move {total} draft/ready scenario(s) to automated/passed, then move the "
-            "test card to done."
-        ),
-        next_action=_update_test_scenario_next_action(
-            board_id=board_id, spec_id=spec_id, card_id=card_id,
-            pending_scenario_ids=scenario_ids,
-        ),
+        operator_action=operator_action,
+        next_action=next_action,
+        enforcement_mode="enforced",
+        enforcement_active=True,
+        would_block_done=True,
         extra_details={
             "unready_scenario_count": total,
             "pending_scenarios": [
@@ -276,16 +333,43 @@ _SCENARIO_EVIDENCE_FIELDS = (
 )
 
 
-def _scenario_evidence_present(scenario: dict[str, Any]) -> bool:
-    # Evidence may live as top-level fields OR (more commonly in Pulse contexts)
-    # nested under scenario["evidence"].
-    if any(scenario.get(f) for f in _SCENARIO_EVIDENCE_FIELDS):
-        return True
-    ev = scenario.get("evidence")
-    if isinstance(ev, dict):
-        return bool(ev)
-    if isinstance(ev, str):
-        return bool(ev.strip())
+def _scenario_evidence_present(
+    scenario: dict[str, Any],
+    *,
+    evidence_validator: Callable[[dict[str, Any]], bool] | None = None,
+) -> bool:
+    # Keep the proactive task context aligned with the actual card/sprint gate:
+    # a non-empty object is not proof. Canonical Evidence V2 must pass the same
+    # semantic verifier used by every mutation path.
+    from okto_pulse.core.services.test_scenario_lifecycle import (
+        GATED_STATUSES,
+        scenario_has_required_evidence,
+    )
+
+    status = str(scenario.get("status") or "")
+    if status in GATED_STATUSES:
+        candidate = scenario
+        if not isinstance(scenario.get("evidence"), dict):
+            legacy_top_level = {
+                field: scenario.get(field)
+                for field in _SCENARIO_EVIDENCE_FIELDS
+                if scenario.get(field)
+            }
+            candidate = {**scenario, "evidence": legacy_top_level or None}
+        evidence = candidate.get("evidence") or candidate.get("latest_evidence")
+        claims_v2 = bool(
+            isinstance(evidence, dict)
+            and (
+                evidence.get("manifest_ref") is not None
+                or evidence.get("execution_attestation") is not None
+                or evidence.get("execution_receipt") is not None
+            )
+        )
+        if evidence_validator is not None:
+            return evidence_validator(candidate)
+        if claims_v2:
+            return False
+        return scenario_has_required_evidence(candidate)
     return False
 
 
@@ -296,6 +380,8 @@ def operational_flow_for_test_card(
     spec_id: str | None,
     current_status: str | None,
     linked_scenarios: list[dict[str, Any]],
+    expected_scenario_ids: list[str] | None = None,
+    evidence_validator: Callable[[dict[str, Any]], bool] | None = None,
 ) -> dict[str, Any]:
     """R4-IMP3 — read-only PROACTIVE operational-flow block for a test card in
     get_task_context. Reuses the R4-IMP1 test_card_completion contract fields so the
@@ -306,32 +392,97 @@ def operational_flow_for_test_card(
             "id": s.get("id"),
             "title": s.get("title"),
             "status": s.get("status"),
-            "evidence_present": _scenario_evidence_present(s),
+            "evidence_present": _scenario_evidence_present(
+                s, evidence_validator=evidence_validator
+            ),
         }
         for s in linked_scenarios
     ]
     pending = [
         {"id": s["id"], "title": s["title"], "status": s["status"]}
         for s in scenarios
-        if str(s["status"] or "") in _BLOCKING_SCENARIO_STATUSES
+        if (
+            str(s["status"] or "") in _BLOCKING_SCENARIO_STATUSES
+            or (
+                str(s["status"] or "") in {"automated", "passed", "failed"}
+                and not s["evidence_present"]
+            )
+        )
     ]
+    # A caller may provide the persisted reference set so partial resolution
+    # (one valid scenario plus one dangling id) is also detectable.  The
+    # parameter is optional for backward compatibility; an entirely empty
+    # resolved set still always fails closed.
+    resolved_ids = {
+        str(scenario["id"])
+        for scenario in scenarios
+        if scenario.get("id") is not None
+    }
+    expected_ids = (
+        [str(value) for value in expected_scenario_ids]
+        if expected_scenario_ids is not None
+        else None
+    )
+    unresolved_ids = (
+        [value for value in expected_ids if value not in resolved_ids]
+        if expected_ids is not None
+        else []
+    )
+    if unresolved_ids:
+        pending.extend(
+            {
+                "id": scenario_id,
+                "title": f"Unresolved test scenario {scenario_id}",
+                "status": "missing",
+            }
+            for scenario_id in unresolved_ids
+        )
+    elif not scenarios:
+        pending = [
+            {
+                "id": None,
+                "title": "No linked test scenario could be resolved",
+                "status": "missing",
+            }
+        ]
     would_block_done = bool(pending)
     if would_block_done:
-        operator_action = (
-            f"Update {len(pending)} pending scenario(s) to automated/passed with "
-            "evidence, then move the test card to done."
+        has_linkage_failure = any(
+            str(item.get("status") or "") == "missing" for item in pending
         )
-        # R4-IMP3: shared test-card next_action (params_template fiel à assinatura
-        # real do tool singular + follow_up move_card). Same surface as the error
-        # builders so the proactive flow and the gate errors never contradict.
-        next_action = _update_test_scenario_next_action(
-            board_id=board_id, spec_id=spec_id, card_id=card_id,
-            pending_scenario_ids=[p["id"] for p in pending],
-        )
+        if has_linkage_failure:
+            operator_action = (
+                "No linked scenario could be resolved. Repair the scenario "
+                "linkage and execute the linked scenarios before completion."
+            )
+            required_tool = "okto_pulse_link_task"
+            next_action = _link_test_scenario_next_action(
+                board_id=board_id,
+                spec_id=spec_id,
+                card_id=card_id,
+            )
+        else:
+            operator_action = (
+                f"Update {len(pending)} pending scenario(s) to automated/passed "
+                "with evidence, then move the test card to done."
+            )
+            required_tool = "okto_pulse_update_test_scenario_status"
+            # R4-IMP3: shared test-card next_action (params_template fiel à
+            # assinatura real do tool singular + follow_up move_card).
+            next_action = _update_test_scenario_next_action(
+                board_id=board_id,
+                spec_id=spec_id,
+                card_id=card_id,
+                pending_scenario_ids=[
+                    str(p["id"]) for p in pending if p.get("id")
+                ],
+            )
     else:
         operator_action = (
-            "All linked scenarios are automated/passed; move the test card to done."
+            "The resolved linked scenarios are automated/passed; move the test "
+            "card to done."
         )
+        required_tool = "okto_pulse_update_test_scenario_status"
         next_action = {
             "tool": "okto_pulse_move_card",
             "params": {"board_id": board_id, "card_id": card_id, "status": "done"},
@@ -347,7 +498,7 @@ def operational_flow_for_test_card(
         "would_block_done": would_block_done,
         "linked_scenarios": scenarios,
         "pending_scenarios": pending,
-        "required_tool": "okto_pulse_update_test_scenario_status",
+        "required_tool": required_tool,
         "follow_up_tool": "okto_pulse_move_card",
         "operator_action": operator_action,
         "next_action": next_action,

@@ -15,15 +15,17 @@ schema-safe map is asserted from the REAL schema constants / get_schema_info.
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
+from fastmcp import Client, FastMCP
 
-from okto_pulse.core.kg.global_discovery.schema import (
+from global_graph_testing import (
     bootstrap_global_discovery,
-    reset_global_db_for_tests,
+    reset_global_discovery_runtime_for_tests,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     NODE_TYPES,
     STABLE_NODE_PROPERTIES,
     VECTOR_INDEX_TYPES,
@@ -40,14 +42,14 @@ from test_kg_layer_propagation import (
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _isolated_global_db():
+def _isolated_global_discovery_runtime():
     # R6-IMP3 rework: own the global-discovery graph lifecycle for this module
     # (mirrors test_kg_layer_propagation) so this file neither inherits nor leaks
     # cross-board global-discovery state — order-robust regardless of run order.
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
     bootstrap_global_discovery()
     yield
-    reset_global_db_for_tests()
+    reset_global_discovery_runtime_for_tests()
 
 
 # ===========================================================================
@@ -133,6 +135,121 @@ def test_get_related_context_echoes_and_fails_closed(monkeypatch):
     assert "context" not in bad
 
 
+def test_get_related_context_rejects_raw_uuid_before_graph_lookup(monkeypatch):
+    board_id = _seed_board_subgraph()
+    raw_uuid = str(uuid.uuid4())
+    calls = {"get_related_context": 0}
+
+    class FakeService:
+        def check_board_access(self, boards, checked_board_id):
+            assert checked_board_id == board_id
+
+        def get_related_context(self, *args, **kwargs):
+            calls["get_related_context"] += 1
+            return []
+
+    import okto_pulse.core.mcp.kg_query_tools as kg_query_tools
+
+    monkeypatch.setattr(kg_query_tools, "get_kg_service", lambda: FakeService())
+    tool = _register_query_tools(board_id, monkeypatch)["okto_pulse_kg_get_related_context"]
+
+    result = _call(tool, board_id=board_id, artifact_id=raw_uuid)
+    assert result["error"]["code"] == "invalid_artifact_ref"
+    assert result["error"]["supported"] == ["spec:<uuid>", "card:<uuid>"]
+    assert calls["get_related_context"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_related_context_raw_uuid_survives_real_fastmcp_transport(
+    monkeypatch,
+):
+    """The host/transport must deliver the structured boundary error verbatim.
+
+    This mirrors the live friction report, including graph_layer=all and
+    max_rows=200.  Unlike the focused closure test above, this calls through a
+    real FastMCP client transport, so a wrapper/serialization regression cannot
+    turn the valid JSON envelope into an ExceptionGroup with no payload.
+    """
+    import okto_pulse.core.mcp.kg_query_tools as kg_query_tools
+
+    board_id = f"transport-{uuid.uuid4()}"
+    calls = {"get_related_context": 0}
+
+    class Agent:
+        id = "transport-agent"
+
+    async def authorized_user_boards(*_args, **_kwargs):
+        return Agent(), [board_id]
+
+    class FakeService:
+        def check_board_access(self, boards, checked_board_id):
+            assert boards == [board_id]
+            assert checked_board_id == board_id
+
+        def get_related_context(self, *_args, **_kwargs):
+            calls["get_related_context"] += 1
+            raise AssertionError("raw UUID must fail before graph lookup")
+
+    monkeypatch.setattr(
+        kg_query_tools,
+        "_get_user_boards",
+        authorized_user_boards,
+    )
+    monkeypatch.setattr(kg_query_tools, "get_kg_service", lambda: FakeService())
+
+    host = FastMCP("related-context-transport-regression")
+
+    async def _board_agent(_board_id: str):
+        return Agent()
+
+    kg_query_tools.register_kg_query_tools(
+        host,
+        get_agent=lambda: None,
+        get_uow=lambda: None,
+        get_board_agent=_board_agent,
+    )
+    async with Client(host) as client:
+        result = await client.call_tool(
+            "okto_pulse_kg_get_related_context",
+            {
+                "board_id": board_id,
+                "artifact_id": str(uuid.uuid4()),
+                "graph_layer": "all",
+                "max_rows": 200,
+            },
+        )
+
+    assert result.is_error is False
+    payload = json.loads(result.data)
+    assert payload["error"]["code"] == "invalid_artifact_ref"
+    assert payload["error"]["supported"] == ["spec:<uuid>", "card:<uuid>"]
+    assert calls["get_related_context"] == 0
+
+
+def test_get_related_context_accepts_typed_uuid_refs(monkeypatch):
+    board_id = _seed_board_subgraph()
+    artifact_ref = f"spec:{uuid.uuid4()}"
+    calls = {"artifact_id": None}
+
+    class FakeService:
+        def check_board_access(self, boards, checked_board_id):
+            assert checked_board_id == board_id
+
+        def get_related_context(self, board_id_arg, artifact_id, **kwargs):
+            calls["artifact_id"] = artifact_id
+            return []
+
+    import okto_pulse.core.mcp.kg_query_tools as kg_query_tools
+
+    monkeypatch.setattr(kg_query_tools, "get_kg_service", lambda: FakeService())
+    tool = _register_query_tools(board_id, monkeypatch)["okto_pulse_kg_get_related_context"]
+
+    result = _call(tool, board_id=board_id, artifact_id=artifact_ref)
+    assert result["context"] == []
+    assert result["applied_graph_layer"] == "canonical"
+    assert calls["artifact_id"] == artifact_ref
+
+
 # ===========================================================================
 # R6-IMP3 rework TEETH — query_global must fall back to the linear scan when the
 # global HNSW page is incomplete for the target board (so a board's `working`
@@ -141,33 +258,15 @@ def test_get_related_context_echoes_and_fails_closed(monkeypatch):
 # ===========================================================================
 
 
-class _FakeResult:
-    """Minimal Kùzu QueryResult double."""
-
-    def __init__(self, rows):
-        self._rows = list(rows)
-
-    def has_next(self):
-        return bool(self._rows)
-
-    def get_next(self):
-        return self._rows.pop(0)
-
-    def close(self):
-        pass
-
-
 def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
-    from okto_pulse.core.kg.embedding import get_embedding_provider
     from okto_pulse.core.kg import global_discovery as _gd  # noqa: F401
-    from okto_pulse.core.kg.global_discovery import schema as gd_schema
+    from okto_pulse.core.kg.interfaces import get_kg_registry
     from okto_pulse.core.kg.kg_service import get_kg_service
-    from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+    from kg_schema_testing import bootstrap_board_graph, open_board_connection
 
     qtext = "teeth fallback query"
     board_id = f"teeth-{uuid.uuid4().hex[:10]}"
     bootstrap_board_graph(board_id)
-    emb = get_embedding_provider().encode(qtext)
     # Real board source nodes so _filter_global_results_to_existing_nodes (NOT
     # stubbed — kept intact) confirms BOTH digests' sources exist.
     with open_board_connection(board_id) as (_db, conn):
@@ -180,29 +279,45 @@ def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
 
     # HNSW returns an INCOMPLETE page for the board: only the canonical digest
     # (1 row < top_k) — simulating the global top-k crowded by other boards.
-    canon_hnsw = [board_id, "dd_canon", "canon_src", "canonical digest",
-                  qtext, "Decision", "canonical", 0.0]
+    canon_hnsw = {
+        "board_id": board_id,
+        "digest_id": "dd_canon",
+        "id": "canon_src",
+        "title": "canonical digest",
+        "summary": qtext,
+        "node_type": "Decision",
+        "graph_layer": "canonical",
+        "similarity": 1.0,
+    }
     # The board+layer-scoped LINEAR fallback returns BOTH layers (complete).
-    canon_lin = [board_id, "dd_canon", "canon_src", "canonical digest",
-                 qtext, "Decision", "canonical", emb]
-    work_lin = [board_id, "dd_work", "work_src", "working digest",
-                qtext, "Decision", "working", emb]
+    canon_lin = dict(canon_hnsw)
+    work_lin = {
+        **canon_hnsw,
+        "digest_id": "dd_work",
+        "id": "work_src",
+        "title": "working digest",
+        "graph_layer": "working",
+    }
 
-    class _FakeGlobalConn:
-        def execute(self, cypher, params=None):
-            if "QUERY_VECTOR_INDEX" in cypher:        # HNSW page (incomplete)
-                return _FakeResult([canon_hnsw])
-            if "DecisionDigest" in cypher:            # linear fallback (complete)
-                return _FakeResult([canon_lin, work_lin])
-            return _FakeResult([])
+    def _search(
+        query_vector,
+        *,
+        board_ids,
+        graph_layer,
+        top_k,
+        min_similarity,
+        exhaustive=False,
+    ):
+        assert query_vector
+        assert board_ids == (board_id,)
+        assert graph_layer == "all"
+        assert top_k >= 10
+        assert min_similarity == 0.1
+        return [canon_lin, work_lin] if exhaustive else [canon_hnsw]
 
-        def close(self):
-            pass
-
-    monkeypatch.setattr(gd_schema, "open_global_connection",
-                        lambda: (object(), _FakeGlobalConn()))
-    monkeypatch.setattr(gd_schema, "ensure_global_discovery_layer_schema",
-                        lambda: None)
+    runtime = get_kg_registry().global_discovery_runtime
+    monkeypatch.setattr(runtime, "search_decision_digests", _search)
+    monkeypatch.setattr(runtime, "ensure_layer_schema", lambda: [])
 
     rows = get_kg_service().query_global(
         qtext, user_boards=[board_id], graph_layer="all", top_k=10, min_similarity=0.1,

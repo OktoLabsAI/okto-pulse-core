@@ -22,10 +22,12 @@ import re
 import uuid
 
 import pytest
+import pytest_asyncio
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
-    _apply_kuzu_node_create_with_timestamp,
+    _apply_graph_node_create,
     add_node_candidate,
     begin_consolidation,
     commit_consolidation,
@@ -47,21 +49,41 @@ from test_kg_closeout_docs_deterministic_only import (  # noqa: E402
     _assert_only_deterministic,
     _section,
 )
+from kg_registry_testing import configure_real_graph_test_kg_registry
+
+
+@pytest_asyncio.fixture
+async def board_handle(board_id, db_factory):
+    """Bootstrap both halves of the board lifecycle used by integration cases."""
+    from kg_schema_testing import bootstrap_board_graph
+    from sqlalchemy_test_models import Board
+
+    async with db_factory() as db:
+        if await db.get(Board, board_id) is None:
+            db.add(
+                Board(
+                    id=board_id,
+                    name=f"Closeout ownership {board_id}",
+                    owner_id="closeout-ownership-test",
+                )
+            )
+            await db.commit()
+    return bootstrap_board_graph(board_id)
 
 
 def _seed_entity_root(board_id: str, source_ref: str) -> str:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
 
     root_id = f"entity_seed_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
         orch = TransactionOrchestrator(
-            kuzu_conn=kconn,
-            sqlite_session=None,
+            graph_scope=kconn,
+
             session_id=f"seed_{uuid.uuid4().hex[:8]}",
             board_id=board_id,
         )
-        _apply_kuzu_node_create_with_timestamp(
+        _apply_graph_node_create(
             orch,
             "Entity",
             root_id,
@@ -86,7 +108,7 @@ def _seed_entity_root(board_id: str, source_ref: str) -> str:
 
 
 def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
 
     with open_board_connection(board_id) as (_db, kconn):
         res = kconn.execute(
@@ -104,6 +126,24 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
     return 0
 
 
+async def _seed_entity_root_async(board_id: str, source_ref: str) -> str:
+    return await run_blocking_graph_io(
+        lambda: _seed_entity_root(board_id, source_ref),
+        task_name="tests.closeout_ownership.seed_entity_root",
+    )
+
+
+async def _count_by_source_ref_async(
+    board_id: str,
+    node_type: str,
+    source_ref: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_by_source_ref(board_id, node_type, source_ref),
+        task_name="tests.closeout_ownership.count_by_source_ref",
+    )
+
+
 # ---------------------------------------------------------------------------
 # POSITIVE (ts_a43c9874 / TR7 / AC6) — Alternative + Assumption still commit
 # ---------------------------------------------------------------------------
@@ -113,11 +153,14 @@ def _count_by_source_ref(board_id: str, node_type: str, source_ref: str) -> int:
 async def test_allowed_cognitive_candidates_still_commit(
     board_id, agent_id, db_factory, board_handle
 ):
+    configure_real_graph_test_kg_registry()
     # Positive case (ts_a43c9874 / TR7 / AC6): allowed cognitive node types still
     # commit while deterministic-only Criterion/Constraint remain blocked.
     spec_id = f"spec-{uuid.uuid4()}"
     spec_ref = f"spec:{spec_id}"
-    _seed_entity_root(board_id, spec_ref)  # provenance root the cognitive node attaches to
+    await _seed_entity_root_async(
+        board_id, spec_ref
+    )  # provenance root the cognitive node attaches to
     alt_ref = f"{spec_ref}:alternative:{uuid.uuid4().hex[:8]}"
     assumption_ref = f"{spec_ref}:assumption:{uuid.uuid4().hex[:8]}"
 
@@ -156,8 +199,10 @@ async def test_allowed_cognitive_candidates_still_commit(
 
     assert commit.connectivity["passed"] is True
     assert commit.nodes_added >= 2
-    assert _count_by_source_ref(board_id, "Alternative", alt_ref) == 1
-    assert _count_by_source_ref(board_id, "Assumption", assumption_ref) == 1
+    assert await _count_by_source_ref_async(board_id, "Alternative", alt_ref) == 1
+    assert await _count_by_source_ref_async(
+        board_id, "Assumption", assumption_ref
+    ) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +218,7 @@ async def test_allowed_cognitive_candidates_still_commit(
 async def test_deterministic_only_candidates_fail_without_mutation(
     node_type, label, board_id, agent_id, db_factory, board_handle
 ):
+    configure_real_graph_test_kg_registry()
     source_ref = f"spec:{label.lower()}:{uuid.uuid4()}"
     async with db_factory() as db:
         begin = await begin_consolidation(
@@ -210,7 +256,7 @@ async def test_deterministic_only_candidates_fail_without_mutation(
     )
     assert violation["reason"] == "writer_not_connectivity_owner"
     assert violation["source_resolution_status"] == "source_type_not_supported"
-    assert _count_by_source_ref(board_id, label, source_ref) == 0
+    assert await _count_by_source_ref_async(board_id, label, source_ref) == 0
 
 
 # ---------------------------------------------------------------------------

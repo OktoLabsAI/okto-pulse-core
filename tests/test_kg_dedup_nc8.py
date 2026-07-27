@@ -2,7 +2,7 @@
 
 Covers the bug where re-consolidating the same artefact (spec/sprint/card)
 produced multiple Kuzu Entity nodes for the same `source_artifact_ref`
-because the ADD branch of `_do_kuzu_commit` never consulted the existing
+because the ADD branch of `_do_graph_commit` never consulted the existing
 `_lookup_existing_node` helper.
 
 Tests in this module:
@@ -23,9 +23,19 @@ import uuid
 from pathlib import Path
 
 import pytest
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _restore_conftest_engine(preserve_relational_runtime):
+    """FU-2 F4: tests here call create_database() against a throwaway DB,
+    which swaps the composed runtime. The shared fixture closes that runtime
+    and restores the conftest runtime after each test."""
+    yield
 
 
 @pytest.fixture
@@ -45,11 +55,25 @@ def dedup_tempdir(monkeypatch):
     monkeypatch.setenv("KG_BASE_DIR", str(kg_path))
     monkeypatch.setenv("KG_CLEANUP_ENABLED", "false")
     monkeypatch.setenv("KG_EMBEDDING_MODE", "stub")
+    configure_real_graph_test_kg_registry()
+
+    async def _healthy(_board_id, _db, scheduler_control=None):
+        return {
+            "overall_state": "healthy",
+            "graph_state": "healthy",
+            "discovery_state": "healthy",
+            "total_nodes": 1,
+        }
+
+    import okto_pulse.core.services.kg_health_service as health_service
+
+    monkeypatch.setattr(health_service, "get_kg_health", _healthy)
 
     yield base
 
     try:
-        from okto_pulse.core.kg.schema import close_all_connections
+        from kg_schema_testing import close_all_connections
+
         close_all_connections()
     except Exception:
         pass
@@ -64,8 +88,12 @@ async def _drive_one_session(
     title: str,
     content: str = "",
     agent_id: str = "system:layer1_worker",
+    *,
+    force_add: bool = False,
+    node_type: str = "Entity",
+    source_confidence: float = 0.95,
 ):
-    """Run one begin -> propose -> commit cycle for one Entity candidate.
+    """Run one begin -> propose -> commit cycle for one graph candidate.
 
     Returns the CommitConsolidationResponse so callers can assert on
     `nodes_added` and the kuzu node id mappings.
@@ -90,6 +118,8 @@ async def _drive_one_session(
         KGNodeType,
         NodeCandidate,
         ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
     )
 
     root_cand = NodeCandidate(
@@ -102,18 +132,18 @@ async def _drive_one_session(
     )
     cand = NodeCandidate(
         candidate_id=f"nc8_entity_{uuid.uuid4().hex[:8]}",
-        node_type=KGNodeType.ENTITY,
+        node_type=node_type,
         title=title,
         content=content,
         source_artifact_ref=artifact_ref,
-        source_confidence=0.95,
+        source_confidence=source_confidence,
     )
     begin = await begin_consolidation(
         BeginConsolidationRequest(
             board_id=board_id,
             artifact_type="spec",
             artifact_id=artifact_ref.split(":", 1)[1],
-            raw_content=f"NC-8 dedup test — {title}",
+            raw_content=f"NC-8 dedup test — {title} :: {content}",
             deterministic_candidates=[root_cand, cand],
         ),
         agent_id=agent_id,
@@ -132,16 +162,43 @@ async def _drive_one_session(
         ),
         agent_id=agent_id,
     )
+    if str(node_type) == "Decision":
+        await add_edge_candidate(
+            AddEdgeCandidateRequest(
+                session_id=begin.session_id,
+                candidate=EdgeCandidate(
+                    candidate_id=f"edge_{cand.candidate_id}_mentions_root",
+                    edge_type=KGEdgeType.MENTIONS,
+                    from_candidate_id=cand.candidate_id,
+                    to_candidate_id=root_cand.candidate_id,
+                    confidence=1.0,
+                ),
+            ),
+            agent_id=agent_id,
+        )
     await propose_reconciliation(
         ProposeReconciliationRequest(session_id=begin.session_id),
         agent_id=agent_id,
         db=None,
+    )
+    overrides = (
+        {
+            cand.candidate_id: ReconciliationHint(
+                candidate_id=cand.candidate_id,
+                operation=ReconciliationOperation.ADD,
+                confidence=1.0,
+                reason="test forces the NC-8 ADD/replay path",
+            )
+        }
+        if force_add
+        else {}
     )
     async with session_factory() as db:
         commit = await commit_consolidation(
             CommitConsolidationRequest(
                 session_id=begin.session_id,
                 summary_text=f"NC-8 commit — {title}",
+                agent_overrides=overrides,
             ),
             agent_id=agent_id,
             db=db,
@@ -254,11 +311,13 @@ async def _drive_spec_worker_session(
         NodeCandidate,
         ProposeReconciliationRequest,
     )
-    from okto_pulse.core.kg.workers.consolidation import (
+    from okto_pulse.core.application.processors.consolidation import (
         _worker_edge_to_candidate,
         _worker_node_to_candidate,
     )
-    from okto_pulse.core.kg.workers.deterministic_worker import DeterministicWorker
+    from okto_pulse.core.application.processors.deterministic_kg import (
+        DeterministicWorker,
+    )
 
     worker_result = DeterministicWorker().process_spec(spec_payload)
     begin = await begin_consolidation(
@@ -323,34 +382,49 @@ async def _drive_spec_worker_session(
 
 
 async def _bootstrap_test_board(monkeypatch):
-    """Common setup: create DB schema, stub similarity search, return ids."""
+    """Common setup: create DB schema + board, stub similarity search, return ids."""
     from okto_pulse.core.infra.database import (
         create_database,
         get_session_factory,
         init_db,
     )
     from okto_pulse.core.kg.interfaces.registry import (
-        configure_kg_registry,
         reset_registry_for_tests,
     )
-    from okto_pulse.core.kg.schema import bootstrap_board_graph
+    from kg_registry_testing import configure_real_graph_test_kg_registry
+    from kg_schema_testing import bootstrap_board_graph
 
     db_url = os.environ["DATABASE_URL"]
     create_database(db_url, echo=False)
     await init_db()
     reset_registry_for_tests()
     session_factory = get_session_factory()
-    configure_kg_registry(session_factory=session_factory)
+    configure_real_graph_test_kg_registry(session_factory=session_factory)
 
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())
-    bootstrap_board_graph(board_id)
+    from sqlalchemy_test_models import Board
+
+    async with session_factory() as db:
+        db.add(
+            Board(
+                id=board_id,
+                name=f"KG test board {board_id}",
+                owner_id="kg-test",
+            )
+        )
+        await db.commit()
+    await run_blocking_graph_io(
+        lambda: bootstrap_board_graph(board_id),
+        task_name="tests.dedup_nc8.bootstrap_board_graph",
+    )
     gc.collect()
 
     # Same trick as the e2e test — fresh boards have no HNSW data, the
     # fallback similarity search races Windows file locks. Force ADD.
     import okto_pulse.core.kg.primitives as _prim
     import okto_pulse.core.kg.search as _search
+
     monkeypatch.setattr(
         _search, "find_similar_for_candidate", lambda **_: [], raising=True
     )
@@ -363,12 +437,12 @@ async def _bootstrap_test_board(monkeypatch):
 
 def _count_entities(board_id: str, source_artifact_ref: str) -> int:
     """Direct Kuzu count of Entity nodes by source_artifact_ref."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
+
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
-            "MATCH (n:Entity) WHERE n.source_artifact_ref = $r "
-            "RETURN count(n)",
+            "MATCH (n:Entity) WHERE n.source_artifact_ref = $r RETURN count(n)",
             {"r": source_artifact_ref},
         )
         try:
@@ -385,7 +459,8 @@ def _count_nodes_by_source_prefix(
     node_type: str,
     source_prefix: str,
 ) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
+
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
@@ -403,7 +478,8 @@ def _count_nodes_by_source_prefix(
 
 
 def _count_nodes(board_id: str, node_type: str) -> int:
-    from okto_pulse.core.kg.schema import open_board_connection
+    from kg_schema_testing import open_board_connection
+
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(f"MATCH (n:{node_type}) RETURN count(n)")
@@ -417,21 +493,133 @@ def _count_nodes(board_id: str, node_type: str) -> int:
 
 
 def _query_one(board_id: str, source_artifact_ref: str):
-    """Return (id, title, content) of the first Entity for a given ref."""
-    from okto_pulse.core.kg.schema import open_board_connection
+    """Return the first Entity and its provenance anchor for a given ref."""
+    from kg_schema_testing import open_board_connection
+
     conn = open_board_connection(board_id)
     with conn as (_kdb, kconn):
         res = kconn.execute(
             "MATCH (n:Entity) WHERE n.source_artifact_ref = $r "
-            "RETURN n.id, n.title, n.content, n.created_at LIMIT 1",
+            "RETURN n.id, n.title, n.content, n.created_at, "
+            "n.source_content_hash, n.attestation_count LIMIT 1",
             {"r": source_artifact_ref},
         )
         try:
             row = res.get_next()
             return {
-                "id": row[0], "title": row[1], "content": row[2],
+                "id": row[0],
+                "title": row[1],
+                "content": row[2],
                 "created_at": row[3],
+                "source_content_hash": row[4],
+                "attestation_count": row[5],
             }
+        finally:
+            try:
+                res.close()
+            except Exception:
+                pass
+
+
+async def _count_entities_async(board_id: str, source_artifact_ref: str) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_entities(board_id, source_artifact_ref),
+        task_name="tests.dedup_nc8.count_entities",
+    )
+
+
+async def _count_nodes_by_source_prefix_async(
+    board_id: str,
+    node_type: str,
+    source_prefix: str,
+) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_nodes_by_source_prefix(board_id, node_type, source_prefix),
+        task_name="tests.dedup_nc8.count_nodes_by_source_prefix",
+    )
+
+
+async def _count_nodes_async(board_id: str, node_type: str) -> int:
+    return await run_blocking_graph_io(
+        lambda: _count_nodes(board_id, node_type),
+        task_name="tests.dedup_nc8.count_nodes",
+    )
+
+
+async def _query_one_async(board_id: str, source_artifact_ref: str):
+    return await run_blocking_graph_io(
+        lambda: _query_one(board_id, source_artifact_ref),
+        task_name="tests.dedup_nc8.query_one",
+    )
+
+
+def _query_decision_lineage(board_id: str, source_artifact_ref: str) -> dict:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_kdb, kconn):
+        nodes_result = kconn.execute(
+            "MATCH (n:Decision) WHERE n.source_artifact_ref = $ref "
+            "RETURN n.id, n.title, n.content, coalesce(n.generation, 0), "
+            "n.superseded_by ORDER BY coalesce(n.generation, 0)",
+            {"ref": source_artifact_ref},
+        )
+        nodes = []
+        try:
+            while nodes_result.has_next():
+                nodes.append(nodes_result.get_next())
+        finally:
+            nodes_result.close()
+
+        edge_result = kconn.execute(
+            "MATCH (new:Decision)-[r:supersedes]->(old:Decision) "
+            "WHERE new.source_artifact_ref = $ref "
+            "AND old.source_artifact_ref = $ref RETURN count(r)",
+            {"ref": source_artifact_ref},
+        )
+        try:
+            supersedes_edges = int(edge_result.get_next()[0])
+        finally:
+            edge_result.close()
+
+    return {"nodes": nodes, "supersedes_edges": supersedes_edges}
+
+
+async def _query_decision_lineage_async(
+    board_id: str,
+    source_artifact_ref: str,
+) -> dict:
+    return await run_blocking_graph_io(
+        lambda: _query_decision_lineage(board_id, source_artifact_ref),
+        task_name="tests.dedup_nc8.query_decision_lineage",
+    )
+
+
+def _set_human_curated_sync(
+    board_id: str,
+    node_id: str,
+    node_type: str = "Entity",
+) -> None:
+    from kg_schema_testing import open_board_connection
+
+    if node_type not in {"Entity", "Decision"}:
+        raise ValueError(f"unsupported test node type: {node_type}")
+    with open_board_connection(board_id) as (_kdb, kconn):
+        kconn.execute(
+            f"MATCH (n:{node_type}) WHERE n.id = $id SET n.human_curated = true",
+            {"id": node_id},
+        )
+
+
+def _count_named_entities_sync(board_id: str, title: str) -> int:
+    from kg_schema_testing import open_board_connection
+
+    with open_board_connection(board_id) as (_kdb, kconn):
+        res = kconn.execute(
+            "MATCH (n:Entity) WHERE n.title = $t RETURN count(n)",
+            {"t": title},
+        )
+        try:
+            return int(res.get_next()[0])
         finally:
             try:
                 res.close()
@@ -444,9 +632,7 @@ def _query_one(board_id: str, source_artifact_ref: str):
 # ---------------------------------------------------------------------------
 
 
-async def test_tc3_reconsolidation_counts_and_audits_merge(
-    dedup_tempdir, monkeypatch
-):
+async def test_tc3_reconsolidation_counts_and_audits_merge(dedup_tempdir, monkeypatch):
     """AC6: NC-8 dedup-reuse on re-consolidation increments nodes_merged and
     emits a merge audit item in the response (no silent drop, no KuzuWriteRecord).
     AC7: the counters sum closes as processed_candidates. Structural Entity
@@ -460,9 +646,11 @@ async def test_tc3_reconsolidation_counts_and_audits_merge(
     assert commit1.nodes_added >= 1
     assert commit1.nodes_merged == 0  # first commit is a create, not a merge
 
-    # Re-consolidate the SAME ref with changed content -> NC-8 dedup-reuse.
+    # Re-consolidate the SAME ref with changed CONTENT (same title) ->
+    # NC-8 dedup-reuse. A changed TITLE would now supersede-with-trail
+    # instead (spec MKG-D-S1 FR8), covered by test_kg_nc8_supersede_trail.
     commit2 = await _drive_one_session(
-        session_factory, board_id, artifact_ref, "[TC-3] titulo atualizado", content="v2"
+        session_factory, board_id, artifact_ref, "[TC-3] titulo original", content="v2"
     )
 
     # AC6: merge counted + audited, not a silent nodes_updated:0/superseded:0.
@@ -491,7 +679,44 @@ async def test_tc3_reconsolidation_counts_and_audits_merge(
     assert commit2.processed_candidates >= 1
 
     # AC8 invariant: structural Entity dedup intact — still exactly 1 node.
-    assert _count_entities(board_id, artifact_ref) == 1
+    assert await _count_entities_async(board_id, artifact_ref) == 1
+
+
+async def test_decision_same_title_semantic_change_creates_supersedence_trail(
+    dedup_tempdir,
+    monkeypatch,
+):
+    """A source ref is lineage identity, never permission to rewrite history."""
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    decision_ref = f"spec:{spec_id}:decision:dec_1"
+
+    first = await _drive_one_session(
+        session_factory,
+        board_id,
+        decision_ref,
+        "Choose the event broker",
+        content="Kafka is the approved broker.",
+        node_type="Decision",
+    )
+    second = await _drive_one_session(
+        session_factory,
+        board_id,
+        decision_ref,
+        "Choose the event broker",
+        content="RabbitMQ replaces Kafka as the approved broker.",
+        node_type="Decision",
+    )
+
+    assert first.nodes_added >= 1
+    assert second.nodes_superseded == 1
+
+    lineage = await _query_decision_lineage_async(board_id, decision_ref)
+    assert len(lineage["nodes"]) == 2
+    assert [row[3] for row in lineage["nodes"]] == [0, 1]
+    assert lineage["nodes"][0][4] == lineage["nodes"][1][0]
+    assert lineage["nodes"][0][2] == "Kafka is the approved broker."
+    assert lineage["nodes"][1][2] == ("RabbitMQ replaces Kafka as the approved broker.")
+    assert lineage["supersedes_edges"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +758,8 @@ async def test_tc3_update_op_increments_nodes_updated_not_merged(
         session_factory, board_id, artifact_ref, "[TC-3 UPDATE] original", content="v1"
     )
     assert commit1.nodes_added >= 1
-    existing_id = _query_one(board_id, artifact_ref)["id"]
+    original = await _query_one_async(board_id, artifact_ref)
+    existing_id = original["id"]
 
     # Session 2: force op==UPDATE on the candidate via agent_overrides.
     cand_id = "nc8_update_cand"
@@ -607,7 +833,7 @@ async def test_tc3_update_op_increments_nodes_updated_not_merged(
         if item["source_artifact_ref"] == artifact_ref
     ]
     assert artifact_merge_items == []  # target UPDATE was NOT miscounted as MERGE
-    assert commit2.nodes_added == 0    # NOT a CREATE
+    assert commit2.nodes_added == 0  # NOT a CREATE
     assert commit2.processed_candidates == (
         commit2.nodes_added
         + commit2.nodes_updated
@@ -616,8 +842,120 @@ async def test_tc3_update_op_increments_nodes_updated_not_merged(
         + commit2.nodes_noop
     )
     # In-place: still exactly one Entity, with the updated title.
-    assert _count_entities(board_id, artifact_ref) == 1
-    assert _query_one(board_id, artifact_ref)["title"] == "[TC-3 UPDATE] revised"
+    assert await _count_entities_async(board_id, artifact_ref) == 1
+    updated = await _query_one_async(board_id, artifact_ref)
+    assert updated["title"] == "[TC-3 UPDATE] revised"
+    assert updated["source_content_hash"] == begin.content_hash
+    assert updated["source_content_hash"] != original["source_content_hash"]
+    assert updated["attestation_count"] == original["attestation_count"] + 1
+
+
+async def test_cross_artifact_update_preserves_source_provenance(
+    dedup_tempdir, monkeypatch
+):
+    """A child session may reconcile a parent reference, but its content hash
+    must not replace the parent artifact's provenance anchor."""
+    from okto_pulse.core.kg.primitives import (
+        add_edge_candidate,
+        begin_consolidation,
+        commit_consolidation,
+        propose_reconciliation,
+    )
+    from okto_pulse.core.kg.schemas import (
+        AddEdgeCandidateRequest,
+        BeginConsolidationRequest,
+        CommitConsolidationRequest,
+        EdgeCandidate,
+        KGEdgeType,
+        KGNodeType,
+        NodeCandidate,
+        ProposeReconciliationRequest,
+        ReconciliationHint,
+        ReconciliationOperation,
+    )
+
+    session_factory, board_id, parent_spec_id = await _bootstrap_test_board(monkeypatch)
+    parent_ref = f"spec:{parent_spec_id}"
+    await _drive_one_session(
+        session_factory,
+        board_id,
+        parent_ref,
+        "[cross-artifact] parent",
+        content="parent v1",
+    )
+    original = await _query_one_async(board_id, parent_ref)
+
+    child_card_id = str(uuid.uuid4())
+    candidate_id = "cross_artifact_parent_ref"
+    root_candidate = NodeCandidate(
+        candidate_id="cross_artifact_technical_root",
+        node_type=KGNodeType.ENTITY,
+        title="Cross-artifact technical root",
+        content="Allowlisted deterministic source root.",
+        source_artifact_ref="tech_entities.yml",
+        source_confidence=1.0,
+    )
+    parent_candidate = NodeCandidate(
+        candidate_id=candidate_id,
+        node_type=KGNodeType.ENTITY,
+        title="[cross-artifact] parent reference",
+        content="Parent context repeated by the child card.",
+        source_artifact_ref=parent_ref,
+        source_confidence=0.95,
+    )
+    begin = await begin_consolidation(
+        BeginConsolidationRequest(
+            board_id=board_id,
+            artifact_type="card",
+            artifact_id=child_card_id,
+            raw_content="Child card content must not become the parent hash.",
+            deterministic_candidates=[root_candidate, parent_candidate],
+        ),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    await add_edge_candidate(
+        AddEdgeCandidateRequest(
+            session_id=begin.session_id,
+            candidate=EdgeCandidate(
+                candidate_id="edge_cross_artifact_parent_to_root",
+                edge_type=KGEdgeType.BELONGS_TO,
+                from_candidate_id=candidate_id,
+                to_candidate_id=root_candidate.candidate_id,
+                confidence=1.0,
+            ),
+        ),
+        agent_id="system:layer1_worker",
+    )
+    await propose_reconciliation(
+        ProposeReconciliationRequest(session_id=begin.session_id),
+        agent_id="system:layer1_worker",
+        db=None,
+    )
+    override = ReconciliationHint(
+        candidate_id=candidate_id,
+        operation=ReconciliationOperation.UPDATE,
+        target_node_id=original["id"],
+        confidence=0.9,
+        reason="child session reconciles an existing parent reference",
+    )
+    async with session_factory() as db:
+        commit = await commit_consolidation(
+            CommitConsolidationRequest(
+                session_id=begin.session_id,
+                summary_text="cross-artifact provenance regression",
+                agent_overrides={candidate_id: override},
+            ),
+            agent_id="system:layer1_worker",
+            db=db,
+        )
+
+    assert commit.nodes_updated == 1
+    updated = await _query_one_async(board_id, parent_ref)
+    assert updated["title"] == "[cross-artifact] parent reference"
+    assert updated["source_content_hash"] == original["source_content_hash"]
+    assert updated["source_content_hash"] != begin.content_hash
+    assert updated["attestation_count"] == original["attestation_count"] + 1
 
 
 # ---------------------------------------------------------------------------
@@ -645,7 +983,7 @@ async def test_ts1_reconsolidation_does_not_duplicate_entity(
         f"expected 0 new nodes on re-consolidation, got {commit2.nodes_added}"
     )
 
-    count = _count_entities(board_id, artifact_ref)
+    count = await _count_entities_async(board_id, artifact_ref)
     assert count == 1, f"expected exactly 1 Entity for {artifact_ref}, got {count}"
 
 
@@ -669,23 +1007,27 @@ async def test_kgdet_multi_item_refs_preserve_siblings_on_reprocess(
     source_prefix = f"spec:{spec_id}:"
     for node_type, expected in expected_counts.items():
         assert (
-            _count_nodes_by_source_prefix(board_id, node_type, source_prefix)
+            await _count_nodes_by_source_prefix_async(
+                board_id, node_type, source_prefix
+            )
             == expected
         )
-    assert _count_entities(board_id, f"spec:{spec_id}") == 1
-    assert _count_nodes(board_id, "Learning") == 0
-    assert _count_nodes(board_id, "Alternative") == 0
+    assert await _count_entities_async(board_id, f"spec:{spec_id}") == 1
+    assert await _count_nodes_async(board_id, "Learning") == 0
+    assert await _count_nodes_async(board_id, "Alternative") == 0
 
     commit2 = await _drive_spec_worker_session(session_factory, board_id, spec_payload)
     assert commit2.nodes_added == 0
     for node_type, expected in expected_counts.items():
         assert (
-            _count_nodes_by_source_prefix(board_id, node_type, source_prefix)
+            await _count_nodes_by_source_prefix_async(
+                board_id, node_type, source_prefix
+            )
             == expected
         )
-    assert _count_entities(board_id, f"spec:{spec_id}") == 1
-    assert _count_nodes(board_id, "Learning") == 0
-    assert _count_nodes(board_id, "Alternative") == 0
+    assert await _count_entities_async(board_id, f"spec:{spec_id}") == 1
+    assert await _count_nodes_async(board_id, "Learning") == 0
+    assert await _count_nodes_async(board_id, "Alternative") == 0
 
 
 # ---------------------------------------------------------------------------
@@ -699,19 +1041,17 @@ async def test_ts2_reconsolidation_updates_attrs_preserves_history(
     session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
     artifact_ref = f"spec:{spec_id}"
 
-    await _drive_one_session(
-        session_factory, board_id, artifact_ref, "Original", "A"
-    )
-    snapshot_before = _query_one(board_id, artifact_ref)
+    await _drive_one_session(session_factory, board_id, artifact_ref, "Original", "A")
+    snapshot_before = await _query_one_async(board_id, artifact_ref)
     assert snapshot_before["title"] == "Original"
     assert snapshot_before["content"] == "A"
 
-    await _drive_one_session(
-        session_factory, board_id, artifact_ref, "Atualizado", "B"
-    )
-    snapshot_after = _query_one(board_id, artifact_ref)
+    # Same title (identity) with refreshed content — a changed title now
+    # supersedes-with-trail (spec MKG-D-S1 FR8; see test_kg_nc8_supersede_trail).
+    await _drive_one_session(session_factory, board_id, artifact_ref, "Original", "B")
+    snapshot_after = await _query_one_async(board_id, artifact_ref)
     # Attrs updated:
-    assert snapshot_after["title"] == "Atualizado"
+    assert snapshot_after["title"] == "Original"
     assert snapshot_after["content"] == "B"
     # Same underlying node (same kuzu id, same created_at):
     assert snapshot_after["id"] == snapshot_before["id"], (
@@ -734,28 +1074,100 @@ async def test_ts3_human_curated_preserves_node(dedup_tempdir, monkeypatch):
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "Custom", "human-edited"
     )
-    snapshot = _query_one(board_id, artifact_ref)
+    snapshot = await _query_one_async(board_id, artifact_ref)
     node_id = snapshot["id"]
 
     # Mark as human_curated=true via direct Cypher (simulating a back-office
     # action). The fix must honour this flag in the dedup branch.
-    from okto_pulse.core.kg.schema import open_board_connection
-    conn = open_board_connection(board_id)
-    with conn as (_kdb, kconn):
-        kconn.execute(
-            "MATCH (n:Entity) WHERE n.id = $id SET n.human_curated = true",
-            {"id": node_id},
-        )
+    await run_blocking_graph_io(
+        lambda: _set_human_curated_sync(board_id, node_id),
+        task_name="tests.dedup_nc8.set_human_curated",
+    )
 
     # Re-consolidate with a different title — must NOT alter the curated node.
     await _drive_one_session(
         session_factory, board_id, artifact_ref, "AutoGen", "auto-content"
     )
-    snapshot_after = _query_one(board_id, artifact_ref)
+    snapshot_after = await _query_one_async(board_id, artifact_ref)
     assert snapshot_after["title"] == "Custom", (
         "human_curated=true must block UPDATE in the dedup branch"
     )
     assert snapshot_after["content"] == "human-edited"
+
+
+async def test_automatic_confidence_one_is_not_a_human_curated_override(
+    dedup_tempdir,
+    monkeypatch,
+):
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}"
+
+    await _drive_one_session(
+        session_factory,
+        board_id,
+        artifact_ref,
+        "Curated title",
+        "human content",
+        source_confidence=1.0,
+    )
+    snapshot = await _query_one_async(board_id, artifact_ref)
+    await run_blocking_graph_io(
+        lambda: _set_human_curated_sync(board_id, snapshot["id"]),
+        task_name="tests.dedup_nc8.set_confidence_one_human_curated",
+    )
+
+    await _drive_one_session(
+        session_factory,
+        board_id,
+        artifact_ref,
+        "Automatic replacement",
+        "agent content",
+        source_confidence=1.0,
+    )
+
+    snapshot_after = await _query_one_async(board_id, artifact_ref)
+    assert snapshot_after["id"] == snapshot["id"]
+    assert snapshot_after["title"] == "Curated title"
+    assert snapshot_after["content"] == "human content"
+
+
+async def test_automatic_decision_supersede_preserves_human_curated_target(
+    dedup_tempdir,
+    monkeypatch,
+):
+    session_factory, board_id, spec_id = await _bootstrap_test_board(monkeypatch)
+    artifact_ref = f"spec:{spec_id}:decision:curated"
+
+    await _drive_one_session(
+        session_factory,
+        board_id,
+        artifact_ref,
+        "Human decision",
+        "Keep the curated assertion",
+        node_type="Decision",
+    )
+    lineage = await _query_decision_lineage_async(board_id, artifact_ref)
+    assert len(lineage["nodes"]) == 1
+    original = lineage["nodes"][0]
+    await run_blocking_graph_io(
+        lambda: _set_human_curated_sync(board_id, original[0], "Decision"),
+        task_name="tests.dedup_nc8.set_decision_human_curated",
+    )
+
+    await _drive_one_session(
+        session_factory,
+        board_id,
+        artifact_ref,
+        "Automatic replacement",
+        "Different assertion",
+        node_type="Decision",
+    )
+
+    lineage_after = await _query_decision_lineage_async(board_id, artifact_ref)
+    assert lineage_after["nodes"] == [
+        [original[0], "Human decision", "Keep the curated assertion", 0, None]
+    ]
+    assert lineage_after["supersedes_edges"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -791,8 +1203,14 @@ async def test_ts8_dedup_reused_log_emitted(dedup_tempdir, monkeypatch):
     handler = _Capture(level=logging.INFO)
     logger.addHandler(handler)
     try:
+        # Same title (a changed title would supersede-with-trail instead —
+        # spec MKG-D-S1 FR8) with different content to hit the reuse path.
         await _drive_one_session(
-            session_factory, board_id, artifact_ref, "Spec for log test (v2)"
+            session_factory,
+            board_id,
+            artifact_ref,
+            "Spec for log test",
+            content="conteudo novo v2",
         )
     finally:
         logger.removeHandler(handler)
@@ -886,21 +1304,10 @@ async def test_ts7_tech_entity_dedup_cross_spec(dedup_tempdir, monkeypatch):
     for sid in spec_ids:
         await _emit_python_mention(sid)
 
-    from okto_pulse.core.kg.schema import open_board_connection
-    conn = open_board_connection(board_id)
-    with conn as (_kdb, kconn):
-        res = kconn.execute(
-            "MATCH (n:Entity) WHERE n.title = $t RETURN count(n)",
-            {"t": "Python"},
-        )
-        try:
-            count = int(res.get_next()[0])
-        finally:
-            try:
-                res.close()
-            except Exception:
-                pass
+    count = await run_blocking_graph_io(
+        lambda: _count_named_entities_sync(board_id, "Python"),
+        task_name="tests.dedup_nc8.count_named_entities",
+    )
     assert count == 1, (
-        f"expected 1 Python Entity node across 3 specs (cross-spec dedup), "
-        f"got {count}"
+        f"expected 1 Python Entity node across 3 specs (cross-spec dedup), got {count}"
     )

@@ -25,7 +25,7 @@ from okto_pulse.core.events.handlers.cognitive_extraction import (
     CognitiveExtractionHandler,
 )
 from okto_pulse.core.events.types import CardMoved
-from okto_pulse.core.models.db import CardType
+from sqlalchemy_test_models import CardType
 
 
 def _bug_card(*, card_id: str = "card-1", action_plan: str = "x" * 200) -> SimpleNamespace:

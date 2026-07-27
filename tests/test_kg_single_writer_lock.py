@@ -9,11 +9,18 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from okto_pulse.core.ports.coordination import (
+    WriteLockHandle,
+    register_coordination_providers,
+    reset_coordination_providers_for_tests,
+)
 from okto_pulse.core.kg.safe_write_lifecycle import (
     CANONICAL_GRAPH_TYPES,
     CANONICAL_STEP_ORDER,
@@ -24,7 +31,6 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     LockOwnerProbe,
     SafeWriteLifecycleError,
     SafeWriteLifecycleErrorCode,
-    SafeWriteLifecycleResponse,
     SafeWriteLifecycleStatus,
     STEP_CHECKPOINT,
     STEP_CLOSE_REOPEN_PROBE,
@@ -32,13 +38,11 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     STEP_FSYNC,
 )
 from okto_pulse.core.kg.safe_write_lifecycle import (
-    get_lifecycle_counter,
     get_lifecycle_counter_labels,
     get_lifecycle_counter_samples,
     reset_lifecycle_counter,
 )
 from okto_pulse.core.kg.single_writer_lock import (
-    DEFAULT_TTL_SECONDS,
     KGSingleWriterLock,
     LOCK_FILENAME,
     MAX_TTL_SECONDS,
@@ -65,11 +69,14 @@ def _reset_counters_and_mode():
     reset_lock_counter()
     reset_lifecycle_counter()
     reset_unguarded_counter()
+    reset_coordination_providers_for_tests()
+    register_coordination_providers(write_lock_port=InMemorySingleWriterPort())
     prior_mode = get_barrier_mode()
     yield
     reset_lock_counter()
     reset_lifecycle_counter()
     reset_unguarded_counter()
+    reset_coordination_providers_for_tests()
     set_barrier_mode(prior_mode)
 
 
@@ -82,6 +89,140 @@ def lock_root(tmp_path: Path) -> Path:
     root.mkdir()
     return root
 
+
+class InMemorySingleWriterPort:
+    """Core-only fake for KGSingleWriterLock facade tests.
+
+    Filesystem sentinel, O_EXCL and manifest durability behavior is covered by
+    Community adapter parity tests. This fake keeps only the core contract:
+    owner, contention, release, stale recovery and inspect projection.
+    """
+
+    def __init__(self) -> None:
+        self._locks: dict[tuple[str, str, str], dict[str, object]] = {}
+
+    @staticmethod
+    def _scope(base_dir_hint: str | None) -> str:
+        return base_dir_hint or "default"
+
+    def _key(
+        self, board_id: str, artifact_id: str, base_dir_hint: str | None
+    ) -> tuple[str, str, str]:
+        return (self._scope(base_dir_hint), board_id, artifact_id)
+
+    @staticmethod
+    def _iso(epoch: float) -> str:
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+
+    def acquire_single_writer_sync(
+        self,
+        *,
+        board_id: str,
+        artifact_id: str,
+        operation: str,
+        owner_id: str,
+        ttl_seconds: int,
+        admin_lane: bool = False,
+        base_dir_hint: str | None = None,
+        board_dir_resolver=None,
+    ) -> dict[str, object]:
+        del board_dir_resolver
+        key = self._key(board_id, artifact_id, base_dir_hint)
+        now = time.time()
+        current = self._locks.get(key)
+        stale_recovered = False
+        if current is not None and float(current["expires_at_epoch"]) > now:
+            return {
+                "acquired": False,
+                "owner_token": None,
+                "expires_at": current["expires_at"],
+                "current_owner": current["owner_id"],
+                "admin_lane": current["admin_lane"],
+                "stale_recovered": False,
+            }
+        if current is not None:
+            stale_recovered = True
+
+        owner_token = secrets.token_urlsafe(18)
+        expires_at_epoch = now + ttl_seconds
+        manifest = {
+            "owner_token": owner_token,
+            "owner_id": owner_id,
+            "operation": operation,
+            "acquired_at_epoch": now,
+            "expires_at_epoch": expires_at_epoch,
+            "acquired_at": self._iso(now),
+            "expires_at": self._iso(expires_at_epoch),
+            "admin_lane": admin_lane,
+        }
+        self._locks[key] = manifest
+        return {
+            "acquired": True,
+            "owner_token": owner_token,
+            "expires_at": manifest["expires_at"],
+            "current_owner": owner_id,
+            "admin_lane": admin_lane,
+            "stale_recovered": stale_recovered,
+        }
+
+    def release_single_writer_sync(
+        self,
+        *,
+        board_id: str,
+        artifact_id: str,
+        owner_token: str,
+        base_dir_hint: str | None = None,
+        board_dir_resolver=None,
+    ) -> bool:
+        del board_dir_resolver
+        key = self._key(board_id, artifact_id, base_dir_hint)
+        current = self._locks.get(key)
+        if current is None or current["owner_token"] != owner_token:
+            return False
+        del self._locks[key]
+        return True
+
+    def inspect_single_writer_sync(
+        self,
+        *,
+        board_id: str,
+        artifact_id: str,
+        base_dir_hint: str | None = None,
+        board_dir_resolver=None,
+    ) -> dict[str, object] | None:
+        del board_dir_resolver
+        current = self._locks.get(self._key(board_id, artifact_id, base_dir_hint))
+        return dict(current) if current is not None else None
+
+    def acquire_sync(
+        self,
+        board_id: str,
+        artifact_id: str,
+        *,
+        owner_token: str | None = None,
+    ) -> WriteLockHandle:
+        token = owner_token or secrets.token_urlsafe(18)
+        return WriteLockHandle(
+            board_id=board_id,
+            artifact_id=artifact_id,
+            owner_token=token,
+            fencing_token=token,
+        )
+
+    def release_sync(self, handle: WriteLockHandle) -> None:
+        self.release_single_writer_sync(
+            board_id=handle.board_id,
+            artifact_id=handle.artifact_id,
+            owner_token=handle.owner_token,
+        )
+
+    def is_locked(self, board_id: str, artifact_id: str) -> bool:
+        return self.inspect_single_writer_sync(
+            board_id=board_id, artifact_id=artifact_id
+        ) is not None
+
+    def reset_for_tests(self) -> None:
+        self._locks.clear()
 
 @pytest.fixture
 def lock(lock_root: Path) -> KGSingleWriterLock:
@@ -135,7 +276,7 @@ def test_release_with_correct_token_frees_lock(lock: KGSingleWriterLock):
 
 
 def test_release_with_wrong_token_keeps_lock(lock: KGSingleWriterLock):
-    first = lock.acquire(
+    lock.acquire(
         board_id="b1", operation="op", owner_id="w1", ttl_seconds=60
     )
     assert lock.release(board_id="b1", owner_token="forged") is False
@@ -204,6 +345,12 @@ def test_acquire_validates_ttl_bounds(lock: KGSingleWriterLock):
         )
 
 
+@pytest.mark.skip(
+    reason=(
+        "local filesystem manifest format belongs to the Community "
+        "WriteLockPort adapter parity suite"
+    )
+)
 def test_manifest_file_is_human_readable_json(lock_root: Path, lock: KGSingleWriterLock):
     lock.acquire(
         board_id="b1", operation="op", owner_id="w1", ttl_seconds=60
@@ -520,6 +667,12 @@ def test_lock_token_can_drive_lifecycle(lock: KGSingleWriterLock):
 # --- Validator val_75dee856 rework: stale recovery race regression -----------
 
 
+@pytest.mark.skip(
+    reason=(
+        "filesystem stale-recovery CAS belongs to the Community "
+        "WriteLockPort adapter parity suite"
+    )
+)
 def test_stale_recovery_does_not_delete_fresh_lock_placed_by_other_recoverer(
     lock_root: Path, lock: KGSingleWriterLock, monkeypatch: pytest.MonkeyPatch,
 ):
@@ -798,6 +951,12 @@ def test_unguarded_write_outside_lifecycle_is_blocked_in_strict_mode():
         require_write_token("b1")
 
 
+@pytest.mark.skip(
+    reason=(
+        "filesystem recovery-lock serialization belongs to the Community "
+        "WriteLockPort adapter parity suite"
+    )
+)
 def test_stale_recovery_lock_serialises_recoverers(
     lock_root: Path, monkeypatch: pytest.MonkeyPatch,
 ):
@@ -864,6 +1023,12 @@ def test_stale_recovery_lock_serialises_recoverers(
     assert recovery_path.exists()
 
 
+@pytest.mark.skip(
+    reason=(
+        "filesystem recovery-lock stale handling belongs to the Community "
+        "WriteLockPort adapter parity suite"
+    )
+)
 def test_stale_recovery_lock_blocks_with_explicit_error_no_auto_reclaim(
     lock_root: Path,
 ):
@@ -911,6 +1076,12 @@ def test_stale_recovery_lock_blocks_with_explicit_error_no_auto_reclaim(
     assert primary_path.exists()
 
 
+@pytest.mark.skip(
+    reason=(
+        "filesystem recovery-lock concurrency belongs to the Community "
+        "WriteLockPort adapter parity suite"
+    )
+)
 def test_concurrent_recoverers_with_stale_recovery_lock_never_corrupt_primary(
     lock_root: Path,
 ):

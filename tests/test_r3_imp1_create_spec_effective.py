@@ -10,6 +10,8 @@ transactionally — NO spec persisted, never a silent half-resourced spec.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -18,12 +20,15 @@ import pytest
 from sqlalchemy import select
 
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ArchitectureDesign,
     Board,
     Ideation,
+    IdeationComplexity,
+    IdeationStatus,
     IdeationKnowledgeBase,
     Refinement,
+    RefinementStatus,
     RefinementKnowledgeBase,
     Spec,
     SpecKnowledgeBase,
@@ -46,7 +51,7 @@ class _Ctx:
 async def _call(name: str, **kwargs) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
 
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_Ctx())), \
          patch.object(mcp_server, "check_permission", return_value=None):
         tool = await mcp_server.mcp.get_tool(name)
@@ -71,10 +76,11 @@ async def _refinement_with_direct_resources(db_factory, board_id):
     design_id = _id("refdesign")
     async with db_factory() as db:
         db.add(Ideation(id=ideation_id, board_id=board_id, title="R3 parent ideation",
-                        created_by=USER_ID))
+                        status=IdeationStatus.DONE, created_by=USER_ID))
         db.add(Refinement(
             id=refinement_id, board_id=board_id, ideation_id=ideation_id,
-            title="R3 refinement", created_by=USER_ID,
+            title="R3 refinement", status=RefinementStatus.DONE,
+            created_by=USER_ID,
             screen_mockups=[{"id": mockup_id, "title": "Ref mockup",
                              "screen_type": "form", "html_content": "<div/>"}],
         ))
@@ -158,7 +164,7 @@ async def test_create_spec_effective_fallback_from_ideation(db_factory):
     ideation_kb_id = _id("ideakb")
     async with db_factory() as db:
         db.add(Ideation(id=ideation_id, board_id=board_id, title="R3 ideation",
-                        created_by=USER_ID))
+                        status=IdeationStatus.DONE, created_by=USER_ID))
         db.add(IdeationKnowledgeBase(
             id=ideation_kb_id, ideation_id=ideation_id, title="Ideation KB",
             description="d", content="idea content", mime_type="text/markdown",
@@ -166,7 +172,8 @@ async def test_create_spec_effective_fallback_from_ideation(db_factory):
         ))
         # Refinement linked to the ideation but with NO direct KB of its own.
         db.add(Refinement(id=refinement_id, board_id=board_id, ideation_id=ideation_id,
-                          title="Empty refinement", created_by=USER_ID))
+                          title="Empty refinement", status=RefinementStatus.DONE,
+                          created_by=USER_ID))
         await db.commit()
 
     result = await _call(
@@ -194,9 +201,10 @@ async def test_create_spec_without_resources_reports_without_required(db_factory
     ideation_id = _id("idea")
     async with db_factory() as db:
         db.add(Ideation(id=ideation_id, board_id=board_id, title="Bare ideation",
-                        created_by=USER_ID))
+                        status=IdeationStatus.DONE, created_by=USER_ID))
         db.add(Refinement(id=refinement_id, board_id=board_id, ideation_id=ideation_id,
-                          title="Bare refinement", created_by=USER_ID))
+                          title="Bare refinement", status=RefinementStatus.DONE,
+                          created_by=USER_ID))
         await db.commit()
 
     result = await _call(
@@ -215,6 +223,179 @@ async def test_create_spec_without_refinement_has_no_propagation_field(db_factor
     )
     assert result.get("success") is True, result
     assert "resource_propagation" not in result  # unchanged legacy behavior
+
+
+@pytest.mark.asyncio
+async def test_create_spec_with_valid_ideation_only(db_factory):
+    board_id = await _board(db_factory)
+    ideation_id = _id("idea")
+    async with db_factory() as db:
+        db.add(Ideation(
+            id=ideation_id,
+            board_id=board_id,
+            title="Ideation-only parent",
+            status=IdeationStatus.DONE,
+            created_by=USER_ID,
+        ))
+        await db.commit()
+
+    result = await _call(
+        "okto_pulse_create_spec",
+        board_id=board_id,
+        title="Spec from ideation only",
+        ideation_id=ideation_id,
+    )
+    assert result.get("success") is True, result
+    async with db_factory() as db:
+        spec = await db.get(Spec, result["spec"]["id"])
+    assert spec is not None and spec.ideation_id == ideation_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "complexity", "expected_code"),
+    (
+        (
+            IdeationStatus.DRAFT,
+            IdeationComplexity.SMALL,
+            "spec_ideation_not_done",
+        ),
+        (
+            IdeationStatus.DONE,
+            IdeationComplexity.LARGE,
+            "spec_refinement_required",
+        ),
+    ),
+)
+async def test_create_spec_lifecycle_preflight_has_stable_mcp_error_and_no_write(
+    db_factory,
+    status,
+    complexity,
+    expected_code,
+):
+    board_id = await _board(db_factory)
+    ideation_id = _id("idea")
+    async with db_factory() as db:
+        db.add(
+            Ideation(
+                id=ideation_id,
+                board_id=board_id,
+                title="Governed lifecycle parent",
+                status=status,
+                complexity=complexity,
+                created_by=USER_ID,
+            )
+        )
+        await db.commit()
+
+    result = await _call(
+        "okto_pulse_create_spec",
+        board_id=board_id,
+        title="Spec rejected before mutation",
+        ideation_id=ideation_id,
+    )
+
+    assert result["error"] == expected_code
+    assert result["code"] == expected_code
+    assert result["facts"]["ideation_id"] == ideation_id
+    async with db_factory() as db:
+        specs = (
+            (
+                await db.execute(
+                    select(Spec).where(Spec.board_id == board_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert specs == []
+
+
+@pytest.mark.asyncio
+async def test_create_spec_with_valid_ideation_and_refinement(db_factory):
+    board_id = await _board(db_factory)
+    ideation_id = _id("idea")
+    refinement_id = _id("ref")
+    async with db_factory() as db:
+        db.add(Ideation(
+            id=ideation_id,
+            board_id=board_id,
+            title="Shared lineage parent",
+            status=IdeationStatus.DONE,
+            created_by=USER_ID,
+        ))
+        await db.flush()
+        db.add(Refinement(
+            id=refinement_id,
+            board_id=board_id,
+            ideation_id=ideation_id,
+            title="Shared refinement parent",
+            status=RefinementStatus.DONE,
+            created_by=USER_ID,
+        ))
+        await db.commit()
+
+    result = await _call(
+        "okto_pulse_create_spec",
+        board_id=board_id,
+        title="Spec with both parents",
+        ideation_id=ideation_id,
+        refinement_id=refinement_id,
+    )
+    assert result.get("success") is True, result
+    async with db_factory() as db:
+        spec = await db.get(Spec, result["spec"]["id"])
+    assert spec is not None
+    assert spec.ideation_id == ideation_id
+    assert spec.refinement_id == refinement_id
+
+
+@pytest.mark.asyncio
+async def test_create_spec_rejects_incompatible_ideation_and_refinement(db_factory):
+    board_id = await _board(db_factory)
+    requested_ideation_id = _id("idea")
+    actual_ideation_id = _id("idea")
+    refinement_id = _id("ref")
+    async with db_factory() as db:
+        db.add_all([
+            Ideation(
+                id=requested_ideation_id,
+                board_id=board_id,
+                title="Requested parent",
+                created_by=USER_ID,
+            ),
+            Ideation(
+                id=actual_ideation_id,
+                board_id=board_id,
+                title="Actual refinement parent",
+                created_by=USER_ID,
+            ),
+        ])
+        await db.flush()
+        db.add(Refinement(
+            id=refinement_id,
+            board_id=board_id,
+            ideation_id=actual_ideation_id,
+            title="Mismatched refinement",
+            created_by=USER_ID,
+        ))
+        await db.commit()
+
+    result = await _call(
+        "okto_pulse_create_spec",
+        board_id=board_id,
+        title="Spec with incompatible parents",
+        ideation_id=requested_ideation_id,
+        refinement_id=refinement_id,
+    )
+    assert result.get("error") == "resource_lineage_resolution_failed", result
+    assert result["lineage_error_details"]["reason"] == "parent_lineage_mismatch"
+    assert result["lineage_error_details"]["actual_ideation_id"] == actual_ideation_id
+    async with db_factory() as db:
+        specs = (await db.execute(
+            select(Spec).where(Spec.board_id == board_id)
+        )).scalars().all()
+    assert specs == []
 
 
 # ===========================================================================
@@ -239,16 +420,34 @@ async def test_lineage_resolution_failure_persists_no_spec(db_factory):
 
 
 @pytest.mark.asyncio
+async def test_ideation_lineage_resolution_failure_persists_no_spec(db_factory):
+    board_id = await _board(db_factory)
+    result = await _call(
+        "okto_pulse_create_spec",
+        board_id=board_id,
+        title="Spec with bad ideation",
+        ideation_id="ideation-does-not-exist",
+    )
+    assert result.get("error") == "resource_lineage_resolution_failed", result
+    assert result["lineage_error_details"]["entity_type"] == "ideation"
+    async with db_factory() as db:
+        specs = (await db.execute(
+            select(Spec).where(Spec.board_id == board_id)
+        )).scalars().all()
+    assert specs == []
+
+
+@pytest.mark.asyncio
 async def test_propagation_failure_is_structured_and_rolls_back(db_factory, monkeypatch):
     board_id = await _board(db_factory)
     seed = await _refinement_with_direct_resources(db_factory, board_id)
 
-    import okto_pulse.core.services.main as main_module
+    import okto_pulse.core.services.effective_resource_propagation as propagation_module
 
     async def _boom(*args, **kwargs):
         raise RuntimeError("simulated propagate_artifacts failure")
 
-    monkeypatch.setattr(main_module, "propagate_artifacts", _boom)
+    monkeypatch.setattr(propagation_module, "propagate_artifacts", _boom)
 
     result = await _call(
         "okto_pulse_create_spec", board_id=board_id, title="Spec that fails propagation",

@@ -60,6 +60,15 @@ class DomainEvent(BaseModel):
         )
 
 
+class ArtifactArchiveChanged(DomainEvent):
+    """Reversible archive/restore signal for KG-backed SDLC artifacts."""
+
+    event_type: ClassVar[str] = "artifact.archive_changed"
+    artifact_type: Literal["story", "ideation", "refinement", "spec", "card", "sprint"]
+    artifact_id: str
+    archived: bool
+
+
 # --- Card lifecycle ---
 
 
@@ -190,6 +199,13 @@ class RefinementSemanticChanged(DomainEvent):
     changed_fields: list[str] = Field(default_factory=list)
 
 
+class RefinementMoved(DomainEvent):
+    event_type: ClassVar[str] = "refinement.moved"
+    refinement_id: str
+    from_status: str
+    to_status: str
+
+
 class CardLinkedToSpec(DomainEvent):
     """Fired when a card is linked to a spec via link_card_to_spec.
 
@@ -239,6 +255,15 @@ class SprintClosed(DomainEvent):
 # --- Derivation events ---
 
 
+class IdeationMoved(DomainEvent):
+    """Fired whenever an ideation changes lifecycle status."""
+
+    event_type: ClassVar[str] = "ideation.moved"
+    ideation_id: str
+    from_status: str
+    to_status: str
+
+
 class IdeationDerivedToSpec(DomainEvent):
     event_type: ClassVar[str] = "ideation.derived_to_spec"
     ideation_id: str
@@ -284,12 +309,12 @@ class StoryLinkedToIdeation(DomainEvent):
 
 
 class KGHitFlushed(DomainEvent):
-    """Fired when KGService._flush_hits persists a batch of query_hits to Kùzu.
+    """Fired when KGService._flush_hits persists a batch of query_hits to graph backend.
 
     The handler reacts by recomputing the node's relevance_score so the
     refreshed hit count immediately participates in ranking. Decoupling
     via DomainEvent (vs sync recompute on the read path) keeps the search
-    hot path free of Kùzu MATCH/COUNT pressure — see dec_3a6eb8ad.
+    hot path free of graph backend MATCH/COUNT pressure — see dec_3a6eb8ad.
     """
 
     event_type: ClassVar[str] = "kg.hit_flushed"
@@ -348,23 +373,59 @@ class BugRegressionScenarioReuseDecision(DomainEvent):
 
 
 class KGDailyTick(DomainEvent):
-    """Fired by the APScheduler ``IntervalTrigger`` to drive global decay.
+    """Fired by the active scheduler adapter to drive global decay.
 
     The trigger interval is ``kg_decay_tick_interval_minutes`` (configured in
-    ``config.py``; wired in ``app.py``). Uses ``board_id="*"`` as a global
-    sentinel because the handler iterates every active board. Only the leader
-    replica emits the event (advisory lock); other replicas log a skip — see
-    dec_bc0eaeec.
+    ``config.py``; registered through the SchedulerControl port). Uses
+    ``board_id="*"`` as a global sentinel because the handler iterates every
+    active board. Only the leader replica emits the event (advisory lock);
+    other replicas log a skip — see dec_bc0eaeec.
     """
 
     event_type: ClassVar[str] = "kg.tick.daily"
     tick_id: str  # uuid4 per tick run, propagates into kg_tick_runs row
-    scheduled_at: str  # ISO datetime when APScheduler fired the trigger
+    scheduled_at: str  # ISO datetime when the scheduler fired the trigger
+    # Manual full rebuilds are executed by the durable handler, after the
+    # delivery execution has been committed as ``processing``.  Keeping this
+    # intent in the event closes the recovery-admission race that existed when
+    # the API reset graph revisions before publishing the event.
+    # A forced rebuild must use KGFullRebuildTick's distinct event type.  Old
+    # consumers ignore additive payload fields, so accepting True here would
+    # allow the intent to be silently downgraded to an ordinary daily tick.
+    force_full_rebuild: Literal[False] = False
+
+
+class KGFullRebuildTick(KGDailyTick):
+    """Fail-closed durable intent for a forced full KG recomputation.
+
+    Deploy consumers before producers (or drain this event type before a
+    downgrade). Older consumers do not know this type and therefore retry it
+    instead of silently acknowledging an ordinary tick without the reset.
+    """
+
+    event_type: ClassVar[str] = "kg.tick.full_rebuild"
+    force_full_rebuild: Literal[True] = True
+
+
+class KGDeliveryRedriveTick(DomainEvent):
+    """Durable bounded continuation of tick-owned delivery-debt recovery.
+
+    A daily tick starts the chain.  Each event owns exactly one budgeted,
+    globally fair redrive run and transactionally publishes its successor
+    only while due debt remains.  ``checkpoint_version`` identifies the
+    durable checkpoint produced by the run that scheduled this continuation.
+    """
+
+    event_type: ClassVar[str] = "kg.tick.delivery_redrive"
+    run_id: str
+    scheduled_at: str
+    checkpoint_version: int = 0
 
 
 # Ordered list of all event_type strings known to the MVP. The dispatcher
 # uses this to resolve DomainEventRow → subclass during reconstruction.
 EVENT_TYPES: list[str] = [
+    ArtifactArchiveChanged.event_type,
     CardCreated.event_type,
     CardMoved.event_type,
     CardConclusionAdded.event_type,
@@ -380,9 +441,11 @@ EVENT_TYPES: list[str] = [
     StructuredSpecEntityUpdated.event_type,
     StructuredSpecEntityRevoked.event_type,
     RefinementSemanticChanged.event_type,
+    RefinementMoved.event_type,
     SprintCreated.event_type,
     SprintMoved.event_type,
     SprintClosed.event_type,
+    IdeationMoved.event_type,
     IdeationDerivedToSpec.event_type,
     RefinementDerivedToSpec.event_type,
     StoryCreated.event_type,
@@ -394,10 +457,13 @@ EVENT_TYPES: list[str] = [
     CardSeverityChanged.event_type,
     BugRegressionScenarioReuseDecision.event_type,
     KGDailyTick.event_type,
+    KGFullRebuildTick.event_type,
+    KGDeliveryRedriveTick.event_type,
 ]
 
 
 _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
+    ArtifactArchiveChanged.event_type: ArtifactArchiveChanged,
     CardCreated.event_type: CardCreated,
     CardMoved.event_type: CardMoved,
     CardConclusionAdded.event_type: CardConclusionAdded,
@@ -413,9 +479,11 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     StructuredSpecEntityUpdated.event_type: StructuredSpecEntityUpdated,
     StructuredSpecEntityRevoked.event_type: StructuredSpecEntityRevoked,
     RefinementSemanticChanged.event_type: RefinementSemanticChanged,
+    RefinementMoved.event_type: RefinementMoved,
     SprintCreated.event_type: SprintCreated,
     SprintMoved.event_type: SprintMoved,
     SprintClosed.event_type: SprintClosed,
+    IdeationMoved.event_type: IdeationMoved,
     IdeationDerivedToSpec.event_type: IdeationDerivedToSpec,
     RefinementDerivedToSpec.event_type: RefinementDerivedToSpec,
     StoryCreated.event_type: StoryCreated,
@@ -427,6 +495,8 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     CardSeverityChanged.event_type: CardSeverityChanged,
     BugRegressionScenarioReuseDecision.event_type: BugRegressionScenarioReuseDecision,
     KGDailyTick.event_type: KGDailyTick,
+    KGFullRebuildTick.event_type: KGFullRebuildTick,
+    KGDeliveryRedriveTick.event_type: KGDeliveryRedriveTick,
 }
 
 

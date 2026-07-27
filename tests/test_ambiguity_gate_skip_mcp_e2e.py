@@ -13,6 +13,8 @@ fail-closed, REST persists.
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -21,11 +23,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from okto_pulse.core.api.ideations import router as ideations_router
-from okto_pulse.core.infra import auth as _auth_mod
+from okto_pulse.community.api.ideations import router as ideations_router
+from okto_pulse.community.api import auth_deps as _auth_mod
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import Board, Ideation, IdeationStatus
+from sqlalchemy_test_models import Board, Ideation, IdeationStatus
 
 USER_ID = "ambiguity-skip-mcp-agent"
 SKIP_TOOL = "okto_pulse_set_ideation_ambiguity_gate_skip"
@@ -50,7 +52,7 @@ def _stub_ctx():
 
 
 async def _call(name: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     raw = await tool.fn(**kwargs)
     return json.loads(raw)
@@ -98,6 +100,7 @@ def _rest_client():
 
     app.dependency_overrides[get_db] = _odb
     app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
+    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
     return TestClient(app)
 
 

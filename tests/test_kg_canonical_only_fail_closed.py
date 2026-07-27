@@ -32,14 +32,15 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_failclosed_"))
 
-from okto_pulse.core.api.kg_routes import get_subgraph
+from okto_pulse.community.api.kg_routes import get_subgraph
 from okto_pulse.core.kg import cypher_templates as tpl
 from okto_pulse.core.kg.cypher_templates import (
     layer_filter_clause,
     layer_label_projection,
 )
 from okto_pulse.core.kg.kg_service import get_kg_service
-from okto_pulse.core.kg.schema import bootstrap_board_graph, open_board_connection
+from kg_schema_testing import bootstrap_board_graph, open_board_connection
+from kg_registry_testing import configure_real_graph_test_kg_registry
 
 
 CENTER_REF = "spec:center"
@@ -54,6 +55,7 @@ _NODES = [
 
 def _seed_layered_board() -> str:
     """center (canonical) + vizinhos canonical/working/UNCLASSIFIED(NULL)."""
+    configure_real_graph_test_kg_registry()
     board_id = f"failclosed-{uuid.uuid4().hex[:10]}"
     bootstrap_board_graph(board_id)
     ts = "2026-06-15T00:00:00"

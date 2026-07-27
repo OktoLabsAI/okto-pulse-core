@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -9,9 +11,10 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from okto_pulse.core.api import stories as stories_api
+from okto_pulse.community.api import stories as stories_api
+from okto_pulse.core.application.use_cases import stories_crud
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     ActivityLog,
     Board,
     ConsolidationQueue,
@@ -20,6 +23,7 @@ from okto_pulse.core.models.db import (
     Story,
     StoryIdeationLink,
     StoryStatus,
+    Topic,
 )
 from okto_pulse.core.models.schemas import (
     ScreenMockup,
@@ -31,6 +35,7 @@ from okto_pulse.core.models.schemas import (
     TopicMergeRequest,
     TopicUpdate,
 )
+from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services.analytics_service import compute_funnel
 from okto_pulse.core.services.main import InvalidTopicMergeError, StoryService, TopicNotEmptyError
 from okto_pulse.core.services.traceability import build_lineage_graph
@@ -38,6 +43,10 @@ from okto_pulse.core.services.traceability import build_lineage_graph
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
+
+
+def _wrap_uow(db):
+    return resolve_unit_of_work_factory().wrap(db)
 
 
 def _stub_ctx(board_id: str, actor_id: str):
@@ -48,6 +57,7 @@ def _stub_ctx(board_id: str, actor_id: str):
             "agent_id": actor_id,
             "agent_name": "stories-mcp-agent",
             "board_id": board_id,
+            "realm_id": "local",
             "permissions": [
                 "board:read",
                 "specs:create",
@@ -75,6 +85,21 @@ def _stub_ctx(board_id: str, actor_id: str):
     )()
 
 
+def _route_paths(routes) -> set[str]:
+    paths: set[str] = set()
+    for route in routes:
+        effective_route_contexts = getattr(route, "effective_route_contexts", None)
+        if callable(effective_route_contexts):
+            for context in effective_route_contexts():
+                if path := getattr(context, "path", None):
+                    paths.add(path)
+        if path := getattr(route, "path", None):
+            paths.add(path)
+        if nested := getattr(route, "routes", None):
+            paths.update(_route_paths(nested))
+    return paths
+
+
 async def _seed_board(db_factory, board_id: str, owner_id: str) -> None:
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Stories board", owner_id=owner_id))
@@ -82,7 +107,7 @@ async def _seed_board(db_factory, board_id: str, owner_id: str) -> None:
 
 
 async def _call_mcp(db_factory, tool_name: str, **kwargs) -> dict:
-    mcp_server.register_session_factory(db_factory)
+    register_mcp_test_runtime(db_factory)
     tool = await mcp_server.mcp.get_tool(tool_name)
     raw = await tool.fn(**kwargs)
     return json.loads(raw)
@@ -403,7 +428,7 @@ async def test_topic_delete_blocks_active_and_archived_stories(db_factory):
 
         deleted = await service.delete_topic(empty_topic.id, owner_id)
         assert deleted is not None
-        assert await db.get(type(empty_topic), empty_topic.id) is None
+        assert await db.get(Topic, empty_topic.id) is None
         activity = (await db.execute(
             select(ActivityLog).where(ActivityLog.board_id == board_id, ActivityLog.action == "topic_deleted")
         )).scalar_one()
@@ -430,6 +455,7 @@ async def test_topic_merge_moves_stories_preserves_links_and_archives_source(db_
                 topic_id=source.id,
                 title="Link preserving story",
                 description="As a reviewer, I want lineage links to survive a topic merge.",
+                status=StoryStatus.READY,
             ),
         )
         archived_story = await service.create_story(
@@ -490,7 +516,9 @@ async def test_topic_lifecycle_uses_semantic_activity_and_active_name_uniqueness
         replacement = await service.create_topic(board_id, owner_id, TopicCreate(name="Resource Gate"))
         assert replacement is not None
         assert replacement.id != topic.id
-        assert topic.name.startswith("Resource Gate [archived ")
+        archived_topic = await service.get_topic(topic.id)
+        assert archived_topic is not None
+        assert archived_topic.name.startswith("Resource Gate [archived ")
 
         with pytest.raises(ValueError):
             await service.update_topic(topic.id, owner_id, TopicUpdate(name="Resource Gate", archived=False))
@@ -553,7 +581,7 @@ async def test_topic_rest_endpoints_return_contextual_delete_and_merge_payloads(
         await db.commit()
 
         with pytest.raises(HTTPException) as blocked:
-            await stories_api.delete_topic(source_id, user_id=owner_id, db=db)
+            await stories_api.delete_topic(source_id, user_id=owner_id, uow=_wrap_uow(db))
         assert blocked.value.status_code == 409
         assert blocked.value.detail["code"] == "topic_not_empty"
         assert blocked.value.detail["active_count"] == 1
@@ -564,14 +592,14 @@ async def test_topic_rest_endpoints_return_contextual_delete_and_merge_payloads(
             source_id,
             TopicMergeRequest(target_topic_id=target_id),
             user_id=owner_id,
-            db=db,
+            uow=_wrap_uow(db),
         )
         assert merged["success"] is True
         assert merged["moved_count"] == 1
         assert merged["source"].archived is True
         assert getattr(merged["target"], "total_associated_count") == 1
 
-        deleted = await stories_api.delete_topic(source_id, user_id=owner_id, db=db)
+        deleted = await stories_api.delete_topic(source_id, user_id=owner_id, uow=_wrap_uow(db))
         assert deleted.success is True
         assert deleted.deleted_topic_id == source_id
 
@@ -606,18 +634,18 @@ async def test_topic_rest_and_mcp_tools_enforce_granular_permissions(db_factory)
         async def capture_permission(*args, **kwargs):
             seen_permissions.append(args[3])
 
-        with patch.object(stories_api, "_require_permissions", side_effect=capture_permission):
-            await stories_api.create_topic(board_id, TopicCreate(name="Permission created"), user_id=owner_id, db=db)
-            await stories_api.list_topics(board_id, user_id=owner_id, db=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(name="Permission renamed"), user_id=owner_id, db=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(archived=True), user_id=owner_id, db=db)
-            await stories_api.update_topic(topic.id, TopicUpdate(archived=False), user_id=owner_id, db=db)
-            await stories_api.delete_topic(empty.id, user_id=owner_id, db=db)
+        with patch.object(stories_crud, "_require_permissions", side_effect=capture_permission):
+            await stories_api.create_topic(board_id, TopicCreate(name="Permission created"), user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.list_topics(board_id, user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.update_topic(topic.id, TopicUpdate(name="Permission renamed"), user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.update_topic(topic.id, TopicUpdate(archived=True), user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.update_topic(topic.id, TopicUpdate(archived=False), user_id=owner_id, uow=_wrap_uow(db))
+            await stories_api.delete_topic(empty.id, user_id=owner_id, uow=_wrap_uow(db))
             await stories_api.merge_topics(
                 topic.id,
                 TopicMergeRequest(target_topic_id=target.id),
                 user_id=owner_id,
-                db=db,
+                uow=_wrap_uow(db),
             )
 
         flattened = [
@@ -671,6 +699,7 @@ async def test_story_links_require_editable_ideations_and_reject_duplicates(db_f
                 topic_id=topic.id,
                 title="Link Story through editable Ideation selector",
                 description="As a product lead, I want Story links to target editable ideations.",
+                status=StoryStatus.READY,
             ),
         )
         assert story is not None
@@ -754,7 +783,7 @@ async def test_story_links_require_editable_ideations_and_reject_duplicates(db_f
                 story.id,
                 StoryLinkCreate(ideation_id=editable.id),
                 user_id=owner_id,
-                db=db,
+                uow=_wrap_uow(db),
             )
         assert duplicate_http.value.status_code == 400
         assert "already linked" in duplicate_http.value.detail
@@ -832,9 +861,9 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
         assert funnel["stories"] == 0
         assert funnel["story_conversion_pct"] == 0.0
 
-    from okto_pulse.core.api.router import api_router
+    from okto_pulse.community.api.router import api_router
 
-    paths = {getattr(route, "path", "") for route in api_router.routes}
+    paths = _route_paths(api_router.routes)
     assert any(path.endswith("/boards/{board_id}/stories/convert") for path in paths)
     assert any(path.endswith("/boards/{board_id}/stories/convert-to-ideation") for path in paths)
     assert any(path.endswith("/ideations/{ideation_id}/stories") for path in paths)

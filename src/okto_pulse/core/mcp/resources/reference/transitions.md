@@ -1,4 +1,9 @@
-# Card Status Transitions — Mandatory Gates
+---
+version: "1.0"
+---
+# Status Transitions — Mandatory Gates
+
+**When unsure, call `okto_pulse_get_allowed_transitions`** — it returns the valid next statuses (and blocking gates) for the entity's current state. It is always correct, even when a board overrides defaults.
 
 ## Normal cards (`card_type = "normal"`)
 
@@ -18,11 +23,11 @@
 | From | To | Pre-requisites |
 |------|-----|---------------|
 | `not_started` | `started` | Spec must be `validated` or later |
-| `not_started` | `in_progress` | Spec must be `validated` or later; direct start is accepted by the API for executable test cards. |
+| `not_started` | `in_progress` | Spec must be `validated` or later (direct start is accepted by the API for executable test cards) |
 | `started` | `in_progress` | Spec must be `validated` or later |
-| `started`/`in_progress`/`validation` | `done` | ALL linked test scenarios must be `passed` or `automated` + `conclusion` + completeness/drift. On `validated`/`done` specs, scenario status/evidence updates are allowed only when the scenario is already linked to an executable test card. |
+| `started`/`in_progress`/`validation` | `done` | ALL linked test scenarios must be `passed` or `automated` + `conclusion` + completeness/drift |
 
-Test cards skip `okto_pulse_submit_task_validation`; scenario status/evidence is the gate. A single test card may link at most `board.settings.max_scenarios_per_card` scenarios (default 3, board-specific values such as 2 are valid).
+Type rules — scenario cap (`max_scenarios_per_card`), evidence gate, validation-gate skip, scenario updates on locked specs: see `okto-pulse://reference/card_types`.
 
 ## Sprint transitions
 
@@ -40,4 +45,24 @@ Test cards skip `okto_pulse_submit_task_validation`; scenario status/evidence is
 | `review` | `approved` | — |
 | `approved` | `validated` | `okto_pulse_submit_spec_validation` with all coverage gates passing + `recommendation=approve` |
 | `validated` | `in_progress` | `okto_pulse_submit_spec_evaluation` with `recommendation=approve` |
-| `in_progress` | `done` | All cards done |
+| `in_progress` | `done` | All linked non-bug, non-archived cards `done` or `cancelled`; when sprints exist, all sprints `closed`/`cancelled` (minimum 1 closed) |
+
+## Ideation transitions
+
+`draft` → `review` → `approved` → `evaluating` → `done`; `cancelled` from any status except `done`; `cancelled` → `draft` reopens a new editable iteration and clears the cancellation record. Editing only in `draft`, evaluation only in `evaluating`, derivations only from `done`. Details: `okto-pulse://workflows/ideations`.
+
+## Refinement transitions
+
+`draft` → `review` → `approved` → `done`; `done` or `cancelled` → `draft` starts a new editable version, and reopening a cancellation clears its audit record. Details: `okto-pulse://workflows/refinements`.
+
+## Story transitions
+
+`draft` → `triage` → `ready` → `converted`, via `okto_pulse_move_story(status=...)`. Only `ready` stories can be linked/converted; archived stories must be restored first. Details: `okto-pulse://workflows/stories`.
+
+## Amendment revision transitions
+
+`draft` → `review` → `approved` → `done`; terminal: `cancelled`/`superseded` (never resurrected — create a new revision). Promotion to `approved`/`done` requires `lineage_state=complete` first. Use `okto_pulse_transition_amendment_revision`; new revisions MUST start `draft`.
+
+## Bug cards
+
+Bug lifecycle and the regression gate (Path A/B): see `okto-pulse://reference/card_types`.

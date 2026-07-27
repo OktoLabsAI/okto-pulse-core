@@ -16,11 +16,12 @@ import subprocess
 import sys
 import threading
 import time
+from contextvars import copy_context
 from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.kg import schema
+import kg_schema_testing as schema
 from okto_pulse.core.kg.safe_write_lifecycle import (
     DEFAULT_REQUIRED_STEPS,
     STEP_CHECKPOINT,
@@ -28,12 +29,17 @@ from okto_pulse.core.kg.safe_write_lifecycle import (
     STEP_FLUSH,
     STEP_FSYNC,
 )
-from okto_pulse.core.kg.schema import (
+from kg_schema_testing import (
     apply_ladybug_lifecycle_step,
     bootstrap_board_graph,
     close_all_connections,
     close_board_db_cache,
     open_board_connection,
+)
+
+kg_runtime = pytest.importorskip(
+    "okto_pulse.community.adapters.kg_runtime",
+    reason="AF-04 Community integration test requires the Community KG runtime adapter.",
 )
 
 SRC_DIR = str(Path(__file__).resolve().parents[1] / "src")
@@ -63,7 +69,7 @@ class _CheckpointSpyConnection:
 
 
 def _spy_board_connection(monkeypatch, executed: list[str], *, fail_checkpoint: bool = False):
-    orig_bc = schema.BoardConnection
+    orig_bc = kg_runtime.BoardConnection
 
     class SpyBC(orig_bc):
         def __init__(self, board_id: str) -> None:
@@ -79,7 +85,7 @@ def _spy_board_connection(monkeypatch, executed: list[str], *, fail_checkpoint: 
             else:
                 self.conn = _CheckpointSpyConnection(inner, executed)
 
-    monkeypatch.setattr(schema, "BoardConnection", SpyBC)
+    monkeypatch.setattr(kg_runtime, "BoardConnection", SpyBC)
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +139,11 @@ def test_race_continuous_reader_vs_exclusive_close(nd_board):
                 reader_errors.append(f"{type(exc).__name__}: {exc}")
                 break
 
-    th = threading.Thread(target=reader_loop, name="kg-race-reader")
+    th = threading.Thread(
+        target=copy_context().run,
+        args=(reader_loop,),
+        name="kg-race-reader",
+    )
     th.start()
     try:
         # Deadline folgado + exigência mínima de 3 closes: sob carga externa
@@ -158,16 +168,34 @@ def test_race_continuous_reader_vs_exclusive_close(nd_board):
     )
 
 
-def test_close_guard_fail_open_emits_warning(nd_board, monkeypatch, caplog):
+def test_close_guard_fail_closed_defers_and_emits_warning(nd_board, monkeypatch, caplog):
+    # KGD-01 FR6 (spec 26b46ef3, C6) — mudança de contrato INTENCIONAL.
+    # ANTES: o close legítimo era FAIL-OPEN — após o timeout do dreno fechava
+    # o Database com leitores vivos e emitia kg.close_guard.timeout (este
+    # teste assertava esse warning). Esse fail-open é o produtor provável do
+    # "escritor stale" que zera páginas interiores do WAL (KB1/H3).
+    # AGORA: fail-closed — o close é ADIADO (kg.close_guard.deferred), o
+    # Database permanece aberto/utilizável pelo leitor, e só o caminho de
+    # shutdown pode forçar (force_after_drain_timeout=True →
+    # kg.close_guard.forced_on_shutdown).
     # Encurta o dreno para o teste não custar 5s.
-    monkeypatch.setattr(schema, "_CLOSE_DRAIN_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(kg_runtime, "_CLOSE_DRAIN_TIMEOUT_S", 0.2)
     bc = schema.BoardConnection(nd_board)  # leitor "vazado" proposital
     try:
         with caplog.at_level("WARNING", logger="okto_pulse.kg.schema"):
             close_board_db_cache(nd_board)
-        assert any("kg.close_guard.timeout" in rec.message for rec in caplog.records), (
-            "fail-open nao emitiu o warning kg.close_guard.timeout"
-        )
+        assert any(
+            "kg.close_guard.deferred" in rec.message for rec in caplog.records
+        ), "fail-closed nao emitiu o warning kg.close_guard.deferred"
+        assert not any(
+            "kg.close_guard.timeout" in rec.message for rec in caplog.records
+        ), "caminho fail-open antigo (kg.close_guard.timeout) ainda ativo"
+        # Fail-closed de verdade: o Database NAO foi fechado sob o leitor —
+        # a conexao segue utilizavel (o fail-open antigo causava
+        # use-after-close nativo aqui).
+        res = bc.conn.execute("MATCH (m:BoardMeta) RETURN count(m)")
+        res.get_next()
+        res.close()
     finally:
         bc.close()
 
@@ -180,7 +208,17 @@ def test_close_guard_fail_open_emits_warning(nd_board, monkeypatch, caplog):
 _WRITER_SCRIPT = r"""
 import os, sys, time
 sys.path.insert(0, os.environ["ND_SRC"])
-from okto_pulse.core.kg.schema import (
+# R-P2-03: this is a FRESH core subprocess with no composition root, so it must
+# configure the KG registry (embedded fakes via the sanctioned test
+# defaults_factory) before any board op reads get_kg_registry().config.
+sys.path.insert(0, os.environ["ND_COMMUNITY_SRC"])
+sys.path.insert(0, os.environ["ND_TESTS"])
+from kg_registry_testing import configure_test_kg_registry
+from okto_pulse.community.config import CommunitySettings
+from okto_pulse.core.infra.config import configure_settings
+configure_settings(CommunitySettings())
+configure_test_kg_registry(graph_provider="real")
+from kg_schema_testing import (
     BoardConnection, apply_ladybug_lifecycle_step, bootstrap_board_graph,
 )
 bid = os.environ["ND_BOARD"]
@@ -199,7 +237,15 @@ time.sleep(60)  # o parent mata o processo aqui — sem teardown
 _READER_SCRIPT = r"""
 import os, sys
 sys.path.insert(0, os.environ["ND_SRC"])
-from okto_pulse.core.kg.schema import BoardConnection
+# R-P2-03: fresh core subprocess — compose the registry before board ops.
+sys.path.insert(0, os.environ["ND_COMMUNITY_SRC"])
+sys.path.insert(0, os.environ["ND_TESTS"])
+from kg_registry_testing import configure_test_kg_registry
+from okto_pulse.community.config import CommunitySettings
+from okto_pulse.core.infra.config import configure_settings
+configure_settings(CommunitySettings())
+configure_test_kg_registry(graph_provider="real")
+from kg_schema_testing import BoardConnection
 bid = os.environ["ND_BOARD"]
 bc = BoardConnection(bid)
 res = bc.conn.execute("MATCH (k:KillT) RETURN count(k)")
@@ -211,6 +257,10 @@ bc.close()
 def test_kill_durability_checkpoint_survives_abrupt_death(nd_board, tmp_path):
     env = dict(os.environ)
     env["ND_SRC"] = SRC_DIR
+    env["ND_COMMUNITY_SRC"] = str(
+        Path(__file__).resolve().parents[2] / "okto_labs_pulse_community" / "src"
+    )
+    env["ND_TESTS"] = str(Path(__file__).resolve().parent)
     env["ND_BOARD"] = f"board-kill-{os.urandom(3).hex()}"
     # Reusa o KG_BASE_DIR do ambiente de teste (conftest) — escritor e leitor
     # compartilham o mesmo diretório, processos distintos.
@@ -266,12 +316,12 @@ def test_destructive_probe_fails_closed_under_stuck_reader(nd_board, monkeypatch
     com leitor ativo (use-after-close nativo → SIGSEGV). Com um leitor que
     não sai dentro do dreno, o probe falha explicitamente, sem fechar."""
     # Encurta o dreno do probe para o teste não esperar 30s.
-    orig = schema.try_close_board_db
+    orig = kg_runtime.try_close_board_db
 
     def fast_probe_close(board_id, *, drain_timeout=None, fast_path=True):
         return orig(board_id, drain_timeout=0.05, fast_path=fast_path)
 
-    monkeypatch.setattr(schema, "try_close_board_db", fast_probe_close)
+    monkeypatch.setattr(kg_runtime, "try_close_board_db", fast_probe_close)
 
     with open_board_connection(nd_board) as (_db, conn):
         before = conn.execute("MATCH (m:BoardMeta) RETURN count(m)").get_next()
@@ -286,7 +336,7 @@ def test_destructive_probe_fails_closed_under_stuck_reader(nd_board, monkeypatch
 
 
 def test_worker_subset_constant_excludes_probe():
-    from okto_pulse.core.kg.workers.consolidation import WORKER_COMMIT_LIFECYCLE_STEPS
+    from okto_pulse.core.application.processors.consolidation import WORKER_COMMIT_LIFECYCLE_STEPS
 
     assert WORKER_COMMIT_LIFECYCLE_STEPS == (STEP_CHECKPOINT, STEP_FLUSH, STEP_FSYNC)
     assert STEP_CLOSE_REOPEN_PROBE not in WORKER_COMMIT_LIFECYCLE_STEPS
@@ -298,21 +348,21 @@ def test_worker_subset_constant_excludes_probe():
 
 
 def _spy_try_close(monkeypatch, calls: list[bool]):
-    orig = schema.try_close_board_db
+    orig = kg_runtime.try_close_board_db
 
     def spy(board_id: str, **kwargs) -> bool:
         result = orig(board_id, **kwargs)
         calls.append(result)
         return result
 
-    monkeypatch.setattr(schema, "try_close_board_db", spy)
+    monkeypatch.setattr(kg_runtime, "try_close_board_db", spy)
 
 
 def _spy_checkpoint(monkeypatch, calls: list[str], *, fail: bool = False):
     """Espia _execute_checkpoint_unguarded (o CHECKPOINT roda em janela
     exclusiva com conexão crua desde o fix do 6º crash — o SpyBC de
     BoardConnection não o vê mais)."""
-    orig = schema._execute_checkpoint_unguarded
+    orig = kg_runtime._execute_checkpoint_unguarded
 
     def spy(path):
         calls.append(str(path))
@@ -320,7 +370,7 @@ def _spy_checkpoint(monkeypatch, calls: list[str], *, fail: bool = False):
             raise RuntimeError("forced checkpoint failure (ts_d4f7b005)")
         return orig(path)
 
-    monkeypatch.setattr(schema, "_execute_checkpoint_unguarded", spy)
+    monkeypatch.setattr(kg_runtime, "_execute_checkpoint_unguarded", spy)
 
 
 def test_periodic_buffer_hygiene_closes_every_kth_commit(nd_board, monkeypatch):
@@ -328,7 +378,7 @@ def test_periodic_buffer_hygiene_closes_every_kth_commit(nd_board, monkeypatch):
     aberto degradam o buffer do Ladybug até abort nativo. A cada K commits o
     step troca o CHECKPOINT pelo CLOSE (higiene do buffer pool)."""
     monkeypatch.setenv("KG_CHECKPOINT_CLOSE_INTERVAL", "3")
-    schema._reset_checkpoint_counter(nd_board)
+    kg_runtime._reset_checkpoint_counter(nd_board)
     close_calls: list[bool] = []
     _spy_try_close(monkeypatch, close_calls)
     checkpoints: list[str] = []
@@ -352,8 +402,8 @@ def test_hygiene_close_skipped_under_active_reader(nd_board, monkeypatch):
     contador fica re-armado: cada commit seguinte re-tenta até o leitor
     sair — só então o close acontece."""
     monkeypatch.setenv("KG_CHECKPOINT_CLOSE_INTERVAL", "3")
-    monkeypatch.setattr(schema, "_HYGIENE_CLOSE_DRAIN_TIMEOUT_S", 0.05)
-    schema._reset_checkpoint_counter(nd_board)
+    monkeypatch.setattr(kg_runtime, "_HYGIENE_CLOSE_DRAIN_TIMEOUT_S", 0.05)
+    kg_runtime._reset_checkpoint_counter(nd_board)
     close_calls: list[bool] = []
     _spy_try_close(monkeypatch, close_calls)
     checkpoints: list[str] = []
@@ -399,8 +449,8 @@ def test_checkpoint_failure_falls_back_to_close(nd_board, monkeypatch):
     assert result.ok is True, f"fallback close deveria salvar o step: {result.detail}"
     assert checkpoints, "CHECKPOINT nem chegou a ser tentado"
     key = str(schema.board_kuzu_path(nd_board))
-    with schema._board_db_cache_lock:
-        assert key not in schema._board_db_cache, (
+    with kg_runtime._board_db_cache_lock:
+        assert key not in kg_runtime._board_db_cache, (
             "fallback nao fechou o Database (buffer pool nao liberado)"
         )
 
@@ -411,7 +461,7 @@ def test_checkpoint_skipped_under_active_reader_after_failure_setup(
     """CHECKPOINT exige janela exclusiva: com leitor ativo o step é adiado
     SEM executar o CHECKPOINT (6º crash: SIGSEGV nativo) e SEM fechar nada
     — o commit já está no WAL e o STEP_FSYNC sincroniza os arquivos."""
-    schema._reset_checkpoint_counter(nd_board)
+    kg_runtime._reset_checkpoint_counter(nd_board)
     checkpoints: list[str] = []
     _spy_checkpoint(monkeypatch, checkpoints, fail=True)
 
@@ -430,22 +480,29 @@ def test_checkpoint_and_fallback_failure_blocks_queue_ack(nd_board, monkeypatch)
     """BR-3 preservada no caso terminal: se o CHECKPOINT falha E o fallback
     close também falha (falha REAL de close, não skip por leitor), o step
     falha e o worker NÃO ACKa o queue entry."""
-    from okto_pulse.core.kg.workers.consolidation import (
+    from okto_pulse.core.application.processors.consolidation import (
         _apply_board_graph_lifecycle_after_commit,
     )
+    from okto_pulse.core.kg.guarded_write import guarded_board_write
 
     def _broken_close(*_a, **_k):
         raise RuntimeError("forced close failure (terminal)")
 
-    monkeypatch.setattr(schema, "_close_cached_db_unguarded", _broken_close)
+    monkeypatch.setattr(kg_runtime, "_close_cached_db_unguarded", _broken_close)
     checkpoints: list[str] = []
     _spy_checkpoint(monkeypatch, checkpoints, fail=True)
     with pytest.raises(RuntimeError) as exc_info:
-        _apply_board_graph_lifecycle_after_commit(
-            board_id=nd_board,
-            owner_token="consolidation-worker:test-entry:deadbeef",
+        with guarded_board_write(
+            nd_board,
+            operation="consolidation_worker",
+            owner_id="consolidation-worker:test-entry",
             mutation_ref="spec:test:session",
-        )
+        ) as write_lease:
+            _apply_board_graph_lifecycle_after_commit(
+                board_id=nd_board,
+                mutation_ref="spec:test:session",
+                write_lease=write_lease,
+            )
     msg = str(exc_info.value)
     assert "board_graph_safe_lifecycle_failed" in msg
     assert "failed_step=checkpoint" in msg

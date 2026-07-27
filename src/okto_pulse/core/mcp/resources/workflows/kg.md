@@ -6,22 +6,37 @@ version: "1.0"
 
 ## Architecture Overview
 
-- **Per-board LadybugDB graph** at `~/.okto-pulse/boards/{board_id}/graph.lbug` — 11 node types, 10 relationship types, 5 HNSW vector indexes
-- **Global discovery meta-graph** at `~/.okto-pulse/global/discovery.lbug` — board summaries, topic clusters, canonical entities (digest-only, no sensitive content)
-- **SQLite operational tables**: `consolidation_queue`, `consolidation_audit`, node back-references for undo, `global_update_outbox`
+- **Per-board embedded graph database** (per-board graph store) — 11 node types, 10 relationship types, 5 HNSW vector indexes
+- **Global discovery meta-graph** (global discovery graph store) — board summaries, topic clusters, canonical entities (digest-only, no sensitive content)
+- **Relational operational tables**: `consolidation_queue`, `consolidation_audit`, node back-references for undo, `global_update_outbox`
 - **Agent-as-LLM premise**: the platform NEVER invokes LLM. All cognitive work (extraction, reasoning, reconciliation decisions) is done by YOU, the code agent.
+
+When KG Health reports `digest_vs_board_layer_mismatch` after all operational
+queues are idle, inspect the rows with
+`okto_pulse_kg_digest_layer_mismatch_list`. An authorized KG administrator may
+then call `okto_pulse_kg_digest_layer_reconcile` with a bounded audit reason and
+wait for the outbox to return to idle before verifying the mismatch list again.
+This is a parity sync, not a rebuild. The worker keyset-inventories authoritative
+publishable board sources with physical duplicate detection, guards stale prune
+against derived clustering relationships, repairs identities and Board links,
+and backfills missing identities. It revalidates the source inventory before a
+board-isolated ACK and requires a post-flush fresh-handle proof of one stable
+digest, the correct Board edge, and exactly one total inbound Board edge per
+source.
 
 ## Consolidation Primitives (7 tools)
 
-| Tool | Args | Purpose |
-|------|------|---------|
-| `okto_pulse_kg_begin_consolidation` | board_id, artifact_type, artifact_id, raw_content, deterministic_candidates? | Open a transactional session. Returns session_id + SHA256 dedup. |
-| `okto_pulse_kg_add_node_candidate` | session_id, candidate | Add a node candidate. Not persisted until commit. |
-| `okto_pulse_kg_add_edge_candidate` | session_id, candidate | Add an edge. Endpoints reference in-session candidates or existing nodes via `kg:` prefix. |
-| `okto_pulse_kg_get_similar_nodes` | session_id, candidate_id, top_k?, min_similarity? | HNSW vector search against existing graph. |
-| `okto_pulse_kg_propose_reconciliation` | session_id | Server computes deterministic hints: ADD/UPDATE/SUPERSEDE/NOOP. |
-| `okto_pulse_kg_commit_consolidation` | session_id, summary_text?, agent_overrides? | Atomically write to LadybugDB + audit row + outbox event. |
-| `okto_pulse_kg_abort_consolidation` | session_id, reason? | Drop the session without writing. |
+> Args/returns for every `okto_pulse_kg_*` tool live in `okto-pulse://reference/tool-docs/kg` — the tables in this workflow list purpose only.
+
+| Tool | Purpose |
+|------|---------|
+| `okto_pulse_kg_begin_consolidation` | Open a transactional session. Returns session_id + SHA256 dedup. |
+| `okto_pulse_kg_add_node_candidate` | Add a node candidate. Not persisted until commit. |
+| `okto_pulse_kg_add_edge_candidate` | Add an edge. Endpoints reference in-session candidates or existing nodes via `kg:` prefix. |
+| `okto_pulse_kg_get_similar_nodes` | HNSW vector search against existing graph. |
+| `okto_pulse_kg_propose_reconciliation` | Server computes deterministic hints: ADD/UPDATE/SUPERSEDE/NOOP. |
+| `okto_pulse_kg_commit_consolidation` | Atomically write to the embedded graph database + audit row + outbox event. |
+| `okto_pulse_kg_abort_consolidation` | Drop the session without writing. |
 
 **Node types (11):** Decision, Criterion, Constraint, Assumption, Requirement, Entity, APIContract, TestScenario, Bug, Learning, Alternative
 
@@ -34,15 +49,93 @@ version: "1.0"
 1. okto_pulse_kg_begin_consolidation(board_id, artifact_type, artifact_id, raw_content, deterministic_candidates=[...])
    → if nothing_changed=true → STOP, abort and move on
 2. For every candidate:
-     a. okto_pulse_kg_get_similar_nodes(session_id, candidate_id, top_k=5, min_similarity=0.85)
+     a. okto_pulse_kg_add_node_candidate(session_id, candidate)
+     b. okto_pulse_kg_get_similar_nodes(session_id, candidate_id, top_k=5, min_similarity=0.85)
         → if match ≥ 0.95: plan UPDATE; if 0.85..0.95: plan SUPERSEDE; else: plan ADD
-     b. okto_pulse_kg_add_node_candidate(session_id, candidate)
 3. okto_pulse_kg_add_edge_candidate only for cognitive rels
 4. okto_pulse_kg_propose_reconciliation(session_id)
 5. okto_pulse_kg_commit_consolidation(session_id, summary_text="<1-2 sentences>", agent_overrides={...})
 6. Verify with okto_pulse_kg_health + okto_pulse_kg_query_natural + okto_pulse_kg_query_cypher
 7. On any unrecoverable error: okto_pulse_kg_abort_consolidation(session_id, reason=...)
 ```
+
+`candidate_id` is session-local: calling `get_similar_nodes` before
+`add_node_candidate` deterministically returns `candidate_not_found`.
+
+## Global Discovery recovery (component-scoped)
+
+Never infer the remedy from generic `overall_state=recovery_needed`. If
+`graph_state` is healthy while `discovery_state=recovery_needed` and
+`discovery_recovery_required=true`, use only
+`okto_pulse_kg_global_discovery_recovery_preflight` →
+`okto_pulse_kg_global_discovery_recovery_confirm` →
+`okto_pulse_kg_global_discovery_recovery_run`. Board rebuild preflight refuses
+this discovery-only case. The global preflight requires all board graphs to be
+healthy; healthy/quarantined discovery is not admitted.
+
+`run` persists integrity-bound worker inputs, creates the durable control row,
+dispatches owned background work, and returns `accepted` without waiting for
+the native candidate/cutover. Poll
+`okto_pulse_kg_global_discovery_recovery_status` for authoritative progress and
+the terminal outcome. Retrying the exact confirmation/run binding returns the
+existing run; do not issue a new recovery while the existing run is `pending`
+or `running`.
+
+### Terminal Global Discovery outbox recovery
+
+Use the global-outbox dead-letter family only after the delivery root cause is
+fixed; it is distinct from the board consolidation DLQ family:
+
+1. Page `okto_pulse_kg_global_outbox_dead_letter_list` with `limit<=100` and
+   retain the returned immutable IDs. With `classification`, an empty page may
+   still carry `next_cursor`; follow it until null.
+2. For legacy rows, call `okto_pulse_kg_global_outbox_dead_letter_reprocess`
+   with 1-100 explicit, unique IDs and an audit reason.
+   Never interpret an empty selection as all. Governed
+   `gd_parity:...:attempt:n` rows are immutable
+   delivery history: do not rearm them. `kg.tick.daily` starts the automatic
+   recovery chain; each `kg.tick.delivery_redrive` event runs one globally
+   bounded page, serves one oldest due item per board before repeating a board,
+   and advances the persisted round-robin checkpoint in the same transaction
+   as fresh `attempt:n+1` rows. Due backlog schedules the next bounded event in
+   that transaction. A governed or mixed manual selection fails closed with
+   `governed_delivery_attempt_tick_owned`.
+   The orphan watchdog is independently board-bounded and resumes from a
+   persisted rotating cursor, so an active prefix cannot starve a later
+   missing, malformed, terminal, or already-processed attempt.
+3. Call `okto_pulse_kg_global_outbox_dead_letter_verify` with those exact IDs.
+   Treat `still_dead_lettered`, dangling/cyclic lineage reason codes, or a busy
+   response as unresolved; queued/applied are idempotent replay outcomes.
+
+Each operation owns a dedicated relational transaction. Selection validation
+and guarded requeue are atomic; `process_now=true` wakes the outbox worker only
+after commit.
+
+## Durable stale-canonical catch-up
+
+`kg.tick.daily` stages at most one low-priority `stale_sweep` coordinator per
+relational board, and does so only after the board's decay graph transaction has
+closed. Its durable payload is `{cursor,budget,attempt}`. The queue worker runs
+one global `(artifact_type, artifact_id)` keyset query capped at `budget + 1`,
+normalizes card child refs to their owning card, and advances through live-only
+inventory pages as well as deleted-source pages.
+
+The inventory requires a complete relational source snapshot. Before creating
+catch-up work, the relational adapter rechecks each candidate while holding the
+writer slot. A still-absent historical source receives the deterministic key
+`catchup:{board}:{type}:{id}:epoch:1`; its tombstone, `stale_reconcile` child and
+next checkpoint are committed in one relational unit of work. An existing real
+tombstone is reused and never advanced by the sweep.
+
+Graph open/read failures and incomplete source snapshots preserve the cursor
+and re-pend the coordinator for the next tick window; they never authorize a
+broader scan or a synthetic tombstone. Literal relational board deletion still
+cascades its queue rows, so "board unavailable" here means the board remains in
+SQL while its graph runtime is absent, locked, quarantined or unreadable. Do not
+edit coordinator payloads manually. Use staged telemetry
+`kg.stale_sweep.scheduled.staged`, `kg.stale_sweep.page_staged`,
+`kg.stale_sweep.rescheduled.staged` and `kg.stale_sweep.completed.staged` to
+follow the caller-owned commit boundary.
 
 ## Query Timing — MANDATORY at Every Stage
 
@@ -57,7 +150,7 @@ version: "1.0"
 >
 > This rule keys ONLY on the existing `graph_state` field and the existing structured `graph_unavailable`. Recovering a degraded graph is the separate KG Health recovery flow (an operator-driven path, out of scope for this rule), and this rule does **not** define any new error code or response envelope for the degraded case. When `graph_state` is not one of the two degraded values, run the mandatory query sets normally.
 
-**Stage 1 — Ideation (before moving to `evaluating` or answering any Q&A)**
+**Stage 1 — Ideation (before moving to `evaluating` and before answering any Q&A)**
 
 | Query | Why it's required |
 |---|---|
@@ -70,7 +163,7 @@ version: "1.0"
 | Query | Why it's required |
 |---|---|
 | `okto_pulse_kg_find_similar_decisions(board_id, topic=<refinement topic>)` | Find prior decisions the refinement may extend, supersede, or contradict |
-| `okto_pulse_kg_get_related_context(board_id, artifact_id=<formalized_node_or_artifact_id>)` | Use only when anchored to an existing formalized KG node |
+| `okto_pulse_kg_get_related_context(board_id, artifact_id="spec:<uuid>")` or `artifact_id="card:<uuid>"` | Use only when anchored to an existing formalized spec/card; the type discriminator is mandatory |
 | `okto_pulse_kg_find_contradictions(board_id, node_id=<relevant decision>)` | Detect contradictions before they reach spec |
 | `okto_pulse_kg_list_alternatives(board_id, decision_id=<anchor decision>)` | Surface "why not X" rationale |
 
@@ -78,34 +171,44 @@ version: "1.0"
 
 | Query | Why it's required |
 |---|---|
-| `okto_pulse_kg_get_related_context(board_id, artifact_id=<spec_id>)` | Final sweep of 2-hop neighbors |
+| `okto_pulse_kg_get_related_context(board_id, artifact_id="spec:<uuid>")` | Final sweep of 2-hop neighbors; a raw spec UUID is rejected |
 | `okto_pulse_kg_find_contradictions(board_id)` (board-wide) | Detects contradictions the spec itself may have introduced |
 | `okto_pulse_kg_find_similar_decisions(board_id, topic=<each major FR/BR>)` | Check every significant FR/BR for similarity |
-| `okto_pulse_kg_explain_constraint(board_id, constraint_id=<each relevant constraint>)` | Fetch origin + related constraints + prior violations |
+| `okto_pulse_kg_explain_constraint(board_id, constraint_id=<each relevant canonical Constraint.id>)` | Fetch origin + related constraints + prior violations. Do not fabricate this id from a TR id or worker candidate id; use the discovery recipe below. |
+
+**Constraint-ID discovery for Stage 3.** `constraint_id` is the canonical graph
+node id. For a current draft, resolve it through the read-only MCP boundary with
+`okto_pulse_kg_query_cypher(board_id, cypher="MATCH (c:Constraint) WHERE
+c.source_artifact_ref STARTS WITH $prefix RETURN c.id AS id,
+c.source_artifact_ref AS ref", params={"prefix":"spec:<spec-id>:"},
+include_working=true)`. Match the returned `source_artifact_ref` to the spec child
+refs, reject missing or duplicate refs, and pass only the returned `c.id` values to
+`okto_pulse_kg_explain_constraint`. `include_working=true` is required here because
+the mandatory sweep happens before the spec leaves `draft`.
 
 ## Tier Primary Query Tools (9 tools)
 
-| Tool | Args | Purpose |
-|------|------|---------|
-| `okto_pulse_kg_get_decision_history` | board_id, topic, min_confidence?, max_rows? | Trace decisions about a topic over time |
-| `okto_pulse_kg_get_related_context` | board_id, artifact_id, min_confidence?, max_rows? | 2-hop neighborhood |
-| `okto_pulse_kg_get_supersedence_chain` | board_id, decision_id | Full chain of what superseded what |
-| `okto_pulse_kg_find_contradictions` | board_id, node_id?, max_rows? | Contradictory decision pairs |
-| `okto_pulse_kg_find_similar_decisions` | board_id, topic, top_k?, min_similarity? | Semantic search with hybrid ranking |
-| `okto_pulse_kg_explain_constraint` | board_id, constraint_id | Origin, related constraints, violations |
-| `okto_pulse_kg_list_alternatives` | board_id, decision_id, max_rows? | Alternatives considered and discarded |
-| `okto_pulse_kg_get_learning_from_bugs` | board_id, area, min_confidence?, max_rows? | Lessons learned from bugs |
-| `okto_pulse_kg_query_global` | board_id?, nl_query, top_k? | Cross-board semantic search |
+| Tool | Purpose |
+|------|---------|
+| `okto_pulse_kg_get_decision_history` | Trace decisions about a topic over time |
+| `okto_pulse_kg_get_related_context` | 2-hop neighborhood |
+| `okto_pulse_kg_get_supersedence_chain` | Full chain of what superseded what |
+| `okto_pulse_kg_find_contradictions` | Contradictory decision pairs |
+| `okto_pulse_kg_find_similar_decisions` | Semantic search with hybrid ranking |
+| `okto_pulse_kg_explain_constraint` | Origin, related constraints, violations |
+| `okto_pulse_kg_list_alternatives` | Alternatives considered and discarded |
+| `okto_pulse_kg_get_learning_from_bugs` | Lessons learned from bugs |
+| `okto_pulse_kg_query_global` | Cross-board semantic search |
 
 ## Tier Power Escape Hatch (3 tools)
 
-| Tool | Args | Purpose |
-|------|------|---------|
-| `okto_pulse_kg_query_cypher` | board_id, cypher, params?, max_rows?, timeout_ms?, include_working? | Read-only Cypher directly on LadybugDB. Defaults to canonical-only rows; pass `include_working=true` when validating working graph ingestion. |
-| `okto_pulse_kg_query_natural` | board_id, nl_query, limit?, min_confidence? | Natural language search via embedding + HNSW |
-| `okto_pulse_kg_schema_info` | board_id?, include_internal? | Schema introspection: node types, rel types, vector indexes |
+| Tool | Purpose |
+|------|---------|
+| `okto_pulse_kg_query_cypher` | Read-only Cypher directly on the embedded graph database. Defaults to canonical-only rows; pass `include_working=true` when validating working graph ingestion. |
+| `okto_pulse_kg_query_natural` | Natural language search via embedding + HNSW |
+| `okto_pulse_kg_schema_info` | Schema introspection: node types, rel types, vector indexes |
 
-**Safety rails:** Timeout: 5s default, 30s max. Max rows: 1000 default, 10000 max. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
+**Safety rails:** Timeout: 5s default, 30s max. Max rows: 50 by default and 1000 hard cap. Rate limit: **30 queries/min per agent**. Cypher injection: blacklist keywords rejected.
 
 **Layer contract:** Graph nodes expose `graph_layer` (`canonical` or `working`). `kg_layer_counts` is a health payload aggregate, not a node property. `okto_pulse_kg_query_cypher` enforces canonical-only visibility by default and should be called with `include_working=true` for working graph checks, rebuild validation, or E2E ingestion tests.
 
@@ -120,7 +223,7 @@ version: "1.0"
 
 Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment the counter — there's no row-level node id to attribute to. That's intentional: aggregations are diagnostic, not consumption.
 
-**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, and `decay_scheduler_diagnostics`, populated from the daily APScheduler tick ledger (03:00 UTC). When the diagnostics report `operational_debt=true` but `graph_recovery_required=false`, treat it as scheduler/operations debt, not as a rebuild trigger. Score freshness is still bounded by the on-read `_apply_decay_reorder` until the scheduled tick lands.
+**Last decay tick visibility:** `okto_pulse_kg_health` exposes `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, and `decay_scheduler_diagnostics`, populated from the daily scheduler tick ledger (03:00 UTC). When the diagnostics report `operational_debt=true` but `graph_recovery_required=false`, treat it as scheduler/operations debt, not as a rebuild trigger. Score freshness is still bounded by the on-read `_apply_decay_reorder` until the scheduled tick lands.
 
 ## When and How to Consolidate — Mandatory Triggers
 
@@ -210,11 +313,24 @@ Before creating any Decision or Constraint, run:
 | `mentions`, `derives_from`, `tests`, `implements`, `violates`, `belongs_to` | Layer 1 deterministic worker | Auto on consolidation |
 | `supersedes`, `contradicts`, `depends_on`, `relates_to`, `validates` | Cognitive agent (you) | Manual cognitive edges only |
 
+### Cognitive Provenance — Learning Taxonomy (S-KG-01)
+
+Cognitive artifacts (`Learning` / `Alternative` / `Assumption`) prove connectivity through **cognitive provenance** — a resolved `source_artifact_ref` PLUS a cognitive-taxonomy relation — NOT the deterministic `belongs_to`-to-`Entity` backbone the **operational** artifacts (`Requirement` / `Constraint` / `APIContract` / `TestScenario` / `Criterion` / `Bug` / `Entity`) require. The taxonomy reuses the EXISTING edge names; no new edge type is ever introduced (never `learned_from` / `informs` / `constrains` / `refines` / `warns_about`):
+
+| Learning shape | Allowed relation | Endpoint |
+|---|---|---|
+| bug-derived | `validates` | a **canonical** `Bug` (a `working` Bug never canonizes the Learning) |
+| non-bug | `relates_to` | ONE canonical `Entity` \| `Decision` \| `Requirement` \| `Constraint` \| `TestScenario` \| `APIContract` \| `Criterion` |
+
+`relates_to Decision -> Alternative` is unchanged. A cognitive writer that emits `belongs_to` (or any deterministic edge) is rejected fail-closed with `forbidden_deterministic_edge`; a cognitive node whose source resolves but carries no allowed relation is `missing_cognitive_provenance`. Operational artifacts stay on the strict deterministic provenance group even when they carry cognitive metadata.
+
 ### KG Health
 
 `okto_pulse_kg_health(board_id)` — returns a JSON health snapshot. It carries the KG-01 contract fields (`board_id`, `graph_state`, `discovery_state`, `overall_state`, `metric_status`, `correlation_id`, `checked_at`, …) alongside the legacy aggregation fields (`queue_depth`, `oldest_pending_age_s`, `dead_letter_count`, `total_nodes`, `default_score_ratio`, `avg_relevance`, `schema_version`, `contradict_warn_count`), the daily-tick fields `last_decay_tick_at` / `nodes_recomputed_in_last_tick`, `decay_scheduler_diagnostics`, and `storage_footprint_proxy`.
 
 **When to consult:** before long consolidation cycles, after flagging contradictions, when debugging stale ranking (`default_score_ratio > 0.7`).
+
+**Storage:** each board's KG persists through the runtime graph-store adapter. The core contract reports `graph_state` for the canonical/working graph and `discovery_state` for the discovery/embedding index without naming a concrete storage engine or filesystem layout. Never delete the graph store; schema migrations self-heal on the hot path. A degraded `graph_state` / `discovery_state` points at the matching operational store owned by the active runtime adapter.
 
 ### Operational Signals — Separate Domains + Drill-Down (spec 007d1308)
 

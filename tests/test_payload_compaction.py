@@ -12,6 +12,8 @@ Covers spec ``MCP KG Query Safety and Quick-Win Payload Bounds`` test scenarios:
 
 from __future__ import annotations
 
+from mcp_runtime_testing import register_mcp_test_runtime
+
 import json
 import logging
 import uuid
@@ -29,7 +31,7 @@ from okto_pulse.core.mcp.payload_compaction import (
     compact_payload,
     compute_compaction_stats,
 )
-from okto_pulse.core.models.db import (
+from sqlalchemy_test_models import (
     Board,
     BugSeverity,
     Card,
@@ -61,7 +63,7 @@ def _stub_ctx(board_id: str):
 
 
 async def _call(name: str, **kwargs):
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     raw = await tool.fn(**kwargs)
     return json.loads(raw)
@@ -655,6 +657,6 @@ async def test_list_business_rules_preserves_unresolved_legacy_refs():
 
 
 async def _call_raw(name: str, **kwargs) -> str:
-    mcp_server.register_session_factory(get_session_factory())
+    register_mcp_test_runtime(get_session_factory())
     tool = await mcp_server.mcp.get_tool(name)
     return await tool.fn(**kwargs)

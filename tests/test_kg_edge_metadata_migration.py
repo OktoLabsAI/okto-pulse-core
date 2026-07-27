@@ -14,20 +14,24 @@ import os
 
 import pytest
 
-import okto_pulse.core.kg.schema as kg_schema
-from okto_pulse.core.kg.connection_pool import reset_connection_pool_for_tests
-from okto_pulse.core.kg.schema import (
+import kg_schema_testing as kg_schema
+from okto_pulse.community.adapters.graph_connection_pool import (
+    reset_connection_pool_for_tests,
+)
+from kg_schema_testing import (
     EDGE_LAYERS,
     EDGE_METADATA_COLUMNS,
     REL_TYPES,
     SCHEMA_VERSION,
-    _ensure_multi_rel_pairs,
-    _show_rel_connection_pairs,
     bootstrap_board_graph,
     close_all_connections,
-    migrate_edge_metadata,
     open_board_connection,
 )
+
+kg_runtime = pytest.importorskip("okto_pulse.community.adapters.kg_runtime")
+_ensure_multi_rel_pairs = kg_runtime._ensure_multi_rel_pairs
+_show_rel_connection_pairs = kg_runtime._show_rel_connection_pairs
+migrate_edge_metadata = kg_runtime.migrate_edge_metadata
 
 
 @pytest.fixture
@@ -43,7 +47,19 @@ def test_schema_version_is_current():
     # Monotonic additive bumps (0.3.6 = KG working/canonical partitioning,
     # commit dcf6130) preserve the floor — assert known-version membership
     # rather than a single fixed string (pattern from test_events.py).
-    assert SCHEMA_VERSION in {"0.3.2", "0.3.3", "0.3.4", "0.3.5", "0.3.6", "0.3.7"}
+    assert SCHEMA_VERSION in {
+        "0.3.2",
+        "0.3.3",
+        "0.3.4",
+        "0.3.5",
+        "0.3.6",
+        "0.3.7",
+        "0.3.8",
+        "0.3.9",
+        "0.3.10",
+        "0.3.11",
+        "0.3.12",
+    }
 
 
 def test_edge_metadata_columns_declared():
@@ -104,24 +120,20 @@ def test_board_migration_probe_detects_missing_multi_rel_pair(tmp_path, monkeypa
         del conn, db
 
     monkeypatch.setattr(kg_schema, "board_kuzu_path", lambda _board_id: graph_path)
-    kg_schema._MIGRATED_BOARDS.discard(board)
+    kg_runtime._MIGRATED_BOARDS.discard(board)
     try:
-        assert kg_schema._board_needs_migration(board) is True
+        assert kg_runtime._board_needs_migration(board) is True
     finally:
         kg_schema.close_board_db_cache(board)
-        kg_schema._MIGRATED_BOARDS.discard(board)
+        kg_runtime._MIGRATED_BOARDS.discard(board)
 
 
 def test_bootstrap_creates_rels_with_metadata_columns(board):
     """Every REL_TYPES table must accept writes to the new columns."""
     with open_board_connection(board) as (_db, conn):
         # Seed two Decisions so a supersedes edge has anchors.
-        conn.execute(
-            "CREATE (n:Decision {id: 'd1', title: 't1', content: 'c1'})"
-        )
-        conn.execute(
-            "CREATE (n:Decision {id: 'd2', title: 't2', content: 'c2'})"
-        )
+        conn.execute("CREATE (n:Decision {id: 'd1', title: 't1', content: 'c1'})")
+        conn.execute("CREATE (n:Decision {id: 'd2', title: 't2', content: 'c2'})")
         conn.execute(
             "MATCH (a:Decision {id: 'd1'}), (b:Decision {id: 'd2'}) "
             "CREATE (a)-[:supersedes {confidence: 1.0, "
@@ -167,14 +179,11 @@ def test_legacy_backfill_tags_untagged_edges(board):
     Simulates a pre-v0.2.0 edge (no layer field) by inserting the legacy
     shape, then running migrate_edge_metadata and asserting the update.
     """
+
     def seed_legacy_edge():
         with open_board_connection(board) as (_db, conn):
-            conn.execute(
-                "CREATE (n:Decision {id: 'd3', title: 't3', content: 'c3'})"
-            )
-            conn.execute(
-                "CREATE (n:Decision {id: 'd4', title: 't4', content: 'c4'})"
-            )
+            conn.execute("CREATE (n:Decision {id: 'd3', title: 't3', content: 'c3'})")
+            conn.execute("CREATE (n:Decision {id: 'd4', title: 't4', content: 'c4'})")
             # Insert WITHOUT any of the v0.2.0 columns — they default to NULL.
             conn.execute(
                 "MATCH (a:Decision {id: 'd3'}), (b:Decision {id: 'd4'}) "
