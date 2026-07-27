@@ -32,6 +32,40 @@ SUBSCRIBER_QUEUE_MAXSIZE = 512
 OUTBOX_BATCH_LIMIT = 50
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _event_order_key(event: KGOutboxEvent) -> tuple[datetime, str]:
+    # Outbox rows are expected to carry a timestamp.  Keep a deterministic
+    # position even for a defensive transport event that does not.
+    created_at = (
+        _as_utc(event.created_at)
+        if event.created_at is not None
+        else datetime.max.replace(tzinfo=timezone.utc)
+    )
+    return created_at, event.event_id
+
+
+def _event_is_after_cursor(
+    event: KGOutboxEvent,
+    *,
+    after: datetime,
+    after_event_id: str | None,
+) -> bool:
+    """Apply the same composite boundary required from reader providers."""
+
+    if event.created_at is None:
+        return False
+    event_created_at = _as_utc(event.created_at)
+    cursor_created_at = _as_utc(after)
+    if event_created_at != cursor_created_at:
+        return event_created_at > cursor_created_at
+    return after_event_id is not None and event.event_id > after_event_id
+
+
 def format_sse(event_type: str, payload: Mapping[str, Any]) -> str:
     """Serialize one event in the wire format consumed by the web client."""
 
@@ -76,6 +110,7 @@ class KgEventsSubscription:
     queue: asyncio.Queue[str]
     cursor: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     initial_progress: dict[str, int] | None = None
+    cursor_event_id: str | None = None
 
 
 class _BoardStream:
@@ -84,6 +119,7 @@ class _BoardStream:
         self.subscribers: set[asyncio.Queue[str]] = set()
         self.task: asyncio.Task[None] | None = None
         self.last_seen: datetime = datetime.now(timezone.utc)
+        self.last_seen_event_id: str | None = None
         self.last_progress: dict[str, int] | None = None
 
     def broadcast(self, chunk: str) -> None:
@@ -139,6 +175,7 @@ class KgEventsHub:
             board_id=board_id,
             queue=queue,
             cursor=stream.last_seen,
+            cursor_event_id=stream.last_seen_event_id,
             initial_progress=stream.last_progress,
         )
 
@@ -158,11 +195,13 @@ class KgEventsHub:
         board_id: str,
         after: datetime,
         limit: int,
+        after_event_id: str | None = None,
     ) -> Sequence[KGOutboxEvent]:
         return await self._reader.replay(
             board_id=board_id,
             after=after,
             limit=limit,
+            after_event_id=after_event_id,
         )
 
     async def aclose(self) -> None:
@@ -188,11 +227,36 @@ class KgEventsHub:
                     board_id=stream.board_id,
                     after=stream.last_seen,
                     limit=OUTBOX_BATCH_LIMIT,
+                    after_event_id=stream.last_seen_event_id,
                 )
-                for event in result.events:
+                ordered_events = sorted(
+                    result.events,
+                    key=_event_order_key,
+                )
+                for event in ordered_events:
+                    if event.created_at is None:
+                        logger.warning(
+                            "kg_events_hub.event_missing_created_at "
+                            "board=%s event_id=%s",
+                            stream.board_id,
+                            event.event_id,
+                            extra={
+                                "event": "kg_events_hub.event_missing_created_at",
+                                "board_id": stream.board_id,
+                                "event_id": event.event_id,
+                            },
+                        )
+                        continue
+                    if not _event_is_after_cursor(
+                        event,
+                        after=stream.last_seen,
+                        after_event_id=stream.last_seen_event_id,
+                    ):
+                        continue
                     stream.broadcast(format_outbox_row_sse(event))
                     if event.created_at is not None:
-                        stream.last_seen = event.created_at
+                        stream.last_seen = _as_utc(event.created_at)
+                        stream.last_seen_event_id = event.event_id
                 progress = dict(result.progress)
                 if progress != stream.last_progress:
                     stream.last_progress = progress

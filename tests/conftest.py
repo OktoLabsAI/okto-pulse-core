@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import and_, asc, event, exists, func, literal, select
+from sqlalchemy import and_, asc, event, exists, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ---------------------------------------------------------------------------
@@ -773,7 +773,14 @@ class _CoreTestKGEventsReader:
     def __init__(self, session_factory) -> None:
         self._session_factory = session_factory
 
-    async def poll(self, *, board_id, after, limit):
+    async def poll(
+        self,
+        *,
+        board_id,
+        after,
+        limit,
+        after_event_id=None,
+    ):
         from okto_pulse.core.infra.database import cancel_safe_session_scope
 
         async with cancel_safe_session_scope(self._session_factory) as session:
@@ -782,11 +789,19 @@ class _CoreTestKGEventsReader:
                 board_id=board_id,
                 after=after,
                 limit=limit,
+                after_event_id=after_event_id,
             )
             progress = await self._query_queue_snapshot(session, board_id=board_id)
         return KGEventsPoll(events=events, progress=progress)
 
-    async def replay(self, *, board_id, after, limit):
+    async def replay(
+        self,
+        *,
+        board_id,
+        after,
+        limit,
+        after_event_id=None,
+    ):
         from okto_pulse.core.infra.database import cancel_safe_session_scope
 
         async with cancel_safe_session_scope(self._session_factory) as session:
@@ -795,9 +810,27 @@ class _CoreTestKGEventsReader:
                 board_id=board_id,
                 after=after,
                 limit=limit,
+                after_event_id=after_event_id,
             )
 
-    async def _query_outbox_rows(self, session, *, board_id, after, limit):
+    async def _query_outbox_rows(
+        self,
+        session,
+        *,
+        board_id,
+        after,
+        limit,
+        after_event_id=None,
+    ):
+        cursor_filter = GlobalUpdateOutbox.created_at > after
+        if after_event_id is not None:
+            cursor_filter = or_(
+                GlobalUpdateOutbox.created_at > after,
+                and_(
+                    GlobalUpdateOutbox.created_at == after,
+                    GlobalUpdateOutbox.event_id > after_event_id,
+                ),
+            )
         rows = (
             (
                 await session.execute(
@@ -805,10 +838,13 @@ class _CoreTestKGEventsReader:
                     .where(
                         and_(
                             GlobalUpdateOutbox.board_id == board_id,
-                            GlobalUpdateOutbox.created_at > after,
+                            cursor_filter,
                         )
                     )
-                    .order_by(asc(GlobalUpdateOutbox.created_at))
+                    .order_by(
+                        asc(GlobalUpdateOutbox.created_at),
+                        asc(GlobalUpdateOutbox.event_id),
+                    )
                     .limit(limit)
                 )
             )

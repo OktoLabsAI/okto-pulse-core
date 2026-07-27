@@ -132,14 +132,28 @@ async def test_hub_poller_uses_injected_reader():
         def __init__(self) -> None:
             self.calls = 0
 
-        async def poll(self, *, board_id, after, limit):
+        async def poll(
+            self,
+            *,
+            board_id,
+            after,
+            limit,
+            after_event_id=None,
+        ):
             self.calls += 1
             return KGEventsPoll(
                 events=[],
                 progress={"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0},
             )
 
-        async def replay(self, *, board_id, after, limit):
+        async def replay(
+            self,
+            *,
+            board_id,
+            after,
+            limit,
+            after_event_id=None,
+        ):
             return []
 
     reader = _Reader()
@@ -159,7 +173,14 @@ async def test_hub_unsubscribe_cancels_an_inflight_reader_poll():
     poll_cancelled = asyncio.Event()
 
     class _Reader:
-        async def poll(self, *, board_id, after, limit):
+        async def poll(
+            self,
+            *,
+            board_id,
+            after,
+            limit,
+            after_event_id=None,
+        ):
             poll_started.set()
             try:
                 await asyncio.Event().wait()
@@ -167,7 +188,14 @@ async def test_hub_unsubscribe_cancels_an_inflight_reader_poll():
                 poll_cancelled.set()
                 raise
 
-        async def replay(self, *, board_id, after, limit):
+        async def replay(
+            self,
+            *,
+            board_id,
+            after,
+            limit,
+            after_event_id=None,
+        ):
             return []
 
     hub = KgEventsHub(_Reader(), poll_interval=30.0)
