@@ -92,7 +92,9 @@ def format_outbox_row_sse(event: KGOutboxEvent | Mapping[str, Any]) -> str:
             "event_id": event.event_id,
             "session_id": event.session_id,
             "event_type": event.event_type,
-            "created_at": event.created_at.isoformat() if event.created_at else None,
+            "created_at": _as_utc(event.created_at).isoformat()
+            if event.created_at
+            else None,
             "payload": dict(event.payload),
         }
         return format_sse(event.event_type, payload)

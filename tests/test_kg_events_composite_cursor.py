@@ -12,6 +12,7 @@ from okto_pulse.core.application import kg_events_hub as hub_module
 from okto_pulse.core.application.kg_events_hub import (
     KgEventsHub,
     KgEventsSubscription,
+    format_outbox_row_sse,
 )
 from okto_pulse.core.ports.kg_events import KGEventsPoll, KGOutboxEvent
 
@@ -41,6 +42,16 @@ def _is_after(
 def _event_id_from_sse(chunk: str) -> str:
     data_line = next(line for line in chunk.splitlines() if line.startswith("data: "))
     return str(json.loads(data_line.removeprefix("data: "))["event_id"])
+
+
+def test_outbox_sse_normalizes_naive_timestamp_to_utc() -> None:
+    chunk = format_outbox_row_sse(
+        _event("event-naive", datetime(2026, 7, 27, 9, 42, 1, 123456))
+    )
+    data_line = next(line for line in chunk.splitlines() if line.startswith("data: "))
+    payload = json.loads(data_line.removeprefix("data: "))
+
+    assert payload["created_at"] == "2026-07-27T09:42:01.123456+00:00"
 
 
 class _CompositeReader:
