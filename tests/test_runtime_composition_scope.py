@@ -121,6 +121,25 @@ def test_explicit_runtime_scopes_keep_independent_locks() -> None:
     assert first_lock is not second_lock
 
 
+def test_runtime_registry_copy_detaches_nested_mutable_state() -> None:
+    class FirstHandler:
+        pass
+
+    class SecondHandler:
+        pass
+
+    key = "runtime.state.events.registry"
+    original = RuntimeValueRegistry({key: {"event.created": [FirstHandler]}})
+    copied = original.copy()
+
+    copied.resolve(key)["event.created"].append(SecondHandler)
+
+    assert original.resolve(key) == {"event.created": [FirstHandler]}
+    assert copied.resolve(key) == {
+        "event.created": [FirstHandler, SecondHandler],
+    }
+
+
 def test_isolated_provider_scope_clones_and_restores_on_failure() -> None:
     class CloneableProvider:
         def __init__(self, name: str):

@@ -15,6 +15,25 @@ from threading import RLock
 from typing import Any, Callable, Iterator, Mapping
 
 
+def _clone_runtime_state(value: Any) -> Any:
+    """Recursively detach mutable built-in containers without cloning adapters."""
+
+    if isinstance(value, Counter):
+        return Counter({key: _clone_runtime_state(item) for key, item in value.items()})
+    if isinstance(value, dict):
+        return {key: _clone_runtime_state(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clone_runtime_state(item) for item in value]
+    if isinstance(value, set):
+        return {_clone_runtime_state(item) for item in value}
+    if isinstance(value, deque):
+        return deque(
+            (_clone_runtime_state(item) for item in value),
+            maxlen=value.maxlen,
+        )
+    return value
+
+
 @dataclass(slots=True)
 class RuntimeValueRegistry:
     _values: dict[str, Any] = field(default_factory=dict)
@@ -71,18 +90,7 @@ class RuntimeValueRegistry:
             elif key.startswith("runtime.lock."):
                 copied[key] = RLock()
             elif key.startswith("runtime.state."):
-                if isinstance(value, Counter):
-                    copied[key] = value.copy()
-                elif isinstance(value, dict):
-                    copied[key] = value.copy()
-                elif isinstance(value, list):
-                    copied[key] = list(value)
-                elif isinstance(value, set):
-                    copied[key] = set(value)
-                elif isinstance(value, deque):
-                    copied[key] = value.copy()
-                else:
-                    copied[key] = value
+                copied[key] = _clone_runtime_state(value)
             else:
                 copied[key] = value
         return RuntimeValueRegistry(copied)
