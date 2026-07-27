@@ -1528,6 +1528,10 @@ class GlobalDiscoveryRecoveryService:
             artifact_store=artifact_store
         )
         self._single_writer = single_writer_lock or KGSingleWriterLock()
+        # Bind context-owned synchronization once.  The service is dispatched
+        # to worker threads, which do not necessarily inherit ContextVars.
+        self._run_lock = _run_lock.bind()
+        self._active_run = _active_run.resolve()
 
     def current_snapshot_fingerprint(self) -> str:
         """Return the one cheap authoritative freshness fence allowed at start."""
@@ -2194,7 +2198,7 @@ class GlobalDiscoveryRecoveryService:
                 "candidate_inventory_mismatch",
                 "candidate seeds must cover every manifest board exactly once",
             )
-        if not _run_lock.acquire(blocking=False):
+        if not self._run_lock.acquire(blocking=False):
             raise GlobalDiscoveryRecoveryError(
                 "recovery_in_progress", "another recovery owns the process lock"
             )
@@ -2292,8 +2296,8 @@ class GlobalDiscoveryRecoveryService:
                         "confirmation_refused",
                         f"{consumed.outcome}:{consumed.reason or 'n/a'}",
                     )
-            _active_run.clear()
-            _active_run.update(
+            self._active_run.clear()
+            self._active_run.update(
                 {"run_id": run_id, "actor_id": actor_id, "state": "running"}
             )
             running_payload = {
@@ -2416,8 +2420,10 @@ class GlobalDiscoveryRecoveryService:
                 self._manifests.write_status(run_id, payload)
             finally:
                 lease.release()
-            _active_run.clear()
-            _active_run.update({"run_id": run_id, "actor_id": actor_id, "state": state})
+            self._active_run.clear()
+            self._active_run.update(
+                {"run_id": run_id, "actor_id": actor_id, "state": state}
+            )
             return {"run_id": run_id, **payload}
         except Exception as exc:
             current_status = self._manifests.read_status(run_id)
@@ -2509,8 +2515,8 @@ class GlobalDiscoveryRecoveryService:
                     code,
                     "global recovery failed; concurrent durable status was preserved",
                 ) from exc
-            _active_run.clear()
-            _active_run.update(
+            self._active_run.clear()
+            self._active_run.update(
                 {"run_id": run_id, "actor_id": actor_id, "state": "failed"}
             )
             if isinstance(exc, GlobalDiscoveryRecoveryError):
@@ -2520,7 +2526,7 @@ class GlobalDiscoveryRecoveryService:
                 "global recovery failed; inspect the durable run status",
             ) from exc
         finally:
-            _run_lock.release()
+            self._run_lock.release()
 
     def read_bound_status(
         self,
@@ -2587,7 +2593,7 @@ class GlobalDiscoveryRecoveryService:
     ) -> dict[str, object]:
         """Mark completion only after the caller confirms the UoW commit."""
 
-        if not _run_lock.acquire(blocking=False):
+        if not self._run_lock.acquire(blocking=False):
             raise GlobalDiscoveryRecoveryError(
                 "recovery_in_progress", "another recovery owns the process lock"
             )
@@ -2621,13 +2627,13 @@ class GlobalDiscoveryRecoveryService:
                 "delivery": dict(delivery),
             }
             self._manifests.write_status(run_id, payload)
-            _active_run.clear()
-            _active_run.update(
+            self._active_run.clear()
+            self._active_run.update(
                 {"run_id": run_id, "actor_id": actor_id, "state": "completed"}
             )
             return {"run_id": run_id, **payload}
         finally:
-            _run_lock.release()
+            self._run_lock.release()
 
 
 __all__ = [

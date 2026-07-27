@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 
@@ -25,10 +26,13 @@ from okto_pulse.core.infra.config import (
 )
 from okto_pulse.core.infra.storage import get_storage_provider
 from okto_pulse.core.runtime_context import (
+    RuntimeValueRegistry,
     capture_runtime_values_for_tests,
     register_runtime_value,
     resolve_runtime_value,
     restore_runtime_values_for_tests,
+    runtime_lock,
+    runtime_value_scope,
 )
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 
@@ -67,6 +71,52 @@ def test_nested_scope_restores_the_previous_composition() -> None:
             assert current_runtime_composition() is second
         assert current_runtime_composition() is first
     assert current_runtime_composition() is None
+
+
+def test_process_default_runtime_lock_is_shared_across_raw_threads() -> None:
+    """Raw worker threads must not manufacture independent process locks."""
+
+    lock = runtime_lock("tests.raw_thread_exclusion")
+    owner_entered = threading.Event()
+    release_owner = threading.Event()
+    contender_outcomes: list[bool] = []
+
+    def owner() -> None:
+        with lock:
+            owner_entered.set()
+            assert release_owner.wait(timeout=5)
+
+    def contender() -> None:
+        assert owner_entered.wait(timeout=5)
+        acquired = lock.acquire(blocking=False)
+        contender_outcomes.append(acquired)
+        if acquired:
+            lock.release()
+
+    owner_thread = threading.Thread(target=owner)
+    contender_thread = threading.Thread(target=contender)
+    owner_thread.start()
+    contender_thread.start()
+    contender_thread.join(timeout=5)
+    release_owner.set()
+    owner_thread.join(timeout=5)
+
+    assert not owner_thread.is_alive()
+    assert not contender_thread.is_alive()
+    assert contender_outcomes == [False]
+
+
+def test_explicit_runtime_scopes_keep_independent_locks() -> None:
+    lock = runtime_lock("tests.explicit_runtime_isolation")
+    first = RuntimeValueRegistry()
+    second = RuntimeValueRegistry()
+
+    with runtime_value_scope(first):
+        first_lock = lock.bind()
+    with runtime_value_scope(second):
+        second_lock = lock.bind()
+
+    assert first_lock is not second_lock
 
 
 def test_isolated_provider_scope_clones_and_restores_on_failure() -> None:

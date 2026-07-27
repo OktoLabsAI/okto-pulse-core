@@ -18,14 +18,34 @@ from typing import Any, Callable, Iterator, Mapping
 @dataclass(slots=True)
 class RuntimeValueRegistry:
     _values: dict[str, Any] = field(default_factory=dict)
+    _guard: RLock = field(
+        default_factory=RLock,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def register(self, key: str, value: Any) -> None:
         if value is None:
             raise ValueError(f"runtime_value_none:{key}")
-        self._values[key] = value
+        with self._guard:
+            self._values[key] = value
 
     def resolve(self, key: str) -> Any | None:
-        return self._values.get(key)
+        with self._guard:
+            return self._values.get(key)
+
+    def resolve_or_create(self, key: str, factory: Callable[[], Any]) -> Any:
+        """Resolve one value, creating it atomically for this runtime."""
+
+        with self._guard:
+            value = self._values.get(key)
+            if value is None:
+                value = factory()
+                if value is None:
+                    raise ValueError(f"runtime_value_none:{key}")
+                self._values[key] = value
+            return value
 
     def require(self, key: str, error: str | None = None) -> Any:
         value = self.resolve(key)
@@ -34,15 +54,17 @@ class RuntimeValueRegistry:
         return value
 
     def discard(self, *keys: str) -> None:
-        for key in keys:
-            self._values.pop(key, None)
+        with self._guard:
+            for key in keys:
+                self._values.pop(key, None)
 
     def snapshot(self) -> Mapping[str, Any]:
-        return dict(self._values)
+        with self._guard:
+            return dict(self._values)
 
     def copy(self) -> "RuntimeValueRegistry":
         copied: dict[str, Any] = {}
-        for key, value in self._values.items():
+        for key, value in self.snapshot().items():
             clone = getattr(value, "clone_for_runtime", None)
             if callable(clone):
                 copied[key] = clone()
@@ -71,15 +93,32 @@ class RuntimeLock:
     """Immutable descriptor for a lock owned by the active runtime context."""
 
     key: str
+    _process_default_lock: RLock = field(
+        default_factory=RLock,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def _resolve(self) -> RLock:
-        registry = current_runtime_values(create=True)
+        registry = current_runtime_values()
+        if registry is None:
+            # Raw ``threading.Thread`` instances do not inherit ContextVars.
+            # Seed their local registry with the descriptor's shared fallback
+            # so acquire/release stay paired without sharing providers/state.
+            registry = current_runtime_values(create=True)
+            assert registry is not None
+            return registry.resolve_or_create(
+                self.key,
+                lambda: self._process_default_lock,
+            )
         assert registry is not None
-        lock = registry.resolve(self.key)
-        if lock is None:
-            lock = RLock()
-            registry.register(self.key, lock)
-        return lock
+        return registry.resolve_or_create(self.key, RLock)
+
+    def bind(self) -> RLock:
+        """Bind the concrete lock before work crosses a thread boundary."""
+
+        return self._resolve()
 
     def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
         return self._resolve().acquire(blocking, timeout)
@@ -96,7 +135,7 @@ class RuntimeLock:
 
 
 def runtime_lock(key: str) -> RuntimeLock:
-    """Create a descriptor whose concrete lock is runtime-context owned."""
+    """Create one module-scope descriptor for a runtime-owned lock key."""
 
     return RuntimeLock(f"runtime.lock.{key}")
 
@@ -111,11 +150,7 @@ class RuntimeState:
     def resolve(self) -> Any:
         registry = current_runtime_values(create=True)
         assert registry is not None
-        value = registry.resolve(self.key)
-        if value is None:
-            value = self.factory()
-            registry.register(self.key, value)
-        return value
+        return registry.resolve_or_create(self.key, self.factory)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.resolve(), name)
